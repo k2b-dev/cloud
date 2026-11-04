@@ -709,7 +709,16 @@ level, and further entries of the audience appear in the list. Removing a denial
 asks nothing, because nobody loses access by it, and **Undo** is disabled when
 it would leave the resource without a manager.
 The search offers people, groups, and agents; it never finds the account of an
-object or app by name.
+object or app by name. Someone already on the list stays in the results, greyed
+with their level, and a search without results names what was searched.
+
+Each row's level opens a menu of the offered levels, each with one sentence on
+what it means, and **Remove** at its foot. Pass `description` in
+`allowedLevels` for wording that fits the resource; otherwise the dialog uses
+general sentences. Read-only (`canEdit: false`) names who manages the resource,
+shows **General** in words, and offers only **Close**. Pass `loadEntries(signal)`
+instead of `initialEntries` to open the dialog at once: rows that are still
+loading take the list's place, and a failure offers **Try again**.
 
 Pass `findServiceAccount(handle, signal)` to add such service accounts by their
 identifier. Send the resource as the lookup's target: your server answers only

@@ -4,6 +4,14 @@ import { delegateEvents, isServer, render } from "solid-js/web";
 import { precedenceScenarios, type ScenarioPrincipal } from "@/access-precedence.test-fixture";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../ui/test/dom";
 
+/** Opens a row's level menu and picks a level, as a person would. */
+const chooseLevel = (row: Element, level: string) => {
+  row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+  Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]'))
+    .find((option) => option.textContent?.includes(level))!
+    .click();
+};
+
 const domTest = isServer ? test.skip : test;
 
 const waitFor = async (condition: () => boolean, label: string) => {
@@ -94,9 +102,7 @@ domTest("the base access section turns read-only once a saved change costs the p
   try {
     const dialog = await openDialog(dom);
     const row = Array.from(dialog.querySelectorAll("li")).find((item) => item.textContent?.includes("Quentin Dorn"))!;
-    Array.from(row.querySelectorAll<HTMLElement>('[role="option"]'))
-      .find((option) => option.textContent?.includes("Edit"))!
-      .click();
+    chooseLevel(row, "Edit");
     await waitFor(() => dialog.textContent?.includes("1 change") === true, "one change");
     Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.trim() === "Save")!

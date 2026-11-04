@@ -3,6 +3,14 @@ import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { AccessEntry } from "../contracts/shared";
 
+/** Opens a row's level menu and picks a level, as a person would. */
+const chooseLevel = (row: Element, level: string) => {
+  row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+  Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]'))
+    .find((option) => option.textContent?.includes(level))!
+    .click();
+};
+
 const waitFor = async (condition: () => boolean, label: string) => {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     if (condition()) return;
@@ -80,10 +88,7 @@ describe("AccessDialog", () => {
     const row = (name: string) => Array.from(dom.root.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
     const button = (text: string) =>
       Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text)!;
-    const choose = (name: string, level: string) =>
-      Array.from(row(name).querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes(level))!
-        .click();
+    const choose = (name: string, level: string) => chooseLevel(row(name), level);
     return {
       dom,
       calls,
@@ -148,10 +153,14 @@ describe("AccessDialog", () => {
     try {
       const remove = ui.row("Mia Hoffmann").querySelector<HTMLButtonElement>("button[aria-label^='Give someone else']")!;
       expect(remove.disabled).toBe(true);
-      const view = Array.from(ui.row("Mia Hoffmann").querySelectorAll<HTMLElement>('[role="option"]')).find((option) =>
+      ui.row("Mia Hoffmann").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+      const view = Array.from(ui.row("Mia Hoffmann").querySelectorAll<HTMLButtonElement>('[role="radio"]')).find((option) =>
         option.textContent?.includes("View"),
       )!;
-      expect(view.getAttribute("aria-disabled") === "true" || view.hasAttribute("disabled")).toBe(true);
+      expect(view.disabled).toBe(true);
+      // The menu says why, and its Remove is off too.
+      expect(ui.row("Mia Hoffmann").textContent).toContain("First give someone else “Manage”.");
+      ui.row("Mia Hoffmann").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
       // Once Lea manages too, Mia may step down.
       ui.choose("Lea Schmitt", "Manage");
       await waitFor(
@@ -334,9 +343,7 @@ describe("AccessDialog", () => {
     const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
     try {
       await waitFor(() => dialog()?.textContent?.includes("Lea Schmitt") === true, "the dialog");
-      Array.from(row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes("Edit"))!
-        .click();
+      chooseLevel(row("Lea Schmitt"), "Edit");
       row("Lagerbot").querySelector<HTMLButtonElement>('button[aria-label="Remove Lagerbot"]')!.click();
       await waitFor(() => dialog()?.textContent?.includes("2 changes") === true, "two changes");
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button"))
@@ -501,9 +508,7 @@ describe("AccessDialog", () => {
         denialRow().querySelector<HTMLButtonElement>("[data-access-remove]")!.click();
         await waitFor(() => !!denialRow().querySelector("[data-access-undo]"), "the removal mark");
         const miaRow = ui.rows("Mia Hoffmann")[0]!;
-        Array.from(miaRow.querySelectorAll<HTMLElement>('[role="option"]'))
-          .find((option) => option.textContent?.includes("View"))!
-          .click();
+        chooseLevel(miaRow, "View");
         await waitFor(() => ui.dom.root.textContent?.includes("2 changes") === true, "two changes");
         expect(denialRow().querySelector<HTMLButtonElement>("[data-access-undo]")!.disabled).toBe(true);
       } finally {
@@ -602,6 +607,173 @@ describe("AccessDialog", () => {
           (item) => item.textContent?.includes("Code von info@beispiel.de") && item.querySelector("img"),
         );
         expect(preview?.querySelector("img")?.getAttribute("src")).toContain("rev=abc123");
+      } finally {
+        ui.cleanup();
+      }
+    });
+  });
+
+  describe("states as in the approved mockup", () => {
+    const renderDialog = async (props: Partial<import("./AccessDialog").AccessDialogProps> = {}) => {
+      const dom = createDomTestHarness();
+      dom.document.documentElement.lang = "en";
+      // happy-dom has no Popover API; the search results open through it.
+      const prototype = dom.window.HTMLElement.prototype as unknown as Record<string, unknown>;
+      const open = new WeakSet<object>();
+      const matches = prototype.matches as (this: Element, selector: string) => boolean;
+      Object.assign(prototype, {
+        matches(this: Element, selector: string) {
+          return selector === ":popover-open" ? open.has(this) : matches.call(this, selector);
+        },
+        showPopover(this: object) {
+          open.add(this);
+        },
+        hidePopover(this: object) {
+          open.delete(this);
+        },
+        scrollIntoView() {},
+      });
+      delegateEvents(["click", "input", "keydown"], dom.document);
+      const { AccessDialog } = await import("./AccessDialog");
+      const close = mock((_saved: boolean) => {});
+      const dispose = render(
+        () => (
+          <AccessDialog
+            resourceName="Einkauf 2027"
+            initialEntries={props.loadEntries ? undefined : [mia, lea]}
+            grantAccess={async (principal, permission) => ({ id: "x", principal, permission, createdAt: "now" })}
+            updateAccess={async () => {}}
+            revokeAccess={async () => {}}
+            close={close}
+            {...props}
+          />
+        ),
+        dom.root,
+      );
+      const text = () => dom.root.textContent ?? "";
+      const button = (label: string) =>
+        Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === label);
+      const row = (name: string) => Array.from(dom.root.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
+      return { dom, text, button, row, close, cleanup: () => (dispose(), dom.cleanup()) };
+    };
+    const search = async (dom: ReturnType<typeof createDomTestHarness>, query: string) => {
+      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+      input.focus();
+      input.value = query;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    const withDirectory = (items: unknown[]) => {
+      const original = globalThis.fetch;
+      globalThis.fetch = Object.assign(async () => Response.json({ items }), { preconnect: original.preconnect });
+      return () => {
+        globalThis.fetch = original;
+      };
+    };
+
+    test("an empty search names the search and says what to search for", async () => {
+      const restore = withDirectory([]);
+      const ui = await renderDialog();
+      try {
+        await search(ui.dom, "xyz");
+        await waitFor(() => ui.text().includes("Nobody is called “xyz”."), "the empty text");
+        expect(ui.text()).toContain("Search by name, email or group.");
+      } finally {
+        ui.cleanup();
+        restore();
+      }
+    });
+
+    test("someone already on the list stays in the results, greyed with their level", async () => {
+      const restore = withDirectory([
+        { kind: "user", user: { id: "10000000-0000-4000-8000-000000000002", uid: "lea", displayName: "Lea Schmitt", mail: null } },
+        {
+          kind: "user",
+          user: { id: "10000000-0000-4000-8000-000000000008", uid: "tom", displayName: "Tom Berg", mail: "tom@beispiel.de" },
+        },
+      ]);
+      const ui = await renderDialog();
+      try {
+        await search(ui.dom, "le");
+        const option = () =>
+          Array.from(ui.dom.root.querySelectorAll<HTMLElement>('[role="option"]')).find((item) =>
+            item.textContent?.includes("Lea Schmitt"),
+          );
+        await waitFor(() => !!option(), "Lea in the results");
+        expect(option()!.getAttribute("aria-disabled")).toBe("true");
+        expect(option()!.textContent).toContain("already has View");
+        option()!.click();
+        await Bun.sleep(20);
+        expect(ui.text()).not.toContain("1 change");
+      } finally {
+        ui.cleanup();
+        restore();
+      }
+    });
+
+    test("read-only names who manages, shows General in words, and offers only Close", async () => {
+      const ui = await renderDialog({ canEdit: false });
+      try {
+        expect(ui.text()).toContain("Only those who manage it can change access: Mia Hoffmann.");
+        expect(ui.row("All signed-in people").textContent).toContain("Off");
+        expect(ui.dom.root.querySelector('input[aria-label="All signed-in people"]')).toBeNull();
+        expect(ui.button("Close")).toBeDefined();
+        expect(ui.button("Save")).toBeUndefined();
+        expect(ui.button("Cancel")).toBeUndefined();
+        expect(ui.text()).not.toContain("No changes");
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("loading shows rows that are still coming, without the search; a failure offers Try again", async () => {
+      let attempt = 0;
+      const held = Promise.withResolvers<void>();
+      const ui = await renderDialog({
+        loadEntries: async () => {
+          attempt += 1;
+          if (attempt === 1) throw new Error("offline");
+          await held.promise;
+          return [mia, lea];
+        },
+      });
+      try {
+        await waitFor(() => ui.text().includes("Access could not be loaded."), "the load failure");
+        ui.button("Try again")!.click();
+        await waitFor(() => !!ui.dom.root.querySelector('[aria-busy="true"]'), "the loading rows");
+        expect(ui.dom.root.querySelector("input[role=combobox]")).toBeNull();
+        expect(ui.text()).toContain("Loading access");
+        held.resolve();
+        await waitFor(() => ui.text().includes("Lea Schmitt"), "the loaded rows");
+        expect(ui.dom.root.querySelector("input[role=combobox]")).not.toBeNull();
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("the level menu says what each level means and can remove the row", async () => {
+      const ui = await renderDialog();
+      try {
+        ui.row("Lea Schmitt").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+        const menu = () => ui.row("Lea Schmitt").querySelector<HTMLElement>('[role="dialog"]');
+        expect(menu()?.textContent).toContain("Sees the content.");
+        expect(menu()?.textContent).toContain("Adds and changes content.");
+        expect(menu()?.textContent).toContain("Also changes settings and access.");
+        Array.from(menu()!.querySelectorAll<HTMLButtonElement>("button"))
+          .find((item) => item.textContent?.trim() === "Remove")!
+          .click();
+        await waitFor(() => ui.row("Lea Schmitt").textContent?.includes("Will be removed") === true, "the removal mark");
+        expect(menu()).toBeNull();
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("all signed-in people says agents and service accounts need their own access", async () => {
+      const ui = await renderDialog();
+      try {
+        ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="All signed-in people"]')!.click();
+        await waitFor(() => ui.text().includes("1 change"), "the change");
+        expect(ui.row("All signed-in people").textContent).toContain("Agents and service accounts need their own access.");
       } finally {
         ui.cleanup();
       }

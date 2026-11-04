@@ -4,6 +4,14 @@ import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { ContactBook } from "../../service";
 
+/** Opens a row's level menu and picks a level, as a person would. */
+const chooseLevel = (row: Element, level: string) => {
+  row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+  Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]'))
+    .find((option) => option.textContent?.includes(level))!
+    .click();
+};
+
 const load = async () => {
   const dom = createDomTestHarness();
   try {
@@ -165,9 +173,7 @@ describe("Contact book settings reconciliation", () => {
       );
       button("Edit access")!.click();
       await waitFor(() => dialog()?.textContent?.includes("Access to Suppliers") === true, "the access dialog");
-      Array.from(row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes("Edit"))!
-        .click();
+      chooseLevel(row("Lea Schmitt"), "Edit");
       row("Ben Albers").querySelector<HTMLButtonElement>('button[aria-label="Remove Ben Albers"]')!.click();
       await waitFor(() => dialog()?.textContent?.includes("2 changes") === true, "two changes");
       expect(writes).toEqual([]);
@@ -245,9 +251,7 @@ describe("Contact book settings reconciliation", () => {
       button("Edit access")!.click();
       await waitFor(() => dialog()?.textContent?.includes("Lea Schmitt") === true, "the access dialog");
       const row = Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes("Lea Schmitt"))!;
-      Array.from(row.querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes("Edit"))!
-        .click();
+      chooseLevel(row, "Edit");
       await waitFor(() => dialog()?.textContent?.includes("1 change") === true, "one change");
       button("Save")!.click();
       await waitFor(() => reloads === 1 && !dialog(), "the failed reload");

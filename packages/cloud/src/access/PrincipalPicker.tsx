@@ -1,4 +1,5 @@
 import { Combobox, type ComboboxOption, useLocale } from "@k2b/ui";
+import { createSignal, type JSX } from "solid-js";
 import type { Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import { accessMessages } from "./messages";
 import { principalKey } from "./principal-key";
@@ -42,6 +43,13 @@ export default function PrincipalPicker(props: {
   placeholder?: string;
   /** The consumer's name and description for every signed-in person. */
   signedIn?: { label: string; description: string };
+  /**
+   * Keeps a principal that is already on the list in the results, shown but not pickable, with this reason such as
+   * "already has Edit". Without it, such principals are left out of the results.
+   */
+  takenReason?: (principal: Principal) => string | undefined;
+  /** Shown instead of the default text when a search finds nothing, with the typed search. */
+  empty?: (query: string) => JSX.Element;
   /** `serviceAccountKind` is set for service accounts so a new row can show the same kind as the result. */
   onSelect: (
     principal: Principal,
@@ -59,7 +67,9 @@ export default function PrincipalPicker(props: {
     serviceAccountKind?: ServiceAccountKind;
   };
   let selectable = new Map<string, Entry>();
+  const [lastQuery, setLastQuery] = createSignal("");
   const load = async (search: string, signal: AbortSignal): Promise<ComboboxOption[]> => {
+    setLastQuery(search.trim());
     const entries: Entry[] = [];
     if (props.allowAuthenticated !== false)
       entries.push({
@@ -138,10 +148,17 @@ export default function PrincipalPicker(props: {
       }
     }
     const existing = new Set(props.existing?.map(principalKey));
-    const filtered = entries.filter((e) => !existing.has(principalKey(e.principal)));
+    const taken = (e: Entry) => (existing.has(principalKey(e.principal)) ? (props.takenReason?.(e.principal) ?? null) : undefined);
+    // A principal on the list stays visible when a reason is given, so the search never looks like it missed someone.
+    const shown = entries.filter((e) => taken(e) !== null);
     if (signal.aborted) return [];
-    selectable = new Map(filtered.map((e) => [principalKey(e.principal), e]));
-    return filtered.map((e) => ({ id: principalKey(e.principal), label: e.label, icon: e.icon, description: e.description }));
+    selectable = new Map(shown.filter((e) => taken(e) === undefined).map((e) => [principalKey(e.principal), e]));
+    return shown.map((e): ComboboxOption => {
+      const reason = taken(e);
+      return typeof reason === "string"
+        ? { id: principalKey(e.principal), label: e.label, icon: e.icon, description: reason, disabled: true }
+        : { id: principalKey(e.principal), label: e.label, icon: e.icon, description: e.description };
+    });
   };
   return (
     <Combobox
@@ -158,6 +175,7 @@ export default function PrincipalPicker(props: {
             : t().addBasic)
       }
       fetchData={load}
+      empty={props.empty ? props.empty(lastQuery()) : undefined}
       onSelect={(option) => {
         const entry = selectable.get(option.id);
         if (entry)
