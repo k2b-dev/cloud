@@ -252,10 +252,13 @@ permission. The tables come from the foreign keys that reference
 `auth.access`, so optional and third-party applications are included when
 installed. Resource IDs are JSON arrays containing the resource key, or
 `[base_id, path]` for Files storage. For a table that no built-in application
-owns, the resource key is the link row without its grant and time columns,
+owns, the resource key is the link row without its grant column and the usual
+audit columns (`created_at`, `updated_at`, `added_at`, `added_by`,
+`added_by_type`, `added_by_id`, `created_by`, `granted_at`, `granted_by`),
 such as `[{"workspace": "office"}]`. If such a row holds more than the
-resource, for example who added it, an own grant may not be matched, and the
-machine is listed although it keeps access: review it in the owning app.
+resource, an own grant may not be matched, and the machine is listed although
+it keeps access: review it in the owning app. The result does not depend on
+the session's `search_path`.
 `assistant.artifact_machine_rights` is grant metadata, not another object
 link. The second result lists grants for all signed-in people that no table
 links with a foreign key. An application keeps their IDs elsewhere; ask its
@@ -289,26 +292,28 @@ WITH known(link_table, resource_expression, public_allowed) AS (
     ('mail.mailbox_assigned_access', 'jsonb_build_array(l.mailbox_id)', true)
 ), references_to_access AS (
   -- Every table that links a grant with a foreign key to auth.access, built-in and app-owned.
-  SELECT c.conrelid AS relid, c.conrelid::regclass::text AS link_table, a.attname AS access_column
+  -- Names are schema-qualified whatever the search_path is.
+  SELECT c.conrelid AS relid, format('%I.%I', n.nspname, t.relname) AS link_table, n.nspname AS link_schema,
+    a.attname AS access_column
   FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+  JOIN pg_class t ON t.oid = c.conrelid JOIN pg_namespace n ON n.oid = t.relnamespace
   WHERE c.contype = 'f' AND c.confrelid = 'auth.access'::regclass AND cardinality(c.conkey) = 1
 ), links AS (
   SELECT k.link_table, k.resource_expression, k.public_allowed, 'access_id'::name AS access_column
   FROM known k WHERE to_regclass(k.link_table) IS NOT NULL
   UNION ALL
-  -- App-owned tables: the resource is the link row without its grant and time columns.
-  SELECT r.link_table, format('jsonb_build_array(to_jsonb(l) - %L::text[])', (
-      SELECT array_agg(attname::text) FROM pg_attribute
-      WHERE attrelid = r.relid AND attnum > 0 AND NOT attisdropped
-        AND (attname = r.access_column OR atttypid IN ('timestamp'::regtype, 'timestamptz'::regtype, 'date'::regtype)))),
+  -- App-owned tables: the resource is the link row without its grant column and the usual audit columns. Any other
+  -- column, such as a date, stays part of the resource, so a grant on another resource never hides a loss.
+  SELECT r.link_table, format('jsonb_build_array(to_jsonb(l) - %L::text[])', ARRAY[r.access_column::text,
+      'created_at', 'updated_at', 'added_at', 'added_by', 'added_by_type', 'added_by_id', 'created_by', 'granted_at', 'granted_by']),
     true, r.access_column
   FROM references_to_access r
   WHERE r.link_table NOT IN (SELECT link_table FROM known)
-    AND r.link_table <> 'assistant.artifact_machine_rights' AND r.link_table NOT LIKE 'code.%'
+    AND r.link_table <> 'assistant.artifact_machine_rights' AND r.link_schema <> 'code'
 ), object_queries AS (
   SELECT string_agg(format(
     'SELECT %L::text AS link_table, %s AS resource_id, %L::boolean AS public_allowed, a.* FROM %s l JOIN auth.access a ON a.id = l.%I',
-    link_table, resource_expression, public_allowed, to_regclass(link_table), access_column),
+    link_table, resource_expression, public_allowed, link_table, access_column),
     E'\nUNION ALL\n' ORDER BY link_table) AS body
   FROM links
 ), unlinked_query AS (
@@ -316,7 +321,7 @@ WITH known(link_table, resource_expression, public_allowed) AS (
   SELECT format(
     'SELECT a.id AS access_id, a.permission, a.created_at FROM auth.access a WHERE a.authenticated_only AND a.permission IN (%L, %L, %L)%s ORDER BY a.created_at',
     'read', 'write', 'admin',
-    COALESCE(string_agg(format(' AND NOT EXISTS (SELECT 1 FROM %s l WHERE l.%I = a.id)', relid::regclass, access_column), ''), '')
+    COALESCE(string_agg(format(' AND NOT EXISTS (SELECT 1 FROM %s l WHERE l.%I = a.id)', link_table, access_column), ''), '')
   ) AS body
   FROM references_to_access
 )

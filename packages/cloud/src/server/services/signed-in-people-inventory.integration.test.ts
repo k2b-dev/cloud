@@ -81,10 +81,23 @@ databaseSuite()("a tier meant for people admits machines: pre-switch inventory",
           await appLink(`${prefix}-store`, { authenticated: true }),
         ];
         await appLink(`${prefix}-office`, { accountId: agent.id });
+        // A date is part of the resource: a grant for another day never hides a loss.
+        await db.unsafe(`CREATE TABLE ${appSchema}.shift_access (
+          shift_day date NOT NULL, grant_ref uuid NOT NULL REFERENCES auth.access(id), created_at timestamptz NOT NULL DEFAULT now())`);
+        const shiftLink = async (day: string, principal: { accountId?: string; authenticated?: boolean }) => {
+          const [grant] = await db<{ id: string }[]>`INSERT INTO auth.access(service_account_id, authenticated_only, permission)
+          VALUES (${principal.accountId ?? null}::uuid, ${principal.authenticated ?? false}, 'read') RETURNING id`;
+          if (!grant) throw new Error("Missing shift grant fixture");
+          await db.unsafe(`INSERT INTO ${appSchema}.shift_access(shift_day, grant_ref) VALUES ($1::date, $2::uuid)`, [day, grant.id]);
+        };
+        await shiftLink("2026-11-04", { authenticated: true });
+        await shiftLink("2026-11-03", { accountId: agent.id });
         // A grant an app keeps without a foreign key.
         const [unlinked] = await db<{ id: string }[]>`INSERT INTO auth.access(authenticated_only, permission)
         VALUES (true, 'write') RETURNING id`;
         if (!unlinked) throw new Error("Missing unlinked grant fixture");
+        // The operator's search_path must not change what the inventory finds.
+        await db.unsafe("SET LOCAL search_path = auth, public");
         const [generated] = await db.unsafe<{ inventory_query: string; unlinked_query: string }[]>(generator);
         if (!generated) throw new Error("Inventory did not generate a query");
         const rows = await db.unsafe<{ service_account_id: string; link_table: string; resource_id: string[]; lost_permission: string }[]>(
@@ -115,12 +128,18 @@ databaseSuite()("a tier meant for people admits machines: pre-switch inventory",
             ...[standalone, bound].map((account) => `${account.id}:[{"workspace":"${prefix}-office"}]:read`),
           ].sort(),
         );
+        expect(
+          rows
+            .filter((row) => row.link_table === `${appSchema}.shift_access` && row.service_account_id === agent.id)
+            .map((row) => JSON.stringify(row.resource_id)),
+        ).toEqual(['[{"shift_day":"2026-11-04"}]']);
         const unlinkedRows = await db.unsafe<{ access_id: string; permission: string }[]>(generated.unlinked_query);
         expect(unlinkedRows).toContainEqual(expect.objectContaining({ access_id: unlinked.id, permission: "write" }));
         // Grants a table links never show as unlinked.
         expect(unlinkedRows.filter((row) => appAudience.includes(row.access_id))).toEqual([]);
-        const references = await db<{ link_table: string }[]>`SELECT DISTINCT conrelid::regclass::text AS link_table
-        FROM pg_constraint WHERE contype = 'f' AND confrelid = 'auth.access'::regclass`;
+        const references = await db<{ link_table: string }[]>`SELECT DISTINCT n.nspname || '.' || t.relname AS link_table
+        FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE c.contype = 'f' AND c.confrelid = 'auth.access'::regclass`;
         for (const { link_table } of references) {
           if (link_table === "assistant.artifact_machine_rights" || link_table.startsWith("code.")) continue;
           expect(generated.inventory_query).toContain(`'${link_table}'::text AS link_table`);
