@@ -4806,6 +4806,7 @@ export const mailCapabilities = localizeCapabilityErrors(
     types: {
       mailbox: {
         title: "Mailbox",
+        codeAccount: { name: "Code of a mailbox", description: "Service account of a mailbox" },
         description: "A mailbox the actor may access.",
         icon: "ti ti-inbox",
         reader: "mailbox.read",

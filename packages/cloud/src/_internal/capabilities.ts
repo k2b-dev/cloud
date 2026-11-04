@@ -9,6 +9,7 @@ import {
   CapabilityQualifiedIdSchema,
   type CapabilitySubscriptionManifest,
   CapabilitySubscriptionManifestSchema,
+  CodeAccountTypeLabelsSchema,
 } from "../contracts/capabilities";
 import { RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "../contracts/resource-pages";
 import { sql } from "../runtime/clients";
@@ -133,6 +134,7 @@ const CALENDAR_SOURCE_FIELDS = {
 } satisfies DefinedFields<CapabilityCalendarSourceDeclaration>;
 const FILE_PROVIDER_FIELDS = { list: true, read: true, save: true } satisfies DefinedFields<CapabilityFileProviderDeclaration>;
 const TYPE_FIELDS = {
+  codeAccount: true,
   title: true,
   description: true,
   icon: true,
@@ -572,7 +574,7 @@ export const compileCapabilityPresentation = (
     const translatedTypes = compileGroup(raw.types, types, "Resource type", (entry, _definition, label) => {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`${label} must be an object`);
       const copy = entry as Record<string, unknown>;
-      const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description");
+      const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description" && key !== "codeAccount");
       if (strict && extraField) throw new Error(`${label} contains unsupported field "${extraField}"`);
       if (copy.title !== undefined) {
         if (typeof copy.title !== "string") throw new Error(`${label}.title must be text`);
@@ -583,6 +585,7 @@ export const compileCapabilityPresentation = (
         assertText(copy.description, `${label}.description`, 500);
       }
       return {
+        ...(copy.codeAccount !== undefined ? { codeAccount: CodeAccountTypeLabelsSchema.parse(copy.codeAccount) } : {}),
         ...(copy.title ? { title: String(copy.title).trim() } : {}),
         ...(copy.description ? { description: String(copy.description).trim() } : {}),
       };
@@ -791,6 +794,7 @@ export const compileCapabilities = (
         localId,
         title: definition.title.trim(),
         description: definition.description.trim(),
+        ...(definition.codeAccount ? { codeAccount: CodeAccountTypeLabelsSchema.parse(definition.codeAccount) } : {}),
         ...(definition.icon ? { icon: definition.icon } : {}),
         ...(definition.color !== undefined ? { color: z.enum(CAPABILITY_RESOURCE_COLORS).parse(definition.color) } : {}),
         ...(definition.reader !== undefined ? { reader: CapabilityLocalIdSchema.parse(definition.reader) } : {}),
@@ -1270,7 +1274,14 @@ export const resolveCapabilityManifestPresentation = (
       appId: current.appId,
       types: current.types.map((type) => {
         const copy = translation.types?.[type.localId];
-        return copy ? { ...type, title: copy.title ?? type.title, description: copy.description ?? type.description } : type;
+        return copy
+          ? {
+              ...type,
+              title: copy.title ?? type.title,
+              description: copy.description ?? type.description,
+              ...(copy.codeAccount ? { codeAccount: copy.codeAccount } : {}),
+            }
+          : type;
       }),
       queries: current.queries.map((operation) => {
         const copy = translation.queries?.[operation.localId];

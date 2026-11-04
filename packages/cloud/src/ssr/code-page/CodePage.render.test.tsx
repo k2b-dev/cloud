@@ -3,12 +3,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import type { Context } from "hono";
+import { type Context, Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { currentLibrary } from "../../../test/future-capability-manifest";
+import * as capabilityProvider from "../../capabilities/server";
 import { capabilityResultSchema } from "../../contracts/capabilities";
 import { cloudResourcePageHref } from "../../contracts/resource-pages";
+import * as coreLocation from "../../services/identity/core-origin";
 import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { codePageFixture } from "./code-page.fixture";
 import type { CodePageInvoke } from "./data";
@@ -41,6 +43,15 @@ const text = (state: State, locale = "de") =>
     .replaceAll(/\s+/g, " ")
     // A sentence may end right after a linked ID.
     .replaceAll(/ \./g, ".");
+
+// Refusal actions belong to the notice; the account line always keeps its ordinary copy action.
+const refusalMarkup = (state: State) => {
+  const markup = html(state);
+  const start = markup.indexOf('<div class="cloud-code__refusal">');
+  const end = markup.indexOf("</section>", start);
+  if (start < 0 || end < 0) throw new Error(`Missing refusal notice in ${state}`);
+  return markup.slice(start, end);
+};
 
 const personal = (state: State, locale = "de") =>
   renderToString(() =>
@@ -101,7 +112,7 @@ describe("personal Code", () => {
 describe("Code page states", () => {
   test("overview lists automations with schedule, status and last run, and targets as operation at target", () => {
     const page = text("overview");
-    expect(page).toContain("Läuft als Dienstkonto „Code von info@moebel-beispiel.de“ · Kennung code-7k2q9m4xwt Kopieren");
+    expect(page).toContain("Läuft als Dienstkonto „Code von info@moebel-beispiel.de“ · code-7k2q9m4xwt Kennung kopieren");
     expect(page).toContain("Version 4");
     expect(page).toContain("Ursprünge im Internet");
     expect(page).toContain("https://bank.example");
@@ -175,22 +186,20 @@ describe("Code page states", () => {
     expect(html("refused-nolink")).not.toContain("it_7f3k</code></a>");
   });
 
-  test("a reader learns only that a call was refused, without action, target ID, link or handle", () => {
+  test("a reader’s refusal notice gives no action, target ID, link or handle", () => {
     const page = text("refused-reader");
     expect(page).toContain(
       "Ein Aufruf wurde abgelehnt. Der Code läuft als Dienstkonto „Code von info@moebel-beispiel.de“. Welches Ziel abgelehnt hat, sehen alle, die den Code bearbeiten dürfen.",
     );
     for (const hidden of ["sp_2lg8", "Aufgabe erstellen", "spaces.task.create", "Kennung kopieren", "Rechte-Editor", "/app/spaces/"])
-      expect(html("refused-reader").replace(/<li class="cloud-code__row cloud-code__row--access">[\s\S]*?<\/li>/g, "")).not.toContain(
-        hidden,
-      );
+      expect(refusalMarkup("refused-reader")).not.toContain(hidden);
   });
 
   test("an editor whose refused call could not be read is told so, not given the reader's text", () => {
     const page = text("refused-unloaded");
     expect(page).toContain("Ein Aufruf wurde abgelehnt. Welches Ziel abgelehnt hat, ließ sich gerade nicht laden.");
     expect(page).not.toContain("sehen alle, die den Code bearbeiten dürfen");
-    expect(page).not.toContain("Kennung kopieren");
+    expect(refusalMarkup("refused-unloaded")).not.toContain("Kennung kopieren");
   });
 
   test("policy and approval refusals never read as a target refusal and offer no handle", () => {
@@ -204,7 +213,7 @@ describe("Code page states", () => {
     // Cloud admins decide approvals, so only they get the link to the version's review.
     expect(approval).toContain("Freigabe ansehen");
     expect(html("refused-approval")).toContain('href="/admin/code?sec=approvals&amp;id=00000000-0000-4000-8000-000000000004"');
-    for (const page of [policy, approval]) {
+    for (const page of [refusalMarkup("refused-policy"), refusalMarkup("refused-approval")]) {
       expect(page).not.toContain("Kein Zugriff");
       expect(page).not.toContain("Kennung kopieren");
       expect(page).not.toContain("Wer das Ziel verwaltet");
@@ -238,9 +247,10 @@ describe("Code page states", () => {
       )
         .replaceAll(/<[^>]+>/g, " ")
         .replaceAll(/\s+/g, " ");
-    expect(render(first)).toContain("Kennung code-7k2q9m4xwt Kopieren");
+    expect(render(first)).toContain("code-7k2q9m4xwt Kennung kopieren");
     const unknown = codePageFixture("refused");
-    unknown.owner = { ...unknown.owner, handle: null };
+    if (unknown.state.kind !== "ready") throw new Error("Expected ready fixture");
+    unknown.state.code.serviceAccountHandle = null;
     const page = render(unknown);
     expect(page).not.toContain("Kennung kopieren");
     expect(page).toContain(
@@ -783,4 +793,70 @@ describe("Code page loader", () => {
     expect(serialized).not.toContain("k7qm2x9a");
     expect(serialized).not.toContain("spaces.task.create");
   });
+});
+
+test("the handle is present before the first run and in the server's first render", () => {
+  const data = codePageFixture("overview", "de");
+  if (data.state.kind !== "ready") throw new Error("Expected draft Code fixture");
+  data.state.runs = { items: [], nextCursor: null };
+  const markup = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(CodePage, { data });
+      },
+    }),
+  );
+  expect(markup).toContain("code-7k2q9m4xwt");
+  expect(markup.match(/Kennung kopieren/g)).toHaveLength(1);
+});
+
+test("the real Code page loader retains the handle before the first run", async () => {
+  const unavailable = { ok: false as const, error: { code: "UNAVAILABLE", message: "Not needed", status: 503 as const } };
+  const catalog = spyOn(capabilityProvider, "getCapabilityCatalogApp").mockResolvedValue({ ok: true, data: null });
+  const origin = spyOn(coreLocation, "coreOrigin").mockResolvedValue("http://core.test");
+  const network = spyOn(globalThis, "fetch").mockRejectedValue(new Error("No app calls in fixture"));
+  const invoke = spyOn(capabilityProvider, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
+    if (invocation.capabilityId !== "code.list") return unavailable;
+    return {
+      ok: true,
+      data: capabilityResultSchema(schema).parse({
+        data: {
+          items: [
+            {
+              id: "c_fixture",
+              title: "Code",
+              serviceAccountHandle: "code-7k2q9m4xwt",
+              state: "draft",
+              activeVersionId: null,
+              pauseReason: null,
+              permission: "editor",
+            },
+          ],
+          nextCursor: null,
+        },
+      }),
+    };
+  });
+  try {
+    const routes = new Hono().get("/code", async (c) =>
+      c.json(
+        await loadCodePage(c, {
+          owner: { ref: { type: "demo.item", id: "fixture" }, title: "Fixture" },
+          href: "/code",
+          canManageOwner: true,
+        }),
+      ),
+    );
+    const response = await routes.request("http://example.test/code");
+    const page = await response.json();
+    expect(page.state.kind).toBe("ready");
+    expect(page.state.code.serviceAccountHandle).toBe("code-7k2q9m4xwt");
+    expect(page.owner).not.toHaveProperty("handle");
+  } finally {
+    invoke.mockRestore();
+    catalog.mockRestore();
+    origin.mockRestore();
+    network.mockRestore();
+  }
 });

@@ -186,3 +186,9 @@ A panel that declares `code: true` (see [Offer a panel](/en/docs/platform/panels
 appears as **Edit with <panel>** on the page and on an empty page, with the icon
 the panel declares; the empty page also says that the panel writes the Code with
 the person. The page names no application.
+
+The account handle has one source in the shared page data:
+`state.code.serviceAccountHandle`. The loader retains Core’s
+`Code.serviceAccountHandle` for both the account line and refusal notices.
+Administration reads the same handle for app Code. An unavailable handle hides
+the copy action; personal Code has no service-account handle.

@@ -368,7 +368,7 @@ export const codePageMessages = i18n.define({
       copy: "Kopieren",
       copyHandle: "Kennung kopieren",
       handleCopied: "Kennung kopiert",
-      handleCopyFailed: "Die Kennung ließ sich nicht kopieren.",
+      handleCopyFailed: "Die Kennung konnte nicht kopiert werden.",
       versionLine: ({ version }: Version) => `Version ${version}`,
       draftLine: ({ version, name, date }: { version: number; name: string; date: string }) =>
         `Version ${version} · von ${name} · ${date} · noch nicht eingeschaltet`,

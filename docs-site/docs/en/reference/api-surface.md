@@ -723,3 +723,11 @@ directory authority for normal share mutations. `AccessMutationBusyError`
 reports retryable lock contention. Use the helper before the target lock and
 recheck target management on the same transaction, as described in
 [Resource authorization](/en/docs/identity/authorization#retain-manager-authority-while-changing-a-grant).
+
+## Code account handles
+
+`codeOwnerTitleChanged` from `@k2b/cloud` updates a declared owner's title in its
+rename transaction. `resolveDisplayNames` and `CodeAccountDisplayContext` from
+`@k2b/cloud/server` present names inside locally authorized target lists.
+`codeAccountPresenter` supports adapters that already join account metadata in
+one query. See [Code account handles](/en/docs/identity/code-service-account-handles).

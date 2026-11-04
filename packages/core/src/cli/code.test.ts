@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@k2b/cloud/cli";
 import { codeTestFailure } from "@k2b/cloud/code";
 import type { CodeAuthoringData, CodeProject } from "../code/authoring-contracts";
+import type { Code } from "../code/contracts";
 import { codePolicyPreset } from "../code/policy-contracts";
 import code, { printCodeCheck } from "./code";
 import { codeProjectFolder, listCodeProjects, loadCodeProject, readCodeFiles, writeCodeProject } from "./code-files";
@@ -650,6 +651,7 @@ const serverCode = {
   owner: config.owner,
   title: config.title,
   serviceAccountId: uuid,
+  serviceAccountHandle: "code-abcdefghjk",
   state: "paused",
   activeVersionId: uuid,
   pauseReason: "manual",
@@ -657,7 +659,7 @@ const serverCode = {
   pausePolicyRevision: null,
   createdBy: uuid,
   createdAt: "2026-10-31T12:00:00.000Z",
-};
+} satisfies Code;
 const runMetadata = {
   id: uuid,
   codeId: config.codeId,

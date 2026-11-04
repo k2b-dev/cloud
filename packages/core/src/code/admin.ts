@@ -7,7 +7,7 @@ import type { CodePageRefusal } from "@k2b/cloud/ssr/code-page/data";
 import { catalogCache, presentRefusedCall } from "@k2b/cloud/ssr/code-page/load";
 import { diffArrays } from "diff";
 import { z } from "zod";
-import { type CodeContext, CodeDataError, readCodeOwner } from "./access";
+import { type CodeContext, CodeDataError } from "./access";
 import type { Code, CodeOwner, CodeRun, CodeSourceFiles } from "./contracts";
 import { listCodeCleanupJobs } from "./lifecycle";
 import type { CodeCleanupJob } from "./lifecycle-contracts";
@@ -122,7 +122,7 @@ export type CodeAdminCode = {
 };
 export type CodeAdminCodeFilter = { status?: CodeAdminCodeStatus; app?: string; q?: string };
 export type CodeAdminCodeDetail = {
-  code: CodeAdminCode & { activeVersionNumber: number | null; createdAt: string };
+  code: CodeAdminCode & { activeVersionNumber: number | null; createdAt: string; serviceAccountHandle: string | null };
   versions: Awaited<ReturnType<typeof listCodeVersions>>["items"];
   runs: CodeRun[];
   cleanup: CodeCleanupJob[];
@@ -448,7 +448,7 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
   const comparedOperations = (comparisonEvidence?.trial?.calls ?? []).map((call) => ({ operation: call.operation, target: null }));
   const [authorName, ownerName, decidedByName] = await Promise.all([
     userName(row.created_by),
-    owner.kind === "person" ? userName(owner.userId) : placeName(owner, context),
+    owner.kind === "person" ? userName(owner.userId) : Promise.resolve(null),
     userName(row.decided_by),
   ]);
   return {
@@ -529,34 +529,12 @@ const mapListRow = (row: CodeListRow): CodeAdminCode => ({
   pauseReason: row.pause_reason,
   lastRun: row.last_run_at && row.last_run_state ? { at: iso(row.last_run_at), state: row.last_run_state } : null,
 });
-/**
- * A place is named by its type's public reader, under the admin's own authority. A place the admin may not read, or
- * whose app does not answer, stays null and the page shows its ID.
- */
-const placeName = (owner: CodeOwner, context: CodeContext): Promise<string | null> =>
-  owner.kind === "resource"
-    ? readCodeOwner(owner, context).then(
-        (read) => read?.title ?? null,
-        () => null,
-      )
-    : Promise.resolve(null);
-
-/** Names the places of one page; each place is read once. */
-const withPlaceNames = async (items: CodeAdminCode[], context: CodeContext): Promise<CodeAdminCode[]> => {
-  const names = new Map<string, Promise<string | null>>();
-  return Promise.all(
-    items.map(async (item) => {
-      if (item.owner.kind !== "resource") return item;
-      const key = `${item.owner.ref.type}:${item.owner.ref.id}`;
-      const name = names.get(key) ?? placeName(item.owner, context);
-      names.set(key, name);
-      return { ...item, ownerName: await name };
-    }),
-  );
-};
+/** A Cloud-admin role grants no target context for a resource owner's title. */
+const withPlaceNames = async (items: CodeAdminCode[], _context: CodeContext): Promise<CodeAdminCode[]> =>
+  items.map((item) => (item.owner.kind === "resource" ? { ...item, ownerName: null } : item));
 
 const codeListBase =
-  () => sql`SELECT c.id,c.title,c.state,c.pause_reason,c.created_at,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
+  () => sql`SELECT c.id,c.title,c.state,c.pause_reason,c.created_at,c.service_account_id,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
     COALESCE(NULLIF(u.display_name,''),u.uid) AS owner_name,
     EXISTS(SELECT 1 FROM code.version_submissions s JOIN approvals.requests r ON r.id=s.approval_id
       WHERE s.code_id=c.id AND r.status='pending' AND r.expires_at>now()) AS waiting,
@@ -611,7 +589,9 @@ export const decodeCodeAdminCursor = (value: string): { title: string; id: strin
 /** One Code for the detail column: versions with decisions, recent runs and pending cleanup. */
 export async function readCodeAdminCode(codeId: string, context: CodeContext): Promise<CodeAdminCodeDetail> {
   requireCodePolicyAdmin(context);
-  const [row] = await sql<CodeListRow[]>`SELECT * FROM (${codeListSelect()}) x WHERE x.id=${codeId}`;
+  const [row] = await sql<(CodeListRow & { service_account_handle: string | null })[]>`
+    SELECT x.*,a.handle AS service_account_handle FROM (${codeListSelect()}) x
+    LEFT JOIN auth.service_accounts a ON a.id=x.service_account_id WHERE x.id=${codeId}`;
   if (!row) throw new CodeDataError("NOT_FOUND", "Code not found.");
   const [versions, runs, cleanup, pending, [named]] = await Promise.all([
     listCodeVersions({ codeId, limit: 10 }, context),
@@ -624,7 +604,12 @@ export async function readCodeAdminCode(codeId: string, context: CodeContext): P
   const code = named ?? mapListRow(row);
   const last = runs.items.find((run) => run.state === "succeeded" || run.state === "failed");
   return {
-    code: { ...code, activeVersionNumber: row.active_number, createdAt: iso(row.created_at) },
+    code: {
+      ...code,
+      activeVersionNumber: row.active_number,
+      createdAt: iso(row.created_at),
+      serviceAccountHandle: row.service_account_handle,
+    },
     versions: versions.items,
     runs: runs.items,
     cleanup: cleanup.items,

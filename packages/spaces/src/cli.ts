@@ -385,7 +385,7 @@ function spacesCommands(locale?: string) {
       if (!args[0]) throw new Error(t({ en: "Missing space.", de: "Space fehlt." }));
       if (args.length > 1) throw new Error(`Unexpected arguments: ${args.slice(1).join(" ")}`);
       const space = await resolveSpace(ctx, args[0]);
-      return { id: space.id, label: `${space.name} (${space.id})` };
+      return { id: space.id, label: `${space.name} (${space.id})`, target: { type: "spaces.space", id: space.id } };
     },
     list: (ctx, space) => readApi<AccessEntry[]>(ctx, api(`/${space.id}/access`)),
     grant: (ctx, space, principal: Principal, permission: PermissionLevel) =>

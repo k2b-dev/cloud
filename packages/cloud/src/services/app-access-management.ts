@@ -13,9 +13,9 @@ import {
   getEffectivePermission,
   lockAccessMutationAuthority,
   type Principal,
-  resolveDisplayNames,
   updateAccess,
 } from "../server/services/access";
+import { resolveDisplayNames } from "../server/services/access-display";
 import { isAccountExpired } from "./account-model";
 import { recursiveGroupIdsSubquery } from "./accounts/group-sql";
 import { hasInstallationAdminInTransaction } from "./accounts/installation-admin";

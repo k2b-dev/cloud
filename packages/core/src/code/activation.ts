@@ -1,17 +1,6 @@
 import { type CodeAccessGrant, sql } from "@k2b/cloud";
-import {
-  getCapabilityCatalogApp,
-  invokeCapabilityWithDataSchema,
-  readCodeActivationManifest,
-  readResourcePrincipals,
-} from "@k2b/cloud/capabilities/server";
-import {
-  type CapabilityManifest,
-  CloudResourceReaderViewSchema,
-  type CodeAccessSetData,
-  CodeCheckedVersionManifestSchema,
-  resolveCapabilityResourceReader,
-} from "@k2b/cloud/contracts";
+import { getCapabilityCatalogApp, readCodeActivationManifest, readResourcePrincipals } from "@k2b/cloud/capabilities/server";
+import { type CapabilityManifest, type CodeAccessSetData, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { isAppSessionActor, type RequestAuthority } from "@k2b/cloud/server";
 import { accounts, audit, canRepairAppAccess } from "@k2b/cloud/services";
 import { isNestedSourceCurrent } from "@k2b/cloud/services/identity";
@@ -238,31 +227,8 @@ const visibleManagers = async (
     firstName: row.given_name?.trim() || null,
   }));
 };
-/** The owner's name and link through its own reader, with this person's authority; null when they may not read it. */
-const previewPlace = async (code: Code, context: CodeContext): Promise<CodeActivationPreview["place"]> => {
-  if (code.owner.kind !== "resource") return null;
-  const ref = code.owner.ref;
-  try {
-    const catalog = await getCapabilityCatalogApp(targetApp(ref), context.locale, context.authority);
-    if (!catalog.ok || !catalog.data) return null;
-    const reader = resolveCapabilityResourceReader(catalog.data.manifest, ref);
-    if (!reader) return null;
-    const read = await invokeCapabilityWithDataSchema(
-      { appId: catalog.data.appId, capabilityId: reader.localId, kind: "query", input: { id: ref.id } },
-      z.object({ view: CloudResourceReaderViewSchema }),
-      { authority: context.authority, locale: context.locale, signal: context.signal },
-    );
-    if (!read.ok) return null;
-    const localType = ref.type.slice(catalog.data.appId.length + 1);
-    return {
-      title: read.data.data.view.title,
-      typeTitle: catalog.data.manifest.types.find((type) => type.localId === localType)?.title ?? null,
-      href: read.data.links?.find((link) => link.rel === "open")?.href ?? null,
-    };
-  } catch {
-    return null;
-  }
-};
+/** An activation is not a target rights list; it carries no resource-owner title. Removed with the preview in A4. */
+const previewPlace = async (_code: Code, _context: CodeContext): Promise<CodeActivationPreview["place"]> => null;
 const previewType = async (type: string, context: CodeContext): Promise<{ typeTitle: string | null; icon: string | null }> => {
   const appId = type.split(".")[0]!;
   const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority).catch(() => null);

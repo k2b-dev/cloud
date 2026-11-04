@@ -1,4 +1,4 @@
-import { codeOwnerDeleted, sql } from "@k2b/cloud";
+import { codeOwnerDeleted, codeOwnerTitleChanged, sql } from "@k2b/cloud";
 import { createAccess, type PermissionLevel } from "@k2b/cloud/server";
 import { audit } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
@@ -437,7 +437,7 @@ export const updateMailbox = async (params: {
             }),
           );
         }
-        const [row] = await tx<DbMailbox[]>`
+        const [row] = await tx<(DbMailbox & { short_id: string })[]>`
           UPDATE mail.mailboxes
           SET
             name = COALESCE(${name ?? null}, name),
@@ -460,10 +460,11 @@ export const updateMailbox = async (params: {
               ELSE health_reason
             END
           WHERE id = ${params.mailboxId}::uuid
-          RETURNING id, name, description, health, health_reason, sync_enabled, search_backend,
+          RETURNING id, short_id, name, description, health, health_reason, sync_enabled, search_backend,
             automatic_reply_management_permission, compose_safety, deleted_at, created_at, updated_at
         `;
         if (!row) throw new Error("Mailbox update returned no row");
+        if (name !== undefined) await codeOwnerTitleChanged(tx, { type: "mail.mailbox", id: row.short_id }, row.name);
         await audit.record(
           {
             action: "mail.mailbox.update",

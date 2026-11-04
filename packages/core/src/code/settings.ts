@@ -298,9 +298,9 @@ export const CODE_SETTINGS = {
     max: 60000,
     default: 20000,
     label: "Runner long poll (ms)",
-    description: "Maximum duration of a signed acquisition request.",
+    description: "Maximum queue wait during a signed acquisition request.",
     presentation: {
-      translations: { de: { label: "Runner-Long-Poll (ms)", description: "Maximale Dauer einer signierten Arbeitsabholung." } },
+      translations: { de: { label: "Runner-Long-Poll (ms)", description: "Maximale Wartezeit auf Arbeit bei einer signierten Abholung." } },
     },
   },
   "core.code.runner_transport_ms": {

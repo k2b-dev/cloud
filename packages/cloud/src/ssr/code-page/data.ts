@@ -13,6 +13,8 @@ import { CodeInternetOriginsSchema } from "../../contracts/code-internet";
 const CodeSchema = z.object({
   id: z.string(),
   title: z.string(),
+  /** A2: the credentialless account handle; A3b uses this in the refusal notice. */
+  serviceAccountHandle: z.string().nullable().optional(),
   state: z.enum(["draft", "active", "paused", "deleting"]),
   activeVersionId: z.string().nullable(),
   pauseReason: z.string().nullable(),
@@ -346,8 +348,6 @@ export type CodePageData = {
     typeTitle: string | null;
     /** Personal Code of someone else, shared with the viewer: whose rights it runs with. Null for the viewer's own. */
     runsAs?: { name: string | null } | null;
-    /** The copyable handle (Kennung) of the service account the Code runs as; absent for personal Code. */
-    handle?: string | null;
   };
   /** This page's path; tabs and selections add query parameters, and "Copy link" shares it. */
   href: string;

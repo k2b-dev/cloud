@@ -17,7 +17,8 @@ const code = (id: string, account: string, grantId: string, permission: AccessEn
   principal: { type: "service_account", serviceAccountId: account },
   permission,
   createdAt: "2026-10-28T09:00:00.000Z",
-  displayName: `code:fixture:${id}`,
+  displayName:
+    query.get("readonly") === "1" ? "Code eines Postfachs" : id === "info" ? "Code von info@moebel-beispiel.de" : "Code von Einkauf",
   serviceAccountKind: "code",
   grantId,
 });

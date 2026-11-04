@@ -689,9 +689,19 @@ revoke callbacks. Each row explains that anyone editing the Code acts with
 this permission. Existing loading, save, failure and retry feedback applies.
 
 `PrincipalPicker` accepts a Code account supplied in a result. It does not add a
-name-search path; the general directory continues to exclude Code accounts
-until target-scoped identifier lookup is available. Applications must authorize
-the lookup for the target before returning these identities.
+name-search path; the general directory excludes Code accounts. Exact handle
+lookup requires a target that the caller manages, as described in
+[Code account handles](/en/docs/identity/code-service-account-handles).
+
+The target application's access list supplies authorized Code names; see
+[Code account handles](/en/docs/identity/code-service-account-handles).
+Legacy Code rows also carry `grantId` for the
+[Code access contract](/en/docs/platform/capabilities#code-access-at-the-target).
+Until the adapter migration is complete, the legacy Code section reads grant
+details from [`POST /api/code/access/target`](/en/docs/platform/code-activation)
+and removes them through `POST /api/resources/code-access/remove`, sending the
+current application's ID. Both routes accept only same-origin
+`application/json` requests.
 
 `createAccess` and `updateAccess` reject `admin` for a Code account, and the
 database rejects direct inserts and updates too. Code accounts inherit no

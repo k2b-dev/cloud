@@ -14,6 +14,7 @@ import {
   rateLimit,
   requiresAuth,
   respond,
+  userFromActor,
   v,
 } from "@k2b/cloud/server";
 import { coreSettings, serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
@@ -924,6 +925,7 @@ const app = new Hono<AuthContext>()
       return respond(
         c,
         loadSpaceSettingsContext({
+          locale: getLocale(c),
           user: userResult.data,
           spaceId,
           settings: parseSpaceSettings(c.req.header("Cookie"), spaceShortId),
@@ -3125,7 +3127,12 @@ const app = new Hono<AuthContext>()
       const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
       if (error) return error;
 
-      const entries = await spacesService.access.list({ spaceId: spaceId! });
+      const entries = await spacesService.access.list({
+        spaceId: spaceId!,
+        canManageTarget: true,
+        cloudAdmin: userFromActor(c.get("actor"))?.roles.includes("admin"),
+        locale: getLocale(c),
+      });
       return respond(c, ok(entries.items));
     },
   )
@@ -3291,7 +3298,7 @@ const adminApp = new Hono<AuthContext>()
     async (c) => {
       const { internalId: spaceId, error } = await requireExistingSpace(c, c.req.param("id") ?? "");
       if (error) return error;
-      const entries = await spacesService.access.list({ spaceId: spaceId! });
+      const entries = await spacesService.access.list({ spaceId: spaceId!, cloudAdmin: true, locale: getLocale(c) });
       return respond(c, ok(entries.items));
     },
   )
