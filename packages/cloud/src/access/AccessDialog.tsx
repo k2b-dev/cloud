@@ -541,7 +541,7 @@ export function AccessDialog(
               </>
             }
           >
-            <Show when={peopleRows().length > 0} fallback={<p class="text-[13px] text-dimmed">{t().onlyYou}</p>}>
+            <Show when={peopleRows().length > 0} fallback={<p class="text-[13px] text-dimmed">{t().nobodyListed}</p>}>
               <ul class="flex flex-col">
                 {/* Rows are keyed by principal, so a staged change keeps the row, its controls and the focus. */}
                 <For each={peopleRows().map((row) => row.key)}>

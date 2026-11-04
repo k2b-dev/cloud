@@ -293,4 +293,14 @@ describe("AccessDialog", () => {
       ui.cleanup();
     }
   });
+
+  test("an empty list claims nobody's access, also when the viewer is not listed", async () => {
+    const ui = await setup({ entries: [] });
+    try {
+      expect(ui.dom.root.textContent).toContain("Nobody is listed yet.");
+      expect(ui.dom.root.textContent).not.toContain("Only you");
+    } finally {
+      ui.cleanup();
+    }
+  });
 });
