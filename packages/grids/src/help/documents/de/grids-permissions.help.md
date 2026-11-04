@@ -11,7 +11,7 @@ Die Cloud-Administration ist in Grids nicht automatisch allmächtig. Sie kann Gr
 
 ## Zugriff auf eine Base geben {icon="database"}
 
-Zugriff auf eine Base gilt für alle Tabellen, Felder, Datensätze, Ansichten, Formulare, Dokumentvorlagen und Workflows dieser Base.
+Zugriff auf eine Base gilt für alle Tabellen, Felder, Datensätze, Ansichten, Formulare, Dokumentvorlagen und Workflows dieser Base. Um ihn zu ändern, öffne **Base-Einstellungen → Zugriff** und wähle **Zugriff bearbeiten**. Deine Änderungen gelten, wenn du **Speichern** wählst.
 
 Du kannst Personen, Gruppen, Dienstkonten und allen angemeldeten Konten Zugriff geben. Öffentlichen Zugriff auf eine Base gibt es nicht.
 

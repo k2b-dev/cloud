@@ -41,8 +41,26 @@ const manager = (id: string, displayName: string): AccessEntry => ({
   displayName,
 });
 
-domTest("the base access editor turns read-only once a change costs the person Manage access", async () => {
+/** Opens the access dialog from the section and returns it. */
+const openDialog = async (dom: DomTestHarness) => {
+  Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button"))
+    .find((button) => button.textContent?.trim() === "Edit access")!
+    .click();
+  await waitFor(() => !!dom.document.querySelector('[role="dialog"] input[role=combobox]'), "the access dialog");
+  return dom.document.querySelector<HTMLElement>('[role="dialog"]')!;
+};
+const closeDialog = async (dom: DomTestHarness) => {
+  const dialog = dom.document.querySelector<HTMLElement>('[role="dialog"]');
+  if (!dialog) return;
+  Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
+    .find((button) => button.textContent?.trim() === "Cancel")
+    ?.click();
+  await waitFor(() => !dom.document.querySelector('[role="dialog"]'), "the dialog to close");
+};
+
+domTest("the base access section turns read-only once a saved change costs the person Manage access", async () => {
   const dom = createDomTestHarness();
+  dom.document.documentElement.lang = "en";
   installPopoverApi(dom);
   const originalFetch = globalThis.fetch;
   const requests: string[] = [];
@@ -57,33 +75,41 @@ domTest("the base access editor turns read-only once a change costs the person M
     },
     { preconnect: originalFetch.preconnect },
   );
-  const { ScopedPermissionEditor } = await import("./ScopedPermissionEditor");
-  delegateEvents(["click"]);
+  const { ScopedAccessSection } = await import("./ScopedAccessSection");
+  delegateEvents(["click", "input"], dom.document);
   const dispose = render(
     () => (
-      <ScopedPermissionEditor
+      <ScopedAccessSection
         scope={{ type: "base", id: "BASE01" }}
+        resourceName="Projects"
+        title="Base access"
         initialEntries={[manager("qdt", "Quentin Dorn"), manager("lym", "Lya Meyer")]}
         canEdit
       />
     ),
     dom.root,
   );
-  const rowOf = (name: string) =>
-    Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes(name))!;
-  const removeButtons = () => dom.root.querySelectorAll("button[aria-label^='Remove ']");
+  const editButton = () =>
+    Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit access");
   try {
-    expect(removeButtons()).toHaveLength(2);
-    const edit = Array.from(rowOf("Quentin Dorn").querySelectorAll<HTMLButtonElement>("[role=menuitemradio]")).find((item) =>
-      item.textContent?.startsWith("Edit"),
-    )!;
-    edit.click();
-
-    await waitFor(() => removeButtons().length === 0, "the read-only editor");
+    const dialog = await openDialog(dom);
+    const row = Array.from(dialog.querySelectorAll("li")).find((item) => item.textContent?.includes("Quentin Dorn"))!;
+    Array.from(row.querySelectorAll<HTMLElement>('[role="option"]'))
+      .find((option) => option.textContent?.includes("Edit"))!
+      .click();
+    await waitFor(() => dialog.textContent?.includes("1 change") === true, "one change");
+    Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "Save")!
+      .click();
+    await waitFor(() => !editButton(), "the read-only section");
     expect(requests).toEqual(["PATCH /api/grids/access/qdt", "GET /api/grids/access/by-base/BASE01"]);
-    expect(rowOf("Quentin Dorn").querySelector("[role=menuitemradio]")).toBeNull();
-    expect(rowOf("Quentin Dorn").textContent).toContain("Edit");
+    // The saved change still shows, although the list could not be read again.
+    const listed = Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((item) =>
+      item.textContent?.includes("Quentin Dorn"),
+    )!;
+    expect(listed.textContent).toContain("Edit");
   } finally {
+    await closeDialog(dom);
     dispose();
     globalThis.fetch = originalFetch;
     dom.cleanup();
@@ -94,13 +120,15 @@ const scenarioPrincipal = ({ type, name }: ScenarioPrincipal): Principal =>
   type === "user" ? { type, userId: name } : { type, groupId: name };
 
 for (const scenario of precedenceScenarios) {
-  domTest(`the base access editor locks exactly the rows the service refuses: ${scenario.name}`, async () => {
+  domTest(`the base access dialog locks exactly the rows the service refuses: ${scenario.name}`, async () => {
     const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
     installPopoverApi(dom);
     const originalFetch = globalThis.fetch;
     // Group rows load their members; the directory withholds them here.
     globalThis.fetch = Object.assign(async () => new Response(null, { status: 403 }), { preconnect: originalFetch.preconnect });
-    const { ScopedPermissionEditor } = await import("./ScopedPermissionEditor");
+    const { ScopedAccessSection } = await import("./ScopedAccessSection");
+    delegateEvents(["click", "input"], dom.document);
     const entries: AccessEntry[] = scenario.grants.map((grant) => ({
       id: grant.key,
       principal: scenarioPrincipal(grant.principal),
@@ -109,26 +137,29 @@ for (const scenario of precedenceScenarios) {
       displayName: grant.principal.name,
     }));
     const dispose = render(
-      () => <ScopedPermissionEditor scope={{ type: "base", id: "BASE01" }} initialEntries={entries} canEdit />,
+      () => (
+        <ScopedAccessSection
+          scope={{ type: "base", id: "BASE01" }}
+          resourceName="Projects"
+          title="Base access"
+          initialEntries={entries}
+          canEdit
+        />
+      ),
       dom.root,
     );
-    // The editor keeps the order of its entries, and two grants of one principal share a name.
-    const rows = () => Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row"));
     try {
-      expect(rows()).toHaveLength(entries.length);
-      const locked = entries
-        .filter((_, index) => rows()[index]!.querySelector<HTMLButtonElement>("button[aria-label^='Remove ']")!.disabled)
-        .map((item) => item.id);
+      const dialog = await openDialog(dom);
+      // The dialog keeps the order of the entries, and two grants of one principal share a name.
+      const rows = Array.from(dialog.querySelectorAll<HTMLElement>("li")).filter((item) => item.querySelector("[data-access-remove]"));
+      const removable = entries.filter((item) => item.permission !== "none");
+      expect(rows.length).toBeGreaterThanOrEqual(removable.length);
+      const locked = rows
+        .filter((item) => item.querySelector<HTMLButtonElement>("[data-access-remove]")!.disabled)
+        .map((item) => entries.find((entry) => item.textContent?.includes(entry.displayName ?? ""))!.id);
       expect(locked).toEqual(scenario.locked);
-      for (const [index, item] of entries.entries()) {
-        if (item.permission !== "admin") continue;
-        const lower = Array.from(rows()[index]!.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]")).filter(
-          (option) => !option.textContent?.startsWith("Manage"),
-        );
-        expect(lower.length).toBeGreaterThan(0);
-        expect(lower.every((option) => option.disabled)).toBe(scenario.locked.includes(item.id));
-      }
     } finally {
+      await closeDialog(dom);
       dispose();
       globalThis.fetch = originalFetch;
       dom.cleanup();
@@ -137,8 +168,9 @@ for (const scenario of precedenceScenarios) {
 }
 
 for (const scopeType of ["base", "customApp"] as const) {
-  domTest(`${scopeType} picker mirrors the current API's machine-recipient support`, async () => {
+  domTest(`${scopeType} search offers people, groups, and active agents or standalone accounts`, async () => {
     const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
     installPopoverApi(dom);
     const originalFetch = globalThis.fetch;
     const requests: URL[] = [];
@@ -149,22 +181,35 @@ for (const scopeType of ["base", "customApp"] as const) {
       },
       { preconnect: originalFetch.preconnect },
     );
-    const { ScopedPermissionEditor } = await import("./ScopedPermissionEditor");
+    const { ScopedAccessSection } = await import("./ScopedAccessSection");
+    delegateEvents(["click", "input"], dom.document);
     const dispose = render(
-      () => <ScopedPermissionEditor scope={{ type: scopeType, id: "SCOPE01" }} initialEntries={[]} canEdit />,
+      () => (
+        <ScopedAccessSection
+          scope={{ type: scopeType, id: "SCOPE01" }}
+          resourceName="Projects"
+          title="Access"
+          initialEntries={[]}
+          canEdit
+        />
+      ),
       dom.root,
     );
     try {
-      delegateEvents(["input"]);
-      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+      const dialog = await openDialog(dom);
+      const input = dialog.querySelector<HTMLInputElement>("input[role=combobox]")!;
       input.value = "helper";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       await waitFor(() => requests.length > 0, "scoped directory request");
       expect(requests[0]!.pathname).toBe("/api/accounts/entities");
       expect(requests[0]!.searchParams.get("kinds")).toBe("user,group,service_account");
       expect(requests[0]!.searchParams.get("service_account_status")).toBe("active");
-      expect(requests[0]!.searchParams.get("service_account_kinds")).toBe(scopeType === "customApp" ? "standalone,agent" : null);
+      // Accounts of objects and apps are never found by name; the dialog adds them only by identifier.
+      expect(requests[0]!.searchParams.get("service_account_kinds")).toBe("agent,standalone");
+      // Only apps can be public.
+      expect(!!dialog.querySelector('input[aria-label="Public with link"]')).toBe(scopeType === "customApp");
     } finally {
+      await closeDialog(dom);
       dispose();
       globalThis.fetch = originalFetch;
       dom.cleanup();

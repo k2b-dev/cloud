@@ -26,14 +26,18 @@ for (const locale of ["en", "de"] as const) {
     dom.document.documentElement.lang = locale;
     try {
       const [{ openPermissionDialog }, { dialogCore }] = await Promise.all([import("./AdminGridsActions.island"), import("@k2b/ui")]);
-      void openPermissionDialog({ baseId: id(90), baseName: "Projects" }, [
-        appEntry(1, { type: "user", userId: id(2) }),
-        appEntry(3, { type: "group", groupId: id(4) }),
-        appEntry(5, { type: "service_account", serviceAccountId: id(6) }),
-        appEntry(7, { type: "authenticated" }, "All users (incl. guests)"),
-        appEntry(8, { type: "public" }, "Public"),
-        appEntry(9, { type: "user", userId: id(10) }, "Quentin Dorn"),
-      ]);
+      void openPermissionDialog(
+        { baseId: id(90), baseName: "Projects" },
+        [
+          appEntry(1, { type: "user", userId: id(2) }),
+          appEntry(3, { type: "group", groupId: id(4) }),
+          appEntry(5, { type: "service_account", serviceAccountId: id(6) }),
+          appEntry(7, { type: "authenticated" }, "All users (incl. guests)"),
+          appEntry(8, { type: "public" }, "Public"),
+          appEntry(9, { type: "user", userId: id(10) }, "Quentin Dorn"),
+        ],
+        locale,
+      );
       try {
         const ready = () => dom.document.querySelector("dialog")?.textContent?.includes("Board 9") ?? false;
         for (let attempt = 0; attempt < 150 && !ready(); attempt++) await Bun.sleep(10);

@@ -1,9 +1,9 @@
-import { PermissionEditor, principalLabel } from "@k2b/cloud/access/ui";
+import { openAccessDialog, principalLabel } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts/shared";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Dropdown, IconButton, prompts, toast, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { unshadowedGrants } from "@/access-precedence";
 import { apiClient } from "@/api/client";
 import { gridsAdminMessages } from "../admin-messages";
@@ -31,137 +31,132 @@ const listBaseAccess = async (baseId: string, fallback: string): Promise<ScopedA
   return (await response.json()) as ScopedAccessEntry[];
 };
 
-/** Exported for the behavior test; the island opens it from its menu. */
-export const openPermissionDialog = async (props: AdminGridsActionsProps, entries: ScopedAccessEntry[]) => {
-  const PermissionDialog = () => {
-    const locale = useLocale();
-    const t = () => gridsAdminMessages.resolve([locale()]).t;
-    const label = (entry: AccessEntry) => principalLabel(entry, locale());
-    const permissionLabel = (permission: AccessEntry["permission"]) => {
-      if (permission === "none") return t().permissionNone;
-      if (permission === "read") return t().permissionRead;
-      if (permission === "write") return t().permissionWrite;
-      return t().permissionAdmin;
-    };
-    const [scopedEntries, setScopedEntries] = createSignal(entries);
-    const baseEntries = createMemo(() => scopedEntries().filter((entry) => entry.resourceType === "base"));
-    const customAppEntries = createMemo(() => scopedEntries().filter((entry) => entry.resourceType === "customApp"));
-
-    const revokeCustomAppEntryMutation = mutations.create<ScopedAccessEntry, ScopedAccessEntry>({
-      mutation: async (entry) => {
-        const response = await apiClient.admin.bases[":baseId"].access[":accessId"].$delete({
-          param: { baseId: props.baseId, accessId: entry.id },
-        });
-        if (!response.ok) throw new Error(await readErrorMessage(response, t().revokeAppFailed));
-        return entry;
-      },
-      onSuccess: (entry) => {
-        setScopedEntries((current) => current.filter((item) => item.id !== entry.id));
-        toast.success(t().appAccessRevoked);
-      },
-      onError: (err) => prompts.error(err.message),
-    });
-
-    return (
-      <div class="flex w-full max-w-full flex-col gap-4">
-        <div class="flex flex-col gap-2">
-          <p class="text-xs text-dimmed">{t().baseGrantDescription}</p>
-          <PermissionEditor
-            initialEntries={baseEntries()}
-            canEdit
-            allowPublic={false}
-            effectiveEntries={unshadowedGrants}
-            grantAccess={async (principal, permission) => {
-              const response = await apiClient.admin.bases[":baseId"].access.$post({
-                param: { baseId: props.baseId },
-                json: { principal, permission },
-              });
-              if (!response.ok) throw new Error(await readErrorMessage(response, t().grantFailed));
-              const created = (await response.json()) as AccessEntry;
-              setScopedEntries((current) => [
-                ...current,
-                {
-                  ...created,
-                  resourceType: "base",
-                  resourceId: props.baseId,
-                  resourceName: props.baseName,
-                  tableId: null,
-                  tableName: null,
-                },
-              ]);
-              toast.success(t().accessGranted);
-              return created;
-            }}
-            updateAccess={async (accessId, permission) => {
-              const response = await apiClient.admin.bases[":baseId"].access[":accessId"].$patch({
-                param: { baseId: props.baseId, accessId },
-                json: { permission },
-              });
-              if (!response.ok) throw new Error(await readErrorMessage(response, t().updateFailed));
-              setScopedEntries((current) => current.map((entry) => (entry.id === accessId ? { ...entry, permission } : entry)));
-              toast.success(t().accessUpdated);
-            }}
-            revokeAccess={async (accessId) => {
-              const response = await apiClient.admin.bases[":baseId"].access[":accessId"].$delete({
-                param: { baseId: props.baseId, accessId },
-              });
-              if (!response.ok) throw new Error(await readErrorMessage(response, t().revokeFailed));
-              setScopedEntries((current) => current.filter((entry) => entry.id !== accessId));
-              toast.success(t().accessRevoked);
-            }}
-          />
-        </div>
-
-        <Show when={customAppEntries().length > 0}>
-          <div class="flex flex-col gap-2 pt-1">
-            <div>
-              <h3 class="text-xs font-semibold text-secondary">{t().appAccess}</h3>
-              <p class="text-xs text-dimmed">{t().appAccessDescription}</p>
+/** App access, listed under the base's own access. Apps never inherit the base's access; revoking applies right away. */
+const AppAccessList = (props: { baseId: string; entries: ScopedAccessEntry[] }) => {
+  const locale = useLocale();
+  const t = () => gridsAdminMessages.resolve([locale()]).t;
+  const label = (entry: AccessEntry) => principalLabel(entry, locale());
+  const permissionLabel = (permission: AccessEntry["permission"]) => {
+    if (permission === "none") return t().permissionNone;
+    if (permission === "read") return t().permissionRead;
+    if (permission === "write") return t().permissionWrite;
+    return t().permissionAdmin;
+  };
+  const [entries, setEntries] = createSignal(props.entries);
+  const revoke = mutations.create<ScopedAccessEntry, ScopedAccessEntry>({
+    mutation: async (entry) => {
+      const response = await apiClient.admin.bases[":baseId"].access[":accessId"].$delete({
+        param: { baseId: props.baseId, accessId: entry.id },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().revokeAppFailed));
+      return entry;
+    },
+    onSuccess: (entry) => {
+      setEntries((current) => current.filter((item) => item.id !== entry.id));
+      toast.success(t().appAccessRevoked);
+    },
+    onError: (err) => prompts.error(err.message),
+  });
+  return (
+    <div class="flex flex-col gap-2">
+      <div>
+        <h3 class="text-xs font-semibold text-secondary">{t().appAccess}</h3>
+        <p class="text-xs text-dimmed">{t().appAccessDescription}</p>
+      </div>
+      <div class="flex flex-col">
+        <For each={entries()}>
+          {(entry) => (
+            <div class="grid grid-cols-[1fr_auto] items-center gap-3 px-1 py-2">
+              <div class="min-w-0">
+                <div class="truncate text-sm font-medium text-default">{entry.resourceName}</div>
+                <div class="truncate text-xs text-dimmed">
+                  {label(entry)} · {permissionLabel(entry.permission)}
+                </div>
+              </div>
+              <IconButton
+                variant="ghost"
+                size="xs"
+                class="text-dimmed hover:text-default"
+                label={t().revokeAppFor({ name: label(entry) })}
+                disabled={revoke.loading()}
+                onClick={() => revoke.mutate(entry)}
+              >
+                <i class="ti ti-x text-sm" />
+              </IconButton>
             </div>
-            <div class="flex flex-col">
-              <For each={customAppEntries()}>
-                {(entry) => (
-                  <div class="grid grid-cols-[1fr_auto] items-center gap-3 px-1 py-2">
-                    <div class="min-w-0">
-                      <div class="truncate text-sm font-medium text-default">{entry.resourceName}</div>
-                      <div class="truncate text-xs text-dimmed">
-                        {label(entry)} · {permissionLabel(entry.permission)}
-                      </div>
-                    </div>
-                    <IconButton
-                      variant="ghost"
-                      size="xs"
-                      class="text-dimmed hover:text-default"
-                      label={t().revokeAppFor({ name: label(entry) })}
-                      disabled={revokeCustomAppEntryMutation.loading()}
-                      onClick={() => revokeCustomAppEntryMutation.mutate(entry)}
-                    >
-                      <i class="ti ti-x text-sm" />
-                    </IconButton>
-                  </div>
-                )}
-              </For>
-            </div>
-          </div>
+          )}
+        </For>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * The base's own access in the shared access dialog; changes apply on Save. App access follows below.
+ * Exported for the behavior test; the island opens it from its menu.
+ */
+export const openPermissionDialog = async (
+  props: AdminGridsActionsProps,
+  entries: ScopedAccessEntry[],
+  locale: string,
+  signal?: AbortSignal,
+) => {
+  const t = gridsAdminMessages.resolve([locale]).t;
+  const appEntries = entries.filter((entry) => entry.resourceType === "customApp");
+  await openAccessDialog({
+    resourceName: props.baseName,
+    subtitle: t.baseAccessSubtitle,
+    initialEntries: entries.filter((entry) => entry.resourceType === "base"),
+    allowPublic: false,
+    effectiveEntries: unshadowedGrants,
+    signal,
+    grantAccess: async (principal, permission) => {
+      const response = await apiClient.admin.bases[":baseId"].access.$post({
+        param: { baseId: props.baseId },
+        json: { principal, permission },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, t.grantFailed));
+      return (await response.json()) as AccessEntry;
+    },
+    updateAccess: async (accessId, permission) => {
+      const response = await apiClient.admin.bases[":baseId"].access[":accessId"].$patch({
+        param: { baseId: props.baseId, accessId },
+        json: { permission },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, t.updateFailed));
+    },
+    revokeAccess: async (accessId) => {
+      const response = await apiClient.admin.bases[":baseId"].access[":accessId"].$delete({
+        param: { baseId: props.baseId, accessId },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, t.revokeFailed));
+    },
+    extraSections: (
+      <div class="flex flex-col gap-4">
+        <p class="text-xs text-dimmed">{t.baseGrantDescription}</p>
+        <Show when={appEntries.length > 0}>
+          <AppAccessList baseId={props.baseId} entries={appEntries} />
         </Show>
       </div>
-    );
-  };
-
-  await prompts.dialog<void>(() => <PermissionDialog />, {
-    title: props.baseName,
-    icon: "ti ti-shield",
+    ),
   });
 };
 
 const AdminGridsActions = (props: AdminGridsActionsProps) => {
   const locale = useLocale();
   const t = () => gridsAdminMessages.resolve([locale()]).t;
+  // The access dialog closes with this menu's page; nothing is sent after the page changed.
+  const owner = new AbortController();
+  onCleanup(() => owner.abort());
   const permissionsMutation = mutations.create<void, void>({
     mutation: async () => {
-      await openPermissionDialog(props, await listBaseAccess(props.baseId, t().loadPermissionsFailed));
+      const entries = await listBaseAccess(props.baseId, t().loadPermissionsFailed);
+      if (owner.signal.aborted) return;
+      await openPermissionDialog(props, entries, locale(), owner.signal);
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => {
+      if (!owner.signal.aborted) void prompts.error(err.message);
+    },
   });
 
   const deleteMutation = mutations.create<boolean, void>({
