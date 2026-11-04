@@ -70,8 +70,7 @@ const measurements = [
   ".k2b-filter-chip",
   ".mail-sidebar-mailbox",
   ".mail-list-entry",
-  ".mail-draft-row",
-  ".mail-draft-row__subject",
+  ".mail-row-draft-tag",
   "[data-mail-queue-count]",
   ".k2b-app-workspace__main-pane",
   ".k2b-app-workspace__main-primary",
@@ -1547,13 +1546,27 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               assertFrame(serverFrame, await recordedFrame(page, "hydrated"), "draft queue hydrated");
               assertFrame(serverFrame, await geometry(page), "draft queue settled");
               expect(await page.locator(".k2b-app-workspace__head [data-mail-queue-count]").textContent()).toBe("2 drafts");
-              expect(await page.locator(".mail-drafts-list header").count()).toBe(0);
-              expect(await page.locator(".mail-draft-row").count()).toBe(2);
-              const draft = page.locator("a.mail-draft-row").first();
-              const subject = await draft.locator(".mail-draft-row__subject").boundingBox();
-              const recipients = await draft.locator(".mail-draft-row__recipients").boundingBox();
-              expect(subject).not.toBeNull();
-              expect(recipients!.y).toBeGreaterThanOrEqual(subject!.y + subject!.height);
+              expect(await page.locator("[data-mail-drafts-list] header").count()).toBe(0);
+              const rows = page.locator("[data-mail-drafts-list] > [data-draft-id]");
+              expect(await rows.count()).toBe(2);
+              // A draft is a conversation row of the person's view: three lines with the reader beside the list, at the
+              // conversations' fixed height (4.8125rem), so nothing moves between the lists.
+              expect(await rows.first().getAttribute("data-lines")).toBe("3");
+              for (const box of [await rows.first().boundingBox(), await rows.nth(1).boundingBox()])
+                expect(Math.abs(box!.height - 77)).toBeLessThanOrEqual(1);
+              const draft = rows.first().locator("a.mail-list-row");
+              const tag = draft.locator(".mail-row-draft-tag");
+              const subject = await draft.locator(".mail-row-subject").boundingBox();
+              const recipients = await draft.locator(".mail-row-sender").boundingBox();
+              const tagBox = await tag.boundingBox();
+              expect(await tag.textContent()).toBe("Draft");
+              // Recipients stand where the sender does; the tag leads the subject on the line below.
+              expect(await draft.locator(".mail-row-sender").textContent()).toBe("Ada Example");
+              expect(await rows.nth(1).locator(".mail-row-from .mail-row-more").textContent()).toBe("+1");
+              expect(await rows.nth(1).locator('[aria-label="1 attachment"]').count()).toBe(1);
+              expect(Math.abs(tagBox!.y + tagBox!.height / 2 - (subject!.y + subject!.height / 2))).toBeLessThanOrEqual(1);
+              expect(tagBox!.x + tagBox!.width).toBeLessThanOrEqual(subject!.x);
+              expect(subject!.y).toBeGreaterThanOrEqual(recipients!.y + recipients!.height - 1);
               expect(await draft.getAttribute("href")).toContain("/compose/Draft1?return=");
               expect(await draft.getAttribute("href")).toContain("folder%3DDrafts1");
               const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
@@ -1569,14 +1582,30 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               await page.reload();
               await ready(page);
               expect(await page.locator("[data-mail-queue-count]").textContent()).toBe("2 drafts");
-              expect(await page.locator(".mail-draft-row").count()).toBe(2);
+              expect(await page.locator("[data-draft-id]").count()).toBe(2);
             } finally {
               await close(page);
             }
+            // The columns view draws one line per draft on a wide screen and two on a phone, as for conversations.
+            const columns = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&layout=auto&theme=${theme}`, width);
+            try {
+              assertFrame(await recordedFrame(columns, "server"), await geometry(columns), "draft columns settled");
+              const rows = columns.locator("[data-mail-drafts-list] > [data-draft-id]");
+              expect(await rows.first().getAttribute("data-lines")).toBe("1");
+              for (const box of [await rows.first().boundingBox(), await rows.nth(1).boundingBox()])
+                expect(Math.abs(box!.height - (width < 768 ? 65 : 44))).toBeLessThanOrEqual(1);
+              expect(await rows.first().locator(".mail-row-subject-cell > .mail-row-draft-tag").textContent()).toBe("Draft");
+              expect(await rows.nth(1).locator(".mail-row-sender-cell").textContent()).toBe("Ada Example+1");
+              expect(await columns.locator(".mail-columns-head").isVisible()).toBe(width >= 768);
+              if (screenshots) await columns.screenshot({ path: join(screenshots, `compact-drafts-columns-${theme}-${width}.png`) });
+            } finally {
+              await close(columns);
+            }
             const readOnly = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&permission=read&theme=${theme}`, width);
             try {
-              expect(await readOnly.locator("article.mail-draft-row").count()).toBe(2);
-              expect(await readOnly.locator("a.mail-draft-row").count()).toBe(0);
+              expect(await readOnly.locator("[data-draft-id]").count()).toBe(2);
+              expect(await readOnly.locator("[data-draft-id] a").count()).toBe(0);
+              expect(await readOnly.locator("[data-draft-id] .k2b-dropdown__trigger").count()).toBe(0);
             } finally {
               await close(readOnly);
             }
@@ -1589,12 +1618,68 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           });
 
+      for (const width of [1440, 390])
+        test(`a draft is deleted from its row at ${width}: right-click or …, confirmation, and a refused delete keeps it`, async () => {
+          const page = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1`, width);
+          const discards: unknown[] = [];
+          let answer: { status: number; body: Record<string, string> } = {
+            status: 409,
+            body: { code: "DRAFT_LEASE_HELD", message: "This draft is being edited by Ben" },
+          };
+          await page.route("**/api/mail/mailboxes/Box001/drafts/*/discard", async (route) => {
+            discards.push({ url: new URL(route.request().url()).pathname, body: route.request().postDataJSON() });
+            await route.fulfill({ status: answer.status, json: answer.body });
+          });
+          // Bounded by the case's own timeout.
+          const until = async (condition: () => boolean) => {
+            while (!condition()) await Bun.sleep(30);
+          };
+          try {
+            const rows = page.locator("[data-mail-drafts-list] > [data-draft-id]");
+            const first = rows.first();
+            // Touch has no right-click; its "…" button opens the same menu. A mouse right-clicks the row.
+            if (width === 390) await first.locator(".k2b-dropdown__trigger").click();
+            else await first.locator("a.mail-list-row").click({ button: "right" });
+            const menu = page.getByRole("menu");
+            await menu.getByRole("menuitem", { name: "Delete draft" }).waitFor({ state: "visible" });
+            expect((await menu.getByRole("menuitem").allTextContents()).map((label) => label.trim())).toEqual([
+              "Continue editing",
+              "Delete draft",
+            ]);
+            if (screenshots) {
+              mkdirSync(screenshots, { recursive: true });
+              await page.screenshot({ path: join(screenshots, `drafts-delete-menu-light-${width}.png`) });
+            }
+            await menu.getByRole("menuitem", { name: "Delete draft" }).click();
+            const dialog = page.getByRole("dialog");
+            await dialog.getByText("Delete draft?").waitFor({ state: "visible" });
+            if (screenshots) await page.screenshot({ path: join(screenshots, `drafts-delete-confirm-light-${width}.png`) });
+            await dialog.getByRole("button", { name: "Delete draft" }).click();
+            await until(() => discards.length === 1);
+            expect(discards[0]).toEqual({ url: "/api/mail/mailboxes/Box001/drafts/Draft1/discard", body: { expectedRevision: 3 } });
+            // The composer elsewhere holds the draft: the error says so and the row keeps its place.
+            await page.getByText("Someone is editing this draft right now", { exact: false }).waitFor({ state: "visible" });
+            expect(await rows.count()).toBe(2);
+            expect(await first.getAttribute("data-leaving")).toBeNull();
+            answer = { status: 200, body: {} };
+            await first.locator("a.mail-list-row").focus();
+            await page.keyboard.press("Delete");
+            await page.getByRole("dialog").getByRole("button", { name: "Delete draft" }).click();
+            await until(() => discards.length === 2);
+            await page.locator('[data-draft-id="Draft1"]').waitFor({ state: "detached" });
+            expect(await rows.count()).toBe(1);
+            await page.getByText("Draft deleted", { exact: true }).first().waitFor({ state: "visible" });
+          } finally {
+            await close(page);
+          }
+        });
+
       test("compact draft pagination stays centered and retains the folder", async () => {
         for (const width of [1440, 390]) {
           const page = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&drafts-cursor=1`, width);
           try {
-            const list = page.locator(".mail-drafts-list");
-            const next = list.getByRole("link", { name: "Load more", exact: true });
+            const list = page.locator("[data-mail-drafts-list]");
+            const next = page.getByRole("link", { name: "Load more", exact: true });
             const bounds = await list.boundingBox();
             const button = await next.boundingBox();
             expect(bounds).not.toBeNull();

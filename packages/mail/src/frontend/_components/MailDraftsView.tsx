@@ -1,23 +1,28 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
-import { type DateContext, dates } from "@k2b/stdlib";
-import { ButtonLink, Placeholder, ScrollArea, useLocale } from "@k2b/ui";
-import { createMemo, For, Show } from "solid-js";
-import type { DraftFolderItem, DraftFolderPage } from "../../contracts";
+import type { DateContext } from "@k2b/stdlib";
+import { mutation } from "@k2b/stdlib/solid";
+import { ButtonLink, Placeholder, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { apiClient } from "../../api/client";
+import { DRAFT_LEASE_ERROR_CODES, type DraftFolderItem, type DraftFolderPage } from "../../contracts";
+import { MailApiError, readApiFailure } from "./api-response";
+import MailDraftRow from "./MailDraftRow";
 import { mailDraftHref } from "./mail-compose-route";
+import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
+import { createRetryToasts } from "./mail-feedback";
+import { mailTimeColumnSamples, mailTimeColumnSizer } from "./mail-view-mode";
 
-const recipients = (item: DraftFolderItem, t: ReturnType<typeof mailConversationUiMessages.resolve>["t"]): string => {
-  const all = [...item.to, ...item.cc, ...item.bcc];
-  if (all.length === 0) return t.noRecipients;
-  const first = all[0]!;
-  const label = first.name || first.address;
-  return all.length === 1 ? label : t.moreRecipients({ first: label, count: all.length - 1 });
-};
+/** The collapse of a deleted row (`mail-list-row-leave`); the list drops the row once it ends. */
+const LEAVE_MS = 160;
 
-/** The Drafts folder: the mailbox's drafts, each opening in the composer for members who may edit them. */
+/**
+ * The Drafts folder: the mailbox's drafts as conversation rows, each opening in the composer for members who may edit
+ * them. Members who may write also delete a draft from its row, after the same confirmation the composer asks.
+ */
 export default function MailDraftsView(props: {
   mailboxId: string;
-  /** Only members who may write open the composer; readers see the drafts without a link. */
+  /** Only members who may write open the composer or delete; readers see the drafts without a link. */
   canWrite: boolean;
   title: string;
   /** The workspace route the composer returns to. */
@@ -26,78 +31,192 @@ export default function MailDraftsView(props: {
   error: string | null;
   dateConfig: DateContext;
   loading: boolean;
+  /** The person's view: one line per draft in columns, as for conversations, or three-line rows. */
+  columns: boolean;
   onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
+  /** Reloads the folder after a delete. */
+  onRefresh: () => Promise<void>;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  const listText = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
   const listHref = (cursor: string | null) => {
     const target = new URL(props.returnHref, "http://mail.local");
     if (cursor) target.searchParams.set("cursor", cursor);
     else target.searchParams.delete("cursor");
     return `${target.pathname}${target.search}`;
   };
+  const timeColumnSizer = createMemo(() =>
+    props.columns ? mailTimeColumnSizer(mailTimeColumnSamples(props.dateConfig, new Date())) : undefined,
+  );
+
+  const [pendingId, setPendingId] = createSignal<string | null>(null);
+  const [leaving, setLeaving] = createSignal<ReadonlySet<string>>(new Set());
+  // A deleted draft stays out of the list even when the reload that drops it fails.
+  const [deleted, setDeleted] = createSignal<ReadonlySet<string>>(new Set());
+  const items = createMemo(() => props.page.items.filter((item) => !deleted().has(item.id)));
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  onCleanup(() => {
+    for (const timer of timers) clearTimeout(timer);
+  });
+  const add = (set: ReadonlySet<string>, id: string) => new Set([...set, id]);
+  let list: HTMLDivElement | undefined;
+  let heading: HTMLHeadingElement | undefined;
+  /** A leaving row can hold no focus: it moves to the next draft, the previous one, or the folder's heading. */
+  const keepFocus = (id: string) => {
+    const row = list?.querySelector<HTMLElement>(`[data-draft-id="${id}"]`);
+    const active = document.activeElement;
+    if (!row || (active && active !== document.body && !row.contains(active))) return;
+    const neighbour = [row.nextElementSibling, row.previousElementSibling]
+      .map((entry) => entry?.querySelector<HTMLElement>("a.mail-list-row"))
+      .find(Boolean);
+    (neighbour ?? heading)?.focus({ preventScroll: true });
+  };
+  const retryToast = createRetryToasts();
+  /** Only the list is stale after a failed reload, so Retry repeats the reload, never the delete. */
+  const refresh = (): void => {
+    props.onRefresh().catch((error: unknown) =>
+      retryToast(error instanceof Error ? error.message : String(error), {
+        title: t().draftsRefreshFailed,
+        retryLabel: t().retry,
+        retry: async () => refresh(),
+      }),
+    );
+  };
+
+  /** What the person confirmed: the draft as its row showed it, not as a later reload may change it meanwhile. */
+  type DeleteTarget = Pick<DraftFolderItem, "id" | "revision">;
+  const deleteDraft = mutation.create<true, DeleteTarget, { item: DeleteTarget }>({
+    onBefore: (item) => {
+      setPendingId(item.id);
+      return { item };
+    },
+    mutation: async (item, { abortSignal }) => {
+      const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].discard.$post(
+        { param: { mailboxId: props.mailboxId, draftId: item.id }, json: { expectedRevision: item.revision } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw await readApiFailure(response, t().deleteDraftFailed);
+      return true;
+    },
+    onSuccess: (_removed, context) => {
+      const id = context?.item.id;
+      if (!id) return;
+      toast.success(t().draftDeleted);
+      keepFocus(id);
+      setLeaving((current) => add(current, id));
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        setDeleted((current) => add(current, id));
+      }, LEAVE_MS);
+      timers.add(timer);
+      refresh();
+    },
+    onError: (error) => {
+      const code = error instanceof MailApiError ? error.code : null;
+      // An open composer holds the draft, or someone changed it since the list loaded: the draft stays either way.
+      toast.error(
+        code === DRAFT_LEASE_ERROR_CODES.HELD ? t().draftInUse : code === "CONFLICT" ? t().draftChangedBeforeDelete : error.message,
+      );
+      // The server answered: reload, so the row shows the draft as it is now, or leaves once it was sent meanwhile.
+      if (error instanceof MailApiError) refresh();
+    },
+    onFinally: () => setPendingId(null),
+  });
+  onCleanup(deleteDraft.abort);
+  // The row shows its request only once the person confirmed; one delete runs at a time.
+  let confirming = false;
+  const requestDelete = async (item: DraftFolderItem) => {
+    if (confirming || pendingId()) return;
+    confirming = true;
+    // A reload during the question may update the row in place; the delete keeps the revision the person saw.
+    const target: DeleteTarget = { id: item.id, revision: item.revision };
+    try {
+      const confirmed = await prompts.confirm(t().deleteDraftDescription({ subject: item.subject || t().noSubject }), {
+        title: t().deleteDraftQuestion,
+        confirmText: t().deleteDraft,
+        variant: "danger",
+      });
+      if (confirmed) void deleteDraft.mutate(target);
+    } finally {
+      confirming = false;
+    }
+  };
 
   return (
-    <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden" aria-busy={props.loading}>
-      <h1 class="sr-only">{props.title}</h1>
-      <ScrollArea class="flex-1">
-        <Show when={!props.error} fallback={<Placeholder state="error" title={t().draftsUnavailable} description={props.error!} />}>
+    <section
+      class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[var(--ui-surface)]"
+      style={{ "--mail-time-samples": timeColumnSizer() }}
+      aria-busy={props.loading}
+    >
+      <h1 ref={heading} tabIndex={-1} class="sr-only">
+        {props.title}
+      </h1>
+      <Show when={pendingId()}>
+        <span class="sr-only" role="status">
+          {t().deletingDraft}
+        </span>
+      </Show>
+      <ScrollArea class="mail-columns-area flex-1 pb-2" inset>
+        <Show
+          when={!props.error}
+          fallback={<Placeholder state="error" variant="panel" title={t().draftsUnavailable} description={props.error!} />}
+        >
           <Show
-            when={props.page.items.length > 0}
-            fallback={<Placeholder icon="ti ti-file-pencil" title={t().noDrafts} description={t().noDraftsDescription} />}
+            when={items().length > 0}
+            fallback={<Placeholder icon="ti ti-file-pencil" variant="panel" title={t().noDrafts} description={t().noDraftsDescription} />}
           >
-            <div class="mail-drafts-list">
-              <For each={props.page.items}>
-                {(item) => {
-                  const card = (
-                    <>
-                      <span class="mail-draft-row__icon">
-                        <i class={`ti ${item.intent === "new" ? "ti-file-pencil" : "ti-arrow-back-up"}`} aria-hidden="true" />
-                      </span>
-                      <h2 class="mail-draft-row__subject">{item.subject || t().noSubject}</h2>
-                      <p class="mail-draft-row__recipients">
-                        {t().to} {recipients(item, t())}
-                      </p>
-                      <time
-                        class="mail-draft-row__time"
-                        dateTime={item.updatedAt}
-                        title={dates.formatDateTime(item.updatedAt, props.dateConfig)}
-                      >
-                        {t().edited({ value: dates.formatDateTimeRelative(item.updatedAt, props.dateConfig) })}
-                      </time>
-                      <p class="mail-draft-row__preview">{item.bodyPreview || t().noMessageBody}</p>
-                      <p class="mail-draft-row__owner">{t().draftStartedBy({ name: item.createdByDisplayName })}</p>
-                    </>
-                  );
-                  return (
-                    <Show when={props.canWrite} fallback={<article class="mail-draft-row">{card}</article>}>
-                      <a
-                        href={mailDraftHref(props.mailboxId, item.id, listHref(null))}
-                        aria-label={t().openDraft({ subject: item.subject || t().noSubject })}
-                        class="mail-draft-row"
-                      >
-                        {card}
-                      </a>
-                    </Show>
-                  );
-                }}
+            <Show when={props.columns}>
+              <div class="mail-columns-head mail-columns-personal" aria-hidden="true">
+                <span />
+                <span class="mail-columns-head-cells">
+                  <span>{t().columnTo}</span>
+                  <span>{listText().columnSubject}</span>
+                  <span class="mail-columns-head-participants">{t().columnStartedBy}</span>
+                  <span class="mail-columns-head-time">{listText().columnTime}</span>
+                </span>
+              </div>
+            </Show>
+            <div
+              class="flex flex-col gap-0.5"
+              classList={{ "mail-columns mail-columns-personal": props.columns }}
+              style={{ opacity: props.loading ? 0.5 : undefined }}
+              ref={list}
+              role="list"
+              aria-label={t().draftListLabel({ title: props.title })}
+              data-mail-drafts-list
+            >
+              <For each={items()}>
+                {(item) => (
+                  <MailDraftRow
+                    item={item}
+                    href={props.canWrite ? mailDraftHref(props.mailboxId, item.id, listHref(null)) : null}
+                    columns={props.columns}
+                    dateConfig={props.dateConfig}
+                    pending={pendingId() === item.id}
+                    leaving={leaving().has(item.id)}
+                    onDelete={props.canWrite ? requestDelete : undefined}
+                  />
+                )}
               </For>
-              <Show when={props.page.nextCursor}>
-                {(cursor) => (
+            </div>
+            <Show when={props.page.nextCursor}>
+              {(cursor) => (
+                <div class="flex min-h-14 items-center justify-center py-3">
                   <ButtonLink
                     href={listHref(cursor())}
                     variant="secondary"
                     size="sm"
-                    class="self-center"
                     navigation="enhanced"
                     onNavigate={props.onNavigate}
                     scroll="preserve"
                   >
+                    <i class="ti ti-chevron-down" aria-hidden="true" />
                     {t().loadMore}
                   </ButtonLink>
-                )}
-              </Show>
-            </div>
+                </div>
+              )}
+            </Show>
           </Show>
         </Show>
       </ScrollArea>
