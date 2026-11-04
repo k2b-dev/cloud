@@ -56,7 +56,6 @@ packages/notebooks/src/frontend/[id]/_components/book/book-charts.behavior.test.
 packages/notebooks/src/frontend/[id]/_components/book/book-mermaid.behavior.test.ts | 1
 packages/notebooks/src/frontend/[id]/_components/detail/NotebookDetailPanel.behavior.test.tsx | 1
 packages/notebooks/src/frontend/[id]/_components/detail/duplicate-note.behavior.test.tsx | 1
-packages/notebooks/src/frontend/[id]/_components/settings/AccessSection.behavior.test.tsx | 1
 packages/notebooks/src/frontend/lib/editor/late-parse.behavior.test.ts | 1
 packages/notebooks/src/frontend/lib/editor/query-blocks.behavior.test.tsx | 1
 packages/oauth/src/device-grant.integration.test.ts | 1

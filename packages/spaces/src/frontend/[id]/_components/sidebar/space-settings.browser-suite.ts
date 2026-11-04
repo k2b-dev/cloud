@@ -128,6 +128,8 @@ beforeAll(async () => {
         pushAccessChanged();
         return Response.json(added);
       }
+      if (url.pathname === "/api/spaces/Space1/access" && request.method === "GET")
+        return Response.json([...settings.accessEntries, added]);
       if (url.pathname.startsWith("/api/")) return Response.json({ message: "Not part of the settings flow" }, { status: 404 });
       if (url.pathname !== "/app/spaces/Space1") return new Response("Not found", { status: 404 });
       const locale = url.searchParams.get("lang") === "de" ? "de" : "en";
@@ -175,8 +177,7 @@ const pageHtml = (locale: "en" | "de") => {
   );
 };
 const settle = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => setTimeout(done, 80))));
-const focusedPicker = (page: Page) =>
-  page.evaluate(() => document.activeElement === document.querySelector('dialog[open] input[role="combobox"]'));
+const focusedText = (page: Page) => page.evaluate(() => document.activeElement?.textContent?.trim());
 const pageMarker = (page: Page) => page.evaluate(() => Reflect.get(window, "__page"));
 const shoot = async (page: Page, name: string) => {
   mkdirSync(shots, { recursive: true });
@@ -198,7 +199,7 @@ describe(`Space settings survive access changes in ${browserName}`, () => {
     ["phone-en", 390, 844, true, "en"],
     ["phone-de", 390, 844, true, "de"],
   ] as const) {
-    test(`${label}: the grant keeps the dialog and focus, and a live change offers the reload after closing`, async () => {
+    test(`${label}: a saved grant keeps the settings and focus, and a live change offers the reload after closing`, async () => {
       grant = Promise.withResolvers<void>();
       postHeld = false;
       eventsSent = 0;
@@ -223,21 +224,26 @@ describe(`Space settings survive access changes in ${browserName}`, () => {
         await page.waitForFunction(() => Boolean(Reflect.get(document.querySelector("main button") ?? {}, "$$click")));
         const settingsLabel = locale === "de" ? "Space-Einstellungen" : "Space settings";
         const closeLabel = locale === "de" ? "Einstellungen schließen" : "Close settings";
+        const editLabel = locale === "de" ? "Zugriff bearbeiten" : "Edit access";
         await page.getByRole("button", { name: settingsLabel, exact: true }).click();
         const dialog = page.locator("dialog[open]");
-        await dialog.getByRole("tab", { name: locale === "de" ? "Zugriff" : "Access", exact: true }).click();
-        const input = dialog.getByRole("combobox");
-        await input.waitFor();
+        const accessTab = dialog.getByRole("tab", { name: locale === "de" ? "Zugriff" : "Access", exact: true });
+        await accessTab.click();
+        const edit = dialog.getByRole("button", { name: editLabel, exact: true });
+        await edit.waitFor();
         await settle(page);
         const before = await dialog.boundingBox();
         expect(before).not.toBeNull();
+        await edit.click();
+        // The access dialog opens over the settings in the same dialog element; nothing applies before Save.
+        const input = dialog.locator("input[role=combobox]");
+        await input.waitFor();
         await input.fill("Jo");
         await dialog.getByRole("option", { name: /Jonas Weber/ }).click();
+        await dialog.getByText(locale === "de" ? "Neu" : "New", { exact: true }).waitFor();
+        expect(postHeld).toBe(false);
+        await dialog.getByRole("button", { name: locale === "de" ? "Speichern" : "Save", exact: true }).click();
         await waitFor(() => postHeld, "the held access POST");
-        const row = dialog.locator(".group\\/access-row").filter({ hasText: "Jonas Weber" });
-        expect(await dialog.count()).toBe(1);
-        expect(await row.getAttribute("aria-busy")).toBe("true");
-        expect(await focusedPicker(page)).toBe(true);
         await shoot(page, `${label}-pending`);
 
         const event = socket.waitForEvent(
@@ -247,16 +253,13 @@ describe(`Space settings survive access changes in ${browserName}`, () => {
         grant.resolve();
         await event;
         expect(eventsSent).toBeGreaterThan(0);
-        await page.waitForFunction(() =>
-          [...document.querySelectorAll(".group\\/access-row")].some(
-            (row) => row.textContent?.includes("Jonas Weber") && !row.hasAttribute("aria-busy"),
-          ),
-        );
-        await settle(page);
+        // The saved list shows in the settings, which stay open with focus back on Edit access.
+        await accessTab.waitFor();
+        await dialog.getByText("Jonas Weber").waitFor();
         expect(await dialog.count()).toBe(1);
+        await settle(page);
         expect(await pageMarker(page)).toBe("first");
-        expect(await row.getAttribute("aria-busy")).toBeNull();
-        expect(await focusedPicker(page)).toBe(true);
+        expect(await focusedText(page)).toBe(editLabel);
         expect(await dialog.boundingBox()).toEqual(before);
         await shoot(page, `${label}-added`);
 

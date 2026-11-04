@@ -7,14 +7,22 @@ import { type MailRespondIntent, mailConversationMenuItems } from "./mail-conver
 import { MAX_MAIL_CONVERSATION_SELECTION } from "./mail-conversation-selection";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { buildMailAttachmentDownloadHref, buildMailSelectionHref, isMailListItemActive, type MailListItem } from "./mail-navigation";
+import { type MailRowAssignee, mailRowAssigneeLabels } from "./mail-row-assignees";
 import { mailParticipantFaces, mailParticipantSummary, mailRowParticipants } from "./mail-row-participants";
 
 /** Tags shown as pills on a row's fourth line; the rest are counted. */
 const MAX_ROW_TAGS = 3;
 
-/** A row has a fourth line only for its tags or for "Waiting"; every other row has the same three-line height. */
-export const mailRowHasFourthLine = (item: Pick<MailListItem, "localTags" | "workStatus">): boolean =>
-  item.localTags.length > 0 || item.workStatus === "waiting";
+/** Others than the sender the row names wrote, so the row shows who took part (`participants` is left out otherwise). */
+const mailRowShowsParticipants = (item: Pick<MailListItem, "selectionKind" | "participants">): boolean =>
+  item.selectionKind === "conversation" && Boolean(item.participants?.length);
+
+/**
+ * A row has a fourth line only for its tags, for "Waiting", or for the faces of others who wrote; every other row has
+ * the same three-line height.
+ */
+export const mailRowHasFourthLine = (item: Pick<MailListItem, "localTags" | "workStatus" | "selectionKind" | "participants">): boolean =>
+  item.localTags.length > 0 || item.workStatus === "waiting" || mailRowShowsParticipants(item);
 
 type MailConversationRowState = {
   selectedConversationId: string | null;
@@ -51,8 +59,8 @@ type MailConversationRowQuickLook = Pick<HoverPreviewController<string>, "id" | 
 
 /** The columns view (F2) draws one line per conversation; shared mailboxes add who is responsible and the status. */
 export type MailConversationRowColumns = {
-  /** Names of the people responsible, or null in a personal mailbox where the column is left out. */
-  assignees: string[] | null;
+  /** The people responsible, or null in a personal mailbox where the column is left out. */
+  assignees: MailRowAssignee[] | null;
 };
 
 export default function MailConversationRow(props: {
@@ -86,6 +94,13 @@ export default function MailConversationRow(props: {
   const attachmentLabel = () => t().attachmentCount({ count: props.item.attachmentCount ?? 0 });
   const participants = createMemo(() => mailRowParticipants(props.item));
   const participantLabel = () => mailParticipantSummary(t(), participants().people, participants().count);
+  const participantFaces = (size?: "md") => (
+    <Tooltip.Anchor content={participantLabel()}>
+      <span class="mail-row-participants" role="img" aria-label={participantLabel()} data-mail-participants>
+        <AvatarFaces people={mailParticipantFaces(participants().people)} total={participants().count} size={size} />
+      </span>
+    </Tooltip.Anchor>
+  );
   const [menuOpen, setMenuOpen] = createSignal(false);
   let activation: "keyboard" | "pointer" = "keyboard";
   let selectRange = false;
@@ -248,16 +263,40 @@ export default function MailConversationRow(props: {
               </span>
               {/* Who wrote: up to three faces in a fixed-width column, then "+n"; the tooltip names them by kind. */}
               <span class="mail-row-cell mail-row-participants-cell">
-                <Show when={props.item.selectionKind === "conversation" && participants().count > 0}>
-                  <Tooltip.Anchor content={participantLabel()}>
-                    <span class="mail-row-participants" role="img" aria-label={participantLabel()} data-mail-participants>
-                      <AvatarFaces people={mailParticipantFaces(participants().people)} total={participants().count} size="md" />
-                    </span>
-                  </Tooltip.Anchor>
-                </Show>
+                <Show when={props.item.selectionKind === "conversation" && participants().count > 0}>{participantFaces("md")}</Show>
               </span>
+              {/* Who is responsible: the first face and name ("You" first), then "+n"; the tooltip names everyone. */}
               <Show when={columns().assignees}>
-                {(names) => <span class="mail-row-cell mail-row-assignee-cell">{names().length > 0 ? names().join(", ") : "—"}</span>}
+                {(assignees) => {
+                  const labels = () => mailRowAssigneeLabels(assignees(), state().currentUserId, t().you);
+                  const label = () =>
+                    t().responsibleNames({
+                      names: labels()
+                        .map((assignee) => assignee.name)
+                        .join(", "),
+                    });
+                  return (
+                    <span class="mail-row-cell mail-row-assignee-cell">
+                      <Show when={labels()[0]} fallback={<span class="mail-row-assignee-none">{t().nobodyResponsible}</span>}>
+                        {(first) => (
+                          <Tooltip.Anchor content={label()}>
+                            <span class="mail-row-assignee" role="img" aria-label={label()} data-mail-assignees>
+                              <AvatarFaces
+                                people={[{ name: first().name, src: first().src, tone: first().unknown ? "neutral" : undefined }]}
+                                max={1}
+                                size="md"
+                              />
+                              <span class="mail-row-assignee-name">{first().name}</span>
+                              <Show when={labels().length > 1}>
+                                <span class="mail-row-count">+{labels().length - 1}</span>
+                              </Show>
+                            </span>
+                          </Tooltip.Anchor>
+                        )}
+                      </Show>
+                    </span>
+                  );
+                }}
               </Show>
               <Show when={columns().assignees}>
                 <span class="mail-row-cell mail-row-status-cell" data-status={props.item.workStatus}>
@@ -380,6 +419,12 @@ export default function MailConversationRow(props: {
                   <span class="mail-row-waiting">
                     <i class="ti ti-hourglass" aria-hidden="true" />
                     {t().waitingShort}
+                  </span>
+                </Show>
+                {/* Who wrote, at the line's end: up to three faces, then "+n". */}
+                <Show when={mailRowShowsParticipants(props.item)}>
+                  <span class="mail-row-extra-participants" data-clear-download={attachmentDownloadHref() ? "" : undefined}>
+                    {participantFaces()}
                   </span>
                 </Show>
               </span>

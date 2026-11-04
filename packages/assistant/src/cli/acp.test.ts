@@ -80,6 +80,8 @@ const harness = async (
     hold?: boolean;
     activeTurn?: boolean;
     manualSkill?: boolean;
+    /** Answers a request before the fake Cloud does; undefined falls through. */
+    intercept?: (path: string, method: string, init?: RequestInit) => Promise<Response | undefined> | Response | undefined;
   } = {},
 ) => {
   const cwd = await mkdtemp(join(tmpdir(), "cld-acp-test-"));
@@ -131,6 +133,8 @@ const harness = async (
       const method = init?.method ?? "GET";
       const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       requests.push({ path, method, body, headers: new Headers(init?.headers) });
+      const intercepted = await options.intercept?.(path, method, init);
+      if (intercepted) return intercepted;
       if (path.endsWith("/models"))
         return Response.json({
           status: "ok",
@@ -298,6 +302,7 @@ const harness = async (
     streams,
     submitted,
     connection,
+    bridge,
   };
 };
 
@@ -837,4 +842,178 @@ test("sends supplied resource permalinks as full Cloud addresses in ACP updates"
   await h.send("Show the draft");
   expect(h.text()).toContain("[Draft](https://cloud.test/open/mail.draft/AbC123)");
   expect(h.text()).not.toContain(text);
+});
+
+describe("ACP turn outcome and cancellation", () => {
+  const waitFor = async (condition: () => boolean) => {
+    while (!condition()) await Bun.sleep(5);
+  };
+  const statuses = (h: Awaited<ReturnType<typeof harness>>) =>
+    h.updates.flatMap(({ update }) =>
+      (update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update") && update.status ? [update.status] : [],
+    );
+
+  test("a failing title refresh keeps end_turn and cancelled", async () => {
+    let turns = 0;
+    const h = await harness({
+      intercept: (path, method) => {
+        if (method === "POST" && path.endsWith("/turns")) turns++;
+        if (turns > 0 && method === "GET" && path.endsWith("/conversations/chat")) return Response.json({}, { status: 500 });
+      },
+    });
+    expect(await h.send("Hello")).toEqual({ stopReason: "end_turn" });
+    let submitted = false;
+    const held = await harness({
+      hold: true,
+      intercept: (path, method) => {
+        if (method === "GET" && path.endsWith("/conversations/chat") && submitted) return Response.json({}, { status: 500 });
+      },
+    });
+    const pending = held.send("Wait");
+    await held.submitted;
+    submitted = true;
+    await held.acp.notify("session/cancel", { sessionId: held.session.sessionId });
+    expect(await pending).toEqual({ stopReason: "cancelled" });
+  });
+
+  test("Stop while offline still answers cancelled", async () => {
+    const h = await harness({
+      hold: true,
+      intercept: (path) => {
+        if (path.endsWith("/abort")) throw new TypeError("fetch failed");
+      },
+    });
+    const pending = h.send("Wait");
+    await h.submitted;
+    await h.acp.notify("session/cancel", { sessionId: h.session.sessionId });
+    expect(await pending).toEqual({ stopReason: "cancelled" });
+  });
+
+  test("Stop during the draft write starts no turn and empties the draft", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let drafts = 0;
+    const h = await harness({
+      intercept: async (path, method) => {
+        if (method === "PUT" && path.endsWith("/draft") && drafts++ === 0) {
+          await gate;
+          return undefined;
+        }
+      },
+    });
+    const pending = h.send("Hello");
+    await waitFor(() => drafts > 0);
+    await h.acp.notify("session/cancel", { sessionId: h.session.sessionId });
+    release();
+    expect(await pending).toEqual({ stopReason: "cancelled" });
+    expect(h.requests.some((r) => r.method === "POST" && r.path.endsWith("/turns"))).toBe(false);
+    expect(h.requests.filter((r) => r.path.endsWith("/draft")).map((r) => r.body)).toMatchObject([
+      { content: [{ type: "text", text: "Hello" }] },
+      { content: [] },
+    ]);
+  });
+
+  for (const [label, text, read] of [
+    ["the chat read", "Hello", "/api/ai/conversations/chat"],
+    ["a command read", "/usage", "/api/ai/quotas"],
+  ] as const)
+    test(`Stop ends ${label} that hangs`, async () => {
+      let waiting = false;
+      const h = await harness({
+        intercept: (path, method, init) => {
+          if (method !== "GET" || path !== read) return undefined;
+          waiting = true;
+          return new Promise<Response>((_, reject) =>
+            init?.signal?.addEventListener("abort", () => reject(new DOMException("Cancelled", "AbortError")), { once: true }),
+          );
+        },
+      });
+      const pending = h.send(text);
+      await waitFor(() => waiting);
+      await h.acp.notify("session/cancel", { sessionId: h.session.sessionId });
+      expect(await pending).toEqual({ stopReason: "cancelled" });
+      expect(h.requests.some((r) => r.path.endsWith("/draft") || r.path.endsWith("/turns"))).toBe(false);
+    });
+
+  test("a request paused after the editor leaves cannot keep cld running", async () => {
+    let paused = false;
+    const h = await harness({
+      intercept: (path, method, init) => {
+        if (method !== "PUT" || !path.endsWith("/draft")) return undefined;
+        paused = true;
+        return new Promise<Response>((_, reject) =>
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("Cancelled", "AbortError")), { once: true }),
+        );
+      },
+    });
+    void h.send("Hello").catch(() => undefined);
+    await waitFor(() => paused);
+    h.connection.close();
+    await h.connection.closed;
+    const started = performance.now();
+    const outcome = await Promise.race([h.bridge.close().then(() => "closed"), Bun.sleep(5_000).then(() => "stuck")]);
+    expect(outcome).toBe("closed");
+    expect(performance.now() - started).toBeLessThan(4_000);
+  });
+
+  test("a replayed running status never moves a finished call back", async () => {
+    const h = await harness();
+    const call = tool("read_file", "running");
+    h.streams.push([h.block(call), h.block({ ...call, status: "completed" }), h.block(call), h.done()]);
+    expect(await h.send("Read")).toEqual({ stopReason: "end_turn" });
+    expect(statuses(h)).toEqual(["in_progress", "completed"]);
+  });
+
+  test("a 401 in prompt, list and resume asks to sign in again", async () => {
+    let expired = false;
+    const h = await harness({
+      intercept: (path) => (expired && !path.endsWith("/models") ? Response.json({}, { status: 401 }) : undefined),
+    });
+    expired = true;
+    await expect(h.send("Hello")).rejects.toMatchObject({ code: -32000, message: expect.stringContaining("cld login") });
+    await expect(h.acp.request("session/list", {})).rejects.toMatchObject({ code: -32000 });
+    await expect(h.acp.request("session/resume", { sessionId: "chat", cwd: h.cwd, mcpServers: [] })).rejects.toMatchObject({
+      code: -32000,
+    });
+  });
+
+  test("a sign-in refresh that fails asks to sign in again, a network failure does not", async () => {
+    let failure: Error | undefined;
+    const h = await harness({
+      intercept: () => {
+        if (failure) throw failure;
+      },
+    });
+    failure = new Error("Login expired, sign in again: cld login");
+    await expect(h.send("Hello")).rejects.toMatchObject({ code: -32000 });
+    failure = new TypeError("Unable to connect.");
+    await expect(h.send("Hello")).rejects.toMatchObject({ code: -32603 });
+  });
+
+  test("a new thread reads the profile again, so a later cld login counts", async () => {
+    const h = await harness();
+    const reloads: string[] = [];
+    const options = { ...h.ctx.options, token: "" };
+    const reloading = createAcpAgent({
+      ...h.ctx,
+      options,
+      reloadCredentials: async () => {
+        reloads.push(options.token);
+        if (reloads.length === 1) throw new Error("No login configured.");
+        options.token = "fresh";
+      },
+    });
+    const connection = client().connect(reloading.app);
+    resources.push(async () => {
+      connection.close();
+      await connection.closed;
+      await reloading.close();
+    });
+    await connection.agent.request("initialize", { protocolVersion: 1, clientCapabilities: {} });
+    await expect(connection.agent.request("session/new", { cwd: h.cwd, mcpServers: [] })).rejects.toMatchObject({ code: -32000 });
+    expect(await connection.agent.request("session/new", { cwd: h.cwd, mcpServers: [] })).toHaveProperty("sessionId");
+    expect(reloads).toEqual(["", ""]);
+  });
 });

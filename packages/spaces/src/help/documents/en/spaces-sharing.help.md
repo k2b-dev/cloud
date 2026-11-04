@@ -26,7 +26,7 @@ The categories sort the settings by owner and effect:
 - **Sharing** contains access and API keys. It is for people with **Manage** access.
 - **Lifecycle** contains permanent deletion.
 
-When a form has a footer, review its count of changes and choose **Save changes**. Actions on a list, such as adding a status, changing access, or revoking a key, save immediately after you confirm them.
+When a form has a footer, review its count of changes and choose **Save changes**. Actions on a list, such as adding a status or revoking a key, save immediately after you confirm them. Access changes apply when you choose **Save** in **Edit access**.
 
 ## Choose the access level {icon="shield-lock"}
 
