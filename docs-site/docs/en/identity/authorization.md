@@ -76,8 +76,16 @@ type Principal =
 | User | One user |
 | Group | Direct and nested members |
 | Service account | One machine identity: resource-bound, standalone, or agent |
-| Authenticated | Any authenticated user or service account |
+| Authenticated | Any signed-in person, including guests |
 | Public | Every caller, including anonymous requests |
+
+The authenticated tier means **All signed-in people**. It matches only
+`AccessSubject.type === "user"`, including guests. Sessions, personal API keys
+(`user_delegated`), a person's OAuth credentials, invocations, and mandates
+retain that person's access subject. Agents and other service accounts need
+a direct or group grant: authenticating a machine does not make it a person.
+Public grants retain their existing behavior. Before upgrading, run the
+[people-only access inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people).
 
 ### Discover principals safely
 
@@ -224,10 +232,9 @@ For a standalone or agent service account it includes:
 
 - the direct service-account grant;
 - direct and nested local group grants;
-- authenticated grants;
 - public grants.
 
-A resource-bound account matches direct, authenticated, and public grants,
+A resource-bound account matches direct and public grants,
 but has no independent group membership.
 
 A standalone or agent account has no resource binding, so it is not capped to
@@ -515,10 +522,15 @@ If linking a new entry fails, remove it again. Protect grant mutations with
 ### Keep at least one manager
 
 A resource keeps at least one manager: an `admin` entry for a user, a group,
-all signed-in users, or a standalone or agent service account. A group counts
+all signed-in people, or a standalone or agent service account. A group counts
 regardless of its current members. Public entries never count, and neither do
 resource-bound or user-delegated service accounts: they disappear with their
 key or their user without passing the resource's rules.
+
+`isManagerEntry(entry)` classifies grant rows for last-manager protection.
+An authenticated admin row always counts because it keeps the resource
+manageable by people. The helper takes only the entry; authorize callers with
+the resource resolver before changing grants.
 
 Check every change of an existing grant with `ensureManagerRemains()` from
 `@k2b/cloud/server`, on administration routes too. Lock the resource row, then

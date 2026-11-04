@@ -489,7 +489,7 @@ describe("App access through real browser controls and same-origin transport", (
       expect(colors.text).not.toBe(colors.body);
       expect(await page.getByText("Bisher nutzten alle angemeldeten Personen", { exact: false }).count()).toBe(0);
       const signedIn = row(page, "Alle angemeldeten Personen");
-      await signedIn.getByText("Jede Person mit Konto in dieser Cloud", { exact: true }).waitFor();
+      await signedIn.getByText("Jede Person mit Konto in dieser Cloud, auch Gäste", { exact: true }).waitFor();
       expect(await level(page, "Alle angemeldeten Personen").isDisabled()).toBe(true);
       expect(errors).toEqual([]);
     } finally {
@@ -681,7 +681,7 @@ test("bootstrap shows the inherited signed-in grant, dismisses its notice and ha
     });
     await notice.waitFor();
     // The approved term for the signed-in audience, the same one the notice uses, and nobody's own marker.
-    await row(page, "Alle angemeldeten Personen").getByText("Jede Person mit Konto in dieser Cloud", { exact: true }).waitFor();
+    await row(page, "Alle angemeldeten Personen").getByText("Jede Person mit Konto in dieser Cloud, auch Gäste", { exact: true }).waitFor();
     expect(await level(page, "Alle angemeldeten Personen").textContent()).toBe("Nutzen");
     await page.getByRole("button", { name: "Hinweis schließen", exact: true }).click();
     expect(await notice.count()).toBe(0);

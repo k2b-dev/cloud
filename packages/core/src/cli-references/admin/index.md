@@ -543,7 +543,7 @@ retain their response envelope and pagination fields.
 
 Interrupted-call token amounts can be estimates; balances expose the number of
 `estimated` calls separately from `unknown`. Estimates count toward limits.
-The `authenticated` principal also matches service accounts. Raw call history
+The `authenticated` principal matches people, including guests and their delegated credentials. Agents and other service accounts need their own grant or a group. Raw call history
 is retained for 8,760 hours (the maximum quota window), with bounded cleanup;
 usage history in balances is not a lifetime total. Reset IDs remain durable.
 

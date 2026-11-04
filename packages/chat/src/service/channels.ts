@@ -35,13 +35,7 @@ type Entry = z.infer<typeof DiscoveryEntrySchema>;
 // for authorization, settings, and the response. Never return a partial count.
 const AUDIENCE_TIMEOUT_MS = (REQUEST_IDLE_TIMEOUT_SECONDS * 1_000) / 2;
 /** Internal counting seam; callers supply a transaction, tests may shorten its budget. */
-export const countAudience = async (
-  db: TransactionSQL,
-  entries: Entry[],
-  context: ChatContext,
-  conversationId?: string,
-  timeoutMs = AUDIENCE_TIMEOUT_MS,
-) => {
+export const countAudience = async (db: TransactionSQL, entries: Entry[], context: ChatContext, timeoutMs = AUDIENCE_TIMEOUT_MS) => {
   const authenticated = entries.some((entry) => entry.principal.type === "authenticated") && (await discoveryAllowed());
   const ids = entries.flatMap((entry) => (entry.principal.type === "group" ? [entry.principal.groupId] : []));
   try {
@@ -55,11 +49,8 @@ export const countAudience = async (
       SELECT id, provider FROM auth.groups WHERE id = ANY(${toPgUuidArray(ids)}::uuid[])
       UNION SELECT child.id, child.provider FROM groups parent JOIN auth.group_groups_v2 gg ON gg.parent_group_id = parent.id
       JOIN auth.groups child ON child.id = gg.child_group_id AND child.provider = parent.provider
-    ) SELECT ((SELECT COUNT(*) FROM auth.users u WHERE (u.account_expires IS NULL OR u.account_expires > now())
-      AND (${authenticated} OR (u.profile <> 'guest' AND u.id IN (SELECT ug.user_id FROM groups g JOIN auth.user_groups_v2 ug ON ug.group_id = g.id))))
-      + (SELECT COUNT(*) FROM auth.service_accounts WHERE ${authenticated} AND status = 'active'
-        AND (kind IN ('standalone', 'agent') OR (kind = 'resource_bound' AND app_id = 'chat'
-          AND resource_type = 'conversation' AND resource_id = ${conversationId ?? null}))))::int AS count`;
+    ) SELECT COUNT(*)::int AS count FROM auth.users u WHERE (u.account_expires IS NULL OR u.account_expires > now())
+      AND (${authenticated} OR (u.profile <> 'guest' AND u.id IN (SELECT ug.user_id FROM groups g JOIN auth.user_groups_v2 ug ON ug.group_id = g.id)))`;
       await tx`SELECT set_config('statement_timeout', ${previous!.timeout}, true)`;
       return ok({ audienceCount: row!.count, includesAuthenticated: authenticated });
     });
@@ -86,7 +77,7 @@ const preview = async (input: ChatContext & { input: unknown; conversationId?: s
       if (!allowed.ok) return allowed;
     }
     const valid = await validateDiscovery(db, parsed.data, input);
-    return valid.ok ? countAudience(db, parsed.data, input, input.conversationId) : valid;
+    return valid.ok ? countAudience(db, parsed.data, input) : valid;
   });
 };
 /**
@@ -116,7 +107,7 @@ const get = async (input: ChatContext & { conversationId: string }) =>
       permission: entry.permission,
       displayName: entry.name ?? messages(input).allAuthenticated,
     }));
-    const audience = await countAudience(db, projected, input, allowed.data.short_id);
+    const audience = await countAudience(db, projected, input);
     if (!audience.ok) return audience;
     return ok({
       entries: projected,

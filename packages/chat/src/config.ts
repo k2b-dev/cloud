@@ -52,15 +52,16 @@ export const app = defineApp({
     },
     "chat.discoverable_authenticated": {
       kind: "boolean",
-      label: "Allow channels discoverable by all signed-in accounts",
-      description: "Includes guests and service accounts. Turning this off removes their discovery access; existing members keep access.",
+      label: "Allow channels discoverable by all signed-in people",
+      description:
+        "Includes people and guests. Agents and service accounts need their own grant. Turning this off removes their discovery access; existing members keep access.",
       default: true,
       presentation: {
         translations: {
           de: {
             label: "Kanäle für alle Angemeldeten erlauben",
             description:
-              "Schließt Gäste und Dienstkonten ein. Ausschalten entzieht den Zugriff über diese Auffindbarkeit; bestehende Mitglieder behalten Zugriff.",
+              "Schließt Personen und Gäste ein. Agenten und Dienstkonten brauchen ein eigenes Recht. Ausschalten entzieht den Zugriff über diese Auffindbarkeit; bestehende Mitglieder behalten Zugriff.",
           },
         },
       },

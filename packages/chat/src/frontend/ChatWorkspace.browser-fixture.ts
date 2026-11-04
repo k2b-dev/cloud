@@ -1190,7 +1190,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
         };
         chat.discovery = input.discovery?.map((entry) => ({
           ...entry,
-          displayName: entry.principal.type === "authenticated" ? "All signed-in accounts" : groups.get(entry.principal.groupId)!.name,
+          displayName: entry.principal.type === "authenticated" ? "All signed-in people" : groups.get(entry.principal.groupId)!.name,
         }));
         for (const principal of input.members.filter((principal) => principal.type !== "user"))
           chat.members.push(makeMember(principal, "write", chat.conversation.createdAt));
@@ -1302,7 +1302,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
                 ...entry,
                 displayName:
                   entry.principal.type === "authenticated"
-                    ? "All signed-in accounts"
+                    ? "All signed-in people"
                     : (groups.get(entry.principal.groupId)?.name ?? "Directory group"),
                 accessId: `cccccccc-cccc-4ccc-8ccc-${String(index).padStart(12, "0")}`,
               })),
@@ -1896,7 +1896,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     addChannel: (name: string, purpose: string, member = false, permission: "read" | "write" = "write") => {
       const id = addChat({ name, members: [nora], count: 3, end: now(), spacing: 1 });
       const chat = chats.get(id)!;
-      chat.discovery = [{ principal: { type: "authenticated" }, permission, displayName: "All signed-in accounts" }];
+      chat.discovery = [{ principal: { type: "authenticated" }, permission, displayName: "All signed-in people" }];
       if (!member) chat.members = chat.members.filter((entry) => entry.principal.type !== "user" || entry.principal.userId !== viewer.id);
       chat.conversation = {
         ...chat.conversation,
