@@ -94,7 +94,9 @@ Use **View** in a mailbox to choose how its list and reader appear. On large scr
 
 While you read beside the list, **View → Hide conversation list** hides it, and the reader uses the full width. The `[` key hides and shows it. Without a reader beside the list, the switch is unavailable. Mail remembers the choice in this browser.
 
-In columns, **Participants** shows who wrote in the conversation: up to three people, then "+N". Point at it to see their names, grouped as **External**, **Team**, and **Automations**. Mail recognizes team members and automations by the replies Mail sent. A reply from another mail program counts by its sender address. If you see only assigned conversations, you see only the people of those conversations. A narrow list and a phone leave the column out.
+In columns, **Participants** shows who wrote in the conversation: up to three people, then "+N". Point at it to see their names, grouped as **External**, **Team**, and **Automations**. Mail recognizes team members and automations by the replies Mail sent. A reply from another mail program counts by its sender address. If you see only assigned conversations, you see only the people of those conversations. A narrow list and a phone leave the column out. When the list is beside the reader, the same faces end a row's fourth line as soon as someone other than the named sender wrote.
+
+In a team mailbox, **Responsible** shows the face and name of the first responsible person, then "+N" for more. If you are responsible, you come first as "You". Point at it to see every name. Without anyone responsible, it says "Nobody".
 
 Mail remembers each choice for you and this mailbox, separately for phones and large screens. A choice on one phone applies on your other phones too. Without a saved choice, Mail uses Automatic on large screens and Compact on phones. Administrators do not set your default.
 

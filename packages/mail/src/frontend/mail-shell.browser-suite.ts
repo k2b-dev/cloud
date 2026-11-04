@@ -3463,7 +3463,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("rows: three-line rows share one height, a fourth line only for tags or Waiting", async () => {
+        test("rows: three-line rows share one height, a fourth line only for tags, Waiting, or others who wrote", async () => {
           const page = await open(widePath(), 1440, 900);
           try {
             const rows = await page.locator(".mail-workspace .mail-list-entry").evaluateAll((elements) =>
@@ -3859,6 +3859,92 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               await close(page);
             }
           });
+
+        for (const [locale, you, nobody, both] of [
+          ["en", "You", "Nobody", "Responsible: You, Nora Example"],
+          ["de", "Du", "Niemand", "Zuständig: Du, Nora Example"],
+        ] as const)
+          test(`the Responsible column shows the first face and name, you first, then +n (${locale})`, async () => {
+            const page = await open(`${boxPath}?layout=columns&team=1&locale=${locale}`);
+            try {
+              const cell = (id: string) => page.locator(`.mail-workspace [data-conversation-id="${id}"] .mail-row-assignee-cell`);
+              const faces = (id: string) => cell(id).locator("[data-mail-assignees]");
+              expect(await faces("Conv01").locator(".k2b-avatar").count()).toBe(1);
+              expect(await faces("Conv01").locator(".mail-row-assignee-name").textContent()).toBe("Nora Example");
+              expect(await faces("Conv01").locator(".mail-row-count").count()).toBe(0);
+              expect(await faces("Conv02").locator(".k2b-avatar").count()).toBe(1);
+              expect(await faces("Conv02").locator(".mail-row-assignee-name").textContent()).toBe(you);
+              expect(await faces("Conv02").locator(".mail-row-count").textContent()).toBe("+1");
+              expect(await faces("Conv02").getAttribute("aria-label")).toBe(both);
+              expect(await cell("Conv03").textContent()).toBe(nobody);
+              // Every cell starts at the same place and has the same width, so no row moves its columns.
+              const boxes = await page.locator(".mail-workspace .mail-row-assignee-cell").evaluateAll((cells) =>
+                cells.map((cell) => {
+                  const { left, width } = cell.getBoundingClientRect();
+                  return { left, width };
+                }),
+              );
+              expect(boxes.length).toBe(12);
+              for (const box of boxes) expect(box).toEqual(boxes[0]!);
+              await faces("Conv02").hover();
+              await page.getByRole("tooltip").filter({ hasText: both }).waitFor();
+              if (screenshots && locale === "de") {
+                mkdirSync(join(screenshots, browserName), { recursive: true });
+                await page.screenshot({ path: join(screenshots, browserName, "assignees-light-1440.png") });
+              }
+            } finally {
+              await close(page);
+            }
+          });
+
+        test("a narrow Responsible column shortens the name and keeps +n inside the column", async () => {
+          const page = await open(`${boxPath}?layout=columns&team=1`, 1024);
+          try {
+            const cell = page.locator('.mail-workspace [data-conversation-id="Conv01"] .mail-row-assignee-cell');
+            await cell.locator("[data-mail-assignees]").waitFor();
+            const fit = await page.locator(".mail-workspace .mail-row-assignee-cell:has(.mail-row-count)").evaluateAll((cells) =>
+              cells.map((element) => {
+                const right = element.getBoundingClientRect().right;
+                return element.querySelector(".mail-row-count")!.getBoundingClientRect().right <= right + 0.5;
+              }),
+            );
+            expect(fit).toEqual([true]);
+            expect(await cell.locator(".mail-row-assignee-name").evaluate((element) => getComputedStyle(element).textOverflow)).toBe(
+              "ellipsis",
+            );
+          } finally {
+            await close(page);
+          }
+        });
+
+        test("the three-line list ends a row's fourth line with who wrote, three faces and +n", async () => {
+          const page = await open(`${boxPath}?conversation=Conv01&team=1`);
+          try {
+            const row = (id: string) => page.locator(`.mail-workspace [data-conversation-id="${id}"]`);
+            expect(await row("Conv05").getAttribute("data-lines")).toBe("4");
+            const stack = row("Conv05").locator(".mail-row-extra [data-mail-participants]");
+            expect(await stack.locator(".k2b-avatar").count()).toBe(3);
+            expect(await stack.locator(".k2b-avatar-stack__more").textContent()).toBe("+14");
+            // The faces sit at the line's end.
+            const ends = await row("Conv05").evaluate((element) => {
+              const line = element.querySelector(".mail-row-extra")!.getBoundingClientRect();
+              const faces = element.querySelector(".mail-row-extra-participants")!.getBoundingClientRect();
+              return { line: Math.round(line.right), faces: Math.round(faces.right) };
+            });
+            expect(ends.faces).toBe(ends.line);
+            // Only the sender wrote: the row keeps its three lines and shows no faces.
+            expect(await row("Conv04").getAttribute("data-lines")).toBe("3");
+            expect(await row("Conv04").locator("[data-mail-participants]").count()).toBe(0);
+            await stack.hover();
+            await page.getByRole("tooltip").filter({ hasText: "17 participants · External: Sender 5" }).waitFor();
+            if (screenshots) {
+              mkdirSync(join(screenshots, browserName), { recursive: true });
+              await page.screenshot({ path: join(screenshots, browserName, "participants-three-line-light-1440.png") });
+            }
+          } finally {
+            await close(page);
+          }
+        });
 
         test("Copy Cloud ID writes the permalink and the structured reference from every menu and the details", async () => {
           const { parseCloudResourceClipboard, parseCloudResourceUrl } = await import("@k2b/cloud/contracts");
