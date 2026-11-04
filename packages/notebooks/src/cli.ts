@@ -66,6 +66,7 @@ import {
 import { compareNoteOrder } from "./lib/note-order";
 import { noteSlug } from "./lib/note-path";
 import { hasNoteTitleHeading } from "./lib/note-title";
+import { normalizePageTemplateName } from "./lib/page-templates";
 import { PRESENTATION_MODES } from "./lib/presentation-mode";
 
 type Notebook = {
@@ -360,6 +361,8 @@ function notebooksCommands(locale?: string) {
   };
 
   type PageTemplate = { id: string; name: string; description: string | null; builtIn: boolean };
+  /** A name as the notebook compares it: normalized, ignoring case. */
+  const templateNameKey = (name: string) => (normalizePageTemplateName(name) ?? name.trim()).toLowerCase();
   const listPageTemplates = async (ctx: CloudCliContext, notebookId: string) =>
     ctx.readJson<PageTemplate[]>(await ctx.fetch(api(notebookId, "/page-templates")));
 
@@ -368,7 +371,8 @@ function notebooksCommands(locale?: string) {
     const templates = await listPageTemplates(ctx, notebookId);
     const byId = templates.find((template) => template.id === raw);
     if (byId) return byId;
-    const matches = templates.filter((template) => template.name.toLowerCase() === raw.trim().toLowerCase());
+    const name = templateNameKey(raw);
+    const matches = templates.filter((template) => templateNameKey(template.name) === name);
     if (matches.length === 1) return matches[0]!;
     if (matches.length > 1)
       throw new Error(
@@ -2631,7 +2635,7 @@ function notebooksCommands(locale?: string) {
           const target = await resolveNote(ctx, args.note);
           const existing = flags.replace
             ? (await listPageTemplates(ctx, target.notebookId)).find(
-                (template) => !template.builtIn && template.name.toLowerCase() === args.name.trim().toLowerCase(),
+                (template) => !template.builtIn && templateNameKey(template.name) === templateNameKey(args.name),
               )
             : undefined;
           const template = existing

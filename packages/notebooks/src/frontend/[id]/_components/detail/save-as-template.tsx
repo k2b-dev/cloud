@@ -1,7 +1,7 @@
 import { Button, InlineGuidance, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
-import { PAGE_TEMPLATE_NAME_MAX_LENGTH, type PageTemplateSummary } from "@/lib/page-templates";
+import { normalizePageTemplateName, PAGE_TEMPLATE_NAME_MAX_LENGTH, type PageTemplateSummary } from "@/lib/page-templates";
 import { notebookWorkspaceMessages } from "../../messages";
 import { readErrorMessage } from "../settings/utils";
 
@@ -11,9 +11,12 @@ type Messages = ReturnType<(typeof notebookWorkspaceMessages)["resolve"]>["t"];
 const ownTemplateNamed = async (notebookId: string, name: string, locale: string): Promise<PageTemplateSummary | null> => {
   const res = await apiClient[":id"]["page-templates"].$get({ param: { id: notebookId } });
   if (!res.ok) return null;
-  const needle = name.trim().toLocaleLowerCase(locale);
+  const needle = sameName(name, locale);
   return (await res.json()).find((template) => !template.builtIn && template.name.toLocaleLowerCase(locale) === needle) ?? null;
 };
+
+/** A name as the server compares it: normalized, ignoring case. */
+const sameName = (name: string, locale: string) => (normalizePageTemplateName(name) ?? name.trim()).toLocaleLowerCase(locale);
 
 const layer = (shown: boolean) => (shown ? "[grid-area:1/1]" : "invisible [grid-area:1/1]");
 const visible = (shown: boolean) => (shown ? undefined : "true");
@@ -44,7 +47,7 @@ function SaveAsTemplateForm(props: {
     setError(null);
     try {
       const target = replacing();
-      if (target && target.name.toLocaleLowerCase(props.locale) === trimmed.toLocaleLowerCase(props.locale)) {
+      if (target && sameName(target.name, props.locale) === sameName(trimmed, props.locale)) {
         const res = await apiClient[":id"]["page-templates"][":templateId"].$patch({
           param: { id: props.notebookId, templateId: target.id },
           json: { noteId: props.noteId },
@@ -79,7 +82,7 @@ function SaveAsTemplateForm(props: {
 
   const asksReplace = () => {
     const target = replacing();
-    return Boolean(target && target.name.toLocaleLowerCase(props.locale) === name().trim().toLocaleLowerCase(props.locale));
+    return Boolean(target && sameName(target.name, props.locale) === sameName(name(), props.locale));
   };
 
   return (

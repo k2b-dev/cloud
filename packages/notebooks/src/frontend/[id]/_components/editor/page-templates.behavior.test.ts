@@ -1,11 +1,30 @@
-import { expect, test } from "bun:test";
+import { expect, mock, test } from "bun:test";
 import { history, undo } from "@codemirror/commands";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState, StateEffect } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 
+/** The draft answers when the test lets it, so the note can change in between. */
+let answerDraft: () => void = () => {};
+mock.module("@/api/client", () => ({
+  apiClient: {
+    ":id": {
+      "page-templates": {
+        ":templateId": {
+          draft: {
+            $get: () =>
+              new Promise<Response>((resolve) => {
+                answerDraft = () => resolve(Response.json({ name: "Meeting notes", contentMd: "# Meeting\n\n## Agenda\n" }));
+              }),
+          },
+        },
+      },
+    },
+  },
+}));
+
 const loading = createDomTestHarness();
-const { applyPageTemplate, isBlankNoteText } = await import("./page-templates");
+const { applyPageTemplate, applyPageTemplateById, isBlankNoteText } = await import("./page-templates");
 loading.cleanup();
 
 const template = "# Meeting 2026-11-04\n\n- **Notes by:** Ada\n\n## Agenda\n\n1.\n";
@@ -49,4 +68,16 @@ test("the empty-note offer reads only short notes", () => {
   expect(isBlankNoteText("# New Document\n")).toBe(true);
   expect(isBlankNoteText(`# Title\n${" ".repeat(2000)}`)).toBe(false);
   expect(isBlankNoteText("# Title\n\nBody")).toBe(false);
+});
+
+test("a note that turns read-only while the template loads stays as it is", async () => {
+  using editor = mount("# New Document\n");
+  const lock = new Compartment();
+  editor.view.dispatch({ effects: StateEffect.appendConfig.of(lock.of([])) });
+  const meeting = { id: "meeting-notes", name: "Meeting notes", description: null, icon: "ti ti-users", builtIn: true, updatedAt: null };
+  const applying = applyPageTemplateById(editor.view, "Book01", meeting, "en");
+  editor.view.dispatch({ effects: lock.reconfigure(EditorState.readOnly.of(true)) });
+  answerDraft();
+  await applying;
+  expect(editor.view.state.doc.toString()).toBe("# New Document\n");
 });

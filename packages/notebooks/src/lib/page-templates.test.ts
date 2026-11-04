@@ -7,6 +7,7 @@ import {
   normalizePageTemplateName,
   PAGE_TEMPLATE_NAME_MAX_LENGTH,
   pageTemplateBody,
+  renderedPageTemplateLength,
   renderPageTemplate,
 } from "./page-templates";
 
@@ -29,12 +30,27 @@ describe("renderPageTemplate", () => {
   });
 });
 
+describe("renderedPageTemplateLength", () => {
+  test("counts the filled-in length without building it", () => {
+    const content = "# {{date}} by {{ author }} and {{author}}";
+    expect(renderedPageTemplateLength(content, values)).toBe(renderPageTemplate(content, values).length);
+  });
+});
+
 describe("isBlankPage", () => {
   test("a note with no text or only its title is blank", () => {
     expect(isBlankPage("")).toBe(true);
     expect(isBlankPage("\n\n  \n")).toBe(true);
     expect(isBlankPage("# New Document\n")).toBe(true);
     expect(isBlankPage("\n# New Document\n\n\n")).toBe(true);
+    // A title typed over leaves "# " behind, which is still only a title.
+    expect(isBlankPage("# ")).toBe(true);
+    expect(isBlankPage("   # Indented title")).toBe(true);
+  });
+
+  test("four spaces before # are indented code, not a title, so a template never replaces it", () => {
+    expect(isBlankPage("    # Keep this code comment")).toBe(false);
+    expect(pageTemplateBody("    # code\n\nrest")).toBe("    # code\n\nrest");
   });
 
   test("any line below the title, or a first line that is not a title, makes it a note with content", () => {

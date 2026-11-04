@@ -1509,7 +1509,13 @@ export const notebooksCapabilities = defineCapabilities({
             { label: t.notebook, value: access.data.notebook.name },
             { label: t.parent, value: parentTitle },
             ...(input.position === undefined ? [] : [{ label: t.position, value: String(input.position) }]),
-            ...(template ? [{ label: t.pageTemplate, value: template.data.name }] : []),
+            // The preview may be cut; the hash of the whole filled-in text makes a changed template ask again.
+            ...(template
+              ? [
+                  { label: t.pageTemplate, value: template.data.name },
+                  { label: t.pageTemplateContentHash, value: noteContentHash(content) },
+                ]
+              : []),
             ...(input.content === undefined && !template
               ? []
               : [

@@ -1477,6 +1477,8 @@ test("note.create starts from a page template only for writers, with the caller 
   permission.mockResolvedValue("write");
   const review = await operation.review!(input, userContext);
   expect(review.ok && review.data.details?.find((detail) => detail.label === "Template")?.value).toBe("Meeting notes");
+  // The preview may be cut, so the review names a checksum of the whole text; a changed template asks again.
+  expect(review.ok && review.data.details?.find((detail) => detail.label === "Text checksum")?.value).toMatch(/^sha256:[a-f0-9]{64}$/);
   expect((await operation.run(input, userContext)).ok).toBe(true);
   const content = create.mock.calls[0]![0].data.contentMd ?? "";
   expect(content).toStartWith("# Meeting ");

@@ -67,7 +67,10 @@ export const applyPageTemplate = (view: EditorView, contentMd: string): void => 
 /** Loads, fills in and applies one template; a failure says so and leaves the note as it was. */
 export const applyPageTemplateById = async (view: EditorView, notebookId: string, template: PageTemplateSummary, locale?: string) => {
   try {
-    applyPageTemplate(view, await loadPageTemplateDraft(notebookId, template.id, locale));
+    const draft = await loadPageTemplateDraft(notebookId, template.id, locale);
+    // The note may have closed, locked or lost its write access while the draft loaded; a script change would still apply.
+    if (!view.dom.isConnected || view.state.readOnly) return;
+    applyPageTemplate(view, draft);
   } catch (error) {
     toast.error(error instanceof Error ? error.message : messages(locale).failedApplyTemplate);
   }

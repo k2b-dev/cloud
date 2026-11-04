@@ -10,6 +10,7 @@ import {
   PAGE_TEMPLATE_MAX_LENGTH,
   type PageTemplatePlaceholders,
   type PageTemplateSummary,
+  renderedPageTemplateLength,
   renderPageTemplate,
 } from "../lib/page-templates";
 import { generateUniqueShortId } from "../lib/short-id";
@@ -105,13 +106,13 @@ export const draft = async (params: {
   const allowed = requirePermission(params.permission, "write", params.locale);
   if (!allowed.ok) return allowed;
   const builtIn = isBuiltInPageTemplateId(params.templateId) ? findBuiltInPageTemplate(params.templateId) : null;
-  if (builtIn) {
-    const localized = localizedBuiltInPageTemplate(builtIn, params.locale);
-    return ok({ name: localized.name, contentMd: renderPageTemplate(localized.content, params.placeholders) });
-  }
-  const own = isBuiltInPageTemplateId(params.templateId) ? null : await findOwn(params.notebookId, params.templateId);
-  if (!own) return notFound(params.locale);
-  return ok({ name: own.name, contentMd: renderPageTemplate(own.content_md, params.placeholders) });
+  const own = builtIn || isBuiltInPageTemplateId(params.templateId) ? null : await findOwn(params.notebookId, params.templateId);
+  const source = builtIn ? localizedBuiltInPageTemplate(builtIn, params.locale) : own ? { name: own.name, content: own.content_md } : null;
+  if (!source) return notFound(params.locale);
+  // Filled-in placeholders may grow the text; the page it becomes keeps the page limit.
+  if (renderedPageTemplateLength(source.content, params.placeholders) > PAGE_TEMPLATE_MAX_LENGTH)
+    return fail(err.badInput(messages(params.locale).pageTemplateTooLarge));
+  return ok({ name: source.name, contentMd: renderPageTemplate(source.content, params.placeholders) });
 };
 
 /** A page's current text; the page must belong to the template's notebook, so its links and files keep working. */

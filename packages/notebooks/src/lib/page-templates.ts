@@ -37,23 +37,31 @@ export const PAGE_TEMPLATE_PLACEHOLDERS = ["date", "author"] as const;
 
 const PLACEHOLDER = /\{\{\s*(date|author)\s*\}\}/g;
 
+/** How long the filled-in template gets, counted without building it, so a size check costs no memory. */
+export const renderedPageTemplateLength = (content: string, values: PageTemplatePlaceholders): number => {
+  let length = content.length;
+  for (const match of content.matchAll(PLACEHOLDER)) length += values[match[1] as keyof PageTemplatePlaceholders].length - match[0].length;
+  return length;
+};
+
 /** The template's Markdown with `{{date}}` and `{{author}}` filled in. */
 export const renderPageTemplate = (content: string, values: PageTemplatePlaceholders): string =>
   content.replace(PLACEHOLDER, (_, key: keyof PageTemplatePlaceholders) => values[key]);
 
-const TITLE_LINE = /^#[ \t]+\S/;
+/** A level-1 ATX heading, also an empty one: at most three spaces before `#`; four make it indented code. */
+const TITLE_LINE = /^ {0,3}#(?:[ \t]|$)/;
 
 /** A page that holds at most its title: a template may then replace it whole. */
 export const isBlankPage = (markdown: string): boolean => {
   const lines = markdown.split(/\r?\n/).filter((line) => line.trim().length > 0);
-  return lines.length === 0 || (lines.length === 1 && TITLE_LINE.test(lines[0]!.trimStart()));
+  return lines.length === 0 || (lines.length === 1 && TITLE_LINE.test(lines[0]!));
 };
 
 /** What a template adds inside a page that already has content: everything below its title. */
 export const pageTemplateBody = (markdown: string): string => {
   const lines = markdown.split(/\r?\n/);
   const first = lines.findIndex((line) => line.trim().length > 0);
-  if (first === -1 || !TITLE_LINE.test(lines[first]!.trimStart())) return markdown;
+  if (first === -1 || !TITLE_LINE.test(lines[first]!)) return markdown;
   let start = first + 1;
   while (start < lines.length && lines[start]!.trim().length === 0) start++;
   return lines.slice(start).join("\n");
