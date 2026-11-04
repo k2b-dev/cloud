@@ -98,6 +98,12 @@ const resultEntries = (draft: AccessDraft): AccessEntry[] =>
       : [],
   );
 
+/** How many entries manage the resource after saving, counted as the resource's rules count them. */
+export const managerCount = (
+  draft: AccessDraft,
+  effective: (entries: readonly AccessEntry[]) => readonly AccessEntry[] = (entries) => entries,
+): number => effective(resultEntries(draft)).filter((entry) => !entry.scope && isManagerEntry(entry)).length;
+
 /** Keys of rows that are the only manager after saving: they cannot lose Manage or be removed. */
 export const lastManagerKeys = (
   draft: AccessDraft,

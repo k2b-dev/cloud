@@ -701,8 +701,11 @@ switches under **General** (`allowAuthenticated`, `allowPublic`, `publicLink`).
 Turning on public access warns that nobody changes anything without signing in;
 pass `publicWarning` when visitors can do more, for example send a published
 form. Each stored entry is its own row, so a principal with a grant and a denial
-shows both; a stored denial of a **General** audience shows as off, and turning
-it on changes the denial into the first offered level.
+shows both. A **General** switch follows that audience's denial when one is
+stored and shows off; turning it on changes the denial into the first offered
+level, and further entries of the audience appear in the list. Removing a denial
+asks nothing, because nobody loses access by it, and **Undo** is disabled when
+it would leave the resource without a manager.
 The search offers people, groups, and agents; it never finds the account of an
 object or app by name.
 

@@ -6,6 +6,8 @@
 - **Guard:**
   - Rows now key by stored entry and by principal only for added rows.
   - `saveOrder` puts removed denials with the raised levels.
-  - General switches treat `none` as off.
+  - General switches follow a stored denial and show it as off; other entries of that audience appear in the list.
+  - Removing a denial asks nothing and says so.
+  - Undo is disabled when it would leave nobody managing.
   - `publicWarning` lets a resource say what visitors can do.
-  - `access-draft.test.ts` covers two rows for one principal and the denial-first handover; `AccessDialog.behavior.test.tsx` covers a stored public denial and the custom warning.
+  - `access-draft.test.ts` covers two rows for one principal and the denial-first handover; `AccessDialog.behavior.test.tsx` covers a stored public denial, the custom warning, a signed-in grant next to a denial, removing a denial, and the guarded Undo.
