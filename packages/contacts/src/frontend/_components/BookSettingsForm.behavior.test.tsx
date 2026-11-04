@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { ContactBook } from "../../service";
@@ -102,6 +103,86 @@ describe("Contact book settings reconciliation", () => {
       expect(requests).toHaveLength(1);
     } finally {
       dispose?.();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("access changes save together in the dialog; a half-failed, discarded save still reloads once", async () => {
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
+    delegateEvents(["click", "input"], dom.document);
+    const { prompts } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    const entry = (id: string, name: string, permission: AccessEntry["permission"]): AccessEntry => ({
+      id,
+      principal: { type: "user", userId: `user-${id}` },
+      permission,
+      displayName: name,
+      createdAt: now,
+    });
+    const mia = entry("mia", "Mia Hoffmann", "admin");
+    const lea = entry("lea", "Lea Schmitt", "read");
+    const ben = entry("ben", "Ben Albers", "read");
+    const writes: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        writes.push(`${init?.method} ${url.split("/access/")[1]}`);
+        if (init?.method === "DELETE") return Response.json({ message: "offline" }, { status: 503 });
+        return new Response(null, { status: 204 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const onWorkspaceChange = mock(() => {});
+    const onReconcile = mock(async () => {});
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const button = (text: string) =>
+      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
+    const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
+    const waitFor = async (condition: () => boolean, label: string) => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (condition()) return;
+        await Bun.sleep(10);
+      }
+      throw new Error(`Timed out waiting for ${label}`);
+    };
+    let dispose: (() => void) | undefined;
+    try {
+      dispose = render(
+        () => (
+          <BookSettingsForm
+            context={() => ({ book, accessEntries: [mia, lea, ben], apiKeys: [], tags: [] })}
+            initialTab="access"
+            onClose={() => {}}
+            onDeleted={() => {}}
+            onWorkspaceChange={onWorkspaceChange}
+            onReconcile={onReconcile}
+          />
+        ),
+        dom.root,
+      );
+      button("Edit access")!.click();
+      await waitFor(() => dialog()?.textContent?.includes("Access to Suppliers") === true, "the access dialog");
+      Array.from(row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
+        .find((option) => option.textContent?.includes("Edit"))!
+        .click();
+      row("Ben Albers").querySelector<HTMLButtonElement>('button[aria-label="Remove Ben Albers"]')!.click();
+      await waitFor(() => dialog()?.textContent?.includes("2 changes") === true, "two changes");
+      expect(writes).toEqual([]);
+      button("Save")!.click();
+      await waitFor(() => !!dialog()?.querySelector('[role="alert"]'), "the failed removal");
+      expect(writes).toEqual(["PATCH lea", "DELETE ben"]);
+      // Each change does not reload the settings on its own; the dialog saves them together.
+      expect(onReconcile).not.toHaveBeenCalled();
+      button("Cancel")!.click();
+      await waitFor(() => onReconcile.mock.calls.length === 1, "one reload after the dialog");
+      expect(dialog()).toBeNull();
+      expect(onWorkspaceChange).toHaveBeenCalledTimes(1);
+    } finally {
+      dispose?.();
+      confirm.mockRestore();
       globalThis.fetch = originalFetch;
       dom.cleanup();
     }
