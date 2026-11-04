@@ -570,45 +570,58 @@ export default function AiModelDetail(props: {
         </Show>
 
         <Section title={t().access} description={t().accessSub}>
-          <SegmentedControl
-            class="w-auto"
-            ariaLabel={t().access}
-            value={() => (draft().restricted ? "restricted" : "all")}
-            onValueChange={(value) => update({ restricted: value === "restricted" })}
-            options={[
-              { value: "all", label: t().accessAll },
-              { value: "restricted", label: t().accessRestricted },
-            ]}
-          />
-          <Show when={draft().restricted}>
-            <div class="grid max-w-md gap-2">
-              <div class="flex flex-wrap gap-1.5">
-                <For each={draft().grants}>
-                  {(grant, index) => (
-                    <span class="inline-flex items-center gap-1 rounded-full bg-(--k2b-surface-muted) py-0.5 ps-2.5 pe-1 text-sm">
-                      {principalLabel(grant, locale())}
-                      <IconButton
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        label={t().delete}
-                        onClick={() => update({ grants: draft().grants.filter((_, position) => position !== index()) })}
-                      >
-                        <i class="ti ti-x" aria-hidden="true" />
-                      </IconButton>
-                    </span>
-                  )}
-                </For>
+          <Show
+            when={props.provider.dataBoundary !== "restricted"}
+            fallback={
+              <div class="grid gap-1.5">
+                <p class="text-sm text-(--k2b-warning-text)">{t().accessAppsOnly}</p>
+                <span class="inline-flex items-center gap-2 font-mono text-sm">
+                  {base().id}
+                  <CopyButton value={base().id} label={t().copy} />
+                </span>
               </div>
-              <PrincipalPicker
-                existing={draft().grants.map((grant) => grant.principal)}
-                placeholder={t().addPrincipal}
-                allowServiceAccounts
-                onSelect={(principal, display) =>
-                  update({ grants: [...draft().grants, { principal, displayName: display.displayName, avatarHash: display.avatarHash }] })
-                }
-              />
-            </div>
+            }
+          >
+            <SegmentedControl
+              class="w-auto"
+              ariaLabel={t().access}
+              value={() => (draft().restricted ? "restricted" : "all")}
+              onValueChange={(value) => update({ restricted: value === "restricted" })}
+              options={[
+                { value: "all", label: t().accessAll },
+                { value: "restricted", label: t().accessRestricted },
+              ]}
+            />
+            <Show when={draft().restricted}>
+              <div class="grid max-w-md gap-2">
+                <div class="flex flex-wrap gap-1.5">
+                  <For each={draft().grants}>
+                    {(grant, index) => (
+                      <span class="inline-flex items-center gap-1 rounded-full bg-(--k2b-surface-muted) py-0.5 ps-2.5 pe-1 text-sm">
+                        {principalLabel(grant, locale())}
+                        <IconButton
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          label={t().delete}
+                          onClick={() => update({ grants: draft().grants.filter((_, position) => position !== index()) })}
+                        >
+                          <i class="ti ti-x" aria-hidden="true" />
+                        </IconButton>
+                      </span>
+                    )}
+                  </For>
+                </div>
+                <PrincipalPicker
+                  existing={draft().grants.map((grant) => grant.principal)}
+                  placeholder={t().addPrincipal}
+                  allowServiceAccounts
+                  onSelect={(principal, display) =>
+                    update({ grants: [...draft().grants, { principal, displayName: display.displayName, avatarHash: display.avatarHash }] })
+                  }
+                />
+              </div>
+            </Show>
           </Show>
         </Section>
 
@@ -631,8 +644,13 @@ export default function AiModelDetail(props: {
                 onValueChange={(kind) => update({ kind })}
                 options={[
                   { value: "chat", label: t().kindChat, icon: "ti ti-message-2" },
-                  { value: "transcription", label: t().kindAudio, icon: "ti ti-microphone" },
-                  { value: "live-transcription", label: t().kindLiveAudio, icon: "ti ti-microphone" },
+                  // Providers without a data-protection commitment only take chat models.
+                  ...(props.provider.dataBoundary === "restricted"
+                    ? []
+                    : [
+                        { value: "transcription" as const, label: t().kindAudio, icon: "ti ti-microphone" },
+                        { value: "live-transcription" as const, label: t().kindLiveAudio, icon: "ti ti-microphone" },
+                      ]),
                 ]}
               />
             </span>

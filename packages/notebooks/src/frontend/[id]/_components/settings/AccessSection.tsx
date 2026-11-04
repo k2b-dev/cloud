@@ -1,7 +1,7 @@
-import { PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
-import type { AccessEntry } from "@k2b/cloud/contracts";
+import { type GrantableLevel, openAccessDialog, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, Placeholder, Select, SettingsField, SettingsGroup, useLocale } from "@k2b/ui";
+import { Button, Placeholder, prompts, Select, SettingsField, SettingsGroup, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { isNoteDeletePermission, type NoteDeletePermission } from "@/lib/note-delete-permission";
@@ -90,6 +90,9 @@ export function ApiKeysSection(props: { notebook: Notebook }) {
   );
 }
 
+/** Object keys have their own tab; every other grant, agents included, belongs to who may use the notebook. */
+const visibleEntries = (entries: AccessEntry[]) => entries.filter((entry) => entry.serviceAccountKind !== "resource_bound");
+
 export function PermissionsSection(props: { notebook: Notebook }) {
   const locale = useLocale();
   const t = () => notebookSettingsMessages.resolve([locale()]).t;
@@ -102,13 +105,81 @@ export function PermissionsSection(props: { notebook: Notebook }) {
     },
   });
   const [reconcileError, setReconcileError] = createSignal<string | null>(null);
-  const reconcile = () => {
+  const reconcile = async () => {
     setReconcileError(null);
-    void accessEntries.invalidate().catch(() => setReconcileError(t().accessReconcileFailed));
+    try {
+      await accessEntries.invalidate();
+    } catch {
+      setReconcileError(t().accessReconcileFailed);
+    }
+  };
+  // Set by every saved change, also when a later one fails and the person discards the rest.
+  let wrote = false;
+  // A plain guard, not a loading state: a disabled button could not take focus back when the dialog closes.
+  let running = false;
+  const grantAccess = async (principal: Principal, permission: GrantableLevel) => {
+    const response = await apiClient[":id"].access.$post({
+      param: { id: props.notebook.id },
+      json: { principal, permission },
+    });
+    if (!response.ok) throw new Error(await readErrorMessage(response, t().grantAccessFailed));
+    wrote = true;
+    return (await response.json()) as AccessEntry;
+  };
+  const updateAccess = async (accessId: string, permission: GrantableLevel) => {
+    const response = await apiClient[":id"].access[":accessId"].$patch({
+      param: { id: props.notebook.id, accessId },
+      json: { permission },
+    });
+    if (!response.ok) throw new Error(await readErrorMessage(response, t().updateAccessFailed));
+    wrote = true;
+  };
+  const revokeAccess = async (accessId: string) => {
+    const response = await apiClient[":id"].access[":accessId"].$delete({
+      param: { id: props.notebook.id, accessId },
+    });
+    if (!response.ok) throw new Error(await readErrorMessage(response, t().revokeAccessFailed));
+    wrote = true;
+  };
+  // Changes are collected in the dialog and saved together; the list here shows what is stored.
+  const edit = async () => {
+    // The list missed a saved change: read it first, so the dialog never starts from an old list.
+    if (reconcileError()) {
+      await reconcile();
+      if (reconcileError()) return;
+    }
+    const entries = accessEntries.data();
+    if (!entries) return;
+    wrote = false;
+    await openAccessDialog({
+      resourceName: props.notebook.name,
+      subtitle: t().accessDialogSubtitle,
+      initialEntries: visibleEntries(entries),
+      grantAccess,
+      updateAccess,
+      revokeAccess,
+    });
+    // Awaited, so a second click waits for the saved list instead of opening the old one.
+    if (wrote) await reconcile();
+  };
+  const run = () => {
+    if (running) return;
+    running = true;
+    edit()
+      .catch((error: Error) => prompts.error(error.message))
+      .finally(() => {
+        running = false;
+      });
   };
 
   return (
     <SettingsGroup title={t().peopleGroups} description={t().peopleGroupsDescription}>
+      <SettingsGroup.Action>
+        <Button size="sm" variant="secondary" disabled={!accessEntries.data()} onClick={run}>
+          <i class="ti ti-pencil" aria-hidden="true" />
+          {t().editAccess}
+        </Button>
+      </SettingsGroup.Action>
       <Show when={!accessEntries.loading()} fallback={<Placeholder state="loading" variant="panel" title={t().loadingAccess} />}>
         <Show
           when={accessEntries.data()}
@@ -124,34 +195,11 @@ export function PermissionsSection(props: { notebook: Notebook }) {
         >
           {(entries) => (
             <PermissionEditor
-              // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
-              initialEntries={entries().filter((entry) => entry.serviceAccountKind !== "resource_bound")}
-              canEdit
-              grantAccess={async (principal, permission) => {
-                const response = await apiClient[":id"].access.$post({
-                  param: { id: props.notebook.id },
-                  json: { principal, permission },
-                });
-                if (!response.ok) throw new Error(await readErrorMessage(response, t().grantAccessFailed));
-                const created = (await response.json()) as AccessEntry;
-                reconcile();
-                return created;
-              }}
-              updateAccess={async (accessId, permission) => {
-                const response = await apiClient[":id"].access[":accessId"].$patch({
-                  param: { id: props.notebook.id, accessId },
-                  json: { permission },
-                });
-                if (!response.ok) throw new Error(await readErrorMessage(response, t().updateAccessFailed));
-                reconcile();
-              }}
-              revokeAccess={async (accessId) => {
-                const response = await apiClient[":id"].access[":accessId"].$delete({
-                  param: { id: props.notebook.id, accessId },
-                });
-                if (!response.ok) throw new Error(await readErrorMessage(response, t().revokeAccessFailed));
-                reconcile();
-              }}
+              initialEntries={visibleEntries(entries())}
+              canEdit={false}
+              grantAccess={grantAccess}
+              updateAccess={updateAccess}
+              revokeAccess={revokeAccess}
             />
           )}
         </Show>
@@ -159,7 +207,7 @@ export function PermissionsSection(props: { notebook: Notebook }) {
       <Show when={reconcileError()}>
         <div class="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300">
           <span>{reconcileError()}</span>
-          <RetryButton loading={accessEntries.refreshing()} onClick={() => reconcile()} />
+          <RetryButton loading={accessEntries.refreshing()} onClick={() => void reconcile()} />
         </div>
       </Show>
     </SettingsGroup>

@@ -5,10 +5,32 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-01
+updated: 2026-11-03
 ---
 
 # Deprecations and migrations
+
+## Authenticated grants apply only to people
+
+**Breaking:** “All signed-in people” (`authenticated`) now includes people
+and guests, with their delegated credentials, and excludes agents and other
+service accounts. Public grants keep their behavior. Give affected machines
+a direct or group grant before upgrading. Third-party apps using an older
+`@k2b/cloud` keep the previous behavior until their dependency is updated and
+they are redeployed. Run the read-only
+[pre-switch inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people)
+and review app-owned copies of the predicate before switching.
+
+## New agent API keys act as their account
+
+For standalone and agent keys, `POST /api/admin/identity/service-accounts/<id>/api-keys`
+with `access: "full"` and no `scopes` now stores `read`, `write`, and `admin`.
+Explicit scopes are deprecated for new keys but remain accepted unchanged.
+Existing keys, including empty-scope keys, keep their limits. No migration
+widens issued keys. New OAuth clients from `cld admin agents create` also
+include `admin`; existing clients are unchanged. Scopes do not grant roles or
+resource permissions. See [Standalone service accounts and agents](/en/docs/identity/service-accounts)
+for issuance and the `cld admin agents keys` commands.
 
 ## Capability targets: major release operator note
 

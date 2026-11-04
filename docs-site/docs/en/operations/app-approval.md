@@ -734,12 +734,17 @@ retries delivery itself. An answer of 410 means the device's subscription is
 gone, so Core clears that token from the account's devices. Revoked devices
 are never woken.
 
-For an Action approval asked outside Cloud's pages, Core sends the same body
+For an Action approval that no signed-in browser tab shows, Core sends the same body
 with `kind: "action"` and the approval ID as `requestRef`. It wakes only active
 devices that called `inbox` and registered a push token. Each device gets at
 most one Action wake-up in 30 seconds while the previously woken request is still
 open. Cloud Login counts Action wake-ups separately from sign-ins.
-Requests from signed-in browser turns do not trigger an Action wake-up.
+While a signed-in tab streams the chat, its requests do not trigger an Action
+wake-up. When the last such tab closes and a request still waits, Core sends
+the wake-up then. Each request wakes the devices at most once, and a failed
+push is not retried. A Core replica that stops without closing its streams
+leaves their watches to expire after 30 seconds; no wake-up follows for those
+chats, but the Pending approvals notice does on its next run.
 A `400` from an older Cloud Login server leaves the token unchanged.
 Sign-in wake-ups keep their original body without `kind`. Cloud Login uses
 separate Web Push topics for Actions and sign-ins, so one does not replace the

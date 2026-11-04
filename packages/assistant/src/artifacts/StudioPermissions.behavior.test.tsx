@@ -100,7 +100,7 @@ describe("Studio sharing in the shared access dialog", () => {
       const services = ui.section("Dienstkonten");
       expect(services.textContent).toContain("Code von einkauf@beispiel.de");
       expect(ui.row("Code von einkauf@beispiel.de").textContent).toContain("Dienstkonto eines Postfachs");
-      expect(services.textContent).toContain("Wer den Code bearbeitet, handelt mit diesem Recht.");
+      expect(services.textContent?.match(/Wer den Code bearbeitet, handelt mit diesem Recht\./g)).toHaveLength(1);
       const levels = Array.from(ui.row("Code von einkauf@beispiel.de").querySelectorAll('[role="option"]')).map((node) =>
         node.textContent?.trim(),
       );
@@ -127,8 +127,7 @@ describe("Studio sharing in the shared access dialog", () => {
     }
   });
 
-  // TODO(#2595): passes once the main sync brings #2595's code icon for `code` accounts to feat/code; then make it a test.
-  test.todo("a Code account's row shows the code icon in the square service-account avatar", async () => {
+  test("a Code account's row shows the code icon in the square service-account avatar", async () => {
     const ui = await setup();
     try {
       expect(ui.row("Code von einkauf@beispiel.de").querySelector('[data-shape="square"] .ti-code')).not.toBeNull();

@@ -10,6 +10,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
+import { checkFixtureSessionOrigin } from "../../../../../../../scripts/fixtures/session-origin";
 import { browserName, keptThrough, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
@@ -165,6 +166,8 @@ beforeAll(async () => {
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
+      const refused = await checkFixtureSessionOrigin(request);
+      if (refused) return refused;
       const url = new URL(request.url);
       if (url.pathname.startsWith("/_ssr/")) return new Response(Bun.file(join(root, url.pathname)));
       if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(join(ui, url.pathname.slice(4))));
@@ -199,6 +202,7 @@ beforeAll(async () => {
       if (url.pathname === "/api/capabilities/v1/catalog") return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
       if (url.pathname.startsWith("/api/")) {
         if (request.method === "GET") return Response.json([]);
+        expect(request.headers.get("cookie")).toContain("session_token=fixture-session");
         const body = request.headers.get("content-type")?.includes("json") ? await request.json() : null;
         writes.push({ method: request.method, path: url.pathname, body });
         for (const wake of writeWaiters) wake();
@@ -249,7 +253,12 @@ beforeAll(async () => {
       }
       const html = pages.get(url.searchParams.get("case") ?? "");
       return html
-        ? new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } })
+        ? new Response(html, {
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+              "set-cookie": "session_token=fixture-session; Path=/; HttpOnly; SameSite=Lax",
+            },
+          })
         : new Response("Not found", { status: 404 });
     },
   });

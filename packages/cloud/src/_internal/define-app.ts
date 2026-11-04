@@ -73,11 +73,13 @@ import { getLocale, resolveLocale } from "../server/locale";
 import { requireAppAccess, stopAppAccessConnections } from "../server/middleware/app-access";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
+import { sessionOriginGuard } from "../server/middleware/session-origin";
 import { preloadAdminCodeApprovals } from "../ssr/admin-status";
 import { createPublicSurfaceHandler, validatePublicSurfaceRoutes } from "./public-surface";
 import "../events/app-access";
 import { createNestedCapabilityQuery } from "../capabilities/nested";
 import { connections } from "../runtime/connections";
+import { DEPENDENCY_STARTUP_BUDGET_MS } from "../runtime/startup-budget";
 import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-template";
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { preloadLayoutAnnouncements, settings as settingsMiddleware } from "../server/middleware/settings";
@@ -281,6 +283,14 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
    * /app/<id> ownership and the reserved /pwa paths.
    */
   routes: readonly string[];
+  /**
+   * Narrow protocol paths authenticated by their own credential (for example
+   * WOPI access_token or a signed webhook). The runtime removes web and app
+   * session cookies before ANY handler on these paths, on every method.
+   * This never grants access: the handler must validate its own credential.
+   * Ordinary publicRoutes retain the mandatory cookie Origin guard.
+   */
+  sessionlessRoutes?: readonly string[];
   /** Platform services requested by this application, visible to administrators. */
   platformPermissions?: readonly PlatformPermission[];
   /**
@@ -738,7 +748,10 @@ export const defineApp = <
 
     // One NATS connection and one Sync instance per process. Ready before
     // anything registers, so a discoverable app can always serve sync work.
+    const dependencyStart = performance.now();
     const processSync = await startProcessSync({ application: meta.id });
+    // Recovery waits share one allowance; application setup retains its lifecycle.
+    const settingsStartupBudget = Math.max(0, Math.floor(DEPENDENCY_STARTUP_BUDGET_MS - (performance.now() - dependencyStart)));
     const cleanup: Array<() => void | Promise<void>> = [() => processSync.stop()];
     let cleanupPromise: Promise<void> | undefined;
     const stopStartedResources = (): Promise<void> =>
@@ -925,6 +938,7 @@ export const defineApp = <
       const invocationApp = { getApp: async (id: string) => (id === meta.id ? meta : null) };
       const publicSurface = createPublicSurfaceHandler(opts.public ? publicRouter : undefined, isDevelopment);
       const server = new Hono<AuthContext>()
+        .use("*", sessionOriginGuard(opts.sessionlessRoutes))
         .all(PUBLIC_SURFACE_PREFIX, publicSurface)
         .all(`${PUBLIC_SURFACE_PREFIX}/*`, publicSurface)
         .use("*", routeTemplate)
@@ -1220,7 +1234,7 @@ export const defineApp = <
 
       stopNotificationRegistration = await startNotificationDefinitionRegistration(meta.id, notifications);
 
-      await loadSettingsCache();
+      await loadSettingsCache(AbortSignal.timeout(settingsStartupBudget));
 
       // The instance can obtain its credential before workers run; routes remain undiscoverable.
       await membership.register();

@@ -275,7 +275,7 @@ for (const width of [1280, 390])
       const services = dialog.locator("section", { has: page.locator("h3", { hasText: /^Dienstkonten/ }) });
       const code = services.locator("li", { hasText: "Code von einkauf-und-rechnungseingang@beispiel.de" });
       await code.getByText("Dienstkonto eines Postfachs", { exact: true }).waitFor();
-      await services.getByText("Wer den Code bearbeitet, handelt mit diesem Recht.", { exact: true }).waitFor();
+      await services.getByText("Wer den Code bearbeitet, handelt mit diesem Recht.").waitFor();
       // Long titles wrap instead of being cut, also on a phone, even when the app's own stylesheet repeats utilities.
       const clipped = (text: string) =>
         services

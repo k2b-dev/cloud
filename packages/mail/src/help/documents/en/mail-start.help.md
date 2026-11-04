@@ -63,8 +63,8 @@ The sidebar contains your mailboxes, with pinned mailboxes first. The open mailb
 
 The head contains:
 
-- View tabs: **All**, **Needs action**, **Assigned to me**, **Waiting for reply**, and **Unassigned**. **More** contains **Later**, **Done**, **Recent activity**, **Kept**, and saved views. Folders, Scheduled, and Send problems have no view tabs.
-- A **Tag** icon next to **Search** when tags exist, a **Search** chip for an active structured search, and **Reset** to clear filters. Remove the Search chip to end that search. The magnifier or `/` opens search in the head; **Search filters** opens its filter builder.
+- View tabs: **All**, **Needs action**, **Assigned to me**, **Waiting for reply**, **Unassigned**, **Later**, **Done**, **Recent activity**, **Kept**, and saved views. The head shows as many of them as its width allows, and **More** holds the rest. The open view always stays visible. Folders, Scheduled, and Send problems have no view tabs.
+- A **Tag** icon next to **Search** when tags exist, a **Search** chip for an active structured search, and **Reset** to clear filters. Remove the Search chip to end that search. The magnifier or `/` opens search in the head; **More filters** opens its filter builder.
 - **Select conversations** replaces the views with a selection count and actions. **Exit selection** brings the views back.
 - **… → Choose list view** switches between conversations and individual messages. The menu also contains mailbox details, synchronization, health, automations, mailing lists, remote images, shared links, email-link handling, and **Settings**. Your access determines the entries. Readers see **About this mailbox**. People who can only see assigned conversations can choose their list view here; the open mailbox's **…** in the sidebar offers them only pin and hide.
 - **Compose** as the primary action when you can send.
@@ -82,7 +82,7 @@ Group rows list the people that the group reaches, as far as your account can se
 
 The center list shows one row per conversation: the sender and the time, the subject with marks for attachments, flags, and assignment, and a preview. Tags and **Waiting** get a fourth line. On a wide screen the list grows, and the subject and messages stay in a calm reading column. The reader groups the messages of that conversation. A long conversation shows its newest messages, and **n older messages** shows the rest. It quietly places meaningful status, assignment, tag, summary, and workflow activity at the time it happened. Technical processing events stay out of the reading flow.
 
-**Reply**, **Reply all**, and **Forward** start the reader's toolbar, followed by the actions you chose with **… > Customize toolbar**. When the reader gets narrow, Reply all and Forward show only their icons, then move into **…** with the actions that no longer fit. **…** always lists every action.
+**Reply**, **Reply all**, and **Forward** start the reader's toolbar, followed by the actions you chose with **… > Customize toolbar**. From tablet width on, the actions have their own row above the subject. When the reader is wide enough, they show their names. When it gets narrower, they show only their icons, then move into **…** with the actions that no longer fit. **…** always lists every action.
 
 Choose **Details** in the mailbox head to open team context, local tags, ownership, comments, reminders, and the longer list of recent activity. On a phone, use the details icon beside **…** in the reader instead. The details stand next to the reader while it keeps enough room. With less room, they open over the reader's end. To get more reading space, hide the conversation list.
 
@@ -94,7 +94,9 @@ Use **View** in a mailbox to choose how its list and reader appear. On large scr
 
 While you read beside the list, **View → Hide conversation list** hides it, and the reader uses the full width. The `[` key hides and shows it. Without a reader beside the list, the switch is unavailable. Mail remembers the choice in this browser.
 
-In columns, **Participants** shows who wrote in the conversation: up to three people, then "+N". Point at it to see their names, grouped as **External**, **Team**, and **Automations**. Mail recognizes team members and automations by the replies Mail sent. A reply from another mail program counts by its sender address. If you see only assigned conversations, you see only the people of those conversations. A narrow list and a phone leave the column out.
+In columns, **Participants** shows who wrote in the conversation: up to three people, then "+N". Point at it to see their names, grouped as **External**, **Team**, and **Automations**. Mail recognizes team members and automations by the replies Mail sent. A reply from another mail program counts by its sender address. If you see only assigned conversations, you see only the people of those conversations. A narrow list and a phone leave the column out. When the list is beside the reader, the same faces end a row's fourth line as soon as someone other than the named sender wrote.
+
+In a team mailbox, **Responsible** shows the face and name of the first responsible person, then "+N" for more. If you are responsible, you come first as "You". Point at it to see every name. Without anyone responsible, it says "Nobody".
 
 Mail remembers each choice for you and this mailbox, separately for phones and large screens. A choice on one phone applies on your other phones too. Without a saved choice, Mail uses Automatic on large screens and Compact on phones. Administrators do not set your default.
 

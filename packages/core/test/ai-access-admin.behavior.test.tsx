@@ -207,7 +207,7 @@ describe("AI administration access", () => {
       ui.button("Add")!.click();
       await until(() => ui.dialog()?.textContent?.includes("1 change") === true);
       expect(ui.row("Code von Werkstatt").textContent).toContain("Service account");
-      expect(ui.dialog()!.textContent).toContain("Whoever edits the Code acts with this permission.");
+      expect(ui.dialog()!.textContent).toContain("Whoever edits the code acts with this right.");
       expect(Array.from(ui.row("Code von Werkstatt").querySelectorAll('[role="option"]')).map((node) => node.textContent)).not.toContain(
         "Manage",
       );

@@ -5,10 +5,12 @@ section: Identity and access
 order: 315
 description: Declare who may use an application and keep entry and discovery decisions consistent.
 tags: [identity, applications, authorization]
-updated: 2026-10-28
+updated: 2026-11-03
 ---
 
 # App access
+
+See [Who may do what](/en/docs/identity/access-model) for the access model.
 
 Declare `access` in `defineApp()` to choose who may use your application.
 Cloud evaluates this rule before application code and uses it to filter
@@ -43,6 +45,12 @@ export const app = defineApp({
 for an application-specific audience. A standalone service account has no user
 roles; it can use `signedIn`, `noGuests`, or an explicit grant. A Cloud app
 session never regains the Cloud administrator role through this check.
+
+Spaces, Grids, Contacts, Mail, Pulse, and Venue use `noGuests()`. Guests and
+credentials delegated by them cannot use these apps through pages, API, CLI,
+capabilities, widgets, or search, even with an object grant. Public-route
+exemptions and independent resource-bound keys retain their contracts.
+Operators should [check affected guests before upgrading](/en/docs/operations/app-access-upgrade#check-guest-access-before-upgrading).
 
 Credentials retain their scopes and resource binding. App access opens the
 application; it does not widen a key or replace route and resource checks.
@@ -192,6 +200,14 @@ participate in the access decision.
 `appAccess.grants()` declares a platform-evaluated list, not a callback to
 application code. `read` means **Use**; `admin` means **Manage access** and also
 includes use. Installation administrators do not receive app use automatically.
+
+An `authenticated` grant means **All signed-in people**, including guests.
+It matches a user access subject, including a person's delegated credentials,
+invocations and mandates. Agents and other service accounts need a direct or
+group grant. Fixed rules such as `appAccess.signedIn()` retain their existing
+behavior; this change applies to grant rows. See the
+[upgrade inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people).
+
 
 When moving from a fixed rule to a list, declare the previous rule as `until`:
 

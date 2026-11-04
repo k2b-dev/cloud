@@ -63,7 +63,7 @@ describe("local group machine management UI", () => {
     test(`${kind}: search keeps the name and kind, submits membership and refreshes after success`, async () => {
       const dom = createDomTestHarness();
       const { AddMember } = modules!;
-      const refreshed = spyOn(navigation, "refreshCurrentPath").mockImplementation(() => {});
+      const refreshed = spyOn(navigation, "swapPage").mockResolvedValue();
       const requests: URL[] = [];
       const originalFetch = globalThis.fetch;
       globalThis.fetch = mock(async (input: string | URL | Request) => {
@@ -105,7 +105,7 @@ describe("local group machine management UI", () => {
       const option = [...dom.document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
         button.textContent?.includes("Named worker"),
       )!;
-      expect(option.textContent).toContain(kind === "agent" ? "Agent" : "Service account");
+      expect(option.textContent).toContain(kind === "agent" ? "Agent" : "Agent (API key only)");
       option.click();
       await flush();
       expect(writes).toEqual([{ type: "service_account", id: "worker", operation: "add" }]);
@@ -121,7 +121,7 @@ describe("local group machine management UI", () => {
       const { ManagersTab, ui } = modules!;
       spyOn(ui.prompts, "confirm").mockResolvedValue(true);
       const error = spyOn(ui.prompts, "error").mockResolvedValue(undefined);
-      const refreshed = spyOn(navigation, "refreshCurrentPath").mockImplementation(() => {});
+      const refreshed = spyOn(navigation, "swapPage").mockResolvedValue();
       const dispose = render(
         () =>
           createComponent(ManagersTab, {
@@ -162,7 +162,7 @@ describe("local group machine management UI", () => {
         dom.cleanup();
       };
       expect(dom.root.textContent).toContain("Named worker");
-      expect(dom.root.textContent).toContain(kind === "agent" ? "Agent" : "Service account");
+      expect(dom.root.textContent).toContain(kind === "agent" ? "Agent" : "Agent (API key only)");
       const remove = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Remove Named worker"]');
       expect(remove).not.toBeNull();
       remove!.click();

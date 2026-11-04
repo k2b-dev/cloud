@@ -15,12 +15,12 @@ import { agentIdFromPath } from "./agent-id";
 /** One agent or standalone service account: its picture, which opens "Change profile picture", and its facts. */
 export default ssr<AuthContext>(async (c) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
-  const user = expectUserBackedActor(c);
+  expectUserBackedActor(c);
   const id = agentIdFromPath(c.req.param("id"));
   const account = id ? await serviceAccounts.get({ id }) : null;
   if (!account || !(account.kind === "standalone" || account.kind === "agent")) return c.notFound();
-  const [pendingRequestsPage, picture, creator] = await Promise.all([
-    accountsService.accountRequest.list({ access: { userId: user.id, isAdmin: true }, filter: { status: "pending" } }),
+  const [pendingRequests, picture, creator] = await Promise.all([
+    accountsService.accountRequest.countPending(),
     getServiceAccountAvatarState({ id: account.id }),
     account.createdBy ? accountsService.user.get({ id: account.createdBy }) : Promise.resolve(null),
   ]);
@@ -57,13 +57,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: account.name },
       ]}
     >
-      <AccountsWorkspace
-        active="agents"
-        ancestor
-        isAdmin
-        pendingRequests={pendingRequestsPage.total}
-        scrollPreserveKey="accounts-agent-detail"
-      >
+      <AccountsWorkspace active="agents" ancestor isAdmin pendingRequests={pendingRequests} scrollPreserveKey="accounts-agent-detail">
         <div class="flex flex-col gap-3">
           <div class="flex min-w-0 items-center gap-4 py-2" style="view-transition-name: accounts-agent-title">
             <AgentPictureTrigger id={account.id} name={account.name} avatarHash={picture?.avatarHash ?? null} />

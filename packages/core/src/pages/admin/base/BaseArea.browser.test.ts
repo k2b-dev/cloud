@@ -241,3 +241,19 @@ test("Sign-in shows the options of an account type only while it is on; FreeIPA 
   expect(await visible("Test connection").isDisabled()).toBe(true);
   expect(errors).toEqual([]);
 }, 30_000);
+
+test("CLI access settings save from the real form with a browser session and canonical Origin", async () => {
+  await goto("/admin/base/cli");
+  await page.getByRole("combobox", { name: "Who may install cld plugins" }).click();
+  await page.getByRole("option", { name: "All accounts, including guests", exact: true }).click();
+  const sent = page.waitForRequest((candidate) => candidate.method() === "PUT");
+  const saved = page.waitForResponse((candidate) => candidate.request().method() === "PUT");
+  await visible("Save").click();
+  const request = await sent;
+  expect(request.postDataJSON().updates).toEqual({ "cli.plugins.access": "all_users" });
+  expect((await request.allHeaders()).cookie).toContain("session_token=fixture-session");
+  expect((await request.allHeaders()).origin).toBe(fixture.url);
+  expect((await saved).status()).toBe(204);
+  expect(fixture.saves()).toBe(1);
+  expect(errors).toEqual([]);
+}, 30_000);

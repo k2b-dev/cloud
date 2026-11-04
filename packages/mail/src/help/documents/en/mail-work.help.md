@@ -15,7 +15,7 @@ To narrow the search, use the search-in button. Choose any combination of **Send
 
 **Place** starts at **Whole mailbox**. If you started in a folder, choose that folder to search only there. After you open search with the magnifier or `/`, clearing or deleting the text restores the starting view and keeps the field open. **Reset**, **Cancel**, or Escape returns to the view where you started; closing an open options menu with Escape leaves search open until you press Escape again.
 
-For more conditions, such as dates, recipients, attachments, folders, tags, or collaboration state, choose **Search filters**.
+For more conditions, such as dates, recipients, attachments, folders, tags, or collaboration state, choose **More filters**. On a phone, **Search in**, **Place**, and **More filters …** share one menu, and its button names the current choice, such as **Everything · Whole mailbox**.
 
 The filter dialog shows the current search as conditions that you can edit. Choose **Add filter** for another field. When several filters are active, choose whether all filters or any filter must match. **Advanced conditions** stays collapsed until you need alternative or nested groups.
 
@@ -53,7 +53,7 @@ When extracted attachment text matches, the result names the attachment and show
 
 ## Use follow-up, assignment, and folders for different purposes {icon="layout-list"}
 
-The view tabs in the head show what happens next and who owns the work. Open **More** for Later, Done, Recent activity, Kept, and saved views. Except for **Done**, these views leave out conversations that are only in Trash or Junk. Examples are spam that your provider filed there, or mail that someone deleted. When you move such a conversation back, it appears again with its next step.
+The view tabs in the head show what happens next and who owns the work. Views that do not fit the head, such as Later, Done, Recent activity, Kept, or saved views, are under **More**. Except for **Done**, these views leave out conversations that are only in Trash or Junk. Examples are spam that your provider filed there, or mail that someone deleted. When you move such a conversation back, it appears again with its next step.
 
 | Place | View | What it shows |
 | --- | --- | --- |
@@ -108,7 +108,7 @@ To act on several conversations, select their checkboxes. Hold **Shift** while y
 - **Partial result:** If Mail can queue only some commands, it keeps the failed conversations selected and reports each failure.
 :::
 
-Choose **Assign** to change the assignees of the selected conversations. Choose **Assign to me**, **Remove me**, or **Remove all assignees**, or search for a person, agent, or standalone service account that can be assigned. A person that you add joins the other assignees and receives one notification for the whole selection. Mail confirms how many conversations changed and offers **Undo**. **Undo** reverses the change only in the conversations that it changed. **Remove all assignees** has no **Undo**. If a conversation no longer belongs to the mailbox, Mail says how many conversations did not change.
+Choose **Assign** to change the assignees of the selected conversations. Choose **Assign to me**, **Remove me**, or **Remove all assignees**, or search for a person or agent that can be assigned. A person that you add joins the other assignees and receives one notification for the whole selection. Mail confirms how many conversations changed and offers **Undo**. **Undo** reverses the change only in the conversations that it changed. **Remove all assignees** has no **Undo**. If a conversation no longer belongs to the mailbox, Mail says how many conversations did not change.
 
 ### Work from Needs action
 
@@ -154,7 +154,7 @@ By default, Mail shows the HTML version of a message and adapts its colors to da
 
 HTML messages keep a limited set of layout, typography, color, spacing, and table styles. Scripts, forms, embedded objects, external stylesheets, and other active content are removed. Remote images stay blocked separately until you choose to load them.
 
-Mail collapses the quoted history of earlier messages. Choose **Show quoted text** to expand it and **Hide quoted text** to collapse it again. An expanded quote stays open while new activity or other live updates arrive.
+Mail collapses the quoted history of earlier messages at the end of a message. Choose **Show quoted text** to expand it and **Hide quoted text** to collapse it again. Quotes between the lines of a reply and forwarded messages stay visible. An expanded quote stays open while new activity or other live updates arrive.
 
 The top actions take the conversation out of the folder that you view, such as Inbox. This also applies when your newest reply is stored in Sent. In views that span folders, such as **All mail** or **Needs action**, they take it out of every folder where it is filed. Your copies in Sent and Drafts stay where they are, and so do messages in Junk, Trash, or the **All Mail** folder of Gmail. The exception is a conversation that is only there.
 
@@ -286,7 +286,7 @@ For composing, drafts, attachments, signatures, and delivery options, see [Write
 
 ## Create reusable views and local tags {icon="layout-list"}
 
-Open **… → Settings → Organization** to create a saved view from folder and collaboration filters. Open saved views under **More** in the head. A view can filter by folder, assignee, next step, local tag, and whether the conversation is in **Later**. A filter for conversations without an assignee works like **Unassigned**: it also finds conversations whose assignees can no longer work on them.
+Open **… → Settings → Organization** to create a saved view from folder and collaboration filters. Saved views are tabs in the head, under **More** when the head has no room for them. A view can filter by folder, assignee, next step, local tag, and whether the conversation is in **Later**. A filter for conversations without an assignee works like **Unassigned**: it also finds conversations whose assignees can no longer work on them.
 
 - **Only me** creates a private view.
 - **Everyone with mailbox access** creates a mailbox view and requires **Edit** access.

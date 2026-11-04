@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { Hono } from "hono";
 import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify } from "jose";
 import { z } from "zod";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
@@ -11,6 +12,7 @@ import { env } from "../config/env";
 import { type CapabilityAppExecutionContext, type CapabilityExecutionContext, defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { UserSchema } from "../contracts/shared";
+import { sessionOriginGuard } from "../server/middleware/session-origin";
 import * as appKeys from "../services/app-keys";
 import * as invocation from "../services/identity/invocation-token";
 import * as settings from "../services/settings";
@@ -318,11 +320,24 @@ test("provider rechecks key revocation for an already issued token before app co
   const active = spyOn(appKeys, "getActiveAppKey").mockResolvedValue({ keyId } as never);
   const locale = spyOn(settings, "get").mockResolvedValue("en");
   try {
-    const routes = createAppCapabilityRoutes(compiled);
+    const routes = new Hono()
+      .use(
+        "*",
+        sessionOriginGuard([], async () => signer.issuer),
+      )
+      .use("*", async (c, next) => {
+        expect(c.req.header("cookie")).toBeUndefined();
+        return next();
+      })
+      .route("/", createAppCapabilityRoutes(compiled));
     const call = () =>
       routes.request("http://provider.test/queries/echo", {
         method: "POST",
-        headers: { authorization: `Bearer ${signed.token}` },
+        headers: {
+          authorization: `Bearer ${signed.token}`,
+          cookie: "session_token=attached-session; pwa_session=attached-app-session",
+          origin: "https://foreign.example.test",
+        },
         body: JSON.stringify({ input: expected.input }),
       });
     expect((await call()).status).toBe(200);

@@ -51,8 +51,12 @@ const germanText: Record<string, string> = {
   "Capabilities and fixed inputs": "Capabilities und feste Eingaben",
   "Runs work independently using the completed chat context at their start. Files and memories remain live.":
     "Läufe arbeiten unabhängig mit dem abgeschlossenen Chatverlauf beim Start. Dateien und Erinnerungen bleiben aktuell.",
-  "Changes apply immediately. At least one administrator must remain.":
-    "Änderungen gelten sofort. Mindestens eine Person muss Administrator bleiben.",
+  "Changes apply when you save them. At least one administrator must remain.":
+    "Änderungen gelten, sobald du sie speicherst. Mindestens eine Person mit Verwaltungsrecht muss bleiben.",
+  "Edit access": "Zugriff bearbeiten",
+  "Project · Assistant": "Projekt · Assistent",
+  "Skill · Assistant": "Skill · Assistent",
+  "Access could not be reloaded.": "Der Zugriff konnte nicht neu geladen werden.",
   "Could not update Project access": "Projektzugriff konnte nicht geändert werden",
   "Link a Skill": "Skill verknüpfen",
   "Search Skills…": "Skills suchen…",
@@ -544,13 +548,13 @@ const germanText: Record<string, string> = {
     "Nutze die Modelle von Gustav in anderen Apps über eine OpenAI-kompatible API.",
   Connection: "Verbindung",
   "Apps with an OpenAI-compatible provider, such as a dictation app, need this address, an API key, and a model ID. They get the models only: no chats, files, or personalization.":
-    "Apps mit einem OpenAI-kompatiblen Anbieter, etwa eine Diktier-App, brauchen diese Adresse, einen API-Schlüssel und eine Modell-ID. Sie bekommen nur die Modelle: keine Chats, keine Dateien und keine Personalisierung.",
+    "Apps mit einem OpenAI-kompatiblen Anbieter, etwa eine Diktier-App, brauchen diese Adresse, einen API Key und eine Modell-ID. Sie bekommen nur die Modelle: keine Chats, keine Dateien und keine Personalisierung.",
   "Base URL": "Base-URL",
   "Copy base URL": "Base-URL kopieren",
-  "API key": "API-Schlüssel",
+  "API key": "API Key",
   "In your profile, create a key with the access “AI models only”.":
     "Erstelle in deinem Profil einen Schlüssel mit dem Zugriff „Nur KI-Modelle“.",
-  "Create API key": "API-Schlüssel erstellen",
+  "Create API key": "API Key erstellen",
   Models: "Modelle",
   "Use one of these model IDs. Requests count toward your Gustav usage limits.":
     "Nutze eine dieser Modell-IDs. Anfragen zählen zu deinen Nutzungslimits bei Gustav.",

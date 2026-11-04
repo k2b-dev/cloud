@@ -1002,7 +1002,12 @@ const renderTable = <TRow extends Record<string, unknown>>(rows: TRow[], columns
   return [renderRow(headers), renderRow(widths.map((width) => "-".repeat(width))), ...values.map(renderRow)].join("\n");
 };
 
-const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCliOptions): CloudCliContext => {
+const createContext = (
+  args: string[],
+  flags: CloudCliFlags,
+  options: ResolvedCliOptions,
+  reload?: () => Promise<ResolvedCliOptions>,
+): CloudCliContext => {
   let bearerToken = options.token;
   const cloudOrigin = options.server ? new URL(options.server).origin : null;
   const authHeaders = () => ({ Authorization: `Bearer ${bearerToken}` });
@@ -1116,6 +1121,19 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
       if (envLacksLocalBrowser()) return false;
       return launchBrowser(url);
     },
+    ...(reload
+      ? {
+          reloadCredentials: async () => {
+            const next = await reload();
+            // Requests stay pinned to the origin this command started with.
+            if (next.server !== options.server)
+              throw new CliError(`Profile "${options.profile}" now uses ${next.server}. Start the command again to use it.`);
+            options.token = next.token;
+            options.refresh = next.refresh;
+            bearerToken = next.token;
+          },
+        }
+      : {}),
   };
 };
 
@@ -1537,7 +1555,9 @@ const runModule = async (module: CloudCliModule, moduleArgs: string[], global: G
     ...resolvedOptions,
     output: takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : resolvedOptions.output,
   };
-  const code = await module.run(createContext(parsed.args, parsed.flags, options));
+  // A reload keeps the profile this command started with, also when another one becomes current meanwhile.
+  const reload = !requiresCloud || helpRequest ? undefined : () => resolveOptions({ ...global, profile: options.profile });
+  const code = await module.run(createContext(parsed.args, parsed.flags, options, reload));
   return code ?? 0;
 };
 

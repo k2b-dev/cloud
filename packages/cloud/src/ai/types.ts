@@ -67,7 +67,7 @@ export type AiProviderId =
   | "vllm-realtime"
   | "openai-compatible";
 
-export const AI_DATA_BOUNDARIES = ["hosted", "private"] as const;
+export const AI_DATA_BOUNDARIES = ["hosted", "private", "restricted"] as const;
 export type AiDataBoundary = (typeof AI_DATA_BOUNDARIES)[number];
 /** @deprecated Use AiDataBoundary. */
 export type AiDataPolicy = AiDataBoundary;

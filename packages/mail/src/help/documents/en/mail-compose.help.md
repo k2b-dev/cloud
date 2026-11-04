@@ -89,7 +89,8 @@ Mail shows a temporary connection problem separately and does not ask you to tak
 
 Drafts live in Cloud as shared drafts.
 
-- **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer. The count is in the workspace head. Each row starts with the subject and shows recipients, a preview, the edit time, and who started the draft.
+- **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer. The count is in the workspace head. Each draft looks like a conversation row: the recipients stand where the sender is, an orange **Draft** tag comes before the subject, and the row shows the preview, an attachment mark, and the edit time. In the columns view, the **Started by** column shows who started the draft.
+- **Delete from the list:** Open the draft's **…** menu or right-click the row, then choose **Delete draft**. On a focused row, you can also press Delete or Backspace. Mail asks before it deletes the draft. The draft stays when somebody has it open in the composer or changed it in the meantime, and Mail tells you why. Drafts that are scheduled or being sent are not in this folder; cancel them in **Outbox** first.
 - **Reply indicator:** A conversation with drafts shows an indicator on Reply.
 - **CLI:** `cld mail draft list` lists these drafts, together with drafts that are scheduled or being sent.
 - **Provider copy:** When the provider allows it, Mail keeps a copy of each draft in the provider's Drafts folder, so other mail programs show it. Drafts that another mail program saves there appear in Mail as shared drafts.
@@ -107,7 +108,7 @@ If the draft was already sent or discarded, a later save from another program ap
 If another session schedules, sends, or discards the draft, every open composer reloads the current draft state. It stops saving and stops renewing its editing lease. The composer stays read-only and allows no second send or takeover. Unsaved local text stays visible. You can copy it or save it as a new independent draft. When the original message belongs to a conversation, **Open message** returns to it.
 
 :::warning Discard draft removes the draft for everyone
-**Discard draft** removes the shared draft for everyone with access to the mailbox. To keep the draft, return to the mailbox instead.
+**Discard draft** in the composer and **Delete draft** in the Drafts folder remove the shared draft for everyone with access to the mailbox. To keep the draft, return to the mailbox instead.
 :::
 
 ## Use signatures and snippets {icon="pencil"}

@@ -76,6 +76,7 @@ export { parseAiSse } from "./client/transport";
 export { CODE_CAPABILITY_TOKEN_HEADER, createCodeCapabilityTransport } from "./code-capability-transport";
 export { authorizeCodeExecution } from "./code-execution";
 export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
+export { type AiConversationWatch, aiApprovalUnwatched, watchAiConversation } from "./conversation-watchers";
 export { listAiCredentialProviderIds } from "./credentials";
 export {
   CLOUD_AI_CHART_MAX_SERIES,

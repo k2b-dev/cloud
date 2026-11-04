@@ -1,4 +1,4 @@
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { openAccessDialog } from "@k2b/cloud/access/ui";
 import type { AiSkill, AiSkillExtraFrontmatter, AiSkillReferenceInput, AiSkillSummary } from "@k2b/cloud/ai";
 import { isAiSkillManualOnly } from "@k2b/cloud/ai/browser";
 import { files as browserFiles } from "@k2b/stdlib/browser";
@@ -79,34 +79,29 @@ const openSkillAccess = async (skill: AiSkillSummary): Promise<void> => {
   );
   if (!access) return;
   const [entries, projects] = access;
-  await prompts.dialog<void>(
-    () => (
-      <div class="flex min-h-0 flex-col gap-3">
-        <p class="text-sm text-secondary">{text("Share this skill through Cloud permissions. At least one administrator must remain.")}</p>
-        <Show when={projects.length}>
-          <NoticeCard
-            tone="info"
-            title={text("Access through projects")}
-            detail={text("Members of these projects can read and use this Skill. Editing permissions stay unchanged.")}
-          >
-            <ul class="flex flex-col gap-1">
-              <For each={projects}>{(project) => <li>{project.name ?? text("Project without access to its details")}</li>}</For>
-            </ul>
-          </NoticeCard>
-        </Show>
-        <PermissionEditor
-          initialEntries={entries}
-          canEdit
-          allowPublic={false}
-          allowServiceAccounts
-          grantAccess={(principal, permission) => assistantApi.grantSkillAccess(skill.id, principal, permission)}
-          updateAccess={(accessId, permission) => assistantApi.updateSkillAccess(skill.id, accessId, permission)}
-          revokeAccess={(accessId) => assistantApi.revokeSkillAccess(skill.id, accessId)}
-        />
-      </div>
+  // Changes are collected in the access dialog and saved together.
+  await openAccessDialog({
+    resourceName: skill.name,
+    subtitle: text("Skill · Assistant"),
+    initialEntries: entries,
+    allowPublic: false,
+    grantAccess: (principal, permission) => assistantApi.grantSkillAccess(skill.id, principal, permission),
+    updateAccess: (accessId, permission) => assistantApi.updateSkillAccess(skill.id, accessId, permission),
+    revokeAccess: (accessId) => assistantApi.revokeSkillAccess(skill.id, accessId),
+    extraSections: (
+      <Show when={projects.length}>
+        <NoticeCard
+          tone="info"
+          title={text("Access through projects")}
+          detail={text("Members of these projects can read and use this Skill. Editing permissions stay unchanged.")}
+        >
+          <ul class="flex flex-col gap-1">
+            <For each={projects}>{(project) => <li>{project.name ?? text("Project without access to its details")}</li>}</For>
+          </ul>
+        </NoticeCard>
+      </Show>
     ),
-    { title: `Access to ${skill.name}`, icon: "ti ti-users", size: "large" },
-  );
+  });
 };
 
 export function AssistantSkillsSettings(props: { refreshKey: number; onOpenEditor: (request: AssistantSkillEditorRequest) => void }) {

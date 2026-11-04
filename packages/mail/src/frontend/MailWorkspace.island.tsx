@@ -126,6 +126,7 @@ import {
   resolveMailWorkspaceUrl,
 } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
+import { mailRowAssignees } from "./_components/mail-row-assignees";
 import { emptyMailSelection, mailRowOlderThanDetail, pickMailSelection } from "./_components/mail-selection-detail";
 import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./_components/mail-sender-preference";
 import { mailSidebarMessages } from "./_components/mail-sidebar-messages";
@@ -1303,6 +1304,7 @@ function createMailboxController(props: MailboxControllerProps) {
   const sharedMailbox = () => data.assignableUsers.length > 1;
   const assigneeNames = (userIds: readonly string[]) =>
     userIds.map((userId) => data.assignableUsers.find((user) => user.id === userId)?.displayName ?? listText().unknownPerson);
+  const rowAssignees = (userIds: readonly string[]) => mailRowAssignees(userIds, data.assignableUsers, listText().unknownPerson);
   /** Shows the new view at once and stores it for this person and mailbox; a failed save keeps it until reload. */
   const changeLargeView = async (large: MailLargeView) => {
     const before = viewPreference();
@@ -2996,6 +2998,7 @@ function createMailboxController(props: MailboxControllerProps) {
     listCounts,
     sharedMailbox,
     assigneeNames,
+    rowAssignees,
     changeLargeView,
     automationUndo,
     assignToMe,
@@ -3210,7 +3213,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
       }
       onLoadMore={controller().loadMoreConversations}
       onRefresh={controller().reconcileWorkspace}
-      columns={wide ? { shared: controller().sharedMailbox(), assigneeNames: controller().assigneeNames } : undefined}
+      columns={wide ? { shared: controller().sharedMailbox(), assignees: controller().rowAssignees } : undefined}
       assignedGroups={controller().listCounts().assignedGroups}
       hiddenDone={(() => {
         const data = controller().data;
@@ -3640,10 +3643,12 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                     error={mailbox.data.draftsError}
                     dateConfig={props.dateConfig}
                     loading={mailbox.routeLoading()}
+                    columns={mailbox.largeLayout().rows === "columns"}
                     onNavigate={async () => {
                       await mailbox.workspaceQuery.loadMore();
                       if (mailbox.workspaceQuery.error()) toast.error(mailbox.workspaceQuery.error()!.message);
                     }}
+                    onRefresh={mailbox.requireWorkspaceReconcile}
                   />
                 )}
               </Show>

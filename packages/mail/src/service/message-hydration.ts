@@ -13,6 +13,7 @@ import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueF
 import { MAX_IMAP_LITERAL_BYTES } from "./connectors";
 import { isMailReceivedSinceSend, isTimelineMessage, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
+import { databaseErrorFacts } from "./database-errors";
 import { allowedEmailInlineStyles } from "./email-inline-style-policy";
 import { type MailActivityChange, mailLive } from "./live";
 import { assertMailboxTransportFence, type MailboxTransportFence } from "./mailbox-transport-fence";
@@ -275,6 +276,23 @@ const findPartPath = (structure: Record<string, unknown>, contentType: string): 
   }
   return null;
 };
+
+// Postgres text and jsonb cannot hold U+0000, and a lone surrogate has no UTF-8 form. Broken mail
+// carries both in bodies, headers and file names, and a write that contains one fails the same way
+// on every attempt. Mail drops NUL and replaces each lone surrogate with U+FFFD; the stored source
+// keeps the original bytes.
+const storableText = (value: string): string => value.replaceAll("\u0000", "").toWellFormed();
+
+const storableValue = <T>(value: T): T => {
+  if (typeof value === "string") return storableText(value) as T;
+  if (Array.isArray(value)) return value.map(storableValue) as T;
+  if (value && typeof value === "object" && [Object.prototype, null].includes(Object.getPrototypeOf(value))) {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [storableText(key), storableValue(entry)])) as T;
+  }
+  return value;
+};
+
+const optionalStorableText = (value: string | null | undefined): string | null => (value ? storableText(value) : null);
 
 const normalizeErrorCode = (error: unknown): string => {
   const code = (error as { code?: unknown } | null)?.code;
@@ -908,13 +926,13 @@ export const hydrateMessageFromSource = async (params: {
               try {
                 const blob = await storeReadableBlob(attachment.content as Readable, attachment.size || null);
                 parts.push({
-                  partPath: attachment.partId || `attachment-${attachmentIndex}`,
-                  contentType: attachment.contentType || "application/octet-stream",
+                  partPath: optionalStorableText(attachment.partId) || `attachment-${attachmentIndex}`,
+                  contentType: optionalStorableText(attachment.contentType) || "application/octet-stream",
                   charset: null,
                   transferEncoding: null,
-                  disposition: attachment.contentDisposition || "attachment",
-                  contentId: attachment.contentId ?? null,
-                  filename: attachment.filename ?? null,
+                  disposition: optionalStorableText(attachment.contentDisposition) || "attachment",
+                  contentId: optionalStorableText(attachment.contentId),
+                  filename: optionalStorableText(attachment.filename),
                   blob,
                   attachment: true,
                 });
@@ -922,8 +940,8 @@ export const hydrateMessageFromSource = async (params: {
                 attachment.release();
               }
             } else {
-              plainText = value.text ?? "";
-              originalHtml = typeof value.html === "string" ? value.html : null;
+              plainText = storableText(value.text ?? "");
+              originalHtml = typeof value.html === "string" ? storableText(value.html) : null;
             }
           }
           await parsePipeline;
@@ -958,13 +976,13 @@ export const hydrateMessageFromSource = async (params: {
           }
 
           const sourceHash = storedSource.contentHash;
-          const protocolFacts = extractMessageProtocolFacts((name) => headers.getFirst(name));
+          const protocolFacts = storableValue(extractMessageProtocolFacts((name) => headers.getFirst(name)));
           const receiptSource =
             protocolFacts.deliveryStatus ||
             /(?:^|;)\s*report-type\s*=\s*["']?disposition-notification\b/iu.test(protocolFacts.contentType ?? "")
               ? await readReceiptSource(storedSource)
               : null;
-          const receipt = receiptSource ? parseMessageReceiptSource(receiptSource) : null;
+          const receipt = receiptSource ? storableValue(parseMessageReceiptSource(receiptSource)) : null;
           const sanitized = originalHtml ? sanitizeIncomingMailHtmlWithRemoteImages(originalHtml) : null;
           originalHtml = null;
           const sanitizedHtml = sanitized?.html ?? null;
@@ -1091,7 +1109,7 @@ export const hydrateMessageFromSource = async (params: {
         SET
           plain_text = ${plainText || null},
           sanitized_html = ${sanitizedHtml},
-          selected_headers = selected_headers || ${selectedHeaders(headers)}::jsonb,
+          selected_headers = selected_headers || ${storableValue(selectedHeaders(headers))}::jsonb,
           protocol_facts = ${protocolFacts}::jsonb,
           source_hash = ${sourceHash},
           hydration_status = 'complete',
@@ -1155,6 +1173,11 @@ export const hydrateMessageFromSource = async (params: {
         WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
       `;
     } else {
+      log.warn("Mail message hydration failed", {
+        messageId: params.messageId,
+        code: normalizeErrorCode(error),
+        ...databaseErrorFacts(error),
+      });
       const { failed, events } = await sql
         .begin(async (tx) => {
           const [failed] = await tx<{ mailbox_id: string; hydration_attempt: number }[]>`

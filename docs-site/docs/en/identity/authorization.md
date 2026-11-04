@@ -10,6 +10,8 @@ updated: 2026-11-03
 
 # Resource authorization
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 The service that reads or changes a resource checks its permission.
 
 Every API route, SSR page, background action, and CLI command should reach the
@@ -76,8 +78,16 @@ type Principal =
 | User | One user |
 | Group | Direct and nested members |
 | Service account | One machine identity: resource-bound, standalone, agent, or Code |
-| Authenticated | Any authenticated user or service account except Code accounts |
+| Authenticated | Any signed-in person, including guests |
 | Public | Every caller, including anonymous requests, except Code accounts |
+
+The authenticated tier means **All signed-in people**. It matches only
+`AccessSubject.type === "user"`, including guests. Sessions, personal API keys
+(`user_delegated`), a person's OAuth credentials, invocations, and mandates
+retain that person's access subject. Agents and other service accounts need
+a direct or group grant: authenticating a machine does not make it a person.
+Public grants retain their existing behavior. Before upgrading, run the
+[people-only access inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people).
 
 ### Discover principals safely
 
@@ -224,10 +234,9 @@ For a standalone or agent service account it includes:
 
 - the direct service-account grant;
 - direct and nested local group grants;
-- authenticated grants;
 - public grants.
 
-A resource-bound account matches direct, authenticated, and public grants,
+A resource-bound account matches direct and public grants,
 but has no independent group membership.
 
 A standalone or agent account has no resource binding, so it is not capped to
@@ -515,10 +524,15 @@ If linking a new entry fails, remove it again. Protect grant mutations with
 ### Keep at least one manager
 
 A resource keeps at least one manager: an `admin` entry for a user, a group,
-all signed-in users, or a standalone or agent service account. A group counts
+all signed-in people, or a standalone or agent service account. A group counts
 regardless of its current members. Public entries never count, and neither do
 resource-bound or user-delegated service accounts: they disappear with their
 key or their user without passing the resource's rules.
+
+`isManagerEntry(entry)` classifies grant rows for last-manager protection.
+An authenticated admin row always counts because it keeps the resource
+manageable by people. The helper takes only the entry; authorize callers with
+the resource resolver before changing grants.
 
 Check every change of an existing grant with `ensureManagerRemains()` from
 `@k2b/cloud/server`, on administration routes too. Lock the resource row, then
@@ -701,8 +715,10 @@ object or app by name.
 
 Pass `findServiceAccount(handle, signal)` to add such service accounts by their
 identifier. Code accounts (`serviceAccountKind: "code"`) appear in that section,
-never offer Manage, and the section adds "Whoever edits the Code acts with this
-permission." while one is listed. Long names wrap instead of being cut. Pass
+never offer Manage, and the section shows one note, naming the resource,
+which includes "Whoever edits the code acts with this right." while accounts
+are listed. The empty section explains how to add one; the note and empty text
+hide while adding an account. Long names wrap instead of being cut. Pass
 `entryDetail` to show the account's `serviceAccountDescription`, such as
 "Service account of a mailbox", as its second line. Send the resource as the lookup's target: your server answers only
 someone who manages that resource, returns nothing for any other identifier,

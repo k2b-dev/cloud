@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { encoding } from "@k2b/stdlib";
 import type { ServerWebSocket } from "bun";
 import * as Y from "yjs";
+import { checkFixtureSessionOrigin } from "../../../../../../scripts/fixtures/session-origin";
 import { notebooksYjs } from "../../../lib/yjs";
 
 export async function startOfflineNotebookFixture() {
@@ -62,6 +63,8 @@ export async function startOfflineNotebookFixture() {
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request, server) {
+      const refused = await checkFixtureSessionOrigin(request);
+      if (refused) return refused;
       const url = new URL(request.url);
       const asset = build.outputs.find((output) => url.pathname === `/${output.path.split("/").at(-1)}`);
       if (asset) return new Response(asset);
@@ -145,13 +148,14 @@ export async function startOfflineNotebookFixture() {
         });
       }
       if (url.pathname === "/api/notebooks/ws") {
+        if (!request.headers.get("cookie")?.includes("session_token=fixture-session")) return new Response(null, { status: 401 });
         if (server.upgrade(request, { data: { noteId: "Note01" } })) return;
         return new Response("Upgrade failed", { status: 400 });
       }
       return new Response(
         '<!doctype html><html><head><style>body{margin:0}#root{height:100vh;display:flex}.cm-editor{min-height:200px}.overflow-hidden{overflow:hidden}.flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1}.k2b-scroll-area{overflow:auto}</style></head><body><div id="root"></div><script type="module" src="/harness.js"></script></body></html>',
         {
-          headers: { "content-type": "text/html" },
+          headers: { "content-type": "text/html", "set-cookie": "session_token=fixture-session; Path=/; HttpOnly; SameSite=Lax" },
         },
       );
     },

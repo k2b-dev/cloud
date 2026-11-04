@@ -234,7 +234,7 @@ suite("Grids explicit machine principals", () => {
         expect(machinePreview.status).toBe(200);
         const machinePreviewBody = await machinePreview.json();
         expect(machinePreviewBody.ok).toBe(true);
-        expect(JSON.stringify(machinePreviewBody.rows)).toContain("Private service account");
+        expect(JSON.stringify(machinePreviewBody.rows)).toContain("Private agent or service account");
         expect(JSON.stringify(machinePreviewBody.rows)).not.toContain(accountName);
 
         // No durable owner means no scheduled/event authority. Both creation and

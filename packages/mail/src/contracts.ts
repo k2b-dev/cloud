@@ -3466,8 +3466,9 @@ export type ConversationDraftSummary = Pick<MailDraft, "id" | "intent" | "subjec
   createdByDisplayName: string;
 };
 
-/** A draft as the Drafts folder lists it. */
-export type DraftFolderItem = ConversationDraftSummary & Pick<MailDraft, "conversationId" | "to" | "cc" | "bcc">;
+/** A draft as the Drafts folder lists it; `revision` lets the list delete exactly the draft it shows. */
+export type DraftFolderItem = ConversationDraftSummary &
+  Pick<MailDraft, "conversationId" | "to" | "cc" | "bcc" | "revision"> & { attachmentCount: number };
 
 export type DraftFolderPage = {
   items: DraftFolderItem[];

@@ -26,20 +26,6 @@ const toIso = (value: Date | string | null): string | null =>
 const stateRecord = (rows: Array<{ state: string; count: number }>): Record<string, number> =>
   Object.fromEntries(rows.map((row) => [row.state, Number(row.count)]));
 
-// The stored mailbox health describes the provider transport. Messages whose
-// hydration failed are invisible there, so an active transport must not read
-// as fully synchronized while message bodies are missing.
-export const deriveOperationalHealth = (
-  stored: { health: MailboxHealth; healthReason: string | null },
-  failedHydrations: number,
-): { health: MailboxHealth; healthReason: string | null } => {
-  if (stored.health !== "active" || failedHydrations <= 0) return stored;
-  return {
-    health: "degraded",
-    healthReason: `${failedHydrations} message${failedHydrations === 1 ? "" : "s"} failed hydration; run \`mail repair hydration\` to retry`,
-  };
-};
-
 export const getMailboxOperationalHealth = async (
   context: MailRequestContext,
   mailboxId: string,
@@ -204,12 +190,12 @@ export const getMailboxOperationalHealth = async (
           ) AS ready
       `;
       const runStates = stateRecord(syncRuns);
-      const failedHydrations = Number(hydration?.failed ?? 0);
-      const operational = deriveOperationalHealth({ health: mailbox.health, healthReason: mailbox.health_reason }, failedHydrations);
+      // Health is the mailbox's own state: its access, connection and folder syncs. A message whose
+      // body failed to load is that message's state; `hydration.failed` counts such messages.
       return mailboxOperationalHealthSchema.parse({
         mailboxId: mailbox.short_id,
-        health: operational.health,
-        healthReason: operational.healthReason,
+        health: mailbox.health,
+        healthReason: mailbox.health_reason,
         syncEnabled: mailbox.sync_enabled,
         bindings: {
           total: Number(bindingCounts?.total ?? 0),
@@ -238,7 +224,7 @@ export const getMailboxOperationalHealth = async (
         hydration: {
           complete: Number(hydration?.complete ?? 0),
           pending: Number(hydration?.pending ?? 0),
-          failed: failedHydrations,
+          failed: Number(hydration?.failed ?? 0),
         },
         commands: {
           states: stateRecord(commandStates),

@@ -503,8 +503,9 @@ const waitFor = async (ready: () => Promise<boolean>, what: string, timeoutMs = 
 
 /**
  * The draft projection worker this suite runs exports, imports, and retires drafts under the same
- * provider lease as sync and hydration. Their jobs wait out that routine contention instead of
- * failing, and so do the direct calls here.
+ * provider lease as sync, hydration, and sends. Their jobs wait out that routine contention instead
+ * of failing, and so do the direct calls here: a sync or hydration finds it as `SYNC_BUSY`, a send as
+ * `REMOTE_RESOURCE_BUSY`, which the outbox job resubmits (#2522).
  */
 const whenProviderFree = async <T>(work: () => Promise<T>, timeoutMs = 60_000): Promise<T> => {
   const deadline = Date.now() + timeoutMs;
@@ -512,7 +513,7 @@ const whenProviderFree = async <T>(work: () => Promise<T>, timeoutMs = 60_000): 
     try {
       return await work();
     } catch (error) {
-      const busy = error instanceof Error && "code" in error && error.code === "SYNC_BUSY";
+      const busy = error instanceof Error && "code" in error && (error.code === "SYNC_BUSY" || error.code === "REMOTE_RESOURCE_BUSY");
       if (!busy || Date.now() >= deadline) throw error;
       await Bun.sleep(25);
     }
@@ -736,7 +737,8 @@ suite("mail sent message projection", () => {
       await sql`UPDATE mail.commands SET attempt = 1, provider_effect_attempt = 1, provider_effect_started_at = now()
         WHERE id = ${command.data.id}::uuid`;
     }
-    expect(await executeOutboxSubmission(outbox!.id)).toBe(expectedState);
+    // The worker may still export the draft or retire an earlier one; the send waits its turn like the outbox job.
+    expect(await whenProviderFree(() => executeOutboxSubmission(outbox!.id))).toBe(expectedState);
     return outbox!;
   };
 
@@ -2203,7 +2205,7 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("an operator's reconcile of a partly accepted send ends the retry of its Sent copy", async () => {
+  test("an operator's reconcile of a partly accepted send checks it once from its recorded SMTP answer", async () => {
     const provider = createProvider("imap");
     try {
       const mailbox = await connect(provider);
@@ -2223,12 +2225,70 @@ suite("mail sent message projection", () => {
       if (!reconcile.ok) throw new Error(JSON.stringify(reconcile.error));
       expect(await executeMaintenanceCommand(reconcile.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
 
-      // The operator took the send over, so its copy retry ends instead of coming back with every schedule.
-      const searches = provider.searches();
-      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+      // The reconcile checks the send: the recorded SMTP answer settles its partial outcome again, its
+      // copy is stored, and nothing is submitted a second time.
+      expect(await delivery(outbox.id)).toMatchObject({ state: "unknown", command_state: "ambiguous" });
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(await delivery(outbox.id)).toMatchObject({ state: "needs_attention", last_error_code: "SMTP_PARTIAL_ACCEPTANCE" });
       expect(await copyRetry(outbox.id)).toMatchObject({ sent_copy_pending: false });
-      expect(provider.searches()).toBe(searches);
-      expect(provider.appends).toEqual(["Drafts"]);
+      expect(provider.submissions()).toBe(1);
+      expect(provider.appends).toEqual(["Drafts", "Sent"]);
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("an operator's reconcile of an unclear send checks Sent and settles it without sending again", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Unclear, then reconciled");
+      // The connection dropped after the server received the message; Sent has no copy yet.
+      provider.failNextSubmission("ECONNECTION", true);
+      const outbox = await send(mailbox, draft.id, draft.revision, "operator-reconciles-unclear", "unknown");
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(await delivery(outbox.id)).toMatchObject({ last_error_code: "AMBIGUOUS_SMTP_OUTCOME", command_state: "needs_attention" });
+
+      // The copy shows up later, for example after the server's own delay.
+      await provider.storeSent(`Message-ID: ${outbox.stable_message_id}\r\nSubject: Unclear, then reconciled\r\n\r\nBody\r\n`, false);
+      const [target] = await sql<{ command_id: string }[]>`
+        SELECT command_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid
+      `;
+      const reconcile = await createMailCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: { kind: "reconcile_effect", commandId: target!.command_id, idempotencyKey: `operator-reconcile-of-unclear-${suffix}` },
+        enqueue: false,
+      });
+      if (!reconcile.ok) throw new Error(JSON.stringify(reconcile.error));
+      const attempts = () =>
+        sql<{ outbox_attempt: number; command_attempt: number }[]>`
+          SELECT outbox.attempt AS outbox_attempt, command.attempt AS command_attempt
+          FROM mail.outbox_submissions outbox JOIN mail.commands command ON command.id = outbox.command_id
+          WHERE outbox.id = ${outbox.id}::uuid`;
+      // Its checks were used up, as for a provider that saves sent mail itself.
+      await sql`UPDATE mail.outbox_submissions SET attempt = 5 WHERE id = ${outbox.id}::uuid`;
+      const [before] = await attempts();
+      expect(await executeMaintenanceCommand(reconcile.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
+      // The attempts fence the outbox worker, so a stale worker never matches the check's claim.
+      expect(await attempts()).toEqual([before!]);
+
+      expect(await executeOutboxSubmission(outbox.id)).toBe("reconciled_accepted");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "reconciled_accepted",
+        last_error_code: null,
+        command_state: "reconciled",
+        draft_state: "sent",
+      });
+      expect(provider.submissions()).toBe(1);
+      // The feed reports each outcome once: unclear, which the check that gave up repeated (#2522), then sent.
+      const feed = await sql<{ result: string }[]>`
+        SELECT metadata ->> 'result' AS result FROM mail.activity_events
+        WHERE target_id = ${outbox.id}::uuid AND action = 'message.sent'
+        ORDER BY id
+      `;
+      expect(feed.map((row) => row.result)).toEqual(["unknown", "sent"]);
     } finally {
       provider.restore();
     }

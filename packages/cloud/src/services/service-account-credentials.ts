@@ -518,7 +518,7 @@ export const createStandaloneApiToken = async (params: {
       name: params.name,
       expiresAt: params.expiresAt,
       createdBy: params.actor.id,
-      scopes: params.access === "models" ? [AI_INFERENCE_SCOPE] : params.scopes,
+      scopes: params.access === "models" ? [AI_INFERENCE_SCOPE] : (params.scopes ?? ["read", "write", "admin"]),
     });
 
     return audit.recordResult({
@@ -556,6 +556,7 @@ export const listOverview = async (config?: {
   pagination?: PageParams;
   filter?: {
     search?: string;
+    automatic?: "hide" | "include";
     serviceAccountKind?: ServiceAccount["kind"];
     credentialStatus?: ServiceAccountCredentialStatus;
     userId?: string;
@@ -564,7 +565,7 @@ export const listOverview = async (config?: {
     resourceId?: string;
     serviceAccountId?: string;
   };
-}): Promise<Paginated<ServiceAccountCredentialOverview>> => {
+}): Promise<Paginated<ServiceAccountCredentialOverview> & { hiddenAutomaticCount?: number }> => {
   const page = Math.max(1, config?.pagination?.page ?? 1);
   const perPage = Math.max(1, Math.min(config?.pagination?.perPage ?? 100, 500));
   const offset = (page - 1) * perPage;
@@ -577,8 +578,16 @@ export const listOverview = async (config?: {
   const resourceId = config?.filter?.resourceId ?? null;
   const serviceAccountId = config?.filter?.serviceAccountId ?? null;
 
-  const [countRow] = await sql<{ count: string }[]>`
-    SELECT COUNT(*)::text AS count
+  const hideAutomatic = config?.filter?.automatic === "hide";
+  // Remove this predicate when runtime keys are no longer issued (step 8).
+  const automatic = sql`EXISTS (
+    SELECT 1 FROM auth.app_workload_instances i
+    WHERE i.credential_id = c.id OR i.previous_credential_id = c.id
+  )`;
+
+  const [countRow] = await sql<{ count: string; automatic_count: string }[]>`
+    SELECT COUNT(*)::text AS count,
+      ${hideAutomatic ? sql`COUNT(*) FILTER (WHERE ${automatic})` : sql`0`}::text AS automatic_count
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     LEFT JOIN auth.users du ON du.id = sa.delegated_user_id
@@ -653,13 +662,16 @@ export const listOverview = async (config?: {
         OR sa.resource_type ILIKE '%' || ${search} || '%'
         OR sa.resource_id ILIKE '%' || ${search} || '%'
       )
+      AND ${hideAutomatic ? sql`NOT ${automatic}` : sql`TRUE`}
     ORDER BY c.created_at DESC, c.id DESC
     LIMIT ${perPage}
     OFFSET ${offset}
   `;
 
-  const total = Number.parseInt(countRow?.count ?? "0", 10);
+  const hiddenAutomaticCount = Number.parseInt(countRow?.automatic_count ?? "0", 10);
+  const total = Number.parseInt(countRow?.count ?? "0", 10) - hiddenAutomaticCount;
   return {
+    ...(hideAutomatic ? { hiddenAutomaticCount } : {}),
     items: rows.map(mapCredentialOverview),
     page,
     perPage,

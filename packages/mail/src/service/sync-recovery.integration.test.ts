@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { connections, createSql, sql } from "@k2b/cloud";
+import { connections, createSql, redis, sql } from "@k2b/cloud";
 import { initializeTestPlatform, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, type ProviderConnectionInput, unavailableProviderLimitSnapshot } from "../contracts";
@@ -473,6 +473,174 @@ suite("mail sync recovery", () => {
     const [binding] = await sql<{ last_error_code: string | null }[]>`
       SELECT last_error_code FROM mail.provider_bindings WHERE id = ${quiet.bindingId}::uuid`;
     expect(binding?.last_error_code).toBeNull();
+  });
+
+  test("a folder job's turn that finds the lease busy runs no database statement", async () => {
+    const fixture = await createSyncedMailbox("busy-turn");
+    const holder = await acquireProviderLease({
+      resource: fixture.resourceId,
+      waiter: `outbox:${crypto.randomUUID()}`,
+      priority: "command",
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    });
+    if (!holder.lock) throw new Error("The test could not take the provider lease");
+    const counter = await countPostgresRoundTrips(connections().database.url);
+    const originalUrl = connections().database.url;
+    try {
+      process.env.DATABASE_URL = counter.url;
+      await initializeTestPlatform();
+      const turn = async (input: { folderId: string; remoteResourceId?: string }) => {
+        let resubmitted: { delayMs?: number; input?: unknown } | undefined;
+        const before = counter.count();
+        await runSyncFolderJob({ input, heartbeat: async () => undefined, resubmit: (options) => (resubmitted = options) });
+        return { statements: counter.count() - before, resubmitted };
+      };
+      // The first turn reads the folder's remote mailbox once and carries it into its retry.
+      const first = await turn({ folderId: fixture.folderId });
+      expect(first.statements).toBe(1);
+      expect(first.resubmitted?.input).toMatchObject({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId });
+      // Every later turn that finds the lease busy asks the lease line only.
+      const later = await turn({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId });
+      expect(later.statements).toBe(0);
+      expect(later.resubmitted?.input).toMatchObject({ remoteResourceId: fixture.resourceId });
+    } finally {
+      process.env.DATABASE_URL = originalUrl;
+      await initializeTestPlatform();
+      await counter.close();
+      await releaseProviderLease(holder.lock);
+    }
+  });
+
+  test("a folder job whose folder is gone leaves the provider breaker as it is", async () => {
+    const fixture = await createSyncedMailbox("gone-folder");
+    // The breaker's window ended: the next job probes the provider.
+    const breaker = `mail:provider-lease-line:{${fixture.resourceId}}:breaker`;
+    await redis.send("HSET", [breaker, "window", "5000", "until", String(Date.now() - 1_000)]);
+    await redis.send("PEXPIRE", [breaker, "60000"]);
+    try {
+      await runSyncFolderJob({
+        input: { folderId: crypto.randomUUID(), remoteResourceId: fixture.resourceId },
+        heartbeat: async () => undefined,
+        resubmit: () => undefined,
+      });
+      // It never reached the provider, so the breaker still waits for a real probe.
+      expect(await redis.send("HGET", [breaker, "window"])).toBe("5000");
+    } finally {
+      await redis.send("DEL", [breaker]);
+    }
+  });
+
+  /** Runs one `mail:sync-folder` job turn and returns whether it asked for a continuation. */
+  const jobTurn = async (folderId: string): Promise<boolean> => {
+    let continued = false;
+    await runSyncFolderJob({
+      input: { folderId },
+      heartbeat: async () => undefined,
+      resubmit: () => {
+        continued = true;
+      },
+    });
+    return continued;
+  };
+  const storedCursor = async (folderId: string) => {
+    const [row] = await sql<{ envelope_cursor: Record<string, unknown> }[]>`
+      SELECT envelope_cursor FROM mail.folders WHERE id = ${folderId}::uuid`;
+    return row!.envelope_cursor;
+  };
+  const warmFolder = async (fixture: SyncFixture): Promise<void> => {
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+    try {
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+    } finally {
+      status.mockRestore();
+    }
+  };
+
+  test("a flag walk never starts on an empty folder, and one left open there ends in one batch", async () => {
+    const fixture = await createSyncedMailbox("empty-flag-walk");
+    await warmFolder(fixture);
+    const flagReads = spyOn(imapSmtpConnector, "fetchFlagChanges").mockResolvedValue([]);
+    try {
+      // A modification sequence bump on an empty folder needs no walk and no continuation.
+      const bumped = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue({ ...EMPTY_INBOX, highestModseq: "5" });
+      try {
+        expect(await jobTurn(fixture.folderId)).toBe(false);
+      } finally {
+        bumped.mockRestore();
+      }
+      expect(await storedCursor(fixture.folderId)).toMatchObject({ highestModseq: "5", flagNextLow: null, flagMaxUid: null });
+
+      // The cursors production holds from before: a walk over UIDs 1..0, with and without its
+      // target. The next batch closes it and asks for no continuation; no migration is needed.
+      for (const stuck of [
+        { flagMaxUid: 0, flagNextLow: 1, flagTargetModseq: "8", highestModseq: "5" },
+        { flagMaxUid: 0, flagNextLow: 1, flagTargetModseq: null, highestModseq: "8" },
+      ]) {
+        await sql`
+          UPDATE mail.folders SET envelope_cursor = envelope_cursor || ${stuck}::jsonb WHERE id = ${fixture.folderId}::uuid`;
+        const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue({ ...EMPTY_INBOX, highestModseq: "8" });
+        try {
+          expect(await jobTurn(fixture.folderId)).toBe(false);
+        } finally {
+          status.mockRestore();
+        }
+        expect(await storedCursor(fixture.folderId)).toMatchObject({
+          highestModseq: "8",
+          flagTargetModseq: null,
+          flagNextLow: null,
+          flagMaxUid: null,
+        });
+      }
+      expect(flagReads).not.toHaveBeenCalled();
+    } finally {
+      flagReads.mockRestore();
+    }
+  });
+
+  test("a flag walk over a folder ends after one batch per window", async () => {
+    const fixture = await createSyncedMailbox("bounded-flag-walk");
+    await warmFolder(fixture);
+    // Mail holds UIDs up to 12,000; the provider's modification sequence moved on.
+    await sql`
+      UPDATE mail.folders
+      SET envelope_cursor = envelope_cursor || '{"highestSeenUid": 12000, "countedMessages": 12000}'::jsonb
+      WHERE id = ${fixture.folderId}::uuid`;
+    const flagReads = spyOn(imapSmtpConnector, "fetchFlagChanges").mockResolvedValue([]);
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue({
+      uidValidity: "10",
+      uidNext: 12_001,
+      highestModseq: "9",
+      messages: 12_000,
+    });
+    try {
+      let batches = 0;
+      while (await jobTurn(fixture.folderId)) {
+        batches += 1;
+        if (batches > 10) throw new Error("The flag walk did not end");
+      }
+      // Three windows of 5,000 UIDs: two continuations, then the walk ends.
+      expect(batches).toBe(2);
+      expect(flagReads).toHaveBeenCalledTimes(3);
+      expect(await storedCursor(fixture.folderId)).toMatchObject({ highestModseq: "9", flagNextLow: null, flagMaxUid: null });
+
+      // A walk whose server stops reporting a modification sequence stops too, without claiming
+      // the changes it did not read.
+      status.mockResolvedValue({ uidValidity: "10", uidNext: 12_001, highestModseq: "12", messages: 12_000 });
+      expect(await jobTurn(fixture.folderId)).toBe(true);
+      // Without one, reconcile windows carry the flags instead.
+      status.mockResolvedValue({ uidValidity: "10", uidNext: 12_001, highestModseq: null, messages: 12_000 });
+      const windows = spyOn(imapSmtpConnector, "fetchUidWindow").mockResolvedValue([]);
+      try {
+        await syncFolderBatch(fixture.folderId, async () => undefined);
+      } finally {
+        windows.mockRestore();
+      }
+      expect(await storedCursor(fixture.folderId)).toMatchObject({ highestModseq: "9", flagNextLow: null, flagTargetModseq: null });
+    } finally {
+      status.mockRestore();
+      flagReads.mockRestore();
+    }
   });
 
   test("idle commits skip unchanged metadata while preserving freshness, history and changed-state recovery", async () => {

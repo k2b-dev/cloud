@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import type { CloudRuntime } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
+import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
 import { settings } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { dates } from "@k2b/stdlib";
@@ -10,6 +11,7 @@ import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import apiRoutes from "./api";
+import { app } from "./config";
 import type { PublicSection, PublicStatus, Venue } from "./contracts";
 import "./frontend/ssr-test-plugin";
 
@@ -19,6 +21,7 @@ const suite = suiteFor("database", "nats", "valkey");
 setDefaultTimeout(30_000);
 
 const venueApp = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>()
+  .use(requireAppAccess(app.meta, async () => new Response("denied", { status: 403 })))
   .use("*", async (c, next) => {
     c.set("runtime", { apps: [] });
     await next();

@@ -34,8 +34,9 @@ export function MailboxViewTabs(props: {
     () => props.items,
     (href) => props.onOpenHref(href),
   );
-  // A direct child of the head's views slot, so the shared head rules size and scroll the strip.
-  return <ViewTabs label={messages().mailboxViews} items={props.items} current={props.current} />;
+  // A direct child of the head's views slot, so the shared head rules size and scroll the strip. Every view may stand
+  // in the strip: how many do follows the head's room, and the rest wait under More.
+  return <ViewTabs label={messages().mailboxViews} items={props.items} current={props.current} max={props.items.length} fit />;
 }
 
 type MailboxFilterContext = {

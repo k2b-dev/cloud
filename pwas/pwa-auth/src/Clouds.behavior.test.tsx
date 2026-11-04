@@ -68,6 +68,7 @@ for (const scenario of [
         await Bun.sleep(10);
         setRequests([]);
       },
+      recheck: noop,
       revoke: noop,
       syncPush: noop,
       forget: noop,
@@ -97,14 +98,17 @@ for (const scenario of [
       expect(dialog).not.toBeNull();
       expect(dialog.querySelector("output")?.textContent).toBe("123456");
       const title = scopes ? (scenario.locale === "de" ? "Terminal-Anmeldung (Cloud CLI)" : "Terminal sign-in (Cloud CLI)") : binding.label;
-      expect(dialog.querySelector("h2")?.textContent).toBe(title);
-      expect([...dom.root.querySelectorAll(".auth-request-row > span")].map((row) => row.textContent)).toEqual(
-        Array(queued ? 2 : 1).fill(scopes ? title : "Sign-in request"),
+      expect(dialog.querySelector("h2")?.textContent).toBe(scopes ? title : t.loginTitle({ cloud: binding.label }));
+      // The card says what waits in one line; several sign-ins are counted.
+      expect(dom.root.querySelector('.auth-status[data-tone="pending"] b')?.textContent).toBe(
+        queued ? t.loginRequests({ count: 2 }) : scopes ? title : t.loginRequest,
       );
       const context = dialog.querySelector(".auth-decision__request")!;
       expect(context.querySelector("p:not(.auth-decision__started)")?.textContent).toBe(scopes ? t.terminalComparison : t.loginComparison);
       if (scopes) {
-        expect(dialog.querySelector(".k2b-panel-dialog__header p")?.textContent).toBe(queued ? `${binding.label} · 1 / 2` : binding.label);
+        expect(dialog.querySelector(".k2b-panel-dialog__header p")?.textContent).toBe(
+          queued ? `${binding.label} · cloud.example.org:8443 · 1 / 2` : `${binding.label} · cloud.example.org:8443`,
+        );
         const labels = [...dialog.querySelectorAll("dl dt")];
         expect(labels.map((label) => label.textContent)).toEqual(
           scenario.locale === "de" ? ["Cloud", "Gültig für", "Berechtigungen"] : ["Cloud", "Valid for", "Permissions"],
@@ -130,14 +134,16 @@ for (const scenario of [
         }
       } else {
         expect(dialog.querySelector("dl")).toBeNull();
-        expect(dialog.querySelector(".k2b-panel-dialog__header p")).toBeNull();
+        // The head always names the Cloud's address.
+        expect(dialog.querySelector(".k2b-panel-dialog__header p")?.textContent).toBe("cloud.example.org:8443");
       }
       if (!queued) {
         document.querySelector<HTMLButtonElement>("dialog .k2b-bottom-sheet__handle")!.click();
         await Bun.sleep(30);
         expect(document.querySelector("dialog[open]")).toBeNull();
         expect(decisions).toEqual([]);
-        dom.root.querySelector<HTMLButtonElement>(".auth-request-row button")!.click();
+        // While the request waits, the whole card opens it again.
+        dom.root.querySelector<HTMLButtonElement>(".auth-cloud__open")!.click();
         await Bun.sleep(30);
       }
       const approve = [...document.querySelectorAll<HTMLButtonElement>("dialog button")].find(
@@ -227,6 +233,7 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "expired", "loa
         setActions([]);
       },
       decideChange: noop,
+      recheck: noop,
       revoke: noop,
       syncPush: noop,
       forget: noop,
@@ -250,11 +257,16 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "expired", "loa
         await Bun.sleep(30);
         expect(document.querySelector("dialog[open]")).toBeNull();
         expect(dom.root.textContent).toContain("2 more waiting in Cloud");
-        expect(dom.root.querySelector(".auth-action-row")?.textContent).toContain("Files · <a href=");
-        dom.root.querySelector<HTMLButtonElement>(".auth-action-row button")!.click();
-        // The view loads on the row's button; no sheet opens before it is there.
+        expect(dom.root.querySelector('.auth-status[data-tone="pending"] b')?.textContent).toBe("Approval request");
+        // The card's name carries the request as text, never as markup.
+        expect(dom.root.querySelector(".auth-cloud__open")?.getAttribute("aria-label")).toBe(
+          `Test Cloud, cloud.example.org. Approval request, ${view.sentence}, just now`,
+        );
+        expect(dom.root.querySelector(".auth-cloud a")).toBeNull();
+        dom.root.querySelector<HTMLButtonElement>(".auth-cloud__open")!.click();
+        // The view loads on the card; no sheet opens before it is there.
         await Bun.sleep(0);
-        expect(dom.root.querySelector(".auth-action-row button")?.getAttribute("aria-busy")).toBe("true");
+        expect(dom.root.querySelector(".auth-cloud__open")?.getAttribute("aria-busy")).toBe("true");
         expect(document.querySelector("dialog[open]")).toBeNull();
       }
       loaded.resolve();
@@ -269,20 +281,29 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "expired", "loa
       expect(reads).toEqual(["action"]);
       if (scenario === "load" || scenario === "digest") {
         expect(document.querySelector("dialog[open]")).toBeNull();
-        const failed = dom.root.querySelector('.auth-action-row [role="alert"]');
-        expect(failed?.textContent).toBe("Could not load. Check it in Cloud.");
-        expect(dom.root.querySelector(".auth-action-row time")).toBeNull();
-        expect(dom.root.querySelector(".auth-action-row button")?.hasAttribute("aria-busy")).toBe(false);
+        // One error line with a reload in the card's place; the card itself is no longer a button.
+        const failed = dom.root.querySelector('.auth-status [role="alert"]');
+        expect(failed?.textContent).toBe("Approval not loaded. The approval could not be loaded. Check it in Cloud.");
+        expect(dom.root.querySelector(".auth-cloud__open")).toBeNull();
+        const reload = dom.root.querySelector<HTMLButtonElement>(".auth-status__reload")!;
+        expect(reload.getAttribute("aria-label")).toBe("Check again");
+        reload.click();
+        await Bun.sleep(0);
+        expect(reload.hasAttribute("data-busy")).toBe(true);
+        expect(reads).toEqual(["action", "action"]);
         return;
       }
       const dialog = document.querySelector("dialog[open]")!;
       // The first frame already shows the whole request.
       expect(dialog.textContent).not.toContain("Loading");
-      expect(dialog.querySelector(".auth-action-frame")?.textContent).toContain("Files on cloud.example.org wants to:");
-      expect(dialog.textContent).toContain("Requested by Assistant");
-      expect(dialog.querySelector("blockquote")?.textContent).toBe(view.sentence);
+      // The head names the Cloud and its address; the request is the headline; then who runs it and who asked.
+      expect(dialog.querySelector("h2")?.textContent).toBe("Approval on Test Cloud");
+      expect(dialog.querySelector(".k2b-panel-dialog__header p")?.textContent).toBe("cloud.example.org");
+      expect(dialog.querySelector(".auth-action-ask")?.textContent).toBe(view.sentence);
       expect(dialog.textContent).toContain("<img src=x> Details");
-      expect(dialog.querySelector("dl")?.textContent).toContain("Chat<b>Chat</b><b>Name</b><script>text</script>");
+      expect(dialog.querySelector("dl")?.textContent).toContain(
+        "AppFilesRequested byAssistant · Chat “<b>Chat</b>”<b>Name</b><script>text</script>",
+      );
       expect(dialog.querySelector("dl")?.textContent).toContain("2026");
       expect(dialog.querySelector("dl")?.textContent).not.toContain("2026-10-11");
       expect(dialog.textContent).toContain("Shortened. See everything in Cloud under My account → Approvals.");
@@ -294,7 +315,7 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "expired", "loa
         await Bun.sleep(10);
         expect(dialog.querySelector("h3")?.textContent).toBe("Expired");
         expect(dialog.textContent).toContain("This request has expired. Nothing happens.");
-        expect(dialog.querySelector("blockquote")).toBeNull();
+        expect(dialog.querySelector(".auth-action-ask")).toBeNull();
         expect(decisions).toEqual([]);
         return;
       }

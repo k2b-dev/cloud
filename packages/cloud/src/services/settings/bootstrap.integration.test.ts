@@ -3,6 +3,8 @@ import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { redis, sql } from "../../runtime/clients";
 import { connections } from "../../runtime/connections";
 import { stubConnections } from "../../runtime/connections.test-fixture";
+import { MISSING_SETTING } from "../cache-fill";
+import { requestCacheRedis } from "../request-cache-redis";
 import { encryptValue } from "./crypto";
 import { registerSettings, SETTINGS } from "./defaults";
 import { readEnvSettingsStatus } from "./env-status";
@@ -109,6 +111,52 @@ suite("environment-backed settings", () => {
     } finally {
       listValue = undefined;
       await settings.remove(listKey);
+    }
+  });
+
+  test.each([
+    ["bootstrap", "retry"],
+    ["bootstrap", "restart"],
+    ["normalize", "retry"],
+    ["normalize", "restart"],
+  ] as const)("startup invalidates committed %s changes after a failed cache command and %s", async (source, recovery) => {
+    const retryKey = `${key}_cache_${source}_${recovery}`;
+    const cacheKey = `settings:${retryKey}`;
+    const marker = "settings-cache:format";
+    const previousMarker = await redis.get(marker);
+    let value: number | undefined = source === "bootstrap" ? 42 : undefined;
+    registerSettings([
+      { key: retryKey, kind: "number", default: 0, group: "test", description: "Cache recovery probe", envBootstrap: () => value },
+    ]);
+    const client = await requestCacheRedis();
+    const del = client.del.bind(client);
+    let failed = false;
+    const invalidate = spyOn(client, "del").mockImplementation(async (...keys: string[]) => {
+      if (!failed && keys.includes(cacheKey)) {
+        failed = true;
+        const error = new Error("Connection closed");
+        throw recovery === "retry" ? Object.assign(error, { code: "ERR_REDIS_CONNECTION_CLOSED" }) : error;
+      }
+      return del(...keys);
+    });
+    try {
+      // Another application already completed this format's sweep.
+      await redis.set(marker, "encrypted-v2");
+      if (source === "normalize") {
+        await sql`INSERT INTO settings.entries (key, value) VALUES (${retryKey}, ${await encryptValue("42")})`;
+      }
+      await redis.set(cacheKey, source === "normalize" ? JSON.stringify("42") : MISSING_SETTING);
+      if (recovery === "restart") await expect(settings.loadCache()).rejects.toThrow("Connection closed");
+      await settings.loadCache();
+      expect(failed).toBe(true);
+      expect(await settings.read(retryKey)).toMatchObject({ stored: "readable", value: 42 });
+      expect(await settings.get<number>(retryKey)).toBe(42);
+    } finally {
+      invalidate.mockRestore();
+      value = undefined;
+      await settings.remove(retryKey);
+      if (previousMarker === null) await redis.del(marker);
+      else await redis.set(marker, previousMarker);
     }
   });
 

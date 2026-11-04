@@ -3,6 +3,66 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.64.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.63.0...cloud-v0.64.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cloud:** six apps stay closed to guests in their API and CLI too ([#2538](https://github.com/k2b-dev/cloud/issues/2538))
+
+### Features
+
+* **accounts:** a legacy, limited agent key can be replaced by one that acts as the agent ([#2545](https://github.com/k2b-dev/cloud/issues/2545)) ([1899455](https://github.com/k2b-dev/cloud/commit/1899455112fd14e6161a185e011f11514a5e7483))
+* **accounts:** pages, filters and actions change without a document load ([#2535](https://github.com/k2b-dev/cloud/issues/2535)) ([7753c4b](https://github.com/k2b-dev/cloud/commit/7753c4b15804139486bfd58a01bb6d28e8186283))
+* **cloud:** app PWAs can register a shared device and hand it over without QR codes ([#2496](https://github.com/k2b-dev/cloud/issues/2496)) ([7f87e13](https://github.com/k2b-dev/cloud/commit/7f87e1362e3d3069fa7b1cfa6c5e32ed5d8713b1))
+* **cloud:** new agent API keys act exactly as their agent ([#2533](https://github.com/k2b-dev/cloud/issues/2533)) ([b1d113b](https://github.com/k2b-dev/cloud/commit/b1d113b6c38ca3183117d4a519083e31769f09d5))
+* **cloud:** one access dialog collects changes and shows what changes before saving ([#2543](https://github.com/k2b-dev/cloud/issues/2543)) ([f88a68d](https://github.com/k2b-dev/cloud/commit/f88a68dcab732a6cb640b2d4a4c568330cb87dce))
+* **cloud:** six apps stay closed to guests in their API and CLI too ([#2538](https://github.com/k2b-dev/cloud/issues/2538)) ([a891f38](https://github.com/k2b-dev/cloud/commit/a891f3854b77f343cb732133bc2e7ce151e1b042))
+* **cloud:** the file chooser is a compact file dialog ([#2481](https://github.com/k2b-dev/cloud/issues/2481)) ([f771fd0](https://github.com/k2b-dev/cloud/commit/f771fd01eecfe54ac0e67931237e3274f4891fb7))
+* **cloud:** the profile menu hides the sidebar and the panel button matches search and help ([#2486](https://github.com/k2b-dev/cloud/issues/2486)) ([ed36267](https://github.com/k2b-dev/cloud/commit/ed36267bc4862090cfb5321b67efecfd40bd47e8))
+* **mail:** assigned to me groups whose turn it is ([#2518](https://github.com/k2b-dev/cloud/issues/2518)) ([20be83b](https://github.com/k2b-dev/cloud/commit/20be83b2dc1084690271fafac5ba9c8e3573908c))
+* **mail:** Mail opens your last mailbox directly ([#2504](https://github.com/k2b-dev/cloud/issues/2504)) ([5e567c4](https://github.com/k2b-dev/cloud/commit/5e567c47481d80d8ef0a40708be4a675ef86f8e4))
+* **mail:** shared mailboxes show what happened in an events tab ([#2506](https://github.com/k2b-dev/cloud/issues/2506)) ([419acae](https://github.com/k2b-dev/cloud/commit/419acae5c1f22ede57cb331eacf08aeb5f6c070a))
+* **mail:** standard folders show localized names ([#2501](https://github.com/k2b-dev/cloud/issues/2501)) ([3b2b52f](https://github.com/k2b-dev/cloud/commit/3b2b52f34e6d574410462860ffa254c88264a66d))
+* **mail:** the layout menu hides the conversation list ([#2514](https://github.com/k2b-dev/cloud/issues/2514)) ([2fe0508](https://github.com/k2b-dev/cloud/commit/2fe05089a5fd90f010fca3d149d827d8eabe55f5))
+* **mail:** the wide list shows who took part in a conversation ([#2515](https://github.com/k2b-dev/cloud/issues/2515)) ([78a1b4c](https://github.com/k2b-dev/cloud/commit/78a1b4ce485230cd0cfb797e59f851d29249f8ea))
+* **mail:** wide screens show more of the head and a labelled search filter ([#2521](https://github.com/k2b-dev/cloud/issues/2521)) ([c7043a7](https://github.com/k2b-dev/cloud/commit/c7043a7312ba735556ea16eaf0aef40904a82720))
+* **notebooks:** the detail panel shows who is here and who has access ([#2499](https://github.com/k2b-dev/cloud/issues/2499)) ([5c4b65e](https://github.com/k2b-dev/cloud/commit/5c4b65e1d40fc02fcf1e5fe9382a6963c9988522))
+* **pwa-auth:** requests show on the cloud card and open the sign-in sheet ([#2537](https://github.com/k2b-dev/cloud/issues/2537)) ([40a9497](https://github.com/k2b-dev/cloud/commit/40a949783a69933b658cd644b552a54a371a3269))
+* **ui:** details toggles use the info icon ([#2497](https://github.com/k2b-dev/cloud/issues/2497)) ([05aaf5e](https://github.com/k2b-dev/cloud/commit/05aaf5e7dbd5995fced3ebae3137717a177fbba7))
+
+
+### Bug Fixes
+
+* **accounts:** the requests badge counts instead of reading request rows ([#2532](https://github.com/k2b-dev/cloud/issues/2532)) ([afbc7a6](https://github.com/k2b-dev/cloud/commit/afbc7a6dd97e5e9b69f8be88dd50210c7c73dcdd))
+* **chat:** info reopening and send preparation settle reliably in browser tests ([#2505](https://github.com/k2b-dev/cloud/issues/2505)) ([b0e3671](https://github.com/k2b-dev/cloud/commit/b0e3671f1f9dbf260007b496abca5a1b7428df95))
+* **cloud:** secret settings stay encrypted in the shared cache and short-lived sign-in links are stored by hash ([9ca76e8](https://github.com/k2b-dev/cloud/commit/9ca76e8145b4323f77d07041a1fc189299f816df))
+* **grids:** avoid idle workflow polling and queue growth ([#2476](https://github.com/k2b-dev/cloud/issues/2476)) ([ee0ead8](https://github.com/k2b-dev/cloud/commit/ee0ead814e61a93de553552533cc8ed196956456))
+* **mail:** a refused SMTP login waits for a new login instead of returning the draft ([#2513](https://github.com/k2b-dev/cloud/issues/2513)) ([112165f](https://github.com/k2b-dev/cloud/commit/112165fa20313f8de9940de3afad77146badeee2))
+* **mail:** conversation rows open their menu on right-click ([#2502](https://github.com/k2b-dev/cloud/issues/2502)) ([8853032](https://github.com/k2b-dev/cloud/commit/885303294ff38f8a748f46b46e6d711f5f183082))
+* **mail:** reconciling an unclear send actually checks it ([#2512](https://github.com/k2b-dev/cloud/issues/2512)) ([a52b7a5](https://github.com/k2b-dev/cloud/commit/a52b7a57a50c03de6da95d7aed03c09528ca58bf))
+* **mail:** temporary SMTP rejections are retried for about an hour ([#2516](https://github.com/k2b-dev/cloud/issues/2516)) ([15a730d](https://github.com/k2b-dev/cloud/commit/15a730d10fc8abb361403236ef6e2110e6f21c72))
+* **mail:** the phone list shows its head with the automatic layout ([#2508](https://github.com/k2b-dev/cloud/issues/2508)) ([238d6ca](https://github.com/k2b-dev/cloud/commit/238d6ca4dd111707dd38fce2edd1709adb73d38a))
+* **mail:** the reading pane shows a message's attachments ([#2489](https://github.com/k2b-dev/cloud/issues/2489)) ([edf1b4f](https://github.com/k2b-dev/cloud/commit/edf1b4f025cb74d3e99d8e15a5ae63fb970245ed))
+* **notebooks:** typing in notebooks no longer lags ([#2492](https://github.com/k2b-dev/cloud/issues/2492)) ([5861ced](https://github.com/k2b-dev/cloud/commit/5861cedeca224228618bb4200e536f1cbe6a9c68))
+* **ui:** keyboard hints use normal weight ([#2488](https://github.com/k2b-dev/cloud/issues/2488)) ([1638384](https://github.com/k2b-dev/cloud/commit/163838488167e687e451d1090ccbbd966a95d427))
+* **ui:** pickers are wide enough for names ([#2490](https://github.com/k2b-dev/cloud/issues/2490)) ([8b8d732](https://github.com/k2b-dev/cloud/commit/8b8d73233d2da7e9cfa373c5127ee56336c77c22))
+* **ui:** search results never flash 'nobody found' or trip a ResizeObserver loop ([#2528](https://github.com/k2b-dev/cloud/issues/2528)) ([eed463d](https://github.com/k2b-dev/cloud/commit/eed463d13c46db1b4a7f610de88770a3be7c0c9c))
+* **ui:** table grips show again after a menu closes before it announced itself ([#2523](https://github.com/k2b-dev/cloud/issues/2523)) ([c41ce83](https://github.com/k2b-dev/cloud/commit/c41ce8390ce203ab4d16b3462303d9d83922680c)), closes [#2520](https://github.com/k2b-dev/cloud/issues/2520)
+* **ui:** the shell no longer restyles the whole page when a node changes ([#2495](https://github.com/k2b-dev/cloud/issues/2495)) ([6bb2c9c](https://github.com/k2b-dev/cloud/commit/6bb2c9c40a572ccdb3e567f2b3d4c654e38b70b6))
+
+
+### Performance Improvements
+
+* **cloud:** guard startup-only Postgres application names ([#2484](https://github.com/k2b-dev/cloud/issues/2484)) ([9ca76e8](https://github.com/k2b-dev/cloud/commit/9ca76e8145b4323f77d07041a1fc189299f816df))
+* **cloud:** recover idle workflow workers every thirty seconds ([#2485](https://github.com/k2b-dev/cloud/issues/2485)) ([c327a3b](https://github.com/k2b-dev/cloud/commit/c327a3b2d88d514b0cb0fd2022942e60fb776409))
+* **cloud:** search and widgets resolve the person once per request ([#2530](https://github.com/k2b-dev/cloud/issues/2530)) ([48f1e59](https://github.com/k2b-dev/cloud/commit/48f1e5952d92946c5dc5c286017b7f5616d122a8))
+* **gateway:** persist app metadata only when it changes ([#2483](https://github.com/k2b-dev/cloud/issues/2483)) ([c0a6e4f](https://github.com/k2b-dev/cloud/commit/c0a6e4fe38f1d503b714a20249ac074a029a0c5a))
+* **mail:** a listened folder is checked once a minute instead of three times ([#2510](https://github.com/k2b-dev/cloud/issues/2510)) ([3074b36](https://github.com/k2b-dev/cloud/commit/3074b3654f981f7407f2bfa17a55b4f1ae2281d1))
+* **mail:** a quiet IMAP listener writes its health at most once a minute ([#2517](https://github.com/k2b-dev/cloud/issues/2517)) ([fe96145](https://github.com/k2b-dev/cloud/commit/fe9614596dd020bd953b2928260c0bc0d5c4895c))
+* **mail:** folder checks of one account reuse its IMAP connection within a minute ([#2519](https://github.com/k2b-dev/cloud/issues/2519)) ([e0b74b0](https://github.com/k2b-dev/cloud/commit/e0b74b032c1be13b1788e07d7b3b45c23256d2e4))
+* **mail:** unchanged folder checks end before a fence, run or commit ([#2509](https://github.com/k2b-dev/cloud/issues/2509)) ([f78ceb7](https://github.com/k2b-dev/cloud/commit/f78ceb743b60b14419db01c057d0be015cb4b873))
+
 ## [0.63.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.62.0...cloud-v0.63.0) (2026-11-02)
 
 

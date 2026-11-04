@@ -222,22 +222,20 @@ describe("Venue settings: Access", () => {
   const apiKey = manager("access-key", { type: "service_account", serviceAccountId: "key-1" }, "Corner Café API keys", {
     serviceAccountKind: "resource_bound",
   });
-  // The editor marks the only manager's remove button with the reason it cannot be removed.
-  const lockedRows = (html: string) => html.match(/aria-description=/g)?.length ?? 0;
-
-  test("shows an agent that manages the venue, so a person managing next to it is not locked", () => {
+  test("lists who may use the venue, agents included, and edits it in the access dialog", () => {
     const html = render("admin", { tab: "access", accessEntries: [person, agent, apiKey] });
 
     expect(html).toContain("Ada Lovelace");
     expect(html).toContain("Shift planner");
     expect(html).toContain("(Agent)");
-    expect(lockedRows(html)).toBe(0);
+    expect(html).toContain("Edit access");
+    // The list only shows what is stored; changing it happens in the dialog.
+    expect(html).not.toContain("Remove Ada Lovelace");
   });
 
-  test("keeps API keys in their own section and does not count them as managers", () => {
+  test("keeps API keys in their own section, so the dialog never counts them as managers", () => {
     const html = render("admin", { tab: "access", accessEntries: [person, apiKey] });
 
     expect(html).not.toContain("Corner Café API keys");
-    expect(lockedRows(html)).toBe(1);
   });
 });

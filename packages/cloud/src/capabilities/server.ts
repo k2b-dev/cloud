@@ -12,9 +12,9 @@ import type { RequestAuthority } from "../server";
 import { canUseApp } from "../services/app-access";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import { capabilityMessages } from "../shared/capability-messages";
-import { DEFAULT_LOCALE, LOCALE_HEADER } from "../shared/locale";
+import { DEFAULT_LOCALE } from "../shared/locale";
 import { readCapabilityResponse } from "./response";
-import { type CapabilityCaller, callerRequest, coreOrigin, unavailable } from "./server-invoke";
+import { type CapabilityCaller, callerRequest, unavailable } from "./server-invoke";
 import { combineCapabilitySignals } from "./signals";
 import type { CapabilityCatalogAppClientResult, CapabilityInvocation, CapabilityReviewClientResult } from "./types";
 
@@ -154,13 +154,11 @@ export async function transferCapabilityStream(
 ): Promise<Response> {
   if (caller.mandate || caller.workload) throw new Error("Capability streams require request authority");
   const path = `/api/capabilities/v1/streams/${verb}`;
-  const headers = new Headers();
+  const source = await callerRequest(caller, path);
+  const headers = new Headers(source.headers);
   headers.set("x-cloud-stream-id", stream.id);
   headers.set("content-type", "application/octet-stream");
-  if (caller.locale) headers.set(LOCALE_HEADER, caller.locale);
-  if (caller.authorization) headers.set("authorization", caller.authorization);
-  if (caller.cookie) headers.set("cookie", caller.cookie);
-  const request = new Request(new URL(path, await coreOrigin()), {
+  const request = new Request(source, {
     method: "POST",
     headers,
     body,

@@ -700,7 +700,11 @@ export function AccessDialog(
                       {(account) => (
                         <div class="flex items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2">
                           <PrincipalAvatar
-                            entry={{ principal: account().principal, serviceAccountKind: account().display.serviceAccountKind }}
+                            entry={{
+                              principal: account().principal,
+                              avatarHash: account().display.avatarHash,
+                              serviceAccountKind: account().display.serviceAccountKind,
+                            }}
                             label={account().display.displayName}
                           />
                           <span class="min-w-0 flex-[1_1_10rem]">
@@ -724,9 +728,11 @@ export function AccessDialog(
                   </li>
                 </Show>
               </ul>
-              <p class="text-[13px] text-dimmed">{t().serviceAccountNote}</p>
-              <Show when={objectAccountRows().some((row) => row.display.serviceAccountKind === "code")}>
-                <p class="text-[13px] text-dimmed">{access().codeEditorAuthority}</p>
+              {/* As in the approved mockup: one note under the rows, or the empty text; neither while adding. */}
+              <Show when={!handleOpen()}>
+                <p class="text-[13px] text-dimmed">
+                  {objectAccountRows().length > 0 ? t().serviceAccountNote({ name: props.resourceName }) : t().serviceAccountsEmpty}
+                </p>
               </Show>
             </PanelDialog.Section>
           </Show>

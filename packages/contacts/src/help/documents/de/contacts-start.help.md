@@ -11,7 +11,7 @@ Kontakte verwaltet Kontaktbücher mit Kontaktdaten, Tags, Kommentaren, Hierarchi
 ## Die Objekte kennen {icon="layout-grid"}
 
 :::reference
-- **Kontaktbuch:** Eine Sammlung von Kontakten mit eigenen Tags, eigenem Zugriff, API-Schlüsseln sowie Einstellungen für Import, Export und Löschen.
+- **Kontaktbuch:** Eine Sammlung von Kontakten mit eigenen Tags, eigenem Zugriff, API Keys sowie Einstellungen für Import, Export und Löschen.
 - **Kontakt:** Eine Person, eine Firma, ein Lieferant, ein Kunde oder eine andere Partei. Ein Kontakt enthält Kontaktwege, Adressen, berufliche Angaben, persönliche Angaben und Bankverbindungen.
 - **Tags:** Begriffe eines Kontaktbuchs zum Filtern und Gruppieren seiner Kontakte.
 - **Detailbereich:** Die Arbeitsansicht, um Details zu lesen, den Kontakt zu bearbeiten, Kommentare hinzuzufügen, den Kontakt zu verschieben und seine Zuordnungen zu ändern.

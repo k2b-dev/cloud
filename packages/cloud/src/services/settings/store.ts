@@ -1,7 +1,7 @@
 /**
  * Settings store — Redis cache-aside read/write primitives.
  *
- * Pattern: each key is cached in Redis with a 5-minute TTL. Value reads try Redis
+ * Pattern: keys are cached in Redis with a 5-minute TTL; secret values stay encrypted. Value reads try Redis
  * first, fall back to DB on miss, and populate Redis. Writes update DB and
  * delete the Redis key (next reader repopulates with fresh DB state).
  *
@@ -26,10 +26,12 @@ import { decryptValue, encryptValue } from "./crypto";
 import { SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
 import { SettingUnreadableError } from "./errors";
 import { assertGeoBudgetPair } from "./geo-budget";
+import { ENCRYPTED_SETTING_PREFIX, encodeSecretCache, readSecretCache } from "./secret-cache";
 
 export { SettingUnreadableError } from "./errors";
 
 const REDIS_KEY = (k: string) => `settings:${k}`;
+const warnedPlaintextKeys = new Set<string>();
 
 type SqlClient = typeof sql;
 
@@ -75,7 +77,7 @@ const resolveFallback = (def: SettingDef | undefined): unknown => {
 };
 
 /**
- * Read a single setting key. Tries Redis first, falls back to DB.
+ * Read a single setting key. Tries Redis first, then DB.
  * On DB hit, populates Redis with TTL. On miss, returns env-fallback or default.
  */
 export const readKey = async (key: string): Promise<unknown> => (await bulkRead([key])).get(key);
@@ -86,7 +88,7 @@ export const readKeyState = async (key: string, db: SqlClient = sql): Promise<Se
   return state;
 };
 
-/** One warm MGET; missing rows are cached independently of local env/defaults. */
+/** One warm MGET; secret entries contain encrypted, key-bound values. */
 export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unknown>> => {
   const result = new Map<string, unknown>();
   if (keys.length === 0) return result;
@@ -110,25 +112,38 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
   const missing: string[] = [];
   const observed = new Map(keys.map((key, i) => [key, cached[i] ?? null]));
   const fills = new Map<string, string | null>();
-  for (const [i, key] of keys.entries()) {
-    const value = cached[i] ?? null;
-    if (value === MISSING_SETTING) {
-      result.set(key, resolveFallback(SETTINGS_MAP.get(key)));
-      continue;
-    }
-    if (value !== null) {
-      try {
-        result.set(key, JSON.parse(value));
-        continue;
-      } catch {
-        /* An old/corrupt value or another reader's fill lease. */
+  const unreadableCacheKeys = new Set<string>();
+  await Promise.all(
+    keys.map(async (key) => {
+      const value = observed.get(key) ?? null;
+      if (value === MISSING_SETTING) {
+        result.set(key, resolveFallback(SETTINGS_MAP.get(key)));
+        return;
       }
-    }
-    missing.push(key);
-  }
+      if (value !== null) {
+        try {
+          const def = SETTINGS_MAP.get(key);
+          if (def?.kind === "secret") {
+            // Never accept a previous release's plaintext JSON secret cache.
+            if (!value.startsWith("!cloud:") && !warnedPlaintextKeys.has(key)) {
+              warnedPlaintextKeys.add(key);
+              console.warn(`[settings] ignoring plaintext cache entry for "${key}"; update all application processes`);
+            }
+            result.set(key, await readSecretCache(key, value));
+          } else result.set(key, JSON.parse(value));
+          return;
+        } catch {
+          // Another process may use the correct APP_SECRET. Preserve its cache
+          // entry while this reader tries the authoritative row and its fallback.
+          if (value.startsWith(ENCRYPTED_SETTING_PREFIX)) unreadableCacheKeys.add(key);
+        }
+      }
+      missing.push(key);
+    }),
+  );
   await Promise.all(
     missing.map(async (key) => {
-      fills.set(key, await claimCacheFill(REDIS_KEY(key), observed.get(key) ?? null));
+      if (!unreadableCacheKeys.has(key)) fills.set(key, await claimCacheFill(REDIS_KEY(key), observed.get(key) ?? null));
     }),
   );
   if (missing.length > 0) {
@@ -147,7 +162,8 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
           const validated = def ? validateSettingValue(def, value) : { ok: true as const, value };
           if (!validated.ok) return;
           result.set(key, validated.value);
-          await completeCacheFill(REDIS_KEY(key), fills.get(key) ?? null, JSON.stringify(validated.value), REDIS_TTL_SEC);
+          const cachedValue = def?.kind === "secret" ? await encodeSecretCache(key, validated.value) : JSON.stringify(validated.value);
+          await completeCacheFill(REDIS_KEY(key), fills.get(key) ?? null, cachedValue, REDIS_TTL_SEC);
         } catch {
           /* Preserve legacy undecryptable-row fallback behavior. */
         }
@@ -159,7 +175,7 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
 };
 
 /**
- * Stored state is per process (APP_SECRET), but the plaintext cache is shared.
+ * Stored state is per process (APP_SECRET); secret cache entries also require it.
  * State reads go directly to Postgres without reading or filling the cache;
  * value reads (`get`, snapshot) keep using the cache.
  */

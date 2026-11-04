@@ -610,7 +610,7 @@ const SkillAccessChangeInput = z
       .regex(/^[a-f0-9]{64}$/)
       .describe("Exact revision from ai.skill.access.read; re-read and review after a conflict."),
     principal: AuthenticatedPrincipalSchema.optional().describe(
-      "Recipient for a NEW grant: user, group, service account, or all authenticated identities. Public access is not supported. Supply principal OR accessId.",
+      "Recipient for a NEW grant: user, group, service account, or all signed-in people including guests. Public access is not supported. Supply principal OR accessId.",
     ),
     accessId: z
       .string()

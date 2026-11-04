@@ -386,7 +386,7 @@ export const lockAccessMutationAuthority = async (
  * Pass the resource's entries before and after the change, read in the
  * transaction that writes it after locking the resource, so concurrent changes
  * see each other. A manager is an `admin` entry for a user, a group, all
- * signed-in users, or a standalone or agent service account; service-account
+ * signed-in people, or a standalone or agent service account; service-account
  * entries need their `serviceAccountKind`. Only a change from at least one
  * manager to none fails, with status 409 and code `LAST_MANAGER`. An app whose
  * own precedence lets another entry shadow `admin` drops the shadowed entries
@@ -482,7 +482,7 @@ export type ResourceAccessAdapter<TResourceId = string> = {
 const principalTierConditions = (params: {
   userId: string | SQLQuery | null;
   serviceAccountId: string | SQLQuery | null;
-  authenticated: boolean;
+  authenticated: boolean | SQLQuery;
   columns: AccessPrincipalColumns;
 }): AccessPrincipalTierConditions => {
   const { userId, serviceAccountId, authenticated, columns } = params;
@@ -521,7 +521,7 @@ export const buildAccessPrincipalTierConditions = (params: {
   principalTierConditions({
     userId: params.subject?.type === "user" ? params.subject.userId : null,
     serviceAccountId: params.subject?.type === "service_account" ? params.subject.serviceAccountId : null,
-    authenticated: params.subject !== null,
+    authenticated: params.subject?.type === "user",
     columns: params.columns,
   });
 
@@ -539,7 +539,7 @@ export const buildAccessPrincipalCondition = (params: { subject: AccessSubject |
  * Returns the highest permission from:
  * - Direct user or service-account access
  * - Direct and nested group memberships for users and active standalone/agent accounts
- * - Authenticated access for every authenticated subject
+ * - Authenticated access for people, including guests
  * - Public access for every subject, including anonymous callers
  * Code accounts match only their own direct entry in every resolver and reader.
  *
@@ -573,7 +573,7 @@ export const getEffectivePermission = async (
   if (accessIds.length === 0) return "none";
 
   // Legacy callers did not provide resource binding or scope context. Keep
-  // their service-account lookup direct-only so the new authenticated/public
+  // their service-account lookup direct-only so the shared principal
   // semantics require an explicit AccessSubject migration.
   const principalMatch = legacyServiceAccountId
     ? sql`a.service_account_id = ${legacyServiceAccountId}::uuid`
@@ -665,7 +665,7 @@ export const getEffectivePermissions = async (params: {
     principalTierConditions({
       userId: sql`s.user_id`,
       serviceAccountId: sql`s.service_account_id`,
-      authenticated: true,
+      authenticated: sql`s.user_id IS NOT NULL`,
       columns: {
         userId: sql`a.user_id`,
         groupId: sql`a.group_id`,

@@ -380,6 +380,41 @@ Keep Core's identity key-encryption keys and the Core/OAuth broker secret out
 of the gateway. Their absence does not make it a separate trust boundary.
 See [runtime configuration](/en/docs/operations/runtime-configuration#set-infrastructure-variables).
 
+## Preserve the browser mutation origin
+
+All Cloud applications require an `Origin` exactly equal to the public origin
+of the stored `app.url` setting for cookie-bearing `POST`, `PUT`, `PATCH` and
+`DELETE` requests and cookie-authenticated WebSocket upgrades. Preserve `Origin`
+and `Sec-Fetch-Site` through the reverse proxy and gateway. Foreign and same-site sibling origins are
+rejected with `403 INVALID_ORIGIN` for HTTP mutations, including logout and SSR
+form actions. A missing or `null` Origin passes only with `Sec-Fetch-Site:
+same-origin`, which a page with `Referrer-Policy: no-referrer` sends with its
+own form posts; without either header the request is rejected. Refused WebSocket upgrades lose session authority; live sockets
+close with `1008 forbidden_origin` to stop reconnecting.
+Do not replace these headers with the proxy's or upstream service's address.
+
+When upgrading, check `app.url` against the address people use. Scripts that
+mutate state with session cookies must send that canonical Origin; prefer an
+explicit Bearer credential for integrations. WOPI, OAuth protocol endpoints,
+signed app-approval commands, token-bound shares, webhooks and ingest retain
+their own credential checks. Their declared sessionless paths cannot gain
+session authority from an attached Cloud cookie. See [Route policies](/en/docs/identity/route-policies#send-browser-mutations-from-the-cloud-origin)
+for the application contract.
+
+Application authors must run their own state-changing Cloud cookie routes through
+`app.start()` too. A separate HTTP server needs the same exact Origin check
+against the public Cloud origin before authenticating cookies or reading the
+body. Pages on another origin cannot mutate Cloud state with Cloud session
+cookies. Keep cookie-authenticated actions on the Cloud origin. For requests
+from a cross-origin embed, use a protocol with its own credential and narrowly
+declared `sessionlessRoutes`; those routes receive no Cloud session authority. Adding a
+CORS allowance or an `access.publicRoutes` entry does not exempt a cookie route.
+
+OAuth clients navigating to `/oauth/logout` now show a confirmation before the
+browser signs out. Cloud server capability and sync-operations transports set
+the canonical Origin when forwarding a session to Core; the originating
+application has already applied the same mandatory ingress check.
+
 ## Prepare the common infrastructure
 
 | Requirement | Used for | Operator responsibility |

@@ -84,7 +84,7 @@ editable list; all built-ins keep fixed rules in the first rollout.
 
 ## Admin diagnostics and configuration
 
-An agent using an administrator person's normal `cld login` profile can read admin diagnostics and configure routine admin settings with the default `read write` scopes. The person must still be an administrator on every request; a standalone client's scopes do not supply that role. Start with `cld admin reference`. Read [Administrator operations](references/administration.md) for setting discovery, protected secret input, app-owned commands and short-lived approval for dangerous actions.
+An agent using an administrator person's normal `cld login` profile can read admin diagnostics and configure routine admin settings with the default `read write` scopes. The person must still be an administrator on every request; a standalone client's scopes do not supply that role. Use `cld admin agents keys create|list|revoke` to manage an agent's API keys; creation prints the token once. New full keys act as their account, while older keys keep their limits. Start with `cld admin reference`. Read [Administrator operations](references/administration.md) for setting discovery, protected secret input, app-owned commands and short-lived approval for dangerous actions.
 
 ## Installed modules
 

@@ -1,17 +1,16 @@
 import { coreClient } from "@k2b/cloud/clients/core";
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, CopyButton, DateTimePicker, NoticeCard, prompts, Select, TextInput } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { z } from "zod";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
-
-/** What "Full access" names on the wire; the server never fills in scopes. */
-const FULL_ACCESS_SCOPES = ["read", "write", "admin"];
 
 export function CreateMachineKeyDialog(props: {
   modelsAvailable: boolean;
   close: () => void;
+  /** A key was created, or may have been: the list behind the dialog is out of date. */
+  onChanged: () => void;
   setDismissHandler?: (handler: () => void) => void;
 }) {
   const t = useAccountsMessages();
@@ -33,12 +32,12 @@ export function CreateMachineKeyDialog(props: {
           json: {
             name: name().trim(),
             access: access(),
-            ...(access() === "full" ? { scopes: FULL_ACCESS_SCOPES } : {}),
             expiresAt: expiry,
           },
         })
         .catch(() => {
           setUncertain(true);
+          props.onChanged();
           throw new Error(t().machineKeyUncertain);
         });
       if (!response.ok && response.status < 500) {
@@ -50,10 +49,14 @@ export function CreateMachineKeyDialog(props: {
         return z.object({ token: z.string() }).parse(await response.json()).token;
       } catch {
         setUncertain(true);
+        props.onChanged();
         throw new Error(t().machineKeyUncertain);
       }
     },
-    onSuccess: setToken,
+    onSuccess: (value) => {
+      setToken(value);
+      props.onChanged();
+    },
   });
   props.setDismissHandler?.(() => {
     if (!create.loading()) props.close();
@@ -156,13 +159,18 @@ export function CreateMachineKeyDialog(props: {
 }
 
 export default function CreateMachineKey(props: { modelsAvailable: boolean }) {
+  const { showChanges } = usePageSwap();
   const t = useAccountsMessages();
   const open = async () => {
+    let changed = false;
     await prompts.dialog<void>(
       (close, context) => (
         <CreateMachineKeyDialog
           modelsAvailable={props.modelsAvailable}
           close={() => close()}
+          onChanged={() => {
+            changed = true;
+          }}
           setDismissHandler={context.setDismissHandler}
         />
       ),
@@ -172,7 +180,8 @@ export default function CreateMachineKey(props: { modelsAvailable: boolean }) {
         size: "medium",
       },
     );
-    await refreshCurrentPath();
+    // Only a created key changes the list; after a page change closed the dialog, showChanges does nothing.
+    if (changed) await showChanges();
   };
   return (
     <Button size="sm" onClick={() => void open()}>

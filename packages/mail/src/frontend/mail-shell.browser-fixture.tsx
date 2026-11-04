@@ -442,8 +442,11 @@ export function mailboxData(url: URL): MailboxPageData {
                 intent: "new" as const,
                 subject,
                 to: [{ name: "Ada Example", address: "ada@example.test" }],
-                cc: [],
+                // The second draft goes to two people and carries a file, so the rows show "+1" and the attachment mark.
+                cc: index === 1 ? [{ name: "Ben Sample", address: "ben@example.test" }] : [],
                 bcc: [],
+                revision: 3,
+                attachmentCount: index === 1 ? 1 : 0,
                 bodyPreview: "Invented draft text for the compact mailbox view.",
                 createdByDisplayName: "Example writer",
                 // Keep relative wording stable while the browser clock advances through hydration.
@@ -482,9 +485,16 @@ export function mailboxData(url: URL): MailboxPageData {
         : activeView === "mine"
           ? mineRows
           : selectedMailbox.id === "Box001"
-            ? // ?team=1: a shared mailbox where Nora Example already answers for the first conversation.
+            ? // ?team=1: a shared mailbox where Nora Example already answers for the first conversation, and for the
+              // second together with you.
               url.searchParams.has("team")
-              ? listRows.map((row, index) => (index === 0 ? { ...row, assigneeUserIds: [teamUsers[1]!.id] } : row))
+              ? listRows.map((row, index) =>
+                  index === 0
+                    ? { ...row, assigneeUserIds: [teamUsers[1]!.id] }
+                    : index === 1
+                      ? { ...row, assigneeUserIds: [teamUsers[1]!.id, teamUsers[0]!.id] }
+                      : row,
+                )
               : listRows
             : listRows.map((row) => ({
                 ...row,

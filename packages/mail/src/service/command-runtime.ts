@@ -35,7 +35,7 @@ import {
 } from "./maintenance-runtime";
 import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-blobs";
 import { isOperatorMaintenanceKind } from "./operator-actions";
-import { OUTBOX_MAILBOX_AUTH_REQUIRED, OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
+import { OPERATOR_RECONCILE_FROM_ATTEMPT, OUTBOX_MAILBOX_AUTH_REQUIRED, OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import {
   hasSyncedSentCopy,
   recordOutboundSentAt,
@@ -2932,16 +2932,16 @@ const finishOutbox = async (params: {
     `;
     await refreshOutboxConversationTimeline(tx, params.outbox.id);
     // The event feed's send, committed with the outcome it reports. A new message names the conversation it started.
+    // A send that settles again with the outcome it already reported, as when a check gives up on an unclear send or
+    // an operator's check confirms a partly accepted one, adds no second event; a changed outcome adds one.
+    const sentResult = mailSentActivityResult(params.outboxState, delivered);
     await tx`
       INSERT INTO mail.activity_events (
         mailbox_id, conversation_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
       )
       SELECT
         c.mailbox_id,
-        COALESCE(
-          draft.conversation_id,
-          (SELECT link.conversation_id FROM mail.conversation_messages link WHERE link.message_id = outbox.message_id LIMIT 1)
-        ),
+        sent.conversation_id,
         c.id,
         c.actor_kind,
         c.actor_id,
@@ -2950,7 +2950,7 @@ const finishOutbox = async (params: {
         'outbox_submission',
         outbox.id,
         jsonb_build_object(
-          'result', ${mailSentActivityResult(params.outboxState, delivered)}::text,
+          'result', ${sentResult}::text,
           'intent', draft.intent,
           'code', ${code}::text,
           -- The sent message: people who see only assigned conversations see the event only while they see it.
@@ -2959,7 +2959,25 @@ const finishOutbox = async (params: {
       FROM mail.commands c
       JOIN mail.outbox_submissions outbox ON outbox.id = ${params.outbox.id}::uuid
       LEFT JOIN mail.drafts draft ON draft.id = outbox.draft_id
+      CROSS JOIN LATERAL (
+        SELECT COALESCE(
+          draft.conversation_id,
+          (SELECT link.conversation_id FROM mail.conversation_messages link WHERE link.message_id = outbox.message_id LIMIT 1)
+        ) AS conversation_id
+      ) sent
       WHERE c.id = ${params.outbox.command_id}::uuid
+        -- Keyed by the mailbox and the time since the send was requested, which never change, so a message moved to
+        -- another conversation still finds its event; the mailbox index reads only the send's own time span.
+        AND (
+          SELECT previous.metadata ->> 'result'
+          FROM mail.activity_events previous
+          WHERE previous.mailbox_id = c.mailbox_id
+            AND previous.created_at >= outbox.requested_at
+            AND previous.action = ${MAIL_SENT_ACTIVITY_ACTION}
+            AND previous.target_id = outbox.id
+          ORDER BY previous.created_at DESC, previous.id DESC
+          LIMIT 1
+        ) IS DISTINCT FROM ${sentResult}::text
     `;
     if (params.commandState !== "confirmed" && params.commandState !== "reconciled") {
       return { updated: true, transition: null };
@@ -3786,8 +3804,10 @@ const reconcileUnknownOutbox = async (
   timings: OutboxAttemptTimings,
 ): Promise<void> => {
   // Only a check whose worker stopped during the last attempt gets another one; it settles
-  // without the provider, so a worker that keeps stopping cannot keep the send checking.
-  const exhausted = outbox.attempt > OUTBOX_MAX_ATTEMPTS;
+  // without the provider, so a worker that keeps stopping cannot keep the send checking. An
+  // operator's reconciliation adds one provider check after the attempt it started at.
+  const reconcileFrom = Number(parseJsonRecord(command.transport_metadata)[OPERATOR_RECONCILE_FROM_ATTEMPT]);
+  const exhausted = outbox.attempt > Math.max(OUTBOX_MAX_ATTEMPTS, Number.isInteger(reconcileFrom) ? reconcileFrom + 1 : 0);
   // SMTP already answered, and its worker stopped before it settled the send: the outcome is known.
   const accepted = recordedSmtpOutcome(outbox);
   if (accepted) {

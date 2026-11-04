@@ -405,8 +405,10 @@ for (const kind of ["standalone", "agent"] as const) {
           await coreSettings.set("ai.openai_api_max_concurrent_requests", previousLimit);
         }
         await clear();
-        // An intentionally broad grant counts as explicit access.
+        // All signed-in people are people: a machine key needs its own grant on the model.
         await grant(model.id, { type: "authenticated" });
+        expect((await call()).status).toBe(404);
+        await grant(model.id, machineSubject);
         expect((await call()).status).toBe(200);
         await serviceAccounts.setStatus({ id: machineId, status: "disabled" });
         expect((await call()).status).toBe(401);

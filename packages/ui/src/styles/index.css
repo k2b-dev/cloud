@@ -15712,10 +15712,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* The wide strip shows "More" only when views wait behind it; the compact
-   strip shows its own count (see the head row). */
-.k2b-ui .k2b-view-tabs__more:not([data-wide]),
-.k2b-ui .k2b-view-tabs__more-count[data-level="compact"] {
+   strip shows its own count (see the head row). Views that do not fit the
+   wide strip's room wait behind it too, and More then shows the fitted count. */
+.k2b-ui .k2b-view-tabs__more:not([data-wide], [data-fit]),
+.k2b-ui .k2b-view-tabs__more-count[data-level="compact"],
+.k2b-ui .k2b-view-tabs__more:not([data-fit]) .k2b-view-tabs__more-count[data-level="fit"] {
   display: none;
+}
+
+/* Outweighs the compact levels of the head row and the narrow lead. */
+.k2b-ui .k2b-view-tabs__list > .k2b-view-tabs__more[data-fit] .k2b-view-tabs__more-count:not([data-level="fit"]),
+.k2b-ui .k2b-view-tabs__list > .k2b-view-tabs__item.k2b-view-tabs__item[data-fit-hidden] {
+  display: none;
+}
+
+.k2b-ui .k2b-view-tabs__list > .k2b-view-tabs__more[data-fit] {
+  display: flex;
 }
 
 @media (forced-colors: active) {

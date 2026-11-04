@@ -199,7 +199,7 @@ suite("listUsersWithAccess", () => {
         accessIds: [fixture.authenticatedAccessId],
         subject: { type: "service_account", serviceAccountId: fixture.serviceAccountId },
       });
-      expect(serviceAccountAuthenticatedPermission).toBe("admin");
+      expect(serviceAccountAuthenticatedPermission).toBe("none");
 
       const anonymousPublicPermission = await getEffectivePermission({
         accessIds: [fixture.publicAccessId],

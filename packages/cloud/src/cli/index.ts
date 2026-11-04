@@ -64,6 +64,13 @@ export type CloudCliContext = {
    * interactive terminal or with structured output, so a command never waits for an answer nobody can give.
    */
   confirm?: (question: string) => Promise<boolean>;
+  /**
+   * Read the profile's credentials again, so a long-running command such as
+   * `cld acp` uses a `cld login` that happened after it started. Updates
+   * `options.token` and every later `fetch()`. Rejects when the profile cannot
+   * sign in. Absent in hosts without profiles.
+   */
+  reloadCredentials?: () => Promise<void>;
 };
 
 /** A profile that signs in with the OAuth client-credentials grant. */

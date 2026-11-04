@@ -14,7 +14,7 @@ Mit **Postfach durchsuchen** suchst du schnell im aktuellen Postfach. Standardm�
 
 Um die Suche einzugrenzen, nutze die Schaltfläche für den Suchbereich. Wähle eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichteninhalt** und **Anhangsnamen**. Bei mehreren Wörtern passt eine Nachricht, wenn jedes Wort irgendwo in ihr vorkommt, etwa der Name des Absenders und ein Wort aus dem Betreff.
 
-Für weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Status der Zusammenarbeit wählst du **Suchfilter**.
+Für weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Status der Zusammenarbeit wählst du **Weitere Filter**. Auf dem Smartphone stehen **Suchen in**, **Ort** und **Weitere Filter …** zusammen in einem Menü, dessen Knopf die aktuelle Wahl nennt, etwa **Alles · Ganzes Postfach**.
 
 Der Filterdialog zeigt die aktuelle Suche als Bedingungen, die du bearbeiten kannst. Wähle **Filter hinzufügen** für ein weiteres Feld. Sind mehrere Filter aktiv, legst du fest, ob alle oder mindestens einer zutreffen müssen. **Erweiterte Bedingungen** bleibt eingeklappt, bis du alternative oder verschachtelte Gruppen brauchst.
 
@@ -53,7 +53,7 @@ Passt erkannter Anhangstext, nennt das Ergebnis den Anhang und zeigt einen kurze
 
 ## Nachverfolgung, Zuweisung und Ordner gezielt nutzen {icon="layout-list"}
 
-Die Ansichts-Tabs im Kopfbereich zeigen, was als Nächstes geschieht und wer zuständig ist. Unter **Mehr** findest du Später, Erledigt, Letzte Aktivität, Aufbewahrt und gespeicherte Ansichten. Außer **Erledigt** lassen diese Ansichten Unterhaltungen aus, die nur im Papierkorb oder in Spam liegen. Beispiele sind Spam, den dein Anbieter dort abgelegt hat, oder E-Mails, die jemand gelöscht hat. Verschiebst du eine solche Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt.
+Die Ansichts-Tabs im Kopfbereich zeigen, was als Nächstes geschieht und wer zuständig ist. Was nicht in den Kopf passt, etwa Später, Erledigt, Letzte Aktivität, Aufbewahrt oder gespeicherte Ansichten, findest du unter **Mehr**. Außer **Erledigt** lassen diese Ansichten Unterhaltungen aus, die nur im Papierkorb oder in Spam liegen. Beispiele sind Spam, den dein Anbieter dort abgelegt hat, oder E-Mails, die jemand gelöscht hat. Verschiebst du eine solche Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt.
 
 | Ort | Ansicht | Inhalt |
 | --- | --- | --- |
@@ -108,7 +108,7 @@ Um mehrere Unterhaltungen zu bearbeiten, wähle ihre Kontrollkästchen aus. Halt
 - **Teilergebnis:** Kann Mail nur einige Befehle einreihen, bleiben die fehlgeschlagenen Unterhaltungen ausgewählt, und Mail meldet jeden Fehler.
 :::
 
-Wähle **Zuweisen**, um die Zuständigen der ausgewählten Unterhaltungen zu ändern. Wähle **Mir zuweisen**, **Mich entfernen** oder **Alle Zuweisungen entfernen**, oder suche eine Person, einen Agenten oder ein eigenständiges Dienstkonto, das zugewiesen werden kann. Eine Person, die du hinzufügst, kommt zu den anderen zugewiesenen Personen dazu und erhält eine einzige Benachrichtigung für die ganze Auswahl. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** macht die Änderung nur in den Unterhaltungen rückgängig, die sie geändert hat. **Alle Zuweisungen entfernen** bietet kein **Rückgängig**. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
+Wähle **Zuweisen**, um die Zuständigen der ausgewählten Unterhaltungen zu ändern. Wähle **Mir zuweisen**, **Mich entfernen** oder **Alle Zuweisungen entfernen**, oder suche eine Person oder einen Agenten mit geeignetem Zugriff. Eine Person, die du hinzufügst, kommt zu den anderen zugewiesenen Personen dazu und erhält eine einzige Benachrichtigung für die ganze Auswahl. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** macht die Änderung nur in den Unterhaltungen rückgängig, die sie geändert hat. **Alle Zuweisungen entfernen** bietet kein **Rückgängig**. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
 
 ### Von Handlungsbedarf aus arbeiten
 
@@ -154,7 +154,7 @@ Standardmäßig zeigt Mail die HTML-Fassung einer Nachricht und passt ihre Farbe
 
 HTML-Nachrichten behalten eine begrenzte Auswahl an Layout-, Typografie-, Farb-, Abstands- und Tabellenstilen. Skripte, Formulare, eingebettete Objekte, externe Stylesheets und andere aktive Inhalte werden entfernt. Externe Bilder bleiben zusätzlich blockiert, bis du sie lädst.
 
-Mail klappt den zitierten Verlauf früherer Nachrichten ein. Wähle **Zitierten Text anzeigen**, um ihn aufzuklappen, und **Zitierten Text ausblenden**, um ihn wieder einzuklappen. Ein aufgeklapptes Zitat bleibt offen, während neue Aktivität oder andere Live-Aktualisierungen eintreffen.
+Mail klappt den zitierten Verlauf früherer Nachrichten am Ende einer Nachricht ein. Wähle **Zitierten Text anzeigen**, um ihn aufzuklappen, und **Zitierten Text ausblenden**, um ihn wieder einzuklappen. Zitate zwischen den Zeilen einer Antwort und weitergeleitete Nachrichten bleiben sichtbar. Ein aufgeklapptes Zitat bleibt offen, während neue Aktivität oder andere Live-Aktualisierungen eintreffen.
 
 Die oberen Aktionen nehmen die Unterhaltung aus dem Ordner, den du gerade ansiehst, etwa dem Posteingang. Das gilt auch, wenn deine neueste Antwort in Gesendet liegt. In Ansichten über mehrere Ordner, etwa **Alle E-Mails** oder **Handlungsbedarf**, nehmen sie die Unterhaltung aus jedem Ordner, in dem sie liegt. Deine Kopien in Gesendet und Entwürfe bleiben, wo sie sind. Das gilt auch für Nachrichten in Spam, im Papierkorb oder im Ordner **All Mail** von Gmail. Die Ausnahme ist eine Unterhaltung, die nur dort liegt.
 

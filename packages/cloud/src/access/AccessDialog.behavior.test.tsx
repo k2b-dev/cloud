@@ -539,4 +539,100 @@ describe("AccessDialog", () => {
       }
     });
   });
+
+  describe("service accounts as in the approved mockup", () => {
+    const codeAccount: AccessEntry = {
+      id: "00000000-0000-4000-8000-000000000010",
+      principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000010" },
+      permission: "write",
+      createdAt: "2026-11-03T00:00:00.000Z",
+      displayName: "Code von einkauf@beispiel.de",
+      serviceAccountKind: "resource_bound",
+    };
+    const field = (ui: Awaited<ReturnType<typeof setup>>) =>
+      ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Identifier of the service account"]');
+    const openAdding = async (ui: Awaited<ReturnType<typeof setup>>) => {
+      ui.button("Add service account").click();
+      await waitFor(() => !!field(ui), "the identifier field");
+    };
+    const cancelAdding = async (ui: Awaited<ReturnType<typeof setup>>) => {
+      Array.from(field(ui)!.closest("form")!.querySelectorAll<HTMLButtonElement>("button"))
+        .find((item) => item.textContent?.trim() === "Cancel")!
+        .click();
+      await waitFor(() => !field(ui), "the identifier field to close");
+    };
+    const empty = "No service account yet. Code of a mailbox or a base gets access here like a person.";
+    const note =
+      "Code runs as the service account of its object. Whoever manages “Einkauf 2027” gives it access here, like a person. Whoever edits the code acts with this right.";
+
+    test("without rows: the empty text, the identifier hint, and nothing while adding", async () => {
+      const ui = await setup({ entries: [mia], findServiceAccount: async () => null });
+      try {
+        const text = () => ui.dom.root.textContent ?? "";
+        expect(text()).toContain(empty);
+        expect(text()).not.toContain("Code runs as the service account");
+        await openAdding(ui);
+        expect(field(ui)!.placeholder).toBe("Identifier from the code page, for example code-7k2q9m4xwt");
+        expect(text()).not.toContain(empty);
+        await cancelAdding(ui);
+        expect(text()).toContain(empty);
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("with rows: one note under them naming the resource, gone while adding, and the code icon in a square", async () => {
+      const ui = await setup({ entries: [mia, codeAccount], findServiceAccount: async () => null });
+      try {
+        const text = () => ui.dom.root.textContent ?? "";
+        expect(text()).toContain(note);
+        expect(text()).not.toContain(empty);
+        await openAdding(ui);
+        expect(text()).not.toContain(note);
+        await cancelAdding(ui);
+        expect(text()).toContain(note);
+        const avatar = ui.row("Code von einkauf@beispiel.de").querySelector('[data-shape="square"]');
+        expect(avatar?.querySelector(".ti-code")).not.toBeNull();
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("in German the note quotes the resource's name, so any name reads", async () => {
+      const { accessDialogMessages } = await import("./access-dialog-messages");
+      expect(accessDialogMessages.resolve(["de"]).t.serviceAccountNote({ name: "Der Einkauf" })).toBe(
+        "Code läuft als Dienstkonto seines Objekts. Wer „Der Einkauf“ verwaltet, gibt ihm hier Zugriff wie einer Person. Wer den Code bearbeitet, handelt mit diesem Recht.",
+      );
+      expect(accessDialogMessages.resolve(["de"]).t.serviceAccountsEmpty).toBe(
+        "Noch kein Dienstkonto. Code eines Postfachs oder einer Base bekommt hier Zugriff wie eine Person.",
+      );
+      expect(accessDialogMessages.resolve(["de"]).t.serviceAccountHandlePlaceholder).toBe(
+        "Kennung von der Code-Seite, etwa code-7k2q9m4xwt",
+      );
+    });
+
+    test("a found account with a picture shows it in the preview", async () => {
+      const ui = await setup({
+        entries: [mia],
+        findServiceAccount: async () => ({
+          principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000011" },
+          display: { displayName: "Code von info@beispiel.de", avatarHash: "abc123", serviceAccountKind: "resource_bound" },
+        }),
+      });
+      try {
+        await openAdding(ui);
+        const input = field(ui)!;
+        input.value = "code-7k2q9m4xwt";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        ui.button("Find").click();
+        await waitFor(() => ui.dom.root.textContent?.includes("Code von info@beispiel.de") === true, "the found account");
+        const preview = Array.from(ui.dom.root.querySelectorAll("div")).find(
+          (item) => item.textContent?.includes("Code von info@beispiel.de") && item.querySelector("img"),
+        );
+        expect(preview?.querySelector("img")?.getAttribute("src")).toContain("rev=abc123");
+      } finally {
+        ui.cleanup();
+      }
+    });
+  });
 });

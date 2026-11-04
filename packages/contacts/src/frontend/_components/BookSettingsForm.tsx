@@ -1,4 +1,4 @@
-import { type GrantableLevel, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import { type GrantableLevel, openAccessDialog, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
@@ -205,6 +205,10 @@ export default function BookSettingsForm(props: Props) {
     }
   };
 
+  // Set by every saved access change, also when a later one fails and the person discards the rest.
+  let wroteAccess = false;
+  // A plain guard, not a disabled state: a disabled button could not take focus back when the dialog closes.
+  let editingAccess = false;
   const grantAccess = async (input: { bookId: string; principal: Principal; permission: GrantableLevel }): Promise<AccessEntry> => {
     const created = await runRequest(async (abortSignal) => {
       const response = await apiClient.books[":bookId"].access.$post(
@@ -214,8 +218,7 @@ export default function BookSettingsForm(props: Props) {
       if (!response.ok) throw new Error(await readErrorMessage(response, t().grantAccessFailed));
       return response.json();
     });
-    props.onWorkspaceChange();
-    await reconcile(t().accessGrantedReloadFailed);
+    wroteAccess = true;
     return created;
   };
   const updateAccess = async (input: { bookId: string; accessId: string; permission: GrantableLevel }): Promise<void> => {
@@ -226,8 +229,7 @@ export default function BookSettingsForm(props: Props) {
       );
       if (!response.ok) throw new Error(await readErrorMessage(response, t().updateAccessFailed));
     });
-    props.onWorkspaceChange();
-    await reconcile(t().accessUpdatedReloadFailed);
+    wroteAccess = true;
   };
   const revokeAccess = async (input: { bookId: string; accessId: string }): Promise<void> => {
     await runRequest(async (abortSignal) => {
@@ -237,8 +239,7 @@ export default function BookSettingsForm(props: Props) {
       );
       if (!response.ok) throw new Error(await readErrorMessage(response, t().revokeAccessFailed));
     });
-    props.onWorkspaceChange();
-    await reconcile(t().accessRevokedReloadFailed);
+    wroteAccess = true;
   };
 
   type CreateApiKeyInput = { name: string; expiresAt: string | null; permission: GrantableLevel };
@@ -318,6 +319,43 @@ export default function BookSettingsForm(props: Props) {
 
   // SettingsModal renders only tab content, so every tab carries the notice. A failed reload blocks tab changes
   // and closing, so the notice always shows on the tab where the change was made, next to its recovery.
+  // Changes are collected in the dialog and saved together; the settings reload once afterwards.
+  const editAccess = async () => {
+    // A failed reload is read again first, so the dialog never starts from an old list.
+    if (reconcileError()) {
+      await settingsCoverage.retry();
+      if (disposed || reconcileError()) return;
+    }
+    if (settingsBusy()) throw new Error(t().settingsChangeInProgress);
+    const entries = props.context().accessEntries;
+    if (!entries) return;
+    wroteAccess = false;
+    await openAccessDialog({
+      resourceName: savedName(),
+      subtitle: t().accessDialogSubtitle,
+      initialEntries: entries.filter((entry) => entry.serviceAccountKind !== "resource_bound"),
+      grantAccess: (principal, permission) => grantAccess({ bookId: bookId(), principal, permission }),
+      updateAccess: (accessId, permission) => updateAccess({ bookId: bookId(), accessId, permission }),
+      revokeAccess: (accessId) => revokeAccess({ bookId: bookId(), accessId }),
+    });
+    if (!wroteAccess || disposed) return;
+    props.onWorkspaceChange();
+    // Awaited, so a second click waits for the saved list instead of opening the old one.
+    await reconcile(t().accessSavedReloadFailed);
+  };
+  const runEditAccess = () => {
+    if (editingAccess) return;
+    editingAccess = true;
+    editAccess()
+      .catch((error: Error) => {
+        // A closed form says nothing over the page the person moved on to.
+        if (!disposed) void prompts.error(error.message);
+      })
+      .finally(() => {
+        editingAccess = false;
+      });
+  };
+
   const settingsReconcileNotice = () => (
     <Show when={reconcileError()}>
       <InlineGuidance tone="warning" icon="ti ti-alert-triangle" role="status">
@@ -408,21 +446,21 @@ export default function BookSettingsForm(props: Props) {
         <SettingsModal.Tab id="access" title={t().tabAccess} icon="ti ti-shield" description={t().tabAccessDescription}>
           {settingsReconcileNotice()}
           <SettingsGroup title={t().peopleGroupsTitle} description={t().peopleGroupsDescription}>
+            <SettingsGroup.Action>
+              <Button size="sm" variant="secondary" disabled={!props.context().accessEntries} onClick={runEditAccess}>
+                <i class="ti ti-pencil" aria-hidden="true" />
+                {t().editAccess}
+              </Button>
+            </SettingsGroup.Action>
             <Show when={props.context().accessEntries}>
               {(accessEntries) => (
                 <PermissionEditor
                   // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
                   initialEntries={accessEntries().filter((entry) => entry.serviceAccountKind !== "resource_bound")}
-                  canEdit={reconcileError() === null}
-                  grantAccess={async (principal, permission) => {
-                    return grantAccess({ bookId: bookId(), principal, permission });
-                  }}
-                  updateAccess={async (accessId, permission) => {
-                    await updateAccess({ bookId: bookId(), accessId, permission });
-                  }}
-                  revokeAccess={async (accessId) => {
-                    await revokeAccess({ bookId: bookId(), accessId });
-                  }}
+                  canEdit={false}
+                  grantAccess={(principal, permission) => grantAccess({ bookId: bookId(), principal, permission })}
+                  updateAccess={(accessId, permission) => updateAccess({ bookId: bookId(), accessId, permission })}
+                  revokeAccess={(accessId) => revokeAccess({ bookId: bookId(), accessId })}
                 />
               )}
             </Show>

@@ -12,6 +12,7 @@ import { createSync, type Sync, SyncError } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
 import type { NatsConnection } from "@nats-io/transport-node";
 import { connections } from "../runtime/connections";
+import { DEPENDENCY_STARTUP_BUDGET_MS } from "../runtime/startup-budget";
 import { logger } from "../services/logging";
 import { flushSyncTraceEvents, observeSyncEvent } from "../services/logging/trace";
 import { connectNats } from "./nats-connection";
@@ -87,15 +88,6 @@ export type ProcessSync = {
   stop: () => Promise<void>;
 };
 
-/**
- * How long a starting process waits for NATS and JetStream. After a host or
- * stack restart, NATS nodes come up in any order and JetStream must recover
- * its streams and elect a leader before its API answers; five minutes covers
- * that. A process that still gets no answer exits instead of staying alive
- * without readiness, so Docker or Kubernetes restarts it and the outage shows
- * up as restarts.
- */
-const NATS_STARTUP_BUDGET_MS = 5 * 60_000;
 // About 1 s, doubling to 20 s, each ±50 % so processes that restarted together spread their retries.
 const NATS_STARTUP_BACKOFF = { baseMs: 1_000, maxMs: 20_000, jitter: 0.5 };
 
@@ -111,7 +103,7 @@ const errorMessage = (error: unknown): string => (error instanceof Error ? error
  */
 export const waitForNats = async <T>(
   attempt: () => Promise<T>,
-  { application, budgetMs = NATS_STARTUP_BUDGET_MS }: { application: string; budgetMs?: number },
+  { application, budgetMs = DEPENDENCY_STARTUP_BUDGET_MS }: { application: string; budgetMs?: number },
 ): Promise<T> => {
   const log = logger("sync");
   const deadline = Date.now() + budgetMs;
@@ -174,7 +166,7 @@ const connectReadySync = async (application: string): Promise<{ sync: Sync; conn
  *
  * While NATS or JetStream does not answer, it retries with a fresh connection
  * and instance (see `waitForNats`), and exits the process once
- * `NATS_STARTUP_BUDGET_MS` is spent. Callers are process entry points; nothing
+ * `DEPENDENCY_STARTUP_BUDGET_MS` is spent. Callers are process entry points; nothing
  * serves readiness before this returns.
  */
 export const startProcessSync = async ({ application }: { application: string }): Promise<ProcessSync> => {
