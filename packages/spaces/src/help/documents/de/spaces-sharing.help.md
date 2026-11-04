@@ -25,7 +25,7 @@ Die Kategorien ordnen die Einstellungen nach Zuständigkeit und Auswirkung:
 - **Freigabe** enthält Zugriff und API-Schlüssel. Sie ist für Personen mit Zugriff **Verwalten**.
 - **Verwaltung** enthält das endgültige Löschen des Space.
 
-Formulare mit einer Fußzeile zeigen die Anzahl der Änderungen. Prüfe diese Zahl und wähle **Änderungen speichern**. Aktionen in einer Liste, etwa einen Status hinzufügen, einen Zugriff ändern oder einen Schlüssel widerrufen, speichern sofort nach deiner Bestätigung.
+Formulare mit einer Fußzeile zeigen die Anzahl der Änderungen. Prüfe diese Zahl und wähle **Änderungen speichern**. Aktionen in einer Liste, etwa einen Status hinzufügen oder einen Schlüssel widerrufen, speichern sofort nach deiner Bestätigung. Änderungen am Zugriff gelten, wenn du in **Zugriff bearbeiten** **Speichern** wählst.
 
 ## Zugriffsstufe wählen {icon="shield-lock"}
 
