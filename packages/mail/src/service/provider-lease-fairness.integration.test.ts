@@ -2198,8 +2198,7 @@ suite("mail provider lease fairness", () => {
     expect(await onSyncFolderJobError({ context: { input: { folderId: archive }, attempt: 5 }, error: failure! })).toMatchObject({
       action: "dead_letter",
     });
-    // The hook's degraded mark follows its decision.
-    await waitFor(async () => (await checkTurn(mailbox)) === null, "the waited sync to end after the folder gave up");
+    expect(await checkTurn(mailbox)).toBeNull();
     expect(await commandOutcome(commandId)).toMatchObject({ state: "failed", code: "SYNC_FAILED", result: { queuedFolders: 3 } });
   }, 60_000);
 
@@ -2224,27 +2223,36 @@ suite("mail provider lease fairness", () => {
       holding();
       await released;
     });
+    const failure = Object.assign(new Error("Connection to the database closed"), { code: "ERR_POSTGRES_CONNECTION_CLOSED" });
+    let decision: Promise<unknown> | undefined;
     try {
       await held;
-      const failure = Object.assign(new Error("Connection to the database closed"), { code: "ERR_POSTGRES_CONNECTION_CLOSED" });
-      // The hook answers while the mark still waits; before the fix it waited for the mark first.
-      expect(await onSyncFolderJobError({ context: { input: { folderId: archive }, attempt: 5 }, error: failure })).toEqual({
-        action: "dead_letter",
-        reason: "Connection to the database closed",
-      });
-      expect(errors.mock.calls).toContainEqual([
-        "[mail:sync]",
-        "Mail folder sync exhausted retries",
-        { folderId: archive, attempt: 5, code: "ERR_POSTGRES_CONNECTION_CLOSED" },
-      ]);
+      decision = onSyncFolderJobError({ context: { input: { folderId: archive }, attempt: 5 }, error: failure });
+      // The line is written while the mark still waits; before the fix it came only after the mark.
+      await waitFor(
+        async () =>
+          errors.mock.calls.some(
+            (call) =>
+              call[1] === "Mail folder sync exhausted retries" &&
+              JSON.stringify(call[2]) === JSON.stringify({ folderId: archive, attempt: 5, code: "ERR_POSTGRES_CONNECTION_CLOSED" }),
+          ),
+        "the exhausted-retries log line while the degraded mark waits",
+        10_000,
+      );
       expect(await status()).not.toBe("degraded");
     } finally {
       release();
       await lock;
       errors.mockRestore();
     }
-    // Once the database takes it, the mark follows.
-    await waitFor(async () => (await status()) === "degraded", "the degraded mark after the database answers");
+    // Once the database takes the mark, the hook answers without throwing.
+    expect(await decision).toEqual({ action: "dead_letter", reason: "Connection to the database closed" });
+    expect(await status()).toBe("degraded");
+    // A mark the database rejects, here for an ID it cannot cast, does not make the hook throw.
+    expect(await onSyncFolderJobError({ context: { input: { folderId: "not-a-folder" }, attempt: 5 }, error: failure })).toEqual({
+      action: "dead_letter",
+      reason: "Connection to the database closed",
+    });
   });
 
   test("a waited sync whose mailbox is paused meanwhile ends with the reason, like a request that finds it paused", async () => {
