@@ -1315,6 +1315,45 @@ describe("streamed search", () => {
     expect((await routes.request("/search?app=demo&q=plan&limit=91")).status).toBe(400);
   });
 
+  test("loads more of one app that searches with several Queries", async () => {
+    const twoQueries = compileCapabilities(
+      "demo",
+      defineCapabilities({
+        ...capabilities,
+        queries: {
+          first: { ...capabilities.queries.search, universalSearch: { tags: [{ tag: "first", title: "First", description: "First." }] } },
+          second: {
+            ...capabilities.queries.search,
+            universalSearch: { tags: [{ tag: "second", title: "Second", description: "Second." }] },
+          },
+        },
+      }),
+    ).manifest;
+    const limits: number[] = [];
+    const routes = createSearchRoutes({
+      authenticate,
+      listCapabilities: async () => [{ ...app, manifest: twoQueries }],
+      fetch: async (url, init) => {
+        const query = new URL(String(url)).pathname.split("/").at(-1)!;
+        const { limit } = JSON.parse(String(init?.body)).input as { limit: number };
+        limits.push(limit);
+        return Response.json({
+          data: Array.from({ length: Math.min(limit, 20) }, (_, index) => ({
+            ref: { type: "demo.item", id: `${query}-${index}` },
+            title: `${query} ${index}`,
+            links: [{ rel: "open", href: `/app/demo/${query}-${index}` }],
+          })),
+        });
+      },
+    });
+    const stream = lines(await routes.request("/search?app=demo&q=plan&limit=40", { headers: NDJSON }));
+    let demo: SearchStreamLine | undefined;
+    for (let line = await stream.next(); line; line = await stream.next()) if (line.type === "provider") demo = line;
+    expect(limits).toEqual([41, 41]);
+    expect(demo?.type === "provider" && demo.results).toHaveLength(40);
+    expect(demo?.type === "provider" && demo.more).toBeUndefined();
+  });
+
   test("answers the catalog and unsupported tags in the same two-line shape", async () => {
     let calls = 0;
     const routes = createSearchRoutes({

@@ -166,25 +166,29 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
       if (controller === own && !own.signal.aborted) setRun(breakSearchRun);
     });
   };
-  /** Searches one app again within the current run; its rows, if any, are appended at the end. */
-  const retryApp = (appId: string) => {
+  /** The latest request per app within the run; an older one that ends late never touches a newer one. */
+  const appRequests = new Map<string, object>();
+  /** Searches one app again within the current run; only rows not shown yet are appended at the end. */
+  const searchAppAgain = (appId: string, params: Record<string, string>, limit?: number) => {
     const own = controller;
     const url = runUrl();
     if (!own || !url) return;
+    const request = {};
+    appRequests.set(appId, request);
     const target = new URL(url, URL_BASE);
     target.searchParams.set("app", appId);
-    // Narrowed to one app, the server samples more; the retried section keeps the size the others have.
-    const limit = run().providers.length > 1 ? Number(target.searchParams.get("provider_limit")) : undefined;
+    for (const [name, value] of Object.entries(params)) target.searchParams.set(name, value);
+    const latest = () => controller === own && appRequests.get(appId) === request;
     setRun((current) => retrySearchApp(current, appId));
     const giveUp = () => {
-      if (controller === own && run().status[appId] === "searching")
+      if (latest() && run().status[appId] === "searching")
         setRun((current) => applySearchLine(current, { type: "provider", provider: appId, status: "error", results: [], ms: 0 }));
     };
     void streamCloudResourceSearch(`${target.pathname}${target.search}`, {
       signal: own.signal,
       locale: locale(),
       onLine: (line) => {
-        if (controller !== own || line.type !== "provider" || line.provider !== appId) return;
+        if (!latest() || line.type !== "provider" || line.provider !== appId) return;
         setRun((current) =>
           applySearchLine(current, {
             ...line,
@@ -195,32 +199,18 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
       },
     }).then(giveUp, giveUp);
   };
+  /** Retries an app that failed; narrowed to one app, the server samples more, so the section keeps the others' size. */
+  const retryApp = (appId: string) => {
+    const providerLimit = new URL(runUrl() ?? "/", URL_BASE).searchParams.get("provider_limit");
+    searchAppAgain(appId, {}, run().providers.length > 1 && providerLimit ? Number(providerLimit) : undefined);
+  };
   const shownCount = (appId: string) => run().blocks.reduce((count, block) => count + (block.appId === appId ? block.items.length : 0), 0);
   /**
    * Lists the next page of one app within the current run. The app answers its first rows again; only the new ones
    * are appended, so nothing on screen moves and the selection stays.
    */
-  const loadMore = (appId: string) => {
-    const own = controller;
-    const url = runUrl();
-    if (!own || !url) return;
-    const target = new URL(url, URL_BASE);
-    target.searchParams.set("app", appId);
-    target.searchParams.set("limit", String(Math.min(SEARCH_APP_RESULT_LIMIT, shownCount(appId) + SEARCH_PAGE_SIZE)));
-    setRun((current) => retrySearchApp(current, appId));
-    const giveUp = () => {
-      if (controller === own && run().status[appId] === "searching")
-        setRun((current) => applySearchLine(current, { type: "provider", provider: appId, status: "error", results: [], ms: 0 }));
-    };
-    void streamCloudResourceSearch(`${target.pathname}${target.search}`, {
-      signal: own.signal,
-      locale: locale(),
-      onLine: (line) => {
-        if (controller !== own || line.type !== "provider" || line.provider !== appId) return;
-        setRun((current) => applySearchLine(current, line));
-      },
-    }).then(giveUp, giveUp);
-  };
+  const loadMore = (appId: string) =>
+    searchAppAgain(appId, { limit: String(Math.min(SEARCH_APP_RESULT_LIMIT, shownCount(appId) + SEARCH_PAGE_SIZE)) });
   createEffect(on(searchUrl, startRun));
   onCleanup(() => controller?.abort());
 

@@ -786,7 +786,11 @@ const found = (appId: string, title: string): SearchItem => ({
   ref: { type: `${appId}.item`, id: title },
   href: `/app/${appId}/${title}`,
 });
-const providerLine = (provider: string, results: SearchItem[], status = results.length ? "ok" : "empty"): SearchStreamLine => ({
+const providerLine = (
+  provider: string,
+  results: SearchItem[],
+  status = results.length ? "ok" : "empty",
+): Extract<SearchStreamLine, { type: "provider" }> => ({
   type: "provider",
   provider,
   status: status as "ok",
@@ -1138,6 +1142,44 @@ describe("streamed search results", () => {
       expect(view.rows()[2]!.textContent).toContain("Changes 3");
       expect(second!.getAttribute("aria-selected")).toBe("true");
       expect(more()).toBe("");
+      expect(view.status()).toBe("");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("an earlier page that ends late never fails the next one", async () => {
+    const view = await setup({ initialAppId: "mail" });
+    const button = () => view.dom.root.querySelector<HTMLButtonElement>(".cloud-resource-search__more button");
+    const titles = (count: number) => Array.from({ length: count }, (_, index) => found("mail", `Changes ${index}`));
+    try {
+      const stream = await view.type("changes");
+      stream.write({ type: "start", query: "changes", apps: streamApps, providers: ["mail"] });
+      stream.write({ ...providerLine("mail", titles(1)), more: true });
+      stream.write({ type: "done", status: "complete", count: 1 });
+      stream.close();
+      await waitFor(() => button() !== null, "the first load more button");
+      const searches = view.requests.length;
+      button()!.click();
+      await waitFor(() => view.requests.length === searches + 1, "the second page");
+      const second = view.requests.at(-1)!;
+      second.stream.write({ type: "start", query: "changes", apps: streamApps, providers: ["mail"] });
+      second.stream.write({ ...providerLine("mail", titles(2)), more: true });
+      await waitFor(() => view.rows().length === 2 && button() !== null, "the second page's rows");
+
+      // The second page's stream is still open when the person asks for the third.
+      button()!.click();
+      await waitFor(() => view.requests.length === searches + 2, "the third page");
+      second.stream.write({ type: "done", status: "complete", count: 2 });
+      second.stream.close();
+      await Bun.sleep(20);
+      expect(view.status()).toContain("Mail is still searching…");
+      const third = view.requests.at(-1)!;
+      third.stream.write({ type: "start", query: "changes", apps: streamApps, providers: ["mail"] });
+      third.stream.write(providerLine("mail", titles(3)));
+      third.stream.write({ type: "done", status: "complete", count: 3 });
+      third.stream.close();
+      await waitFor(() => view.rows().length === 3, "the third page's rows");
       expect(view.status()).toBe("");
     } finally {
       view.cleanup();

@@ -232,8 +232,11 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       // ranking — the global slice below still caps the response. Capped
       // at GLOBAL_RESULT_LIMIT so a single app can saturate the response
       // but no more, unless the browser loads more with `limit`.
+      // One app counts once, however many Queries it searches with.
       const effectiveProviderLimit =
-        active.length === 1 ? (query.limit ?? Math.min(GLOBAL_RESULT_LIMIT, query.provider_limit * 3)) : query.provider_limit;
+        new Set(active.map((provider) => provider.appId)).size === 1
+          ? (query.limit ?? Math.min(GLOBAL_RESULT_LIMIT, query.provider_limit * 3))
+          : query.provider_limit;
       // Guard the whole issuance batch once, then reuse the prepared signer for
       // every target. This is one Postgres check per outer search request, not
       // one check per provider.

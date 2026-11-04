@@ -903,7 +903,8 @@ Cloud search and the `search` capability list every matching message, newest
 first, from every mailbox the person may read (up to 200, most recently active
 first). Each result names its sender below the subject, the mailbox too when
 results come from several mailboxes, and shows the date. Its details add the
-recipients, folder, mailbox and number of attachments.
+recipients, folder, mailbox and number of attachments, and it opens that
+message.
 
 Cloud search and the `search` capability search up to four mailboxes at a time.
 Each mailbox has three seconds, and the whole search has six. A mailbox's search

@@ -2666,6 +2666,9 @@ describe("mail capabilities", () => {
         { label: "Mailbox", value: "Sales" },
         { label: "Attachments", value: "2" },
       ]);
+      // Both mails share one conversation; each row opens its own mail.
+      expect(first?.links[0]?.href).toEndWith(`?message=${newer.id}`);
+      expect(second?.links[0]?.href).toEndWith(`?message=${older.id}`);
       expect(second?.context).toBe("Ben · Support");
       expect(second?.metadata?.find((entry) => entry.label === "Date")).toEqual({
         label: "Date",

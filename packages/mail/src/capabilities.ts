@@ -862,7 +862,7 @@ const runSearch = async (
   // and universal search shows only a failure, not a result's summary.
   const firstSkipped = skipped[0]?.page;
   if (resultItems.length === 0 && firstSkipped && !firstSkipped.ok) return firstSkipped;
-  const [mailboxIds, messageIds, conversationIds, attachmentIds] = await Promise.all([
+  const [mailboxIds, messageIds, attachmentIds] = await Promise.all([
     publicResources.publicIds(
       "mailboxes",
       resultItems.map(({ mailbox }) => mailbox.id),
@@ -870,10 +870,6 @@ const runSearch = async (
     publicResources.publicIds(
       "messages",
       resultItems.flatMap(({ message }) => [message.id, ...(message.attachmentMatch ? [message.attachmentMatch.messageId] : [])]),
-    ),
-    publicResources.publicIds(
-      "conversations",
-      resultItems.map(({ message }) => message.conversationId),
     ),
     publicResources.publicIds(
       "attachments",
@@ -905,13 +901,10 @@ const runSearch = async (
         ...(attachmentMatch ? [{ label: t.matchedAttachment, value: attachmentMatch.filename?.trim() || t.untitledAttachment }] : []),
       ],
       links: [
+        // Each row is one mail, so it opens that mail, not its conversation's latest one.
         {
           rel: "open",
-          href: attachmentMatch
-            ? messageHref(mailboxId, requirePublicId(messageIds, attachmentMatch.messageId))
-            : message.conversationId
-              ? conversationHref(mailboxId, requirePublicId(conversationIds, message.conversationId))
-              : messageHref(mailboxId, messageId),
+          href: messageHref(mailboxId, attachmentMatch ? requirePublicId(messageIds, attachmentMatch.messageId) : messageId),
         },
         ...(attachmentMatch
           ? [
