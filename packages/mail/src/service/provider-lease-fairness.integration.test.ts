@@ -1851,7 +1851,7 @@ suite("mail provider lease fairness", () => {
     const mailbox = await connect("aged-bodies");
     await deliverAndSync(mailbox, 3, "aged-bodies");
     const resource = mailbox.remoteResourceId;
-    const places = `mail:provider-lease-line:{${resource}}:places`;
+    const entered = `mail:provider-lease-line:{${resource}}:entered`;
     const hydrationWaiter = `hydrate:mailbox:${mailbox.mailboxId}`;
     const take = (waiter: string, priority: ProviderLeasePriority) =>
       acquireProviderLease({ resource, waiter, priority, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
@@ -1873,8 +1873,8 @@ suite("mail provider lease fairness", () => {
       expect(holder.lock).not.toBeNull();
       turns.push(folderSyncs[0]!);
 
-      // Redis owns lease time: move the body's place back by the head start instead of waiting it.
-      await redis.send("ZINCRBY", [places, "-60000", hydrationWaiter]);
+      // Redis owns lease time: move the body's first ask back by the head start instead of waiting it.
+      await redis.send("HINCRBY", [entered, hydrationWaiter, "-60000"]);
       await expect(batch()).rejects.toMatchObject({ code: "SYNC_BUSY" });
       await releaseProviderLease(holder.lock!);
       // The next folder sync asks for the free lease and is refused: the aged body is next.
@@ -1901,7 +1901,34 @@ suite("mail provider lease fairness", () => {
       if (holder.lock) await releaseProviderLease(holder.lock);
       await redis.send(
         "DEL",
-        ["places", "present", "priorities", "turn"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
+        ["places", "present", "priorities", "turn", "entered"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
+      );
+    }
+  });
+
+  test("an aging waiter's wait counts from its first ask, also when it asks with another priority meanwhile", async () => {
+    const resource = crypto.randomUUID();
+    const prefix = `mail:provider-lease-line:{${resource}}`;
+    const ask = (waiter: string, priority: ProviderLeasePriority) =>
+      acquireProviderLease({ resource, waiter, priority, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS, ages: true });
+    const ranks = async (waiter: string) => String(await redis.send("HGET", [`${prefix}:priorities`, waiter]));
+    const held = await mailProviderOperationMutex().acquire({ resource, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    if (!held) throw new Error("Could not hold the provider lease");
+    try {
+      // A sync head start that the place keeps is no wait: switching to background does not age.
+      expect((await ask("from-sync", "sync")).lock).toBeNull();
+      expect((await ask("from-sync", "background")).lock).toBeNull();
+      expect(await ranks("from-sync")).toBe("background");
+      // A waiter that waited the aging time ranks as a command, whichever priority it asks with now.
+      expect((await ask("to-sync", "background")).lock).toBeNull();
+      await redis.send("HINCRBY", [`${prefix}:entered`, "to-sync", "-60000"]);
+      expect((await ask("to-sync", "sync")).lock).toBeNull();
+      expect(await ranks("to-sync")).toBe("command");
+    } finally {
+      await releaseProviderLease(held);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn", "entered"].map((key) => `${prefix}:${key}`),
       );
     }
   });

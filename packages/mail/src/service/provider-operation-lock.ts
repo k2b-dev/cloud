@@ -87,12 +87,14 @@ const BREAKER_JITTER_FRACTION = 0.25;
 const BREAKER_OPEN = 1;
 const BREAKER_PROBE = 2;
 
-// KEYS: places, presence, breaker, priorities, and last turn, all for one mailbox. ARGV:
+// KEYS: places, presence, breaker, priorities, last turn, and entry times, all for one mailbox. ARGV:
 // waiter, head start, retry step, retry maximum, jitter, presence grace, place TTL, breaker
 // memory, priority, aging (milliseconds, or 0 for none). Registers the waiter, keeping the better
 // of its earlier place and the new one, and returns its position among present waiters, when it
 // should retry, whether the breaker is open, remembers a window that ended, or neither, its
 // place, and the priority it ranks with: `command` once an aging waiter has waited long enough.
+// An aging waiter's wait counts from its first ask, not from its place, which also moves with the
+// priority it asks with.
 const enterLeaseLineScript = `
   local time = redis.call("TIME")
   local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
@@ -102,12 +104,16 @@ const enterLeaseLineScript = `
     redis.call("ZREM", KEYS[1], waiter)
     redis.call("ZREM", KEYS[2], waiter)
     redis.call("HDEL", KEYS[4], waiter)
+    redis.call("HDEL", KEYS[6], waiter)
   end
-  local earlier = redis.call("ZSCORE", KEYS[1], ARGV[1])
   redis.call("ZADD", KEYS[1], "LT", now - tonumber(ARGV[2]), ARGV[1])
   local priority = ARGV[9]
   local aging = tonumber(ARGV[10])
-  if aging > 0 and earlier and now - tonumber(ARGV[2]) - tonumber(earlier) >= aging then priority = "command" end
+  if aging > 0 then
+    redis.call("HSETNX", KEYS[6], ARGV[1], now)
+    if now - tonumber(redis.call("HGET", KEYS[6], ARGV[1])) >= aging then priority = "command" end
+    redis.call("PEXPIRE", KEYS[6], placeTtl)
+  end
   redis.call("HSET", KEYS[4], ARGV[1], priority)
   local function class(priority)
     if priority == "command" then return "command" end
@@ -177,19 +183,20 @@ const openBreakerScript = `
 `;
 
 // One hash tag, so the line, its last turn, and the breaker of a mailbox live together.
-const leaseLineKeys = (resource: string): [string, string, string, string, string] => [
+const leaseLineKeys = (resource: string): [string, string, string, string, string, string] => [
   `mail:provider-lease-line:{${resource}}:places`,
   `mail:provider-lease-line:{${resource}}:present`,
   `mail:provider-lease-line:{${resource}}:breaker`,
   `mail:provider-lease-line:{${resource}}:priorities`,
   `mail:provider-lease-line:{${resource}}:turn`,
+  `mail:provider-lease-line:{${resource}}:entered`,
 ];
 
 /** Lines `waiter` up for the provider lease of `resource` with the script above and returns its reply. */
 const enterLeaseLine = (resource: string, waiter: string, priority: ProviderLeasePriority, ages: boolean): Promise<unknown> =>
   redis.send("EVAL", [
     enterLeaseLineScript,
-    "5",
+    "6",
     ...leaseLineKeys(resource),
     waiter,
     String(LEASE_HEAD_START_MS[priority]),
@@ -203,7 +210,7 @@ const enterLeaseLine = (resource: string, waiter: string, priority: ProviderLeas
     String(ages ? LEASE_AGING_MS : 0),
   ]);
 
-// KEYS: places, presence, priorities, last turn. ARGV: waiter, acquired priority or empty,
+// KEYS: places, presence, priorities, last turn, entry times. ARGV: waiter, acquired priority or empty,
 // place TTL, keep place. Record an acquired turn and leave the line together, unless the caller
 // needs to keep its place while taking another lock. Leaving later does not change the turn.
 const leaveLeaseLineScript = `
@@ -215,6 +222,7 @@ const leaveLeaseLineScript = `
     redis.call("ZREM", KEYS[1], ARGV[1])
     redis.call("ZREM", KEYS[2], ARGV[1])
     redis.call("HDEL", KEYS[3], ARGV[1])
+    redis.call("HDEL", KEYS[5], ARGV[1])
   end
 `;
 
@@ -223,14 +231,15 @@ const leaveLeaseLine = async (
   waiter: string,
   acquired?: { priority: ProviderLeasePriority; keepPlace?: boolean },
 ): Promise<void> => {
-  const [places, present, , priorities, turn] = leaseLineKeys(resource);
+  const [places, present, , priorities, turn, entered] = leaseLineKeys(resource);
   await redis.send("EVAL", [
     leaveLeaseLineScript,
-    "4",
+    "5",
     places,
     present,
     priorities,
     turn,
+    entered,
     waiter,
     acquired?.priority ?? "",
     String(LEASE_PLACE_TTL_MS),
