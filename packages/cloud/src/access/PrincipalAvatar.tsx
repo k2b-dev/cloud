@@ -3,7 +3,8 @@ import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry } from "../contracts/shared";
 
 // One hue per principal kind from the avatar palette, so a group and all signed-in people read apart at a glance.
-// People use a neutral background; a service account shows its robot or photo, never a bare icon.
+// People use a neutral background; a service account shows its robot or photo, and the account of an object its code
+// icon unless it has a photo.
 const hues = { group: "#22c55e", authenticated: "#3b82f6" } as const;
 
 /** The 32px avatar of an access entry in the expanded editor and on the denial page. */
@@ -13,6 +14,8 @@ export default function PrincipalAvatar(props: {
 }) {
   const icon = () => {
     switch (props.entry.principal.type) {
+      case "service_account":
+        return "ti-code";
       case "group":
         return "ti-users-group";
       case "authenticated":
@@ -29,7 +32,9 @@ export default function PrincipalAvatar(props: {
     <Show
       when={props.entry.principal.type === "user" ? props.entry.principal : undefined}
       fallback={
-        props.entry.principal.type === "service_account" ? (
+        // The account of an object runs its code: it shows the code icon unless it has a picture.
+        props.entry.principal.type === "service_account" &&
+        (props.entry.avatarHash || props.entry.serviceAccountKind !== "resource_bound") ? (
           <CloudAvatar
             username={props.label}
             userId={props.entry.principal.serviceAccountId}

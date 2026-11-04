@@ -707,7 +707,12 @@ export function AccessDialog(
                   </li>
                 </Show>
               </ul>
-              <p class="text-[13px] text-dimmed">{t().serviceAccountNote}</p>
+              {/* As in the approved mockup: one note under the rows, or the empty text; neither while adding. */}
+              <Show when={!handleOpen()}>
+                <p class="text-[13px] text-dimmed">
+                  {objectAccountRows().length > 0 ? t().serviceAccountNote({ name: props.resourceName }) : t().serviceAccountsEmpty}
+                </p>
+              </Show>
             </PanelDialog.Section>
           </Show>
 

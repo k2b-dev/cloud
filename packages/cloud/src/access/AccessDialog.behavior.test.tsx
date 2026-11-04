@@ -511,4 +511,42 @@ describe("AccessDialog", () => {
       }
     });
   });
+
+  test("the service accounts section reads as the approved mockup: empty text, one note under rows, code icon", async () => {
+    const codeAccount: AccessEntry = {
+      id: "00000000-0000-4000-8000-000000000010",
+      principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000010" },
+      permission: "write",
+      createdAt: "2026-11-03T00:00:00.000Z",
+      displayName: "Code von einkauf@beispiel.de",
+      serviceAccountKind: "resource_bound",
+    };
+    const empty = await setup({ entries: [mia], findServiceAccount: async () => null });
+    try {
+      const text = () => empty.dom.root.textContent ?? "";
+      expect(text()).toContain("No service account yet. Code of a mailbox or a base gets access here like a person.");
+      expect(text()).not.toContain("Code runs as the service account");
+      empty.button("Add service account").click();
+      await waitFor(() => !!empty.dom.root.querySelector('input[aria-label="Identifier of the service account"]'), "the identifier field");
+      const field = empty.dom.root.querySelector<HTMLInputElement>('input[aria-label="Identifier of the service account"]')!;
+      expect(field.placeholder).toBe("Identifier from the code page, for example code-7k2q9m4xwt");
+      // While adding, neither the empty text nor the note shows.
+      expect(text()).not.toContain("No service account yet.");
+    } finally {
+      empty.cleanup();
+    }
+    const listed = await setup({ entries: [mia, codeAccount], findServiceAccount: async () => null });
+    try {
+      const text = listed.dom.root.textContent ?? "";
+      expect(text).toContain(
+        "Code runs as the service account of its object. Whoever manages Einkauf 2027 gives it access here, like a person. Whoever edits the code acts with this right.",
+      );
+      expect(text).not.toContain("No service account yet.");
+      const row = listed.row("Code von einkauf@beispiel.de");
+      expect(row.querySelector(".ti-code")).not.toBeNull();
+      expect(row.querySelector(".ti-robot")).toBeNull();
+    } finally {
+      listed.cleanup();
+    }
+  });
 });

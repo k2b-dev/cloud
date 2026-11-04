@@ -13,12 +13,13 @@ export const accessDialogMessages = i18n.define({
       serviceAccounts: "Service accounts",
       addServiceAccount: "Add service account",
       serviceAccountHandle: "Identifier of the service account",
-      serviceAccountHandlePlaceholder: "Paste the identifier",
+      serviceAccountHandlePlaceholder: "Identifier from the code page, for example code-7k2q9m4xwt",
       serviceAccountFind: "Find",
       serviceAccountNotFound: "No service account with this identifier, or you cannot add it here.",
       serviceAccountLookupFailed: "The service account could not be looked up.",
-      serviceAccountNote:
-        "A service account belongs to an object, such as a mailbox. Whoever manages this item gives it access here, like a person.",
+      serviceAccountNote: ({ name }: { name: string }) =>
+        `Code runs as the service account of its object. Whoever manages ${name} gives it access here, like a person. Whoever edits the code acts with this right.`,
+      serviceAccountsEmpty: "No service account yet. Code of a mailbox or a base gets access here like a person.",
       add: "Add",
       cancel: "Cancel",
       save: "Save",
@@ -88,12 +89,13 @@ export const accessDialogMessages = i18n.define({
       serviceAccounts: "Dienstkonten",
       addServiceAccount: "Dienstkonto hinzufügen",
       serviceAccountHandle: "Kennung des Dienstkontos",
-      serviceAccountHandlePlaceholder: "Kennung einfügen",
+      serviceAccountHandlePlaceholder: "Kennung von der Code-Seite, etwa code-7k2q9m4xwt",
       serviceAccountFind: "Suchen",
       serviceAccountNotFound: "Kein Dienstkonto mit dieser Kennung, oder du kannst es hier nicht hinzufügen.",
       serviceAccountLookupFailed: "Das Dienstkonto konnte nicht gesucht werden.",
-      serviceAccountNote:
-        "Ein Dienstkonto gehört einem Objekt, etwa einem Postfach. Wer dieses Element verwaltet, gibt ihm hier Zugriff wie einer Person.",
+      serviceAccountNote: ({ name }) =>
+        `Code läuft als Dienstkonto seines Objekts. Wer ${name} verwaltet, gibt ihm hier Zugriff wie einer Person. Wer den Code bearbeitet, handelt mit diesem Recht.`,
+      serviceAccountsEmpty: "Noch kein Dienstkonto. Code eines Postfachs oder einer Base bekommt hier Zugriff wie eine Person.",
       add: "Hinzufügen",
       cancel: "Abbrechen",
       save: "Speichern",
