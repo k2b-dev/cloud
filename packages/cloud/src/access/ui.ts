@@ -6,6 +6,7 @@
  * from depending on Cloud's broad legacy UI entrypoint.
  */
 
+export { AccessDialog, type AccessDialogProps, type FoundServiceAccount, openAccessDialog } from "./AccessDialog";
 export { type AppAccessEditorProps, default as AppAccessEditor } from "./AppAccessEditor";
 export { appAccessAdapter } from "./app-access-adapter";
 export { appAccessMessages } from "./app-access-messages";

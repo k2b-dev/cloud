@@ -267,6 +267,7 @@ const portableSections = [
       page("avatar-stack", "AvatarStack", "ti ti-users", "Overlapping faces that open the full list of people."),
       page("details", "Description list", "ti ti-list-details", "Semantic responsive key-value details with optional actions."),
       page("progress", "Progress", "ti ti-progress", "Determinate progress in compact sizes and semantic tones."),
+      page("change-list", "ChangeList", "ti ti-list-check", "Pending changes before saving, one line each, with tone icons."),
       page("stats", "Statistics", "ti ti-chart-bar", "Labeled values, context, accents, trends, and grids."),
       page(
         "observability",
