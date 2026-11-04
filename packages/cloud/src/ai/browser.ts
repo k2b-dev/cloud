@@ -55,7 +55,12 @@ export {
 } from "./default-tool-contracts";
 export { guessAiMediaType } from "./file-media-type";
 export { AI_PROJECT_FILE_MOUNT, AI_SKILL_FILE_MOUNT } from "./file-mount";
-export { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";
+export {
+  AI_FILES_MAX_FILE_BYTES_DEFAULT,
+  AI_IMAGE_INPUT_MAX_BYTES,
+  AI_TURN_ATTACHMENT_MAX_ITEMS,
+  AI_TURN_IMAGE_MAX_TOTAL_BYTES,
+} from "./limits";
 export {
   AI_LOCAL_BATCH_MAX_ITEMS,
   AI_LOCAL_INSTRUCTIONS_MAX_BYTES,

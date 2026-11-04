@@ -13,6 +13,7 @@ import { type CloudCliContext, printStructured } from "@k2b/cloud/cli";
 import { AiModelRequestSchema } from "@k2b/cloud/shared";
 import { z } from "zod";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
+import { type LocalFileReview, openReviewedFile, reviewedUpload, reviewLocalFile } from "./local-file";
 import { classifyLocalPath } from "./local-paths";
 import { AI_API, jsonRequest, printValue, readApi } from "./shared";
 import { type AssistantClientTools, type AssistantTurnOutput, type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
@@ -76,11 +77,20 @@ export const uploadAttachment = async (
   localPath: string,
   directory?: string,
   signal?: AbortSignal,
+  /** The file the path named when the person attached it; without one, the file it names now. */
+  review?: LocalFileReview,
 ): Promise<Extract<AiTurnContentPart, { type: "attachment" }> & { version: number }> => {
-  const file = Bun.file(localPath);
-  if (!(await file.exists())) throw new Error(`Attachment not found: ${localPath}`);
-  const mediaType = file.type || guessAiMediaType(localPath);
-  return uploadAttachmentFile(ctx, conversationId, new File([file], basename(localPath), { type: mediaType }), directory, signal);
+  const checked = review ?? (await reviewLocalFile(localPath));
+  if (!checked.identity || checked.identity.directory) throw new Error(`Attachment not found: ${localPath}`);
+  const { file, info } = await openReviewedFile(localPath, checked);
+  try {
+    if (!info.isFile()) throw new Error(`Attachment not found: ${localPath}`);
+    const mediaType = Bun.file(localPath).type || guessAiMediaType(localPath);
+    const upload = await reviewedUpload(file, basename(localPath), mediaType, signal);
+    return await uploadAttachmentFile(ctx, conversationId, upload, directory, signal);
+  } finally {
+    await file.close();
+  }
 };
 
 export const uploadAttachmentFile = async (

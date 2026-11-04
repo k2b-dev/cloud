@@ -1,4 +1,3 @@
-import { stat } from "node:fs/promises";
 import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -69,6 +68,7 @@ import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
 import { localTurnFields, readSelectedLocalSkill } from "./interactive";
 import { deniedLocalBashResult } from "./local-bash";
 import { createLocalContextReader, discoverLocalContext, type LocalContext, type LocalSkill } from "./local-context";
+import { openReviewedFile, reviewedUpload, reviewLocalFile } from "./local-file";
 import { classifyLocalPath, resolveLocalPath } from "./local-paths";
 import { createLocalSessionFolder, type LocalQuestionKind, runLocalTool } from "./local-tools";
 import { AI_API, jsonRequest, readApi, readProjectsApi } from "./shared";
@@ -781,11 +781,17 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
             continue;
           }
           const path = fileURLToPath(part.uri);
-          const access = classifyLocalPath(path, { workspace: s.cwd });
+          const given = resolveLocalPath(path, s.cwd);
+          const notFound = () => RequestError.invalidParams(undefined, `Attachment not found: ${terminalSafeText(path)}`);
+          // The checked file is the one that is sent, even if the path names another file after the question.
+          const review = await reviewLocalFile(given);
+          if (!review.identity) throw notFound();
+          const rules = [classifyLocalPath(given, { workspace: s.cwd }), classifyLocalPath(review.target, { workspace: s.cwd })];
+          const access = rules.find((rule) => rule.access === "blocked") ?? rules.find((rule) => rule.access === "ask") ?? rules[0]!;
           if (access.access === "blocked")
             throw RequestError.invalidParams(undefined, `Not attached: ${terminalSafeText(path)} is cld's configuration.`);
           // A folder is no attachment; its path tells Assistant where to look with the local tools.
-          if ((await stat(resolveLocalPath(path, s.cwd)).catch(() => undefined))?.isDirectory()) {
+          if (review.identity.directory) {
             text += `\n${path}`;
             continue;
           }
@@ -798,9 +804,23 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
                   : `It is outside ${s.cwd}.`;
             if (!(await ask(s, crypto.randomUUID(), [], `Attach ${path}? ${reason}`, "access", true))) continue;
           }
-          const file = Bun.file(resolveLocalPath(path, s.cwd));
-          if (!(await file.exists())) throw RequestError.invalidParams(undefined, `Attachment not found: ${terminalSafeText(path)}`);
-          files.push(new File([file], basename(path), { type: file.type || guessAiMediaType(path) }));
+          const { file, info } = await openReviewedFile(given, review).catch((error) => {
+            if (error instanceof Error && "code" in error && error.code === "ENOENT") throw notFound();
+            throw RequestError.invalidParams(undefined, terminalSafeText(error instanceof Error ? error.message : String(error)));
+          });
+          try {
+            if (!info.isFile()) throw notFound();
+            const type = Bun.file(given).type || guessAiMediaType(path);
+            // Refuse an oversized image before reading it into memory.
+            if (isAiImageMediaType(type) && info.size > AI_IMAGE_INPUT_MAX_BYTES)
+              throw RequestError.invalidParams(
+                undefined,
+                `Image attachment exceeds the ${AI_IMAGE_INPUT_MAX_BYTES / (1024 * 1024)} MB limit: ${basename(path)}`,
+              );
+            files.push(await reviewedUpload(file, basename(path), type, abort.signal));
+          } finally {
+            await file.close();
+          }
         } else if (part.type === "image") {
           const extension = part.mimeType === "image/jpeg" ? "jpg" : part.mimeType.split("/")[1]?.replaceAll(/[^a-z0-9]/gi, "") || "bin";
           files.push(new File([Buffer.from(part.data, "base64")], `image-${++imageCount}.${extension}`, { type: part.mimeType }));

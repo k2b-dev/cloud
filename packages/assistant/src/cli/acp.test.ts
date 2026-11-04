@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -913,6 +913,34 @@ describe("Assistant ACP", () => {
     });
     await h.send("Next");
     expect(h.requests.filter((r) => r.path.endsWith("/turns"))[1]?.body).toMatchObject({ localContext: { selectedSkills: [] } });
+  });
+  test("an attachment link sends the checked file when its path changes during the question", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "cld-acp-attachment-"));
+    resources.push(() => rm(outside, { recursive: true, force: true }));
+    const safe = join(outside, "safe.txt");
+    const config = join(outside, "config.json");
+    const previous = process.env.CLD_CONFIG;
+    process.env.CLD_CONFIG = config;
+    resources.push(async () => {
+      if (previous === undefined) delete process.env.CLD_CONFIG;
+      else process.env.CLD_CONFIG = previous;
+    });
+    await writeFile(safe, "reviewed attachment");
+    await writeFile(config, "FAKE-CLOUD-TOKEN");
+    let alias = "";
+    const h = await harness({
+      permission: async () => {
+        await rm(alias);
+        await symlink(config, alias);
+        return { outcome: { outcome: "selected", optionId: "once" } };
+      },
+    });
+    alias = join(h.cwd, "alias.txt");
+    await symlink(safe, alias);
+    const { pathToFileURL } = await import("node:url");
+    await h.send("Read", [{ type: "resource_link", uri: pathToFileURL(alias).href, name: "file" }]);
+    expect(h.permissions).toHaveLength(1);
+    expect(await Promise.all(h.uploads.map((file) => file.text()))).toEqual(["reviewed attachment"]);
   });
   test("file links, attachment count and editor cancellation preserve path policy", async () => {
     const h = await harness();
