@@ -305,7 +305,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     }));
     capabilitySpy = spyOn(registry, "getCapability").mockImplementation(async (id) => (id === "example" ? currentEntry : null));
   });
-  async function resetFixture(options: { personal?: boolean; invalidEntrypoint?: boolean } = {}) {
+  async function resetFixture(options: { personal?: boolean; invalidEntrypoint?: boolean; entry?: boolean } = {}) {
     currentEntry = structuredClone(baseEntry);
     callLimit = 200;
     rateLimited = false;
@@ -359,19 +359,21 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const created = await mandates.create({
       authority: { kind: "admin", userId },
       subject: { type: "service_account", id: account!.id },
-      ownerAppId: "core",
+      ownerAppId: options.entry ? "runner" : "core",
       workloadType: "code.version",
       workloadId: version!.id,
-      policy: {
-        version: 1,
-        apps: ["example"],
-        operations: ["capability.action.run:write", "capability.query:read"],
-        actions: "preapproved",
-        grants: [
-          { kind: "action", appId: "example", capabilityId: "write", target: item, fixedInput: {} },
-          { kind: "query", appId: "example", capabilityId: "read", fixedInput: {} },
-        ],
-      },
+      policy: options.entry
+        ? null
+        : {
+            version: 1,
+            apps: ["example"],
+            operations: ["capability.action.run:write", "capability.query:read"],
+            actions: "preapproved",
+            grants: [
+              { kind: "action", appId: "example", capabilityId: "write", target: item, fixedInput: {} },
+              { kind: "query", appId: "example", capabilityId: "read", fixedInput: {} },
+            ],
+          },
     });
     if (!created.ok) throw new Error(created.error.message);
     claims = {
@@ -551,13 +553,13 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
               inputChunked: false,
               content: null,
               nextCursor: null,
-              calls: [stored],
+              calls: [{ ...stored, refusalKind: classification?.refusal_kind }],
             },
           },
         }),
       });
       const page = await loadCodeRunCalls(invoke, claims.codeId, claims.runId, 0, 1);
-      expect(page?.calls[0]?.accessRefused).toBe(failure.status === 403 || failure.status === 404);
+      expect(page?.calls[0]?.refusal).toBe(failure.status === 403 || failure.status === 404 ? "target_refused" : "bridge");
     }
   });
   test("A3a a provider review requiring confirmation is policy, despite its HTTP 403", async () => {
@@ -713,6 +715,55 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   test("an operation absent from the mandate is refused", async () => error({ operation: "example.other" }, "mandate_forbidden", 200, 403));
   test("the same operation at another target is refused", async () =>
     error({ target: { ...item, id: "b" } }, "mandate_forbidden", 200, 403));
+  test("new entries allow actual operations and targets absent from the checker list", async () => {
+    await resetFixture({ entry: true });
+    expect(await (await send({ operation: "example.other" })).json()).toEqual({ ok: true, data: { value: "a" } });
+    expect(await (await send({ target: { ...item, id: "b" } })).json()).toEqual({ ok: true, data: { value: "b" } });
+  });
+  test("personal Code also uses its active policy-free entry and current person rights", async () => {
+    await resetFixture({ entry: true, personal: true });
+    await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
+    const [access] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${userId}::uuid,'write') RETURNING id`;
+    targetAccess = access!.id;
+    expect(await (await send({ operation: "example.other" })).json()).toEqual({ ok: true, data: { value: "a" } });
+    await sql`UPDATE auth.mandates SET state='paused' WHERE id=${claims.mandateId}::uuid`;
+    await error({}, "code_mandate_mismatch");
+  });
+  test("an all-admin policy requires version approval and coverage for each actual call", async () => {
+    await resetFixture({ entry: true });
+    await sql`UPDATE code.policy_rules SET value='admin' WHERE group_id IS NULL`;
+    await error({ operation: "example.read" }, "code_approval_required");
+    await error({}, "code_approval_required");
+    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
+      SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+    await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'silent_shared')`;
+    expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
+    await error({ operation: "example.read" }, "code_approval_required");
+    await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'read'),(${claims.versionId}::uuid,'ask_app_asks')`;
+    expect(await (await send({ operation: "example.read" })).json()).toEqual({ ok: true, data: { value: "a" } });
+    await error({ operation: "example.asks" }, "code_unattended_forbidden");
+  });
+
+  test("new entries still obey actual-call admin policy, current grants and unattended refusals", async () => {
+    await resetFixture({ entry: true });
+    await sql`UPDATE code.policy_rules SET value='admin' WHERE row='read' AND group_id IS NULL`;
+    await error({ operation: "example.read" }, "code_approval_required");
+    await error({ operation: "example.asks" }, "code_unattended_forbidden");
+    await sql`DELETE FROM auth.access WHERE id=${targetAccess}::uuid`;
+    expect(await (await send()).json()).toEqual({ ok: false, error: { code: "forbidden", status: 403 } });
+  });
+  test("a pending or paused entry cannot issue, including a personal Code entry", async () => {
+    for (const personal of [false, true]) {
+      await resetFixture({ entry: true, personal });
+      if (personal) {
+        await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
+      }
+      await sql`UPDATE auth.mandates SET confirmed_at=NULL,confirmation_deadline=created_at+interval '15 minutes' WHERE id=${claims.mandateId}::uuid`;
+      await error({}, "code_mandate_mismatch");
+      await sql`UPDATE auth.mandates SET confirmed_at=created_at,confirmation_deadline=NULL,state='paused' WHERE id=${claims.mandateId}::uuid`;
+      await error({}, "code_mandate_mismatch");
+    }
+  });
   test("a revoked current Code target grant is refused at the provider", async () => {
     await sql`DELETE FROM auth.access WHERE id=${targetAccess}::uuid`;
     const response = await send();

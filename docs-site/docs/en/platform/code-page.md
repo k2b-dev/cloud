@@ -3,9 +3,9 @@ title: Show a resource's Code page
 navTitle: Code page
 section: Platform services
 order: 967
-description: Mount the shared Code page at a resource so its administrators see automations, access, runs, versions and switch Code on.
+description: Mount the shared Code page at a resource so its administrators see automations, targets, refused calls, runs, versions and switch Code on.
 tags: [code, ssr, ui, permissions]
-updated: 2026-11-01
+updated: 2026-11-03
 ---
 
 # Show a resource's Code page
@@ -13,33 +13,30 @@ updated: 2026-11-01
 An application whose resource type owns Code (`code.owners`) mounts the shared
 Code page at that resource. The page reads Core's public `core.code.*` queries
 and activation routes with the person's own credentials, so a built-in and a
-third-party application get the same page. It never names an application.
+third-party application get the same page. It never names an application, and
+it never asks another application anything: foreign targets come from the
+registry, by type and ID.
 
 ## What people see
 
 The page is titled **Code**; screen readers hear whose Code it is.
 
-- **Overview:** who the Code acts as, the running version and who switched it
-  on, its automations (schedules and manual starts) with status, next run and last run,
-  and its access as operation at target. A newer version that is ready but off
-  says which access it newly needs and offers **Switch on**. A version that
-  waits for a Cloud administrator says so and cannot be switched on yet.
-  Removed access says who removed it at the target and when ("Mia Koch
-  removed it today at 11:20"), and which calls fail until someone switches the
-  Code on again. A name the viewer may not see in the directory reads as
-  "Someone"; without the removal's audit event only the removal itself shows.
-  The automation that needs it shows **Access missing**; the others keep
-  running. Only the whole Code can be paused. A target the page cannot reach,
-  all access removed, and paused Code each show what fails and how to recover.
-  A target's reader answers "not found" both when the target does not exist
-  and when the viewer may not read it, so the page never calls it deleted: it
-  shows the target's type and ID without a name ("Space Sp4kd2 cannot be
-  reached") and says that whoever manages the target can say why. Internet
-  origins come from the full `manifest.internet` list reviewed with each version,
-  including calls without a secret. Running and waiting versions list their own
-  origins; new ones are marked. Historical versions show their reviewed list too.
+- **Overview:** the service account the Code runs as ("Runs as service account
+  “Code of info@example.com”") with its handle to copy, also before the first
+  run; the running version; its automations (schedules and manual starts) with
+  status, next run and last run; and its targets as operation at target, read
+  from the handles in the Code. Targets say what the Code calls, not whether it
+  may: whoever manages a target decides that. A newer version that is ready but
+  off marks what it newly calls and offers **Switch on**. A version that waits
+  for a Cloud admin says so and cannot be switched on yet. When the newest
+  finished run failed with a refused call, **Last run** shows it first (see
+  below). Paused Code shows how to resume. Internet origins come from the full
+  `manifest.internet` list reviewed with each version, including calls without
+  a secret. Running and waiting versions list their own origins; new ones are
+  marked. Historical versions show their reviewed list too.
 - **Runs:** each run with its trigger, version and state, including skipped
-  schedule ticks. A run lists its calls in order with their result. A run that
+  schedule ticks. A run lists its calls in order with their result. A failed
+  run with a refused call shows the refusal in place of the generic failure. A run that
   failed after its first action offers **Run again**, once per failed run; a
   run that failed earlier was already retried by Core. Editors can open any
   failed run in the panel with **View with <panel>**. A run started again says
@@ -59,18 +56,47 @@ The page is titled **Code**; screen readers hear whose Code it is.
 - **Switch on:** a dialog lists every operation at every target the version
   needs, starts Core's durable activation and shows its result. When the person
   does not administer a target, nothing changes and the dialog offers **Copy
-  link** to this page for someone who does. It names the target and who
-  manages it only when the person may read that target; otherwise it shows
-  only the ID. The page decides this itself, whatever the refusal carries. Phone sessions
-  and non-interactive credentials see why they cannot switch on.
+  link** to this page for someone who does. A foreign target appears by type
+  and ID only, never with its name or who manages it, whatever the refusal
+  carries. Phone sessions and non-interactive credentials see why they cannot
+  switch on.
 
 Only administrators of the owner and editors or readers of the Code see the
 page. Readers see runs without their calls and no actions. Every part that
 cannot load shows an error with a way to try again.
 
 Automation names use the optional reviewed `entrypoints[].title` and fall back
-to the entrypoint identifier. This also applies to switch-on dialogs and
-missing-access messages. Run history uses the title from the run's own version.
+to the entrypoint identifier. This also applies to switch-on dialogs. Run
+history uses the title from the run's own version.
+
+## Refused calls
+
+The page reports a refused call like cron reports a failed job: what the Code
+tried, as a fact, never as the run's cause. The Code may have caught the
+refusal and failed for another reason, so the notice appears only on a failed
+run, and a successful run never shows one. The source is what the bridge
+recorded at the run (see [Code runs](/en/docs/platform/code-runs)): the first
+target refusal (`firstRefusedCallOrdinal`, `firstRefusedCall`) and each call's
+`refusalKind`. The page never guesses from a status or an error code.
+
+| Recorded kind | Editors see | Readers see |
+| --- | --- | --- |
+| `target_refused` (403 or 404) | "No access to Space k7qm2x9a." with the action title, and "Either the service account “Code of …” lacks the right for it, or the target does not exist." Then **Copy handle** and the hint for whoever manages the target, ending "The next run tries again." | "A call was refused." and that everyone who may edit the Code sees which target refused. |
+| `policy` | "The policy does not allow this." with action and target. No handle, no hint for the target. | Nothing: readers get no calls. |
+| `approval` | "This version needs the Cloud admin's approval." with action and target; Cloud admins also get **View approval**. No handle. | Nothing. |
+
+A target appears by type and ID. Its ID is a link only when the type's
+`pages` pattern needs nothing but `:id`, such as `/app/spaces/:id`; a pattern
+that also needs another value, such as `/app/spaces/:space?item=:id`, or a
+type without pages leaves the ID as text. The target's app shows its name on
+its own page, to whoever may read it. Action title, type name and icon come
+from the manifest in the registry, without a call. Editors' page load reads
+the refused call once from Core; readers' page data never contains it,
+because a target ID can come from data at run time.
+
+Whoever manages the target adds the service account with the handle in the
+target's access editor. There is no access request: the Code's author asks
+the target's manager in their own way and passes the handle.
 
 ## Mount it
 
@@ -133,8 +159,9 @@ it much longer than for them, so a slow Core only leaves the dot out.
   `visible` is true.
 - Put `CodeNavStatus` from `@k2b/cloud/ssr/code-nav-status` in the entry's
   `meta` with `attention`. It renders `AppWorkspace.SidebarItemStatus`
-  `attention`: a warning dot, never a number, when a latest run failed, access
-  is missing, or a version waits for approval.
+  `attention`: a warning dot, never a number, when Core reports that the Code
+  needs attention, such as a failed latest run or a version waiting for
+  approval.
 
 ```tsx
 import { CodeNavStatus } from "@k2b/cloud/ssr/code-nav-status";
@@ -150,11 +177,18 @@ The same page shows one personal Code: pass `owner: { codeId }` instead of a
 resource. Core reads that Code by ID; a Code the person may not see, or Code
 of a resource or app, shows the "no access" state. Personal Code runs as its
 person, so the page leads with the Code's title, says "runs as you" (or names
-the owner when the Code is shared with the viewer) and lists no target access,
-because the Code never gets access of its own. Gustav uses this at
+the owner when the Code is shared with the viewer) and lists no targets,
+because the Code never gets access of its own. A refused call there says that
+the person it runs as lacks the right, or that the target does not exist. Gustav uses this at
 `/app/assistant/code/<codeId>`.
 
 A panel that declares `code: true` (see [Offer a panel](/en/docs/platform/panels))
 appears as **Edit with <panel>** on the page and on an empty page, with the icon
 the panel declares; the empty page also says that the panel writes the Code with
 the person. The page names no application.
+
+The account handle has one source in the shared page data:
+`state.code.serviceAccountHandle`. The loader retains Core’s
+`Code.serviceAccountHandle` for both the account line and refusal notices.
+Administration reads the same handle for app Code. An unavailable handle hides
+the copy action; personal Code has no service-account handle.

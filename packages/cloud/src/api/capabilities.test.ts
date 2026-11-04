@@ -2265,6 +2265,7 @@ test("target HTTP statuses survive runner dispatch and Code page data without pa
         expect(fetched).toBe(true);
         expect(stored).toEqual({ ok: false, error: { code: failure.code.toLowerCase(), status: failure.status } });
         let pageResult = stored;
+        let pageKind: string | undefined = failure.status === 403 || failure.status === 404 ? "target_refused" : "bridge";
         const invoke: CodePageInvoke = async (_invocation, schema) => ({
           ok: true,
           data: capabilityResultSchema(schema).parse({
@@ -2293,6 +2294,7 @@ test("target HTTP statuses survive runner dispatch and Code page data without pa
                     call: null,
                     result: pageResult,
                     state: "failed",
+                    ...(pageKind ? { refusalKind: pageKind } : {}),
                   },
                 ],
               },
@@ -2300,9 +2302,11 @@ test("target HTTP statuses survive runner dispatch and Code page data without pa
           }),
         });
         const page = await loadCodeRunCalls(invoke, claims.codeId, claims.runId, 0, 1);
-        expect(page?.calls[0]?.accessRefused).toBe(failure.status === 403 || failure.status === 404);
-        pageResult = { ok: false, error: { code: failure.code.toLowerCase() } };
-        expect((await loadCodeRunCalls(invoke, claims.codeId, claims.runId, 0, 1))?.calls[0]?.accessRefused).toBe(false);
+        expect(page?.calls[0]?.refusal).toBe(pageKind as never);
+        // Without the bridge's classification the page never guesses from a status or a code in the result.
+        pageResult = { ok: false, error: { code: "not_found", status: 404 } };
+        pageKind = undefined;
+        expect((await loadCodeRunCalls(invoke, claims.codeId, claims.runId, 0, 1))?.calls[0]?.refusal).toBeNull();
       }
     }
   } finally {

@@ -105,7 +105,7 @@ suiteFor("database", "nats")("incoming Mail automation target upgrade against Sp
         { mandate_id: string }[]
       >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid`;
       const fresh = await mandates.get(binding!.mandate_id);
-      expect(fresh?.policy.grants).toEqual([
+      expect(fresh?.policy?.grants).toEqual([
         {
           appId: "spaces",
           capabilityId: "event.create",

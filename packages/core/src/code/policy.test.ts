@@ -186,3 +186,17 @@ test("the admin preset requires approval for internet versions of every owner", 
   for (const candidate of [owner, { kind: "resource" as const, ref: { type: "example.item", id: "owner" } }])
     expect(effective("internet", candidate, definition, membership).value).toBe("admin");
 });
+
+test("F9 B classifies each actual call; an all-admin table also covers reads", () => {
+  const defaults = codePolicyPreset("admin");
+  for (const rule of defaults.rules)
+    expect(rule.value).toBe(["read", "silent_you", "silent_draft"].includes(rule.row) ? "automatic" : "admin");
+  expect(codePolicyRow("action")).toBe("ask_app_asks");
+  const allAdmin = { ...defaults, preset: "custom" as const, rules: defaults.rules.map((rule) => ({ ...rule, value: "admin" as const })) };
+  for (const candidate of [
+    owner,
+    { kind: "resource" as const, ref: { type: "example.owner", id: "x" } },
+    { kind: "app" as const, appId: "example" },
+  ])
+    for (const rule of allAdmin.rules) expect(effective(rule.row, candidate, allAdmin, { groups: [], ancestors: [] }).value).toBe("admin");
+});

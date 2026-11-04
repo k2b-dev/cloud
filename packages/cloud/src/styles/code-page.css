@@ -231,6 +231,36 @@ a.cloud-code__row[aria-current="true"] {
 .cloud-code__note-actions {
   margin-top: 0.5rem;
 }
+/* A refused call: the notice, then what someone can do about it and the hint for whoever manages the target. */
+.cloud-code__refusal {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.cloud-code__refusal .cloud-code__note-actions {
+  margin-top: 0;
+}
+/* IDs read as identifiers and may be long, so they wrap; the short fixed-length handle stays whole. */
+.cloud-code__refusal code {
+  font-family: var(--k2b-font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+.cloud-code__refusal .cloud-code__quiet code {
+  white-space: nowrap;
+}
+/* "Last run" keeps its words together; the run's time and title wrap below on a phone. */
+.cloud-code__h2--wrap {
+  flex-wrap: wrap;
+  column-gap: 0.5rem;
+  row-gap: 0;
+}
+.cloud-code__h2--wrap > span:first-child {
+  white-space: nowrap;
+}
+.cloud-code__h2 a.cloud-code__count {
+  color: var(--k2b-text-muted);
+}
 .cloud-code__dialog-actions {
   justify-content: flex-end;
   margin-top: 0.5rem;

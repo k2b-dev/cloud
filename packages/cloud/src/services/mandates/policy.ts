@@ -7,15 +7,22 @@ import {
   type NormalizedCapabilityCall,
 } from "../../contracts/capabilities";
 
-/** Core stores one mandate per immutable Code version, shared by all its entry points. */
+/** Core stores one entry per immutable Code version, shared by all its entry points. */
 export const CODE_VERSION_MANDATE_WORKLOAD_TYPE = "code.version" as const;
 
 /** Durable binding consumed by Code activation and invocation. workloadId is the immutable version ID. */
 export type CodeVersionMandateBinding = {
-  ownerAppId: "core";
+  ownerAppId: "runner";
   workloadType: typeof CODE_VERSION_MANDATE_WORKLOAD_TYPE;
   workloadId: string;
 };
+
+/** New Code entries name the authenticated execution app; Core manages their lifecycle. */
+export const CODE_VERSION_ENTRY_APP_ID = "runner" as const;
+/** Legacy Core mandates stay policy-bound until a new version is explicitly activated. */
+export const isCodeVersionWorkload = (value: { ownerAppId: string; workloadType: string }): boolean =>
+  (value.ownerAppId === CODE_VERSION_ENTRY_APP_ID || value.ownerAppId === "core") &&
+  value.workloadType === CODE_VERSION_MANDATE_WORKLOAD_TYPE;
 
 export const MANDATE_POLICY_VERSION = 1 as const;
 export const MANDATE_POLICY_MAX_IDENTIFIERS = 100;
@@ -160,24 +167,19 @@ export const capabilityGrantAllows = (
     kind: "query" | "action";
     input: unknown;
     call?: NormalizedCapabilityCall;
-    codeAccount?: boolean;
-    /** Personal Code may use dynamic targets with an operation-only grant. Explicit target/refs stay binding. */
+    /** Legacy personal Code may use dynamic targets; explicit target/refs stay binding. */
     codeVersion?: boolean;
   },
 ): boolean =>
   grant.appId === input.appId &&
   grant.capabilityId === input.capabilityId &&
   grant.kind === input.kind &&
-  !(input.codeAccount && input.kind === "action" && !input.call) &&
-  ((input.codeAccount && input.kind === "query") ||
-    (!input.call
-      ? grant.target === undefined && grant.refs === undefined
-      : (grant.target === undefined
-          ? (input.call.target === null || (input.codeVersion === true && !input.codeAccount)) &&
-            (!input.codeAccount || input.kind !== "action")
-          : equalJson(grant.target, input.call.target)) &&
-        ((grant.refs === undefined && input.codeVersion === true && !input.codeAccount) ||
-          equalJson(grant.refs ?? {}, input.call.refs)))) &&
+  (!input.call
+    ? grant.target === undefined && grant.refs === undefined
+    : (grant.target === undefined
+        ? input.call.target === null || input.codeVersion === true
+        : equalJson(grant.target, input.call.target)) &&
+      ((grant.refs === undefined && input.codeVersion === true) || equalJson(grant.refs ?? {}, input.call.refs))) &&
   Object.entries(grant.fixedInput).every(
     ([key, value]) =>
       input.input !== null &&
@@ -185,6 +187,17 @@ export const capabilityGrantAllows = (
       Object.hasOwn(input.input, key) &&
       equalJson(value, Reflect.get(input.input, key)),
   );
+
+/** Preserve the exact authority of stored object/app Code policies until a new version is activated.
+ * New entries never call this matcher: they have no policy. */
+const legacyCodeGrantAllows = (grant: CapabilityGrant, input: Parameters<typeof capabilityGrantAllows>[1]): boolean => {
+  if (input.kind === "action" && (!input.call || grant.target === undefined)) return false;
+  return capabilityGrantAllows(input.kind === "query" ? { ...grant, target: undefined, refs: undefined } : grant, {
+    ...input,
+    call: input.kind === "query" ? undefined : input.call,
+    codeVersion: false,
+  });
+};
 
 export const MandatePolicyV1Schema = z
   .object({
@@ -269,8 +282,8 @@ export const mandatePolicyAllows = (
     input?: unknown;
     /** Validated full call; required for target-bound authorization. */
     call?: NormalizedCapabilityCall;
-    /** Derived from the live service-account row, never request JSON. */
-    codeAccount?: boolean;
+    /** Legacy policy only: derived from the live Code account row, never request JSON. */
+    legacyCodeAccount?: boolean;
     /** Core-owned code.version workload; personal Code retains dynamic targets. */
     codeVersion?: boolean;
     capabilityPolicy?: CapabilityActionPolicy;
@@ -304,7 +317,7 @@ export const mandatePolicyAllows = (
         ? "action"
         : null;
   if (input.call && input.call.capability !== `${input.appId}.${capabilityId}`) return false;
-  if (kind === "action" && input.codeAccount && policy.grants === undefined) return false;
+  if (kind === "action" && input.legacyCodeAccount && policy.grants === undefined) return false;
   if (
     policy.grants === undefined &&
     input.call &&
@@ -319,13 +332,12 @@ export const mandatePolicyAllows = (
       !policy.grants.some(
         (grant) =>
           "appId" in grant &&
-          capabilityGrantAllows(grant, {
+          (input.legacyCodeAccount ? legacyCodeGrantAllows : capabilityGrantAllows)(grant, {
             appId: input.appId,
             capabilityId,
             kind,
             input: input.input,
             call: input.call,
-            codeAccount: input.codeAccount,
             codeVersion: input.codeVersion,
           }),
       )

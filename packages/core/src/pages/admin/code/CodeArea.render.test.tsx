@@ -270,3 +270,24 @@ test("reviewed automation titles appear in approvals and old declarations keep t
   expect(html).toContain("legacyJob");
   expect(html).toContain(">lieferungenEintragen</code>");
 });
+
+test("Code of an app has its Code page here: its service account and a refused call like any Code page", () => {
+  const detail = render({ sec: "code", id: "c_portal" })
+    .replaceAll(/<!--[^>]*-->/g, "")
+    .replaceAll(/<[^>]+>/g, " ")
+    .replaceAll(/\s+/g, " ")
+    .replaceAll(/ \./g, ".");
+  expect(detail).toContain("Läuft als Dienstkonto „Code von Werkstattbuch“");
+  expect(detail).toContain("Letzter Lauf");
+  expect(detail).toContain(
+    "Kein Zugriff auf Space k7qm2x9a. Der Code wollte dort „Aufgabe erstellen“. Entweder fehlt dem Dienstkonto „Code von Werkstattbuch“ das Recht dafür, oder das Ziel existiert nicht.",
+  );
+  expect(detail).toContain(
+    "Wer das Ziel verwaltet, fügt das Dienstkonto im Rechte-Editor des Ziels mit der Kennung code-7k2q9m4xwt hinzu. Der nächste Lauf versucht es erneut.",
+  );
+  expect(render({ sec: "code", id: "c_portal" })).toContain('href="/app/spaces/k7qm2x9a"');
+  // Administration manages policy, approvals and Code of apps, never target access.
+  expect(detail).not.toContain("Zielrechte");
+  // Code of a place or a person keeps its Code page at its owner.
+  expect(render({ sec: "code", id: "c_rechn" })).not.toContain("Läuft als Dienstkonto");
+});

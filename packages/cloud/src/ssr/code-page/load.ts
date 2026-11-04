@@ -2,39 +2,38 @@ import type { Context } from "hono";
 import { z } from "zod";
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "../../capabilities/server";
 import type { CapabilityCaller } from "../../capabilities/server-invoke";
-import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "../../contracts/capabilities";
+import { type CloudResourceRef, cloudResourceRefAppId } from "../../contracts/capabilities";
+import { cloudResourcePageHref } from "../../contracts/resource-pages";
 import { sql } from "../../runtime/clients";
 import { getDateConfig, getLocale, isAppSessionActor } from "../../server";
-import { coreOrigin } from "../../services/identity/core-origin";
-import { LOCALE_HEADER } from "../../shared/locale";
 import { visiblePanelProviders } from "../app-navigation";
 import { getDisplayRuntimeContext } from "../runtime";
 import { AttentionSchema } from "./attention-schema";
-import { loadCodeRunCalls, loadCodeRunCallsForDetail } from "./calls";
+import { loadCodeRunCallsForDetail } from "./calls";
 import {
   AutomationListSchema,
   CodeListSchema,
-  type CodePageAccessRow,
   type CodePageAutomation,
-  type CodePageCall,
   type CodePageData,
   type CodePageDiff,
   type CodePageInvoke,
   type CodePagePerson,
   type CodePageReady,
+  type CodePageRefusal,
   type CodePageRun,
   type CodePageRunDetail,
   type CodePageSecret,
   type CodePageSecrets,
   type CodePageTab,
   type CodePageTarget,
+  type CodePageTargetRow,
   type CodePageVersion,
   CodeReadSchema,
   coreQuery,
   ManifestSchema,
   RunListSchema,
+  RunReadSchema,
   SecretListSchema,
-  TargetAccessSchema,
   VersionDiffSchema,
   VersionListSchema,
   VersionReadSchema,
@@ -44,12 +43,6 @@ import {
 const PAGE = 20;
 /** Core's default manifest budget is 1 MiB: 64 chunks of 16 Ki code units. A larger manifest shows as unreadable. */
 const MANIFEST_CHUNKS = 64;
-/** Failed automations whose last calls are read to find which one lost access, one after another. */
-const MISSING_ACCESS_CHECKS = 3;
-/** Calls read per check: a failing call to a removed target is usually among the first. */
-const MISSING_ACCESS_BATCH = 10;
-/** Distinct targets named on one page; a version has at most 200 operations. */
-const TARGET_LIMIT = 50;
 /** Pages of 20 secrets read for one page view; Core bounds each page by items and bytes. */
 const SECRET_PAGES = 10;
 const SECRET_NOTICES = ["replaced", "submitted", "saved", "submit-failed"] as const;
@@ -61,7 +54,6 @@ const isOwnRef = (ref: { type: string; id: string }, owner: LoadCodePageOptions[
   const own = ownerRefOf(owner);
   return own !== null && sameRef(ref, own);
 };
-const ReaderViewSchema = z.object({ view: z.object({ title: z.string().min(1) }) });
 export const targetKey = (ref: { type: string; id: string }) => `${ref.type}\u0000${ref.id}`;
 const sameRef = (a: { type: string; id: string }, b: { type: string; id: string }) => a.type === b.type && a.id === b.id;
 
@@ -116,8 +108,8 @@ export const loadPeople = async (ids: Iterable<string | null | undefined>, viewe
 };
 
 type CatalogApp = Awaited<ReturnType<typeof getCapabilityCatalogApp>>;
-/** One catalog read per app and page, shared by every target of that app. */
-const catalogCache = (locale: string) => {
+/** One registry catalog read per app and page, shared by every target of that app; never a call to the app. */
+export const catalogCache = (locale: string) => {
   const apps = new Map<string, Promise<CatalogApp | null>>();
   return (appId: string) => {
     let app = apps.get(appId);
@@ -129,11 +121,14 @@ const catalogCache = (locale: string) => {
   };
 };
 
-/** Name a target through its own app's public reader, as the person may see it; its type gives the icon. */
-export const loadTarget = async (
+/**
+ * Describe a target from its app's manifest in the registry: type name, icon, and a link when the type's page pattern
+ * needs only the ID. The target's app is never asked, so a foreign target is never named and the page costs no call
+ * per target; the app names it on its own page, for whoever may read it.
+ */
+export const describeTarget = async (
   ref: { type: string; id: string },
   owner: LoadCodePageOptions["owner"],
-  invoke: CodePageInvoke,
   catalog: ReturnType<typeof catalogCache>,
 ): Promise<CodePageTarget> => {
   const own = isOwnRef(ref, owner);
@@ -144,32 +139,36 @@ export const loadTarget = async (
     typeTitle: null,
     icon: null,
     own,
-    missing: false,
     href: null,
   };
   try {
     if (ref.type === "app") {
-      // An app-wide grant: the receiving app as a whole.
+      // An app-wide target: the receiving app as a whole, whose name every person in the installation sees.
       const app = await catalog(ref.id);
       return app?.ok && app.data ? { ...base, title: app.data.appName, icon: app.data.appIcon ?? null } : base;
     }
     const app = await catalog(cloudResourceRefAppId(ref));
     if (!app?.ok || !app.data) return base;
-    const type = app.data.manifest.types.find((candidate) => candidate.localId === ref.type.slice(app.data!.appId.length + 1));
-    const typed = { ...base, typeTitle: type?.title ?? null, icon: type?.icon ?? null };
-    const reader = own ? null : resolveCapabilityResourceReader(app.data.manifest, ref);
-    if (!reader) return typed;
-    const read = await invoke({ appId: app.data.appId, capabilityId: reader.localId, kind: "query", input: { id: ref.id } }, z.unknown());
-    // "Not found" may also mean the person may not read it, so it is only missing, never "deleted".
-    if (!read.ok) return { ...typed, missing: read.error.status === 404 };
-    return {
-      ...typed,
-      title: ReaderViewSchema.safeParse(read.data.data).data?.view.title ?? null,
-      href: read.data.links?.find((link) => link.rel === "open")?.href ?? null,
-    };
+    const localType = ref.type.slice(app.data.appId.length + 1);
+    const type = app.data.manifest.types.find((candidate) => candidate.localId === localType);
+    const href =
+      (app.data.manifest.resourcePages ?? [])
+        .filter((page) => page.type === localType)
+        .map((page) => cloudResourcePageHref(page.path, ref.id))
+        .find((path) => path !== null) ?? null;
+    return { ...base, typeTitle: type?.title ?? null, icon: type?.icon ?? null, href };
   } catch {
     return base;
   }
+};
+
+/** The title of a called Query or Action in the caller's locale, from the same registry manifest; null when unknown. */
+const capabilityTitle = async (capability: string, catalog: ReturnType<typeof catalogCache>): Promise<string | null> => {
+  const appId = capability.split(".")[0]!;
+  const app = await catalog(appId);
+  if (!app?.ok || !app.data) return null;
+  const localId = capability.slice(appId.length + 1);
+  return [...app.data.manifest.actions, ...app.data.manifest.queries].find((entry) => entry.localId === localId)?.title ?? null;
 };
 
 /** Reads a whole manifest in bounded chunks; null when it cannot be read or parsed. */
@@ -222,68 +221,25 @@ const versionView = (
 /** Statuses that keep a newer version waiting to be switched on. */
 const WAITING = new Set(["submitted", "pending", "approved"]);
 
-/**
- * Removed access: which automation needs it. Proven by a last run that failed there; the only automation needs it in
- * any case; an automation whose last run succeeded is unaffected so far; anything else stays unknown. Readers get no
- * call contents; editors read a few short batches, one automation after another.
- */
-export const attributeMissingAccess = async (
-  automations: CodePageAutomation[],
-  removedKeys: ReadonlySet<string>,
-  permission: "editor" | "reader",
-  readCalls: (runId: string) => Promise<{ calls: CodePageCall[]; next: number | null } | null>,
-): Promise<void> => {
-  if (removedKeys.size === 0) return;
-  const running = automations.filter((automation) => !automation.isNew);
-  const callKeys = (call: CodePageCall) => [
-    targetKey(call.target ?? { type: "app", id: call.capability.split(".")[0]! }),
-    ...call.refs.map(targetKey),
-  ];
-  const failed = running.filter((automation) => automation.lastRun?.state === "failed");
-  const checked = permission === "editor" ? failed.slice(0, MISSING_ACCESS_CHECKS) : [];
-  for (const automation of checked) {
-    const calls = await readCalls(automation.lastRun!.id).catch(() => null);
-    const named = (list: CodePageCall[]) => [...new Set(list.flatMap(callKeys).filter((key) => removedKeys.has(key)))];
-    // Only a refusal for access proves the cause; a call that failed otherwise still shows the automation needs it.
-    const refused = named((calls?.calls ?? []).filter((call) => call.state === "failed" && call.accessRefused));
-    const used = named(calls?.calls ?? []);
-    if (refused.length > 0) {
-      automation.missingTargets = refused;
-      automation.missingProven = true;
-    } else if (used.length > 0) automation.missingTargets = used;
-    else if (!calls || calls.next !== null) automation.accessUnknown = true;
-  }
-  for (const automation of failed.filter((automation) => !checked.includes(automation))) automation.accessUnknown = true;
-  for (const automation of running.filter((automation) => !automation.lastRun)) automation.accessUnknown = true;
-  if (running.length === 1 && running[0]!.missingTargets.length === 0) {
-    running[0]!.missingTargets = [...removedKeys];
-    running[0]!.accessUnknown = false;
-  }
-};
+/** A recorded refused call as the Code page shows it, from the registry only; Administration › Code uses it too. */
+export const presentRefusedCall = async (
+  call: { capability: string; target: { type: string; id: string } | null },
+  owner: LoadCodePageOptions["owner"],
+  catalog: ReturnType<typeof catalogCache>,
+): Promise<NonNullable<CodePageRefusal["call"]>> => ({
+  capability: call.capability,
+  title: await capabilityTitle(call.capability, catalog).catch(() => null),
+  target: call.target ? await describeTarget(call.target, owner, catalog) : null,
+});
 
-/** Core's activation routes take the person's own credentials; only Core may act on them. */
-const coreRoute = async <T extends z.ZodType>(caller: CapabilityCaller, path: string, body: unknown, schema: T) => {
-  const headers = new Headers({ "content-type": "application/json", accept: "application/json" });
-  if (caller.cookie) headers.set("cookie", caller.cookie);
-  if (caller.authorization) headers.set("authorization", caller.authorization);
-  if (caller.locale) headers.set(LOCALE_HEADER, caller.locale);
-  if (caller.requestId) headers.set("x-request-id", caller.requestId);
-  const response = await fetch(new URL(path, await coreOrigin(false)), {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    signal: caller.signal,
-  });
-  if (!response.ok) return null;
-  const parsed = schema.safeParse(((await response.json()) as { data?: unknown } | null)?.data);
-  return parsed.success ? (parsed.data as z.output<T>) : null;
-};
+/** Refusal kinds the page explains; the others stay a plain failed run. */
+const SHOWN_REFUSALS = new Set<CodePageRefusal["kind"]>(["target_refused", "policy", "approval"]);
+const isShownRefusal = (kind: string | null): kind is CodePageRefusal["kind"] => SHOWN_REFUSALS.has(kind as CodePageRefusal["kind"]);
 
 const loadReady = async (
   c: Context,
   options: LoadCodePageOptions,
   invoke: CodePageInvoke,
-  caller: CapabilityCaller,
   listed: z.infer<typeof CodeListSchema>["items"][number],
   tab: CodePageTab,
   url: URL,
@@ -293,10 +249,9 @@ const loadReady = async (
 ): Promise<CodePageReady> => {
   const catalog = catalogCache(getLocale(c));
   const code = listed;
-  const [versionsResult, runsResult, accessResult, attentionResult, automationResult] = await Promise.all([
+  const [versionsResult, runsResult, attentionResult, automationResult] = await Promise.all([
     invoke(coreQuery("code.version.list", { codeId: code.id, limit: PAGE }), VersionListSchema),
     invoke(coreQuery("code.run.list", { codeId: code.id, limit: PAGE }), RunListSchema),
-    coreRoute(caller, "/api/code/access", { codeId: code.id }, TargetAccessSchema).catch(() => null),
     // The same answer the owner's navigation gets, so its dot and this page agree.
     invoke(coreQuery("code.attention", { owner: codeOwner }), AttentionSchema).catch(() => null),
     // Only the next run comes from here; without it the row simply does not name one.
@@ -337,41 +292,72 @@ const loadReady = async (
         ? versionParam
         : (waitingReceipt?.version.id ?? code.activeVersionId ?? latest?.version.id ?? null)
       : null;
-  const [runCalls, diffResult, olderActive, olderSelected] = await Promise.all([
+  // The newest run that ended; "skipped" and "cancelled" are not a run's result.
+  const lastRun = runs?.find((run) => run.state === "succeeded" || run.state === "failed") ?? null;
+  // Only a failed run with a recorded target refusal raises the notice; editors read that one call once at Core.
+  const lastRefused = tab === "overview" && lastRun?.state === "failed" && lastRun.firstRefusedCallOrdinal ? lastRun : null;
+  const [runCalls, diffResult, olderActive, olderSelected, lastRead] = await Promise.all([
     selectedRunId ? loadCodeRunCallsForDetail(invoke, code.id, selectedRunId) : Promise.resolve(null),
     selectedVersionId
       ? invoke(coreQuery("code.version.diff", { codeId: code.id, versionId: selectedVersionId }), VersionDiffSchema)
       : Promise.resolve(null),
     versionMeta(code.activeVersionId),
     selectedVersionId !== code.activeVersionId ? versionMeta(selectedVersionId) : Promise.resolve(null),
+    lastRefused && code.permission === "editor"
+      ? invoke(coreQuery("code.run.read", { codeId: code.id, runId: lastRefused.id }), RunReadSchema).catch(() => null)
+      : Promise.resolve(null),
   ]);
   for (const version of [olderActive, olderSelected]) if (version) numbers.set(version.id, version.number);
 
-  // Targets: what the running version reaches, plus what the waiting version would add.
-  const access = accessResult;
-  const presentOps = new Map<string, Set<string>>();
-  for (const row of access ?? []) if (row.state !== "removed") presentOps.set(targetKey(row.target), new Set(row.operations));
-  const waitingByTarget = new Map<string, { ref: { type: string; id: string }; operations: Set<string> }>();
-  for (const permission of waitingManifest?.permissions ?? []) {
-    const ref = permissionRef(permission);
-    if (!ref) continue;
-    const entry = waitingByTarget.get(targetKey(ref)) ?? { ref, operations: new Set<string>() };
-    entry.operations.add(permission.operation);
-    waitingByTarget.set(targetKey(ref), entry);
-  }
+  // Targets: what the running version calls, plus what the waiting version would add, as the checker read them.
+  const byTarget = (manifest: z.infer<typeof ManifestSchema> | null) => {
+    const map = new Map<string, { ref: { type: string; id: string }; operations: Set<string> }>();
+    for (const permission of manifest?.permissions ?? []) {
+      const ref = permissionRef(permission);
+      if (!ref) continue;
+      const entry = map.get(targetKey(ref)) ?? { ref, operations: new Set<string>() };
+      entry.operations.add(permission.operation);
+      map.set(targetKey(ref), entry);
+    }
+    return map;
+  };
+  const activeByTarget = byTarget(activeManifest);
+  const waitingByTarget = byTarget(waitingManifest);
   const diffPermissions = diffResult?.ok ? diffResult.data.data.permissions : [];
   const ownerRef = ownerRefOf(options.owner);
+  /** The refused call of a failed run: the target refusal Core recorded, else the first policy or approval refusal loaded. */
+  const refusalOf = (
+    run: CodePageRun,
+    recorded: { ordinal: number; capability: string; target: { type: string; id: string } | null } | null | undefined,
+    loaded: { ordinal: number; capability: string; target: { type: string; id: string } | null; refusal: string | null }[] | null,
+  ) => {
+    if (run.state !== "failed") return null;
+    // The target refusal Core recorded wins, so the overview and the run's detail always name the same call.
+    const first =
+      (recorded ? { ...recorded, kind: "target_refused" as const } : undefined) ??
+      (loaded ?? [])
+        .flatMap((call) => (call.refusal === "policy" || call.refusal === "approval" ? [{ ...call, kind: call.refusal }] : []))
+        .sort((a, b) => a.ordinal - b.ordinal)[0];
+    if (first && isShownRefusal(first.kind)) return { run, kind: first.kind, call: first };
+    // Readers see no calls, only that a target refused one.
+    return loaded === null && run.firstRefusedCallOrdinal ? { run, kind: "target_refused" as const, call: null } : null;
+  };
+  const lastContents = lastRead?.ok ? lastRead.data.data.contents : null;
+  const overviewRefusal = lastRefused ? refusalOf(lastRefused, lastContents?.firstRefusedCall, lastContents ? [] : null) : null;
+  const detailRefusal = runCalls
+    ? refusalOf({ ...runCalls.run, versionNumber: null }, runCalls.firstRefusedCall, runCalls.readable ? runCalls.calls : null)
+    : null;
   const refs = new Map<string, { type: string; id: string }>(ownerRef ? [[targetKey(ownerRef), ownerRef]] : []);
-  for (const row of access ?? []) refs.set(targetKey(row.target), row.target);
-  for (const entry of waitingByTarget.values()) refs.set(targetKey(entry.ref), entry.ref);
+  for (const entry of [...activeByTarget.values(), ...waitingByTarget.values()]) refs.set(targetKey(entry.ref), entry.ref);
   for (const permission of diffPermissions) {
     const ref = permissionRef(permission);
     if (ref) refs.set(targetKey(ref), ref);
   }
+  for (const refusal of [overviewRefusal, detailRefusal])
+    if (refusal?.call?.target) refs.set(targetKey(refusal.call.target), refusal.call.target);
+  // Registry reads only, one per app and page: a version calls at most 200 operations.
   const targets = new Map(
-    (await Promise.all([...refs.values()].slice(0, TARGET_LIMIT).map((ref) => loadTarget(ref, options.owner, invoke, catalog)))).map(
-      (target) => [target.key, target],
-    ),
+    (await Promise.all([...refs.values()].map((ref) => describeTarget(ref, options.owner, catalog)))).map((target) => [target.key, target]),
   );
   const targetOf = (ref: { type: string; id: string }): CodePageTarget =>
     targets.get(targetKey(ref)) ?? {
@@ -381,51 +367,44 @@ const loadReady = async (
       typeTitle: null,
       icon: null,
       own: isOwnRef(ref, options.owner),
-      missing: false,
       href: null,
     };
+  const presentRefusal = async (refusal: ReturnType<typeof refusalOf>): Promise<CodePageRefusal | null> =>
+    refusal && {
+      kind: refusal.kind,
+      runId: refusal.run.id,
+      versionId: refusal.run.versionId,
+      call: refusal.call && {
+        capability: refusal.call.capability,
+        title: await capabilityTitle(refusal.call.capability, catalog).catch(() => null),
+        target: refusal.call.target ? targetOf(refusal.call.target) : null,
+      },
+    };
+  const [refusal, runRefusal] = await Promise.all([presentRefusal(overviewRefusal), presentRefusal(detailRefusal)]);
 
   const people = await loadPeople(
     [
       ...receipts.flatMap((receipt) => [receipt.version.createdBy, receipt.decision?.decidedBy]),
       olderActive?.createdBy,
       olderSelected?.createdBy,
-      ...(access ?? []).flatMap((row) => [row.activatedBy, row.removedBy]),
     ],
     viewer,
   ).catch(() => new Map<string, CodePagePerson>());
-  const accessRows: CodePageAccessRow[] | null = access
-    ? [
-        ...access.map((row) => {
-          const waiting = waitingByTarget.get(targetKey(row.target));
-          const target = targetOf(row.target);
-          return {
-            target,
-            operations: row.operations,
-            state: row.state,
-            newOperations: waiting ? [...waiting.operations].filter((operation) => !row.operations.includes(operation)) : [],
-            activatedBy: row.activatedBy ? (people.get(row.activatedBy) ?? null) : null,
-            activatedAt: row.activatedAt ?? null,
-            activatedVersionId: row.activatedVersionId ?? null,
-            removedBy: row.state === "removed" && row.removedBy ? (people.get(row.removedBy) ?? null) : null,
-            removedAt: row.state === "removed" ? (row.removedAt ?? null) : null,
-          };
-        }),
-        ...[...waitingByTarget.values()]
-          .filter((entry) => !presentOps.has(targetKey(entry.ref)) && !(access ?? []).some((row) => sameRef(row.target, entry.ref)))
-          .map((entry) => ({
+  const targetRows: CodePageTargetRow[] | null =
+    (code.activeVersionId && !activeManifest) || (waitingReceipt && !waitingManifest)
+      ? null
+      : [
+          ...[...activeByTarget.values()].map((entry) => ({
             target: targetOf(entry.ref),
             operations: [...entry.operations],
-            state: "new" as const,
-            newOperations: [...entry.operations],
-            activatedBy: null,
-            activatedAt: null,
-            activatedVersionId: null,
-            removedBy: null,
-            removedAt: null,
+            newOperations: [...(waitingByTarget.get(targetKey(entry.ref))?.operations ?? [])].filter(
+              (operation) => !entry.operations.has(operation),
+            ),
           })),
-      ]
-    : null;
+          ...[...waitingByTarget.values()]
+            .filter((entry) => !activeByTarget.has(targetKey(entry.ref)))
+            .map((entry) => ({ target: targetOf(entry.ref), operations: [], newOperations: [...entry.operations] })),
+        ];
 
   const waitingTargets =
     waitingReceipt && waitingManifest
@@ -435,7 +414,7 @@ const loadReady = async (
             ? []
             : [{ target: targetOf(ownerRef), operations: [] as string[], isNew: false }]),
           ...[...waitingByTarget.values()].map((entry) => {
-            const present = presentOps.get(targetKey(entry.ref));
+            const present = activeByTarget.get(targetKey(entry.ref))?.operations;
             return {
               target: targetOf(entry.ref),
               operations: [...entry.operations],
@@ -457,9 +436,6 @@ const loadReady = async (
       isNew: isNew(entry.entrypoint),
       lastRun: lastRunOf(entry.entrypoint),
       nextRunAt: isNew(entry.entrypoint) ? null : (nextRuns.get(entry.entrypoint) ?? null),
-      missingTargets: [],
-      missingProven: false,
-      accessUnknown: false,
     }));
   const activeEntrypoints = new Set(activeManifest?.entrypoints.map((entry) => entry.entrypoint) ?? []);
   const automations =
@@ -472,13 +448,6 @@ const loadReady = async (
             : []),
         ];
 
-  if (automations)
-    await attributeMissingAccess(
-      automations,
-      new Set((access ?? []).filter((row) => row.state === "removed").map((row) => targetKey(row.target))),
-      code.permission,
-      (runId) => loadCodeRunCalls(invoke, code.id, runId, 0, MISSING_ACCESS_BATCH),
-    );
   const versions = receipts.map((receipt) => versionView(receipt, people, code.activeVersionId));
   /** Every read goes through Core's editor-only list; a failure on any page shows as an error, never as a shorter list. */
   const loadSecrets = async (): Promise<CodePageSecrets | null> => {
@@ -552,6 +521,7 @@ const loadReady = async (
       nextCallCursor: runCalls.readable ? runCalls.next : null,
       input: runCalls.input,
       inputTooLarge: runCalls.inputTooLarge,
+      refusal: runRefusal,
     };
   let diff: CodePageDiff | null = null;
   if (diffResult?.ok && selectedVersionId) {
@@ -609,7 +579,8 @@ const loadReady = async (
       active: activeManifest ? (activeManifest.internet ?? []) : code.activeVersionId ? null : [],
       waiting: waitingManifest ? (waitingManifest.internet ?? []) : waitingReceipt ? null : [],
     },
-    access: accessRows,
+    targets: targetRows,
+    refusal,
     attentionReasons: attentionResult?.ok ? (attentionResult.data.data.items.find((item) => item.codeId === code.id)?.reasons ?? []) : null,
     waitingTargets,
     runs: runs && runsResult.ok ? { items: runs, nextCursor: runsResult.data.data.nextCursor } : null,
@@ -667,9 +638,10 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
     editor: editorPanel ? { provider: editorPanel.id, label: editorPanel.label, icon: editorPanel.icon } : null,
     dates: { ...getDateConfig(c), now: new Date().toISOString() },
     activatedNotice: /^\d{1,6}$/.test(url.searchParams.get("activated") ?? "") ? Number(url.searchParams.get("activated")) : null,
+    cloudAdmin: Boolean(user?.roles.includes("admin")),
   } satisfies Omit<CodePageData, "state">;
   let code: z.infer<typeof CodeListSchema>["items"][number] | undefined;
-  let attentionOwner: Parameters<typeof loadReady>[8];
+  let attentionOwner: Parameters<typeof loadReady>[7];
   if ("ref" in options.owner) {
     attentionOwner = { kind: "resource", ref: options.owner.ref };
     const ownerRefForList = options.owner.ref;
@@ -701,7 +673,7 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
     const viewer = { id: user?.id ?? null, directory: Boolean(user?.roles.includes("user")) };
     // Secrets are for editors; anyone else following such a link lands on the overview.
     const shown = tab === "secrets" && code.permission !== "editor" ? "overview" : tab;
-    return { ...base, tab: shown, state: await loadReady(c, options, invoke, caller, code, shown, url, viewer, attentionOwner) };
+    return { ...base, tab: shown, state: await loadReady(c, options, invoke, code, shown, url, viewer, attentionOwner) };
   } catch {
     return { ...base, state: { kind: "error" } };
   }

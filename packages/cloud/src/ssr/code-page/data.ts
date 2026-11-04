@@ -2,6 +2,7 @@ import type { DateContext } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CapabilityClientResult, CapabilityInvocation } from "../../capabilities/types";
 import type { CloudResourceRef } from "../../contracts/capabilities";
+import { CODE_BRIDGE_REFUSAL_KINDS, type CodeBridgeRefusalKind } from "../../contracts/code-call";
 import { CodeInternetOriginsSchema } from "../../contracts/code-internet";
 
 /**
@@ -74,6 +75,8 @@ const RunSchema = z.object({
   title: z.string().optional(),
   state: z.enum(["queued", "running", "succeeded", "failed", "cancelled", "skipped"]),
   outcome: z.string().nullable(),
+  /** The first call a target refused. It names no target, so readers get it too; older Cores leave it out. */
+  firstRefusedCallOrdinal: z.number().int().positive().nullable().optional(),
   createdAt: z.string(),
   startedAt: z.string().nullable(),
   endedAt: z.string().nullable(),
@@ -90,6 +93,8 @@ const CallSchema = z.object({
   call: z.json().nullable(),
   result: z.json().nullable(),
   state: z.enum(["running", "succeeded", "failed", "uncertain"]),
+  /** How the bridge classified a refusal while it still knew the target's status. */
+  refusalKind: z.enum(CODE_BRIDGE_REFUSAL_KINDS).nullable().optional(),
 });
 export const RunReadSchema = z.object({
   run: RunSchema,
@@ -100,22 +105,19 @@ export const RunReadSchema = z.object({
       content: z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).nullable(),
       calls: z.array(CallSchema),
       nextCursor: z.number().int().nullable(),
+      /** The call `run.firstRefusedCallOrdinal` names, read in the same request. */
+      firstRefusedCall: z
+        .object({
+          ordinal: z.number().int(),
+          kind: z.enum(["query", "action"]),
+          capability: z.string(),
+          target: z.object({ type: z.string(), id: z.string() }).nullable(),
+        })
+        .nullable()
+        .optional(),
     })
     .nullable(),
 });
-export const TargetAccessSchema = z.array(
-  z.object({
-    grantId: z.string(),
-    target: z.object({ type: z.string(), id: z.string() }),
-    operations: z.array(z.string()),
-    state: z.enum(["present", "removed", "unavailable"]),
-    activatedBy: z.string().nullable().optional(),
-    activatedAt: z.string().nullable().optional(),
-    activatedVersionId: z.string().nullable().optional(),
-    removedBy: z.string().nullable().optional(),
-    removedAt: z.string().nullable().optional(),
-  }),
-);
 export const ActivationSchema = z.object({
   id: z.string(),
   versionId: z.string(),
@@ -125,10 +127,6 @@ export const ActivationSchema = z.object({
       target: z.object({ type: z.string(), id: z.string() }).nullable(),
       code: z.string(),
       reason: z.string(),
-      /** False when Core's reader check denied presentation. */
-      readable: z.boolean().optional(),
-      /** Who manages the refusing target, only for a person who may read it. */
-      managerNames: z.array(z.string()).optional(),
     })
     .nullable(),
 });
@@ -181,10 +179,15 @@ export const coreQuery = (capabilityId: string, input: unknown): CapabilityInvoc
 export const wrapped = <T extends z.ZodType>(schema: T) => z.object({ data: schema });
 
 export type CodePagePerson = { id: string; name: string };
-/** A target or the owner, named through its own app's public reader. */
+/**
+ * A target or the owner, described from its app's manifest in the registry. The page never asks the target's app, so
+ * a foreign target has only its type, ID and, where the type's page pattern allows, a link; its app names it once
+ * someone opens that link and may read it.
+ */
 export type CodePageTarget = {
   key: string;
   ref: { type: string; id: string };
+  /** The owner's own title, or an app's name for an app-wide target; null for every other target. */
   title: string | null;
   /** The target type's name in its app, such as "Space". */
   typeTitle: string | null;
@@ -192,28 +195,16 @@ export type CodePageTarget = {
   icon: string | null;
   /** The owner resource itself. */
   own: boolean;
-  /**
-   * Its reader answered "not found". Apps answer that both for a resource that does not exist and for one the person
-   * may not read, so this only means the page cannot reach it; its name stays unknown.
-   */
-  missing: boolean;
+  /** The type's page with only this ID filled in; null when its pattern needs more than the ID or it has none. */
   href: string | null;
 };
-/** Operation at target, as the checker read it from the handles in the Code. */
-export type CodePageAccessRow = {
+/** Operations at one target, as the checker read them from the handles in the Code: what it calls, not what it may. */
+export type CodePageTargetRow = {
   target: CodePageTarget;
+  /** Operations of the running version. */
   operations: string[];
-  /** `new`: only the waiting version needs it; it is set when someone switches that version on. */
-  state: "present" | "removed" | "unavailable" | "new";
-  /** Operations the waiting version adds at a target the running version already reaches. */
+  /** Operations only the waiting version adds here. */
   newOperations: string[];
-  activatedBy: CodePagePerson | null;
-  activatedAt: string | null;
-  /** The version whose activation created this grant; a later version may reuse it unchanged. */
-  activatedVersionId: string | null;
-  /** For removed access: who removed it at the target, when the viewer may see that name, and when. */
-  removedBy: CodePagePerson | null;
-  removedAt: string | null;
 };
 /** One target the waiting version needs, for the switch-on dialog. The owner is always checked. */
 export type CodePageActivationRow = { target: CodePageTarget; operations: string[]; isNew: boolean };
@@ -225,8 +216,8 @@ export type CodePageCall = {
   target: { type: string; id: string } | null;
   /** Additional resources the call named. */
   refs: { type: string; id: string }[];
-  /** It failed because the target refused access, not for another reason. */
-  accessRefused: boolean;
+  /** How the bridge classified its refusal; null for calls it did not refuse and for older records. */
+  refusal: CodeBridgeRefusalKind | null;
   state: "running" | "succeeded" | "failed" | "uncertain";
   /** A short readable summary of the result or error, never the full payload. */
   summary: string | null;
@@ -238,6 +229,8 @@ export type CodePageRunDetail = {
   nextCallCursor: number | null;
   /** The run's input, needed to run it again. */
   input: unknown;
+  /** The refusal this failed run recorded; null when it did not fail or recorded none. */
+  refusal: CodePageRefusal | null;
   /** The input is too large to carry along; "Run again" points to cld code instead. */
   inputTooLarge: boolean;
 };
@@ -249,18 +242,25 @@ export type CodePageAutomation = {
   cron: string | null;
   /** Only the waiting version has it. */
   isNew: boolean;
-  /**
-   * Keys of targets whose access was removed and that this automation needs: proven by its failed last run, or
-   * because it is the only automation. Its runs fail there until someone switches the Code on again.
-   */
-  missingTargets: string[];
-  /** Its last run failed at one of those targets; otherwise it needs them but has not failed there yet. */
-  missingProven: boolean;
-  /** Access was removed, but whether this automation needs it could not be told. */
-  accessUnknown: boolean;
   lastRun: CodePageRun | null;
   /** When the scheduler runs it next; absent when it does not or Core cannot say. */
   nextRunAt?: string | null;
+};
+/**
+ * A refused call of a failed run, as the bridge recorded it. It is a fact, not the run's cause: the Code may have
+ * caught the refusal and failed for another reason.
+ */
+export type CodePageRefusal = {
+  /**
+   * `target_refused`: the target answered 403 or 404, so either the account lacks the right or the target does not
+   * exist. `policy`: the Cloud admin's policy never allows the call. `approval`: this version needs the Cloud admin's
+   * approval for it.
+   */
+  kind: Extract<CodeBridgeRefusalKind, "target_refused" | "policy" | "approval">;
+  runId: string;
+  versionId: string;
+  /** What the Code called; null for readers, who see no calls, because a target ID can come from runtime data. */
+  call: { capability: string; title: string | null; target: CodePageTarget | null } | null;
 };
 export type CodePageVersion = {
   id: string;
@@ -319,8 +319,10 @@ export type CodePageReady = {
   attentionReasons: string[] | null;
   /** Full declared lists for the running and waiting versions; null means the manifest could not be read. */
   internet: { active: string[] | null; waiting: string[] | null };
-  /** Null when Core could not reconcile target access. */
-  access: CodePageAccessRow[] | null;
+  /** What the running and the waiting version call; null when a manifest could not be read. */
+  targets: CodePageTargetRow[] | null;
+  /** The refusal of the newest finished run, when that run failed with one. */
+  refusal: CodePageRefusal | null;
   /** What switching on the waiting version asks for; null without a waiting version or when unreadable. */
   waitingTargets: CodePageActivationRow[] | null;
   runs: { items: CodePageRun[]; nextCursor: string | null } | null;
@@ -358,6 +360,8 @@ export type CodePageData = {
   dates: DateContext & { now: string };
   /** The page reloaded right after this version was switched on. */
   activatedNotice: number | null;
+  /** The viewer is a Cloud admin, who decides approvals; others are not offered the approval link. */
+  cloudAdmin: boolean;
   state: CodePageState;
 };
 

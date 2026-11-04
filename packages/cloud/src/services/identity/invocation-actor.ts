@@ -111,6 +111,28 @@ export const resolveInvocationAuthority = async (
       if (!mandate) return null;
     }
   }
+  // Provider-side revalidation covers personal Code too. The signed run identifies
+  // the attempt Core admitted; no session, API key, or scope substitutes for it.
+  if (claims.workload_type === "code.version") {
+    if (
+      claims.credential_kind !== "mandate" ||
+      !claims.mandate_id ||
+      !claims.mandate_revision ||
+      !claims.workload_id ||
+      !claims.workload_run ||
+      claims.scopes.length !== 0
+    )
+      return null;
+    const [entry] = await query<{ id: string }[]>`
+      SELECT id FROM auth.mandates
+      WHERE id=${claims.mandate_id}::uuid AND revision=${claims.mandate_revision}
+        AND owner_app_id IN ('core','runner') AND workload_type='code.version' AND workload_id=${claims.workload_id}
+        AND state='active' AND confirmed_at IS NOT NULL AND (expires_at IS NULL OR expires_at>now())
+        AND subject_kind=${claims.principal_type}
+        AND COALESCE(subject_user_id,subject_service_account_id)=${claims.sub}::uuid
+    `;
+    if (!entry) return null;
+  }
   const groupsAdmin = groupsAdminOverride ?? (await getIdentityRuntimeConfig()).groupsAdmin;
   const delegation = provenance(claims);
 
@@ -163,16 +185,6 @@ export const resolveInvocationAuthority = async (
       claims.scopes.length !== 0
     )
       return null;
-    const [mandate] = await query<{ id: string }[]>`
-      SELECT id FROM auth.mandates
-      WHERE id = ${claims.mandate_id}::uuid AND revision = ${claims.mandate_revision}
-        AND state = 'active' AND confirmed_at IS NOT NULL
-        AND (expires_at IS NULL OR expires_at > now())
-        AND owner_app_id = 'core' AND workload_type = 'code.version'
-        AND workload_id = ${claims.workload_id}
-        AND subject_kind = 'service_account' AND subject_service_account_id = ${claims.sub}::uuid
-    `;
-    if (!mandate) return null;
   }
 
   const delegatedUser = serviceAccount.delegatedUserId ? buildProjectedUser(row) : null;

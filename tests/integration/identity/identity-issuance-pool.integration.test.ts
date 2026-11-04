@@ -112,7 +112,7 @@ if (!testInfra.database) {
       const policy = { version: 1, apps: ["spaces"], operations: [operation], actions: "deny" };
       const [mandate] = await pool<{ id: string }[]>`
         INSERT INTO auth.mandates (subject_kind, subject_user_id, owner_app_id, workload_type, workload_id, policy, created_by_user_id)
-        VALUES ('user', ${userId}::uuid, 'mail', 'pool.test', 'pool-workload', ${JSON.stringify(policy)}::jsonb, ${userId}::uuid) RETURNING id
+        VALUES ('user', ${userId}::uuid, 'mail', 'pool.test', 'pool-workload', ${JSON.stringify(policy)}::text::jsonb, ${userId}::uuid) RETURNING id
       `;
       mandateId = mandate!.id;
       identity.clearIdentityKeyCachesForTest();

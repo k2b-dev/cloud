@@ -155,7 +155,8 @@ const CreatePendingMandateSchema = z
       .trim()
       .min(1)
       .max(120)
-      .regex(/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/),
+      .regex(/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/)
+      .refine((value) => value !== "code.version", "Code version entries are created by Core activation"),
     workloadId: z.string().trim().min(1).max(200),
     policy: MandatePolicyV1Schema,
     expiresAt: z.iso.datetime().nullable().optional(),

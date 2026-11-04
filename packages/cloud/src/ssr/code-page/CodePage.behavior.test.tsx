@@ -95,3 +95,57 @@ for (const control of ["pause-menu", "resume-menu", "resume-notice", "run", "rer
     }
   });
 }
+
+test.skipIf(isServer)("“Copy handle” under a target refusal copies the service account's handle, and failing to copy says so", async () => {
+  const dom = createDomTestHarness();
+  const { CodePage, LocaleProvider, toast } = modules!;
+  const written: string[] = [];
+  let refuse = false;
+  Object.defineProperty(globalThis.navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: async (value: string) => {
+        if (refuse) throw new Error("Clipboard denied");
+        written.push(value);
+      },
+    },
+  });
+  const success = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+  const failure = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+  delegateEvents(["click"]);
+  const dispose = render(
+    () =>
+      createComponent(LocaleProvider, {
+        locale: "en",
+        get children() {
+          return createComponent(CodePage, { data: codePageFixture("refused", "en") });
+        },
+      }),
+    dom.root,
+  );
+  const copy = () => {
+    const button = [...dom.document.querySelectorAll<HTMLElement>("button")].find(
+      (element) => element.textContent?.trim() === "Copy handle",
+    );
+    if (!button) throw new Error("Missing Copy handle");
+    button.click();
+  };
+  try {
+    expect(dom.root.textContent).toContain(
+      "Whoever manages the target adds the service account in the target's access editor with the handle code-7k2q9m4xwt. The next run tries again.",
+    );
+    copy();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(written).toEqual(["code-7k2q9m4xwt"]);
+    expect(success).toHaveBeenCalledWith("Handle copied");
+    refuse = true;
+    copy();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(failure).toHaveBeenCalledWith("The handle could not be copied.");
+  } finally {
+    dispose();
+    success.mockRestore();
+    failure.mockRestore();
+    dom.cleanup();
+  }
+});

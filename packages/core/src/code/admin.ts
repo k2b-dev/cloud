@@ -3,6 +3,8 @@ import { runAiStructured } from "@k2b/cloud/ai";
 import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import { audit, logger } from "@k2b/cloud/services";
 import { listPending, presentPendingApproval } from "@k2b/cloud/services/approvals";
+import type { CodePageRefusal } from "@k2b/cloud/ssr/code-page/data";
+import { catalogCache, presentRefusedCall } from "@k2b/cloud/ssr/code-page/load";
 import { diffArrays } from "diff";
 import { z } from "zod";
 import { type CodeContext, CodeDataError } from "./access";
@@ -22,7 +24,7 @@ import {
 import { effective } from "./policy-effective";
 import { readCodeRunnerMetrics } from "./scheduling";
 import type { CodeRunnerMetrics } from "./scheduling-contracts";
-import { listCodeRuns } from "./store";
+import { listCodeRuns, readCodeRun } from "./store";
 import {
   type CodeCheckedVersionManifest,
   CodeCheckedVersionManifestSchema,
@@ -120,11 +122,16 @@ export type CodeAdminCode = {
 };
 export type CodeAdminCodeFilter = { status?: CodeAdminCodeStatus; app?: string; q?: string };
 export type CodeAdminCodeDetail = {
-  code: CodeAdminCode & { activeVersionNumber: number | null; createdAt: string };
+  code: CodeAdminCode & { activeVersionNumber: number | null; createdAt: string; serviceAccountHandle: string | null };
   versions: Awaited<ReturnType<typeof listCodeVersions>>["items"];
   runs: CodeRun[];
   cleanup: CodeCleanupJob[];
   pendingVersionId: string | null;
+  /**
+   * Code of an app has its Code page here: the newest finished run's target refusal, as any Code page shows it. The
+   * target comes only for editors of that Code, by type and ID from the registry; null for other Code.
+   */
+  refusal: { refusal: CodePageRefusal; editor: boolean } | null;
 };
 export type CodeAdminSummary = { approvals: number; codes: number; groups: number; cleanup: number };
 export type CodeAdminPolicy = {
@@ -527,7 +534,7 @@ const withPlaceNames = async (items: CodeAdminCode[], _context: CodeContext): Pr
   items.map((item) => (item.owner.kind === "resource" ? { ...item, ownerName: null } : item));
 
 const codeListBase =
-  () => sql`SELECT c.id,c.title,c.state,c.pause_reason,c.created_at,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
+  () => sql`SELECT c.id,c.title,c.state,c.pause_reason,c.created_at,c.service_account_id,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
     COALESCE(NULLIF(u.display_name,''),u.uid) AS owner_name,
     EXISTS(SELECT 1 FROM code.version_submissions s JOIN approvals.requests r ON r.id=s.approval_id
       WHERE s.code_id=c.id AND r.status='pending' AND r.expires_at>now()) AS waiting,
@@ -582,7 +589,9 @@ export const decodeCodeAdminCursor = (value: string): { title: string; id: strin
 /** One Code for the detail column: versions with decisions, recent runs and pending cleanup. */
 export async function readCodeAdminCode(codeId: string, context: CodeContext): Promise<CodeAdminCodeDetail> {
   requireCodePolicyAdmin(context);
-  const [row] = await sql<CodeListRow[]>`SELECT * FROM (${codeListSelect()}) x WHERE x.id=${codeId}`;
+  const [row] = await sql<(CodeListRow & { service_account_handle: string | null })[]>`
+    SELECT x.*,a.handle AS service_account_handle FROM (${codeListSelect()}) x
+    LEFT JOIN auth.service_accounts a ON a.id=x.service_account_id WHERE x.id=${codeId}`;
   if (!row) throw new CodeDataError("NOT_FOUND", "Code not found.");
   const [versions, runs, cleanup, pending, [named]] = await Promise.all([
     listCodeVersions({ codeId, limit: 10 }, context),
@@ -592,12 +601,36 @@ export async function readCodeAdminCode(codeId: string, context: CodeContext): P
       WHERE s.code_id=${codeId} AND r.status='pending' AND r.expires_at>now() LIMIT 1`,
     withPlaceNames([mapListRow(row)], context),
   ]);
+  const code = named ?? mapListRow(row);
+  const last = runs.items.find((run) => run.state === "succeeded" || run.state === "failed");
   return {
-    code: { ...(named ?? mapListRow(row)), activeVersionNumber: row.active_number, createdAt: iso(row.created_at) },
+    code: {
+      ...code,
+      activeVersionNumber: row.active_number,
+      createdAt: iso(row.created_at),
+      serviceAccountHandle: row.service_account_handle,
+    },
     versions: versions.items,
     runs: runs.items,
     cleanup: cleanup.items,
     pendingVersionId: pending[0]?.version_id ?? null,
+    refusal:
+      code.owner.kind === "app" && last?.state === "failed" && last.firstRefusedCallOrdinal ? await appCodeRefusal(last, context) : null,
+  };
+}
+
+/** Reads the refused call once; Core returns it only to editors of the Code, and nobody here asks the target's app. */
+async function appCodeRefusal(run: CodeRun, context: CodeContext): Promise<NonNullable<CodeAdminCodeDetail["refusal"]>> {
+  const read = await readCodeRun({ codeId: run.codeId, runId: run.id }, context).catch(() => null);
+  const call = read?.contents?.firstRefusedCall ?? null;
+  return {
+    editor: Boolean(read?.contents),
+    refusal: {
+      kind: "target_refused",
+      runId: run.id,
+      versionId: run.versionId,
+      call: call ? await presentRefusedCall(call, { codeId: run.codeId }, catalogCache(context.locale ?? "en")) : null,
+    },
   };
 }
 

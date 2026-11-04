@@ -271,7 +271,7 @@ if (!testInfra.database) {
         const [row] = await pool<{ id: string }[]>`
           INSERT INTO auth.mandates (subject_kind, subject_user_id, owner_app_id, workload_type, workload_id, policy, state, created_by_user_id)
           VALUES ('user', ${userId(authority)}::uuid, ${ownerAppId}, 'pool.resume', ${`resume-${allowed}`},
-            ${JSON.stringify({ version: 1, apps: [targetAppId], operations: [operation], actions: "deny" })}::jsonb,
+            ${JSON.stringify({ version: 1, apps: [targetAppId], operations: [operation], actions: "deny" })}::text::jsonb,
             'paused', ${userId(authority)}::uuid) RETURNING id`;
         const mandateId = row!.id;
         // The owner requires the configured IPA admin group; the target still
@@ -310,7 +310,7 @@ if (!testInfra.database) {
           const [row] = await pool<{ id: string }[]>`
             INSERT INTO auth.mandates (subject_kind, subject_user_id, owner_app_id, workload_type, workload_id, policy, created_by_user_id)
             VALUES ('user', ${userId(authority)}::uuid, ${ownerAppId}, 'pool.test', ${requestId},
-              ${JSON.stringify({ version: 1, apps: [targetAppId], operations: [operation], actions: "deny" })}::jsonb,
+              ${JSON.stringify({ version: 1, apps: [targetAppId], operations: [operation], actions: "deny" })}::text::jsonb,
               ${userId(authority)}::uuid) RETURNING id`;
           mandateId = row!.id;
         }
