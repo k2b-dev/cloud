@@ -78,6 +78,12 @@ const builtins: AvailableCommand[] = [
 const diagnostic = (text: string) => {
   process.stderr.write(`${terminalSafeText(text)}\n`);
 };
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/** Cloud answers an ordinary request within its 10-second idle timeout; three times that is a dead connection. */
+const REQUEST_DEADLINE_MS = 30_000;
+/** How long requests already sent may finish after the editor disconnects, before they are cut off. */
+const SHUTDOWN_GRACE_MS = 2_000;
+const SIGN_IN = "Sign in first: run `cld login` in a terminal, then start a new thread.";
 class WebChatRequired extends Error {}
 type Session = {
   id: string;
@@ -111,6 +117,38 @@ export const createAcpAgent = (host: CloudCliContext) => {
     if (!s) throw RequestError.resourceNotFound(id);
     return s;
   };
+  // Ends every request still open once the editor is gone, so nothing keeps the process alive.
+  const lifetime = new AbortController();
+  /**
+   * Every request carries the connection's lifetime and, except event streams and uploads, a deadline. A 401 after
+   * the host's own refresh, or a refresh that fails for another reason than the network, means the sign-in is gone,
+   * wherever it happens.
+   */
+  const api: CloudCliContext = {
+    ...host,
+    fetch: async (path, init) => {
+      const headers = new Headers(init?.headers);
+      headers.set(APPROVAL_CLIENT_HEADER, APPROVAL_ACP_CLIENT);
+      const open = headers.get("accept") === "text/event-stream" || init?.body instanceof FormData;
+      const signals = [
+        lifetime.signal,
+        ...(init?.signal ? [init.signal] : []),
+        ...(open ? [] : [AbortSignal.timeout(REQUEST_DEADLINE_MS)]),
+      ];
+      try {
+        return await host.fetch(path, { ...init, headers, signal: AbortSignal.any(signals) });
+      } catch (error) {
+        // Network failures are TypeErrors and stops are DOMExceptions; the host throws anything else only for its sign-in.
+        if (error instanceof TypeError || error instanceof DOMException || !(error instanceof Error)) throw error;
+        diagnostic(error.message);
+        throw RequestError.authRequired(undefined, SIGN_IN);
+      }
+    },
+    readJson: async <T>(response: Parameters<CloudCliContext["readJson"]>[0]) => {
+      if (response.status === 401) throw RequestError.authRequired(undefined, SIGN_IN);
+      return host.readJson<T>(response);
+    },
+  };
   const update = (s: Session, value: SessionUpdate): Promise<void> => {
     s.queue = s.queue.then(() => s.client.notify("session/update", { sessionId: s.id, update: value }));
     // Keep synchronous CLI output callbacks from leaving unhandled rejections on disconnect.
@@ -119,8 +157,18 @@ export const createAcpAgent = (host: CloudCliContext) => {
   };
   const message = (s: Session, text: string) => update(s, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
   const chatLink = (s: Session) => `${host.options.server.replace(/\/$/, "")}/app/assistant?conversation=${s.chat}`;
-  const promptContext = (s: Session): CloudCliContext => ({
-    ...host,
+  /** Inside a prompt every read stops with `signal`; writes check it before they start. */
+  const promptContext = (s: Session, signal?: AbortSignal): CloudCliContext => ({
+    ...api,
+    fetch: (path, init) => {
+      const method = init?.method?.toUpperCase() ?? "GET";
+      return api.fetch(
+        path,
+        signal && (method === "GET" || method === "HEAD")
+          ? { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal }
+          : init,
+      );
+    },
     options: { ...host.options, output: "text" },
     openUrl: undefined,
     write: (text) => message(s, text),
@@ -133,19 +181,17 @@ export const createAcpAgent = (host: CloudCliContext) => {
     error: diagnostic,
     json: (value) => diagnostic(JSON.stringify(value)),
     jsonLine: (value) => diagnostic(JSON.stringify(value)),
-    fetch: (path, init) => {
-      const headers = new Headers(init?.headers);
-      headers.set(APPROVAL_CLIENT_HEADER, APPROVAL_ACP_CLIENT);
-      return host.fetch(path, { ...init, headers });
-    },
   });
+  /** Opening a thread reads the profile again, so a `cld login` after the editor started this process counts. */
   const models = async () => {
-    if (!host.options.token)
-      throw RequestError.authRequired(undefined, "Sign in first: run `cld login` in a terminal, then start a new thread.");
-    const response = await host.fetch(`${AI_API}/models`);
-    if (response.status === 401)
-      throw RequestError.authRequired(undefined, "Sign in first: run `cld login` in a terminal, then start a new thread.");
-    return host.readJson<AiPeopleModels>(response).then((payload) => payload.options);
+    try {
+      await host.reloadCredentials?.();
+    } catch (error) {
+      diagnostic(errorText(error));
+      throw RequestError.authRequired(undefined, SIGN_IN);
+    }
+    if (!host.options.token) throw RequestError.authRequired(undefined, SIGN_IN);
+    return readApi<AiPeopleModels>(api, "/models").then((payload) => payload.options);
   };
   const config = (s: Session): SessionConfigOption[] => [
     {
@@ -289,10 +335,12 @@ export const createAcpAgent = (host: CloudCliContext) => {
     sessions.set(id, s);
     return s;
   };
-  const commands = async (s: Session, refresh = false) => {
+  const commands = async (s: Session, refresh = false, signal?: AbortSignal) => {
     if (refresh) s.context = await s.contextReader();
     s.context ??= await discoverLocalContext(s.cwd, undefined, false);
-    s.cloudSkills = (await readApi<{ skills: AiSkillSummary[] }>(promptContext(s), "/skills")).skills.filter((skill) => skill.enabled);
+    s.cloudSkills = (
+      await readApi<{ skills: AiSkillSummary[] }>(promptContext(s), "/skills", signal ? { signal } : undefined)
+    ).skills.filter((skill) => skill.enabled);
     const names = new Set(builtins.map((b) => b.name));
     const skills: AvailableCommand[] = [];
     for (const skill of [...s.context.skills, ...s.cloudSkills]) {
@@ -323,12 +371,17 @@ export const createAcpAgent = (host: CloudCliContext) => {
           await update(s, { sessionUpdate: "session_info_update", title: terminalSafeText(title) });
         }
       })().catch((e: unknown) => {
-        if (!s.disconnected) diagnostic(e instanceof Error ? e.message : String(e));
+        if (!s.disconnected) diagnostic(errorText(e));
       });
     });
   };
-  const commandReply = async (s: Session, name: string, value: string): Promise<{ handled: boolean; message?: string }> => {
-    const ctx = promptContext(s);
+  const commandReply = async (
+    s: Session,
+    name: string,
+    value: string,
+    signal: AbortSignal,
+  ): Promise<{ handled: boolean; message?: string }> => {
+    const ctx = promptContext(s, signal);
     const reply = async (text: string) => {
       await message(s, terminalSafeText(text) + "\n");
       return { handled: true };
@@ -389,7 +442,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
       return reply(`Project: ${project?.name ?? "none"}${!s.chat ? " Your first message starts the chat there." : ""}`);
     }
     if (name === "skills") {
-      await commands(s, true);
+      await commands(s, true, signal);
       const local = s.context?.skills ?? [];
       const visible = s.cloudSkills.filter((skill) => !local.some((l) => l.name === skill.name));
       const preview = (text: string) => {
@@ -423,7 +476,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
           : "No Skills found. Local Skills live in .agents/skills or ~/.agents/skills.",
       );
     }
-    await commands(s);
+    await commands(s, false, signal);
     let local = s.context?.skills.find((skill) => skill.name === name);
     const cloud = s.cloudSkills.find((skill) => skill.name === name);
     if (!local && !cloud) return { handled: false };
@@ -450,8 +503,9 @@ export const createAcpAgent = (host: CloudCliContext) => {
     s.finished = new Promise<void>((resolve) => {
       finishPrompt = resolve;
     });
-    const ctx = promptContext(s);
+    const ctx = promptContext(s, abort.signal);
     let turnId: string | undefined;
+    let title: string | undefined;
     let output = createAssistantTurnOutput();
     const waitingApprovals = new Set<string>();
     const calls = new Map<string, string>();
@@ -523,6 +577,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
         const actions = await readApi<AiPendingTurnAction[]>(
           ctx,
           conversationPath(s.chat!, `/pending-actions/${encodeURIComponent(turnId!)}`),
+          { signal: abort.signal },
         );
         const action = actions.find((a) => !(a.type === "approval_request" && waitingApprovals.has(a.callId)));
         if (!action) {
@@ -584,6 +639,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
       return result;
     };
     const finish = async (result: AssistantTurnStreamResult) => {
+      if (result.title !== undefined) title = result.title;
       if (result.status === "failed") throw RequestError.internalError(undefined, result.error ?? "Assistant turn failed.");
       if (result.status === "aborted") return cancelled(s);
     };
@@ -650,16 +706,18 @@ export const createAcpAgent = (host: CloudCliContext) => {
         );
       const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
       if (match) {
-        const command = await commandReply(s, match[1]!, match[2]?.trim() ?? "");
+        const command = await commandReply(s, match[1]!, match[2]?.trim() ?? "", abort.signal);
+        abort.signal.throwIfAborted();
         if (command.handled && command.message === undefined) return { stopReason: "end_turn" as const };
         if (command.message !== undefined) text = command.message;
       }
       if (!s.chat) {
+        abort.signal.throwIfAborted();
         s.chat = (await resolveConversation(ctx, { projectId: s.project })).id;
         await host.setDefault(`assistant.acpSession.${s.id}`, s.chat);
         await host.setDefault(`assistant.acpChat.${s.chat}`, s.id);
       }
-      const detail = await readConversationDetail(ctx, s.chat);
+      const detail = await readConversationDetail(ctx, s.chat, abort.signal);
       if (detail.activeTurn) {
         turnId = detail.activeTurn.turnId;
         await finish(await attention(await streamAssistantTurn(streamOptions())));
@@ -670,7 +728,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
         waitingApprovals.clear();
       }
       s.context = await s.contextReader();
-      await commands(s);
+      await commands(s, false, abort.signal);
       const selectedSkills: AiLocalContext["selectedSkills"] = [];
       if (s.localTools === "ask")
         for (const selected of s.selectedLocal) {
@@ -716,8 +774,11 @@ export const createAcpAgent = (host: CloudCliContext) => {
       return { stopReason: "end_turn" as const };
     } catch (error) {
       if (abort.signal.aborted) {
+        // Stop always answers as cancelled; an unreachable Cloud only means the turn may still run there.
         if (!s.disconnected && turnId && s.chat)
-          await readApi(ctx, conversationPath(s.chat, `/turns/${encodeURIComponent(turnId)}/abort`), { method: "POST" });
+          await readApi(ctx, conversationPath(s.chat, `/turns/${encodeURIComponent(turnId)}/abort`), { method: "POST" }).catch(
+            (abortError: unknown) => diagnostic(`Could not stop the turn in Cloud: ${errorText(abortError)}`),
+          );
         return { stopReason: "cancelled" as const };
       }
       if (error instanceof WebChatRequired) {
@@ -725,17 +786,24 @@ export const createAcpAgent = (host: CloudCliContext) => {
         return { stopReason: "end_turn" as const };
       }
       if (error instanceof RequestError) throw error;
-      throw RequestError.internalError(undefined, error instanceof Error ? error.message : String(error));
+      throw RequestError.internalError(undefined, errorText(error));
     } finally {
+      // The title and the last updates are best-effort: they never change how the turn ended.
       try {
-        if (s.chat && !s.disconnected) {
-          const detail = await readConversationDetail(ctx, s.chat);
-          if (detail.conversation.title !== s.title) {
-            s.title = detail.conversation.title;
-            await update(s, { sessionUpdate: "session_info_update", title: terminalSafeText(s.title) });
-          }
+        if (s.chat && !s.disconnected && !abort.signal.aborted) {
+          title = (await readConversationDetail(ctx, s.chat, abort.signal)).conversation.title;
+        }
+      } catch (error) {
+        diagnostic(`Could not refresh the chat title: ${errorText(error)}`);
+      }
+      try {
+        if (title !== undefined && title !== s.title && !s.disconnected) {
+          s.title = title;
+          await update(s, { sessionUpdate: "session_info_update", title: terminalSafeText(title) });
         }
         await s.queue;
+      } catch (error) {
+        if (!s.disconnected) diagnostic(errorText(error));
       } finally {
         s.active = undefined;
         finishPrompt();
@@ -749,19 +817,25 @@ export const createAcpAgent = (host: CloudCliContext) => {
         s.disconnected = true;
         s.active?.abort();
       }
-      await Promise.all(
-        [...sessions.values()].map(async (s) => {
-          await s.finished;
-          await s.folder.close();
-        }),
-      );
+      const finished = Promise.all([...sessions.values()].map((s) => s.finished));
+      // A request already sent, such as a turn's start, may finish briefly; then every open request ends.
+      const grace = async () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([finished, new Promise<void>((resolve) => (timer = setTimeout(resolve, SHUTDOWN_GRACE_MS)))]);
+        clearTimeout(timer);
+      };
+      await grace();
+      lifetime.abort();
+      // Output the editor no longer reads cannot hold the cleanup either.
+      await grace();
+      await Promise.all([...sessions.values()].map((s) => s.folder.close()));
     })());
   const app = agent()
     .onConnect(({ signal }) => {
       signal.addEventListener(
         "abort",
         () => {
-          void close().catch((error: unknown) => diagnostic(error instanceof Error ? error.message : String(error)));
+          void close().catch((error: unknown) => diagnostic(errorText(error)));
         },
         { once: true },
       );
@@ -802,7 +876,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
       const page = params.cursor == null ? 1 : Number(params.cursor);
       if (params.cursor != null && (!/^[1-9]\d*$/.test(params.cursor) || !Number.isSafeInteger(page)))
         throw RequestError.invalidParams(undefined, "Unknown session list cursor.");
-      const conversations = await readApi<AiConversationPage>(host, `/conversations/page?page=${page}&perPage=50`);
+      const conversations = await readApi<AiConversationPage>(api, `/conversations/page?page=${page}&perPage=50`);
       return {
         sessions: await Promise.all(
           conversations.items.map(async (chat) => ({
@@ -818,9 +892,9 @@ export const createAcpAgent = (host: CloudCliContext) => {
     .onRequest("session/resume", async ({ params, client }) => {
       const profiles = await models();
       const chat = (await host.getDefault(`assistant.acpSession.${params.sessionId}`)) ?? params.sessionId;
-      const response = await host.fetch(`${AI_API}${conversationPath(chat)}`);
+      const response = await api.fetch(`${AI_API}${conversationPath(chat)}`);
       if (response.status === 404) throw RequestError.resourceNotFound(params.sessionId);
-      const detail = await host.readJson<Awaited<ReturnType<typeof readConversationDetail>>>(response);
+      const detail = await api.readJson<Awaited<ReturnType<typeof readConversationDetail>>>(response);
       const existing = sessions.get(params.sessionId);
       if (existing?.active) throw RequestError.invalidRequest(undefined, "This session already has a running prompt.");
       if (existing) await existing.folder.close();
@@ -838,7 +912,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
     })
     .onRequest("session/prompt", ({ params }) => prompt(getSession(params.sessionId), params.prompt))
     .onNotification("session/cancel", ({ params }) => {
-      getSession(params.sessionId).active?.abort();
+      sessions.get(params.sessionId)?.active?.abort();
     });
   return { app, close };
 };

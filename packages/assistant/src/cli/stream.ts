@@ -18,6 +18,8 @@ export type AssistantTurnStreamResult = {
   text: string;
   messages: AiStoredMessage[];
   pending?: { type: "approval" | "client_tool"; callId: string; name: string };
+  /** The chat title in the newest saved state this stream received. */
+  title?: string;
 };
 
 export type AssistantClientTools = {
@@ -106,6 +108,7 @@ export const streamAssistantTurn = async (input: {
   const output = input.output ?? createAssistantTurnOutput();
   const { blocks: printedBlocks, ids, toolStatuses, renderedTables, namedFiles } = output;
   const blocks = new Map<string, AiTurnBlock>();
+  let title: string | undefined;
   const writeText = (text: string) => {
     output.links ??= createCloudLinkRewriter(ctx.options.server);
     const rewritten = output.links.push(text);
@@ -251,14 +254,19 @@ export const streamAssistantTurn = async (input: {
         output.closed = true;
       }
     }
-    return { ...result, text: rewriteText(result.text), messages: rewriteMessages(result.messages) };
+    return {
+      ...result,
+      text: rewriteText(result.text),
+      messages: rewriteMessages(result.messages),
+      ...(title !== undefined ? { title } : {}),
+    };
   };
 
   const handleToolBlock = async (block: Extract<AiTurnBlock, { kind: "tool" }>): Promise<AssistantTurnStreamResult | null> => {
-    input.onToolBlock?.(block);
     const previous = toolStatuses.get(block.callId);
     // A resumed attempt replays finished calls as running first; a settled call never goes back.
     if ((previous === "completed" || previous === "failed" || previous === "rejected") && block.status === "running") return null;
+    input.onToolBlock?.(block);
     const changed = previous !== block.status;
     if (changed && ctx.options.output === "text") flushLinks();
     const inline = input.clientTools?.names.has(block.name) === true;
@@ -394,6 +402,7 @@ export const streamAssistantTurn = async (input: {
 
   const handleEvent = async (event: AiStreamSseEvent): Promise<AssistantTurnStreamResult | null> => {
     if (event.type === "state") {
+      title = event.conversation.title;
       if (!targetTurnId) {
         targetTurnId = event.activeTurn?.turnId ?? null;
         if (!targetTurnId) {
