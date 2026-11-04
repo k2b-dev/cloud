@@ -260,7 +260,8 @@ export const settingsMessages = i18n.define({
       settingConflictKeepMine: "Meine Änderung speichern",
       settingConflictTakeTheirs: "Ihren Wert übernehmen",
       skillProjectAccessTitle: "Zugriff über Projekte",
-      skillProjectsUnavailable: "Die Projekte mit diesem Skill konnten nicht geladen werden. Der direkte Zugriff lässt sich trotzdem bearbeiten.",
+      skillProjectsUnavailable:
+        "Die Projekte mit diesem Skill konnten nicht geladen werden. Der direkte Zugriff lässt sich trotzdem bearbeiten.",
       projectAccessSubtitle: "Projekt · KI",
       skillAccessSubtitle: "Skill · KI",
       skillProjectAccessHelp: "Mitglieder dieser Projekte können diesen Skill lesen und nutzen. Bearbeitungsrechte bleiben unverändert.",
