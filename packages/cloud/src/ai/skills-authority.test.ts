@@ -56,17 +56,49 @@ test("every Skill mutation keeps the resolved authority and stops before effects
   });
   const client = new SQL("postgres://localhost/unused_test");
   clients.push(client);
+  let denied = false;
+  const directoryLocks = new Set(
+    [
+      "auth.groups",
+      "auth.group_groups_v2",
+      "auth.user_groups_v2",
+      "auth.service_account_groups",
+      "auth.ipa_user_effective_groups",
+      "settings.entries",
+    ].map((table) => `LOCK TABLE ${table} IN SHARE MODE NOWAIT`),
+  );
+  const answer = (statement: string) => {
+    const query = statement.replace(/\s+/g, " ").trim();
+    if (denied) throw new Error(`Unexpected effect or query after denial: ${query}`);
+    // Reading the wait budget and retaining authority precede the permission decision; they mutate no domain data.
+    if (
+      query ===
+      "SELECT setting::int AS timeout, current_setting('transaction_isolation') AS isolation FROM pg_settings WHERE name = 'statement_timeout'"
+    )
+      return Promise.resolve([{ timeout: 0, isolation: "read committed" }]);
+    if (
+      query === "SAVEPOINT access_mutation_directory" ||
+      query === "RELEASE SAVEPOINT access_mutation_directory" ||
+      directoryLocks.has(query)
+    )
+      return Promise.resolve([]);
+    if (query.startsWith("SELECT * FROM ai.skills") || query.startsWith("SELECT id FROM ai.skills")) return Promise.resolve([row]);
+    if (query.startsWith("SELECT id, (account_expires")) return Promise.resolve([{ id: user.id, active: true }]);
+    if (query.startsWith("SELECT service_account_id, user_id FROM auth.access")) return Promise.resolve([]);
+    if (query.endsWith("AS permission")) {
+      denied = true;
+      return Promise.resolve([{ permission: null }]);
+    }
+    throw new Error(`Unexpected effect or query before denial: ${query}`);
+  };
   const tx = Object.assign(
     new Proxy(client, {
       apply(_target, _receiver, [strings]) {
-        const query = strings.join("?").replace(/\s+/g, " ").trim();
-        if (query.startsWith("SELECT * FROM ai.skills") || query.startsWith("SELECT id FROM ai.skills")) return Promise.resolve([row]);
-        // Grant mutations retain live authority before locking the Skill and checking its audience.
-        if (query.startsWith("SELECT id, (account_expires")) return Promise.resolve([{ id: user.id, active: true }]);
-        if (query.startsWith("SELECT service_account_id, user_id FROM auth.access")) return Promise.resolve([]);
-        if (query.startsWith("LOCK TABLE ") && query.endsWith("IN SHARE MODE NOWAIT")) return Promise.resolve([]);
-        if (query.endsWith("AS permission")) return Promise.resolve([{ permission: null }]);
-        throw new Error(`Unexpected effect or query after denial: ${query}`);
+        return answer(strings.join("?"));
+      },
+      get(target, key, receiver) {
+        if (key === "unsafe") return answer;
+        return Reflect.get(target, key, receiver);
       },
     }),
     {
@@ -77,6 +109,7 @@ test("every Skill mutation keeps the resolved authority and stops before effects
   );
   spyOn(sql, "begin").mockImplementation(async (run) => {
     if (typeof run !== "function") throw new Error("Expected transaction callback");
+    denied = false;
     return run(tx);
   });
   spyOn(aiProjects, "get").mockResolvedValue({

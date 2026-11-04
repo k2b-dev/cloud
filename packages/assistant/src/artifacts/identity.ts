@@ -9,6 +9,8 @@ export type ArtifactIdentity = {
   machineCredential?: { reference: string; isCurrent: () => Promise<boolean> };
   conversationId?: string;
   administrative?: boolean;
+  /** The request locale; access lists present Code accounts in it. */
+  locale?: string;
 };
 export class ArtifactError extends Error {
   constructor(

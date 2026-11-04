@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import "../../../../../scripts/fixtures/authorization-preload";
 import { sql } from "../../runtime/clients";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../request-timeout";
 import {
   AccessMutationBusyError,
   buildAccessPrincipalCondition,
@@ -84,21 +85,28 @@ suite("Code accounts in normal grants", () => {
     }
   });
 
-  test("concurrent directory and person writes return a retryable conflict without waiting", async () => {
+  test("identity contention and exhausted directory waits return a retryable conflict", async () => {
     const [person] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile)
       VALUES (${`code-manager-busy-${crypto.randomUUID()}`}, 'local', 'user') RETURNING id`;
     if (!person) throw new Error("Missing manager");
     try {
-      for (const conflict of ["directory", "person"] as const) {
+      for (const conflict of ["directory_lock_timeout", "directory_statement_timeout", "person"] as const) {
         await sql.begin(async (writer) => {
-          if (conflict === "directory") await writer`LOCK TABLE auth.user_groups_v2 IN ROW EXCLUSIVE MODE`;
+          if (conflict !== "person") await writer`LOCK TABLE auth.user_groups_v2 IN ROW EXCLUSIVE MODE`;
           else await writer`SELECT id FROM auth.users WHERE id = ${person.id}::uuid FOR UPDATE`;
           let failure: unknown;
+          const started = performance.now();
           try {
-            await sql.begin((tx) => lockAccessMutationAuthority({ subject: { type: "user", userId: person.id } }, tx));
+            await sql.begin(async (tx) => {
+              // The helper must retain the caller's tighter wait budget.
+              if (conflict === "directory_statement_timeout") await tx`SET LOCAL statement_timeout = '25ms'`;
+              else await tx`SET LOCAL lock_timeout = '25ms'`;
+              return lockAccessMutationAuthority({ subject: { type: "user", userId: person.id } }, tx);
+            });
           } catch (error) {
             failure = error;
           }
+          expect(performance.now() - started).toBeLessThan((REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2);
           expect(failure).toBeInstanceOf(AccessMutationBusyError);
           if (!(failure instanceof AccessMutationBusyError)) throw new Error("Missing busy error");
           const response = failure.getResponse();
@@ -108,6 +116,63 @@ suite("Code accounts in normal grants", () => {
       }
     } finally {
       await sql`DELETE FROM auth.users WHERE id = ${person.id}::uuid`;
+    }
+  });
+
+  test("directory maintenance exceeding half the request budget returns a retryable conflict", async () => {
+    await sql.begin(async (writer) => {
+      await writer`LOCK TABLE auth.groups IN SHARE UPDATE EXCLUSIVE MODE`;
+      const started = performance.now();
+      await expect(sql.begin((tx) => lockAccessMutationAuthority({ subject: null }, tx))).rejects.toBeInstanceOf(AccessMutationBusyError);
+      expect(performance.now() - started).toBeGreaterThanOrEqual((REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2);
+      expect(performance.now() - started).toBeLessThan(REQUEST_IDLE_TIMEOUT_SECONDS * 1000);
+    });
+  });
+
+  test("grant transactions require a current READ COMMITTED snapshot", async () => {
+    for (const isolation of ["REPEATABLE READ", "SERIALIZABLE"]) {
+      await expect(sql.begin(`ISOLATION LEVEL ${isolation}`, (tx) => lockAccessMutationAuthority({ subject: null }, tx))).rejects.toThrow(
+        "Access mutations require a READ COMMITTED transaction",
+      );
+    }
+  });
+
+  test("a completed directory wait restores the caller's statement timeout", async () => {
+    const writer = await sql.reserve();
+    let pending: Promise<void> | undefined;
+    try {
+      await writer`BEGIN`;
+      await writer`LOCK TABLE auth.groups IN SHARE UPDATE EXCLUSIVE MODE`;
+      const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      let settled = false;
+      pending = sql.begin(async (tx) => {
+        await tx`SET LOCAL statement_timeout = '8s'`;
+        expect(await lockAccessMutationAuthority({ subject: null }, tx)).toBe(true);
+        expect((await tx`SELECT current_setting('statement_timeout') AS timeout`)[0].timeout).toBe("8s");
+      });
+      void pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      const deadline = performance.now() + (REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2;
+      for (;;) {
+        if (settled) throw new Error("Grant returned before its directory blocker committed");
+        const [blocked] = await sql<{ waiting: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+          WHERE datname = current_database() AND ${backend!.pid} = ANY(pg_blocking_pids(pid))) AS waiting`;
+        if (blocked?.waiting) break;
+        if (performance.now() >= deadline) throw new Error("Grant did not wait for directory maintenance");
+        await Bun.sleep(10);
+      }
+      await writer`COMMIT`;
+      await pending;
+    } finally {
+      await writer`ROLLBACK`;
+      writer.release();
+      await pending?.catch(() => {});
     }
   });
 

@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test";
-import { UniversalSearchDataSchema } from "@k2b/cloud/contracts";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { resolveCapabilityResourceReader, UniversalSearchDataSchema } from "@k2b/cloud/contracts";
 import type { ArtifactIdentity, ArtifactSummary } from "./artifacts/service";
 import { testIdentity } from "./artifacts/test-identity";
 import { assistantCapabilities } from "./capabilities";
 import { assistantAppsSearchOptions, assistantSearchOptions } from "./frontend/assistant-search";
-import { searchAssistantApps } from "./search";
+import { AppReadDataSchema, readAssistantApp, searchAssistantApps } from "./search";
 
 const context = { ...testIdentity("owner"), locale: "de" };
 const app: ArtifactSummary = {
@@ -68,4 +69,25 @@ test("all-chat search stays restricted to chats when projects and Studio also pr
     query: "",
     scope: { ref: { type: "assistant.chat", id: "Chat01" } },
   });
+});
+
+test("Studio apps have a reader that answers the person's own level, so a target search can ask it for Manage", async () => {
+  const manifest = compileCapabilityManifest("assistant", assistantCapabilities);
+  expect(resolveCapabilityResourceReader(manifest, { type: "assistant.app", id: "App001" })?.localId).toBe("app.read");
+  const store = (permission: "read" | "admin" | null) => ({
+    describe: async (ids: string[], identity: ArtifactIdentity) => {
+      expect(ids).toEqual(["App001"]);
+      expect(identity).toBe(context);
+      return permission ? [{ ...app, permission, description: "", icon: "" }] : [];
+    },
+  });
+  for (const permission of ["read", "admin"] as const) {
+    const result = await readAssistantApp({ id: "App001" }, context, store(permission));
+    if (!result.ok) throw new Error(result.error.message);
+    expect(AppReadDataSchema.parse(result.data.data)).toEqual({ view: { title: "Banking", permission } });
+  }
+  expect(await readAssistantApp({ id: "App001" }, context, store(null))).toMatchObject({ ok: false, error: { status: 404 } });
+  // Only a person reads: a service account never learns a level here.
+  const machine = { ...context, accessSubject: { type: "service_account" as const, serviceAccountId: "machine" } };
+  expect(await readAssistantApp({ id: "App001" }, machine, store("admin"))).toMatchObject({ ok: false, error: { status: 404 } });
 });

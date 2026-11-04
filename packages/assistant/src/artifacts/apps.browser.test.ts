@@ -177,7 +177,7 @@ test("Studio lists open details with all management actions; publication and ver
     await page.getByRole("button", { name: "Actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "Manage access", exact: true }).click();
     await page.getByRole("dialog").waitFor();
-    await page.getByRole("dialog").getByText("Manage access · Tip calculator").waitFor();
+    await page.getByRole("dialog").getByRole("heading", { name: "Access to Tip calculator", exact: true }).waitFor();
     expect((await page.getByRole("dialog").boundingBox())!.width).toBeLessThan(900);
     await page.keyboard.press("Escape");
     await page.getByRole("dialog").waitFor({ state: "hidden" });

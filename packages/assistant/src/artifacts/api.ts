@@ -66,6 +66,7 @@ const identity = (c: Context<AuthContext>) => ({
   actor: c.get("actor"),
   accessSubject: c.get("accessSubject"),
   conversationId: c.req.query("conversationId"),
+  locale: getLocale(c),
 });
 const id = (c: Context<AuthContext>) => CodeResourceId.parse(c.req.param("id"));
 const page = (c: Context<AuthContext>) =>

@@ -140,6 +140,12 @@ async function accessibleLinkedProjects(db: SQL, identity: AiResourceContext | n
   ];
 }
 
+/** Titles of Code accounts only for someone who manages this app here; Administration sees their type (A2). */
+const codeAccountDisplay = (identity: ArtifactIdentity) => {
+  const viewer = userFromActor(identity.actor);
+  return { canManageTarget: !identity.administrative, cloudAdmin: viewer ? hasRole(viewer, "admin") : false, locale: identity.locale };
+};
+
 export async function requireArtifact(db: SQL, id: string, identity: ArtifactIdentity, required: PermissionLevel) {
   CodeResourceId.parse(id);
   if (!identity.actor) throw new ArtifactError("ACCESS_DENIED");
@@ -488,7 +494,10 @@ export const artifacts = {
       id = (await requireArtifact(db, id, identity, "admin")).row.id;
       const links = await db<{ access_id: string }[]>`SELECT access_id FROM assistant.artifact_access WHERE artifact_id=${id}::uuid`;
       const grants = await Promise.all(links.map((link) => getAccess({ id: link.access_id }, db)));
-      return resolveDisplayNames(grants.filter((grant) => grant !== null));
+      return resolveDisplayNames(
+        grants.filter((grant) => grant !== null),
+        codeAccountDisplay(identity),
+      );
     });
   },
   async grant(id: string, principal: Principal, level: "read" | "admin", identity: ArtifactIdentity, expectedAccessRevision?: string) {
@@ -522,7 +531,7 @@ export const artifacts = {
       await db`INSERT INTO assistant.artifact_access VALUES(${id}::uuid,${access.data.id}::uuid)`;
       const entry = await getAccess({ id: access.data.id }, db);
       if (!entry) return null;
-      const [resolved] = await resolveDisplayNames([entry]);
+      const [resolved] = await resolveDisplayNames([entry], codeAccountDisplay(identity));
       return resolved!;
     });
   },

@@ -678,8 +678,9 @@ as one list, with "What changes" below it. Nothing applies before **Save**: rows
 show what is pending ("New", "before View", "Will be removed" with **Undo**),
 and the summary lists each change once. Save asks again only when someone loses
 access, then calls the same `grantAccess`, `updateAccess`, and `revokeAccess`
-seams as `PermissionEditor`, one at a time: new grants first, level changes next,
-removals last, so the resource always keeps a manager. A failed call stops the
+seams as `PermissionEditor`, one at a time: new grants first, then raised levels
+and removed denials, then lowered levels, other removals last, so the resource
+always keeps a manager. A failed call stops the
 save; changes already saved stay saved, and the dialog keeps exactly the open
 ones with **Try again**. Closing with open changes asks before discarding them.
 
@@ -687,16 +688,37 @@ The last entry that manages the resource keeps Manage: its lower levels and its
 removal are disabled, counted on the result after saving (`effectiveEntries`
 applies as in the editor). "All signed-in people" and "Public with link" are
 switches under **General** (`allowAuthenticated`, `allowPublic`, `publicLink`).
+Turning on public access warns that nobody changes anything without signing in;
+pass `publicWarning` when visitors can do more, for example send a published
+form. Each stored entry is its own row, so a principal with a grant and a denial
+shows both. A **General** switch follows that audience's denial when one is
+stored and shows off; turning it on changes the denial into the first offered
+level, and further entries of the audience appear in the list. Removing a denial
+asks nothing, because nobody loses access by it, and **Undo** is disabled when
+it would leave the resource without a manager.
 The search offers people, groups, and agents; it never finds the account of an
 object or app by name.
 
 Pass `findServiceAccount(handle, signal)` to add such service accounts by their
-identifier. Send the resource as the lookup's target: your server answers only
+identifier. Code accounts (`serviceAccountKind: "code"`) appear in that section,
+never offer Manage, and the section adds "Whoever edits the Code acts with this
+permission." while one is listed. Long names wrap instead of being cut. Pass
+`entryDetail` to show the account's `serviceAccountDescription`, such as
+"Service account of a mailbox", as its second line. Send the resource as the lookup's target: your server answers only
 someone who manages that resource, returns nothing for any other identifier,
 and never searches by name. Without the callback the **Service accounts**
 section shows existing rows only. `extraSections` adds further sections, such
-as the resource's object API keys. The dialog is a presentation of the same
+as the resource's object API keys. The caller builds them before the dialog
+owns them, so they cannot rely on cleanup; tie their requests to the `signal`
+you pass. The dialog is a presentation of the same
 grants; the service still checks every change.
+
+When the dialog opens from settings that can close on their own, pass their
+`signal`. Aborting it closes the dialog without asking and sends nothing that is
+still pending; changes already saved stay saved, and the dialog resolves
+`false`. Reload the list after any change your seams saved, also when the
+dialog resolves `false`: a save can fail halfway and the person can discard
+the rest.
 
 ### Confirm access changes
 
@@ -740,7 +762,8 @@ configuration that names a target supplies no permission.
 #### Retain manager authority while changing a grant
 
 Use `lockAccessMutationAuthority` from `@k2b/cloud/server` in the same SQL
-transaction that changes the share. Pass the current `subject` and either the
+READ COMMITTED transaction that changes the share. Other isolation levels are
+refused. Pass the current `subject` and either the
 recipient `principal` on create or the `accessId` on update/removal. An access
 ID may also be a SQL fragment selecting the internal UUID from an application's
 public short ID. A subject whose account is missing, inactive or expired fails the check.
@@ -749,11 +772,19 @@ Acquire this lock before the resource lock. Then lock the target with the same
 lock used by every grant or ownership change and recheck the current manager's
 permission on that transaction's connection, including credential ceilings.
 The helper retains account, person and directory authority; it grants no
-permission. Identity or directory contention throws `AccessMutationBusyError`, aborting the
-transaction instead of waiting while holding identity locks. It carries HTTP
-409 and `retryable: true`; pass that response through so the caller can retry.
-Directory table maintenance, including autovacuum and analyze, can cause the
-same conflict even when no membership is changing.
+permission. It waits for settings and directory writers or maintenance before
+locking people and accounts. That wait uses at most half the ordinary
+10-second request budget: five seconds across all directory tables. It releases
+partial locks before waiting, so directory writers can finish even when they
+update tables in another order. A shorter transaction statement or lock timeout
+still applies, and the helper restores the previous statement timeout after
+waiting.
+
+An exhausted directory wait or a conflicting identity row lock throws
+`AccessMutationBusyError`, aborting the transaction. It carries HTTP 409 and
+`retryable: true`; pass that response through so the caller can retry the
+complete operation. A grant that waited for a revocation must recheck the
+manager's permission after acquiring the target lock.
 Only trusted initialization or recovery paths may pass `subject: null`.
 
 ```ts

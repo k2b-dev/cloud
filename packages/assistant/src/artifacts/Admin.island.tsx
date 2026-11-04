@@ -1,11 +1,11 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button, DataTable, NoticeCard, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { DatabaseSettingsForm, StorageSettingsForm } from "./AdminSettings";
 import type { artifactAdmin } from "./admin";
 import { artifactClient } from "./client";
 import { artifactMessages } from "./messages";
-import { StudioPermissions } from "./StudioPermissions";
+import { openStudioAccess } from "./StudioPermissions";
 
 export default function Admin(props: { initial: Awaited<ReturnType<typeof artifactAdmin.list>>; search: string }) {
   const locale = useLocale(),
@@ -33,22 +33,25 @@ export default function Admin(props: { initial: Awaited<ReturnType<typeof artifa
         size: "medium",
       });
     });
-  const permissions = (id: string) =>
+  // Sharing ends with this page: nothing opens or stays open after navigating away.
+  const owner = new AbortController();
+  onCleanup(() => owner.abort());
+  const permissions = (row: { id: string; title: string; published: boolean }) =>
     act(async () => {
-      const entries = await artifactClient.admin.access(id);
-      await prompts.dialog<void>(
-        () => (
-          <StudioPermissions
-            artifactId={id}
-            administrative
-            entries={entries}
-            loadProjects={() => artifactClient.admin.projects(id)}
-            grant={(principal, level) => artifactClient.admin.grant(id, principal, level)}
-            change={(accessId, level) => artifactClient.admin.change(id, accessId, level)}
-          />
-        ),
-        { title: t().share, size: "medium" },
-      );
+      const entries = await artifactClient.admin.access(row.id);
+      if (owner.signal.aborted) return;
+      await openStudioAccess({
+        signal: owner.signal,
+        artifactId: row.id,
+        title: row.title,
+        published: row.published,
+        administrative: true,
+        locale: locale(),
+        entries,
+        loadProjects: () => artifactClient.admin.projects(row.id),
+        grant: (principal, level) => artifactClient.admin.grant(row.id, principal, level),
+        change: (accessId, level) => artifactClient.admin.change(row.id, accessId, level),
+      });
     });
   const page = (number: number) => navigateTo(`/admin/assistant?page=${number}&search=${encodeURIComponent(search())}`);
   return (
@@ -129,7 +132,7 @@ export default function Admin(props: { initial: Awaited<ReturnType<typeof artifa
           if (col.id === "actions")
             return (
               <div class="flex gap-2">
-                <Button size="sm" disabled={busy()} onClick={() => permissions(row.id)}>
+                <Button size="sm" disabled={busy()} onClick={() => permissions(row)}>
                   {t().share}
                 </Button>
                 <Button

@@ -8,6 +8,7 @@ import { recursiveGroupIdsSubquery, recursiveServiceAccountGroupIdsSubquery } fr
 import { toPgUuidArray } from "../../services/postgres";
 import type { ServiceAccountKind } from "../../services/service-accounts";
 import type { RequestAuthority } from "../middleware/auth";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../request-timeout";
 
 export type AccessDb = typeof sql;
 
@@ -255,7 +256,63 @@ export const updateAccess = async (params: { id: string; permission: PermissionL
   return ok();
 };
 
-/** A concurrent identity or directory write won; retry the complete grant transaction. */
+// Leave half the ordinary request budget for authorization, the mutation and its response.
+const ACCESS_DIRECTORY_LOCK_TIMEOUT_MS = (REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2;
+
+const ACCESS_DIRECTORY_TABLES = [
+  "auth.groups",
+  "auth.group_groups_v2",
+  "auth.user_groups_v2",
+  "auth.service_account_groups",
+  "auth.ipa_user_effective_groups",
+  "settings.entries",
+] as const;
+
+/** Acquire the whole authority set without retaining partial locks while waiting on a writer. */
+const lockAccessDirectory = async (db: AccessDb): Promise<void> => {
+  const [settings] = await db<{ timeout: number; isolation: string }[]>`SELECT setting::int AS timeout,
+    current_setting('transaction_isolation') AS isolation FROM pg_settings WHERE name = 'statement_timeout'`;
+  if (!settings || settings.isolation !== "read committed") throw new Error("Access mutations require a READ COMMITTED transaction");
+  const deadline = performance.now() + Math.min(settings.timeout || ACCESS_DIRECTORY_LOCK_TIMEOUT_MS, ACCESS_DIRECTORY_LOCK_TIMEOUT_MS);
+  for (;;) {
+    if (performance.now() >= deadline) throw new AccessMutationBusyError();
+    let blockedTable: (typeof ACCESS_DIRECTORY_TABLES)[number] = ACCESS_DIRECTORY_TABLES[0];
+    await db`SAVEPOINT access_mutation_directory`;
+    try {
+      for (const table of ACCESS_DIRECTORY_TABLES) {
+        blockedTable = table;
+        // Identifiers come exclusively from the platform's constant table list.
+        await db.unsafe(`LOCK TABLE ${table} IN SHARE MODE NOWAIT`);
+      }
+      await db`RELEASE SAVEPOINT access_mutation_directory`;
+      return;
+    } catch (error) {
+      // IPA sync/provider transitions touch these tables in different orders.
+      // Release every partial lock before waiting, so that writer can finish.
+      await db`ROLLBACK TO SAVEPOINT access_mutation_directory`;
+      await db`RELEASE SAVEPOINT access_mutation_directory`;
+      if (!(error && typeof error === "object" && "errno" in error && error.errno === "55P03")) throw error;
+    }
+    const remaining = Math.ceil(deadline - performance.now());
+    if (remaining <= 0) throw new AccessMutationBusyError();
+    await db`SAVEPOINT access_mutation_directory_wait`;
+    try {
+      await db`SELECT set_config('statement_timeout', ${String(remaining)}, true)`;
+      // SHARE conflicts with autovacuum/ANALYZE as well as directory writes.
+      // Wait on this table alone, release it, then attempt the complete set.
+      await db.unsafe(`LOCK TABLE ${blockedTable} IN SHARE MODE`);
+    } catch (error) {
+      if (error && typeof error === "object" && "errno" in error && error.errno === "57014") throw new AccessMutationBusyError();
+      throw error;
+    } finally {
+      // This releases the wait lock and restores the caller's statement timeout.
+      await db`ROLLBACK TO SAVEPOINT access_mutation_directory_wait`;
+      await db`RELEASE SAVEPOINT access_mutation_directory_wait`;
+    }
+  }
+};
+
+/** Identity contention or an exhausted directory wait; retry the complete grant transaction. */
 export class AccessMutationBusyError extends HTTPException {
   readonly code = "CONFLICT";
   readonly retryable = true;
@@ -275,13 +332,17 @@ export class AccessMutationBusyError extends HTTPException {
  * `subject: null` is reserved for trusted initialization/recovery, not requests.
  * Pass the recipient principal on create or accessId on update/delete so account
  * deletion cannot invert the account -> target lock order through an FK cascade.
- * Directory contention aborts rather than waiting while holding identity locks.
+ * Use READ COMMITTED. Wait for directory maintenance before taking identity locks, within half the
+ * ordinary request budget (or the caller's shorter timeout). Identity row
+ * contention still aborts immediately to avoid account-deletion cascade inversions.
  */
 export const lockAccessMutationAuthority = async (
   params: { subject: AccessSubject | null; principal?: Principal; accessId?: string | SQLQuery },
   db: AccessDb,
 ): Promise<boolean> => {
   try {
+    await lockAccessDirectory(db);
+
     const { subject, principal, accessId } = params;
     const [entry] = accessId
       ? await db<
@@ -312,8 +373,6 @@ export const lockAccessMutationAuthority = async (
           FROM auth.users WHERE id = ANY(${toPgUuidArray(userIds)}::uuid[]) ORDER BY id FOR SHARE NOWAIT`
       : [];
     if (subject?.type === "user" && !people.some((person) => person.id === subject.userId && person.active)) return false;
-    await db`LOCK TABLE settings.entries IN SHARE MODE NOWAIT`;
-    await db`LOCK TABLE auth.groups, auth.group_groups_v2, auth.user_groups_v2, auth.service_account_groups, auth.ipa_user_effective_groups IN SHARE MODE NOWAIT`;
     return true;
   } catch (error) {
     if (error && typeof error === "object" && "errno" in error && error.errno === "55P03") throw new AccessMutationBusyError();
