@@ -6,6 +6,7 @@ import { conversations } from "./conversations";
 import { chatLive } from "./live";
 import { messages } from "./messages";
 import { loadChatView } from "./snapshot";
+import { INITIAL_MESSAGE_PAGE_SIZE } from "./snapshot-budget";
 
 const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
 
@@ -65,7 +66,7 @@ const conversation = ConversationSchema.parse({
 const page = { items: [], rev: 0, seqHead: 0, from: 1, to: 0 };
 afterEach(() => mock.restore());
 
-test("SSR reads cursor, sidebar, then the same focused snapshot as the browser", async () => {
+test("SSR reads cursor and sidebar before requesting a focused snapshot within its HTML budget", async () => {
   const order: string[] = [];
   spyOn(chatLive, "cursor").mockImplementation(async () => {
     order.push("cursor");
@@ -81,7 +82,12 @@ test("SSR reads cursor, sidebar, then the same focused snapshot as the browser",
   });
   const result = await loadChatView(context, { conversationId: "abcdef", messageId: "message001" });
   expect(order).toEqual(["cursor", "sidebar", "snapshot"]);
-  expect(snapshot).toHaveBeenCalledWith({ ...context, conversationId: "abcdef", messageId: "message001" });
+  expect(snapshot).toHaveBeenCalledWith({
+    ...context,
+    conversationId: "abcdef",
+    messageId: "message001",
+    initialPageSize: INITIAL_MESSAGE_PAGE_SIZE,
+  });
   expect(result).toEqual({
     cursor: "before-reads",
     sidebar: { items: [conversation], nextCursor: null },
@@ -133,4 +139,34 @@ test("SSR applies archive and Unread filters before fetching the sidebar", async
   const list = spyOn(conversations, "list").mockResolvedValue({ ok: true, data: { items: [], nextCursor: null } });
   await loadChatView(context, { archived: true, unread: true });
   expect(list).toHaveBeenCalledWith({ ...context, query: { archived: "true", unread: "true" } });
+});
+
+test("SSR omits API-only systemText while keeping the structured event, focus and cursor range", async () => {
+  spyOn(chatLive, "cursor").mockResolvedValue("before-reads");
+  spyOn(conversations, "list").mockResolvedValue({ ok: true, data: { items: [conversation], nextCursor: null } });
+  const message = {
+    id: "message001",
+    conversationId: "abcdef",
+    seq: 60,
+    rev: 60,
+    kind: "text" as const,
+    author: { type: "user" as const, id: userId, name: "Lea Example" },
+    body: "A visible message",
+    system: null,
+    systemText: "Unused localized copy",
+    createdAt: "2026-10-12T00:00:00.000Z",
+    attachments: [],
+    mentions: [],
+    reactions: [],
+    refs: [],
+    thread: null,
+    replyTo: null,
+  };
+  const initial = { ...page, items: [message], from: 52, to: 67, seqHead: 120, rev: 120 };
+  spyOn(messages, "snapshot").mockResolvedValue({ ok: true, data: { threads: noThreads, conversation, page: initial, focus: message.id } });
+  const result = await loadChatView(context, { conversationId: "abcdef", messageId: message.id, thread: "general" });
+  expect(result.open?.page).toMatchObject({ from: 52, to: 67, seqHead: 120, rev: 120 });
+  expect(result.open?.focus).toBe(message.id);
+  expect(result.open?.page.items[0]).not.toHaveProperty("systemText");
+  expect(result.open?.page.items[0]).toMatchObject({ id: message.id, body: message.body, system: null });
 });

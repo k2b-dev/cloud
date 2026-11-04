@@ -43,7 +43,6 @@ import {
   MESSAGE_MAX_CODE_POINTS,
   type Mention,
   MessageBodySchema,
-  type MessagePageSchema,
   type MessageSchema,
   type PersonalConversationSchema,
   type ReadUpdateSchema,
@@ -71,7 +70,7 @@ import { createChatCommands } from "./chat-commands";
 import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { messageTime, sameDay } from "./chat-format";
 import { createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
-import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
+import { ChatRequestError, createChatStore, type MessagePage, type OpenChat } from "./chat-store";
 import DiscoverChannels from "./DiscoverChannels";
 import type { DeviceNotice } from "./device-notice";
 import ForYou from "./ForYou";
@@ -135,7 +134,7 @@ export type ChatWorkspaceProps = {
   sidebar: z.infer<typeof ConversationPageSchema>;
   open: {
     conversation: Conversation;
-    page: z.infer<typeof MessagePageSchema>;
+    page: MessagePage;
     threads: z.infer<typeof ThreadListSchema>;
     focus: string | null;
   } | null;

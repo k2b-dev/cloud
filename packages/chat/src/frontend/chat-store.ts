@@ -48,7 +48,10 @@ import { chatHasThreads, inView, type ThreadList, type ThreadView } from "./thre
 type Conversation = z.infer<typeof ConversationSchema>;
 type Message = z.infer<typeof MessageSchema>;
 type ConversationPage = z.infer<typeof ConversationPageSchema>;
-type MessagePage = z.infer<typeof MessagePageSchema>;
+// SSR omits the API-only localized systemText; the renderer uses structured system events.
+export type MessagePage = Omit<z.infer<typeof MessagePageSchema>, "items"> & {
+  items: (Message & { systemText?: string | null })[];
+};
 type ChangesPage = z.infer<typeof ChangesPageSchema>;
 type Summary = Extract<z.infer<typeof ChatLiveEventSchema>, { type: "summary" }>;
 const compareRows = (a: Conversation, b: Conversation) =>

@@ -1,10 +1,13 @@
-import { expect, setDefaultTimeout, test } from "bun:test";
+import { expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { loadChatView } from "../service";
 import { requireConversation } from "../service/access";
 import { ChatSnapshotSchema, ConversationPageSchema, ConversationSchema, MessagePageSchema, MessageViewSchema } from "../service/contracts";
 import { appendMessage } from "../service/message-store";
+import * as resourceAccess from "../service/resource-access";
+import { INITIAL_MESSAGE_PAGE_SIZE } from "../service/snapshot-budget";
+import * as threadAccess from "../service/thread-access";
 import { messagePreview } from "../system-messages";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
@@ -97,8 +100,63 @@ suite("chat view snapshots", () => {
     const ssr = await loadChatView(owner.context, { conversationId: chat.shortId, messageId: target.id });
     expect(ssr.cursor.length).toBeGreaterThan(0);
     expect(ssr.noAccess).toBe(false);
-    expect(ssr.open).toEqual({ threads: middle.threads, conversation: middle.conversation, page: middle.page, focus: middle.focus });
+    expect(ssr.open).toMatchObject({ threads: middle.threads, conversation: middle.conversation, focus: middle.focus });
+    expect(ssr.open!.page.items.map((message) => message.seq)).toEqual(
+      Array.from({ length: INITIAL_MESSAGE_PAGE_SIZE }, (_, i) => i + 60 - INITIAL_MESSAGE_PAGE_SIZE / 2),
+    );
+    expect(ssr.open!.page).toMatchObject({ from: 52, to: 67, seqHead: 120, rev: 120 });
+    expect(ssr.open!.page.items.every((message) => !("systemText" in message))).toBeTrue();
+    // The existing cursor API covers both sides of the smaller SSR range without a gap.
+    const older = MessagePageSchema.parse(await (await f.request(owner.headers, `/${chat.shortId}/messages?before=52`)).json());
+    const newer = MessagePageSchema.parse(await (await f.request(owner.headers, `/${chat.shortId}/messages?after=67`)).json());
+    expect(older.to).toBe(51);
+    expect(newer.from).toBe(68);
+    const initialLatest = await loadChatView(owner.context, { conversationId: chat.shortId });
+    expect(initialLatest.open!.page.items).toHaveLength(INITIAL_MESSAGE_PAGE_SIZE);
+    expect(initialLatest.open!.page).toMatchObject({ from: 105, to: 120, seqHead: 120 });
     expect(ssr.sidebar.items.some((row) => row.id === chat.shortId)).toBe(true);
+  });
+
+  test("a partially deferred compact unread snapshot keeps the inspected prefix and resumes at its boundary", async () => {
+    const reader = await f.person(),
+      writer = await f.person();
+    const chat = await f.fixture(reader, [{ person: writer, permission: "write" }]);
+    await fill(writer, chat.shortId, 120);
+    expect((await f.request(reader.headers, `/${chat.shortId}/read`, "POST", { seq: 59 })).status).toBe(200);
+    // Simulate an authorization traversal stopping at the second candidate. Its
+    // direction determines which inspected side is safe to commit as the cursor.
+    const stopped = spyOn(resourceAccess, "discussionStopped").mockReturnValue(true);
+    const visible = spyOn(threadAccess, "visibleMessages").mockImplementation(async (_db, _context, candidates, backward) => {
+      if (backward) candidates.splice(0, candidates.length - 1);
+      else candidates.splice(1);
+      return candidates;
+    });
+    try {
+      const view = await loadChatView(reader.context, { conversationId: chat.shortId });
+      expect(view.open!.page.items.map((message) => message.seq)).toEqual([60]);
+      expect(view.open!.page).toMatchObject({ from: 60, to: 60, seqHead: 120 });
+      const continuation = MessagePageSchema.parse(await (await f.request(reader.headers, `/${chat.shortId}/messages?after=60`)).json());
+      expect(continuation.from).toBe(61);
+    } finally {
+      visible.mockRestore();
+      stopped.mockRestore();
+    }
+  });
+
+  test("the compact SSR unread page begins at the first unread message and keeps both cursors", async () => {
+    const reader = await f.person(),
+      writer = await f.person();
+    const chat = await f.fixture(reader, [{ person: writer, permission: "write" }]);
+    await fill(writer, chat.shortId, 120);
+    const response = await f.request(reader.headers, `/${chat.shortId}/read`, "POST", { seq: 59 });
+    expect(response.status).toBe(200);
+    const view = await loadChatView(reader.context, { conversationId: chat.shortId });
+    expect(view.open!.conversation.read?.lastReadSeq).toBe(59);
+    expect(view.open!.page.items.map((message) => message.seq)).toEqual(
+      Array.from({ length: INITIAL_MESSAGE_PAGE_SIZE }, (_, i) => i + 60),
+    );
+    expect(view.open!.page).toMatchObject({ from: 60, to: 75, seqHead: 120 });
+    expect(view.open!.focus).toBeNull();
   });
 
   test("unknown, foreign, and malformed message links open the latest page without focus", async () => {

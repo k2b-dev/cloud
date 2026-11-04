@@ -68,7 +68,6 @@ const msg = (
   body,
   system: null,
   createdAt: time,
-  systemText: null,
 });
 const log = [
   msg("Werk01", 1, "paul", "Moin! Der Kompressor macht wieder Geräusche.", at(9, 12)),

@@ -54,6 +54,7 @@ import {
   UpdateMemberSchema,
   UpdateThreadSchema,
 } from "../service/contracts";
+import { INITIAL_MESSAGE_PAGE_SIZE } from "../service/snapshot-budget";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 
 type Conversation = z.infer<typeof ConversationSchema>;
@@ -731,7 +732,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           : null,
     };
   };
-  const snapshot = (id: string, focus: string | null, view = "all") => {
+  const snapshot = (id: string, focus: string | null, view = "all", pageSize = 50) => {
     const chat = chats.get(id);
     if (!chat) return null;
     if (view !== "all" && view !== "general" && !chat.threads.some((thread) => thread.id === view)) return null;
@@ -748,7 +749,12 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
         message.seq > (startOf(chat, message.thread) ?? Number.POSITIVE_INFINITY),
     );
     const position = target ? target.seq : !focus && firstUnread ? firstUnread.seq : null;
-    const items = position === null ? selected.slice(-50) : selected.filter((message) => message.seq < position + 25).slice(-50);
+    const forward = pageSize === INITIAL_MESSAGE_PAGE_SIZE && !target && position !== null;
+    const items = forward
+      ? selected.filter((message) => message.seq >= position).slice(0, pageSize)
+      : position === null
+        ? selected.slice(-pageSize)
+        : selected.filter((message) => message.seq < position + pageSize / 2).slice(-pageSize);
     return {
       cursor: `c.${cursor}`,
       conversation: chat.conversation,
@@ -757,8 +763,14 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
         items,
         seqHead: chat.messages.length,
         rev: chat.conversation.rev,
-        from: items.length === 50 ? items[0]!.seq : 1,
-        to: position === null ? chat.messages.length : Math.min(position + 24, chat.messages.length),
+        from: forward ? position : items.length === pageSize ? items[0]!.seq : 1,
+        to: forward
+          ? items.length === pageSize
+            ? items.at(-1)!.seq
+            : chat.messages.length
+          : position === null
+            ? chat.messages.length
+            : Math.min(position + pageSize / 2 - 1, chat.messages.length),
       },
       focus: target?.id ?? null,
     };
@@ -781,7 +793,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     options: { guest?: boolean } = {},
   ): ChatWorkspaceProps => {
     const view = address.thread ?? "all";
-    const open = address.chat ? snapshot(address.chat, address.message ?? null, view) : null;
+    const open = address.chat ? snapshot(address.chat, address.message ?? null, view, INITIAL_MESSAGE_PAGE_SIZE) : null;
     return {
       channelsPage: address.channelsPage,
       channelQuery: address.query,

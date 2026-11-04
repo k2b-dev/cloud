@@ -324,6 +324,13 @@ Renewal starts at the earliest relevant hint in the received batch. Events
 committed during discovery replay after renewal, even if a later known-key
 event in that batch has already advanced the live watermark.
 
+The web and Cloud app render at most 16 messages in their first conversation
+snapshot. A message link centers that window on its authorized target; otherwise
+it opens at the unread position or latest messages. Scrolling uses the existing
+50-message cursor pages, and “Jump to latest” still reaches the current end.
+The first snapshot omits the API-only `systemText` copy; rendering uses the
+structured system event. The API snapshot and message-page schemas are unchanged.
+
 “Jump to latest” preserves authorized live arrivals newer than its snapshot.
 Access reconciliation instead replaces the authorized window and supersedes
 pending reads, so a delayed response cannot restore removed content.

@@ -24,6 +24,7 @@ import { appendMessage, type MessageRow, messageViews } from "./message-store";
 import { notificationOutbox } from "./notification-delivery";
 import { openParticipant } from "./read-state";
 import { discussionIncomplete, discussionStopped } from "./resource-access";
+import type { INITIAL_MESSAGE_PAGE_SIZE } from "./snapshot-budget";
 import { canReadThread, visibleMessages, visibleThreadIdPage } from "./thread-access";
 import { threadStates } from "./thread-state";
 import { findThread, threadNotFound, threads } from "./threads";
@@ -157,8 +158,9 @@ const list = async (input: Input & { query?: unknown }) => {
   });
 };
 const snapshot = async (
-  input: Input & { messageId?: string; thread?: string },
+  input: Input & { messageId?: string; thread?: string; initialPageSize?: typeof INITIAL_MESSAGE_PAGE_SIZE },
 ): Promise<Result<Omit<z.infer<typeof ChatSnapshotSchema>, "cursor">>> => {
+  const pageSize = input.initialPageSize ?? MESSAGE_PAGE_SIZE;
   const parsed = parse(SnapshotQuerySchema, { message: input.messageId, thread: input.thread }, input);
   if (!parsed.ok) return parsed;
   const opened = await openParticipant(input);
@@ -207,12 +209,15 @@ const snapshot = async (
       : input.messageId === undefined && conversation.data.unread > 0 && start !== null
         ? start + 1
         : null;
+    // A compact unread page starts at the unread position. Centering only 16 rows
+    // leaves too little content below the marker to align it at the viewport's top.
+    const forward = input.initialPageSize !== undefined && !target && position !== null;
     const candidates = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
       AND ${filter}
-      AND ${position !== null ? db`seq < ${position + MESSAGE_PAGE_SIZE / 2}` : db`true`}
-      ORDER BY seq DESC LIMIT ${MESSAGE_PAGE_SIZE}`;
-    candidates.reverse();
-    const rows = selector === undefined ? await visibleMessages(db, input, candidates, true) : candidates;
+      AND ${forward ? db`seq >= ${position}` : position !== null ? db`seq < ${position + pageSize / 2}` : db`true`}
+      ORDER BY seq ${forward ? db`ASC` : db`DESC`} LIMIT ${pageSize}`;
+    if (!forward) candidates.reverse();
+    const rows = selector === undefined ? await visibleMessages(db, input, candidates, !forward) : candidates;
     const seqHead = Number(allowed.data.seq_head);
     const list = await threads.list(
       {
@@ -230,8 +235,18 @@ const snapshot = async (
         items: await messageViews(db, rows, input.conversationId, input.accessSubject, input.locale),
         seqHead,
         rev: Number(allowed.data.rev),
-        from: candidates.length === MESSAGE_PAGE_SIZE || discussionStopped(input) ? Number(candidates[0]?.seq ?? seqHead + 1) : 1,
-        to: position !== null ? Math.min(position + MESSAGE_PAGE_SIZE / 2 - 1, seqHead) : seqHead,
+        from: forward
+          ? position
+          : candidates.length === pageSize || discussionStopped(input)
+            ? Number(candidates[0]?.seq ?? seqHead + 1)
+            : 1,
+        to: forward
+          ? candidates.length === pageSize || discussionStopped(input)
+            ? Number(candidates.at(-1)?.seq ?? position - 1)
+            : seqHead
+          : position !== null
+            ? Math.min(position + pageSize / 2 - 1, seqHead)
+            : seqHead,
       },
       threads: list.data,
       focus: target?.short_id ?? null,
