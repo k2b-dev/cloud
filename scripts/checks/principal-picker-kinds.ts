@@ -33,8 +33,8 @@ export const checkSource = (file: string, source: string): Finding[] => {
         for (const attribute of node.attributes.properties) {
           if (!ts.isJsxAttribute(attribute) || attribute.name.getText(parsed) !== "allowServiceAccounts") continue;
           const value = attribute.initializer;
-          // The only forwarding component delegates the same default to PrincipalPicker.
-          if (file === "packages/cloud/src/access/PermissionEditor.tsx") continue;
+          // The forwarding editors delegate the same default to PrincipalPicker.
+          if (file === "packages/cloud/src/access/PermissionEditor.tsx" || file === "packages/cloud/src/access/AccessDialog.tsx") continue;
           if (!value || (ts.isJsxExpression(value) && value.expression?.kind === ts.SyntaxKind.TrueKeyword)) continue;
           if (restrictions[file]) continue;
           findings.push({

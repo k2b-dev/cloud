@@ -45,7 +45,7 @@ for (const surface of ["service-accounts", "audit"] as const) {
       list,
       stubRailSnapshot(),
       spyOn(services.coreSettings, "get").mockResolvedValue(false),
-      spyOn(services.accountsAppService.accountRequest, "list").mockResolvedValue(empty),
+      spyOn(services.accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
     ];
     const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
     app.use("*", async (c, next) => {

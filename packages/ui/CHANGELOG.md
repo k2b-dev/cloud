@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.46.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.45.0...npm-ui-v0.46.0) (2026-11-03)
+
+
+### Features
+
+* **cloud:** one access dialog collects changes and shows what changes before saving ([#2543](https://github.com/k2b-dev/cloud/issues/2543)) ([f88a68d](https://github.com/k2b-dev/cloud/commit/f88a68dcab732a6cb640b2d4a4c568330cb87dce))
+* **cloud:** the file chooser is a compact file dialog ([#2481](https://github.com/k2b-dev/cloud/issues/2481)) ([f771fd0](https://github.com/k2b-dev/cloud/commit/f771fd01eecfe54ac0e67931237e3274f4891fb7))
+* **cloud:** the profile menu hides the sidebar and the panel button matches search and help ([#2486](https://github.com/k2b-dev/cloud/issues/2486)) ([ed36267](https://github.com/k2b-dev/cloud/commit/ed36267bc4862090cfb5321b67efecfd40bd47e8))
+* **mail:** shared mailboxes show what happened in an events tab ([#2506](https://github.com/k2b-dev/cloud/issues/2506)) ([419acae](https://github.com/k2b-dev/cloud/commit/419acae5c1f22ede57cb331eacf08aeb5f6c070a))
+* **mail:** the wide list shows who took part in a conversation ([#2515](https://github.com/k2b-dev/cloud/issues/2515)) ([78a1b4c](https://github.com/k2b-dev/cloud/commit/78a1b4ce485230cd0cfb797e59f851d29249f8ea))
+* **mail:** wide screens show more of the head and a labelled search filter ([#2521](https://github.com/k2b-dev/cloud/issues/2521)) ([c7043a7](https://github.com/k2b-dev/cloud/commit/c7043a7312ba735556ea16eaf0aef40904a82720))
+* **notebooks:** the detail panel shows who is here and who has access ([#2499](https://github.com/k2b-dev/cloud/issues/2499)) ([5c4b65e](https://github.com/k2b-dev/cloud/commit/5c4b65e1d40fc02fcf1e5fe9382a6963c9988522))
+* **ui:** details toggles use the info icon ([#2497](https://github.com/k2b-dev/cloud/issues/2497)) ([05aaf5e](https://github.com/k2b-dev/cloud/commit/05aaf5e7dbd5995fced3ebae3137717a177fbba7))
+
+
+### Bug Fixes
+
+* **notebooks:** typing in notebooks no longer lags ([#2492](https://github.com/k2b-dev/cloud/issues/2492)) ([5861ced](https://github.com/k2b-dev/cloud/commit/5861cedeca224228618bb4200e536f1cbe6a9c68))
+* **ui:** keyboard hints use normal weight ([#2488](https://github.com/k2b-dev/cloud/issues/2488)) ([1638384](https://github.com/k2b-dev/cloud/commit/163838488167e687e451d1090ccbbd966a95d427))
+* **ui:** pickers are wide enough for names ([#2490](https://github.com/k2b-dev/cloud/issues/2490)) ([8b8d732](https://github.com/k2b-dev/cloud/commit/8b8d73233d2da7e9cfa373c5127ee56336c77c22))
+* **ui:** search results never flash 'nobody found' or trip a ResizeObserver loop ([#2528](https://github.com/k2b-dev/cloud/issues/2528)) ([eed463d](https://github.com/k2b-dev/cloud/commit/eed463d13c46db1b4a7f610de88770a3be7c0c9c))
+* **ui:** table grips show again after a menu closes before it announced itself ([#2523](https://github.com/k2b-dev/cloud/issues/2523)) ([c41ce83](https://github.com/k2b-dev/cloud/commit/c41ce8390ce203ab4d16b3462303d9d83922680c)), closes [#2520](https://github.com/k2b-dev/cloud/issues/2520)
+* **ui:** the shell no longer restyles the whole page when a node changes ([#2495](https://github.com/k2b-dev/cloud/issues/2495)) ([6bb2c9c](https://github.com/k2b-dev/cloud/commit/6bb2c9c40a572ccdb3e567f2b3d4c654e38b70b6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.20.2 to 0.21.0
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 to ^0.21.0
+
 ## [0.45.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.44.0...npm-ui-v0.45.0) (2026-11-02)
 
 
