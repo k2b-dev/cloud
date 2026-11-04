@@ -110,11 +110,11 @@ const parseUuidList = (value: string | undefined, label: string) => {
   return { ok: false as const, message: `Invalid ${label} query parameter.` };
 };
 
-type AccountsEntitiesRouteDependencies = {
+export type AccountsEntitiesRouteDependencies = {
   authenticate?: MiddlewareHandler<AuthContext>;
   listEntities?: typeof accountsService.entity.list;
   searchShares?: typeof directoryShares.search;
-  managesTarget?: typeof managesPrincipalSearchTarget;
+  managesTarget?: (...args: Parameters<typeof managesPrincipalSearchTarget>) => Promise<boolean | undefined>;
   limitHandleLookup?: (userId: string) => Promise<boolean>;
 };
 
@@ -211,10 +211,9 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
           return c.json({ code: "RATE_LIMITED", message: "Too many requests" }, 429);
         if (/^code-[0123456789abcdefghjkmnpqrstvwxyz]{10}$/.test(query.search.trim()) && query.target_type && query.target_id) {
           const target = { type: query.target_type, id: query.target_id };
-          if (
-            await (dependencies.managesTarget ?? managesPrincipalSearchTarget)(target, auth.getAuthority(c), getLocale(c), c.req.raw.signal)
-          )
-            codeAccountHandle = query.search.trim();
+          const args = [target, auth.getAuthority(c), getLocale(c), c.req.raw.signal] as const;
+          const manages = (await dependencies.managesTarget?.(...args)) ?? (await managesPrincipalSearchTarget(...args));
+          if (manages) codeAccountHandle = query.search.trim();
         }
       }
       const result = await (dependencies.listEntities ?? accountsService.entity.list)({

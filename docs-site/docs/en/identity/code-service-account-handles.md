@@ -88,3 +88,17 @@ For example, Mail supplies “Code eines Postfachs” and “Dienstkonto eines P
 These labels contain only the type, never a resource title. This avoids guessing
 grammatical gender or genitive forms from the type title. Types without labels
 use the generic resource wording followed by their localized type title.
+
+## Core AI permission dialogs
+
+Core uses the same entity endpoint for `core.ai.skill` and `core.ai.project`.
+Its local Manage adapter checks the current Skill or Project grants, or the
+Cloud administrator's existing recovery authority, and verifies that the
+target still exists. `CoreApiOptions.principalSearchTarget` supplies this
+adapter when Core builds its API. Return `undefined` for other target types
+to use their declared resource reader; `false` denies the lookup. The shared
+endpoint retains exact-handle matching and its user-wide Valkey budget.
+
+Resource-bound API-key accounts have no handle: the database permits this
+column only for `kind = 'code'`. This lookup does not accept their UUID or
+introduce another identifier.

@@ -201,6 +201,30 @@ describe("Code principal lookup with a target", () => {
       expect(admitted).toBe(expected);
     });
   }
+  for (const targetType of ["core.ai.skill", "core.ai.project"]) {
+    test(`${targetType} uses the local Manage adapter and the same handle budget`, async () => {
+      const calls: string[] = [];
+      const route = createAccountsEntitiesRoutes({
+        authenticate: authenticateAs("user"),
+        limitHandleLookup: async () => {
+          calls.push("limit");
+          return false;
+        },
+        managesTarget: async (ref) => {
+          calls.push("target");
+          expect(ref).toEqual({ type: targetType, id: "AI2568" });
+          return true;
+        },
+        listEntities: async (params) => {
+          calls.push("entities");
+          expect(params.codeAccountHandle).toBe(handle);
+          return { items: [], page: 1, perPage: 20, total: 0, hasNext: false };
+        },
+      });
+      expect((await route.request(`/entities?search=${handle}&target_type=${targetType}&target_id=AI2568`)).status).toBe(200);
+      expect(calls).toEqual(["limit", "target", "entities"]);
+    });
+  }
   test("consumes the user-wide Valkey budget before target or account lookup", async () => {
     let queried = false;
     const route = createAccountsEntitiesRoutes({

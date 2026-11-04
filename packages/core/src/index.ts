@@ -23,6 +23,7 @@ import { websocket } from "hono/bun";
 import { aiChatTaskRoutes } from "./ai-chat-task-routes";
 import { createAiNotificationService } from "./ai-notifications";
 import { createAdminAppListingRoutes } from "./api/admin-app-listing";
+import { managesAiPrincipalSearchTarget } from "./api/ai-principal-search-target";
 import { createCodeActivationRoutes } from "./api/code-activation";
 import { createCodeAdminRoutes } from "./api/code-admin";
 import { createCodeAuthoringRoutes } from "./api/code-authoring";
@@ -46,7 +47,11 @@ export type CoreAppContext = AppContext<typeof app>;
 
 const notificationSender = createCoreNotificationSender(app.notifications);
 const aiNotifications = createAiNotificationService(app.notifications);
-const { api } = createCoreApiRouter({ notifications: notificationSender, terminalLogins });
+const { api } = createCoreApiRouter({
+  notifications: notificationSender,
+  terminalLogins,
+  principalSearchTarget: managesAiPrincipalSearchTarget,
+});
 const pages = createPagesRouter();
 const mcpProtectedResource = createMcpProtectedResourceRoutes();
 const identityPublicRoutes = createIdentityPublicRoutes();

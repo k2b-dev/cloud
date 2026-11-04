@@ -20,7 +20,7 @@ import { createCodeCapabilityRoutes } from "../ai/code-capability-routes";
 import { aiProjectsRoutes } from "../ai/projects-routes";
 import { aiRoutes } from "../ai/routes";
 import { aiSkillsRoutes } from "../ai/skills-routes";
-import accountsEntitiesRoutes from "./accounts-entities";
+import { type AccountsEntitiesRouteDependencies, createAccountsEntitiesRoutes } from "./accounts-entities";
 import adminAiRoutes from "./admin-ai";
 import adminAiProjectsRoutes from "./admin-ai-projects";
 import adminAiQuotaRoutes from "./admin-ai-quotas";
@@ -69,6 +69,8 @@ export { createPwaPhoneRoutes } from "./pwa-phone";
  * the typed shape for the client.
  */
 export type CoreApiOptions = {
+  /** Local Manage adapter for Core-owned targets without a resource reader. Undefined uses the target reader. */
+  principalSearchTarget?: AccountsEntitiesRouteDependencies["managesTarget"];
   terminalLogins?: import("../services/app-approval").AppTerminalLogins;
   notifications: import("../services/auth-flows/notification-sender").AuthNotificationSender;
 };
@@ -90,7 +92,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/auth/pwa/v1", createPwaRoutes())
     .route("/auth", createAuthRoutes(options.notifications))
     .route("/me", meRoutes)
-    .route("/accounts", accountsEntitiesRoutes)
+    .route("/accounts", createAccountsEntitiesRoutes({ managesTarget: options.principalSearchTarget }))
     .route("/geo", geoRoutes)
     .route("/apps", appDiscoveryRoutes)
     .route("/app-events", createAppEventRoutes())
