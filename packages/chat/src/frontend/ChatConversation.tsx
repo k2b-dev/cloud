@@ -1,5 +1,5 @@
 import { chooseFiles, SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
-import { type CloudResourceRef, CloudResourceRefSchema } from "@k2b/cloud/contracts";
+import { type CloudResourceRef, CloudResourceRefSchema } from "@k2b/cloud/contracts/capabilities";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import {

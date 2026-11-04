@@ -1,8 +1,9 @@
-import { createLiveDictationSource } from "@k2b/cloud/ai/browser";
+import type { DictationSource } from "@k2b/cloud/ai/browser";
 import { refreshAppBadges } from "@k2b/cloud/browser/app-badges";
 import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
-import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
+import type { CloudResourcePickerOptions } from "@k2b/cloud/browser/resource-picker";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { Link, type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
@@ -52,35 +53,38 @@ import {
   type ThreadListSchema,
 } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
-import { openAddPeopleDialog } from "./AddPeopleDialog";
-import { openChannelDialog } from "./ChannelDialogs";
+
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
-import { openChatDetailsDialog } from "./ChatDetailsDialog";
+
 import ChatDeviceNotice from "./ChatDeviceNotice";
-import ChatInfoPanel from "./ChatInfoPanel";
+
 import ChatList from "./ChatList";
-import ChatNotificationSettings, { FollowToggle } from "./ChatNotificationSettings";
-import ChatSearch, { createChatSearch } from "./ChatSearch";
-import ChatSharedSection from "./ChatSharedSection";
 import ChatSystemChats, { createSystemChatList } from "./ChatSystemChats";
-import ChatThreadColumn from "./ChatThreadColumn";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
-import ChatThreadsPage from "./ChatThreadsPage";
-import { createChannelApi } from "./channel-api";
 import { createChatCommands } from "./chat-commands";
+import { ChatInfoPanel, ChatSearch, ChatThreadColumn, ChatThreadsPage, DiscoverChannels, ForYou } from "./chat-deferred-views";
+import {
+  openAddPeopleDialog,
+  openChannelDialog,
+  openChatDetailsDialog,
+  openLeaveChatDialog,
+  openMessageMutationDialog,
+  openNewChatDialog,
+  openThreadDialog,
+} from "./chat-dialog-openers";
 import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { messageTime, sameDay } from "./chat-format";
+import { createChatSearch } from "./chat-search-state";
 import { createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
-import DiscoverChannels from "./DiscoverChannels";
 import type { DeviceNotice } from "./device-notice";
-import ForYou from "./ForYou";
+import { FollowToggle } from "./FollowToggle";
+
 import { createForYouApi } from "./for-you-api";
 import { createItemEventsApi } from "./item-events-api";
-import { openLeaveChatDialog } from "./LeaveChatDialog";
+
 import type { ChosenMember } from "./MemberPicker";
-import { openMessageMutationDialog } from "./MessageMutationDialog";
-import { openNewChatDialog } from "./NewChatDialog";
+
 import { createNotificationCleanup } from "./notification-cleanup";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
@@ -94,7 +98,6 @@ import {
 } from "./route";
 import { containerIcon, openResourceThread, openSystemChat } from "./system-chats";
 
-import { openThreadDialog } from "./ThreadDialog";
 import {
   chatHasThreads,
   isUnread,
@@ -155,7 +158,37 @@ export type ChatWorkspaceProps = {
   deviceNotice?: DeviceNotice;
 };
 
-const liveDictationSource = createLiveDictationSource({ app: "chat" });
+const liveDictationSource: DictationSource = {
+  async devices() {
+    const module = await importOnDemand(() => import("@k2b/cloud/ai/browser"));
+    if (!module) throw new Error("Dictation code could not load");
+    return module.createLiveDictationSource({ app: "chat" }).devices();
+  },
+  start(options) {
+    let session: ReturnType<DictationSource["start"]> | undefined;
+    const pending = importOnDemand(() => import("@k2b/cloud/ai/browser")).then((module) => {
+      if (!module || options.signal.aborted) return undefined;
+      session = module.createLiveDictationSource({ app: "chat" }).start(options);
+      return session;
+    });
+    return {
+      events: {
+        async *[Symbol.asyncIterator]() {
+          const source = await pending;
+          if (!source) {
+            if (!options.signal.aborted) yield { type: "error" as const, code: "connection_lost" as const, retryable: true };
+            return;
+          }
+          yield* source.events;
+        },
+      },
+      async stop() {
+        session ??= await pending;
+        await session?.stop();
+      },
+    };
+  },
+};
 
 const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>, view: ThreadView): OpenChat => ({
   id: open.conversation.id,
@@ -189,6 +222,17 @@ const chatRoute = (chatId: string | null, view: ThreadView = "all", extra: Parti
  * Below 64 rem the list and a chat are separate pages.
  */
 export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
+  const openCloudResourcePicker = async (options: CloudResourcePickerOptions) => {
+    const source = route();
+    const module = await importOnDemand(() => import("@k2b/cloud/browser/resource-picker"));
+    if (disposed || route() !== source) return undefined;
+    return module?.openCloudResourcePicker(options);
+  };
+
   const basePath = props.app ? "/pwa/chat" : props.embedded ? "/app/chat/panel" : "/app/chat";
   const panelHref = (id: string, info: "info" | null, message?: string | null, view: ThreadView = "all") =>
     conversationHref(id, info, message, view, basePath);
@@ -519,6 +563,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const current = chat();
     return current && current.status !== "no-access" && current.conversation ? current : null;
   };
+  // Open Info only when requested, then keep its search, pages and filters for
+  // this chat just as the eager panel did. Changing chats disposes that state.
+  const [infoMounted, setInfoMounted] = createSignal(props.panel === "info");
+  createEffect(
+    on([() => openChat()?.id, panel], ([id, visible], previous) => {
+      if (visible === "info") setInfoMounted(true);
+      else if (id !== previous?.[0]) setInfoMounted(false);
+    }),
+  );
+
   const conversation = () => openChat()?.conversation ?? null;
   const system = () => conversation()?.kind === "system";
   const systemList = createSystemChatList();
@@ -1620,7 +1674,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     navigate(target.pathname + target.search, { scroll: "preserve", state: { chatFromList: fromList } });
     await refreshList(listPath);
   };
-  const channelsApi = createChannelApi();
+  const channelApi = async () => (await importOnDemand(() => import("./channel-api")))?.createChannelApi();
   const [channelRevision, setChannelRevision] = createSignal(0);
   // The SSR catalog seeds only the first mount. Returning later reads current membership and discovery.
   let initialChannelPage = props.channelsPage ? props.channelPage : undefined;
@@ -1643,7 +1697,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if ((await open(chatRoute(null, "all", { channels: true }))) === "applied") navigation.push(listHref(`${basePath}/channels`));
   };
   const subscribe = async (id: string) => {
-    await channelsApi.join(id);
+    const api = await channelApi();
+    if (!api) return;
+    await api.join(id);
     setChannelRevision((revision) => revision + 1);
     await store?.refreshSidebar();
     if (route().chatId === id) await open(route());
@@ -2926,7 +2982,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             onClose={() => closeInfo()}
           >
             {/* One panel per chat, like its history: search and loaded members never carry over to the next chat. */}
-            <Show when={openChat()?.id} keyed>
+            <Show when={infoMounted() && openChat()?.id} keyed>
               <Show when={conversation()}>
                 {(current) => (
                   <ChatInfoPanel
@@ -2942,33 +2998,28 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     onCreateThread={
                       !system() && !current().channel && current().permission === "admin" ? () => void createThread() : undefined
                     }
-                    shared={
-                      <ChatSharedSection
-                        chatId={current().id}
-                        revision={openChat() ? `${openChat()!.watermark}:${openChat()!.historyRev}` : undefined}
-                        threads={openChat()?.threads ?? null}
-                        viewerId={props.viewerId}
-                        dateConfig={props.dateConfig}
-                        now={now}
-                        cards={cards()}
-                        load={(query) => (store ? store.shared(current().id, query) : Promise.reject(new Error("Chat is not live yet")))}
-                        onJump={jumpToShared}
-                      />
-                    }
-                    notifications={
-                      <Show when={current().notifications}>
-                        {(notifications) => (
-                          <ChatNotificationSettings
-                            conversation={current()}
-                            notifications={notifications()}
-                            dateConfig={props.dateConfig}
-                            now={now}
-                            save={(input) =>
-                              store ? store.setNotifications(current().id, input) : Promise.reject(new Error("Chat is not live yet"))
-                            }
-                          />
-                        )}
-                      </Show>
+                    sharedProps={{
+                      chatId: current().id,
+                      revision: openChat() ? `${openChat()!.watermark}:${openChat()!.historyRev}` : undefined,
+                      threads: openChat()?.threads ?? null,
+                      viewerId: props.viewerId,
+                      dateConfig: props.dateConfig,
+                      now,
+                      cards: cards(),
+                      load: (query) => (store ? store.shared(current().id, query) : Promise.reject(new Error("Chat is not live yet"))),
+                      onJump: jumpToShared,
+                    }}
+                    notificationProps={
+                      current().notifications
+                        ? {
+                            conversation: current(),
+                            notifications: current().notifications!,
+                            dateConfig: props.dateConfig,
+                            now,
+                            save: (input) =>
+                              store ? store.setNotifications(current().id, input) : Promise.reject(new Error("Chat is not live yet")),
+                          }
+                        : undefined
                     }
                     onLeave={() => void (current().channel ? unsubscribe() : leaveChat())}
                   />
