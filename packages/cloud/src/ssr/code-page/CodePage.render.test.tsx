@@ -44,6 +44,15 @@ const text = (state: State, locale = "de") =>
     // A sentence may end right after a linked ID.
     .replaceAll(/ \./g, ".");
 
+// Refusal actions belong to the notice; the account line always keeps its ordinary copy action.
+const refusalMarkup = (state: State) => {
+  const markup = html(state);
+  const start = markup.indexOf('<div class="cloud-code__refusal">');
+  const end = markup.indexOf("</section>", start);
+  if (start < 0 || end < 0) throw new Error(`Missing refusal notice in ${state}`);
+  return markup.slice(start, end);
+};
+
 const personal = (state: State, locale = "de") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
@@ -103,7 +112,7 @@ describe("personal Code", () => {
 describe("Code page states", () => {
   test("overview lists automations with schedule, status and last run, and targets as operation at target", () => {
     const page = text("overview");
-    expect(page).toContain("Läuft als Dienstkonto „Code von info@moebel-beispiel.de“ · Kennung code-7k2q9m4xwt Kopieren");
+    expect(page).toContain("Läuft als Dienstkonto „Code von info@moebel-beispiel.de“ · code-7k2q9m4xwt Kennung kopieren");
     expect(page).toContain("Version 4");
     expect(page).toContain("Ursprünge im Internet");
     expect(page).toContain("https://bank.example");
@@ -177,22 +186,20 @@ describe("Code page states", () => {
     expect(html("refused-nolink")).not.toContain("it_7f3k</code></a>");
   });
 
-  test("a reader learns only that a call was refused, without action, target ID, link or handle", () => {
+  test("a reader’s refusal notice gives no action, target ID, link or handle", () => {
     const page = text("refused-reader");
     expect(page).toContain(
       "Ein Aufruf wurde abgelehnt. Der Code läuft als Dienstkonto „Code von info@moebel-beispiel.de“. Welches Ziel abgelehnt hat, sehen alle, die den Code bearbeiten dürfen.",
     );
     for (const hidden of ["sp_2lg8", "Aufgabe erstellen", "spaces.task.create", "Kennung kopieren", "Rechte-Editor", "/app/spaces/"])
-      expect(html("refused-reader").replace(/<li class="cloud-code__row cloud-code__row--access">[\s\S]*?<\/li>/g, "")).not.toContain(
-        hidden,
-      );
+      expect(refusalMarkup("refused-reader")).not.toContain(hidden);
   });
 
   test("an editor whose refused call could not be read is told so, not given the reader's text", () => {
     const page = text("refused-unloaded");
     expect(page).toContain("Ein Aufruf wurde abgelehnt. Welches Ziel abgelehnt hat, ließ sich gerade nicht laden.");
     expect(page).not.toContain("sehen alle, die den Code bearbeiten dürfen");
-    expect(page).not.toContain("Kennung kopieren");
+    expect(refusalMarkup("refused-unloaded")).not.toContain("Kennung kopieren");
   });
 
   test("policy and approval refusals never read as a target refusal and offer no handle", () => {
@@ -206,7 +213,7 @@ describe("Code page states", () => {
     // Cloud admins decide approvals, so only they get the link to the version's review.
     expect(approval).toContain("Freigabe ansehen");
     expect(html("refused-approval")).toContain('href="/admin/code?sec=approvals&amp;id=00000000-0000-4000-8000-000000000004"');
-    for (const page of [policy, approval]) {
+    for (const page of [refusalMarkup("refused-policy"), refusalMarkup("refused-approval")]) {
       expect(page).not.toContain("Kein Zugriff");
       expect(page).not.toContain("Kennung kopieren");
       expect(page).not.toContain("Wer das Ziel verwaltet");

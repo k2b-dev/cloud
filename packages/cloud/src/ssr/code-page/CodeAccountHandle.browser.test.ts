@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
@@ -8,6 +9,7 @@ import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
 let browser: Browser;
 let harness: string;
 let css: string;
+let icons: string;
 beforeAll(async () => {
   const ui = resolve(import.meta.dir, "../../../../ui");
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -40,6 +42,14 @@ beforeAll(async () => {
   const styles = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../../styles.css")], plugins: [tailwind] });
   if (!styles.success) throw new AggregateError(styles.logs, "Handle stylesheet build failed");
   css = await styles.outputs[0]!.text();
+  const iconPath = fileURLToPath(import.meta.resolve("@k2b/ui/icons/tabler.css"));
+  const source = await Bun.file(iconPath).text();
+  const font = source.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
+  if (!font) throw new Error("Missing Tabler WOFF2 file");
+  icons = source.replace(
+    /url\([^)]+\)/,
+    `url("data:font/woff2;base64,${Buffer.from(await Bun.file(resolve(dirname(iconPath), font)).arrayBuffer()).toString("base64")}")`,
+  );
   browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
@@ -48,11 +58,11 @@ afterAll(async () => {
 
 for (const width of [390, 1200])
   test(`${width}px: the handle copies before any run and a failed copy remains retryable`, async () => {
-    const page = await browser.newPage({ viewport: { width, height: 260 }, reducedMotion: "reduce" });
+    const page = await browser.newPage({ viewport: { width, height: width < 600 ? 844 : 900 }, reducedMotion: "reduce" });
     const errors = pageErrors(page);
     try {
       await page.setContent(
-        `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui"><main id="root" style="padding:24px"></main></body></html>`,
+        `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${icons}</style></head><body class="k2b-ui"><main id="root" style="padding:96px 24px 24px"></main></body></html>`,
       );
       await page.evaluate(() => {
         Object.defineProperty(navigator, "clipboard", {
@@ -65,13 +75,17 @@ for (const width of [390, 1200])
         });
       });
       await page.addScriptTag({ content: harness });
-      await page.getByRole("button", { name: "Kennung kopieren" }).click();
-      await page.waitForFunction(() => document.body.dataset.copied === "code-7k2q9m4xwt");
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+      });
+      expect(await page.evaluate(() => document.fonts.check("16px tabler-icons"))).toBe(true);
       if (process.env.CODE_A2_SCREENSHOTS) {
         mkdirSync(process.env.CODE_A2_SCREENSHOTS, { recursive: true });
         await page.screenshot({ path: resolve(process.env.CODE_A2_SCREENSHOTS, `handle-${width}.png`) });
       }
+      await page.getByRole("button", { name: "Kennung kopieren" }).click();
+      await page.waitForFunction(() => document.body.dataset.copied === "code-7k2q9m4xwt");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.evaluate(() => {
         Object.defineProperty(navigator, "clipboard", {
           configurable: true,
