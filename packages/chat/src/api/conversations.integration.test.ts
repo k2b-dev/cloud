@@ -1799,7 +1799,7 @@ suite("chat conversations, people, and directory groups", () => {
     expect(await count(channel.id)).toBe(before);
     const settings = await request(headers, `/${channel.id}/discovery`);
     expect(settings.status).toBe(200);
-    expect(DiscoveryStateSchema.parse(await settings.json()).audienceCount).toBe(before + 3);
+    expect(DiscoveryStateSchema.parse(await settings.json()).audienceCount).toBe(before);
     expect((await discoveryRequest(outsiderHeaders, `/preview?conversation=${channel.id}`, "POST", entries)).status).toBe(403);
   });
   test("a bound channel manager can preview only its existing channel audience", async () => {
@@ -1976,24 +1976,25 @@ suite("chat conversations, people, and directory groups", () => {
     expect((await request(readerHeaders, `/${chat.shortId}`)).status).toBe(404);
     expect(ConversationPageSchema.parse(await (await discoveryRequest(readerHeaders, "?q=Design")).json()).items).toEqual([]);
   });
-  test("service accounts join, send, appear in counts and members, take management, leave and rejoin", async () => {
+  test("service accounts are added, send, appear in members, take management and leave; discovery is for people", async () => {
     const owner = await user();
     const ownerHeaders = await cookie(owner);
     const agent = await credential("agent", null, ["openid", "read", "write", "admin"]);
-    // An agent finds a channel through its own group, not through all signed-in people.
-    const team = await group();
-    await sql`INSERT INTO auth.service_account_groups (service_account_id, group_id) VALUES (${agent.id}::uuid, ${team}::uuid)`;
     const channel = await create(ownerHeaders, [], {
       name: "Automation",
       purpose: "Coordinate automated work",
-      discovery: [
-        { principal: { type: "authenticated" }, permission: "write" },
-        { principal: { type: "group", groupId: team }, permission: "write" },
-      ],
+      discovery: [{ principal: { type: "authenticated" }, permission: "write" }],
     });
-    expect((await request(agent.headers, `/${channel.id}/messages`, "POST", { clientId: "agent-before", body: "No" })).status).toBe(403);
-    const joined = ConversationSchema.parse(await (await request(agent.headers, `/${channel.id}/join`, "POST")).json());
-    expect(joined).toMatchObject({ memberCount: 2, member: true, permission: "write" });
+    // All signed-in people are people: the agent neither finds nor joins the channel until a manager adds it.
+    expect((await request(agent.headers, `/${channel.id}/messages`, "POST", { clientId: "agent-before", body: "No" })).status).toBe(404);
+    expect((await request(agent.headers, `/${channel.id}/join`, "POST")).status).toBe(404);
+    expect(
+      (
+        await request(ownerHeaders, `/${channel.id}/members`, "POST", {
+          members: [{ type: "service_account", serviceAccountId: agent.id }],
+        })
+      ).status,
+    ).toBe(200);
     expect((await request(agent.headers, `/${channel.id}/messages`, "POST", { clientId: "agent-after", body: "Agent here" })).status).toBe(
       201,
     );
@@ -2011,7 +2012,7 @@ suite("chat conversations, people, and directory groups", () => {
     expect((await request(agent.headers, `/${channel.id}/leave`, "POST", { successor: successor.accessId })).status).toBe(200);
     const history = MessagePageSchema.parse(await (await request(ownerHeaders, `/${channel.id}/messages`)).json());
     expect(history.items.at(-1)?.system).toMatchObject({ code: "permission_changed", params: { permission: "admin" } });
-    expect((await request(agent.headers, `/${channel.id}/join`, "POST")).status).toBe(200);
+    expect((await request(agent.headers, `/${channel.id}/join`, "POST")).status).toBe(404);
   });
   test("deleted service accounts retain messages and a former-account title marker", async () => {
     const owner = await user();

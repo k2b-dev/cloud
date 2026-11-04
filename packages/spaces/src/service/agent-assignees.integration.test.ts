@@ -141,12 +141,16 @@ suite("Spaces service-account assignees", () => {
         ok: false,
         status: 403,
       });
+      expect(await listAssignableUsers({ spaceId: f.spaceId, search: outsider.name })).not.toContainEqual(
+        expect.objectContaining({ id: outsider.id }),
+      );
+      // Its own grant makes it a member of the space like a person: it may claim and is offered for assignment.
       await f.grant(f.spaceId, outsider.id);
       expect(await change({ ...f.context(itemId, outsider.actor), operation: "claim", claimId: crypto.randomUUID() })).toMatchObject({
         ok: true,
       });
       expect((await get({ id: itemId }))?.assignees).toContainEqual(expect.objectContaining({ id: outsider.id, kind: "service_account" }));
-      expect(await listAssignableUsers({ spaceId: f.spaceId, search: outsider.name })).not.toContainEqual(
+      expect(await listAssignableUsers({ spaceId: f.spaceId, search: outsider.name })).toContainEqual(
         expect.objectContaining({ id: outsider.id }),
       );
     });
