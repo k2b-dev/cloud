@@ -146,9 +146,9 @@ export const chatMessages = i18n.define({
         "You leave the channel. If it is still discoverable for you, you can read its history and join again. Your messages stay in the channel.",
       removeChannelMemberDescription:
         "Their direct membership ends. If this channel is still discoverable for them, they can read its history and join again. Their messages stay in the channel.",
-      delegatedAccount: "User-bound account",
-      resourceAccount: "Resource account",
-      standaloneAccount: "Service account",
+      delegatedAccount: "Personal",
+      resourceAccount: "Service account",
+      standaloneAccount: "Agent (API key only)",
       agentAccount: "Agent",
 
       findGroup: "Find a directory group",
@@ -157,7 +157,7 @@ export const chatMessages = i18n.define({
 
       discoveryHistory:
         "Everyone in this audience can read the entire history before joining. Existing members and their settings stay unchanged.",
-      authenticatedExplanation: "Includes guests and service accounts.",
+      authenticatedExplanation: "Includes people and guests. Agents and service accounts need their own grant.",
       removeDisabledAudience: "Remove this audience before saving further changes.",
       discoverySettings: "Discoverability",
       discoverableFor: "Discoverable by",
@@ -309,8 +309,8 @@ export const chatMessages = i18n.define({
         `${name} now manages this chat because the account of its last manager was deleted.`,
       channelNameRequired: "Give the channel a name.",
       channelPurposeRequired: "Describe the channel’s purpose.",
-      authenticatedDiscoveryDisabled: "Discovery by all signed-in accounts is disabled.",
-      allAuthenticated: "Everyone with a Cloud account",
+      authenticatedDiscoveryDisabled: "Discovery by all signed-in people is disabled.",
+      allAuthenticated: "Every person with a Cloud account",
       systemDiscoveryChanged: ({ actor }: { actor: string }) => `${actor} changed who can discover this channel.`,
       systemDiscoveryRemoved: ({ actor }: { actor: string }) => `${actor} removed discovery. Members keep their access.`,
       personalAccountRequired: "Create chats with a personal account.",
@@ -645,9 +645,9 @@ export const chatMessages = i18n.define({
         "Du verlässt den Kanal. Solange er für dich auffindbar ist, kannst du seinen Verlauf lesen und wieder beitreten. Deine Nachrichten bleiben im Kanal.",
       removeChannelMemberDescription:
         "Der direkte Mitgliedseintrag endet. Solange der Kanal für dieses Konto auffindbar ist, kann es den Verlauf lesen und wieder beitreten. Seine Nachrichten bleiben im Kanal.",
-      delegatedAccount: "Nutzergebundenes Konto",
-      resourceAccount: "Ressourcenkonto",
-      standaloneAccount: "Dienstkonto",
+      delegatedAccount: "Persönlich",
+      resourceAccount: "Dienstkonto",
+      standaloneAccount: "Agent (nur API Key)",
       agentAccount: "Agent",
 
       findGroup: "Verzeichnisgruppe suchen",
@@ -656,7 +656,7 @@ export const chatMessages = i18n.define({
 
       discoveryHistory:
         "Alle Auffindbaren können schon vor dem Beitritt den ganzen Verlauf lesen. Bestehende Mitglieder und ihre Einstellungen bleiben erhalten.",
-      authenticatedExplanation: "Schließt Gäste und Dienstkonten ein.",
+      authenticatedExplanation: "Schließt Personen und Gäste ein. Agenten und Dienstkonten brauchen ein eigenes Recht.",
       removeDisabledAudience: "Entferne diese Zielgruppe, bevor du weitere Änderungen speicherst.",
       discoverySettings: "Auffindbarkeit",
       discoverableFor: "Auffindbar für",
@@ -815,7 +815,7 @@ export const chatMessages = i18n.define({
       channelNameRequired: "Gib dem Kanal einen Namen.",
       channelPurposeRequired: "Beschreibe den Zweck des Kanals.",
       authenticatedDiscoveryDisabled: "Auffindbarkeit für alle Angemeldeten ist abgeschaltet.",
-      allAuthenticated: "Alle mit einem Cloud-Konto",
+      allAuthenticated: "Alle Personen mit einem Cloud-Konto",
       systemDiscoveryChanged: ({ actor }: { actor: string }) => `${actor} hat die Auffindbarkeit geändert.`,
       systemDiscoveryRemoved: ({ actor }: { actor: string }) =>
         `${actor} hat die Auffindbarkeit entfernt. Mitglieder behalten ihren Zugriff.`,

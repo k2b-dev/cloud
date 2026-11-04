@@ -9,7 +9,7 @@ export const lastingAccessApiMessages = i18n.define({
       forbidden: "This account cannot create new access.",
     },
     de: {
-      browserSignInRequired: "API-Schlüssel und Passkeys legst du im Browser an.",
+      browserSignInRequired: "API Keys und Passkeys legst du im Browser an.",
       reauthenticate: "Melde dich erneut an, um zu bestätigen, dass du es bist.",
       forbidden: "Dieses Konto kann keinen neuen Zugang anlegen.",
     },

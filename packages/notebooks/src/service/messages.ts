@@ -96,9 +96,9 @@ export const notebookServiceMessages = i18n.define({
       notebookOrAccessNotFound: "Notizbuch oder Zugriffseintrag nicht gefunden",
       accessPrincipalConflict: "Diese Person oder Gruppe hat bereits Zugriff auf das Notizbuch.",
       accessCreateFailed: "Der Zugriffseintrag konnte nicht erstellt werden.",
-      apiKeyNotFound: "API-Schlüssel nicht gefunden",
-      apiKeyCreateFailed: "Der API-Schlüssel konnte nicht erstellt werden.",
-      apiKeyRevoked: "API-Schlüssel widerrufen.",
+      apiKeyNotFound: "API Key nicht gefunden",
+      apiKeyCreateFailed: "Der API Key konnte nicht erstellt werden.",
+      apiKeyRevoked: "API Key widerrufen.",
       snapshotEndpointUrl: "Gib einen gültigen S3-Endpunkt ein, zum Beispiel https://nbg1.your-objectstorage.com.",
       snapshotEndpointProtocol: "Der S3-Endpunkt muss HTTP oder HTTPS verwenden.",
       snapshotEndpointLocation: ({ endpoint, region }) =>

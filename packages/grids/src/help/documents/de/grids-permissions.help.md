@@ -11,9 +11,9 @@ Die Cloud-Administration ist in Grids nicht automatisch allmächtig. Sie kann Gr
 
 ## Zugriff auf eine Base geben {icon="database"}
 
-Zugriff auf eine Base gilt für alle Tabellen, Felder, Datensätze, Ansichten, Formulare, Dokumentvorlagen und Workflows dieser Base.
+Zugriff auf eine Base gilt für alle Tabellen, Felder, Datensätze, Ansichten, Formulare, Dokumentvorlagen und Workflows dieser Base. Um ihn zu ändern, öffne **Base-Einstellungen → Zugriff** und wähle **Zugriff bearbeiten**. Deine Änderungen gelten, wenn du **Speichern** wählst.
 
-Du kannst Personen, Gruppen, Dienstkonten und allen angemeldeten Konten Zugriff geben. Öffentlichen Zugriff auf eine Base gibt es nicht.
+Du kannst Personen, Gruppen, Agenten, Dienstkonten und allen angemeldeten Personen Zugriff geben. Agenten und Dienstkonten brauchen ein eigenes Recht. Öffentlichen Zugriff auf eine Base gibt es nicht.
 
 | Stufe | CLI-Wert | Was sie erlaubt |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ Du kannst Personen, Gruppen, Dienstkonten und allen angemeldeten Konten Zugriff 
 
 ### Einen Eintrag mit Verwalten behalten
 
-Eine Base behält immer mindestens einen Eintrag mit **Verwalten**. Er kann für eine Person, eine Gruppe, alle angemeldeten Konten oder ein eigenständiges Dienstkonto oder einen Agenten gelten. An die Base gebundene API-Schlüssel zählen nicht.
+Eine Base behält immer mindestens einen Eintrag mit **Verwalten**. Er kann für eine Person, eine Gruppe, alle angemeldeten Personen oder einen Agenten gelten. An die Base gebundene API Keys zählen nicht.
 
 - Grids lehnt es ab, den letzten Eintrag mit **Verwalten** herabzustufen oder zu entfernen.
 - Grids lehnt **Kein Zugriff** für dieselbe Person, Gruppe oder dasselbe Konto wie diesen Eintrag ab.
@@ -43,7 +43,7 @@ Wer einen Datensatz erstellt hat, bleibt als normale Information verfügbar. GQL
 
 ## Eine Grids App teilen {icon="app-window"}
 
-Eine Grids App hat eigenen Zugriff. Ihre einzige Stufe ist **Offen** (`read`). `none` verweigert den Zugriff. Du kannst einer Person, einer Gruppe, einem eigenständigen Dienstkonto oder Agentenkonto, allen angemeldeten Konten oder der Öffentlichkeit Zugriff geben. Öffentlicher Zugriff schließt anonyme Besucher ein. Der Umfang der Anmeldedaten begrenzt den Kontozugriff. Ressourcengebundene Anmeldedaten können keine Grids Apps öffnen. Delegierte Anmeldedaten verwenden die Identität ihrer Person.
+Eine Grids App hat eigenen Zugriff. Ihre einzige Stufe ist **Offen** (`read`). `none` verweigert den Zugriff. Du kannst einer Person, einer Gruppe, einem Agentenkonto, allen angemeldeten Personen oder der Öffentlichkeit Zugriff geben. Öffentlicher Zugriff schließt anonyme Besucher ein. Der Umfang der Anmeldedaten begrenzt den Kontozugriff. Ressourcengebundene Anmeldedaten können keine Grids Apps öffnen. Delegierte Anmeldedaten verwenden die Identität ihrer Person.
 
 Personen, die die App verwenden, brauchen keinen Zugriff auf die Base. Sie erhalten nur die Daten, Formulare, Felder, Dokumente und Aktionen, die in den unveränderlichen veröffentlichten Snapshot kompiliert sind. Zugriff auf eine App gibt nie den Grids-Arbeitsbereich mit Rohdaten, direkte APIs für Tabellen oder Datensätze, beliebiges GQL oder eine bearbeitbare Quellansicht.
 

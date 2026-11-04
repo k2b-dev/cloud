@@ -93,7 +93,9 @@ Wähle im Postfach unter **Darstellung**, wie Liste und Leser erscheinen. Auf gr
 
 Während du neben der Liste liest, blendet **Darstellung → Unterhaltungsliste ausblenden** die Liste aus, und der Leser nutzt die volle Breite. Die Taste `[` blendet sie aus und wieder ein. Ohne Leser neben der Liste ist der Schalter gesperrt. Mail merkt sich die Wahl in diesem Browser.
 
-In den Spalten zeigt **Beteiligt**, wer in der Unterhaltung geschrieben hat: bis zu drei Personen, dann „+N“. Zeige darauf, um die Namen zu sehen, getrennt nach **Extern**, **Team** und **Automationen**. Team und Automationen erkennt Mail an Antworten, die Mail gesendet hat. Eine Antwort aus einem anderen Mailprogramm zählt mit ihrer Absenderadresse. Wer nur zugewiesene Unterhaltungen sieht, sieht nur die Personen dieser Unterhaltungen. In einer schmalen Liste und auf dem Handy fehlt die Spalte.
+In den Spalten zeigt **Beteiligt**, wer in der Unterhaltung geschrieben hat: bis zu drei Personen, dann „+N“. Zeige darauf, um die Namen zu sehen, getrennt nach **Extern**, **Team** und **Automationen**. Team und Automationen erkennt Mail an Antworten, die Mail gesendet hat. Eine Antwort aus einem anderen Mailprogramm zählt mit ihrer Absenderadresse. Wer nur zugewiesene Unterhaltungen sieht, sieht nur die Personen dieser Unterhaltungen. In einer schmalen Liste und auf dem Handy fehlt die Spalte. Liegt die Liste neben dem Lesebereich, stehen dieselben Gesichter am Ende der vierten Zeile, sobald außer dem genannten Absender noch jemand geschrieben hat.
+
+In einem Team-Postfach zeigt **Zuständig** das Gesicht und den Namen der ersten zuständigen Person, dann „+N“ für weitere. Bist du zuständig, stehst du als „Du“ vorne. Zeige darauf, um alle Namen zu sehen. Ohne Zuständige steht dort „Niemand“.
 
 Mail merkt sich die Wahl für dich und dieses Postfach, getrennt nach Handys und großen Bildschirmen. Deine Handywahl gilt auch auf deinen anderen Handys. Ohne gespeicherte Wahl verwendet Mail Automatisch und auf Handys Kompakt. Die Administration legt keine Vorgabe für dich fest.
 

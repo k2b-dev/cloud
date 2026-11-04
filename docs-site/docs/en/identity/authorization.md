@@ -10,6 +10,8 @@ updated: 2026-11-03
 
 # Resource authorization
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 The service that reads or changes a resource checks its permission.
 
 Every API route, SSR page, background action, and CLI command should reach the
@@ -76,8 +78,16 @@ type Principal =
 | User | One user |
 | Group | Direct and nested members |
 | Service account | One machine identity: resource-bound, standalone, or agent |
-| Authenticated | Any authenticated user or service account |
+| Authenticated | Any signed-in person, including guests |
 | Public | Every caller, including anonymous requests |
+
+The authenticated tier means **All signed-in people**. It matches only
+`AccessSubject.type === "user"`, including guests. Sessions, personal API keys
+(`user_delegated`), a person's OAuth credentials, invocations, and mandates
+retain that person's access subject. Agents and other service accounts need
+a direct or group grant: authenticating a machine does not make it a person.
+Public grants retain their existing behavior. Before upgrading, run the
+[people-only access inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people).
 
 ### Discover principals safely
 
@@ -224,10 +234,9 @@ For a standalone or agent service account it includes:
 
 - the direct service-account grant;
 - direct and nested local group grants;
-- authenticated grants;
 - public grants.
 
-A resource-bound account matches direct, authenticated, and public grants,
+A resource-bound account matches direct and public grants,
 but has no independent group membership.
 
 A standalone or agent account has no resource binding, so it is not capped to
@@ -515,10 +524,15 @@ If linking a new entry fails, remove it again. Protect grant mutations with
 ### Keep at least one manager
 
 A resource keeps at least one manager: an `admin` entry for a user, a group,
-all signed-in users, or a standalone or agent service account. A group counts
+all signed-in people, or a standalone or agent service account. A group counts
 regardless of its current members. Public entries never count, and neither do
 resource-bound or user-delegated service accounts: they disappear with their
 key or their user without passing the resource's rules.
+
+`isManagerEntry(entry)` classifies grant rows for last-manager protection.
+An authenticated admin row always counts because it keeps the resource
+manageable by people. The helper takes only the entry; authorize callers with
+the resource resolver before changing grants.
 
 Check every change of an existing grant with `ensureManagerRemains()` from
 `@k2b/cloud/server`, on administration routes too. Lock the resource row, then
@@ -676,8 +690,9 @@ as one list, with "What changes" below it. Nothing applies before **Save**: rows
 show what is pending ("New", "before View", "Will be removed" with **Undo**),
 and the summary lists each change once. Save asks again only when someone loses
 access, then calls the same `grantAccess`, `updateAccess`, and `revokeAccess`
-seams as `PermissionEditor`, one at a time: new grants first, level changes next,
-removals last, so the resource always keeps a manager. A failed call stops the
+seams as `PermissionEditor`, one at a time: new grants first, then raised levels
+and removed denials, then lowered levels, other removals last, so the resource
+always keeps a manager. A failed call stops the
 save; changes already saved stay saved, and the dialog keeps exactly the open
 ones with **Try again**. Closing with open changes asks before discarding them.
 
@@ -685,6 +700,14 @@ The last entry that manages the resource keeps Manage: its lower levels and its
 removal are disabled, counted on the result after saving (`effectiveEntries`
 applies as in the editor). "All signed-in people" and "Public with link" are
 switches under **General** (`allowAuthenticated`, `allowPublic`, `publicLink`).
+Turning on public access warns that nobody changes anything without signing in;
+pass `publicWarning` when visitors can do more, for example send a published
+form. Each stored entry is its own row, so a principal with a grant and a denial
+shows both. A **General** switch follows that audience's denial when one is
+stored and shows off; turning it on changes the denial into the first offered
+level, and further entries of the audience appear in the list. Removing a denial
+asks nothing, because nobody loses access by it, and **Undo** is disabled when
+it would leave the resource without a manager.
 The search offers people, groups, and agents; it never finds the account of an
 object or app by name.
 
@@ -693,8 +716,17 @@ identifier. Send the resource as the lookup's target: your server answers only
 someone who manages that resource, returns nothing for any other identifier,
 and never searches by name. Without the callback the **Service accounts**
 section shows existing rows only. `extraSections` adds further sections, such
-as the resource's object API keys. The dialog is a presentation of the same
+as the resource's object API keys. The caller builds them before the dialog
+owns them, so they cannot rely on cleanup; tie their requests to the `signal`
+you pass. The dialog is a presentation of the same
 grants; the service still checks every change.
+
+When the dialog opens from settings that can close on their own, pass their
+`signal`. Aborting it closes the dialog without asking and sends nothing that is
+still pending; changes already saved stay saved, and the dialog resolves
+`false`. Reload the list after any change your seams saved, also when the
+dialog resolves `false`: a save can fail halfway and the person can discard
+the rest.
 
 ### Confirm access changes
 

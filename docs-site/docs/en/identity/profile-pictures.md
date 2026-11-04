@@ -10,6 +10,8 @@ updated: 2026-10-23
 
 # Profile pictures and built avatars
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Every account has one picture that others see. A person shows a photo, a
 built avatar, or initials. A service account, for example an agent, shows a
 photo or a robot; it never shows a bare icon. Applications do not need to know

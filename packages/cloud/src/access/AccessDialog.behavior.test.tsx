@@ -293,4 +293,222 @@ describe("AccessDialog", () => {
       ui.cleanup();
     }
   });
+
+  test("an empty list claims nobody's access, also when the viewer is not listed", async () => {
+    const ui = await setup({ entries: [] });
+    try {
+      expect(ui.dom.root.textContent).toContain("Nobody is listed yet.");
+      expect(ui.dom.root.textContent).not.toContain("Only you");
+    } finally {
+      ui.cleanup();
+    }
+  });
+
+  test("the owner's signal closes the dialog and stops a running save", async () => {
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
+    delegateEvents(["click", "input"], dom.document);
+    const { openAccessDialog } = await import("./AccessDialog");
+    const { prompts } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    const owner = new AbortController();
+    const calls: string[] = [];
+    const held = Promise.withResolvers<void>();
+    const opened = openAccessDialog({
+      resourceName: "Einkauf 2027",
+      initialEntries: [mia, lea, bot],
+      signal: owner.signal,
+      grantAccess: async (principal, permission) => {
+        calls.push(`grant ${principal.type}`);
+        return { id: "00000000-0000-4000-8000-000000000009", principal, permission, createdAt: "now" };
+      },
+      updateAccess: async (id) => {
+        calls.push(`update ${id.slice(-1)}`);
+        await held.promise;
+      },
+      revokeAccess: async (id) => {
+        calls.push(`revoke ${id.slice(-1)}`);
+      },
+    });
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
+    try {
+      await waitFor(() => dialog()?.textContent?.includes("Lea Schmitt") === true, "the dialog");
+      Array.from(row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
+        .find((option) => option.textContent?.includes("Edit"))!
+        .click();
+      row("Lagerbot").querySelector<HTMLButtonElement>('button[aria-label="Remove Lagerbot"]')!.click();
+      await waitFor(() => dialog()?.textContent?.includes("2 changes") === true, "two changes");
+      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button"))
+        .find((item) => item.textContent?.trim() === "Save")!
+        .click();
+      await waitFor(() => calls.length === 1, "the first saved change");
+      owner.abort();
+      expect(await opened).toBe(false);
+      expect(dialog()).toBeNull();
+      held.resolve();
+      await Bun.sleep(20);
+      // The level change was already sent; the removal after it never is.
+      expect(calls).toEqual(["update 2"]);
+    } finally {
+      held.resolve();
+      confirm.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("a stored public denial shows as off, and switching it on grants the first level with the resource's own warning", async () => {
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
+    delegateEvents(["click", "input"], dom.document);
+    const { AccessDialog } = await import("./AccessDialog");
+    const calls: string[] = [];
+    const denied: AccessEntry = {
+      id: "00000000-0000-4000-8000-000000000004",
+      principal: { type: "public" },
+      permission: "none",
+      createdAt: "2026-11-03T00:00:00.000Z",
+    };
+    const dispose = render(
+      () => (
+        <AccessDialog
+          resourceName="Board"
+          initialEntries={[mia, denied]}
+          allowPublic
+          publicWarning="Visitors can open the app and send its published forms without signing in."
+          allowedLevels={[{ level: "read", label: "Open" }]}
+          grantAccess={async (principal, permission) => ({ id: "x", principal, permission, createdAt: "now" })}
+          updateAccess={async (id, permission) => {
+            calls.push(`update ${id.slice(-1)} ${permission}`);
+          }}
+          revokeAccess={async (id) => {
+            calls.push(`revoke ${id.slice(-1)}`);
+          }}
+          close={() => {}}
+        />
+      ),
+      dom.root,
+    );
+    const publicSwitch = () => dom.root.querySelector<HTMLInputElement>('input[aria-label="Public with link"]')!;
+    try {
+      expect(publicSwitch().checked).toBe(false);
+      expect(dom.root.textContent).not.toContain("Visitors can open the app");
+      publicSwitch().click();
+      await waitFor(() => dom.root.textContent?.includes("1 change") === true, "one change");
+      expect(publicSwitch().checked).toBe(true);
+      expect(dom.root.textContent).toContain("Visitors can open the app and send its published forms without signing in.");
+      expect(dom.root.textContent).not.toContain("Nobody can change anything without signing in.");
+      // Off again restores the stored denial: nothing to save.
+      publicSwitch().click();
+      await waitFor(() => !dom.root.textContent?.includes("1 change"), "no change");
+      expect(calls).toEqual([]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  describe("denials", () => {
+    // Like Grids: a principal's denial hides that principal's grants.
+    const unshadowed = (entries: readonly AccessEntry[]) => {
+      const denied = new Set(entries.filter((stored) => stored.permission === "none").map((stored) => JSON.stringify(stored.principal)));
+      return entries.filter((stored) => !denied.has(JSON.stringify(stored.principal)));
+    };
+    const bob = user("5", "Bob Albers", "admin");
+    const bobDenied: AccessEntry = { ...bob, id: "00000000-0000-4000-8000-000000000006", permission: "none" };
+    const renderDialog = async (entries: AccessEntry[]) => {
+      const dom = createDomTestHarness();
+      dom.document.documentElement.lang = "en";
+      delegateEvents(["click", "input"], dom.document);
+      const { AccessDialog } = await import("./AccessDialog");
+      const { prompts } = await import("@k2b/ui");
+      const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+      const calls: string[] = [];
+      const close = mock((_saved: boolean) => {});
+      const dispose = render(
+        () => (
+          <AccessDialog
+            resourceName="Projects"
+            initialEntries={entries}
+            effectiveEntries={unshadowed}
+            grantAccess={async (principal, permission) => ({ id: "x", principal, permission, createdAt: "now" })}
+            updateAccess={async (id, permission) => {
+              calls.push(`update ${id.slice(-1)} ${permission}`);
+            }}
+            revokeAccess={async (id) => {
+              calls.push(`revoke ${id.slice(-1)}`);
+            }}
+            close={close}
+          />
+        ),
+        dom.root,
+      );
+      const rows = (name: string) => Array.from(dom.root.querySelectorAll("li")).filter((item) => item.textContent?.includes(name));
+      const button = (text: string) =>
+        Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text)!;
+      return {
+        dom,
+        calls,
+        close,
+        confirm,
+        rows,
+        button,
+        cleanup: () => {
+          dispose();
+          confirm.mockRestore();
+          dom.cleanup();
+        },
+      };
+    };
+
+    test("a signed-in grant next to a signed-in denial: the switch shows the denial, the grant stays visible", async () => {
+      const grantAll: AccessEntry = {
+        id: "00000000-0000-4000-8000-000000000007",
+        principal: { type: "authenticated" },
+        permission: "read",
+        createdAt: "now",
+      };
+      const denyAll: AccessEntry = { ...grantAll, id: "00000000-0000-4000-8000-000000000008", permission: "none" };
+      const ui = await renderDialog([mia, grantAll, denyAll]);
+      try {
+        expect(ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="All signed-in people"]')!.checked).toBe(false);
+        expect(ui.rows("All signed-in people").some((item) => item.querySelector("[data-access-remove]"))).toBe(true);
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("removing a denial is described as such and asks nothing", async () => {
+      const ui = await renderDialog([mia, bob, bobDenied]);
+      try {
+        const denialRow = ui.rows("Bob Albers").find((item) => item.textContent?.includes("No access"))!;
+        denialRow.querySelector<HTMLButtonElement>("[data-access-remove]")!.click();
+        await waitFor(() => ui.dom.root.textContent?.includes("the denial is removed") === true, "the summary");
+        ui.button("Save").click();
+        await waitFor(() => ui.close.mock.calls.length === 1, "the dialog to close");
+        expect(ui.confirm).not.toHaveBeenCalled();
+        expect(ui.calls).toEqual(["revoke 6"]);
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("Undo cannot bring back a denial that would leave nobody managing", async () => {
+      const ui = await renderDialog([mia, bob, bobDenied]);
+      try {
+        const denialRow = () =>
+          ui.rows("Bob Albers").find((item) => item.querySelector("[data-access-undo]") || item.textContent?.includes("No access"))!;
+        denialRow().querySelector<HTMLButtonElement>("[data-access-remove]")!.click();
+        await waitFor(() => !!denialRow().querySelector("[data-access-undo]"), "the removal mark");
+        const miaRow = ui.rows("Mia Hoffmann")[0]!;
+        Array.from(miaRow.querySelectorAll<HTMLElement>('[role="option"]'))
+          .find((option) => option.textContent?.includes("View"))!
+          .click();
+        await waitFor(() => ui.dom.root.textContent?.includes("2 changes") === true, "two changes");
+        expect(denialRow().querySelector<HTMLButtonElement>("[data-access-undo]")!.disabled).toBe(true);
+      } finally {
+        ui.cleanup();
+      }
+    });
+  });
 });
