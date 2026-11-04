@@ -13,13 +13,24 @@ const entry = (id: string, name: string, permission: AccessEntry["permission"]):
 });
 const mia = entry("1", "Mia Hoffmann", "admin");
 const lea = entry("2", "Lea Schmitt", "read");
+const ben = entry("3", "Ben Albers", "read");
 
 const calls: string[] = [];
-const state = { projectsFail: false, entries: [mia, lea] };
+const state: {
+  projectsFail: boolean;
+  deleteFails: boolean;
+  entries: AccessEntry[];
+  /** Holds the next answer of the access list or the projects until the test lets it through. */
+  accessHeld: PromiseWithResolvers<void> | null;
+  projectsHeld: PromiseWithResolvers<void> | null;
+} = { projectsFail: false, deleteFails: false, entries: [mia, lea], accessHeld: null, projectsHeld: null };
 /** One resource's access routes, as the core client exposes them for Skills and Projects. */
 const accessRoutes = (kind: string) => ({
   access: {
-    $get: async () => Response.json({ access: state.entries }),
+    $get: async () => {
+      await state.accessHeld?.promise;
+      return Response.json({ access: state.entries });
+    },
     $post: async () => Response.json({ access: lea }),
     ":accessId": {
       $patch: async ({ param, json }: { param: { accessId: string }; json: { permission: string } }) => {
@@ -28,7 +39,7 @@ const accessRoutes = (kind: string) => ({
       },
       $delete: async ({ param }: { param: { accessId: string } }) => {
         calls.push(`${kind} DELETE ${param.accessId.slice(-1)}`);
-        return Response.json({});
+        return state.deleteFails ? Response.json({ message: "offline" }, { status: 503 }) : Response.json({});
       },
     },
   },
@@ -42,10 +53,12 @@ if (!isServer) {
             ":skillId": {
               ...accessRoutes("skill"),
               projects: {
-                $get: async () =>
-                  state.projectsFail
+                $get: async () => {
+                  await state.projectsHeld?.promise;
+                  return state.projectsFail
                     ? Response.json({ message: "offline" }, { status: 503 })
-                    : Response.json({ projects: [{ id: "p1", name: "Support desk" }] }),
+                    : Response.json({ projects: [{ id: "p1", name: "Support desk" }] });
+                },
               },
             },
           },
@@ -94,15 +107,22 @@ describe("AI administration access", () => {
     await cleanup();
     calls.length = 0;
     state.projectsFail = false;
+    state.deleteFails = false;
+    state.entries = [mia, lea];
+    state.accessHeld = null;
+    state.projectsHeld = null;
   });
 
-  const setup = async (kind: "skill" | "project") => {
+  const setup = async (kind: "skill" | "project", options: { waitForDialog?: boolean } = {}) => {
     const dom = createDomTestHarness();
     dom.document.documentElement.lang = "en";
     installPopoverApi(dom);
     delegateEvents(["click", "input"], dom.document);
     const refreshed = spyOn(navigation, "refreshCurrentPath").mockImplementation(() => {});
-    const dispose =
+    const { prompts } = await import("@k2b/ui");
+    const error = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    const disposeRender =
       kind === "skill"
         ? await import("../src/pages/admin/settings/_components/AiSkillAdminActions.island").then(({ default: Actions }) =>
             render(() => <Actions skillId="skill-1" skillName="Triage" revision={1} source={null} />, dom.root),
@@ -117,6 +137,12 @@ describe("AI administration access", () => {
     const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
     const button = (text: string) =>
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
+    let disposed = false;
+    const dispose = () => {
+      if (disposed) return;
+      disposed = true;
+      disposeRender();
+    };
     cleanup = async () => {
       if (dialog()) {
         button("Cancel")?.click();
@@ -124,10 +150,13 @@ describe("AI administration access", () => {
       }
       dispose();
       refreshed.mockRestore();
+      error.mockRestore();
+      confirm.mockRestore();
       dom.cleanup();
     };
-    await until(() => dialog()?.textContent?.includes("Lea Schmitt") === true);
-    return { dom, dialog, button, refreshed };
+    if (options.waitForDialog !== false) await until(() => dialog()?.textContent?.includes("Lea Schmitt") === true);
+    const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
+    return { dom, dialog, button, row, refreshed, error, dispose };
   };
 
   test("a Skill's dialog names the projects that include it and saves a change on Save", async () => {
@@ -146,10 +175,48 @@ describe("AI administration access", () => {
     expect(ui.refreshed).toHaveBeenCalledTimes(1);
   });
 
-  test("a Skill whose projects cannot load still opens for its direct access", async () => {
+  test("a Skill opens before its projects answer, and failed projects can be loaded again", async () => {
+    state.projectsHeld = Promise.withResolvers<void>();
     state.projectsFail = true;
+    const held = state.projectsHeld;
     const ui = await setup("skill");
-    expect(ui.dialog()!.textContent).toContain("Could not load the projects that include this Skill.");
+    expect(ui.dialog()!.textContent).toContain("Loading the projects that include this Skill");
+    held.resolve();
+    await until(() => ui.dialog()?.textContent?.includes("Could not load the projects that include this Skill.") === true);
+    state.projectsHeld = null;
+    state.projectsFail = false;
+    Array.from(ui.dialog()!.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "Retry")!
+      .click();
+    await until(() => ui.dialog()?.textContent?.includes("Support desk") === true);
+  });
+
+  test("a save that fails halfway and is discarded still refreshes the page", async () => {
+    state.entries = [mia, lea, ben];
+    state.deleteFails = true;
+    const ui = await setup("skill");
+    Array.from(ui.row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
+      .find((option) => option.textContent?.includes("Edit"))!
+      .click();
+    ui.row("Ben Albers").querySelector<HTMLButtonElement>('button[aria-label="Remove Ben Albers"]')!.click();
+    await until(() => ui.dialog()?.textContent?.includes("2 changes") === true);
+    ui.button("Save")!.click();
+    await until(() => !!ui.dialog()?.querySelector('[role="alert"]'));
+    expect(calls).toEqual(["skill PATCH 2 write", "skill DELETE 3"]);
+    ui.button("Cancel")!.click();
+    await until(() => !ui.dialog());
+    expect(ui.refreshed).toHaveBeenCalledTimes(1);
+  });
+
+  test("a page that changes while the list loads gets no dialog and no error", async () => {
+    state.accessHeld = Promise.withResolvers<void>();
+    const held = state.accessHeld;
+    const ui = await setup("project", { waitForDialog: false });
+    ui.dispose();
+    held.resolve();
+    await Bun.sleep(30);
+    expect(ui.dialog()).toBeNull();
+    expect(ui.error).not.toHaveBeenCalled();
   });
 
   test("a Project's dialog refreshes nothing when it closes unchanged", async () => {

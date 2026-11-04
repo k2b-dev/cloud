@@ -123,6 +123,9 @@ export default function AiProjectAdminActions(props: Props) {
     >
       <Dropdown.Trigger iconOnly label={t().actionsFor({ name: props.projectName })} size="xs" tooltip={t().projectActions}>
         <i class={permissions.loading() ? "ti ti-loader-2 animate-spin text-sm" : "ti ti-settings text-sm"} />
+        <span class="sr-only" role="status">
+          {permissions.loading() ? t().loadingProjectAccess : ""}
+        </span>
       </Dropdown.Trigger>
     </Dropdown.Root>
   );

@@ -17,7 +17,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
 import { settingsMessages } from "./messages";
 import { diffSkillVersions } from "./skill-diff";
 
@@ -34,18 +34,66 @@ const readError = async (response: Pick<Response, "json">, fallback: string): Pr
   return body?.message || fallback;
 };
 
+type SettingsMessages = ReturnType<typeof settingsMessages.resolve>["t"];
+type ProjectContext = { state: "loading" } | { state: "failed" } | { state: "ready"; names: (string | null)[] };
+
+/** The projects that include the Skill: context next to the direct access, loaded on its own with a retry. */
+const SkillProjects = (props: { context: () => ProjectContext; retry: () => void; t: SettingsMessages }) => (
+  <Switch>
+    <Match when={props.context().state === "loading"}>
+      <InlineGuidance loading>{props.t.loadingSkillProjects}</InlineGuidance>
+    </Match>
+    <Match when={props.context().state === "failed"}>
+      <InlineGuidance tone="warning" icon="ti ti-alert-triangle">
+        {props.t.skillProjectsUnavailable}{" "}
+        <Button size="xs" variant="text" onClick={() => props.retry()}>
+          {props.t.retry}
+        </Button>
+      </InlineGuidance>
+    </Match>
+    <Match
+      when={(() => {
+        const context = props.context();
+        return context.state === "ready" && context.names.length > 0 ? context.names : undefined;
+      })()}
+    >
+      {(names) => (
+        <NoticeCard tone="info" title={props.t.skillProjectAccessTitle} detail={props.t.skillProjectAccessHelp}>
+          <ul class="flex flex-col gap-1">
+            <For each={names()}>{(name) => <li>{name ?? props.t.skillProjectUnavailable}</li>}</For>
+          </ul>
+        </NoticeCard>
+      )}
+    </Match>
+  </Switch>
+);
+
 const openPermissionDialog = async (props: Props, locale: string, signal: AbortSignal) => {
   const t = settingsMessages.resolve([locale]).t;
-  const [response, projectsResponse] = await Promise.all([
-    coreClient.admin.core["ai-skills"][":skillId"].access.$get({ param: { skillId: props.skillId } }, { init: { signal } }),
-    coreClient.admin.core["ai-skills"][":skillId"].projects.$get({ param: { skillId: props.skillId } }, { init: { signal } }),
-  ]);
+  const response = await coreClient.admin.core["ai-skills"][":skillId"].access.$get(
+    { param: { skillId: props.skillId } },
+    { init: { signal } },
+  );
   if (!response.ok) throw new Error(await readError(response, t.loadSkillPermissionsFailed));
   const initialEntries: AiSkillAccess[] = (await response.json()).access;
-  // Projects that include the Skill are context; without them the dialog still edits direct access.
-  const projects = projectsResponse.ok ? (await projectsResponse.json()).projects : null;
   // The page may have changed while the list loaded; never open the dialog over another page.
   if (signal.aborted) return;
+  // The projects are context; a slow or failed answer never holds up editing the direct access.
+  const [projects, setProjects] = createSignal<ProjectContext>({ state: "loading" });
+  const loadProjects = () => {
+    setProjects({ state: "loading" });
+    coreClient.admin.core["ai-skills"][":skillId"].projects
+      .$get({ param: { skillId: props.skillId } }, { init: { signal } })
+      .then(async (answer) => {
+        if (!answer.ok) throw new Error(t.skillProjectsUnavailable);
+        const names = (await answer.json()).projects.map((project) => project.name);
+        if (!signal.aborted) setProjects({ state: "ready", names });
+      })
+      .catch(() => {
+        if (!signal.aborted) setProjects({ state: "failed" });
+      });
+  };
+  loadProjects();
   // Set by every saved change, also when a later one fails and the person discards the rest.
   let wrote = false;
   await openAccessDialog({
@@ -54,26 +102,7 @@ const openPermissionDialog = async (props: Props, locale: string, signal: AbortS
     initialEntries,
     allowPublic: false,
     signal,
-    extraSections: (
-      <Show
-        when={projects}
-        fallback={
-          <InlineGuidance tone="warning" icon="ti ti-alert-triangle">
-            {t.skillProjectsUnavailable}
-          </InlineGuidance>
-        }
-      >
-        {(list) => (
-          <Show when={list().length > 0}>
-            <NoticeCard tone="info" title={t.skillProjectAccessTitle} detail={t.skillProjectAccessHelp}>
-              <ul class="flex flex-col gap-1">
-                <For each={list()}>{(project) => <li>{project.name ?? t.skillProjectUnavailable}</li>}</For>
-              </ul>
-            </NoticeCard>
-          </Show>
-        )}
-      </Show>
-    ),
+    extraSections: <SkillProjects context={projects} retry={loadProjects} t={t} />,
     grantAccess: async (principal, permission) => {
       const response = await coreClient.admin.core["ai-skills"][":skillId"].access.$post({
         param: { skillId: props.skillId },
@@ -318,6 +347,9 @@ export default function AiSkillAdminActions(props: Props) {
     >
       <Dropdown.Trigger iconOnly label={t().actionsFor({ name: props.skillName })} size="xs" tooltip={t().skillActions}>
         <i class={permissions.loading() ? "ti ti-loader-2 animate-spin text-sm" : "ti ti-settings text-sm"} />
+        <span class="sr-only" role="status">
+          {permissions.loading() ? t().loadingSkillAccess : ""}
+        </span>
       </Dropdown.Trigger>
     </Dropdown.Root>
   );
