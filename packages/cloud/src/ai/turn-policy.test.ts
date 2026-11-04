@@ -15,9 +15,6 @@ const recordingProvider = (requests: ProviderRequest[], overflows: { count: numb
   family: "openai-compatible",
   model: "test",
   capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
-  complete: async () => {
-    throw new Error("not used");
-  },
   stream: async function* (input) {
     requests.push(input);
     if (overflows.count > 0) {

@@ -42,18 +42,11 @@ import { createCloudCompactFn } from "./compaction";
 import { createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
-import {
-  countMalformedToolCallRepairs,
-  createMalformedToolCallRepair,
-  isMalformedToolCallId,
-  withMalformedToolCallRepair,
-  withMalformedToolCallResults,
-} from "./malformed-tool-call-repair";
+import { isMalformedToolCallId } from "./malformed-tool-calls";
 import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { aiModelAccess } from "./model-access";
-import { answerOpenToolCalls } from "./open-tool-calls";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
@@ -133,7 +126,7 @@ const AI_COALESCE_MAX_CHARS = 512;
 const AI_ACTION_BUDGET_MS = 24 * 60 * 60_000;
 
 // Failed generation can contain calls that nessi deliberately never executes or resumes.
-// Cloud's repair calls are skipped too: the live run never counts them.
+// Malformed calls are skipped too: they never run.
 const isToolRound = (message: AssistantMessage): boolean =>
   message.stopReason !== "error" &&
   message.stopReason !== "interrupted" &&
@@ -157,7 +150,7 @@ const lastToolRoundFailed = (messages: AiStoredMessage[], blocks: AiTurnBlock[])
   const latest = messages.findLast(({ message }) => message.role === "assistant")?.message;
   if (latest?.role !== "assistant") return false;
   const callIds = new Set(latest.content.flatMap((block) => (block.type === "tool_call" ? [block.id] : [])));
-  // A worker may have stored a malformed call but crashed before its error result; load repairs that result without an event.
+  // A worker may have stored a malformed call but crashed before its error result; nessi stores it on resume without an event.
   return (
     [...callIds].some(isMalformedToolCallId) ||
     blocks.some((block) => block.kind === "tool" && callIds.has(block.callId) && isFailedTool(block))
@@ -329,27 +322,15 @@ export type ExecutorConfig = {
 type ResolvedModel = Awaited<ReturnType<typeof resolveAiModel>>;
 type ValidatedTurn = { settings: Awaited<ReturnType<typeof validateAiTurnRequest>>["settings"]; resolved: ResolvedModel };
 
-// One entry per steering text returned to nessi, including repairs that have no user steer to acknowledge.
+// One entry per steering text returned to nessi.
 const createChatSteering =
-  (input: {
-    repair: ReturnType<typeof createMalformedToolCallRepair>;
-    appliedSteers: (AiTurnSteer | null)[];
-    takePendingSteers: () => Promise<AiTurnSteer[]>;
-    noteSteering: () => void;
-  }) =>
+  (input: { appliedSteers: AiTurnSteer[]; takePendingSteers: () => Promise<AiTurnSteer[]>; noteSteering: () => void }) =>
   async ({ signal }: { signal: AbortSignal }) => {
     if (signal.aborted) return undefined;
-    // Exhaustion fails before consuming any pending user input.
-    const repairText = input.repair.takeSteering();
     const steers = await input.takePendingSteers();
     input.appliedSteers.push(...steers);
     if (steers.length > 0) input.noteSteering();
-    const texts = steers.map((steer) => steer.text);
-    if (repairText) {
-      texts.push(repairText);
-      input.appliedSteers.push(null);
-    }
-    return texts.length > 0 ? texts : undefined;
+    return steers.length > 0 ? steers.map((steer) => steer.text) : undefined;
   };
 
 // ---------------------------------------------------------------------------
@@ -1228,7 +1209,7 @@ export class AiTurnExecutor {
       await pipeline.emitBaseline();
     }
 
-    const appliedSteers: (AiTurnSteer | null)[] = [];
+    const appliedSteers: AiTurnSteer[] = [];
 
     let mandatePolicy: MandatePolicyV1 | null | undefined;
     if (config.background && config.mandate) {
@@ -1580,9 +1561,8 @@ export class AiTurnExecutor {
       skillCreatorAvailable,
       recentWork: guidance.recentWork,
     });
-    // The turn policy and repair budget count the whole turn, including rounds that compaction archived.
+    // The turn policy counts the whole turn, including rounds that compaction archived.
     const turnMessages = await aiConversations.listTurnMessages({ conversationId, loopId: turnId, includeCompacted: true });
-    const malformedToolCallRepair = createMalformedToolCallRepair(countMalformedToolCallRepairs(turnMessages));
     const turnBlocks = buildBlocksFromMessages(turnMessages);
     const providerNamesByCallId = new Map(
       turnMessages.flatMap(({ message }) =>
@@ -1603,9 +1583,7 @@ export class AiTurnExecutor {
       provider: acceptCanonicalToolNames(
         retryTransientProviderErrors(
           rememberProviderErrors(
-            answerOpenToolCalls(
-              assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId, resolved.model),
-            ),
+            assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId, resolved.model),
             remember,
           ),
           {
@@ -1641,11 +1619,10 @@ export class AiTurnExecutor {
       agentId: "cloud",
       loopId: turnId,
       ...(isFresh ? { input: turnInput } : {}),
-      provider: withMalformedToolCallRepair(turnPolicy.provider, malformedToolCallRepair),
+      provider: turnPolicy.provider,
       systemPrompt,
-      store: withMalformedToolCallResults(store, malformedToolCallRepair),
+      store,
       steering: createChatSteering({
-        repair: malformedToolCallRepair,
         appliedSteers,
         takePendingSteers: () =>
           aiConversations.takePendingTurnSteers({
@@ -1674,6 +1651,19 @@ export class AiTurnExecutor {
             conversationId,
             turnId,
             modelId: resolved.profile.id,
+            providerType: resolved.profile.provider,
+            // Accounted as compaction, outside the chat turn's tool policy and retries.
+            provider: rememberProviderErrors(
+              inferenceProvider(resolved.provider, resolved.profile, {
+                subject: quotaSubject,
+                turnId,
+                conversationId,
+                modelRef: resolved.model,
+                kind: "background",
+                task: "chat-compaction",
+              }),
+              remember,
+            ),
             additionalInstructions: settings.compactionInstructions,
             maxOutputTokens: resolved.profile.maxOutputTokens,
             signal: abortController.signal,
@@ -1778,7 +1768,7 @@ export class AiTurnExecutor {
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
-    appliedSteers: (AiTurnSteer | null)[];
+    appliedSteers: AiTurnSteer[];
     noteToolRound: () => void;
     noteToolCall: (call: AiTurnPolicyToolCall) => void;
     /**
@@ -1811,7 +1801,6 @@ export class AiTurnExecutor {
     let lastResponse: AssistantMessage | undefined;
     let roundFailed = input.initialRoundFailed;
     let followedFailedRound = false;
-    const malformedCallIds = new Set<string>();
 
     try {
       for await (const event of loop) {
@@ -1891,15 +1880,10 @@ export class AiTurnExecutor {
           lastResponse = event.message;
           followedFailedRound = roundFailed;
           const calls = new Set(event.message.content.flatMap((block) => (block.type === "tool_call" ? [block.id] : [])));
-          // nessi closes a round after executing its tools. Malformed calls have stored failed blocks,
-          // but are added by Cloud's store wrapper, so they are absent from the event's message.
-          roundFailed = pipeline.blocks.some(
-            (block) => block.kind === "tool" && (calls.has(block.callId) || malformedCallIds.has(block.callId)) && isFailedTool(block),
-          );
-          malformedCallIds.clear();
+          // nessi closes a round after executing its tools; its malformed calls are part of the message, with failed blocks.
+          roundFailed = pipeline.blocks.some((block) => block.kind === "tool" && calls.has(block.callId) && isFailedTool(block));
           if (!abortController.signal.aborted && isToolRound(event.message)) noteToolRound();
         } else if (event.type === "issue") {
-          if (event.issue.kind === "malformed_tool_call" && event.issue.callId) malformedCallIds.add(event.issue.callId);
           const diagnostic = aiIssueDiagnostic(event.issue);
           lastIssueMessage = diagnostic.message;
           log.warn("AI turn issue", { conversationId, turnId, ...diagnostic });
@@ -1933,9 +1917,7 @@ export class AiTurnExecutor {
               ? { error: { code: "step_limit" } }
               : event.reason === "context_overflow"
                 ? { error: { code: "context_full" } }
-                : event.reason === "no_credits"
-                  ? { error: { code: "quota_exhausted" } }
-                  : (failureReason.current ?? { error: { code: "failed" } });
+                : (failureReason.current ?? { error: { code: "failed" } });
           return { kind: "finished", status: "failed", failure: { ...reason, detail }, timing };
         }
       }
@@ -2278,6 +2260,7 @@ export class AiTurnExecutor {
         conversationId,
         turnId,
         modelId: resolved.profile.id,
+        providerType: resolved.profile.provider,
         additionalInstructions: settings.compactionInstructions,
         maxOutputTokens: resolved.profile.maxOutputTokens,
         signal: abortController.signal,

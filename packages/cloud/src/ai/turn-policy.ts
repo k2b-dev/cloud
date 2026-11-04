@@ -206,7 +206,6 @@ export const applyAiTurnPolicy = (input: {
     model: input.provider.model,
     contextWindow: input.provider.contextWindow,
     capabilities: input.provider.capabilities,
-    complete: (request) => input.provider.complete(request),
     stream: async function* (request) {
       // Compaction may run between the tool check and this call; the reserve still holds.
       if (!finalReason && reserveReached()) endToolUse("run_time");

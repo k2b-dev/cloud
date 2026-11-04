@@ -84,18 +84,11 @@ suite("AI usage inference accounting", () => {
         family: "openai-compatible",
         model: f.model.model,
         capabilities: { streaming: false, tools: false, images: false, thinking: false, usage: true, structuredOutput: true },
-        async complete() {
-          requests++;
-          const text = requests === 1 ? "not JSON" : '{"answer":42}';
-          const usage = { input: 100 * requests, output: 10 * requests, total: 110 * requests };
-          return { message: { role: "assistant", content: [{ type: "text", text }], usage }, usage, finishReason: "stop" };
-        },
         async *stream() {
           throw new Error("Structured repair must use complete()");
         },
       };
       const result = await nessi.structured({
-        agentId: "usage-test",
         input: "Return an answer",
         output: z.object({ answer: z.number() }),
         provider: inferenceProvider(provider, f.model, { kind: "background", task: f.prefix, userId: f.userId }),

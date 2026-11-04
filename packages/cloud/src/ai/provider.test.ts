@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { ProviderEvent } from "@k2b/nessi";
+import { complete } from "@k2b/nessi/ai";
 import { z } from "zod";
 import { createAiProvider } from "./provider";
 import * as connections from "./provider-connections";
@@ -41,7 +42,7 @@ describe("AI provider factory", () => {
     });
     try {
       const provider = createAiProvider(profile({ provider: "vllm", model: "mock", baseURL: `http://localhost:${server.port}/v1` }));
-      const result = await provider.complete({ messages: [{ role: "user", content: [{ type: "text", text: "Hello" }] }] });
+      const result = await complete(provider, { messages: [{ role: "user", content: [{ type: "text", text: "Hello" }] }] });
       expect(requests).toEqual([{ stream: true }]);
       expect(result.message.content).toEqual([{ type: "text", text: "Streamed answer" }]);
       expect(result.finishReason).toBe("stop");
@@ -56,6 +57,39 @@ describe("AI provider factory", () => {
     expect(provider.name).toBe("openrouter");
     expect(provider.family).toBe("openai-compatible");
     expect(provider.model).toBe("openai/gpt-4.1-mini");
+  });
+
+  test("every provider type calls its OpenAI-compatible chat endpoint with its own request details", async () => {
+    const originalFetch = globalThis.fetch;
+    const sent: { url: string; body: Record<string, unknown>; authorization: string | null }[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      sent.push({ url: String(url), body: JSON.parse(String(init?.body)), authorization: new Headers(init?.headers).get("authorization") });
+      return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n', {
+        headers: { "content-type": "text/event-stream" },
+      });
+    }) as typeof fetch;
+    try {
+      const cases = [
+        ["openai", undefined, "https://api.openai.com/v1/chat/completions", "max_completion_tokens"],
+        ["openrouter", undefined, "https://openrouter.ai/api/v1/chat/completions", "max_tokens"],
+        ["mistral", undefined, "https://api.mistral.ai/v1/chat/completions", "max_tokens"],
+        ["anthropic", undefined, "https://api.anthropic.com/v1/chat/completions", "max_tokens"],
+        ["gemini", undefined, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "max_tokens"],
+        // Ollama serves the OpenAI API under /v1 of the address stored for its native API.
+        ["ollama", "http://ollama.example.test:11434/", "http://ollama.example.test:11434/v1/chat/completions", "max_tokens"],
+        ["ollama", "http://ollama.example.test:11434/v1", "http://ollama.example.test:11434/v1/chat/completions", "max_tokens"],
+      ] as const;
+      for (const [provider, baseURL, url, maxTokensField] of cases) {
+        sent.length = 0;
+        await complete(createAiProvider(profile({ provider, model: "m", baseURL }), "secret"), { messages: [], maxOutputTokens: 32 });
+        expect({ provider, url: sent[0]?.url }).toEqual({ provider, url });
+        expect(sent[0]?.body[maxTokensField]).toBe(32);
+        // Ollama takes no key; every other type sends the configured one.
+        expect(sent[0]?.authorization).toBe(provider === "ollama" ? null : "Bearer secret");
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   test("requires baseURL for custom OpenAI-compatible providers", () => {

@@ -1,6 +1,6 @@
-import type { NessiIssue, Provider, StreamEvent } from "@k2b/nessi/ai";
+import type { NessiIssue, Provider, StreamEvent, TransportReport } from "@k2b/nessi/ai";
 import { classifyProviderFailure, recordAiProviderStatus } from "./provider-connections";
-import { type ProviderFetchMarks, runWithProviderFetchMarks } from "./provider-fetch";
+import { observeTransport, transportFailed } from "./provider-transport";
 
 /** No provider-owned message, name, stack, cause, or extension fields cross this boundary. */
 export class AiProviderError extends Error {
@@ -21,6 +21,14 @@ const providerIssue = (issue: NessiIssue, tools: Parameters<Provider["stream"]>[
         kind: "provider_error",
         message: "AI provider request failed.",
         retryable: issue.retryable === true,
+        // Typed numbers only: the status and the wait the provider asked for drive retries and status records.
+        status: Number.isInteger(issue.status) ? issue.status : undefined,
+        retryAfterMs:
+          typeof issue.retryAfterMs === "number" && Number.isFinite(issue.retryAfterMs) && issue.retryAfterMs >= 0
+            ? issue.retryAfterMs
+            : undefined,
+        // nessi could not build the request and sent nothing.
+        ...(issue.notSent === true ? { notSent: true as const } : {}),
         contextOverflow: issue.contextOverflow === true,
         overflowRatio:
           typeof issue.overflowRatio === "number" && Number.isFinite(issue.overflowRatio) && issue.overflowRatio > 0
@@ -71,36 +79,18 @@ export const withProviderErrors = (provider: Provider, providerId?: string): Pro
   model: provider.model,
   contextWindow: provider.contextWindow,
   capabilities: provider.capabilities,
-  complete: async (request) => {
-    const marks: ProviderFetchMarks = {};
-    try {
-      const result = await runWithProviderFetchMarks(marks, () => provider.complete(request));
-      if (providerId && !request.signal?.aborted)
-        await recordAiProviderStatus(
-          providerId,
-          ["error", "aborted", "interrupted"].includes(result.finishReason ?? "")
-            ? classifyProviderFailure(marks.httpStatus ? { status: marks.httpStatus } : {})
-            : { status: "ok", message: "The provider connection works." },
-        );
-      return result;
-    } catch (error) {
-      if (providerId && !request.signal?.aborted)
-        await recordAiProviderStatus(
-          providerId,
-          classifyProviderFailure(marks.httpStatus ? { status: marks.httpStatus } : marks.networkFailure ? new TypeError() : error),
-        );
-      throw new AiProviderError(request.signal?.aborted);
-    }
-  },
   stream: async function* (request) {
-    const marks: ProviderFetchMarks = {};
+    let transport: TransportReport | undefined;
+    // The failure a status record names: the HTTP status, a lost connection, or the error itself.
+    const failure = (fallback: unknown) =>
+      transport?.status ? { status: transport.status } : transportFailed(transport) ? new TypeError() : fallback;
     let iterator: AsyncIterator<StreamEvent> | undefined;
     try {
-      const activeIterator = provider.stream(request)[Symbol.asyncIterator]();
+      const activeIterator = provider.stream(observeTransport(request, (report) => (transport = report)))[Symbol.asyncIterator]();
       iterator = activeIterator;
       let failed = false;
       for (;;) {
-        const next = await runWithProviderFetchMarks(marks, () => activeIterator.next());
+        const next = await activeIterator.next();
         if (next.done) break;
         const event = next.value;
         if (event.type === "issue" && (event.issue.kind === "provider_error" || event.issue.kind === "timeout")) {
@@ -110,9 +100,7 @@ export const withProviderErrors = (provider: Provider, providerId?: string): Pro
               providerId,
               event.issue.kind === "timeout"
                 ? { status: "unreachable", message: "The provider timed out." }
-                : classifyProviderFailure(
-                    marks.httpStatus ? { status: marks.httpStatus } : marks.networkFailure ? new TypeError() : event.issue,
-                  ),
+                : classifyProviderFailure(failure(event.issue)),
             );
         }
         yield event.type === "issue" ? { type: "issue", issue: providerIssue(event.issue, request.tools) } : event;
@@ -120,11 +108,7 @@ export const withProviderErrors = (provider: Provider, providerId?: string): Pro
       if (providerId && !failed && !request.signal?.aborted)
         await recordAiProviderStatus(providerId, { status: "ok", message: "The provider connection works." });
     } catch (error) {
-      if (providerId && !request.signal?.aborted)
-        await recordAiProviderStatus(
-          providerId,
-          classifyProviderFailure(marks.httpStatus ? { status: marks.httpStatus } : marks.networkFailure ? new TypeError() : error),
-        );
+      if (providerId && !request.signal?.aborted) await recordAiProviderStatus(providerId, classifyProviderFailure(failure(error)));
       // Includes synchronous creation, iteration, and iterator cleanup failures.
       throw new AiProviderError(request.signal?.aborted);
     } finally {

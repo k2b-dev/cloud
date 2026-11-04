@@ -96,7 +96,6 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
         });
 
         const result = await nessi.structured({
-          agentId: "cloud-bg",
           provider: inferenceProvider(resolved.provider, resolved.profile, {
             kind: input.usageSubject ? "chat" : "background",
             subject: input.usageSubject,
@@ -112,7 +111,7 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
           outputName: input.outputName,
           temperature: input.temperature ?? 0,
           maxOutputTokens: input.maxOutputTokens ?? resolved.profile.maxOutputTokens,
-          reasoningEffort: taskReasoningEffort(resolved.provider),
+          reasoningEffort: taskReasoningEffort(resolved.profile.provider),
           signal: input.signal,
         });
         const durationMs = Date.now() - startedAt;

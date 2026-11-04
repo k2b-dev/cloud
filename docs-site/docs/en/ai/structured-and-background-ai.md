@@ -65,9 +65,9 @@ The returned value includes the parsed output, a resolved `model` reference, usa
 structured-output metadata.
 
 Structured tasks and context compaction keep their previous reasoning requests:
-`low` for OpenAI, OpenRouter, vLLM and OpenAI-compatible profiles, a zero thinking
-budget for Gemini, and no thinking field for Anthropic, Mistral and Ollama, which
-keep their model defaults. The profile thinking level does not apply. Profile
+`low` for OpenAI, OpenRouter, vLLM and OpenAI-compatible profiles, `none` for
+Gemini, and no thinking field for Anthropic, Mistral and Ollama, which keep their
+model defaults. The profile thinking level does not apply. Profile
 `extraBody` still applies and can override nested provider parameters; see
 [Thinking level](/en/docs/ai/models-and-providers#set-the-thinking-level).
 

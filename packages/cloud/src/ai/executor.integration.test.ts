@@ -34,14 +34,14 @@ import { aiChatTasks } from "./chat-tasks";
 import { DEFAULT_COMPACTION_PROMPT } from "./compaction";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
-import { isMalformedToolCallId, newMalformedToolCallId } from "./malformed-tool-call-repair";
+import { isMalformedToolCallId } from "./malformed-tool-calls";
 import { aiMemories } from "./memories";
 import { migrateCloudAi } from "./migrate";
 import { aiModelAccess } from "./model-access";
 import { visionPdfFixture } from "./pdf-render.fixture";
 import { aiProjects } from "./projects";
 import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./protocol";
-import { completeThroughStream, createAiProvider } from "./provider";
+import { createAiProvider } from "./provider";
 import { withProviderErrors } from "./provider-errors";
 import { AiQuotaError } from "./quotas";
 import { readReviewContent } from "./review-content";
@@ -148,9 +148,6 @@ const syntheticProvider = (stream: Provider["stream"]): Provider => ({
   model: "mock",
   contextWindow: 8_000,
   capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: true },
-  complete: async () => {
-    throw new Error("synthetic provider streams only");
-  },
   stream,
 });
 
@@ -2794,7 +2791,7 @@ suite("AI executor integration", () => {
         leaseOwner: "failed-round-dead-worker",
       });
       const malformed = answer === "malformed";
-      const callId = malformed ? newMalformedToolCallId() : "search-failed";
+      const callId = malformed ? `malformed_${"1".repeat(24)}` : "search-failed";
       await earlier.append({
         role: "assistant",
         content: [
@@ -2804,7 +2801,7 @@ suite("AI executor integration", () => {
         stopReason: "tool_use",
       });
       if (malformed) {
-        // The worker died after the assistant append, before Cloud's repair wrapper saved its error result.
+        // The worker died after the assistant append, before nessi stored the call's error result.
         expect((await earlier.load()).some(({ message }) => message.role === "tool_result")).toBe(false);
       } else {
         await earlier.append({ role: "tool_result", callId, name: "search_tools", result: "Invalid query", isError: true });
@@ -3024,16 +3021,14 @@ suite("AI executor integration", () => {
             })
           ).turn;
       const before = await aiConversations.listMessages({ conversationId: conversation.id });
-      const provider = completeThroughStream(
-        openAICompatible({
-          name: "stalled-compaction",
-          model: "mock",
-          baseURL: `http://localhost:${server.port}/v1`,
-          // The prior answers far exceed this window, so nessi forces automatic compaction.
-          contextWindow: 1_000,
-          timeouts: { firstByteMs: 200, idleMs: 200 },
-        }),
-      );
+      const provider = openAICompatible({
+        name: "stalled-compaction",
+        model: "mock",
+        baseURL: `http://localhost:${server.port}/v1`,
+        // The prior answers far exceed this window, so nessi forces automatic compaction.
+        contextWindow: 1_000,
+        timeouts: { firstByteMs: 200, idleMs: 200 },
+      });
       const claim = await aiConversations.claimTurn({
         conversationId: conversation.id,
         turnId: turn.id,
@@ -3783,7 +3778,7 @@ suite("AI executor integration", () => {
   test.each([
     { label: "two malformed responses are repaired before the answer completes", rounds: 2, status: "completed" },
     { label: "a third malformed response fails with Cloud's reason", rounds: 3, status: "failed" },
-  ])("Cloud alone owns live repair: $label", async ({ rounds, status }) => {
+  ])("nessi repairs malformed responses of a live turn: $label", async ({ rounds, status }) => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     const requests: z.infer<typeof toolRepairRequestSchema>[] = [];
@@ -3874,7 +3869,8 @@ suite("AI executor integration", () => {
   });
 
   test.each([
-    { label: "two repairs that compaction archived", rounds: 2, compacted: true, missingResult: false, status: "failed", requests: 1 },
+    // Archived responses are no longer in the loop's history, so the budget starts again.
+    { label: "two repairs that compaction archived", rounds: 2, compacted: true, missingResult: false, status: "completed", requests: 2 },
     {
       label: "a third malformed response the stopped run stored",
       rounds: 3,
@@ -3895,8 +3891,7 @@ suite("AI executor integration", () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     const requests: z.infer<typeof toolRepairRequestSchema>[] = [];
-    const genericText =
-      "The tool call to search_tools could not be used. Re-send the call with its exact tool name and complete, valid, properly escaped JSON arguments.";
+    const genericText = "Invalid JSON arguments. Re-send the call.";
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
@@ -3933,7 +3928,14 @@ suite("AI executor integration", () => {
           stopReason: "stop",
         });
         if (!scenario.missingResult)
-          await earlier.append({ role: "tool_result", callId, name: "search_tools", result: genericText, isError: true });
+          await earlier.append({
+            role: "tool_result",
+            callId,
+            name: "search_tools",
+            result: genericText,
+            isError: true,
+            reason: "malformed_tool_call",
+          });
       }
       if (scenario.compacted) await sql`UPDATE ai.messages SET compacted_at = now() WHERE loop_id = ${turn.id} AND role <> 'user'`;
       await sql`UPDATE ai.turns SET lease_expires_at = now() - interval '1 second' WHERE id = ${turn.id}`;
@@ -3964,14 +3966,20 @@ suite("AI executor integration", () => {
         expect(messages.at(-1)?.meta?.turnError).toEqual({ code: "failed" });
       } else {
         const callId = `malformed_${"0".repeat(24)}`;
-        expect(messages.find(({ message }) => message.role === "tool_result" && message.callId === callId)?.message).toEqual({
+        // nessi stores the missing result on resume.
+        const stored = messages.find(({ message }) => message.role === "tool_result" && message.callId === callId)?.message;
+        expect(stored).toEqual({
           role: "tool_result",
           callId,
           name: "search_tools",
-          result: genericText,
+          result: expect.stringContaining("Re-send the call"),
           isError: true,
+          reason: "malformed_tool_call",
         });
-        expect(requests[0]?.messages).toContainEqual(expect.objectContaining({ role: "tool", tool_call_id: callId, content: genericText }));
+        if (stored?.role !== "tool_result") throw new Error("Missing stored repair");
+        expect(requests[0]?.messages).toContainEqual(
+          expect.objectContaining({ role: "tool", tool_call_id: callId, content: stored.result }),
+        );
       }
     } finally {
       completionQueue = [];

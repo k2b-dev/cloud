@@ -5,10 +5,38 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # Deprecations and migrations
+
+## AI providers use their OpenAI-compatible endpoints
+
+Cloud now uses Nessi 1.0, which has one chat adapter for OpenAI-compatible
+endpoints. Every provider type keeps its name, default address and stored
+connection; nothing needs to be migrated. Review these differences:
+
+- **Anthropic** runs through Anthropic's OpenAI SDK compatibility at
+  `https://api.anthropic.com/v1`. It returns no thinking text, ignores the
+  thinking level, and supports structured output only as a strict JSON schema.
+  Anthropic describes this layer as meant for testing and comparison. Budget
+  reservations no longer assume an output limit of 8,192 tokens.
+- **Gemini** receives the thinking level as `reasoning_effort` instead of
+  `thinkingConfig`; structured tasks send `none`.
+- **Ollama** is reached under `/v1` of its stored address. A profile's
+  `contextWindow` is no longer sent as `num_ctx`; set the context length in
+  Ollama itself, for example with `OLLAMA_CONTEXT_LENGTH` or the model's
+  Modelfile.
+- `top_p` from the OpenAI-compatible API is passed on as `top_p` for every
+  provider type.
+- A response cut off at the output limit runs none of its tool calls. The
+  malformed-call limit now counts responses in a row, and a message the person
+  sends during the turn starts it again.
+- Read-only capability Queries of one response run at the same time, at most
+  four at once.
+
+See [Models and providers](/en/docs/ai/models-and-providers#set-the-thinking-level)
+and [Failed turns](/en/docs/ai/chat-runtime-and-streaming#failed-turns).
 
 ## Authenticated grants apply only to people
 
