@@ -1008,6 +1008,7 @@ const createContext = (
   options: ResolvedCliOptions,
   reload?: () => Promise<ResolvedCliOptions>,
 ): CloudCliContext => {
+  options.ci = envIsCi();
   let bearerToken = options.token;
   const cloudOrigin = options.server ? new URL(options.server).origin : null;
   const authHeaders = () => ({ Authorization: `Bearer ${bearerToken}` });
@@ -1042,7 +1043,7 @@ const createContext = (
   return {
     args,
     flags,
-    options: { ...options, ci: envIsCi() },
+    options,
     getDefault: async (key) => {
       const config = await loadConfig();
       return config.profiles?.[options.profile]?.defaults?.[key];
