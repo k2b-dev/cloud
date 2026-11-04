@@ -1434,6 +1434,14 @@ type ReconcileWindow = {
   completesWalk?: boolean;
 };
 
+/** The remote mailbox a folder belongs to; a folder's never changes. */
+const loadFolderRemoteResource = async (folderId: string): Promise<string | null> => {
+  const [folder] = await sql<{ remote_resource_id: string }[]>`
+    SELECT remote_resource_id FROM mail.folders WHERE id = ${folderId}::uuid
+  `;
+  return folder?.remote_resource_id ?? null;
+};
+
 const loadSyncFolder = async (folderId: string): Promise<FolderSyncRow | null> => {
   const [folder] = await sql<FolderSyncRow[]>`
     SELECT
@@ -2422,18 +2430,24 @@ export const syncFolderBatch = async (
   folderId: string,
   jobHeartbeat: () => Promise<void>,
   priority: Extract<ProviderLeasePriority, "sync" | "background"> = "sync",
+  options: { remoteResourceId?: string } = {},
 ): Promise<SyncBatchResult> => {
-  const folder = await loadSyncFolder(folderId);
-  if (!folder) return emptyBatch();
+  // A job that knows its folder's remote mailbox asks for the lease before it reads the folder,
+  // so a turn that finds the lease busy costs no database statement. The batch reads the folder
+  // under the lease either way.
+  const preloaded = options.remoteResourceId ? null : await loadSyncFolder(folderId);
+  const resource = preloaded ? preloaded.remote_resource_id : options.remoteResourceId;
+  if (!resource) return emptyBatch();
+  let mailboxId: string | null = null;
 
   const { lock, retryAfterMs: busyRetryAfterMs } = await acquireProviderLease({
-    resource: folder.remote_resource_id,
+    resource,
     waiter: `sync-folder:${folderId}`,
     priority,
     ttlMs: SYNC_LEASE_MS,
   });
   if (!lock) throw Object.assign(new Error("Mail sync resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
-  await countServedFolderTurn(folder.remote_resource_id);
+  await countServedFolderTurn(resource);
   let runId: string | null = null;
   let selectedBindingId: string | null = null;
   let selectedSecretRevision: number | null = null;
@@ -2458,9 +2472,9 @@ export const syncFolderBatch = async (
         }
       },
       work: async (_assertLeaseActive, signal) => {
-        const refreshedFolder = await loadSyncFolder(folderId);
-        if (!refreshedFolder) return emptyBatch();
-        Object.assign(folder, refreshedFolder);
+        const folder = await loadSyncFolder(folderId);
+        if (!folder || folder.remote_resource_id !== resource) return emptyBatch();
+        mailboxId = folder.mailbox_id;
         await waitForMailProviderSlot(folder.remote_resource_id, signal);
         const execution = await resolveMailExecution({
           mailboxId: folder.mailbox_id,
@@ -2630,7 +2644,7 @@ export const syncFolderBatch = async (
     if (batch.hasMore || requested)
       next = { waiter: `sync-folder:${folderId}`, priority: batch.syncPending || requested ? "sync" : "background" };
   } catch (error) {
-    await recordProviderFailure(folder.remote_resource_id, error);
+    await recordProviderFailure(resource, error);
     const code = normalizeSyncErrorCode(error);
     // A failure while the quiet check reads STATUS records state only under the fence it claims
     // now; without one, another batch may own the folder.
@@ -2672,11 +2686,13 @@ export const syncFolderBatch = async (
   } finally {
     await releaseProviderLease(lock, next);
   }
-  await recordProviderReachable(folder.remote_resource_id);
+  // Only a batch that worked on its folder reached the provider; one whose folder was gone did not.
+  if (mailboxId) await recordProviderReachable(resource);
   // The immediate wake follows lease release; the recovery publisher can race this release,
   // in which case the hydration job resubmits through normal provider contention.
   if (batch.imported > 0) {
-    await (syncTasks.run(() => publishMailboxHydration(folder.mailbox_id)) ?? Promise.resolve());
+    const hydrated = mailboxId;
+    if (hydrated) await (syncTasks.run(() => publishMailboxHydration(hydrated)) ?? Promise.resolve());
   }
   return batch;
 };
@@ -2718,8 +2734,12 @@ const markFolderDegraded = async (folderId: string): Promise<void> => {
   }
 };
 
-/** `backfill` marks a continuation that only imports older mail or reconciliation windows. */
-type SyncFolderJobInput = { folderId: string; backfill?: boolean };
+/**
+ * `backfill` marks a continuation that only imports older mail or reconciliation windows.
+ * `remoteResourceId` is the folder's remote mailbox: a job learns it in its first turn and carries it,
+ * so its later turns ask for the lease without a database statement.
+ */
+type SyncFolderJobInput = { folderId: string; backfill?: boolean; remoteResourceId?: string };
 
 const syncFolderJob = lazySync((sync) =>
   sync.job<SyncFolderJobInput>({
@@ -2734,18 +2754,26 @@ const runSyncFolderJobOutcome = async (
 ): Promise<SyncBatchResult | { deferred: string }> => {
   const { folderId } = ctx.input;
   let backfill = ctx.input.backfill === true;
+  let carried: { remoteResourceId?: string } = ctx.input.remoteResourceId ? { remoteResourceId: ctx.input.remoteResourceId } : {};
   try {
+    // The first turn reads which remote mailbox the folder belongs to, as each turn did before;
+    // every later turn carries it.
+    if (!carried.remoteResourceId) {
+      const remoteResourceId = await loadFolderRemoteResource(folderId);
+      if (remoteResourceId) carried = { remoteResourceId };
+    }
     // A sync requested meanwhile joined this job. Its next batch checks for new mail before it
     // continues with older mail, so it ranks as a folder sync.
     if ((await redis.send("GETDEL", [syncRequestKey(folderId)])) != null) backfill = false;
-    const data = await syncFolderBatch(folderId, () => ctx.heartbeat(), backfill ? "background" : "sync");
+    const data = await syncFolderBatch(folderId, () => ctx.heartbeat(), backfill ? "background" : "sync", carried);
     countFolderBatch(data.unchanged ? "unchanged" : "committed");
     if (data.hasMore) {
       countFolderSyncTrigger("continuation");
-      ctx.resubmit({ delayMs: 0, input: { folderId, backfill: !data.syncPending } });
+      ctx.resubmit({ delayMs: 0, input: { folderId, backfill: !data.syncPending, ...carried } });
     }
     // A sync requested while this batch ran may have come after the batch checked for new mail.
-    else if (Number(await redis.send("EXISTS", [syncRequestKey(folderId)])) > 0) ctx.resubmit({ delayMs: 0, input: { folderId } });
+    else if (Number(await redis.send("EXISTS", [syncRequestKey(folderId)])) > 0)
+      ctx.resubmit({ delayMs: 0, input: { folderId, ...carried } });
     return data;
   } catch (error) {
     const code = normalizeSyncErrorCode(error);
@@ -2756,14 +2784,14 @@ const runSyncFolderJobOutcome = async (
     if (code === "MAIL_RATE_LIMITED") {
       countFolderBatch("deferred");
       countFolderSyncTrigger("rate_limited");
-      ctx.resubmit({ delayMs: retryAfterMs(error, 5_000), input: { folderId, backfill } });
+      ctx.resubmit({ delayMs: retryAfterMs(error, 5_000), input: { folderId, backfill, ...carried } });
       return { deferred: code };
     }
     // A sibling job holds the remote resource: routine contention, not a failed attempt.
     if (code === "SYNC_BUSY") {
       countFolderBatch("deferred");
       countFolderSyncTrigger("busy");
-      ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input: { folderId, backfill } });
+      ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input: { folderId, backfill, ...carried } });
       return { deferred: code };
     }
     countFolderBatch("failed");

@@ -44,7 +44,7 @@ const LEASE_AGING_MS = LEASE_HEAD_START_MS.sync - LEASE_HEAD_START_MS.background
 // its retry is due plus a grace for a busy job queue; the turn goes to the first present waiter,
 // so one that comes back late does not keep a free lease from the others. It keeps its place
 // while it is away and loses it only after the place TTL, for example because its job ended.
-const LEASE_RETRY_STEP_MS = 1_000;
+const LEASE_RETRY_STEP_MS = 250;
 const LEASE_RETRY_MAX_MS = 4_000;
 const LEASE_RETRY_JITTER_MS = 500;
 const LEASE_PRESENCE_GRACE_MS = 2_000;
@@ -151,7 +151,7 @@ const enterLeaseLineScript = `
     local score = effective(entry)
     if score < askingScore or (score == askingScore and entry.rank < asking.rank) then position = position + 1 end
   end
-  local retryAfter = math.min(tonumber(ARGV[3]) * (position + 1), tonumber(ARGV[4])) + tonumber(ARGV[5])
+  local retryAfter = math.min(tonumber(ARGV[3]) * (position + 1), tonumber(ARGV[4])) + math.floor(tonumber(ARGV[5]) / 5)
   local breaker = 0
   local openUntil = redis.call("HGET", KEYS[3], "until")
   if openUntil and tonumber(openUntil) > now then
