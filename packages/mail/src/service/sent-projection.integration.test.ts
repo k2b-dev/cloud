@@ -503,8 +503,9 @@ const waitFor = async (ready: () => Promise<boolean>, what: string, timeoutMs = 
 
 /**
  * The draft projection worker this suite runs exports, imports, and retires drafts under the same
- * provider lease as sync and hydration. Their jobs wait out that routine contention instead of
- * failing, and so do the direct calls here.
+ * provider lease as sync, hydration, and sends. Their jobs wait out that routine contention instead
+ * of failing, and so do the direct calls here: a sync or hydration finds it as `SYNC_BUSY`, a send as
+ * `REMOTE_RESOURCE_BUSY`, which the outbox job resubmits (#2522).
  */
 const whenProviderFree = async <T>(work: () => Promise<T>, timeoutMs = 60_000): Promise<T> => {
   const deadline = Date.now() + timeoutMs;
@@ -512,7 +513,7 @@ const whenProviderFree = async <T>(work: () => Promise<T>, timeoutMs = 60_000): 
     try {
       return await work();
     } catch (error) {
-      const busy = error instanceof Error && "code" in error && error.code === "SYNC_BUSY";
+      const busy = error instanceof Error && "code" in error && (error.code === "SYNC_BUSY" || error.code === "REMOTE_RESOURCE_BUSY");
       if (!busy || Date.now() >= deadline) throw error;
       await Bun.sleep(25);
     }
@@ -736,7 +737,8 @@ suite("mail sent message projection", () => {
       await sql`UPDATE mail.commands SET attempt = 1, provider_effect_attempt = 1, provider_effect_started_at = now()
         WHERE id = ${command.data.id}::uuid`;
     }
-    expect(await executeOutboxSubmission(outbox!.id)).toBe(expectedState);
+    // The worker may still export the draft or retire an earlier one; the send waits its turn like the outbox job.
+    expect(await whenProviderFree(() => executeOutboxSubmission(outbox!.id))).toBe(expectedState);
     return outbox!;
   };
 
