@@ -290,6 +290,11 @@ test("workflow runs never reach a restricted model; application tasks without a 
     });
     const application = { ...task, runId: null, usageUserId: undefined } satisfies WorkflowAiTask;
     expect(await executeWorkflowAiRequest(application, run, new AbortController().signal)).toMatchObject({ output: { ready: true } });
+    // A task admitted for a class stays off restricted models when its pinned ID is reused under such a provider.
+    const admittedForClass = { ...application, modelRef: { requestedClass: "fast", class: "fast", id: "model" } } satisfies WorkflowAiTask;
+    await expect(executeWorkflowAiRequest(admittedForClass, run, new AbortController().signal)).rejects.toMatchObject({
+      aiError: { code: "model_policy_mismatch", fields: { boundary: "restricted" } },
+    });
   } finally {
     read.mockRestore();
   }

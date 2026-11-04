@@ -644,8 +644,13 @@ export default function AiModelDetail(props: {
                 onValueChange={(kind) => update({ kind })}
                 options={[
                   { value: "chat", label: t().kindChat, icon: "ti ti-message-2" },
-                  { value: "transcription", label: t().kindAudio, icon: "ti ti-microphone" },
-                  { value: "live-transcription", label: t().kindLiveAudio, icon: "ti ti-microphone" },
+                  // Providers without a data-protection commitment only take chat models.
+                  ...(props.provider.dataBoundary === "restricted"
+                    ? []
+                    : [
+                        { value: "transcription" as const, label: t().kindAudio, icon: "ti ti-microphone" },
+                        { value: "live-transcription" as const, label: t().kindLiveAudio, icon: "ti ti-microphone" },
+                      ]),
                 ]}
               />
             </span>

@@ -205,6 +205,7 @@ function ProviderColumn(props: {
             <AiAreaActions
               kind="add-models"
               providerType={props.provider.type}
+              chatOnly={props.provider.dataBoundary === "restricted"}
               providerId={props.provider.id}
               providerLabel={props.provider.label}
               existing={[]}
@@ -579,6 +580,7 @@ export function AiAreaView(props: AiAreaViewProps) {
       <AiAreaActions
         kind="add-models"
         providerType={provider.type}
+        chatOnly={provider.dataBoundary === "restricted"}
         providerId={provider.id}
         providerLabel={provider.label}
         existing={index?.models.filter((entry) => entry.providerId === provider.id).map((entry) => entry.providerModel) ?? []}

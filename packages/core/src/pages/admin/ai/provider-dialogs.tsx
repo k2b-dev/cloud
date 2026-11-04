@@ -431,6 +431,7 @@ export function HeaderRows(props: {
 function AddModelsDialog(props: {
   providerId: string;
   providerType?: AiProviderType;
+  chatOnly?: boolean;
   providerLabel: string;
   existing: string[];
   close: () => void;
@@ -457,7 +458,11 @@ function AddModelsDialog(props: {
   props.setDismissHandler(requestClose);
   const visible = () => {
     const q = query().trim().toLowerCase();
-    return (list() ?? []).filter((model) => !q || `${model.providerModel} ${model.label ?? ""}`.toLowerCase().includes(q));
+    return (list() ?? []).filter(
+      (model) =>
+        (!props.chatOnly || (model.kind ?? "chat") === "chat") &&
+        (!q || `${model.providerModel} ${model.label ?? ""}`.toLowerCase().includes(q)),
+    );
   };
   const showManual = () => manual() || (list.state === "ready" && (list() ?? []).length === 0);
   const facts = (model: AvailableModel) =>
@@ -669,7 +674,13 @@ export const openAddProvider = () =>
     panelDialogOptions,
   );
 
-export const openAddModels = (provider: { providerId: string; providerType?: AiProviderType; providerLabel: string; existing: string[] }) =>
+export const openAddModels = (provider: {
+  providerId: string;
+  providerType?: AiProviderType;
+  chatOnly?: boolean;
+  providerLabel: string;
+  existing: string[];
+}) =>
   void dialogCore.open<void>(
     (close, context) => <AddModelsDialog {...provider} close={() => close()} setDismissHandler={context.setDismissHandler} />,
     panelDialogOptions,

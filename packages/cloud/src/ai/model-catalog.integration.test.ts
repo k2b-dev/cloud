@@ -12,6 +12,7 @@ import { aiProjects } from "./projects";
 import { userResourceContext } from "./projects.test-fixture";
 import { getAiRequestHeaders, setAiRequestHeaders } from "./request-headers";
 import { selectAiModelProfile } from "./settings";
+import type { AiModelPolicy } from "./types";
 
 const suite = databaseSuite();
 suite("AI model catalog migration and revisions", () => {
@@ -192,7 +193,7 @@ suite("AI model catalog migration and revisions", () => {
       );
 
       const state = aiSettingsFixture({ profiles: await readAiModelProfiles() });
-      const apps = { kind: "selectable", allowedDataBoundaries: ["private", "hosted", "restricted"] } as const;
+      const apps: AiModelPolicy = { kind: "selectable", allowedDataBoundaries: ["private", "hosted", "restricted"] };
       expect(selectAiModelProfile(state, apps, { id }).dataBoundary).toBe("restricted");
       expect(() => selectAiModelProfile(state, personalAiModelPolicy, { id })).toThrow("no data-protection commitment");
 

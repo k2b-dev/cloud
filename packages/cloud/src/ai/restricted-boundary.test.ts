@@ -10,6 +10,7 @@ import { listAiModels, resolveAiVisionModel, selectAiModelProfile } from "./sett
 import { resolveAiBackgroundModel, resolveAiWorkflowModel } from "./structured";
 import { resolveApplicationAiTaskModel } from "./task-model";
 import { resolveAiAudioModel } from "./transcription";
+import type { AiModelPolicy } from "./types";
 
 /** One shared catalog: a restricted model that also sits in every slot, as if an assignment had slipped through. */
 const restricted = aiModelFixture({ id: "free", modelId: "free", dataBoundary: "restricted", capabilities: ["tools", "vision"] });
@@ -66,7 +67,7 @@ test("every person-facing path rejects a restricted model", async () => {
 });
 
 test("only a policy that names the restricted boundary lists such models", async () => {
-  const apps = { kind: "selectable", allowedDataBoundaries: ["private", "hosted", "restricted"] } as const;
+  const apps: AiModelPolicy = { kind: "selectable", allowedDataBoundaries: ["private", "hosted", "restricted"] };
   expect((await listAiModels(apps, state)).map((profile) => profile.id)).toEqual(["chat", "free"]);
   expect((await listAiModels({ kind: "selectable", allowedDataBoundaries: ["private", "hosted"] }, state)).length).toBe(1);
 });
@@ -79,7 +80,7 @@ test("a deleted model names its ID in a clear policy error", async () => {
 });
 
 test("replacements keep the boundary rank and never move to a restricted model", () => {
-  const model = { kind: "chat", capabilities: [], enabled: true } as const;
+  const model = { kind: "chat" as const, capabilities: [], enabled: true };
   const provider = (dataBoundary: "private" | "hosted" | "restricted") => ({ dataBoundary, enabled: true });
   expect(aiReplacementProblem(provider("private"), provider("hosted"), model, model)).toBe("private_boundary");
   expect(aiReplacementProblem(provider("private"), provider("restricted"), model, model)).toBe("restricted_boundary");
