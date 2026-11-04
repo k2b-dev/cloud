@@ -56,6 +56,19 @@ describe("mandatory session origin boundary", () => {
     });
   }
 
+  test("a WebSocket upgrade gets no exception for Origin: null, also when marked same-origin", async () => {
+    let authority: string | undefined;
+    const app = new Hono().use(guard()).get("/live", (c) => {
+      authority = c.req.header("Cookie");
+      return c.text(hasRefusedSessionOrigin(c.req.raw) ? "refused" : "accepted");
+    });
+    const response = await app.request("http://internal-app/live", {
+      headers: { Cookie: cookie, Upgrade: "websocket", Origin: "null", "Sec-Fetch-Site": "same-origin" },
+    });
+    expect(await response.text()).toBe("refused");
+    expect(authority).toBeUndefined();
+  });
+
   for (const name of ["session_token", "pwa_session"]) {
     for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
       test(`${name}: ${method} requires the canonical origin, never internal or forwarded hosts`, async () => {

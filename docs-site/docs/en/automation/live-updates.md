@@ -221,7 +221,7 @@ refused handshake would only reach the browser as a retryable `1012`.
 | Code | Cause |
 | --- | --- |
 | `login_required` | No credential, or the session or token has ended |
-| `forbidden_origin` | A cookie session with a foreign `Origin`, a missing or null `Origin` outside `Sec-Fetch-Site: same-origin`, or `Sec-Fetch-Site: same-site` or `cross-site`; a session Bearer with a foreign Origin |
+| `forbidden_origin` | A cookie session with a missing, null or foreign `Origin`, or `Sec-Fetch-Site: same-site` or `cross-site`; a session Bearer with a foreign Origin |
 | `missing_scope` | An OAuth token without `read` (or `admin`), as on other read routes |
 
 Browsers send `Origin` with every socket, and the gateway forwards it. A

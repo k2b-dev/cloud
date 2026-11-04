@@ -31,11 +31,12 @@ export const sessionOriginGuard = (
    * `Sec-Fetch-Site: same-origin`, which no page can set or change, so that pair is accepted. Any other request needs
    * the public origin itself: `same-site` and `cross-site` never pass, and a request with neither header, such as a
    * non-browser client that carries a cookie, is refused, because it cannot show where it comes from. Such clients
-   * use a bearer token instead.
+   * use a bearer token instead. Browsers always send the real Origin with a WebSocket handshake, so sockets get no
+   * exception.
    */
-  const fromPublicOrigin = async (site: string | undefined, origin: string | undefined) => {
+  const fromPublicOrigin = async (site: string | undefined, origin: string | undefined, socket: boolean) => {
     if (site === "same-site" || site === "cross-site") return false;
-    if (site === "same-origin" && (origin === undefined || origin === "null")) return true;
+    if (!socket && site === "same-origin" && (origin === undefined || origin === "null")) return true;
     return origin === publicCloudOrigin(await getPublicUrl());
   };
   return createMiddleware(async (c, next) => {
@@ -62,7 +63,7 @@ export const sessionOriginGuard = (
     const socket = c.req.header("Upgrade")?.toLowerCase() === "websocket";
     if (!mutationMethods.has(c.req.method) && !socket) return next();
 
-    if (!(await fromPublicOrigin(c.req.header("Sec-Fetch-Site"), c.req.header("Origin")))) {
+    if (!(await fromPublicOrigin(c.req.header("Sec-Fetch-Site"), c.req.header("Origin"), socket))) {
       if (socket) {
         // No session authority reaches a socket handler. Live routes can still
         // accept and close with 1008: the gateway makes failed handshakes retryable.
