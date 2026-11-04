@@ -178,14 +178,7 @@ export default function AssistantCodeVersionCard(props: {
       <Match when={loaded() === null}>
         <div class="assistant-code-version" role="status" aria-busy="true" aria-label={t().codeVersionLoading} data-state="loading">
           <Skeleton class="h-3.5 w-3/5" />
-          <div class="assistant-code-version__row">
-            <Skeleton class="h-4 w-4 rounded" />
-            <Skeleton class="h-3 w-4/5" />
-          </div>
-          <div class="assistant-code-version__row">
-            <Skeleton class="h-4 w-4 rounded" />
-            <Skeleton class="h-3 w-2/3" />
-          </div>
+          <Skeleton class="h-3 w-4/5" />
           <Skeleton class="h-7 w-32" />
         </div>
       </Match>

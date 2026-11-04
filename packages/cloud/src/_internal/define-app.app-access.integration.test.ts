@@ -2,7 +2,6 @@ import { expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import { z } from "zod";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
-import "../../../../scripts/fixtures/authorization-preload";
 import { appAccess } from "../contracts/app-access";
 import { GrantAccessSchema } from "../contracts/shared";
 import { sql } from "../runtime/clients";
@@ -13,6 +12,7 @@ import { inventory, person, publishedEntry } from "./define-app.test-fixture";
 
 // This application's ordinary share endpoint has no Code declaration or adapter.
 // PermissionEditor exercises the matching ordinary grant callback in its behavior suite.
+// publishedEntry owns Sync; mocked authentication needs no real Core authority preload.
 databaseSuite()("an app with no Code declaration accepts a service account through normal sharing", () => {
   test("the app's normal share route grants View/Edit without generating Code rights operations", async () => {
     const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind)

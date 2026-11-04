@@ -208,7 +208,6 @@ databaseSuite()("durable Code activation", () => {
     catalogSpy?.mockRestore();
     readersSpy?.mockRestore();
     setSystemTime();
-    await database?.drop();
   });
 
   test("personal activation creates its owner's version mandate without resource grants", async () => {
@@ -592,4 +591,9 @@ databaseSuite()("durable Code activation", () => {
     expect((await status(code, fresh.id)).state).toBe("active");
     expect(await sql`SELECT * FROM auth.access WHERE service_account_id=${code.serviceAccountId}::uuid ORDER BY id`).toEqual(before);
   });
+});
+
+// Imported session fixtures clean their rows in file-level hooks before this final drop.
+afterAll(async () => {
+  await database?.drop();
 });

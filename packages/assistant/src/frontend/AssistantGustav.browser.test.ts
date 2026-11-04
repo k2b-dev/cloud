@@ -5,6 +5,7 @@ import type { AiConversation } from "@k2b/cloud/ai";
 import { codePageFixture } from "@k2b/cloud/ssr/code-page/code-page.fixture";
 import type { Browser, Page, Route } from "playwright";
 import { launchBrowser, pageErrors } from "../../../ui/test/browser";
+import type { CodeVersionPreview } from "./code-activation";
 
 // Gustav in the Assistant workspace: the renamed footer, "My apps & automations" with the person's own Code, and the
 // "Code of …" block in the panel. The workspace runs against routes that answer like the Assistant's server and
@@ -160,7 +161,7 @@ type Scenario = {
   panelEmpty?: boolean;
   panelAccessMissing?: boolean;
   /** What Core answers for a version card, which then renders alone in the panel's width. */
-  cardPreview?: unknown;
+  cardPreview?: CodeVersionPreview;
   /** One personal Code with the shared Code page. */
   detail?: boolean;
   /** Waiting for you, with one chat question and Code of a place that needs the person. */
@@ -388,9 +389,11 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
   page.setDefaultTimeout(5000);
   const errors = pageErrors(page);
   const codeCalls: string[] = [];
+  const activationCalls: string[] = [];
   const state = { listFails: Boolean(scenario.listFails) };
   await page.route(`${assets.url.href}**`, async (route: Route) => {
     const url = new URL(route.request().url());
+    if (url.pathname.startsWith("/api/code/")) activationCalls.push(url.pathname);
     if (url.pathname === "/harness.js" || url.pathname === "/harness.css" || url.pathname.startsWith("/ui/")) return route.continue();
     if (url.pathname === "/app/assistant" || url.pathname === "/app/assistant/panel" || url.pathname.startsWith("/app/assistant/code/")) {
       const harness = {
@@ -453,7 +456,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
   });
   // The first load parses the whole workspace bundle; like the other workspace harnesses, it gets 30 s on a busy machine.
   await page.goto(`${assets.url.origin}${options.path ?? "/app/assistant?code=1"}`, { timeout: 30_000 });
-  return { page, errors, codeCalls, state, close: () => context.close() };
+  return { page, errors, codeCalls, activationCalls, state, close: () => context.close() };
 };
 
 /** Personal Code on the shared Code page, from the shared fixture with fictional data. */
@@ -464,19 +467,7 @@ const personalCodePage = () => ({
 });
 
 const cardVersionId = "66666666-6666-4666-8666-666666666666";
-const cardRow = (patch: Record<string, unknown>) => ({
-  target: { type: "spaces.space", id: "sp_2lg8" },
-  operations: ["spaces.task.create"],
-  own: false,
-  isNew: true,
-  check: "manages",
-  title: "Logistik",
-  typeTitle: "Space",
-  icon: "ti ti-layout-kanban",
-  managers: [],
-  ...patch,
-});
-const cardPreview = (patch: Record<string, unknown> = {}) => ({
+const cardPreview = (patch: Partial<CodeVersionPreview> = {}): CodeVersionPreview => ({
   codeId: "c_info01",
   title: "Code von info@",
   ownerKind: "resource",
@@ -488,17 +479,6 @@ const cardPreview = (patch: Record<string, unknown> = {}) => ({
   allowed: { allowed: true },
   readiness: { state: "ready" },
   place: { title: "info@moebel-beispiel.de", typeTitle: "Postfach", href: "/app/mail/m/info" },
-  rows: [
-    cardRow({
-      target: { type: "mail.mailbox", id: "m_info" },
-      operations: ["mail.conversation.move"],
-      own: true,
-      title: "info@moebel-beispiel.de",
-      typeTitle: "Postfach",
-      icon: "ti ti-mail",
-    }),
-    cardRow({}),
-  ],
   ...patch,
 });
 
@@ -613,24 +593,63 @@ describe("Gustav", () => {
     }
   }, 60_000);
 
-  test("the version card fits the panel and says who can switch on, for each person", async () => {
-    const lea = cardPreview();
-    const blocked = (lea.rows as ReturnType<typeof cardRow>[]).map((row) =>
-      row.own ? row : { ...row, check: "blocked", managers: [{ name: "Ben Schulz", firstName: "Ben" }] },
-    );
+  test("the version card fits the panel and shows account, approval and credential state without target planning", async () => {
     const states = [
-      { name: "ben", preview: lea, expected: "du verwaltest ihn", button: "Einschalten" },
       {
-        name: "lea",
-        preview: cardPreview({ rows: blocked }),
-        expected: "Einschalten kann nur, wer Postfach und Space verwaltet: Ben Schulz.",
-        button: "Link für Ben kopieren",
+        name: "ready",
+        preview: cardPreview(),
+        expected: "Läuft als Dienstkonto mit dessen aktuellen Rechten am Ziel.",
+        switchOn: true,
+        diff: true,
+      },
+      {
+        name: "personal",
+        preview: cardPreview({ ownerKind: "person", place: null }),
+        expected: "Läuft als du, mit deinen Rechten und nicht mehr.",
+        switchOn: true,
+        diff: true,
+      },
+      {
+        name: "approval",
+        preview: cardPreview({ readiness: { state: "approval_pending" } }),
+        expected: "Diese Version muss erst ein Cloud-Admin freigeben.",
+        switchOn: null,
+        diff: true,
+      },
+      {
+        name: "refused",
+        preview: cardPreview({ readiness: { state: "refused", code: "code_policy_never", message: "Die Richtlinie erlaubt das nicht." } }),
+        expected: "Die Richtlinie erlaubt das nicht.",
+        switchOn: null,
+        diff: true,
+      },
+      {
+        name: "phone",
+        preview: cardPreview({ allowed: { allowed: false, reason: "phone" } }),
+        expected: "Am Telefon lässt sich nicht einschalten. Öffne diesen Chat am Computer.",
+        switchOn: false,
+        diff: true,
+      },
+      {
+        name: "credential",
+        preview: cardPreview({ allowed: { allowed: false, reason: "credential" } }),
+        expected: "Einschalten braucht eine Browser-Sitzung oder eine persönliche Anmeldung.",
+        switchOn: false,
+        diff: true,
       },
       {
         name: "an",
-        preview: cardPreview({ running: 5, rows: [], activated: { at: at(5), byYou: true, byName: null } }),
+        preview: cardPreview({ running: 5, activated: { at: at(5), byYou: true, byName: null } }),
         expected: "Version 5 eingeschaltet",
-        button: null,
+        switchOn: null,
+        diff: false,
+      },
+      {
+        name: "superseded",
+        preview: cardPreview({ latest: 6 }),
+        expected: "Version 5 wurde von Version 6 abgelöst.",
+        switchOn: null,
+        diff: false,
       },
     ];
     for (const state of states)
@@ -638,7 +657,19 @@ describe("Gustav", () => {
         const h = await open(view, { cardPreview: state.preview }, { path: "/app/assistant/panel" });
         try {
           await h.page.getByText(state.expected).waitFor();
-          if (state.button) expect(await h.page.getByRole("button", { name: state.button }).count()).toBe(1);
+          const card = h.page.locator(".assistant-code-version, .assistant-code-version__line");
+          const switchOn = card.getByRole("button", { name: "Einschalten", exact: true });
+          if (state.switchOn === null) expect(await switchOn.count()).toBe(0);
+          else {
+            expect(await switchOn.count()).toBe(1);
+            expect(await switchOn.isDisabled()).toBe(!state.switchOn);
+          }
+          expect(await card.getByRole("link", { name: "Unterschied", exact: true }).count()).toBe(state.diff ? 1 : 0);
+          expect(await card.textContent()).not.toMatch(/du verwaltest|Link für|Ben Schulz|Logistik/);
+          expect(await card.locator(".assistant-code-version__row").count()).toBe(0);
+          expect(h.activationCalls).toEqual(["/api/code/activation/preview"]);
+          expect(h.codeCalls).toEqual([]);
+          expect(h.errors).toEqual([]);
           const overflow = await h.page.evaluate(() => {
             const card = document.querySelector(".assistant-code-version, .assistant-code-version__line")!;
             return card.scrollWidth - card.clientWidth;
