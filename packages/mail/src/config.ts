@@ -9,6 +9,8 @@ export { MAIL_APP_ID, MAILBOX_RESOURCE_TYPE };
 
 export const app = defineApp({
   id: MAIL_APP_ID,
+  // A public attachment link and its password grant never use Cloud session authority.
+  sessionlessRoutes: ["/share/mail/attachments/:token"],
   // Resource-bound and roleless service accounts remain eligible.
   access: appAccess.noGuests({
     publicRoutes: ["/share/mail/attachments/:token", "/api/mail/openapi.json"],

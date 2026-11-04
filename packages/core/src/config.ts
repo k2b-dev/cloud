@@ -5,6 +5,12 @@ import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
   id: "core",
+  // These protocols validate their own credentials and never use Cloud session authority.
+  sessionlessRoutes: [
+    "/api/auth/app-approval/v1/pairings/claim",
+    "/api/auth/app-approval/v1/pairings/result",
+    "/api/auth/app-approval/v1/device",
+  ],
   // These routes keep their own authentication, including workload and models-only credentials.
   access: appAccess.signedIn({
     publicRoutes: [
