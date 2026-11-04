@@ -2860,3 +2860,10 @@ and effective roles. Anonymous read paths may pass `null`.
 Standalone and agent credentials use their own grants within their credential
 scopes. Resource-bound credentials are unsupported for Projects and Skills.
 See [Projects and Skills](/en/docs/ai/files-projects-and-personalization#reuse-shared-skills).
+
+## Code account name lookup
+
+`POST /api/resources/code-access/accounts` and `CodeAccessAccountsInputSchema`
+are removed. Return Code names with the target's rights list through
+`resolveDisplayNames` after the local permission check. See
+[Code account handles](/en/docs/identity/code-service-account-handles).

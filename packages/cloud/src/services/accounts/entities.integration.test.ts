@@ -392,3 +392,49 @@ suite("service-account directory eligibility filters", () => {
     }
   });
 });
+
+suite("Code handle directory filtering", () => {
+  test("never finds Code by a name, a UUID, a prefix, or without admitted target context", async () => {
+    const handle = "code-7k2q9m4xwt";
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,handle,title,status)
+      VALUES('code:app:a2-fixture','code',${handle},'Werkstatt','disabled') RETURNING id`;
+    const { list } = await import("./entities");
+    try {
+      for (const search of ["Werkstatt", "a2-fixture", "code-7k2", account!.id, handle]) {
+        const result = await list({ visibility: { type: "directory" }, search, kinds: ["service_account"] });
+        expect(result.items.some((item) => item.kind === "service_account" && item.serviceAccount.id === account!.id)).toBe(false);
+      }
+      const result = await list({
+        visibility: { type: "directory" },
+        search: handle,
+        codeAccountHandle: handle,
+        serviceAccountStatus: "active",
+        locale: "de",
+      });
+      const found = result.items.find((item) => item.kind === "service_account" && item.serviceAccount.id === account!.id);
+      expect(found).toMatchObject({
+        kind: "service_account",
+        serviceAccount: {
+          id: account!.id,
+          kind: "code",
+          handle,
+          name: "Code von Werkstatt",
+          status: "disabled",
+          description: "Dienstkonto einer App · deaktiviert",
+        },
+      });
+      const guest = await list({
+        visibility: { type: "self_and_effective_groups", userId: account!.id },
+        search: handle,
+        codeAccountHandle: handle,
+      });
+      expect(guest.items.some((item) => item.kind === "service_account" && item.serviceAccount.id === account!.id)).toBe(true);
+      const noAdmission = await list({ visibility: { type: "self_and_effective_groups", userId: account!.id }, search: handle });
+      expect(noAdmission.items).toEqual([]);
+      await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
+      expect((await list({ visibility: { type: "directory" }, search: handle, codeAccountHandle: handle })).items).toEqual([]);
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
+    }
+  });
+});

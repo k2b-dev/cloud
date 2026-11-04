@@ -11,8 +11,9 @@ import {
   getEffectivePermission,
   getEffectivePermissions,
   listUsersWithAccess,
-  resolveDisplayNames,
 } from "./access";
+
+import { resolveDisplayNames } from "./access-display";
 
 type Fixture = {
   accessIds: string[];
@@ -390,12 +391,12 @@ test("resolveDisplayNames batches each kind once and leaves missing names absent
       return [{ id: "11111111-1111-4111-8111-111111111111", name: "Research agent", kind: "agent" }];
     };
     Bun.plugin({ name: "principal-display-sql-fixture", setup(build) {
-      build.onLoad({ filter: /server\\/services\\/access[.]ts$/ }, async ({ path }) => ({
+      build.onLoad({ filter: /server\\/services\\/access-display[.]ts$/ }, async ({ path }) => ({
         contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.principalDisplaySql;'),
         loader: "ts",
       }));
     } });
-    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access.ts", import.meta.url).pathname)});
+    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
     const present = "11111111-1111-4111-8111-111111111111", missing = "22222222-2222-4222-8222-222222222222";
     const entries = [
       { principal: { type: "user", userId: present } },
@@ -429,4 +430,63 @@ test("resolveDisplayNames batches each kind once and leaves missing names absent
     new Response(child.stderr).text(),
   ]);
   expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+});
+
+test("Code titles are resolved in the existing batch only for a managed target", async () => {
+  const script = `
+    import { strict as assert } from "node:assert";
+    const calls = [];
+    const present = "11111111-1111-4111-8111-111111111111", app = "22222222-2222-4222-8222-222222222222";
+    globalThis.codeDisplaySql = async (parts) => {
+      assert.ok(parts.join("?").includes("FROM auth.service_accounts"));
+      calls.push("accounts");
+      return [
+        { id: present, name: "code:demo.item:secret-id", kind: "code", title: "Private mailbox", handle: "code-7k2q9m4xwt", status: "disabled" },
+        { id: app, name: "code:app:workshop", kind: "code", title: "Werkstatt", handle: "code-0123456789", status: "active" },
+      ];
+    };
+    globalThis.codeDisplayCatalog = async (id) => ({ appId: id, appName: id === "workshop" ? "Werkstatt" : "Demo", manifest: {
+      appId: id, types: [{ localId: "item", title: "Postfach", codeAccount: { name: "Code eines Postfachs", description: "Dienstkonto eines Postfachs" } }], code: { pages: { item: "/app/demo/{id}/code" } },
+    } });
+    Bun.plugin({ name: "code-display-fixture", setup(build) {
+      build.onLoad({ filter: /server\\/services\\/access-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.codeDisplaySql;'), loader: "ts",
+      }));
+      build.onLoad({ filter: /code-account-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text())
+          .replace('import { getCapability } from "../../_internal/registry";', 'const getCapability = globalThis.codeDisplayCatalog;')
+          .replace('import { resolveCapabilityManifestPresentation } from "../../_internal/capabilities";', 'const resolveCapabilityManifestPresentation = (manifest) => manifest;'), loader: "ts",
+      }));
+    } });
+    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
+    const entries = [
+      { principal: { type: "service_account", serviceAccountId: present }, displayName: "Stale secret", serviceAccountHref: "/old-secret" },
+      { principal: { type: "service_account", serviceAccountId: app } },
+    ];
+    const reader = await resolveDisplayNames(entries, { locale: "de" });
+    assert.equal(reader[0].displayName, "Code eines Postfachs");
+    assert.equal(reader[0].serviceAccountHref, undefined);
+    assert.ok(!JSON.stringify(reader).includes("Private mailbox"));
+    assert.ok(!JSON.stringify(reader).includes("secret-id"));
+    assert.equal(reader[1].displayName, "Code von Werkstatt");
+    assert.equal(reader[1].serviceAccountHref, undefined);
+    assert.deepEqual(calls.splice(0), ["accounts"]);
+    const manager = await resolveDisplayNames(entries, { canManageTarget: true, locale: "de" });
+    assert.equal(manager[0].displayName, "Code von Private mailbox");
+    assert.equal(manager[0].serviceAccountHref, "/app/demo/secret-id/code");
+    assert.equal(manager[0].serviceAccountHandle, "code-7k2q9m4xwt");
+    assert.ok(manager[0].serviceAccountDescription.includes("deaktiviert"));
+    assert.equal(manager[1].serviceAccountHref, undefined);
+    assert.deepEqual(calls.splice(0), ["accounts"]);
+    const admin = await resolveDisplayNames(entries, { cloudAdmin: true, locale: "de" });
+    assert.equal(admin[1].serviceAccountHref, "/admin/code");
+    assert.equal(admin[0].displayName, "Code eines Postfachs");
+    // The list length changes neither statement count nor app calls.
+    const many = await resolveDisplayNames(Array.from({ length: 50 }, () => entries[0]), { canManageTarget: true, locale: "de" });
+    assert.equal(many.length, 50);
+    assert.deepEqual(calls.splice(0), ["accounts", "accounts"]);
+  `;
+  const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  expect({ stdout, stderr, exit }).toEqual({ stdout: "", stderr: "", exit: 0 });
 });

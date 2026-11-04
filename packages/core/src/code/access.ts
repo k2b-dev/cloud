@@ -6,9 +6,8 @@ import {
   cloudResourceRefAppId,
   resolveCapabilityResourceReader,
 } from "@k2b/cloud/contracts";
-import { getEffectivePermission, type RequestAuthority, userFromActor } from "@k2b/cloud/server";
+import { codeAccountPresenter, getEffectivePermission, type RequestAuthority, userFromActor } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { i18n } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { z } from "zod";
 import type { Code, CodeOwner, CodePermission } from "./contracts";
@@ -66,6 +65,13 @@ export const codePerson = (context: CodeContext, write = false) => {
   )
     throw new CodeDataError("FORBIDDEN", "Credential does not allow Code access.");
   return user;
+};
+
+const refreshOwnerTitle = async (owner: CodeOwner, title: string, db: SQL = sql) => {
+  const name =
+    owner.kind === "app" ? `code:app:${owner.appId}` : owner.kind === "resource" ? `code:${owner.ref.type}:${owner.ref.id}` : null;
+  if (name)
+    await db`UPDATE auth.service_accounts SET title=${title} WHERE kind='code' AND name=${name} AND title IS DISTINCT FROM ${title}`;
 };
 
 /** Resolve the resource's current title and permission through its canonical reader under this exact authority. */
@@ -135,7 +141,9 @@ export const codePermission = async (
   if (permission === "write" || permission === "admin") return "editor";
   if (code.owner.kind !== "person" && ownerCheck !== "skip") {
     try {
-      if ((await readCodeOwner(code.owner, context))?.admin) return "editor";
+      const owner = await readCodeOwner(code.owner, context);
+      if (owner) await refreshOwnerTitle(code.owner, owner.title, db);
+      if (owner?.admin) return "editor";
     } catch (error) {
       if (!(error instanceof CodeOwnerUnavailableError) || ownerCheck === "edit" || (permission !== "read" && !cloudAdmin)) throw error;
       logger("core:code-owner").warn("Code owner unavailable; retaining existing reader access", { codeId: code.id });
@@ -150,19 +158,11 @@ export const requireCodePermission = async (code: Code, context: CodeContext, ed
   if (editor) codePerson(context, true);
   return permission;
 };
-const codeMessages = i18n.define({
-  baseLocale: "en",
-  messages: {
-    en: { accountName: ({ title }: { title: string }) => `Code of ${title}` },
-    de: { accountName: ({ title }) => `Code von ${title}` },
-  },
-});
-
-/** Live owner presentation uses reader authority, independently of permission to open the Code itself. */
+/** Outside a locally authorized target rights list, resource Code is named only by its type. */
 export const codeAccountDisplayName = async (code: Code, context: CodeContext): Promise<string | null> => {
   codePerson(context);
   if (!code.serviceAccountId) return null;
-  const owner = await readCodeOwner(code.owner, context);
-  const { t } = codeMessages.resolve(context.locale ? [context.locale] : []);
-  return owner ? t.accountName({ title: owner.title }) : null;
+  const [account] = await sql<{ name: string; title: string | null; status: string }[]>`
+    SELECT name,title,status FROM auth.service_accounts WHERE id=${code.serviceAccountId}::uuid AND kind='code'`;
+  return account ? (await codeAccountPresenter({ locale: context.locale })(account)).displayName : null;
 };

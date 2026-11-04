@@ -33,6 +33,7 @@ import type { CodeCleanupJob } from "../../../code/lifecycle-contracts";
 import type { CodeRunnerMetrics } from "../../../code/scheduling-contracts";
 import CoreSettingsForm, { type SettingFieldDef } from "../settings/_components/CoreSettingsForm.island";
 import { CODE_POLICY_ROW_GROUPS, type CodeAreaQuery, type CodeAreaSection, codeAreaHref, codeAreaLevel, isWideCodeSection } from "./area";
+import CodeAccountHandle from "./CodeAccountHandle.island";
 import CodeApprovalReview, { type CodeApprovalCheck, type CodeApprovalReviewProps } from "./CodeApprovalReview.island";
 import CodeListFilters from "./CodeListFilters.island";
 import CodePauseAction from "./CodePauseAction.island";
@@ -566,7 +567,14 @@ export function CodeAreaView(props: Props) {
     const lastRun = detail.refusal ? detail.runs.find((run) => run.id === detail.refusal!.refusal.runId) : undefined;
     return (
       <div class="grid content-start gap-6 px-2 pt-1 pb-6">
-        <Show when={account}>{(name) => <p class="text-sm text-(--k2b-text-secondary)">{t.runsAsAccount({ name: name() })}</p>}</Show>
+        <Show when={account}>
+          {(name) => (
+            <p class="text-sm text-(--k2b-text-secondary)">
+              {t.runsAsAccount({ name: name() })}{" "}
+              <Show when={code.serviceAccountHandle}>{(handle) => <CodeAccountHandle handle={handle()} />}</Show>
+            </p>
+          )}
+        </Show>
         <Show when={account ? detail.refusal : null}>
           {(shown) => (
             <section class="grid gap-2" aria-labelledby="code-detail-last-run">
@@ -576,7 +584,13 @@ export function CodeAreaView(props: Props) {
                   {(run) => <span class="text-sm font-normal text-(--k2b-text-muted)">{when(run().createdAt)}</span>}
                 </Show>
               </h3>
-              <CodeRefusal refusal={shown().refusal} account={account!} handle={null} editor={shown().editor} cloudAdmin={true} />
+              <CodeRefusal
+                refusal={shown().refusal}
+                account={account!}
+                handle={code.serviceAccountHandle}
+                editor={shown().editor}
+                cloudAdmin={true}
+              />
             </section>
           )}
         </Show>

@@ -438,6 +438,13 @@ Action, which then reads as its title.
 
 ### Types name resources
 
+A Type may supply `codeAccount: { name, description }` as final generic Code
+account labels, with translations in `presentation.translations.<locale>.types`.
+For example, Mail uses “Code eines Postfachs” and “Dienstkonto eines Postfachs”.
+These labels identify the type without naming a private resource. See
+[Code account handles](/en/docs/identity/code-service-account-handles) for the
+authorized title and rename contracts.
+
 A Type gives an addressable resource a stable identity such as `item`. Cloud
 qualifies local IDs with the application ID:
 

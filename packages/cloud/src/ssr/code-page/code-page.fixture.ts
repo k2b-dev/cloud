@@ -16,7 +16,6 @@ const owner = {
   ref: { type: "mail.mailbox", id: "Mb4kd2" },
   title: "info@moebel-beispiel.de",
   typeTitle: "Mailbox",
-  handle: "code-7k2q9m4xwt",
 };
 const ben = { id: "00000000-0000-4000-8000-0000000000b1", name: "Ben Schulz" };
 const lea = { id: "00000000-0000-4000-8000-0000000000a1", name: "Lea Muster" };
@@ -110,7 +109,14 @@ const waitingTargets: CodePageActivationRow[] = [
 
 const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
   kind: "ready",
-  code: { id: "c_3mfa", title: "Code von info@", state: "active", activeVersionId: v4.id, pauseReason: null },
+  code: {
+    id: "c_3mfa",
+    serviceAccountHandle: "code-7k2q9m4xwt",
+    title: "Code von info@",
+    state: "active",
+    activeVersionId: v4.id,
+    pauseReason: null,
+  },
   permission: "editor",
   versions: [v5, v4, version(3, "approved")],
   versionsFailed: false,

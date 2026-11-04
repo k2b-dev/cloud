@@ -1,6 +1,7 @@
 import type { SQLQuery } from "bun";
 import type { EntityKind, EntityListItem, UserProfile, UserProvider } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
+import { codeAccountPresenter } from "../../server/services/code-account-display";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { escapeLikePattern, toPgTextArray, toPgUuidArray } from "../postgres";
 import type { ServiceAccountKind, ServiceAccountStatus } from "../service-accounts";
@@ -17,6 +18,9 @@ export type EntityListParams = {
     | { type: "self_and_effective_groups"; userId: string }
     | { type: "directory_shares"; serviceAccountId: string };
   search?: string;
+  /** Internal only. Route verified Manage at a target and consumed the Valkey lookup budget. */
+  codeAccountHandle?: string;
+  locale?: string;
   kinds?: EntityKind[];
   provider?: UserProvider;
   profile?: UserProfile;
@@ -373,7 +377,7 @@ const buildQuerySpec = (params: EntityListParams): EntityQuerySpec => {
 };
 
 const serviceAccountKind = (value: unknown): ServiceAccountKind =>
-  value === "resource_bound" || value === "standalone" || value === "agent" ? value : "user_delegated";
+  value === "code" || value === "resource_bound" || value === "standalone" || value === "agent" ? value : "user_delegated";
 
 const mapEntityRow = (row: DbRow): EntityListItem => {
   const direct = typeof row.direct === "boolean" ? row.direct : undefined;
@@ -422,6 +426,12 @@ export const list = async (
   const page = params.page ?? 1;
   const perPage = params.perPage ?? 100;
   const offset = (page - 1) * perPage;
+  const codeHandle =
+    params.visibility.type !== "directory_shares" &&
+    params.codeAccountHandle === params.search?.trim() &&
+    /^code-[0123456789abcdefghjkmnpqrstvwxyz]{10}$/.test(params.codeAccountHandle ?? "")
+      ? params.codeAccountHandle!
+      : null;
   const pattern = params.search ? `%${escapeLikePattern(params.search.trim().toLowerCase())}%` : null;
   const groupsAdmin = (await getFreeIpaConfig()).groupsAdmin;
   const groupsAdminLiteral = toPgTextArray(groupsAdmin);
@@ -442,6 +452,7 @@ export const list = async (
           )`
         : sql`(
           (kind = 'user' AND id = ${params.visibility.userId}::uuid)
+          OR (kind = 'service_account' AND service_account_kind = 'code' AND code_handle = ${codeHandle})
           OR (
             kind = 'group'
             AND id IN (${recursiveGroupIdsSubquery(params.visibility.userId)})
@@ -473,7 +484,7 @@ export const list = async (
       ? sql`TRUE`
       : sql`(kind <> 'service_account' OR service_account_kind = ANY(${toPgTextArray(params.serviceAccountKinds ?? [])}::text[]))`;
   const serviceAccountStatusCondition = params.serviceAccountStatus
-    ? sql`(kind <> 'service_account' OR status = ${params.serviceAccountStatus})`
+    ? sql`(kind <> 'service_account' OR service_account_kind = 'code' OR status = ${params.serviceAccountStatus})`
     : sql`TRUE`;
   const userMemberOfGroupCondition =
     (params.userMemberOfGroupIds?.length ?? 0) === 0
@@ -526,6 +537,7 @@ export const list = async (
     AND ${personalCondition}
     AND (
       ${pattern}::text IS NULL
+      OR (kind = 'service_account' AND service_account_kind = 'code' AND code_handle = ${codeHandle})
       OR (
         kind = 'user' AND (
           LOWER(uid) LIKE ${pattern} ESCAPE '\\'
@@ -581,6 +593,8 @@ export const list = async (
                 AND eg.group_name = ANY(${groupsAdminLiteral}::text[])
             )
           END AS effective_admin,
+          NULL::text AS code_title,
+          NULL::text AS code_handle,
           NULL::text AS service_account_kind,
           NULL::text AS status,
           NULL::uuid AS delegated_user_id,
@@ -613,6 +627,8 @@ export const list = async (
           g.description,
           g.gid_number,
           NULL::boolean AS effective_admin,
+          NULL::text AS code_title,
+          NULL::text AS code_handle,
           NULL::text AS service_account_kind,
           NULL::text AS status,
           NULL::uuid AS delegated_user_id,
@@ -651,6 +667,8 @@ export const list = async (
           END AS description,
           NULL::int AS gid_number,
           NULL::boolean AS effective_admin,
+          sa.title AS code_title,
+          sa.handle AS code_handle,
           sa.kind AS service_account_kind,
           sa.status,
           sa.delegated_user_id,
@@ -664,7 +682,7 @@ export const list = async (
           NULL::text AS personal_owner_display_name,
           LOWER(sa.name) AS sort_label
         FROM auth.service_accounts sa
-        WHERE sa.kind <> 'code' AND NOT ${otherRelation} AND ${machineRelation}
+        WHERE (sa.kind <> 'code' OR (${codeHandle}::text IS NOT NULL AND sa.handle = ${codeHandle})) AND NOT ${otherRelation} AND ${machineRelation}
       ),
       entity_rows AS (
         SELECT * FROM user_rows
@@ -684,25 +702,44 @@ export const list = async (
   // A page past the end has no rows to carry the window count; the total still counts every match.
   let total = rows.length > 0 ? Number(rows[0]!.total) : 0;
   if (!rows.length && page > 1) total = (await list({ ...params, page: 1, perPage: 1 })).total;
+  const presentCode = codeAccountPresenter({ canManageTarget: codeHandle !== null, locale: params.locale });
   return {
-    items: rows.map((row) => {
-      const entity = mapEntityRow(row);
-      if (params.visibility.type !== "directory_shares") return entity;
-      if (entity.kind === "group") return { ...entity, group: { ...entity.group, personalOwner: null } };
-      if (entity.kind === "service_account")
-        return {
-          ...entity,
-          serviceAccount: {
-            ...entity.serviceAccount,
-            delegatedUserId: null,
-            createdBy: null,
-            appId: null,
-            resourceType: null,
-            resourceId: null,
-          },
-        };
-      return entity;
-    }),
+    items: await Promise.all(
+      rows.map(async (row) => {
+        const entity = mapEntityRow(row);
+        if (entity.kind === "service_account" && entity.serviceAccount.kind === "code") {
+          const presentation = await presentCode({
+            name: String(row.name),
+            title: typeof row.code_title === "string" ? row.code_title : null,
+            status: String(row.status),
+          });
+          return {
+            ...entity,
+            serviceAccount: {
+              ...entity.serviceAccount,
+              name: presentation.displayName,
+              handle: String(row.code_handle),
+              description: presentation.serviceAccountDescription,
+            },
+          };
+        }
+        if (params.visibility.type !== "directory_shares") return entity;
+        if (entity.kind === "group") return { ...entity, group: { ...entity.group, personalOwner: null } };
+        if (entity.kind === "service_account")
+          return {
+            ...entity,
+            serviceAccount: {
+              ...entity.serviceAccount,
+              delegatedUserId: null,
+              createdBy: null,
+              appId: null,
+              resourceType: null,
+              resourceId: null,
+            },
+          };
+        return entity;
+      }),
+    ),
     total,
     pagination: {
       page,

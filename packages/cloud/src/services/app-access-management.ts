@@ -12,8 +12,8 @@ import {
   createAccess,
   getEffectivePermission,
   type Principal,
-  resolveDisplayNames,
 } from "../server/services/access";
+import { resolveDisplayNames } from "../server/services/access-display";
 import { isAccountExpired } from "./account-model";
 import { recursiveGroupIdsSubquery } from "./accounts/group-sql";
 import { canUseApp } from "./app-access";

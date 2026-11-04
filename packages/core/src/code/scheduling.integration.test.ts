@@ -300,6 +300,39 @@ suiteFor(
     }
   });
 
+  test("an admitted run keeps its owner-read budget after the queue poll expires", async () => {
+    const code = await fixture(owner, true);
+    const [runId] = await enqueueMany(code, 1);
+    overrides.set("core.code.runner_poll_ms", 1000);
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockImplementation(async (_ref, _principal, signal) => {
+      // fixed wait: exceed only the 1000 ms queue poll, well within the existing owner-read and lease budgets.
+      await Bun.sleep(1100);
+      signal?.throwIfAborted();
+      return "Current owner";
+    });
+    try {
+      const response = await fetchCodeRuns({ instanceId: crypto.randomUUID(), freeSlots: 1 }, new AbortController().signal, {
+        queue,
+        sign,
+      });
+      expect(response.runs.map((run) => run.runId)).toEqual([runId!]);
+      expect(response.runs[0]?.generation).toBe(1);
+      expect(await state(runId!)).toMatchObject({ state: "running", generation: 1 });
+    } finally {
+      title.mockRestore();
+      registry.mockRestore();
+    }
+  });
+
   test("the delivered lease renews after its owner read; expired generations stay refused", async () => {
     const code = await fixture(owner, true);
     await enqueueMany(code, 1);

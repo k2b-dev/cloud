@@ -602,7 +602,7 @@ const mailboxAccessCommands = createAccessCommands({
   resourceArgDescription: "Optional mailbox id or exact name.",
   resolveResource: async (ctx, args) => {
     const mailbox = await resolveMailbox(ctx, args[0]);
-    return { id: mailbox.id, label: `${mailbox.name} (${mailbox.id})` };
+    return { id: mailbox.id, label: `${mailbox.name} (${mailbox.id})`, target: { type: "mail.mailbox", id: mailbox.id } };
   },
   list: (ctx, mailbox) => readApi<AccessEntry[]>(ctx, `/mailboxes/${mailbox.id}/access`),
   grant: (ctx, mailbox, principal: Principal, permission: PermissionLevel, scope) =>

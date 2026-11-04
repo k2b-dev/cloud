@@ -19,6 +19,7 @@ const authenticateAs =
     c.set("actor", { kind: "user", user });
     c.set("accessSubject", { type: "user", userId: user.id });
     c.set("user", user);
+    c.set("credentialKind", "session");
     await next();
   };
 
@@ -168,5 +169,60 @@ describe("accounts entity routes", () => {
     } finally {
       record.mockRestore();
     }
+  });
+});
+
+describe("Code principal lookup with a target", () => {
+  const handle = "code-7k2q9m4xwt";
+  const target = "&target_type=spaces.space&target_id=space-1";
+  for (const [label, search, targetQuery, manages, expected] of [
+    ["exact handle with Manage", handle, target, true, handle],
+    ["a reader", handle, target, false, undefined],
+    ["no target", handle, "", true, undefined],
+    ["a name", "Code von Geheim", target, true, undefined],
+    ["a prefix", "code-7k2", target, true, undefined],
+    ["a different case", "CODE-7k2q9m4xwt", target, true, undefined],
+  ] as const) {
+    test(label, async () => {
+      let admitted: string | undefined;
+      const route = createAccountsEntitiesRoutes({
+        authenticate: authenticateAs("user"),
+        limitHandleLookup: async () => false,
+        managesTarget: async (ref) => {
+          expect(ref).toEqual({ type: "spaces.space", id: "space-1" });
+          return manages;
+        },
+        listEntities: async (params) => {
+          admitted = params.codeAccountHandle;
+          return { items: [], page: 1, perPage: 20, total: 0, hasNext: false };
+        },
+      });
+      expect((await route.request(`/entities?search=${encodeURIComponent(search)}${targetQuery}`)).status).toBe(200);
+      expect(admitted).toBe(expected);
+    });
+  }
+  test("consumes the user-wide Valkey budget before target or account lookup", async () => {
+    let queried = false;
+    const route = createAccountsEntitiesRoutes({
+      authenticate: authenticateAs("user"),
+      limitHandleLookup: async (id) => {
+        expect(id).toBe(USER_ID);
+        return true;
+      },
+      managesTarget: async () => {
+        queried = true;
+        return true;
+      },
+      listEntities: async () => {
+        queried = true;
+        throw new Error("lookup must not run");
+      },
+    });
+    expect((await route.request(`/entities?search=${handle}${target}`)).status).toBe(429);
+    expect(queried).toBe(false);
+  });
+  test("rejects a partial target reference", async () => {
+    const route = createAccountsEntitiesRoutes({ authenticate: authenticateAs("user") });
+    expect((await route.request(`/entities?search=${handle}&target_type=spaces.space`)).status).toBe(400);
   });
 });

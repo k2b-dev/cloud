@@ -20,7 +20,8 @@ import { createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch
 import { z } from "zod";
 import { openPanel } from "../../browser/panel";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
-import { CodeRefusalNotice, copyHandle } from "./CodeRefusalNotice";
+import { CodeAccountHandle } from "./CodeAccountHandle";
+import { CodeRefusalNotice } from "./CodeRefusalNotice";
 import { CodeSecretsTab } from "./CodeSecrets";
 import { loadCodeRunCalls } from "./calls";
 import {
@@ -402,7 +403,7 @@ function ReadyPage(props: { data: CodePageData; state: CodePageReady; text: Page
         <div class="cloud-code__head-text">
           <p class="cloud-code__lead">
             {!personal(props.data) ? (
-              <AccountLine data={props.data} text={props.text} />
+              <AccountLine state={props.state} text={props.text} />
             ) : !props.data.owner.runsAs ? (
               t().personalLead
             ) : props.data.owner.runsAs.name ? (
@@ -844,20 +845,16 @@ function TargetText(props: { target: CodePageTarget; text: PageText }) {
 }
 
 /** "Runs as service account “Code of …”", with its handle to copy once Core provides it, also before the first run. */
-function AccountLine(props: { data: CodePageData; text: PageText }) {
+function AccountLine(props: { state: CodePageReady; text: PageText }) {
   const t = props.text.t;
   return (
     <>
-      {t().runsAsAccount({ name: props.text.account() ?? props.data.owner.title })}
-      <Show when={props.data.owner.handle}>
+      {t().runsAsAccount({ name: props.text.account() ?? props.state.code.title })}
+      <Show when={props.state.code.serviceAccountHandle}>
         {(handle) => (
           <>
             {" · "}
-            {t().handle} <code class="cloud-code__op">{handle()}</code>{" "}
-            <Button type="button" size="xs" variant="ghost" onClick={() => void copyHandle(handle(), t())}>
-              <i class="ti ti-copy" aria-hidden="true" />
-              {t().copy}
-            </Button>
+            <CodeAccountHandle handle={handle()} />
           </>
         )}
       </Show>
@@ -887,7 +884,7 @@ function LastRunRefusal(props: { data: CodePageData; state: CodePageReady; refus
         refusal={props.refusal}
         account={props.text.account()}
         runsAsOther={Boolean(props.data.owner.runsAs)}
-        handle={props.data.owner.handle ?? null}
+        handle={props.state.code.serviceAccountHandle ?? null}
         editor={props.state.permission === "editor"}
         cloudAdmin={props.data.cloudAdmin}
       />
@@ -1080,7 +1077,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
             refusal={refusal()}
             account={props.text.account()}
             runsAsOther={Boolean(props.data.owner.runsAs)}
-            handle={props.data.owner.handle ?? null}
+            handle={props.state.code.serviceAccountHandle ?? null}
             editor={props.state.permission === "editor"}
             cloudAdmin={props.data.cloudAdmin}
             actions={canRerun() || canViewWithPanel()}

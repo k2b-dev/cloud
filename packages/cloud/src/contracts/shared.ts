@@ -129,6 +129,8 @@ export const EntityListItemSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("service_account"),
     serviceAccount: z.object({
+      handle: z.string().optional(),
+      description: z.string().optional(),
       id: z.uuid(),
       name: z.string(),
       kind: ServiceAccountKindSchema,
@@ -338,6 +340,9 @@ export const AccessEntrySchema = z.object({
   avatarHash: z.string().nullable().optional(),
   /** Kind of a `service_account` principal; presentation only, never authorization. */
   serviceAccountKind: ServiceAccountKindSchema.optional(),
+  serviceAccountHandle: z.string().optional(),
+  serviceAccountDescription: z.string().optional(),
+  serviceAccountHref: z.string().optional(),
   /**
    * A narrower part of the resource the grant covers, defined by the application, such as Mail's
    * `assigned` conversations. Absent for a grant on the whole resource.

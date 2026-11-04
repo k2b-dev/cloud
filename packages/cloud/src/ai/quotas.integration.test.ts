@@ -74,7 +74,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`CREATE SCHEMA ai`;
     await sql`CREATE TABLE auth.users(id UUID PRIMARY KEY,uid TEXT,display_name TEXT)`;
     await sql`CREATE TABLE auth.groups(id UUID PRIMARY KEY,name TEXT,provider TEXT)`;
-    await sql`CREATE TABLE auth.service_accounts(id UUID PRIMARY KEY,name TEXT,kind TEXT,status TEXT NOT NULL DEFAULT 'active')`;
+    await sql`CREATE TABLE auth.service_accounts(id UUID PRIMARY KEY,name TEXT,kind TEXT,title TEXT,handle TEXT,status TEXT NOT NULL DEFAULT 'active')`;
     // Match Core's auth/service-account-groups migration for machine quota checks.
     await sql`CREATE TABLE auth.service_account_groups(
       service_account_id UUID NOT NULL REFERENCES auth.service_accounts(id) ON DELETE CASCADE,

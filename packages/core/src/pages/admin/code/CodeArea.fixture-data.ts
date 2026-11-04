@@ -378,7 +378,7 @@ export const fixtureCodeDetail = (codeId = "c_rechn"): CodeAdminCodeDetail => {
   // The app's Code tried to create a task in a space that has not added its service account.
   const refused = base.owner.kind === "app";
   return {
-    code: { ...base, activeVersionNumber: 1, createdAt: "2026-10-20T09:00:00.000Z" },
+    code: { ...base, activeVersionNumber: 1, createdAt: "2026-10-20T09:00:00.000Z", serviceAccountHandle: "code-7k2q9m4xwt" },
     pendingVersionId: V.rechnungen2,
     versions: [
       {

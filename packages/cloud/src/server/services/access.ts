@@ -73,6 +73,9 @@ export type AccessEntry = {
   displayName?: string;
   avatarHash?: string | null;
   serviceAccountKind?: ServiceAccountKind;
+  serviceAccountHandle?: string;
+  serviceAccountDescription?: string;
+  serviceAccountHref?: string;
 };
 
 export type AccessUserSource =
@@ -735,94 +738,4 @@ export const listUsersWithAccess = async (params: {
           groupName: row.source_group_name as string,
         },
   }));
-};
-
-/**
- * Resolve display names for access entries.
- * Missing principals and audiences have no displayName; render with principalLabel.
- * Includes serviceAccountKind for existing service-account principals.
- */
-export const resolveDisplayNames = async <T extends { principal: Principal }>(
-  entries: T[],
-): Promise<
-  (Omit<T, "displayName" | "avatarHash" | "serviceAccountKind"> & {
-    displayName?: string;
-    avatarHash?: string | null;
-    serviceAccountKind?: ServiceAccountKind;
-  })[]
-> => {
-  const userIds = entries.filter((e) => e.principal.type === "user").map((e) => (e.principal as { type: "user"; userId: string }).userId);
-
-  const groupIds = entries
-    .filter((e) => e.principal.type === "group")
-    .map((e) => (e.principal as { type: "group"; groupId: string }).groupId);
-
-  const serviceAccountIds = entries
-    .filter((e) => e.principal.type === "service_account")
-    .map((e) => (e.principal as { type: "service_account"; serviceAccountId: string }).serviceAccountId);
-
-  // Fetch user display names
-  const userNames = new Map<string, { displayName: string; avatarHash: string | null }>();
-  if (userIds.length > 0) {
-    const users = await sql<{ id: string; display_name: string; uid: string; avatar_hash: string | null }[]>`
-      SELECT id, display_name, uid, avatar_hash
-      FROM auth.users
-      WHERE id = ANY(${toPgUuidArray(userIds)}::uuid[])
-    `;
-    for (const u of users) {
-      userNames.set(u.id, { displayName: u.display_name || u.uid, avatarHash: u.avatar_hash });
-    }
-  }
-
-  const groupNames = new Map<string, string>();
-  if (groupIds.length > 0) {
-    const groups = await sql<{ id: string; name: string }[]>`
-      SELECT id, name
-      FROM auth.groups
-      WHERE id = ANY(${toPgUuidArray(groupIds)}::uuid[])
-    `;
-    for (const group of groups) {
-      groupNames.set(group.id, group.name);
-    }
-  }
-
-  const serviceAccountsById = new Map<string, { id: string; name: string; kind: ServiceAccountKind }>();
-  if (serviceAccountIds.length > 0) {
-    const serviceAccounts = await sql<{ id: string; name: string; kind: ServiceAccountKind }[]>`
-      SELECT id, name, kind
-      FROM auth.service_accounts
-      WHERE id = ANY(${toPgUuidArray(serviceAccountIds)}::uuid[])
-    `;
-    for (const serviceAccount of serviceAccounts) {
-      serviceAccountsById.set(serviceAccount.id, serviceAccount);
-    }
-  }
-
-  return entries.map((entry) => {
-    let displayName: string | undefined;
-    let avatarHash: string | null | undefined;
-    let serviceAccountKind: ServiceAccountKind | undefined;
-    switch (entry.principal.type) {
-      case "user": {
-        const user = userNames.get(entry.principal.userId);
-        displayName = user?.displayName;
-        avatarHash = user?.avatarHash ?? null;
-        break;
-      }
-      case "group":
-        displayName = groupNames.get(entry.principal.groupId);
-        break;
-      case "service_account": {
-        const serviceAccount = serviceAccountsById.get(entry.principal.serviceAccountId);
-        displayName = serviceAccount?.name;
-        serviceAccountKind = serviceAccount?.kind;
-        break;
-      }
-      case "authenticated":
-        break;
-      case "public":
-        break;
-    }
-    return { ...entry, displayName, avatarHash, serviceAccountKind };
-  });
 };

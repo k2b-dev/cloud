@@ -1289,6 +1289,9 @@ export const accountsAppService = {
       actor: AccountsActor;
       pagination?: PageParams;
       search?: string;
+      /** Internal: exact handle admitted by the target search route after Manage and rate-limit checks. */
+      codeAccountHandle?: string;
+      locale?: string;
       kinds?: EntityKind[];
       provider?: UserProvider;
       profile?: UserProfile;
@@ -1322,6 +1325,8 @@ export const accountsAppService = {
       const result = await entities.list({
         visibility: canSearchDirectory ? { type: "directory" } : { type: "self_and_effective_groups", userId: config.actor.userId },
         search: config.search,
+        codeAccountHandle: config.codeAccountHandle,
+        locale: config.locale,
         kinds: config.kinds,
         provider: config.provider,
         profile: config.profile,

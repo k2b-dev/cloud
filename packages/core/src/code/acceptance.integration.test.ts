@@ -478,7 +478,7 @@ suiteFor(
         permission: "write",
       }),
     );
-    expect(await codeAccountDisplayName((await findCode(codeId))!, manager)).toBe("Code von rechnung@beispiel.test");
+    expect(await codeAccountDisplayName((await findCode(codeId))!, manager)).not.toContain("rechnung@beispiel.test");
     expect(await spaces.permission({ spaceId: foreignSpaceId, subject: { type: "user", userId: lea.id } })).toBe("write");
     expect(await spaces.permission({ spaceId: foreignSpaceId, subject: { type: "service_account", serviceAccountId: account } })).toBe(
       "none",

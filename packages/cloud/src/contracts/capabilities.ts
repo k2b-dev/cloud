@@ -910,7 +910,17 @@ export type CapabilityExecutionContext = {
 export const CAPABILITY_RESOURCE_COLORS = ["blue", "emerald", "violet", "orange", "red", "amber", "zinc", "cyan", "rose"] as const;
 export type CapabilityResourceColor = (typeof CAPABILITY_RESOURCE_COLORS)[number];
 
+/** Final localized labels for a resource owner's credentialless Code account; never an owner title. */
+export const CodeAccountTypeLabelsSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().min(1).max(500),
+  })
+  .strict();
+export type CodeAccountTypeLabels = z.infer<typeof CodeAccountTypeLabelsSchema>;
+
 export type CapabilityResourceTypeDefinition = {
+  codeAccount?: CodeAccountTypeLabels;
   title: string;
   description: string;
   icon?: string;
@@ -982,7 +992,7 @@ export type CapabilityOperationPresentationTranslation = {
 
 export type CapabilityPresentationTranslation = {
   events?: Readonly<Record<string, { title?: string; description?: string }>>;
-  types?: Readonly<Record<string, { title?: string; description?: string }>>;
+  types?: Readonly<Record<string, { title?: string; description?: string; codeAccount?: CodeAccountTypeLabels }>>;
   queries?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
   actions?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
   commands?: Readonly<
@@ -1165,6 +1175,7 @@ export function defineCapabilities(definitions: CapabilityDefinitions): Capabili
 
 export const CapabilityResourceTypeManifestSchema = z
   .object({
+    codeAccount: CodeAccountTypeLabelsSchema.optional(),
     localId: CapabilityLocalIdSchema,
     title: z.string().min(1).max(120),
     description: z.string().min(1).max(500),

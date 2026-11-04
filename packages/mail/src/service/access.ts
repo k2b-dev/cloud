@@ -13,6 +13,7 @@ import {
   type Principal,
   resolveDisplayNames,
   updateAccess,
+  userFromActor,
 } from "@k2b/cloud/server";
 import { accounts, audit, type ServiceAccountKind } from "@k2b/cloud/services";
 import { resolveResourceReaders } from "@k2b/cloud/services/identity";
@@ -518,7 +519,10 @@ const authorizeAccessManagement = async (
 };
 
 /** Every grant on the mailbox in both scopes with display names, managers first. Callers authorize before they read it. */
-export const loadMailboxAccessEntries = async (mailboxId: string): Promise<MailboxAccessEntry[]> => {
+export const loadMailboxAccessEntries = async (
+  mailboxId: string,
+  display: { canManageTarget?: boolean; locale?: string; cloudAdmin?: boolean } = {},
+): Promise<MailboxAccessEntry[]> => {
   const rows = await sql<DbAccess[]>`
     SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope,
       account.kind AS service_account_kind
@@ -527,7 +531,7 @@ export const loadMailboxAccessEntries = async (mailboxId: string): Promise<Mailb
     LEFT JOIN auth.service_accounts account ON account.id = a.service_account_id
     ORDER BY (grants.scope = 'assigned'), ${PERMISSION_ORDER()}, a.created_at, a.id
   `;
-  return resolveDisplayNames(rows.map(mapAccess));
+  return resolveDisplayNames(rows.map(mapAccess), display);
 };
 
 const listMailboxAccessWithAuthority = async (
@@ -537,7 +541,14 @@ const listMailboxAccessWithAuthority = async (
 ): Promise<Result<MailboxAccessEntry[]>> => {
   const allowed = await authorizeAccessManagement(context, mailboxId, authority);
   if (!allowed.ok) return allowed;
-  return ok(await loadMailboxAccessEntries(mailboxId));
+  const canManageTarget = authority === "mailbox_admin";
+  return ok(
+    await loadMailboxAccessEntries(mailboxId, {
+      canManageTarget,
+      locale: context.locale,
+      cloudAdmin: userFromActor(context.actor)?.roles.includes("admin"),
+    }),
+  );
 };
 
 const insertGrantLink = async (db: SqlClient, mailboxId: string, accessId: string, scope: MailboxAccessScope): Promise<void> => {
@@ -600,7 +611,11 @@ const grantMailboxAccessWithAuthority = async (params: {
         if (!row) throw new Error("Created access entry could not be loaded");
         return mapAccess(row);
       });
-      const [resolved] = await resolveDisplayNames([created]);
+      const [resolved] = await resolveDisplayNames([created], {
+        canManageTarget: params.authority === "mailbox_admin",
+        cloudAdmin: userFromActor(params.context.actor)?.roles.includes("admin"),
+        locale: params.context.locale,
+      });
       if (!resolved) throw new Error("Created access entry could not be resolved");
       return resolved;
     },

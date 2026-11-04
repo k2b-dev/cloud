@@ -5,7 +5,7 @@ section: Operations
 order: 1155
 description: Configure, scale, and stop the stateless workerd runner for Code.
 tags: [code, runner, scaling, shutdown]
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # Scaling runners
@@ -212,12 +212,15 @@ queue wakeups; brief transport outages do not discard queued runs.
 Change these settings in Administration › Code or through `cld admin settings apply`.
 Restart runner replicas after changing their configuration. Acquisition requests
 may take the long-poll duration plus the transport timeout.
+After Core claims a run, its owner check has a five-second budget, so acquisition
+can continue beyond the queue wait. Request cancellation and the transport timeout
+still apply; an expiring queue wait does not discard the claim.
 
 | Setting | Default | Controls |
 | --- | --- | --- |
 | `core.code.automatic_attempts` | `3` | Maximum lease generations before a possible Action; the original deadline still applies. |
 | `core.code.runner_slots` | `4` | Shared concurrent runs and authoring jobs per replica. |
-| `core.code.runner_poll_ms` | `20000` | Maximum acquisition request duration, in milliseconds. |
+| `core.code.runner_poll_ms` | `20000` | Maximum queue wait per acquisition request, in milliseconds. |
 | `core.code.runner_transport_ms` | `30000` | Runner request timeout, in milliseconds. |
 | `core.code.runner_retry_ms` | `1000` | Delay before retrying a failed transport request, in milliseconds. |
 | `core.code.runner_cache_bytes` | `33554432` | In-memory bundle cache per replica, in bytes. |

@@ -283,7 +283,7 @@ test("Code of an app has its Code page here: its service account and a refused c
     "Kein Zugriff auf Space k7qm2x9a. Der Code wollte dort „Aufgabe erstellen“. Entweder fehlt dem Dienstkonto „Code von Werkstattbuch“ das Recht dafür, oder das Ziel existiert nicht.",
   );
   expect(detail).toContain(
-    "Wer das Ziel verwaltet, fügt das Dienstkonto im Rechte-Editor des Ziels hinzu. Der nächste Lauf versucht es erneut.",
+    "Wer das Ziel verwaltet, fügt das Dienstkonto im Rechte-Editor des Ziels mit der Kennung code-7k2q9m4xwt hinzu. Der nächste Lauf versucht es erneut.",
   );
   expect(render({ sec: "code", id: "c_portal" })).toContain('href="/app/spaces/k7qm2x9a"');
   // Administration manages policy, approvals and Code of apps, never target access.
