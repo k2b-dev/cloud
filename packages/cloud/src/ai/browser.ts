@@ -118,6 +118,7 @@ export {
   splitAiSkillMarkdown,
   validateAiSkillReferences,
 } from "./skill-format";
+export { type AiMessageTimelineItem, buildAiMessageTimeline } from "./timeline";
 export { isAiImageMediaType } from "./types";
 
 export type LaunchAssistantInput = {

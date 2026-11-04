@@ -134,15 +134,26 @@ the cld profile.
 
 ## Continue a session
 
-A new editor thread creates its Cloud chat with the first message. The thread
-list can show Cloud chats too. `cld` remembers which chat and folder each of
-the newest 1,000 editor threads uses, outside the cld profile; an older thread
-opens again through its chat in the thread list. A thread list for one folder
-shows the threads used in that folder and the chats that no editor folder
-owns, such as chats started on the web. Those chats open in the folder you
-choose. Resuming a chat does not replay its history in
-the editor. If a turn is still running, the editor says so, and Assistant
-follows it again before sending your next message.
+A new editor thread creates its Cloud chat with the first message. `cld`
+remembers which chat and folder each of the newest 1,000 editor threads uses,
+outside the cld profile.
+
+The thread list shows only open chats that an editor used in this project
+folder: a turn is running, an approval or question waits, or an answer waits
+for you. Finished chats, chats from other folders, and chats started on the
+web stay out of the list. Showing a reply in the editor counts as reading it,
+as opening the chat on the web does.
+
+Opening a thread shows the chat's recent history: the newest 100 messages,
+including tool calls and their results. An older chat starts with a link to
+its full history in the web chat. If a turn is still running, the editor says
+so, and Assistant follows that turn before sending your next message; a local
+step it already ran does not run again.
+
+Open any other chat by its chat ID, where the editor lets you open a session
+by ID. The ID is the `conversation=` value of the chat's web link, which `/web`
+shows. An editor that resumes instead of opening a session continues the chat
+without its history.
 
 Closing the editor or one of its threads does not stop a Cloud turn. Open the web chat to continue
 or answer a pending request. Use the editor's Stop action to cancel a turn.
