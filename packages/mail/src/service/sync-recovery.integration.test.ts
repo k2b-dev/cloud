@@ -475,6 +475,42 @@ suite("mail sync recovery", () => {
     expect(binding?.last_error_code).toBeNull();
   });
 
+  test("a folder job's turn that finds the lease busy runs no database statement", async () => {
+    const fixture = await createSyncedMailbox("busy-turn");
+    const holder = await acquireProviderLease({
+      resource: fixture.resourceId,
+      waiter: `outbox:${crypto.randomUUID()}`,
+      priority: "command",
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    });
+    if (!holder.lock) throw new Error("The test could not take the provider lease");
+    const counter = await countPostgresRoundTrips(connections().database.url);
+    const originalUrl = connections().database.url;
+    try {
+      process.env.DATABASE_URL = counter.url;
+      await initializeTestPlatform();
+      const turn = async (input: { folderId: string; remoteResourceId?: string }) => {
+        let resubmitted: { delayMs?: number; input?: unknown } | undefined;
+        const before = counter.count();
+        await runSyncFolderJob({ input, heartbeat: async () => undefined, resubmit: (options) => (resubmitted = options) });
+        return { statements: counter.count() - before, resubmitted };
+      };
+      // The first turn reads the folder's remote mailbox once and carries it into its retry.
+      const first = await turn({ folderId: fixture.folderId });
+      expect(first.statements).toBe(1);
+      expect(first.resubmitted?.input).toMatchObject({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId });
+      // Every later turn that finds the lease busy asks the lease line only.
+      const later = await turn({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId });
+      expect(later.statements).toBe(0);
+      expect(later.resubmitted?.input).toMatchObject({ remoteResourceId: fixture.resourceId });
+    } finally {
+      process.env.DATABASE_URL = originalUrl;
+      await initializeTestPlatform();
+      await counter.close();
+      await releaseProviderLease(holder.lock);
+    }
+  });
+
   test("idle commits skip unchanged metadata while preserving freshness, history and changed-state recovery", async () => {
     const fixture = await createSyncedMailbox("idle-writes");
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);

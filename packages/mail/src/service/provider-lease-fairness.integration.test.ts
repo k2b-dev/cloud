@@ -127,7 +127,7 @@ const waitFor = async (ready: () => Promise<boolean>, what: string, timeoutMs = 
   }
 };
 
-type SyncFolderJobInput = { folderId: string; backfill?: boolean };
+type SyncFolderJobInput = { folderId: string; backfill?: boolean; remoteResourceId?: string };
 
 /**
  * Runs one `mail:sync-folder` job the way its worker does: a resubmitted job runs again after its
@@ -2000,6 +2000,28 @@ suite("mail provider lease fairness", () => {
     if (turn.lock) await releaseProviderLease(turn.lock);
   });
 
+  test("the next in line asks again within a quarter second, so a released lease does not sit idle", async () => {
+    const resource = randomUUID();
+    const holder = await acquireProviderLease({ resource, waiter: "outbox:holder", priority: "command", ttlMs: 60_000 });
+    if (!holder.lock) throw new Error("The test could not take the provider lease");
+    try {
+      const head = await acquireProviderLease({ resource, waiter: "sync-folder:head", priority: "sync", ttlMs: 60_000 });
+      const second = await acquireProviderLease({ resource, waiter: "sync-folder:second", priority: "sync", ttlMs: 60_000 });
+      expect(head.lock).toBeNull();
+      expect(second.lock).toBeNull();
+      // Each place waits a quarter second more, so a waiter asks again before its turn comes.
+      // Before, the head waited a second or more and the next places up to four.
+      expect(head.retryAfterMs).toBeLessThanOrEqual(350);
+      expect(second.retryAfterMs).toBeGreaterThanOrEqual(500);
+      expect(second.retryAfterMs).toBeLessThanOrEqual(600);
+    } finally {
+      await releaseProviderLease(holder.lock);
+    }
+    const turn = await acquireProviderLease({ resource, waiter: "sync-folder:head", priority: "sync", ttlMs: 60_000 });
+    expect(turn.lock).not.toBeNull();
+    if (turn.lock) await releaseProviderLease(turn.lock);
+  });
+
   test("a sync requested for a folder that backfills old mail goes before the mailbox's commands", async () => {
     await ensureHydrationRuntime();
     const mailbox = await connect("requested");
@@ -2016,7 +2038,10 @@ suite("mail provider lease fairness", () => {
     // import above queued the mailbox's body downloads, so the batch waits for the provider lease
     // like the job does.
     const archive = mailbox.folderId(ARCHIVE);
-    expect(await syncFolderTurn(archive)).toEqual({ delayMs: 0, input: { folderId: archive, backfill: true } });
+    expect(await syncFolderTurn(archive)).toEqual({
+      delayMs: 0,
+      input: { folderId: archive, backfill: true, remoteResourceId: mailbox.remoteResourceId },
+    });
     const moves = await queueMoves(mailbox, backlog, "requested-move", { startTogether: true });
     await waitFor(async () => (await confirmed(moves)) >= 3, "the moves to start");
 
@@ -2157,7 +2182,7 @@ suite("mail provider lease fairness", () => {
 
     // The next batch ends that import at the UID it started with, below the late mail, and goes on.
     const continuation = await syncFolderTurn(inbox);
-    expect(continuation).toEqual({ delayMs: 0, input: { folderId: inbox, backfill: false } });
+    expect(continuation).toEqual({ delayMs: 0, input: { folderId: inbox, backfill: false, remoteResourceId: mailbox.remoteResourceId } });
     expect(await imported(mailbox, lateMail!)).toBe(false);
     expect(await checkTurn(mailbox)).toEqual(stillWaiting(mailbox));
 
@@ -2176,7 +2201,10 @@ suite("mail provider lease fairness", () => {
     await runFolderSyncJob(inbox);
     // New mail changes the folder; the flag check that follows is half done before the request.
     deliver(mailbox, 1, "modseq-checked");
-    expect(await syncFolderTurn(inbox)).toEqual({ delayMs: 0, input: { folderId: inbox, backfill: false } });
+    expect(await syncFolderTurn(inbox)).toEqual({
+      delayMs: 0,
+      input: { folderId: inbox, backfill: false, remoteResourceId: mailbox.remoteResourceId },
+    });
     const [lateMail] = deliver(mailbox, 1, "modseq-late");
     const commandId = await startWaitedSync(mailbox, "modseq-sync", INBOX);
 
@@ -2511,7 +2539,7 @@ suite("mail provider lease fairness", () => {
     } finally {
       afterStatus = null;
     }
-    expect(continuation).toEqual({ delayMs: 0, input: { folderId: inbox } });
+    expect(continuation).toEqual({ delayMs: 0, input: { folderId: inbox, remoteResourceId: mailbox.remoteResourceId } });
 
     const takeCommandTurn = () =>
       acquireProviderLease({
