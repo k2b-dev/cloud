@@ -1,7 +1,7 @@
 import { type GrantableLevel, openAccessDialog, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
 import type { Principal } from "@k2b/cloud/contracts";
 import { Button, prompts, SettingsGroup } from "@k2b/ui";
-import { createComputed, createSignal, on } from "solid-js";
+import { createComputed, createSignal, on, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { AccessEntry } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
@@ -28,6 +28,10 @@ export function PermissionsSection(props: {
   );
   // A plain guard, not a loading state: a disabled button could not take focus back when the dialog closes.
   let running = false;
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
   // Set by every saved change, also when a later one fails and the person discards the rest.
   let wrote = false;
   // The list missed a saved change; the next edit reads it first, so the dialog never starts from an old list.
@@ -66,7 +70,7 @@ export function PermissionsSection(props: {
       updateAccess,
       revokeAccess,
     });
-    if (!wrote) return;
+    if (!wrote || disposed) return;
     stale = true;
     props.onWorkspaceChange?.();
     await reload();
@@ -75,7 +79,10 @@ export function PermissionsSection(props: {
     if (running) return;
     running = true;
     edit()
-      .catch((error: Error) => prompts.error(error.message))
+      .catch((error: Error) => {
+        // A closed settings panel says nothing over the page the person moved on to.
+        if (!disposed) void prompts.error(error.message);
+      })
       .finally(() => {
         running = false;
       });

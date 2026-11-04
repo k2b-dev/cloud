@@ -23,12 +23,18 @@ const key = entry("3", "Launch API keys", "admin", {
 let stored: AccessEntry[] = [];
 const revoked: string[] = [];
 const updated: string[] = [];
+// Set to hold the next list read, and to answer it with a failure.
+const reads: { held: PromiseWithResolvers<void> | null; fail: boolean } = { held: null, fail: false };
 if (!isServer) {
   mock.module("@/api/client", () => ({
     apiClient: {
       ":id": {
         access: {
-          $get: async () => Response.json(stored),
+          $get: async () => {
+            const held = reads.held;
+            if (held) await held.promise;
+            return reads.fail ? Response.json({ message: "Offline" }, { status: 503 }) : Response.json(stored);
+          },
           ":accessId": {
             $patch: async ({ param, json }: { param: { accessId: string }; json: { permission: AccessEntry["permission"] } }) => {
               updated.push(`${param.accessId} ${json.permission}`);
@@ -68,6 +74,7 @@ describe("Spaces settings: access", () => {
     delegateEvents(["click", "input"], dom.document);
     const { prompts } = await import("@k2b/ui");
     const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    const error = spyOn(prompts, "error").mockResolvedValue(undefined);
     const changed = mock(() => {});
     const { PermissionsSection } = await import("../src/frontend/[id]/_components/edit/AccessSection");
     const dispose = render(
@@ -79,14 +86,23 @@ describe("Spaces settings: access", () => {
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
     const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
     const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
-    const cleanup = () => {
+    let disposed = false;
+    const disposeSection = () => {
+      if (disposed) return;
+      disposed = true;
       dispose();
+    };
+    const cleanup = () => {
+      disposeSection();
       confirm.mockRestore();
+      error.mockRestore();
+      reads.held = null;
+      reads.fail = false;
       dom.cleanup();
       revoked.length = 0;
       updated.length = 0;
     };
-    return { dom, confirm, changed, button, dialog, row, cleanup };
+    return { dom, confirm, error, changed, button, dialog, row, disposeSection, cleanup };
   };
 
   test("Edit access opens the dialog without API keys; a saved removal shows in the list", async () => {
@@ -130,6 +146,28 @@ describe("Spaces settings: access", () => {
       await waitFor(() => !dialog(), "the dialog to close");
       await waitFor(() => dom.root.textContent?.replace("Edit access", "").includes("Edit") === true, "the list to show Lea's new level");
       expect(dom.root.textContent).toContain("Ben Albers");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("a reload that fails after the settings closed says nothing over the next page", async () => {
+    stored = [mia, lea];
+    const { error, button, dialog, disposeSection, cleanup } = await setup();
+    try {
+      button("Edit access")!.click();
+      await waitFor(() => dialog()?.textContent?.includes("Lea Schmitt") === true, "the access dialog");
+      dialog()!.querySelector<HTMLButtonElement>('button[aria-label="Remove Lea Schmitt"]')!.click();
+      await waitFor(() => dialog()?.textContent?.includes("Will be removed") === true, "the removal mark");
+      const held = Promise.withResolvers<void>();
+      reads.held = held;
+      reads.fail = true;
+      button("Save")!.click();
+      await waitFor(() => revoked.length === 1 && !dialog(), "the saved removal");
+      disposeSection();
+      held.resolve();
+      await Bun.sleep(30);
+      expect(error).not.toHaveBeenCalled();
     } finally {
       cleanup();
     }
