@@ -84,20 +84,6 @@ export default function PwaRuntime(props: PwaRuntimeProps) {
 
     if (!props.keepalive) return;
 
-    // A restored document must return through the server rather than resume its old account snapshot.
-    const hide = (event: PageTransitionEvent) => {
-      if (event.persisted) document.documentElement.style.display = "none";
-    };
-    const restore = (event: PageTransitionEvent) => {
-      if (event.persisted) location.reload();
-    };
-    window.addEventListener("pagehide", hide);
-    window.addEventListener("pageshow", restore);
-    cleanups.push(() => {
-      window.removeEventListener("pagehide", hide);
-      window.removeEventListener("pageshow", restore);
-    });
-
     if (props.rememberAddress) {
       const { cookie, maxAge } = props.rememberAddress;
       const remember = () => {
@@ -116,12 +102,19 @@ export default function PwaRuntime(props: PwaRuntimeProps) {
       const leave = () => {
         leaving = true;
       };
+      const back = (event: PageTransitionEvent) => {
+        if (!event.persisted) return;
+        leaving = false;
+        remember();
+      };
       remember();
       document.addEventListener("visibilitychange", hidden);
       window.addEventListener("pagehide", leave);
+      window.addEventListener("pageshow", back);
       cleanups.push(() => {
         document.removeEventListener("visibilitychange", hidden);
         window.removeEventListener("pagehide", leave);
+        window.removeEventListener("pageshow", back);
       });
     }
 

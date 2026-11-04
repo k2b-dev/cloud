@@ -159,42 +159,14 @@ else {
       page.dom.document.cookie = "pwa_last_address=; Path=/pwa/; Max-Age=0; Secure";
       leave();
       expect(remembered()).toBe("");
-      // A restored page returns through the server; it must not restore an outgoing address cookie.
+      // A page restored from the back-forward cache is current again.
+      setVisibility(page.dom, "visible");
       transition("pageshow", true);
-      expect(page.reloads).toBe(1);
-      expect(remembered()).toBe("");
+      expect(remembered()).toBe("/pwa/spaces/demo/task");
     } finally {
       page.dispose();
     }
   });
-  test("a persisted app document stays hidden while its replacement loads", () => {
-    const page = mount({
-      renewedThisSession: true,
-      before: (dom) => {
-        dom.document.body.insertAdjacentHTML("afterbegin", '<div class="k2b-mobile-shell">Task details</div>');
-      },
-    });
-    const documentRoot = page.dom.document.documentElement;
-    const transition = (type: "pagehide" | "pageshow", persisted: boolean) =>
-      page.dom.window.dispatchEvent(Object.defineProperty(new page.dom.window.Event(type), "persisted", { value: persisted }));
-    let disposed = false;
-    try {
-      transition("pageshow", false);
-      expect(page.reloads).toBe(0);
-      transition("pagehide", true);
-      expect(documentRoot.style.display).toBe("none");
-      transition("pageshow", true);
-      expect(documentRoot.style.display).toBe("none");
-      expect(page.reloads).toBe(1);
-      page.dispose();
-      disposed = true;
-      transition("pageshow", true);
-      expect(page.reloads).toBe(1);
-    } finally {
-      if (!disposed) page.dispose();
-    }
-  });
-
   test("a pending typed mutation defers the update until the next foreground after it settles", async () => {
     let settle!: (response: Response) => void;
     const action = new Promise<Response>((resolve) => {

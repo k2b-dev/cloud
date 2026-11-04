@@ -243,9 +243,6 @@ An app session resolves to the same `actor`, `accessSubject`, and
 carries `sessionKind: "app"`. Use `actor` for audit and `accessSubject` for
 grants, as on the web.
 
-A page restored by browser history loads a fresh document before showing its
-content. Its address and selection stay in history.
-
 ## Restart at the last page
 
 Launching the Cloud app from the Home Screen resumes its last successful page,
