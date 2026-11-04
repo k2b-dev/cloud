@@ -32,7 +32,7 @@ const listBaseAccess = async (baseId: string, fallback: string): Promise<ScopedA
 };
 
 /** App access, listed under the base's own access. Apps never inherit the base's access; revoking applies right away. */
-const AppAccessList = (props: { baseId: string; entries: ScopedAccessEntry[] }) => {
+const AppAccessList = (props: { baseId: string; entries: ScopedAccessEntry[]; signal?: AbortSignal }) => {
   const locale = useLocale();
   const t = () => gridsAdminMessages.resolve([locale()]).t;
   const label = (entry: AccessEntry) => principalLabel(entry, locale());
@@ -43,6 +43,9 @@ const AppAccessList = (props: { baseId: string; entries: ScopedAccessEntry[] }) 
     return t().permissionAdmin;
   };
   const [entries, setEntries] = createSignal(props.entries);
+  // The list is built before the dialog owns it, so it follows the dialog owner's signal instead of its own cleanup:
+  // once the page changed, a late answer reports nothing.
+  const disposed = () => props.signal?.aborted === true;
   const revoke = mutations.create<ScopedAccessEntry, ScopedAccessEntry>({
     mutation: async (entry) => {
       const response = await apiClient.admin.bases[":baseId"].access[":accessId"].$delete({
@@ -52,11 +55,15 @@ const AppAccessList = (props: { baseId: string; entries: ScopedAccessEntry[] }) 
       return entry;
     },
     onSuccess: (entry) => {
+      if (disposed()) return;
       setEntries((current) => current.filter((item) => item.id !== entry.id));
       toast.success(t().appAccessRevoked);
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => {
+      if (!disposed()) void prompts.error(err.message);
+    },
   });
+  props.signal?.addEventListener("abort", () => revoke.abort(), { once: true });
   return (
     <div class="flex flex-col gap-2">
       <div>
@@ -135,7 +142,7 @@ export const openPermissionDialog = async (
       <div class="flex flex-col gap-4">
         <p class="text-xs text-dimmed">{t.baseGrantDescription}</p>
         <Show when={appEntries.length > 0}>
-          <AppAccessList baseId={props.baseId} entries={appEntries} />
+          <AppAccessList baseId={props.baseId} entries={appEntries} signal={signal} />
         </Show>
       </div>
     ),

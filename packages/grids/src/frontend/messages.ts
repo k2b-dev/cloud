@@ -39,6 +39,8 @@ export const gridsMessages = i18n.define({
       editAccess: "Edit access",
       baseAccessSubtitle: "Base · Grids",
       appAccessSubtitle: "App · Grids",
+      appPublicWarning:
+        "Anyone with the link can open this app without signing in and send what it publishes, such as forms. It never opens the base itself.",
       updateAccessFailed: "Access could not be updated.",
       revokeAccessFailed: "Access could not be revoked.",
       lessThanMinute: "less than a minute",
@@ -82,6 +84,8 @@ export const gridsMessages = i18n.define({
       editAccess: "Zugriff bearbeiten",
       baseAccessSubtitle: "Base · Grids",
       appAccessSubtitle: "App · Grids",
+      appPublicWarning:
+        "Jeder mit dem Link kann diese App ohne Anmeldung öffnen und senden, was sie veröffentlicht, etwa Formulare. Die Base selbst öffnet sie nie.",
       updateAccessFailed: "Der Zugriff konnte nicht geändert werden.",
       revokeAccessFailed: "Der Zugriff konnte nicht entzogen werden.",
       lessThanMinute: "weniger als einer Minute",

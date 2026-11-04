@@ -150,13 +150,12 @@ for (const scenario of precedenceScenarios) {
     );
     try {
       const dialog = await openDialog(dom);
-      // The dialog keeps the order of the entries, and two grants of one principal share a name.
+      // Every entry is its own row, in the order of the entries, also when one principal has a grant and a denial.
       const rows = Array.from(dialog.querySelectorAll<HTMLElement>("li")).filter((item) => item.querySelector("[data-access-remove]"));
-      const removable = entries.filter((item) => item.permission !== "none");
-      expect(rows.length).toBeGreaterThanOrEqual(removable.length);
-      const locked = rows
-        .filter((item) => item.querySelector<HTMLButtonElement>("[data-access-remove]")!.disabled)
-        .map((item) => entries.find((entry) => item.textContent?.includes(entry.displayName ?? ""))!.id);
+      expect(rows).toHaveLength(entries.length);
+      const locked = entries
+        .filter((_, index) => rows[index]!.querySelector<HTMLButtonElement>("[data-access-remove]")!.disabled)
+        .map((item) => item.id);
       expect(locked).toEqual(scenario.locked);
     } finally {
       await closeDialog(dom);
@@ -208,6 +207,15 @@ for (const scopeType of ["base", "customApp"] as const) {
       expect(requests[0]!.searchParams.get("service_account_kinds")).toBe("agent,standalone");
       // Only apps can be public.
       expect(!!dialog.querySelector('input[aria-label="Public with link"]')).toBe(scopeType === "customApp");
+      if (scopeType === "customApp") {
+        // A public app also accepts what it publishes, so the warning says so instead of promising read-only access.
+        dialog.querySelector<HTMLInputElement>('input[aria-label="Public with link"]')!.click();
+        await waitFor(() => dialog.textContent?.includes("send what it publishes, such as forms") === true, "the app's public warning");
+        expect(dialog.textContent).not.toContain("Nobody can change anything without signing in.");
+        // Off again, so closing has nothing to discard.
+        dialog.querySelector<HTMLInputElement>('input[aria-label="Public with link"]')!.click();
+        await waitFor(() => !dialog.textContent?.includes("send what it publishes"), "the public switch off");
+      }
     } finally {
       await closeDialog(dom);
       dispose();

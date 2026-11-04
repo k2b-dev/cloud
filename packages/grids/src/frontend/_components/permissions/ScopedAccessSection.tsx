@@ -140,6 +140,8 @@ export function ScopedAccessSection(props: Props) {
       subtitle: props.scope.type === "base" ? t().baseAccessSubtitle : t().appAccessSubtitle,
       initialEntries: current,
       allowPublic: props.scope.type === "customApp",
+      // Visitors of a public app can also send what it publishes, such as forms.
+      publicWarning: props.scope.type === "customApp" ? t().appPublicWarning : undefined,
       allowedLevels: levels(),
       effectiveEntries: unshadowedGrants,
       grantAccess: grant,
