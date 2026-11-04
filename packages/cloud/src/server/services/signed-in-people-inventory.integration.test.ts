@@ -64,7 +64,28 @@ databaseSuite()("a tier meant for people admits machines: pre-switch inventory",
           if (["public", "deny-public", "weaker-public", "stronger-public"].includes(suffix))
             await link(id, {}, suffix === "deny-public" ? "none" : suffix === "stronger-public" ? "write" : "read");
         }
-        const [generated] = await db.unsafe<{ inventory_query: string }[]>(generator);
+        // An app-owned link table, like a third-party app's, found through its foreign key to auth.access.
+        const appSchema = `inventory_app_${crypto.randomUUID().replaceAll("-", "")}`;
+        await db.unsafe(`CREATE SCHEMA ${appSchema}`);
+        await db.unsafe(`CREATE TABLE ${appSchema}.workspace_access (
+          workspace text NOT NULL, grant_ref uuid NOT NULL REFERENCES auth.access(id), created_at timestamptz NOT NULL DEFAULT now())`);
+        const appLink = async (workspace: string, principal: { accountId?: string; authenticated?: boolean }) => {
+          const [grant] = await db<{ id: string }[]>`INSERT INTO auth.access(service_account_id, authenticated_only, permission)
+          VALUES (${principal.accountId ?? null}::uuid, ${principal.authenticated ?? false}, 'read') RETURNING id`;
+          if (!grant) throw new Error("Missing app grant fixture");
+          await db.unsafe(`INSERT INTO ${appSchema}.workspace_access(workspace, grant_ref) VALUES ($1, $2::uuid)`, [workspace, grant.id]);
+          return grant.id;
+        };
+        const appAudience = [
+          await appLink(`${prefix}-office`, { authenticated: true }),
+          await appLink(`${prefix}-store`, { authenticated: true }),
+        ];
+        await appLink(`${prefix}-office`, { accountId: agent.id });
+        // A grant an app keeps without a foreign key.
+        const [unlinked] = await db<{ id: string }[]>`INSERT INTO auth.access(authenticated_only, permission)
+        VALUES (true, 'write') RETURNING id`;
+        if (!unlinked) throw new Error("Missing unlinked grant fixture");
+        const [generated] = await db.unsafe<{ inventory_query: string; unlinked_query: string }[]>(generator);
         if (!generated) throw new Error("Inventory did not generate a query");
         const rows = await db.unsafe<{ service_account_id: string; link_table: string; resource_id: string[]; lost_permission: string }[]>(
           generated.inventory_query,
@@ -86,6 +107,18 @@ databaseSuite()("a tier meant for people admits machines: pre-switch inventory",
             `${bound.id}:${prefix}-group:read`,
           ].sort(),
         );
+        const appRows = rows.filter((row) => row.link_table === `${appSchema}.workspace_access`);
+        expect(appRows.map((row) => `${row.service_account_id}:${JSON.stringify(row.resource_id)}:${row.lost_permission}`).sort()).toEqual(
+          [
+            ...[agent, standalone, bound].map((account) => `${account.id}:[{"workspace":"${prefix}-store"}]:read`),
+            // The agent's own grant on the same workspace keeps its access there.
+            ...[standalone, bound].map((account) => `${account.id}:[{"workspace":"${prefix}-office"}]:read`),
+          ].sort(),
+        );
+        const unlinkedRows = await db.unsafe<{ access_id: string; permission: string }[]>(generated.unlinked_query);
+        expect(unlinkedRows).toContainEqual(expect.objectContaining({ access_id: unlinked.id, permission: "write" }));
+        // Grants a table links never show as unlinked.
+        expect(unlinkedRows.filter((row) => appAudience.includes(row.access_id))).toEqual([]);
         const references = await db<{ link_table: string }[]>`SELECT DISTINCT conrelid::regclass::text AS link_table
         FROM pg_constraint WHERE contype = 'f' AND confrelid = 'auth.access'::regclass`;
         for (const { link_table } of references) {

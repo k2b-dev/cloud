@@ -212,8 +212,10 @@ such as `appAccess.signedIn()` are unchanged.
 Before upgrading:
 
 1. Run the read-only inventory below in `psql` against the installation's
-   database. It lists active agent, standalone and resource-bound accounts,
-   the link table and resource ID, and the authenticated permission they lose.
+   database. It covers every application that stores grants in `auth.access`,
+   built-in and third-party. It lists active agent, standalone and
+   resource-bound accounts, the link table and resource ID, and the
+   authenticated permission they lose.
    A result is excluded only when an own, recursively inherited local-group,
    or supported public grant retains at least that permission (`read` < `write`
    < `admin`). A `none` row never excludes a result. Only standalone and agent
@@ -224,8 +226,18 @@ Before upgrading:
    `auth.access` rows.
 3. Upgrade Core and built-in applications together, then check the affected
    machine workflows. Third-party applications with an older `@k2b/cloud`
-   keep the old behavior until they update and redeploy. Update any app-owned
-   copies of the predicate to match user access subjects only.
+   keep the old behavior until they update and redeploy. Their grants appear
+   in the same inventory, so decide for them before they update too.
+
+For application authors: an app that checks its own resources with
+`buildAccessPrincipalCondition`, `getEffectivePermission` or
+`getEffectivePermissions` follows the new rule as soon as it uses this
+`@k2b/cloud`; agents and service accounts then lose access that only an
+`authenticated` grant gave them. Align everything the app shows about access
+with it: a preview of who may do what, a count of an audience, or a copy of
+the predicate must count people only for `authenticated`. The remedy for a
+machine that needs access is an explicit grant for it, or for a local group it
+belongs to; there is no setting that restores the old tier.
 
 This is an inventory of stored grants, not a proof that a credential can
 execute an operation: scopes, bindings, archived resources, app entry and
@@ -234,12 +246,20 @@ their owning app. The accompanying integration guard checks the query against mi
 schemas with absent, weaker, equal, stronger, denied, public and nested-group
 alternatives, including resource-bound accounts.
 
-The first SELECT generates a second read-only SELECT; `\gexec` executes it in
-the same read-only transaction. Optional app tables are included only when
+The first SELECT generates two read-only SELECTs; `\gexec` executes them in
+the same read-only transaction. The first lists the machines and their lost
+permission. The tables come from the foreign keys that reference
+`auth.access`, so optional and third-party applications are included when
 installed. Resource IDs are JSON arrays containing the resource key, or
-`[base_id, path]` for Files storage. The mapping comes from application
-migrations referencing `auth.access`. `assistant.artifact_machine_rights`
-is grant metadata, not another object link. Mail's assigned-conversation
+`[base_id, path]` for Files storage. For a table that no built-in application
+owns, the resource key is the link row without its grant and time columns,
+such as `[{"workspace": "office"}]`. If such a row holds more than the
+resource, for example who added it, an own grant may not be matched, and the
+machine is listed although it keeps access: review it in the owning app.
+`assistant.artifact_machine_rights` is grant metadata, not another object
+link. The second result lists grants for all signed-in people that no table
+links with a foreign key. An application keeps their IDs elsewhere; ask its
+owner which resources they belong to. Mail's assigned-conversation
 links are included for any stored audience grants; mailbox-wide alternatives
 exclude them only at an equal or higher permission, and conversation assignments
 still restrict actual reads.
@@ -247,7 +267,7 @@ Code is outside this migration.
 
 ```sql
 BEGIN TRANSACTION READ ONLY;
-WITH links(link_table, resource_expression, public_allowed) AS (
+WITH known(link_table, resource_expression, public_allowed) AS (
   VALUES
     ('auth.app_access', 'jsonb_build_array(l.app_id)', false),
     ('auth.rail_shortcut_access', 'jsonb_build_array(l.shortcut_id)', true),
@@ -267,12 +287,38 @@ WITH links(link_table, resource_expression, public_allowed) AS (
     ('filesv2.template_access', 'jsonb_build_array(l.template_id)', true),
     ('mail.mailbox_access', 'jsonb_build_array(l.mailbox_id)', true),
     ('mail.mailbox_assigned_access', 'jsonb_build_array(l.mailbox_id)', true)
+), references_to_access AS (
+  -- Every table that links a grant with a foreign key to auth.access, built-in and app-owned.
+  SELECT c.conrelid AS relid, c.conrelid::regclass::text AS link_table, a.attname AS access_column
+  FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+  WHERE c.contype = 'f' AND c.confrelid = 'auth.access'::regclass AND cardinality(c.conkey) = 1
+), links AS (
+  SELECT k.link_table, k.resource_expression, k.public_allowed, 'access_id'::name AS access_column
+  FROM known k WHERE to_regclass(k.link_table) IS NOT NULL
+  UNION ALL
+  -- App-owned tables: the resource is the link row without its grant and time columns.
+  SELECT r.link_table, format('jsonb_build_array(to_jsonb(l) - %L::text[])', (
+      SELECT array_agg(attname::text) FROM pg_attribute
+      WHERE attrelid = r.relid AND attnum > 0 AND NOT attisdropped
+        AND (attname = r.access_column OR atttypid IN ('timestamp'::regtype, 'timestamptz'::regtype, 'date'::regtype)))),
+    true, r.access_column
+  FROM references_to_access r
+  WHERE r.link_table NOT IN (SELECT link_table FROM known)
+    AND r.link_table <> 'assistant.artifact_machine_rights' AND r.link_table NOT LIKE 'code.%'
 ), object_queries AS (
   SELECT string_agg(format(
-    'SELECT %L::text AS link_table, %s AS resource_id, %L::boolean AS public_allowed, a.* FROM %s l JOIN auth.access a ON a.id = l.access_id',
-    link_table, resource_expression, public_allowed, to_regclass(link_table)),
+    'SELECT %L::text AS link_table, %s AS resource_id, %L::boolean AS public_allowed, a.* FROM %s l JOIN auth.access a ON a.id = l.%I',
+    link_table, resource_expression, public_allowed, to_regclass(link_table), access_column),
     E'\nUNION ALL\n' ORDER BY link_table) AS body
-  FROM links WHERE to_regclass(link_table) IS NOT NULL
+  FROM links
+), unlinked_query AS (
+  -- Grants for all signed-in people that no table links with a foreign key: an app keeps their IDs elsewhere.
+  SELECT format(
+    'SELECT a.id AS access_id, a.permission, a.created_at FROM auth.access a WHERE a.authenticated_only AND a.permission IN (%L, %L, %L)%s ORDER BY a.created_at',
+    'read', 'write', 'admin',
+    COALESCE(string_agg(format(' AND NOT EXISTS (SELECT 1 FROM %s l WHERE l.%I = a.id)', relid::regclass, access_column), ''), '')
+  ) AS body
+  FROM references_to_access
 )
 SELECT format($inventory$
 WITH RECURSIVE machines AS (
@@ -313,9 +359,10 @@ WHERE a.authenticated_only AND a.permission IN ('read', 'write', 'admin')
           AND other.permission IN ('read', 'write', 'admin')))
   )
 ORDER BY m.name, m.id, a.link_table, a.resource_id, a.permission
-$inventory$, COALESCE(body,
-  'SELECT NULL::text AS link_table, NULL::jsonb AS resource_id, false AS public_allowed, a.* FROM auth.access a WHERE false')) AS inventory_query
-FROM object_queries
+$inventory$, COALESCE(object_queries.body,
+  'SELECT NULL::text AS link_table, NULL::jsonb AS resource_id, false AS public_allowed, a.* FROM auth.access a WHERE false')) AS inventory_query,
+  unlinked_query.body AS unlinked_query
+FROM object_queries, unlinked_query
 \gexec
 COMMIT;
 ```
