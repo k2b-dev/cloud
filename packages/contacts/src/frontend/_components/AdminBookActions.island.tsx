@@ -1,7 +1,7 @@
 import { openAccessDialog } from "@k2b/cloud/access/ui";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Dropdown, prompts, useLocale } from "@k2b/ui";
+import { Dropdown, toast, useLocale } from "@k2b/ui";
 import { onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
 import { readErrorMessage } from "./api";
@@ -63,7 +63,7 @@ const AdminBookActions = (props: AdminBookActionsProps) => {
   const permissions = mutations.create<void, void>({
     mutation: () => openPermissionDialog(props, locale(), loading.signal),
     onError: (error) => {
-      if (!loading.signal.aborted) void prompts.error(error.message);
+      if (!loading.signal.aborted) toast.error(error.message);
     },
   });
   return (

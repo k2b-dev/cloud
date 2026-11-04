@@ -59,8 +59,8 @@ describe("Contacts administration access", () => {
     installPopoverApi(dom);
     const originalFetch = globalThis.fetch;
     globalThis.fetch = Object.assign(fetchImpl, { preconnect: originalFetch.preconnect });
-    const { prompts } = await import("@k2b/ui");
-    const error = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const { prompts, toast } = await import("@k2b/ui");
+    const error = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
     const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
     const refreshed = spyOn(navigation, "refreshCurrentPath").mockImplementation(() => {});
     const { default: AdminBookActions } = await import("./AdminBookActions.island");
