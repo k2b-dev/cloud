@@ -423,8 +423,15 @@ databaseSuite()("C22 Administration › Code read model", () => {
     try {
       const codes = await listCodeAdminCodes({ app: "example" }, reviewer);
       expect(codes.items).toMatchObject([{ id: "c_place", ownerName: null }]);
-      expect((await readCodeAdminCode("c_place", reviewer)).code.ownerName).toBeNull();
       expect(owner).not.toHaveBeenCalled();
+      const detail = await readCodeAdminCode("c_place", reviewer);
+      expect(detail.code.ownerName).toBeNull();
+      expect(JSON.stringify({ codes, detail })).not.toContain("rechnung@example.test");
+      // Detail permission checks may read the owner and refresh its snapshot without exposing the title.
+      expect(owner).toHaveBeenCalled();
+      expect(await sql<{ title: string | null }[]>`SELECT title FROM auth.service_accounts WHERE id=${account!.id}::uuid`).toEqual([
+        { title: "rechnung@example.test" },
+      ]);
       owner.mockResolvedValue(null);
       expect((await listCodeAdminCodes({ app: "example" }, reviewer)).items[0]?.ownerName).toBeNull();
       owner.mockRejectedValue(new access.CodeOwnerUnavailableError("down"));

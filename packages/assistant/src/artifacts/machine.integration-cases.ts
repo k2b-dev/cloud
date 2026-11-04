@@ -17,7 +17,7 @@ import { type ArtifactIdentity, artifacts } from "./service";
 /** Added to the existing disposable Assistant schema, never the development database. */
 export async function machineFixtureSchema() {
   await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS mail text`;
-  await sql`CREATE TABLE auth.service_accounts(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,kind text,status text DEFAULT 'active',
+  await sql`CREATE TABLE auth.service_accounts(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,kind text,title text,handle text,status text DEFAULT 'active',
     delegated_user_id uuid,app_id text,resource_type text,resource_id text,created_by uuid,created_at timestamptz DEFAULT now())`;
   // Machine ACL checks resolve local groups even when the account has a direct grant.
   await sql`CREATE TABLE auth.service_account_groups(
