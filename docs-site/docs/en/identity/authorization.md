@@ -715,6 +715,8 @@ The helper retains account, person and directory authority; it grants no
 permission. Identity or directory contention throws `AccessMutationBusyError`, aborting the
 transaction instead of waiting while holding identity locks. It carries HTTP
 409 and `retryable: true`; pass that response through so the caller can retry.
+Directory table maintenance, including autovacuum and analyze, can cause the
+same conflict even when no membership is changing.
 Only trusted initialization or recovery paths may pass `subject: null`.
 
 ```ts

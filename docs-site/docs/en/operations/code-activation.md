@@ -60,10 +60,12 @@ group, signed-in or public access. Applications deployed with an older
 for the required transaction and lock order.
 
 A concurrent identity, settings or directory write can make sharing return HTTP
-409 with `retryable: true`. Retry the complete share operation after that write
-finishes. Retrying never bypasses the current manager check. Administration
-repairs recheck live Cloud-admin authority, including supported delegated
-credentials; an app session does not supply that authority.
+409 with `retryable: true`. Directory table maintenance, including autovacuum
+and analyze, can cause the same response. Retry the complete share operation
+after the write or maintenance finishes. Retrying never bypasses the current
+manager check. Administration repairs recheck live Cloud-admin authority,
+including supported delegated credentials; an app session does not supply that
+authority.
 
 Existing activation adapters and their recovery workers remain until their
 separate removal. This transition adds no migration, credentials, worker or

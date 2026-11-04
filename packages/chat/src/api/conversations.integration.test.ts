@@ -46,6 +46,17 @@ const request = (headers: Headers, path = "", method = "GET", body?: unknown) =>
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
 
+// Happy-path grants need a quiet directory. Wait before acquiring any identity or
+// target locks, then keep maintenance/writers out until the request completes.
+// The separate contention test deliberately bypasses this fixture barrier.
+const withStableDirectory = <T>(work: () => T | Promise<T>): Promise<T> =>
+  sql.begin(async (db) => {
+    await db`SET LOCAL lock_timeout = '5s'`;
+    await db`LOCK TABLE settings.entries, auth.groups, auth.group_groups_v2, auth.user_groups_v2,
+    auth.service_account_groups, auth.ipa_user_effective_groups IN SHARE MODE`;
+    return work();
+  });
+
 suite("chat conversations, people, and directory groups", () => {
   const trackedUsers: string[] = [];
   const trackedAccounts: string[] = [];
@@ -1034,6 +1045,48 @@ suite("chat conversations, people, and directory groups", () => {
     }
   });
 
+  test("a busy directory refuses mixed member additions with a retryable conflict and allows them after commit", async () => {
+    const owner = await user();
+    const direct = await user();
+    const grouped = await user();
+    const groupId = await group([grouped]);
+    const headers = await cookie(owner);
+    const chat = await fixture(owner);
+    const members = [
+      { type: "group", groupId },
+      { type: "user", userId: direct },
+    ];
+    const state = () => sql<{ grants: number; participants: number; messages: number; audits: number }[]>`SELECT
+      (SELECT count(*)::int FROM chat.conversation_access WHERE conversation_id = ${chat.id}::uuid) AS grants,
+      (SELECT count(*)::int FROM chat.participants WHERE conversation_id = ${chat.id}::uuid) AS participants,
+      (SELECT count(*)::int FROM chat.messages WHERE conversation_id = ${chat.id}::uuid) AS messages,
+      (SELECT count(*)::int FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ${chat.shortId}) AS audits`;
+    const before = await state();
+    const writer = await sql.reserve();
+    try {
+      await writer`BEGIN`;
+      await writer`LOCK TABLE auth.user_groups_v2 IN ROW EXCLUSIVE MODE`;
+      const response = await request(headers, `/${chat.shortId}/members`, "POST", { members });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        code: "CONFLICT",
+        message: "Access permissions are being updated. Try again.",
+        retryable: true,
+      });
+      expect(await state()).toEqual(before);
+      await writer`COMMIT`;
+    } finally {
+      await writer`ROLLBACK`;
+      writer.release();
+    }
+    const response = await withStableDirectory(() => request(headers, `/${chat.shortId}/members`, "POST", { members }));
+    expect(response.status, await response.clone().text()).toBe(200);
+    expect(await response.json()).toEqual({ added: 2 });
+    const [after] = await state();
+    expect(after?.grants).toBe(3);
+    expect(after?.participants).toBe(3);
+  });
+
   test("group adds seed ondemand state, retain it on direct upgrades, and grant future group members access", async () => {
     const owner = await user();
     const direct = await user();
@@ -1044,13 +1097,15 @@ suite("chat conversations, people, and directory groups", () => {
     const chat = await fixture(owner);
     await sql`UPDATE chat.conversations SET seq_head = 42 WHERE id = ${chat.id}::uuid`;
     const path = `/${chat.shortId}`;
-    const added = await request(headers, `${path}/members`, "POST", {
-      members: [
-        { type: "group", groupId },
-        { type: "user", userId: direct },
-      ],
-    });
-    expect(added.status).toBe(200);
+    const added = await withStableDirectory(() =>
+      request(headers, `${path}/members`, "POST", {
+        members: [
+          { type: "group", groupId },
+          { type: "user", userId: direct },
+        ],
+      }),
+    );
+    expect(added.status, await added.clone().text()).toBe(200);
     expect(await added.json()).toEqual({ added: 2 });
     const participant = () =>
       sql<
