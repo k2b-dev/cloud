@@ -509,7 +509,11 @@ describe("Assistant ACP", () => {
     await h.send("Append");
     expect(h.permissions[0]?.toolCall.kind).toBe("edit");
     expect(h.forms).toHaveLength(0);
-    h.streams.push([h.block(tool("local_write", "awaiting_client", { path: "notes.md", mode: "replace", content: "new" })), h.done()]);
+    // Every turn has its own calls.
+    h.streams.push([
+      h.block({ ...tool("local_write", "awaiting_client", { path: "notes.md", mode: "replace", content: "new" }), callId: "call-2" }),
+      h.done(),
+    ]);
     await h.send("Replace");
     expect(h.forms[0]).toMatchObject({
       requestedSchema: {
@@ -1016,4 +1020,37 @@ describe("ACP turn outcome and cancellation", () => {
     expect(await connection.agent.request("session/new", { cwd: h.cwd, mcpServers: [] })).toHaveProperty("sessionId");
     expect(reloads).toEqual(["", ""]);
   });
+});
+
+test("a local append whose result did not reach Cloud is sent again after resume, never run twice", async () => {
+  let failDelivery = true;
+  let followAgain = false;
+  const h = await harness({
+    activeTurn: true,
+    intercept: (path, method) => {
+      if (method === "POST" && path.includes("/actions/") && failDelivery) {
+        failDelivery = false;
+        return Response.json({ error: "Unavailable" }, { status: 503 });
+      }
+      if (method === "GET" && path.endsWith("/conversations/chat") && followAgain)
+        return Response.json({ conversation: initialConversation(), activeTurn: { turnId: "turn", status: "waiting_for_action" } });
+    },
+  });
+  await writeFile(join(h.cwd, "notes.md"), "");
+  const append = tool("local_write", "awaiting_client", { path: "notes.md", mode: "append", content: "X" });
+  h.streams.push([h.block(append)]);
+  await expect(h.send("Append")).rejects.toThrow("503");
+  expect(await Bun.file(join(h.cwd, "notes.md")).text()).toBe("X");
+
+  followAgain = true;
+  await h.acp.request("session/resume", { sessionId: h.session.sessionId, cwd: h.cwd, mcpServers: [] });
+  h.streams.push([h.block(append), h.block({ ...append, status: "completed" }), h.done()]);
+  expect(await h.acp.request("session/prompt", { sessionId: h.session.sessionId, prompt: [{ type: "text", text: "Again" }] })).toEqual({
+    stopReason: "end_turn",
+  });
+  expect(await Bun.file(join(h.cwd, "notes.md")).text()).toBe("X");
+  const delivered = h.requests.filter((r) => r.method === "POST" && r.path.includes("/actions/"));
+  expect(delivered).toHaveLength(2);
+  expect(delivered[1]?.body).toEqual(delivered[0]?.body);
+  expect(h.permissions.filter((p) => p.toolCall.kind === "edit")).toHaveLength(1);
 });
