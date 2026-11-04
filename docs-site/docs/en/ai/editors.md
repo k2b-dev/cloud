@@ -144,6 +144,11 @@ Stop always ends the editor's turn, also without a connection; the turn may
 then keep running in Cloud until you stop it in the web chat. A Stop before
 the message reaches Cloud sends nothing.
 
+A local step such as a file write or a Bash command runs once. When its result
+does not reach Cloud, for example because the connection drops, the next
+message in this chat sends the same result again instead of running the step
+a second time, also after resuming the thread.
+
 ## Limits
 
 Assistant has no plan mode or other modes; a plan toggle in the editor has no

@@ -29,6 +29,7 @@ import {
   draftRows,
   emptyDraft,
   lastManagerKeys,
+  managerCount,
   removeRow,
   restoreRow,
   saveOrder,
@@ -65,6 +66,11 @@ export type AccessDialogProps = {
   allowPublic?: boolean;
   /** The link a public resource is reached by, offered to copy while public access is on. */
   publicLink?: string;
+  /**
+   * What public access lets visitors do, when it is more than viewing. The default says that nobody changes anything
+   * without signing in; a resource that accepts anonymous input, such as a published form, must say so here.
+   */
+  publicWarning?: string;
   /** Offer agents in the search. Defaults to true. */
   allowAgents?: boolean;
   /** The signed-in person, marked "You" in the list. */
@@ -153,9 +159,18 @@ export function AccessDialog(
             locale(),
           );
 
-  const peopleRows = () => rows().filter((row) => !generalPrincipal(row.principal) && !isObjectAccount(row.display.serviceAccountKind));
+  /**
+   * The row a General switch controls. A stored denial wins, because it shuts the audience out whatever else is
+   * stored; any further entry of that audience shows in the list, where it can be seen and removed.
+   */
+  const generalRow = (type: "authenticated" | "public") => {
+    const matching = rows().filter((row) => row.principal.type === type);
+    return matching.find((row) => row.previous?.permission === "none") ?? matching[0];
+  };
+  const isGeneralSwitch = (row: DraftRow) =>
+    (row.principal.type === "authenticated" || row.principal.type === "public") && generalRow(row.principal.type)?.key === row.key;
+  const peopleRows = () => rows().filter((row) => !isObjectAccount(row.display.serviceAccountKind) && !isGeneralSwitch(row));
   const objectAccountRows = () => rows().filter((row) => isObjectAccount(row.display.serviceAccountKind));
-  const generalRow = (type: "authenticated" | "public") => rows().find((row) => row.principal.type === type);
   const showGeneral = () =>
     props.allowAuthenticated !== false || props.allowPublic === true || rows().some((row) => generalPrincipal(row.principal));
   const showObjectAccounts = () => props.findServiceAccount !== undefined || objectAccountRows().length > 0;
@@ -181,7 +196,7 @@ export function AccessDialog(
               {change.kind === "remove" ? t().publicChangeOff : t().publicChangeOn}
             </>
           ),
-          detail: change.kind === "remove" ? undefined : t().publicWarning,
+          detail: change.kind === "remove" ? undefined : (props.publicWarning ?? t().publicWarning),
         };
       if (type === "authenticated")
         return {
@@ -212,7 +227,7 @@ export function AccessDialog(
           content: (
             <>
               {name}
-              {t().loses}
+              {change.from.permission === "none" ? t().denialRemoved : t().loses}
             </>
           ),
         };
@@ -229,7 +244,8 @@ export function AccessDialog(
   // ── Save ──────────────────────────────────────────────────────────────
   const confirmRemovals = async (pending: readonly DraftChange[]): Promise<boolean> => {
     // Turning off signed-in or public access takes access away as well.
-    const losing = pending.filter((change) => change.kind === "remove");
+    // Removing a denial lets other entries apply again; nobody loses access by it.
+    const losing = pending.filter((change) => change.kind === "remove" && change.from.permission !== "none");
     if (losing.length === 0) return true;
     const names = new Intl.ListFormat(locale(), { type: "conjunction" }).format(losing.map((change) => nameOf(change.row)));
     const others = pending.length - losing.length;
@@ -351,6 +367,9 @@ export function AccessDialog(
       />
     );
   };
+  /** Undo may not leave the resource without a manager, for example by bringing back a denial. */
+  const canRestore = (row: DraftRow) =>
+    managerCount(restoreRow(draft(), row), props.effectiveEntries) > 0 || managerCount(draft(), props.effectiveEntries) === 0;
   const AccessRow = (rowProps: { row: DraftRow }) => {
     const row = () => rowProps.row;
     const protectedRow = () => lastManagers().has(row().key);
@@ -380,7 +399,7 @@ export function AccessDialog(
                   <Button
                     variant="text"
                     data-access-undo=""
-                    disabled={saving()}
+                    disabled={saving() || !canRestore(row())}
                     onClick={(event) => {
                       const item = event.currentTarget.closest("li");
                       edit((current) => restoreRow(current, row()));
@@ -436,12 +455,20 @@ export function AccessDialog(
   const GeneralRow = (rowProps: { type: "authenticated" | "public" }) => {
     const principal: Principal = { type: rowProps.type };
     const row = () => generalRow(rowProps.type);
-    const on = () => Boolean(row()?.next);
+    // A stored denial is off: nobody of that audience gets in.
+    const granted = (level: DraftLevel | null | undefined) => Boolean(level && level.permission !== "none");
+    const on = () => granted(row()?.next);
     const toggle = (value: boolean) =>
       edit((current) => {
-        const existing = draftRows(current).find((candidate) => candidate.principal.type === rowProps.type);
-        if (value) return addPrincipal(current, principal, { displayName: "" }, existing?.previous ?? firstLevel(principal));
-        return existing ? removeRow(current, existing) : current;
+        const existing = draftRows(current).find((candidate) => candidate.key === row()?.key);
+        if (value) {
+          if (!existing?.entry) return addPrincipal(current, principal, { displayName: "" }, existing?.previous ?? firstLevel(principal));
+          // A stored grant comes back with its level; a stored denial turns into the first level offered.
+          return setLevel(current, existing, granted(existing.previous) ? existing.previous! : firstLevel(principal));
+        }
+        if (!existing) return current;
+        // Switching off again restores a stored denial instead of removing it.
+        return existing.entry && existing.previous?.permission === "none" ? restoreRow(current, existing) : removeRow(current, existing);
       });
     const description = () => {
       const level = row()?.next ?? null;
@@ -565,9 +592,9 @@ export function AccessDialog(
                 </Show>
                 <Show when={props.allowPublic === true || generalRow("public")}>
                   <GeneralRow type="public" />
-                  <Show when={generalRow("public")?.next}>
+                  <Show when={(generalRow("public")?.next?.permission ?? "none") !== "none"}>
                     <li class="flex flex-col gap-2 pb-2 sm:pl-11">
-                      <NoticeCard tone="warning">{t().publicWarning}</NoticeCard>
+                      <NoticeCard tone="warning">{props.publicWarning ?? t().publicWarning}</NoticeCard>
                       <Show when={props.publicLink}>
                         {(link) => (
                           <div class="flex items-center gap-2 [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1">

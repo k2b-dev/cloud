@@ -505,6 +505,7 @@ They go to the model with every message and can steer what it does with your Clo
         : `${context.instructions.length} ${context.instructions.length === 1 ? "file" : "files"}${context.shortened ? ", shortened" : ""}`;
   const clientTools: AssistantClientTools = {
     names: new Set(["local_bash", ...AI_LOCAL_TOOL_NAMES]),
+    receipts: new Map(),
     run: async (call, signal) =>
       runLocalTool(
         call,
