@@ -35,6 +35,12 @@ beforeAll(async () => {
       });
     })
     .get("/pwa/example", (c) => c.html("<p>Phone</p>", 200, { "Referrer-Policy": "no-referrer" }))
+    // An app's token share page: no referrer, and its own native form.
+    .get("/share/example/token", (c) =>
+      c.html(`<form method="post" action="/share/example/token/reply"><input name="note" value="ok"><button>Submit</button></form>`, 200, {
+        "Referrer-Policy": "no-referrer",
+      }),
+    )
     .post("*", (c) => {
       writes++;
       received.push({ origin: c.req.header("Origin"), site: c.req.header("Sec-Fetch-Site"), cookie: c.req.header("Cookie") });
@@ -54,11 +60,18 @@ beforeAll(async () => {
   foreign = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch: () =>
-      new Response(
-        `<form method="post" action="${origin}/api/pulse/bases/base/clear-data"><input name="value" value="1"><button>Submit</button></form>`,
-        { headers: { "Content-Type": "text/html" } },
-      ),
+    fetch: (request) =>
+      new URL(request.url).pathname === "/no-referrer"
+        ? new Response(
+            `<form method="post" action="${origin}/share/example/token/reply"><input name="note" value="x"><button>Submit</button></form>`,
+            {
+              headers: { "Content-Type": "text/html", "Referrer-Policy": "no-referrer" },
+            },
+          )
+        : new Response(
+            `<form method="post" action="${origin}/api/pulse/bases/base/clear-data"><input name="value" value="1"><button>Submit</button></form>`,
+            { headers: { "Content-Type": "text/html" } },
+          ),
   });
   browser = await launchBrowser();
 });
@@ -182,3 +195,35 @@ for (const cookieName of ["session_token", "pwa_session"])
       await context.close();
     }
   });
+
+test("a no-referrer page's own form post sends Origin: null as same-origin and passes with a session cookie; a foreign one does not", async () => {
+  const context = await browser.newContext();
+  try {
+    await context.addCookies([{ name: "session_token", value: "web-fixture", url: origin, sameSite: "Lax", httpOnly: true }]);
+    const page = await context.newPage();
+    await page.goto(`${origin}/share/example/token`);
+    const [own] = await Promise.all([
+      page.waitForResponse((response) => response.request().method() === "POST"),
+      page.getByRole("button", { name: "Submit" }).click(),
+    ]);
+    const ownHeaders = await own.request().allHeaders();
+    expect(ownHeaders.origin).toBe("null");
+    expect(ownHeaders["sec-fetch-site"]).toBe("same-origin");
+    expect(ownHeaders.cookie).toContain("session_token=web-fixture");
+    expect(own.status()).toBe(200);
+
+    const before = writes;
+    await page.goto(`http://localhost:${foreign.port}/no-referrer`);
+    const [foreignPost] = await Promise.all([
+      page.waitForResponse((response) => response.request().method() === "POST"),
+      page.getByRole("button", { name: "Submit" }).click(),
+    ]);
+    const foreignHeaders = await foreignPost.request().allHeaders();
+    expect(foreignHeaders.origin).toBe("null");
+    expect(foreignHeaders["sec-fetch-site"]).toBe("same-site");
+    expect(foreignPost.status()).toBe(403);
+    expect(writes).toBe(before);
+  } finally {
+    await context.close();
+  }
+});

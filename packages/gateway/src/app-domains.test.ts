@@ -236,6 +236,9 @@ test("Cloud credential cookies are stripped and app cookies survive", async () =
 test.each([
   [{ Origin: "https://other.test" }, 403],
   [{ Origin: "null" }, 403],
+  [{ Origin: "null", "Sec-Fetch-Site": "same-origin" }, 200],
+  [{ Origin: "null", "Sec-Fetch-Site": "cross-site" }, 403],
+  [{ Origin: "https://other.test", "Sec-Fetch-Site": "same-origin" }, 403],
   [{ Origin: "https://site.test" }, 200],
   [{ "Sec-Fetch-Site": "same-site" }, 403],
   [{ "Sec-Fetch-Site": "cross-site" }, 403],

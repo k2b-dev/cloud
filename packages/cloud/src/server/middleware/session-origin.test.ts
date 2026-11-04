@@ -38,6 +38,24 @@ describe("mandatory session origin boundary", () => {
     }
   }
 
+  // A no-referrer page posts its own forms with Origin: null; the browser still marks them same-origin.
+  for (const [label, headers, status] of [
+    ["same-origin with Origin: null", { Origin: "null", "Sec-Fetch-Site": "same-origin" }, 204],
+    ["same-origin without Origin", { "Sec-Fetch-Site": "same-origin" }, 204],
+    ["same-origin with the public origin", { Origin: origin, "Sec-Fetch-Site": "same-origin" }, 204],
+    ["same-origin with another Origin", { Origin: "https://evil.test", "Sec-Fetch-Site": "same-origin" }, 403],
+    ["cross-site with Origin: null", { Origin: "null", "Sec-Fetch-Site": "cross-site" }, 403],
+    ["same-site with Origin: null", { Origin: "null", "Sec-Fetch-Site": "same-site" }, 403],
+    ["a user-started request with Origin: null", { Origin: "null", "Sec-Fetch-Site": "none" }, 403],
+    ["neither Origin nor Sec-Fetch-Site", {}, 403],
+  ] satisfies [string, Record<string, string>, number][]) {
+    test(`a cookie-authenticated POST: ${label} gives ${status}`, async () => {
+      const app = new Hono().use(guard()).post("/action", (c) => c.body(null, 204));
+      const response = await app.request("http://internal-app/action", { method: "POST", headers: { Cookie: cookie, ...headers } });
+      expect(response.status).toBe(status);
+    });
+  }
+
   for (const name of ["session_token", "pwa_session"]) {
     for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
       test(`${name}: ${method} requires the canonical origin, never internal or forwarded hosts`, async () => {

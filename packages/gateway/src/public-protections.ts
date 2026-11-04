@@ -26,8 +26,10 @@ export const rejectPublicOrigin = (req: Request, target: Pick<PublicTarget, "aut
   if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket" && ["GET", "HEAD", "OPTIONS"].includes(req.method)) return false;
   const origin = req.headers.get("Origin");
   const site = req.headers.get("Sec-Fetch-Site");
+  // A no-referrer page posts its own forms with `Origin: null`; the browser still marks them same-origin.
+  const ownNoReferrerForm = origin === "null" && site === "same-origin";
   return (
-    (origin !== null && origin !== new URL(`${target.scheme}://${target.authority}`).origin) ||
+    (origin !== null && !ownNoReferrerForm && origin !== new URL(`${target.scheme}://${target.authority}`).origin) ||
     site === "cross-site" ||
     site === "same-site"
   );
