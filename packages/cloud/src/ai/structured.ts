@@ -1,5 +1,6 @@
 import type { Input, LoopAggregate, StructuredMeta, Usage } from "@k2b/nessi";
 import { nessi, StructuredOutputError } from "@k2b/nessi";
+import { ProviderError } from "@k2b/nessi/ai";
 import type { z } from "zod";
 import type { AccessSubject } from "../server";
 import type { TraceContext } from "../services/logging";
@@ -170,9 +171,12 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
           errorCode:
             failure instanceof StructuredOutputError || failure instanceof AiProviderError
               ? failure.code
-              : failure instanceof Error
-                ? failure.name
-                : "unknown",
+              : // A model call collected from the stream fails with nessi's error; its text is already Cloud's fixed one.
+                failure instanceof ProviderError
+                ? "provider_error"
+                : failure instanceof Error
+                  ? failure.name
+                  : "unknown",
           error: failure instanceof Error ? failure.message : String(failure),
         });
         throw failure;

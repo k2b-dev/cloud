@@ -3,6 +3,7 @@ import { nessi, type Provider } from "@k2b/nessi";
 import { z } from "zod";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
+import { streamAnswer } from "./answer-stream.test-fixture";
 import { type AiCallContext, beginAiCall, finishAiCall } from "./inference-calls";
 import { migrateCloudAi } from "./migrate";
 import { inferenceProvider } from "./quota-provider";
@@ -85,7 +86,10 @@ suite("AI usage inference accounting", () => {
         model: f.model.model,
         capabilities: { streaming: false, tools: false, images: false, thinking: false, usage: true, structuredOutput: true },
         async *stream() {
-          throw new Error("Structured repair must use complete()");
+          requests++;
+          const text = requests === 1 ? "not JSON" : '{"answer":42}';
+          const usage = { input: 100 * requests, output: 10 * requests, total: 110 * requests };
+          yield* streamAnswer({ message: { role: "assistant", content: [{ type: "text", text }], usage }, usage, finishReason: "stop" });
         },
       };
       const result = await nessi.structured({

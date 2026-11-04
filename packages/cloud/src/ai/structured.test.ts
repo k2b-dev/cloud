@@ -106,3 +106,57 @@ for (const [type, reasoningEffort] of [
       span.mockRestore();
     }
   });
+
+test("a provider error a structured task streams is stored with Cloud's code", async () => {
+  const context: TraceContext = { traceId: "trace", spanId: "span", traceparent: "parent" };
+  const span = spyOn(trace, "withSpan").mockImplementation(
+    async <T>(_params: Parameters<typeof trace.withSpan>[0], run: (ctx: TraceContext) => Promise<T> | T) => run(context),
+  );
+  const record = spyOn(trace, "record").mockResolvedValue(context);
+  const ledger = spyOn(structuredRuns, "safelyRecordStructuredRun").mockResolvedValue(undefined);
+  // An HTTP rejection reaches nessi as an issue; its complete() then raises nessi's ProviderError.
+  const provider: Provider = {
+    name: "fixture",
+    family: "openai-compatible",
+    model: "fixture",
+    capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: true },
+    async *stream() {
+      yield { type: "issue", issue: { kind: "provider_error", message: "AI provider request failed.", retryable: false, status: 422 } };
+    },
+  };
+  const accounting = spyOn(quotaProvider, "inferenceProvider").mockReturnValue(provider);
+  try {
+    await expect(
+      runAiStructured({
+        task: "test",
+        input: "Answer",
+        output: z.object({ answer: z.string() }),
+        resolveModel: async () => ({
+          model: { id: "fixture" },
+          provider,
+          profile: {
+            modelId: "fixture",
+            providerId: "fixture",
+            variantLabel: "Standard",
+            description: "",
+            icon: { kind: "provider" },
+            showInPicker: true,
+            id: "fixture",
+            label: "Fixture",
+            provider: "openai",
+            model: "fixture",
+            enabled: true,
+            capabilities: [],
+            dataBoundary: "hosted",
+          },
+        }),
+      }),
+    ).rejects.toThrow("AI provider request failed.");
+    expect(ledger.mock.calls[0]?.[0]).toMatchObject({ status: "failed", errorCode: "provider_error" });
+  } finally {
+    accounting.mockRestore();
+    ledger.mockRestore();
+    record.mockRestore();
+    span.mockRestore();
+  }
+});
