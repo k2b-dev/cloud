@@ -18,6 +18,7 @@ const user = crypto.randomUUID(),
   group = crypto.randomUUID(),
   child = crypto.randomUUID(),
   service = crypto.randomUUID(),
+  codeService = crypto.randomUUID(),
   turn = crypto.randomUUID();
 const subject = { type: "user" as const, userId: user };
 const rule = (scope: string, limit: number | null): AiQuotaRule => ({
@@ -86,7 +87,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`CREATE TABLE ai.conversations(id UUID PRIMARY KEY,created_by_user_id UUID,launched_by_app_id TEXT,archived_at TIMESTAMPTZ)`;
     await sql`CREATE TABLE ai.queued_messages(id UUID PRIMARY KEY,conversation_id UUID,submission JSONB,status TEXT,error TEXT,quota_checked_at TIMESTAMPTZ,position BIGSERIAL)`;
     await sql`INSERT INTO auth.users VALUES(${user}::uuid,'one','One'),(${other}::uuid,'two','Two')`;
-    await sql`INSERT INTO auth.service_accounts(id,name,kind) VALUES(${service}::uuid,'Service','agent')`;
+    await sql`INSERT INTO auth.service_accounts(id,name,kind) VALUES(${service}::uuid,'Service','agent'),(${codeService}::uuid,'Build service','code')`;
     await sql`INSERT INTO auth.groups VALUES(${group}::uuid,'Parent','local'),(${child}::uuid,'Child','local')`;
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${user}::uuid,${child}::uuid)`;
     await sql`INSERT INTO auth.group_groups_v2 VALUES(${group}::uuid,${child}::uuid)`;
@@ -277,13 +278,36 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await expect(aiQuotas.save(initial, user)).rejects.toThrow("Reload");
     await expect(aiQuotas.assertAllowed(subject, "a")).rejects.toThrow("limit reached");
   });
-  test("service accounts have separate personal usage", async () => {
+  test("authenticated quota assignments apply only to people, before any usage", async () => {
     await save([rule("*", 100)]);
-    const s = { type: "service_account" as const, serviceAccountId: service };
-    expect(await aiQuotas.assertAllowed(s, "a")).toBe(true);
-    await fixtureCalls.finish(await fixtureCalls.begin(s, "a", turn), { input: 80, output: 20 });
-    await expect(aiQuotas.assertAllowed(s, "a")).rejects.toThrow("limit reached");
+    expect((await aiQuotas.snapshot(subject, "a")).balances[0]).toMatchObject({ limit: 100, used: 0 });
     expect(await aiQuotas.assertAllowed(subject, "a")).toBe(true);
+    for (const serviceAccountId of [service, codeService]) {
+      const account = { type: "service_account" as const, serviceAccountId };
+      expect((await aiQuotas.snapshot(account, "a")).balances[0]).toMatchObject({ limit: 0, used: 0, sources: [] });
+      await expect(aiQuotas.assertAllowed(account, "a")).rejects.toMatchObject({ code: "quota_exhausted" });
+    }
+  });
+  test("service accounts have separate personal usage", async () => {
+    const agent = { type: "service_account" as const, serviceAccountId: service };
+    const code = { type: "service_account" as const, serviceAccountId: codeService };
+    const allowance = rule("*", 100);
+    // The authenticated tier assigns allowances only to people.
+    allowance.grants.push({ principal: agent, limit: 100 }, { principal: code, limit: 100 });
+    await save([allowance]);
+    for (const account of [agent, code]) {
+      expect((await aiQuotas.snapshot(account, "a")).balances[0]).toMatchObject({ limit: 100, used: 0 });
+      expect(await aiQuotas.assertAllowed(account, "a")).toBe(true);
+      await fixtureCalls.finish(await fixtureCalls.begin(account, "a", turn), { input: 80, output: 20 });
+      await expect(aiQuotas.assertAllowed(account, "a")).rejects.toThrow("limit reached");
+      expect((await aiQuotas.snapshot(subject, "a")).balances[0]).toMatchObject({ limit: 100, used: 0 });
+      expect(await aiQuotas.assertAllowed(subject, "a")).toBe(true);
+    }
+    await charge("a", 30, 20);
+    expect((await aiQuotas.snapshot(subject, "a")).balances[0]).toMatchObject({ limit: 100, used: 50 });
+    for (const account of [agent, code]) {
+      expect((await aiQuotas.snapshot(account, "a")).balances[0]).toMatchObject({ limit: 100, used: 100 });
+    }
   });
   test("user quota checks preserve nested groups without machine membership tables", async () => {
     const r = rule("*", 100);
