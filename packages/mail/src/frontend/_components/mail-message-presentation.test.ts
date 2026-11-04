@@ -29,12 +29,80 @@ describe("mail message presentation", () => {
     ).toBe("16:30 Aug 6, 2026");
   });
 
-  test("keeps plain content and quoted history in ordered segments", () => {
-    expect(splitPlainMessageSegments("Answer\n\n> Older line\n>\n> Older detail\n\nClosing")).toEqual([
-      { kind: "content", text: "Answer\n" },
-      { kind: "quote", text: "> Older line\n>\n> Older detail" },
-      { kind: "content", text: "\nClosing" },
+  test("collapses the quoted earlier conversation at the end of a reply", () => {
+    expect(
+      splitPlainMessageSegments("Thanks, that works.\n\nOn Monday, Alex Example wrote:\n> Does Tuesday suit you?\n>\n> Alex\n"),
+    ).toEqual([
+      { kind: "content", text: "Thanks, that works.\n\nOn Monday, Alex Example wrote:" },
+      { kind: "quote", text: "> Does Tuesday suit you?\n>\n> Alex" },
     ]);
+  });
+
+  test("keeps blank lines within the trailing quoted block", () => {
+    expect(splitPlainMessageSegments("Reply\n> first\n\n\n> second")).toEqual([
+      { kind: "content", text: "Reply" },
+      { kind: "quote", text: "> first\n\n\n> second" },
+    ]);
+  });
+
+  test("collapses trailing history above a signature and keeps the signature visible", () => {
+    expect(splitPlainMessageSegments("Agreed.\n\n> Shall we start at nine?\n\n-- \nRiley Sample")).toEqual([
+      { kind: "content", text: "Agreed.\n" },
+      { kind: "quote", text: "> Shall we start at nine?" },
+      { kind: "content", text: "\n-- \nRiley Sample" },
+    ]);
+  });
+
+  test("keeps inline answers between quotes visible", () => {
+    const text = "See my answers below.\n\n> Can you send the plan?\nYes, attached.\n\n> And the budget?\nNext week.";
+    expect(splitPlainMessageSegments(text)).toEqual([{ kind: "content", text }]);
+  });
+
+  test("keeps a bottom-posted answer and its quote visible", () => {
+    const text = "> Is the room booked?\n\nYes, room 4 from ten.";
+    expect(splitPlainMessageSegments(text)).toEqual([{ kind: "content", text }]);
+  });
+
+  test("keeps a lone quoted line inside the text visible", () => {
+    const text = "The sign said:\n> No parking\nso we moved the car.";
+    expect(splitPlainMessageSegments(text)).toEqual([{ kind: "content", text }]);
+  });
+
+  test("keeps a message that is only quoted text visible", () => {
+    const text = "> A quoted note without any reply";
+    expect(splitPlainMessageSegments(text)).toEqual([{ kind: "content", text }]);
+  });
+
+  test("collapses attributed history after inline answers but keeps an unanswered closing quote visible", () => {
+    expect(
+      splitPlainMessageSegments("> Can you send the plan?\nYes, attached.\n\nOn Monday, Alex Example wrote:\n> Thanks in advance."),
+    ).toEqual([
+      { kind: "content", text: "> Can you send the plan?\nYes, attached.\n\nOn Monday, Alex Example wrote:" },
+      { kind: "quote", text: "> Thanks in advance." },
+    ]);
+    const unanswered = "> Can you send the plan?\nYes, attached.\n\n> And the budget?";
+    expect(splitPlainMessageSegments(unanswered)).toEqual([{ kind: "content", text: unanswered }]);
+  });
+
+  test("keeps a quote with only its attribution above it visible", () => {
+    for (const text of [
+      "On Monday, Alex Example wrote:\n> The meeting is cancelled.",
+      "Am Montag schrieb Erika Muster:\n\n> Das Treffen fällt aus.",
+    ]) {
+      expect(splitPlainMessageSegments(text)).toEqual([{ kind: "content", text }]);
+    }
+  });
+
+  test("keeps forwarded originals visible", () => {
+    const apple =
+      "For your records.\n\nBegin forwarded message:\n\n> From: Sam Example <sam@example.com>\n> Subject: Invoice\n>\n> Attached.";
+    const german = "Zur Info.\n\nAnfang der weitergeleiteten Nachricht:\n\n> Von: Sam Beispiel <sam@example.com>\n>\n> Anbei.";
+    const quotedMarker = "FYI\n\n> ---------- Forwarded message ---------\n> From: Sam Example <sam@example.com>\n>\n> Agenda below.";
+    const gmail = "FYI\n\n---------- Forwarded message ---------\nFrom: Sam Example <sam@example.com>\nSubject: Agenda\n\nAgenda below.";
+    const historyInForward = `${gmail}\n\nOn Monday, Riley Sample wrote:\n> The budget is approved.`;
+    for (const text of [apple, german, quotedMarker, gmail, historyInForward]) {
+      expect(splitPlainMessageSegments(text)).toEqual([{ kind: "content", text }]);
+    }
   });
 
   test("does not collapse ordinary attribution or indentation", () => {
@@ -43,14 +111,6 @@ describe("mail message presentation", () => {
         kind: "content",
         text: "On Monday, Alex wrote:\n  ordinary indented text",
       },
-    ]);
-  });
-
-  test("keeps blank lines within a quoted block", () => {
-    expect(splitPlainMessageSegments("Reply\n> first\n\n\n> second\nAfter")).toEqual([
-      { kind: "content", text: "Reply" },
-      { kind: "quote", text: "> first\n\n\n> second" },
-      { kind: "content", text: "After" },
     ]);
   });
 
@@ -72,6 +132,7 @@ describe("mail message presentation", () => {
 
   test("builds a bounded one-line preview from new content rather than quoted history", () => {
     expect(messagePreviewText("Short answer\n\n> much older text", "")).toBe("Short answer");
+    expect(messagePreviewText("> Is the room booked?\n\nYes, room 4.", "")).toBe("Yes, room 4.");
     expect(messagePreviewText(null, "HTML fallback\nwith spacing")).toBe("HTML fallback with spacing");
     expect(messagePreviewText("123456789", "", 6)).toBe("12345…");
   });
