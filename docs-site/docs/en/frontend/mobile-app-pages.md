@@ -193,7 +193,9 @@ Automatic is the default and follows the device.
 
 App pages switch at once, without the cross-fade that web pages use between
 documents. A browser ignores taps while such a transition runs, so a quick
-second tap in the tab bar would be lost.
+second tap in the tab bar would be lost. Inside a part, a navigation with
+`@k2b/ssr/nav` keeps its view transition, and only the content takes part:
+the shell's header, tab bar, and sidebar show the next page at once.
 
 A tab or sidebar row switches at the first touch. The item shows as selected, the header
 shows the title of the tab's page, and the content area is empty. The page
