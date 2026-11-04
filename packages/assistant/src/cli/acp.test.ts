@@ -12,7 +12,7 @@ import {
   type RequestPermissionResponse,
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
-import type { AiConversation, AiPendingTurnAction, AiPeopleModels, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
+import type { AiConversation, AiPendingTurnAction, AiPeopleModels, AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import module from "../cli";
 import { createAcpAgent, runAcpConnection } from "./acp";
@@ -161,7 +161,14 @@ const harness = async (
         const query = new URL(path, "https://cloud.test").searchParams;
         const page = Number(query.get("page"));
         const perPage = Number(query.get("perPage"));
-        const conversations = options.conversations ?? (created ? [conversation] : []);
+        const status = query.get("status");
+        const conversations = (options.conversations ?? (created ? [conversation] : [])).filter(
+          (chat) =>
+            !status ||
+            (status === "running" && ["queued", "running", "waiting_for_browser"].includes(chat.runStatus)) ||
+            (status === "needs_attention" && chat.runStatus === "needs_attention") ||
+            (status === "unread" && chat.unreadCompletion),
+        );
         return Response.json({
           items: conversations.slice((page - 1) * perPage, page * perPage),
           total: conversations.length,
@@ -209,7 +216,7 @@ const harness = async (
       if (path.includes("/pending-actions/")) return Response.json(options.actions ?? (options.action ? [options.action] : []));
       if (path.includes("/actions/"))
         return options.post403 ? Response.json({ error: "Approve this request in Cloud." }, { status: 403 }) : Response.json({});
-      if (path.endsWith("/abort")) return Response.json({});
+      if (path.endsWith("/abort") || path.endsWith("/viewed")) return Response.json({});
       if (path.endsWith("/files") && init?.body instanceof FormData) {
         const file = init.body.get("file");
         if (!(file instanceof File)) throw new Error("Missing upload");
@@ -319,7 +326,7 @@ describe("Assistant ACP", () => {
       protocolVersion: 1,
       agentInfo: { name: "cld", title: "Cloud Assistant" },
       agentCapabilities: {
-        loadSession: false,
+        loadSession: true,
         promptCapabilities: { image: true, audio: false, embeddedContext: true },
         sessionCapabilities: { list: {}, resume: {} },
       },
@@ -605,11 +612,9 @@ describe("Assistant ACP", () => {
     await h.send("/web");
     expect(h.text()).toContain("Open this chat in Cloud: https://cloud.test/app/assistant?conversation=chat");
   });
-  test("session list preserves ACP ids and resume accepts ACP and Cloud ids without replay", async () => {
+  test("resume accepts ACP and Cloud ids without replay", async () => {
     const h = await harness();
     await h.send("Hello");
-    const list = await h.acp.request("session/list", { cwd: h.cwd });
-    expect(list.sessions).toEqual([{ sessionId: h.session.sessionId, cwd: h.cwd, title: "Chat", updatedAt: "2026-10-11T00:00:00Z" }]);
     const count = h.text().match(/Hello world/g)?.length;
     for (const sessionId of [h.session.sessionId, "chat"])
       expect(await h.acp.request("session/resume", { sessionId, cwd: h.cwd, mcpServers: [] })).toMatchObject({
@@ -620,19 +625,29 @@ describe("Assistant ACP", () => {
       code: -32002,
     });
   });
-  test("session list pages through all conversations", async () => {
-    const conversations = Array.from({ length: 53 }, (_, i) => ({ ...initialConversation(), id: `chat-${i}` }));
+  test("session list pages through every open chat, never stopping early", async () => {
+    // Unrelated open chats come first; the folder's chat is on the third page of one state.
+    const conversations = [
+      ...Array.from({ length: 120 }, (_, i) => ({ ...initialConversation(), id: `other-${i}`, unreadCompletion: true })),
+      { ...initialConversation(), id: "mine", unreadCompletion: true },
+    ];
     const h = await harness({ conversations });
-    await h.store.set("saved-session", "chat-52");
-    const first = await h.acp.request("session/list", { cwd: h.cwd });
-    expect(first.sessions.map((s) => s.sessionId)).toEqual(conversations.slice(0, 50).map((c) => c.id));
-    expect(first.nextCursor).toBe("2");
-    const second = await h.acp.request("session/list", { cwd: h.cwd, cursor: "2" });
-    expect(second.sessions.map((s) => s.sessionId)).toEqual(["chat-50", "chat-51", "saved-session"]);
-    expect(second).not.toHaveProperty("nextCursor");
-    expect(h.requests.filter((r) => r.path.includes("/conversations/page?")).map((r) => r.path)).toEqual([
-      "/api/ai/conversations/page?page=1&perPage=50",
-      "/api/ai/conversations/page?page=2&perPage=50",
+    await h.store.set("session-mine", "mine", h.cwd);
+    const found: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const list = await h.acp.request("session/list", { cwd: h.cwd, ...(cursor ? { cursor } : {}) });
+      found.push(...list.sessions.map((s) => s.sessionId));
+      cursor = list.nextCursor ?? undefined;
+      pages++;
+    } while (cursor);
+    expect(found).toEqual(["session-mine"]);
+    expect(pages).toBe(3);
+    expect(h.requests.filter((r) => r.path.includes("status=unread")).map((r) => r.path)).toEqual([
+      "/api/ai/conversations/page?status=unread&page=1&perPage=50",
+      "/api/ai/conversations/page?status=unread&page=2&perPage=50",
+      "/api/ai/conversations/page?status=unread&page=3&perPage=50",
     ]);
   });
   test.each(["x", "0", "-1", "1.5", "", " 2", "1e2", "9007199254740992"])("session list rejects invalid cursor %s", async (cursor) => {
@@ -1077,7 +1092,7 @@ test("a local append whose result did not reach Cloud is sent again after resume
 });
 
 describe("ACP round trips and bounded state", () => {
-  test("a message in an existing chat costs four requests: chat, stream, draft, turn", async () => {
+  test("a message in an existing chat waits for four requests: chat, stream, draft, turn", async () => {
     const h = await harness();
     await h.send("First");
     await Bun.sleep(20);
@@ -1089,20 +1104,24 @@ describe("ACP round trips and bounded state", () => {
       "GET /api/ai/conversations/chat/stream",
       "PUT /api/ai/conversations/chat/draft",
       "POST /api/ai/conversations/chat/turns",
+      // After the reply: the person saw it in the editor.
+      "POST /api/ai/conversations/chat/viewed",
     ]);
   });
 
   test("session list reads no profile defaults and the session store stays bounded", async () => {
-    const h = await harness({ conversations: Array.from({ length: 50 }, (_, i) => ({ ...initialConversation(), id: `chat-${i}` })) });
+    const h = await harness({
+      conversations: Array.from({ length: 50 }, (_, i) => ({ ...initialConversation(), id: `chat-${i}`, runStatus: "running" as const })),
+    });
     let reads = 0;
     const getDefault = h.ctx.getDefault;
     h.ctx.getDefault = async (key) => {
       reads++;
       return getDefault(key);
     };
-    await h.store.set("known", "chat-7");
+    await h.store.set("known", "chat-7", h.cwd);
     const list = await h.acp.request("session/list", {});
-    expect(list.sessions[7]?.sessionId).toBe("known");
+    expect(list.sessions.map((s) => s.sessionId)).toEqual(["known"]);
     expect(reads).toBe(0);
 
     const state = await mkdtemp(join(tmpdir(), "cld-acp-bound-"));
@@ -1280,32 +1299,34 @@ describe("ACP attachments, sessions and cleanup", () => {
     });
   });
 
-  test("session list filters by folder and reports each session's own folder", async () => {
-    const conversations = ["here", "there", "web"].map((id) => ({ ...initialConversation(), id }));
-    const h = await harness({ conversations });
-    await h.store.set("session-here", "here", h.cwd);
-    await h.store.set("session-there", "there", "/elsewhere");
-    const filtered = await h.acp.request("session/list", { cwd: h.cwd });
-    expect(filtered.sessions.map((s) => [s.sessionId, s.cwd])).toEqual([
-      ["session-here", h.cwd],
-      ["web", h.cwd],
+  test("session list shows only open chats an editor used in this folder", async () => {
+    const chat = (id: string, change: Partial<AiConversation>) => ({ ...initialConversation(), id, ...change });
+    const h = await harness({
+      conversations: [
+        chat("running", { runStatus: "running", updatedAt: "2026-10-11T00:00:05Z" }),
+        chat("asking", { runStatus: "needs_attention", updatedAt: "2026-10-11T00:00:04Z" }),
+        chat("answered", { unreadCompletion: true, updatedAt: "2026-10-11T00:00:03Z" }),
+        chat("finished", { updatedAt: "2026-10-11T00:00:02Z" }),
+        chat("elsewhere", { runStatus: "running", updatedAt: "2026-10-11T00:00:01Z" }),
+        chat("web", { runStatus: "running", updatedAt: "2026-10-11T00:00:00Z" }),
+      ],
+    });
+    for (const id of ["running", "asking", "answered", "finished"]) await h.store.set(`session-${id}`, id, h.cwd);
+    await h.store.set("session-elsewhere", "elsewhere", "/elsewhere");
+    const here = await h.acp.request("session/list", { cwd: h.cwd });
+    expect(here.sessions.map((s) => [s.sessionId, s.cwd])).toEqual([
+      ["session-running", h.cwd],
+      ["session-asking", h.cwd],
+      ["session-answered", h.cwd],
     ]);
-    // Two threads on one chat: each folder lists its own, the unfiltered list the newest.
-    await Bun.sleep(5);
-    await h.store.set("session-here-too", "there", h.cwd);
-    expect((await h.acp.request("session/list", { cwd: h.cwd })).sessions.map((s) => s.sessionId)).toEqual([
-      "session-here",
-      "session-here-too",
-      "web",
+    // A second thread on one chat lists in its own folder.
+    await h.store.set("session-running-there", "running", "/elsewhere");
+    expect((await h.acp.request("session/list", { cwd: "/elsewhere" })).sessions.map((s) => s.sessionId)).toEqual([
+      "session-running-there",
+      "session-elsewhere",
     ]);
-    expect((await h.acp.request("session/list", { cwd: "/elsewhere" })).sessions.map((s) => s.sessionId)).toEqual(["session-there", "web"]);
-    await h.store.forget("session-here-too");
-    const all = await h.acp.request("session/list", {});
-    expect(all.sessions.map((s) => [s.sessionId, s.cwd])).toEqual([
-      ["session-here", h.cwd],
-      ["session-there", "/elsewhere"],
-      ["web", process.cwd()],
-    ]);
+    // Without a folder: open chats of any editor folder, never a chat no editor used.
+    expect((await h.acp.request("session/list", {})).sessions.map((s) => s.sessionId)).not.toContain("web");
   });
 
   test("closing a session ends its prompt, keeps the Cloud turn and forgets the session", async () => {
@@ -1398,4 +1419,223 @@ await runAcpConnection(ctx, Bun.stdin.stream(), new WritableStream({ write: (chu
     },
     20_000,
   );
+});
+
+describe("ACP session/load", () => {
+  let seq = 0;
+  const stored = (message: AiStoredMessage["message"], loopId: string | null = "old-turn"): AiStoredMessage => ({
+    id: `m-${++seq}`,
+    shortId: `m-${seq}`,
+    conversationId: "chat",
+    seq,
+    kind: "message",
+    message,
+    loopId,
+    modelId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: null,
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    meta: null,
+    createdAt: "2026-10-11T00:00:00Z",
+  });
+  const state = (
+    messages: AiStoredMessage[],
+    extra: Partial<Extract<AiStreamSseEvent, { type: "state" }>> = {},
+  ): Extract<AiStreamSseEvent, { type: "state" }> => ({
+    type: "state",
+    conversation: { ...initialConversation(), title: "Old chat" },
+    messages,
+    activeTurn: null,
+    ...extra,
+  });
+  const load = (h: Awaited<ReturnType<typeof harness>>, sessionId = "chat") =>
+    h.acp.request("session/load", { sessionId, cwd: h.cwd, mcpServers: [] });
+  const of = (h: Awaited<ReturnType<typeof harness>>, sessionId = "chat") =>
+    h.updates.filter((u) => u.sessionId === sessionId).map((u) => u.update);
+  const said = (updates: ReturnType<typeof of>, kind: "user_message_chunk" | "agent_message_chunk") =>
+    updates.flatMap((u) => (u.sessionUpdate === kind && u.content.type === "text" ? [u.content.text] : [])).join("");
+
+  test("a chat that is not listed opens by its ID and replays its history before the response", async () => {
+    const h = await harness();
+    h.streams.push([
+      state([
+        stored({ role: "user", content: ["Plan the week"] }),
+        stored({ role: "assistant", content: [{ type: "text", text: "See [the draft](/open/mail.draft/Ab12)." }] }),
+      ]),
+    ]);
+    expect(await load(h)).toMatchObject({ configOptions: [{ id: "model" }] });
+    const updates = of(h);
+    expect(said(updates, "user_message_chunk")).toBe("Plan the week");
+    expect(said(updates, "agent_message_chunk")).toBe("See [the draft](https://cloud.test/open/mail.draft/Ab12).\n\n");
+    expect(updates).toContainEqual({ sessionUpdate: "session_info_update", title: "Old chat" });
+    expect(h.requests.filter((r) => r.path.includes("/conversations/chat")).map((r) => `${r.method} ${r.path}`)).toEqual([
+      "GET /api/ai/conversations/chat/stream",
+    ]);
+    expect(await h.store.chat("chat")).toBe("chat");
+    // The chat now belongs to this folder and a message continues it.
+    expect(await h.acp.request("session/prompt", { sessionId: "chat", prompt: [{ type: "text", text: "Go on" }] })).toEqual({
+      stopReason: "end_turn",
+    });
+  });
+
+  test("a long chat replays only the saved window and links the rest", async () => {
+    const h = await harness();
+    const messages = Array.from({ length: 100 }, (_, i) =>
+      stored(
+        i % 2 ? { role: "assistant", content: [{ type: "text", text: `answer ${i}` }] } : { role: "user", content: [`question ${i}`] },
+      ),
+    );
+    h.streams.push([state(messages, { hasMoreMessages: true })]);
+    await load(h);
+    const updates = of(h);
+    expect(said(updates, "agent_message_chunk")).toStartWith(
+      "Earlier messages of this chat are in the web chat: https://cloud.test/app/assistant?conversation=chat\n\n",
+    );
+    expect(updates.filter((u) => u.sessionUpdate === "user_message_chunk")).toHaveLength(50);
+    expect(h.requests.some((r) => r.path.includes("/messages"))).toBe(false);
+  });
+
+  test("stored tool calls render through the tool mapping", async () => {
+    const h = await harness();
+    h.streams.push([
+      state([
+        stored({ role: "user", content: ["Read and send"] }),
+        stored({
+          role: "assistant",
+          content: [
+            { type: "tool_call", id: "read", name: "read_file", args: { path: "/notes.md" } },
+            { type: "tool_call", id: "send", name: "mail.send", args: { to: "a@b.test" } },
+            { type: "tool_call", id: "lost", name: "local_bash", args: { command: "make" } },
+          ],
+        }),
+        stored({ role: "tool_result", callId: "read", name: "read_file", result: "notes" }),
+        stored({ role: "tool_result", callId: "send", name: "mail.send", result: { error: "Denied" }, isError: true }),
+      ]),
+    ]);
+    await load(h);
+    const calls = of(h).flatMap((u) => (u.sessionUpdate === "tool_call" ? [u] : []));
+    expect(calls).toMatchObject([
+      { toolCallId: "tool-read", title: "read_file /notes.md", kind: "read", status: "completed", rawOutput: "notes" },
+      { toolCallId: "tool-send", title: "mail.send", status: "failed", content: [{ content: { text: "Denied" } }] },
+      {
+        toolCallId: "tool-lost",
+        kind: "execute",
+        status: "failed",
+        content: [{ content: { text: "No result was saved for this call." } }],
+      },
+    ]);
+    expect(calls[0]?.content).toEqual([{ type: "content", content: { type: "text", text: "```\nnotes\n```" } }]);
+  });
+
+  test("a running turn shows once after load, and its local call never runs twice", async () => {
+    let failDelivery = true;
+    const h = await harness({
+      activeTurn: true,
+      intercept: (path, method) => {
+        if (method === "POST" && path.includes("/actions/") && failDelivery) {
+          failDelivery = false;
+          return Response.json({ error: "Unavailable" }, { status: 503 });
+        }
+        if (method === "GET" && path.endsWith("/conversations/chat"))
+          return Response.json({ conversation: initialConversation(), activeTurn: { turnId: "turn", status: "waiting_for_action" } });
+      },
+    });
+    await writeFile(join(h.cwd, "notes.md"), "");
+    const append = tool("local_write", "awaiting_client", { path: "notes.md", mode: "append", content: "X" });
+    // The first prompt runs the append; its result does not reach Cloud.
+    h.streams.push([h.block(append)]);
+    await expect(h.send("Append")).rejects.toThrow("503");
+    const working = { id: "text", kind: "text" as const, text: "Working on it" };
+    h.streams.push(
+      [
+        state(
+          [
+            stored({ role: "user", content: ["Earlier"] }),
+            stored({ role: "user", content: ["Append"] }, "turn"),
+            stored({ role: "assistant", content: [{ type: "text", text: "Working on it" }] }, "turn"),
+          ],
+          {
+            activeTurn: {
+              turnId: "turn",
+              attempt: 1,
+              status: "waiting_for_action",
+              seq: 3,
+              blocks: [working, append],
+              modelId: null,
+              createdAt: "2026-10-11T00:00:00Z",
+              actionWaitMs: 0,
+              waitingSince: null,
+            },
+          },
+        ),
+      ],
+      [h.block(working), h.block(append), h.block({ ...append, status: "completed" }), h.done()],
+    );
+    await load(h);
+    const loaded = of(h);
+    expect(said(loaded, "user_message_chunk")).toBe("EarlierAppend");
+    expect(said(loaded, "agent_message_chunk")).not.toContain("Working on it");
+    expect(said(loaded, "agent_message_chunk")).toContain("A turn in this chat is still running.");
+    const before = h.updates.length;
+    expect(await h.acp.request("session/prompt", { sessionId: "chat", prompt: [{ type: "text", text: "Next" }] })).toEqual({
+      stopReason: "end_turn",
+    });
+    const after = h.updates
+      .slice(before)
+      .filter((u) => u.sessionId === "chat")
+      .map((u) => u.update);
+    expect(said([...loaded, ...after], "agent_message_chunk").match(/Working on it/g)).toHaveLength(1);
+    expect(await Bun.file(join(h.cwd, "notes.md")).text()).toBe("X");
+    const delivered = h.requests.filter((r) => r.method === "POST" && r.path.includes("/actions/"));
+    expect(delivered).toHaveLength(2);
+    expect(delivered[1]?.body).toEqual(delivered[0]?.body);
+  });
+
+  test("a running turn that finishes before the next message still shows, and only then counts as seen", async () => {
+    let finished = false;
+    const h = await harness({
+      intercept: (path, method) => {
+        if (method === "GET" && path.endsWith("/conversations/chat"))
+          return Response.json({
+            conversation: initialConversation(),
+            activeTurn: finished ? null : { turnId: "turn", status: "running" },
+          });
+      },
+    });
+    const running = {
+      turnId: "turn",
+      attempt: 1,
+      status: "running" as const,
+      seq: 1,
+      blocks: [],
+      modelId: null,
+      createdAt: "2026-10-11T00:00:00Z",
+    };
+    h.streams.push([state([stored({ role: "user", content: ["Question"] }, "turn")], { activeTurn: running })]);
+    await load(h);
+    await Bun.sleep(20);
+    expect(h.requests.some((r) => r.path.endsWith("/viewed"))).toBe(false);
+    // The turn ends before the person writes again.
+    finished = true;
+    h.streams.push([
+      state([
+        stored({ role: "user", content: ["Question"] }, "turn"),
+        stored({ role: "assistant", content: [{ type: "text", text: "The answer" }] }, "turn"),
+      ]),
+    ]);
+    await h.acp.request("session/prompt", { sessionId: "chat", prompt: [{ type: "text", text: "Next" }] });
+    await Bun.sleep(20);
+    expect(said(of(h), "agent_message_chunk").match(/The answer/g)).toHaveLength(1);
+    expect(h.requests.filter((r) => r.path.endsWith("/viewed"))).toHaveLength(1);
+  });
+
+  test("loading a chat that is gone forgets it", async () => {
+    const h = await harness({ intercept: (path) => (path.endsWith("/gone/stream") ? Response.json({}, { status: 404 }) : undefined) });
+    await h.store.set("gone-session", "gone", h.cwd);
+    await expect(load(h, "gone-session")).rejects.toMatchObject({ code: -32002 });
+    expect(await h.store.chat("gone-session")).toBeUndefined();
+  });
 });

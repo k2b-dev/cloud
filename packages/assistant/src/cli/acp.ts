@@ -16,6 +16,7 @@ import {
   type ToolCall,
 } from "@agentclientprotocol/sdk";
 import type {
+  AiConversation,
   AiConversationPage,
   AiDraftContentPart,
   AiLocalContext,
@@ -23,6 +24,7 @@ import type {
   AiPeopleModels,
   AiProject,
   AiSkillSummary,
+  AiStreamState,
 } from "@k2b/cloud/ai";
 import {
   AI_IMAGE_INPUT_MAX_BYTES,
@@ -36,6 +38,7 @@ import {
   CODE_RUNTIME_TOOL_NAMES,
   guessAiMediaType,
   isAiImageMediaType,
+  parseAiSse,
 } from "@k2b/cloud/ai/browser";
 import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import { type CloudCliContext, command } from "@k2b/cloud/cli";
@@ -43,6 +46,7 @@ import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "@k2b/cloud/contract
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
 import { parseAiModelChoice } from "@k2b/cloud/shared";
 import { version } from "../../package.json";
+import { historyUpdates } from "./acp-history";
 import { type AcpSessionStore, createAcpSessionStore } from "./acp-sessions";
 import {
   approvalOptions,
@@ -99,6 +103,8 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
 const REQUEST_DEADLINE_MS = 30_000;
 /** How long requests already sent may finish after the editor disconnects, before they are cut off. */
 const SHUTDOWN_GRACE_MS = 2_000;
+/** Cloud's list filters for chats that are not finished. */
+const OPEN_CHAT_STATUSES = ["running", "needs_attention", "unread"] as const;
 const SIGN_IN = "Sign in first: run `cld login` in a terminal, then start a new thread.";
 class WebChatRequired extends Error {}
 /** The file name an embedded resource arrives with; a relative or odd URI keeps its last segment. */
@@ -130,6 +136,8 @@ type Session = {
   disconnected: boolean;
   title?: string;
   commands?: string;
+  /** A turn that ran when the thread opened, left out of the replay until a message follows or shows it. */
+  unseenTurn?: string;
   /** Updates not yet handed to the editor; `sending` drains them in order. */
   outbox: SessionUpdate[];
   sending?: Promise<void>;
@@ -431,10 +439,15 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
     }
   };
   /** Work that follows a response instead of delaying it. */
-  const afterResponse = (s: Session, next: { commands?: boolean; title?: string; notice?: string; refreshTitle?: boolean }) => {
+  const afterResponse = (
+    s: Session,
+    next: { commands?: boolean; title?: string; notice?: string; refreshTitle?: boolean; viewed?: boolean },
+  ) => {
     setImmediate(() => {
       void (async () => {
         if (s.disconnected) return;
+        // The person saw the chat in the editor, as when opening it on the web; it no longer waits for them.
+        if (next.viewed && s.chat) await readApi(api, conversationPath(s.chat, "/viewed"), { method: "POST" });
         if (next.commands) await commands(s);
         if (next.notice !== undefined) await message(s, next.notice + "\n");
         const title = next.refreshTitle && s.chat ? (await readConversationDetail(api, s.chat)).conversation.title : next.title;
@@ -579,6 +592,7 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
     let turnId: string | undefined;
     let title: string | undefined;
     let created = false;
+    let answered = false;
     let output = createAssistantTurnOutput();
     const waitingApprovals = new Set<string>();
     const calls = new Map<string, string>();
@@ -803,6 +817,19 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
       } else {
         current = await readConversationDetail(ctx, s.chat, abort.signal);
         title = current.conversation.title;
+        // The turn that ran when the thread opened finished meanwhile: show what it did before this message.
+        if (s.unseenTurn && current.activeTurn?.turnId !== s.unseenTurn) {
+          const state = await savedState(s.chat, abort.signal);
+          if (state)
+            for (const value of historyUpdates(state, {
+              cwd: s.cwd,
+              server: host.options.server,
+              chatLink: chatLink(s),
+              turn: s.unseenTurn,
+            }))
+              void update(s, value);
+        }
+        s.unseenTurn = undefined;
         if (current.activeTurn) {
           turnId = current.activeTurn.turnId;
           await finish(await attention(await streamAssistantTurn(streamOptions())));
@@ -860,6 +887,7 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
       });
       if (!submission.result) throw RequestError.internalError(undefined, "Missing turn stream result.");
       await finish(await attention(submission.result));
+      answered = true;
       return { stopReason: "end_turn" as const };
     } catch (error) {
       if (abort.signal.aborted) {
@@ -890,7 +918,7 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
         s.active = undefined;
         finishPrompt();
         // Cloud names a new chat after its first message, which the stream's earlier state does not know yet.
-        if (created && !abort.signal.aborted) afterResponse(s, { refreshTitle: true });
+        if (answered && !abort.signal.aborted) afterResponse(s, { refreshTitle: created, viewed: true });
       }
     }
   };
@@ -914,6 +942,64 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
       await grace();
       await Promise.all([...sessions.values()].map((s) => s.folder.close()));
     })());
+  const runningNotice = (s: Session) =>
+    `A turn in this chat is still running. Send a message to follow it here, or open it in Cloud: ${chatLink(s)}`;
+  /** The chat a session uses; a chat ID works as a session ID, also for a chat no editor opened before. */
+  const chatOf = async (sessionId: string, cwd: string) => {
+    const chat = await store.chat(sessionId);
+    if (chat) return chat;
+    // Sessions from before the store kept their chat in the profile; move them over once.
+    const legacyKey = `assistant.acpSession.${sessionId}`;
+    const legacy = await host.getDefault(legacyKey);
+    if (!legacy) return sessionId;
+    await store.set(sessionId, legacy, cwd);
+    await host.setDefault(legacyKey, undefined);
+    await host.setDefault(`assistant.acpChat.${legacy}`, undefined);
+    return legacy;
+  };
+  /** The stream's first saved state of a chat, then the stream closes; undefined when the chat is gone. */
+  const savedState = async (chat: string, signal?: AbortSignal): Promise<AiStreamState | undefined> => {
+    const connection = new AbortController();
+    const response = await api.fetch(`${AI_API}${conversationPath(chat, "/stream")}`, {
+      headers: { Accept: "text/event-stream" },
+      signal: AbortSignal.any([connection.signal, AbortSignal.timeout(REQUEST_DEADLINE_MS), ...(signal ? [signal] : [])]),
+    });
+    if (response.status === 404) return undefined;
+    if (!response.ok || !response.body) await api.readJson(response);
+    const events = parseAiSse(response, connection.signal);
+    try {
+      for await (const event of events) if (event.type === "state") return event;
+      throw RequestError.internalError(undefined, "The chat sent no saved state.");
+    } finally {
+      connection.abort();
+      await events.return(undefined);
+    }
+  };
+  /** Opens a session on a chat for resume and load, unless a close arrived while it waited. */
+  const install = async (
+    id: string,
+    cwd: string,
+    client: AgentContext,
+    profiles: AiPeopleModels["options"][number][],
+    closed: number,
+    conversation: AiConversation,
+  ) => {
+    const existing = sessions.get(id);
+    if (existing?.active) throw RequestError.invalidRequest(undefined, "This session already has a running prompt.");
+    if (existing) await existing.folder.close();
+    const s = await createSession(id, cwd, client, profiles);
+    // A close that arrived while this request waited wins; the session does not come back.
+    if ((closes.get(id) ?? 0) !== closed) {
+      sessions.delete(s.id);
+      await s.folder.close();
+      throw RequestError.invalidRequest(undefined, "This session was closed.");
+    }
+    s.chat = conversation.id;
+    // The thread now works in this folder; a session opened by its chat ID becomes known too.
+    await store.set(id, s.chat, s.cwd).catch((error: unknown) => diagnostic(`Could not remember this session: ${errorText(error)}`));
+    s.project = conversation.projectId ?? undefined;
+    return s;
+  };
   const app = agent()
     .onConnect(({ signal }) => {
       signal.addEventListener(
@@ -931,7 +1017,7 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
         protocolVersion: 1,
         agentInfo: { name: "cld", title: "Cloud Assistant", version },
         agentCapabilities: {
-          loadSession: false,
+          loadSession: true,
           promptCapabilities: { image: true, audio: false, embeddedContext: true },
           sessionCapabilities: { list: {}, resume: {}, close: {} },
         },
@@ -960,70 +1046,67 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
       const page = params.cursor == null ? 1 : Number(params.cursor);
       if (params.cursor != null && (!/^[1-9]\d*$/.test(params.cursor) || !Number.isSafeInteger(page)))
         throw RequestError.invalidParams(undefined, "Unknown session list cursor.");
-      const conversations = await readApi<AiConversationPage>(api, `/conversations/page?page=${page}&perPage=50`);
-      const known = await store.lookup(conversations.items.map((chat) => chat.id));
+      // Only open chats: a turn runs, an approval or question waits, or an answer waits for the person. Each list page
+      // reads one Cloud page per state; a page can come back empty while the cursor goes on.
+      const pages = await Promise.all(
+        OPEN_CHAT_STATUSES.map((status) =>
+          readApi<AiConversationPage>(api, `/conversations/page?status=${status}&page=${page}&perPage=50`),
+        ),
+      );
+      const open = new Map(pages.flatMap((result) => result.items.map((chat) => [chat.id, chat] as const)));
+      const known = await store.lookup([...open.keys()]);
       return {
-        // `cwd` filters: a chat used in another folder stays out, a chat without a folder (from the web) fits every one.
-        sessions: conversations.items.flatMap((chat) => {
-          // With several threads on one chat, the one in the asked folder wins, otherwise the newest.
-          const entries = known.get(chat.id) ?? [];
-          const entry = params.cwd ? (entries.find((e) => e.cwd === params.cwd) ?? entries.find((e) => !e.cwd)) : entries[0];
-          if (params.cwd && entries.length && !entry) return [];
-          return [
-            {
-              sessionId: entry?.session ?? chat.id,
-              cwd: entry?.cwd ?? params.cwd ?? process.cwd(),
-              title: terminalSafeText(chat.title),
-              updatedAt: chat.updatedAt,
-            },
-          ];
-        }),
-        ...(conversations.hasNext ? { nextCursor: String(page + 1) } : {}),
+        // Only chats an editor used in this folder, or in any folder when the editor names none; others open by ID.
+        sessions: [...open.values()]
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+          .flatMap((chat) => {
+            const entry = (known.get(chat.id) ?? []).find((e) => (params.cwd ? e.cwd === params.cwd : e.cwd));
+            return entry?.cwd
+              ? [{ sessionId: entry.session, cwd: entry.cwd, title: terminalSafeText(chat.title), updatedAt: chat.updatedAt }]
+              : [];
+          }),
+        ...(pages.some((result) => result.hasNext) ? { nextCursor: String(page + 1) } : {}),
       };
     })
     .onRequest("session/resume", async ({ params, client }) => {
       const closed = closes.get(params.sessionId) ?? 0;
       const profiles = await models();
-      const legacyKey = `assistant.acpSession.${params.sessionId}`;
-      let chat = await store.chat(params.sessionId);
-      // Sessions from before the store kept their chat in the profile; move them over once.
-      const legacy = chat ? undefined : await host.getDefault(legacyKey);
-      if (legacy) {
-        chat = legacy;
-        await store.set(params.sessionId, legacy, params.cwd);
-        await host.setDefault(legacyKey, undefined);
-        await host.setDefault(`assistant.acpChat.${legacy}`, undefined);
-      }
-      chat ??= params.sessionId;
+      const chat = await chatOf(params.sessionId, params.cwd);
       const response = await api.fetch(`${AI_API}${conversationPath(chat)}`);
       if (response.status === 404) {
         await store.forget(params.sessionId);
         throw RequestError.resourceNotFound(params.sessionId);
       }
       const detail = await api.readJson<Awaited<ReturnType<typeof readConversationDetail>>>(response);
-      const existing = sessions.get(params.sessionId);
-      if (existing?.active) throw RequestError.invalidRequest(undefined, "This session already has a running prompt.");
-      if (existing) await existing.folder.close();
-      const s = await createSession(params.sessionId, params.cwd, client, profiles);
-      // A close that arrived while this resume waited wins; the session does not come back.
-      if ((closes.get(params.sessionId) ?? 0) !== closed) {
-        sessions.delete(s.id);
-        await s.folder.close();
-        throw RequestError.invalidRequest(undefined, "This session was closed.");
-      }
-      s.chat = detail.conversation.id;
-      // The thread now works in this folder; a session resumed by its chat ID becomes known too.
-      await store
-        .set(params.sessionId, s.chat, s.cwd)
-        .catch((error: unknown) => diagnostic(`Could not remember this session: ${errorText(error)}`));
-      s.project = detail.conversation.projectId ?? undefined;
+      const s = await install(params.sessionId, params.cwd, client, profiles, closed, detail.conversation);
       afterResponse(s, {
         commands: true,
         title: detail.conversation.title,
-        notice: detail.activeTurn
-          ? `A turn in this chat is still running. Send a message to follow it here, or open it in Cloud: ${chatLink(s)}`
-          : undefined,
+        notice: detail.activeTurn ? runningNotice(s) : undefined,
       });
+      return { configOptions: config(s) };
+    })
+    .onRequest("session/load", async ({ params, client }) => {
+      const closed = closes.get(params.sessionId) ?? 0;
+      const profiles = await models();
+      const chat = await chatOf(params.sessionId, params.cwd);
+      // One request: the stream's saved state carries the recent messages and the running turn.
+      const state = await savedState(chat);
+      if (!state) {
+        await store.forget(params.sessionId);
+        throw RequestError.resourceNotFound(params.sessionId);
+      }
+      const s = await install(params.sessionId, params.cwd, client, profiles, closed, state.conversation);
+      s.title = state.conversation.title;
+      for (const value of historyUpdates(state, { cwd: s.cwd, server: host.options.server, chatLink: chatLink(s) })) void update(s, value);
+      void update(s, { sessionUpdate: "session_info_update", title: terminalSafeText(state.conversation.title) });
+      if (state.activeTurn) {
+        void message(s, `${runningNotice(s)}\n`);
+        // Its steps stay out of the replay; the next message shows them, then the chat counts as seen.
+        s.unseenTurn = state.activeTurn.turnId;
+      }
+      await flushed(s);
+      afterResponse(s, { commands: true, viewed: !state.activeTurn });
       return { configOptions: config(s) };
     })
     .onRequest("session/prompt", ({ params }) => prompt(getSession(params.sessionId), params.prompt))
