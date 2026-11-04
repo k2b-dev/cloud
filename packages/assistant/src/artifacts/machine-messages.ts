@@ -5,7 +5,8 @@ export const machineMessages = i18n.define({
     en: {
       title: "Machine execution",
       help: "An agent or service account needs a direct app grant and explicit execution rights. Project access grants no execution rights. Execution also requires a write credential; managing source or sharing requires admin scope.",
-      empty: "No agents or service accounts have access. Add one above, then choose its execution rights.",
+      empty: "No agents or service accounts have access. Add one above and save, then choose its execution rights here.",
+      afterSave: "Agents added above appear here once saved. Code service accounts get no execution rights.",
       scope: "These rights cover this app's published version and shared data. Personal data and personal secrets are unavailable.",
       execute: "Execute published code",
       sharing: "Manage sharing",
@@ -53,7 +54,8 @@ export const machineMessages = i18n.define({
     de: {
       title: "Maschinenausführung",
       help: "Ein Agent oder Dienstkonto braucht eine direkte App-Freigabe und ausdrückliche Ausführungsrechte. Projektzugriff erlaubt keine Ausführung. Ausführung braucht zusätzlich den Scope write; Quellcode und Freigaben verwalten braucht admin.",
-      empty: "Noch kein Agent oder Dienstkonto hat Zugriff. Füge oben eines hinzu und wähle danach seine Ausführungsrechte.",
+      empty: "Noch kein Agent oder Dienstkonto hat Zugriff. Füge oben eines hinzu, speichere und wähle danach hier seine Ausführungsrechte.",
+      afterSave: "Oben hinzugefügte Agenten erscheinen hier nach dem Speichern. Dienstkonten von Code bekommen keine Ausführungsrechte.",
       scope:
         "Diese Rechte gelten für die veröffentlichte Version dieser App und ihre gemeinsamen Daten. Persönliche Daten und Secrets sind nicht verfügbar.",
       execute: "Veröffentlichten Code ausführen",

@@ -393,9 +393,9 @@ export function AccessDialog(
           entry={{ principal: row().principal, avatarHash: row().display.avatarHash, serviceAccountKind: row().display.serviceAccountKind }}
           label={nameOf(row())}
         />
-        <span class="min-w-0 flex-1 basis-40">
+        <span class="min-w-0 flex-[1_1_10rem]">
           <span class="flex min-w-0 items-center gap-2 text-[15px] font-medium text-primary">
-            <span class="truncate">{nameOf(row())}</span>
+            <span class="min-w-0 break-words">{nameOf(row())}</span>
             {mark(row())}
           </span>
           <span class="block truncate text-[13px] text-dimmed">{kindLine(row())}</span>
@@ -503,7 +503,7 @@ export function AccessDialog(
         >
           <i class={rowProps.type === "public" ? "ti ti-world" : "ti ti-building"} />
         </span>
-        <span class="min-w-0 flex-1 basis-40">
+        <span class="min-w-0 flex-[1_1_10rem]">
           <span class="flex min-w-0 items-center gap-2 text-[15px] font-medium text-primary">
             <span class="truncate">{rowProps.type === "public" ? t().publicLabel : t().signedInLabel}</span>
             {generalMark()}
@@ -703,8 +703,9 @@ export function AccessDialog(
                             entry={{ principal: account().principal, serviceAccountKind: account().display.serviceAccountKind }}
                             label={account().display.displayName}
                           />
-                          <span class="min-w-0 flex-1 basis-40">
-                            <span class="flex min-w-0 items-center gap-2 text-[15px] font-medium text-primary">
+                          <span class="min-w-0 flex-[1_1_10rem]">
+                            {/* A long title wraps on a phone instead of pushing Add out of the sheet. */}
+                            <span class="block min-w-0 break-words text-[15px] font-medium text-primary">
                               {account().display.displayName}
                             </span>
                             <span class="block truncate text-[13px] text-dimmed">{t().serviceAccount}</span>

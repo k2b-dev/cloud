@@ -20,13 +20,15 @@ export async function requireMachineExecution(db: SQL, id: string, identity: Art
 }
 
 export const machineAccess = {
+  /** Machines with a direct grant. Code accounts act only through their grant level, so they never get machine rights. */
   async list(id: string, identity: ArtifactIdentity) {
     return sql.begin(async (db) => {
       const { row } = await requireArtifact(db, id, identity, "admin");
       const policies = await db<{ access_id: string; rights: unknown; revision: string | null; status: string }[]>`
         SELECT l.access_id,m.rights,m.revision,s.status FROM assistant.artifact_access l
         JOIN auth.access a ON a.id=l.access_id JOIN auth.service_accounts s ON s.id=a.service_account_id
-        LEFT JOIN assistant.artifact_machine_rights m ON m.access_id=a.id WHERE l.artifact_id=${row.id}::uuid`;
+        LEFT JOIN assistant.artifact_machine_rights m ON m.access_id=a.id WHERE l.artifact_id=${row.id}::uuid
+        AND s.kind IN ('agent','standalone','resource_bound')`;
       const grants = await Promise.all(policies.map((policy) => getAccess({ id: policy.access_id }, db)));
       const entries = await resolveDisplayNames(grants.filter((entry) => entry !== null));
       return policies.flatMap((policy) => {
