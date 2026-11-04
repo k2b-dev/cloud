@@ -42,6 +42,10 @@ mock.module("../src/api/client", () => ({
     },
   },
 }));
+/** Waits for the condition; the test's own timeout bounds it. */
+const until = async (condition: () => boolean) => {
+  while (!condition()) await Bun.sleep(10);
+};
 const flush = async () => {
   for (let i = 0; i < 60; i++) await Promise.resolve();
 };
@@ -53,7 +57,7 @@ afterEach(() => {
 });
 
 for (const kind of ["standalone", "agent"] as const) {
-  test(`template permissions send the selected ${kind} to the grant transport`, async () => {
+  test(`template access saves the selected ${kind} through the grant transport`, async () => {
     const dom = createDomTestHarness();
     // happy-dom has no Popover API; exercise the real picker's result list.
     const prototype = dom.window.HTMLElement.prototype;
@@ -103,6 +107,9 @@ for (const kind of ["standalone", "agent"] as const) {
       .click();
     await flush();
     const dialog = dom.document.querySelector("dialog")!;
+    await until(() => !!dialog.querySelector('input[role="combobox"]'));
+    // The dialog keeps the template's own hint: without an entry it stays in administration.
+    expect(dialog.textContent).toContain("Without an access entry");
     const picker = dialog.querySelector<HTMLInputElement>('input[role="combobox"]')!;
     const selected = new Promise<HTMLButtonElement>((resolve) => {
       const observer = new MutationObserver(() => {
@@ -126,15 +133,19 @@ for (const kind of ["standalone", "agent"] as const) {
     expect(options.some((option) => option.textContent?.includes("Public"))).toBe(false);
     option.click();
     await flush();
+    // The pick is staged; Save sends it.
+    expect(granted).toBeUndefined();
+    [...dialog.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Save")!.click();
+    await until(() => granted !== undefined);
     expect(granted).toEqual({
       param: { id: item.id },
       json: {
         principal: { type: "service_account", serviceAccountId: machine.id },
       },
     });
-    expect(dialog.textContent).not.toContain("Could not");
-    dialog.querySelector<HTMLButtonElement>('button[aria-label="close dialog"]')!.click();
-    await flush();
+    // The saved dialog closes.
+    await until(() => !dom.document.querySelector("dialog[open]"));
+    expect(dom.document.querySelector("dialog[open]")).toBeNull();
   });
 }
 test("template editing publishes metadata and replacement bytes in one request and cannot dismiss a pending save", async () => {
