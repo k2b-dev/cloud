@@ -32,6 +32,7 @@ import { mailboxHealthPresentation } from "./mail-health-presentation";
 import { mailListRowKey } from "./mail-list-projection";
 import { buildMailListHref, buildMailSearchClearHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
 import { createMailQuickLookLoader, mailQuickLookKey } from "./mail-quick-look";
+import type { MailRowAssignee } from "./mail-row-assignees";
 import { type MailDayGroup, mailDayGroupStarts, mailTimeColumnSamples, mailTimeColumnSizer } from "./mail-view-mode";
 
 /** Width of the fixed quick look card, which opens 8px beside the list and keeps 8px to the frame edge. */
@@ -100,7 +101,7 @@ export default function MailConversationList(props: {
   onLoadMore: (href: string) => boolean | Promise<boolean>;
   onRefresh: () => Promise<void>;
   /** The columns view (F2): a header and one line per conversation. Absent for today's rows. */
-  columns?: { shared: boolean; assigneeNames: (userIds: readonly string[]) => string[] };
+  columns?: { shared: boolean; assignees: (userIds: readonly string[]) => MailRowAssignee[] };
   /** Conversations done today and how many still need action; drives the done line and "All done." */
   doneToday?: { done: number; automated: number; open: number; logHref: string } | null;
   /** The done conversations this work list leaves out, named at its end, and where "Show done" leads. */
@@ -545,7 +546,7 @@ export default function MailConversationList(props: {
                         item={item}
                         columns={
                           props.columns
-                            ? { assignees: props.columns.shared ? props.columns.assigneeNames(item.assigneeUserIds) : null }
+                            ? { assignees: props.columns.shared ? props.columns.assignees(item.assigneeUserIds) : null }
                             : undefined
                         }
                         leaving={props.leavingKeys?.has(mailListRowKey(item))}

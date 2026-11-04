@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { MailListItem } from "./mail-navigation";
+import type { MailRowAssignee } from "./mail-row-assignees";
 
 const root = mkdtempSync(join(tmpdir(), "mail-conversation-row-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -46,7 +47,7 @@ const item: MailListItem = {
   kept: false,
 };
 
-const renderRow = (value: MailListItem, columns?: { assignees: string[] | null }) =>
+const renderRow = (value: MailListItem, columns?: { assignees: MailRowAssignee[] | null }, currentUserId: string | null = null) =>
   renderToString(() =>
     createComponent(MailConversationRow, {
       item: value,
@@ -59,7 +60,7 @@ const renderRow = (value: MailListItem, columns?: { assignees: string[] | null }
         selectionMode: false,
         canWrite: false,
         spamAction: "junk",
-        currentUserId: null,
+        currentUserId,
         dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
       },
       actions: {
@@ -176,5 +177,78 @@ describe("Mail conversation participants column", () => {
 
   test("the three-line row leaves the column out", () => {
     expect(renderRow(item)).not.toContain("mail-row-participants-cell");
+  });
+});
+
+describe("Mail conversation responsible column", () => {
+  const cell = (html: string) => html.slice(html.indexOf("mail-row-assignee-cell"), html.indexOf("mail-row-status-cell"));
+  const faces = (html: string) => cell(html).match(/class="k2b-avatar "/g)?.length ?? 0;
+  const nora = { id: "Usr002", name: "Nora Example", src: "/api/accounts/users/Usr002/avatar?rev=a1" };
+  const robin = { id: "Usr001", name: "Robin Example" };
+
+  test("one person: their face and name, no +n", () => {
+    const html = renderRow({ ...item, attachmentMatch: null }, { assignees: [nora] }, "Usr001");
+    expect(faces(html)).toBe(1);
+    expect(cell(html)).toContain('src="/api/accounts/users/Usr002/avatar?rev=a1"');
+    expect(cell(html)).toContain(">Nora Example</span>");
+    expect(cell(html)).toContain('aria-label="Responsible: Nora Example"');
+    expect(cell(html)).not.toContain("mail-row-count");
+  });
+
+  test("several people: you come first as You, then +n, and the tooltip names everyone", () => {
+    const html = renderRow({ ...item, attachmentMatch: null }, { assignees: [nora, robin] }, "Usr001");
+    expect(faces(html)).toBe(1);
+    expect(cell(html)).toContain(">You</span>");
+    expect(cell(html)).toContain(">+1</span>");
+    expect(cell(html)).toContain('aria-label="Responsible: You, Nora Example"');
+  });
+
+  test("someone the reader may not list: a placeholder name and a gray face", () => {
+    const html = renderRow({ ...item, attachmentMatch: null }, { assignees: [{ id: "Usr009", name: "Unknown person", unknown: true }] });
+    expect(cell(html)).toContain(">Unknown person</span>");
+    expect(cell(html)).not.toContain("data-tint");
+  });
+
+  test("nobody responsible: the column says so", () => {
+    const html = renderRow({ ...item, attachmentMatch: null }, { assignees: [] });
+    expect(cell(html)).toContain(">Nobody</span>");
+    expect(cell(html)).not.toContain("data-mail-assignees");
+  });
+
+  test("a personal mailbox leaves the column out", () => {
+    expect(renderRow(item, { assignees: null })).not.toContain("mail-row-assignee-cell");
+  });
+});
+
+describe("Mail conversation three-line row participants", () => {
+  const line = (html: string) => html.slice(html.indexOf("mail-row-extra"));
+
+  test("others who wrote: a fourth line ends with up to three faces and +n", () => {
+    const html = renderRow({
+      ...item,
+      attachmentMatch: null,
+      participants: [
+        { name: "Ada" },
+        { name: "Jonas Weber", kind: "user" },
+        { name: "Mira Schulz", kind: "user" },
+        { name: "Lea Brandt", kind: "user" },
+      ],
+    });
+    expect(html).toContain('data-lines="4"');
+    expect(line(html)).toContain("mail-row-extra-participants");
+    expect(line(html).match(/class="k2b-avatar "/g)?.length).toBe(3);
+    expect(line(html)).toContain(">+1</span>");
+    expect(line(html)).toContain('aria-label="4 participants · External: Ada · Team: Jonas Weber, Mira Schulz, Lea Brandt"');
+  });
+
+  test("only the sender wrote: the row keeps three lines", () => {
+    const html = renderRow({ ...item, attachmentMatch: null });
+    expect(html).toContain('data-lines="3"');
+    expect(html).not.toContain("mail-row-extra");
+  });
+
+  test("the faces keep clear of a matched attachment's download button", () => {
+    const html = renderRow({ ...item, participants: [{ name: "Ada" }, { name: "Jonas Weber", kind: "user" }] });
+    expect(line(html)).toContain("data-clear-download");
   });
 });

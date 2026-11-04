@@ -5,7 +5,7 @@ section: Platform services
 order: 595
 description: Expose application operations through the shared cld command-line interface.
 tags: [cli, cld, automation, plugins]
-updated: 2026-10-22
+updated: 2026-11-04
 ---
 
 # Application CLI modules
@@ -393,6 +393,7 @@ cld inventory items list --jsonl
 | `getDefault()` / `setDefault()` | Profile-scoped application defaults |
 | `openUrl?()` | Open an http(s) link in the user's browser; resolves false when the host cannot, so print the link too; absent in hosts without a browser |
 | `profiles?.saveClientCredentials()` | Store an OAuth client ID and secret as a client-credentials profile; absent in hosts without profiles |
+| `reloadCredentials?()` | Read the profile's credentials again, so a long-running command uses a `cld login` that happened after it started; rejects when the profile cannot sign in; absent in hosts without profiles |
 
 `readJson()` accepts native fetch responses and typed Hono client responses.
 It requires `json()`, `text()`, `ok`, `status`, and `statusText`.

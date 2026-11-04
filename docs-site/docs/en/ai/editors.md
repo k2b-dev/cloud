@@ -5,7 +5,7 @@ section: AI
 order: 1035
 description: Run Cloud Assistant in T3 Code or Zed with cld acp.
 tags: [ai, assistant, editors, acp, cli]
-updated: 2026-10-11
+updated: 2026-11-04
 ---
 
 # Assistant in editors
@@ -36,6 +36,10 @@ cld plugins install assistant
 
 For an older installation, run `cld plugins update`. Sign in with `cld login`,
 not an API key. Check that the command is available with `cld acp --help`.
+
+When the editor reports that you need to sign in, run `cld login` in a
+terminal and start a new thread. The editor does not need a restart: every new
+or resumed thread reads the profile again.
 If `acp` is reported inactive, use `assistant` and `acp` as the editor's two
 arguments instead.
 
@@ -136,6 +140,9 @@ follows it again before sending your next message.
 
 Closing the editor does not stop a Cloud turn. Open the web chat to continue
 or answer a pending request. Use the editor's Stop action to cancel a turn.
+Stop always ends the editor's turn, also without a connection; the turn may
+then keep running in Cloud until you stop it in the web chat. A Stop before
+the message reaches Cloud sends nothing.
 
 ## Limits
 
