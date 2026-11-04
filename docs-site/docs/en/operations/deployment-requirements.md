@@ -1020,6 +1020,11 @@ fields. Core adds nullable columns to its existing Assistant reference index
 through its normal startup migration; no operator configuration is needed.
 See [result references](/en/docs/platform/capabilities).
 
+Universal Search result metadata may now carry a `format` for dates. Upgrade
+Core before the apps: Core accepts the search of apps built by earlier
+releases, but an earlier Core leaves out the search of an app built by this
+release until Core is upgraded. See [Search](/en/docs/platform/search).
+
 During the rollout to this release, and during a rollback to the previous
 version, replicas of the previous version write no liveness key. While they
 run, a replica that stops can still delete the shared registry entry once, and

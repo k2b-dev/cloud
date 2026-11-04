@@ -803,6 +803,17 @@ const searchMailboxes = async <T extends { id: string }, R>(
   return mailboxList.map((mailbox, index) => ({ mailbox, page: pages[index] ?? search.searchExceededLimit() }));
 };
 
+/** Bounds the mailboxes one search reaches, as `listMailboxes` does. */
+const MAILBOX_LIST_LIMIT = 200;
+const LISTED_ADDRESSES = 3;
+
+/** "Anna Berger, ben@example.com +2": names where known, and how many more there are. */
+const addressList = (addresses: ReadonlyArray<{ name: string | null; address: string }>, t: ReturnType<typeof mailCapabilityMessages>) => {
+  const listed = addresses.slice(0, LISTED_ADDRESSES).map((address) => address.name?.trim() || address.address);
+  const more = addresses.length - listed.length;
+  return truncateText(more > 0 ? `${listed.join(", ")} ${t.moreAddresses({ count: more })}` : listed.join(", "), 1000).text;
+};
+
 const runSearch = async (
   input: UniversalSearchInput,
   capabilityContext: CapabilityExecutionContext,
@@ -811,7 +822,8 @@ const runSearch = async (
   if (!input.scope && !input.query.trim()) return ok({ data: [] });
   const context = requestContext(capabilityContext);
   const mailboxResult = await (async () => {
-    if (!input.scope) return mailboxes.listMailboxes(context, 20);
+    // Every mailbox the person may read, most recently active first; the search deadline bounds the work.
+    if (!input.scope) return mailboxes.listMailboxes(context, MAILBOX_LIST_LIMIT);
     if (input.scope.type !== "mail.mailbox") return fail(err.badInput("Unsupported mail search context"));
     const scope = await resolveMailboxScope(input.scope.id);
     if (!scope.ok) return scope;
@@ -826,9 +838,12 @@ const runSearch = async (
       mailboxId: mailbox.id,
       request: {
         expression: { type: "text", field: "any", query: input.query, match: "words" },
-        sort: "relevance",
-        limit: Math.min(input.limit, 10),
+        // Every matching mail, newest first: best match ranks only a mailbox's newest matches, and a person picking
+        // a mail tells similar ones apart by sender and date. One row per mail keeps pages in date order.
+        sort: "newest",
+        limit: input.limit,
       },
+      groupByConversation: false,
       timeoutMs,
     }),
   );
@@ -839,14 +854,15 @@ const runSearch = async (
       searchLog.warn("Mail search skipped a mailbox", { mailboxId: mailbox.id, code: page.error.code, reason: page.error.message });
   }
   const resultItems = pages
-    .flatMap(({ mailbox, page }) => page.items.map((message, mailboxRank) => ({ mailbox, message, mailboxRank })))
-    .sort((left, right) => left.mailboxRank - right.mailboxRank || right.message.internalDate.localeCompare(left.message.internalDate))
+    .flatMap(({ mailbox, page }) => page.items.map((message) => ({ mailbox, message })))
+    .sort((left, right) => right.message.internalDate.localeCompare(left.message.internalDate))
     .slice(0, input.limit);
+  const severalMailboxes = new Set(resultItems.map(({ mailbox }) => mailbox.id)).size > 1;
   // No result while a mailbox was skipped is not an answer: the skipped mailbox may hold the match,
   // and universal search shows only a failure, not a result's summary.
   const firstSkipped = skipped[0]?.page;
   if (resultItems.length === 0 && firstSkipped && !firstSkipped.ok) return firstSkipped;
-  const [mailboxIds, messageIds, conversationIds, attachmentIds] = await Promise.all([
+  const [mailboxIds, messageIds, attachmentIds] = await Promise.all([
     publicResources.publicIds(
       "mailboxes",
       resultItems.map(({ mailbox }) => mailbox.id),
@@ -854,10 +870,6 @@ const runSearch = async (
     publicResources.publicIds(
       "messages",
       resultItems.flatMap(({ message }) => [message.id, ...(message.attachmentMatch ? [message.attachmentMatch.messageId] : [])]),
-    ),
-    publicResources.publicIds(
-      "conversations",
-      resultItems.map(({ message }) => message.conversationId),
     ),
     publicResources.publicIds(
       "attachments",
@@ -868,28 +880,31 @@ const runSearch = async (
     const mailboxId = requirePublicId(mailboxIds, mailbox.id);
     const messageId = requirePublicId(messageIds, message.id);
     const attachmentMatch = message.attachmentMatch;
+    const sender = addressList(message.from, t);
+    const recipients = addressList(message.to, t);
     return {
       ref: { type: "mail.message", id: messageId },
       title: message.subject || t.noSubject,
-      preview: truncateText(
-        attachmentMatch?.snippet ?? message.snippet ?? message.from.map((address) => address.name || address.address).join(", "),
-        320,
-      ).text,
+      ...(sender || severalMailboxes
+        ? { context: truncateText([sender, severalMailboxes ? mailbox.name : ""].filter(Boolean).join(" · "), 200).text }
+        : {}),
+      preview: truncateText(attachmentMatch?.snippet ?? message.snippet ?? sender, 320).text,
       icon: "ti ti-mail",
       priority: 8,
       metadata: [
+        ...(sender ? [{ label: t.sender, value: sender }] : []),
+        ...(recipients ? [{ label: t.recipients, value: recipients }] : []),
+        { label: t.date, value: message.internalDate, format: "date-time" as const },
+        ...(message.folderPath ? [{ label: t.folder, value: truncateText(message.folderPath, 1000).text }] : []),
         { label: t.mailbox, value: mailbox.name },
-        { label: t.date, value: message.internalDate },
+        ...(message.attachmentCount > 0 ? [{ label: t.attachments, value: String(message.attachmentCount) }] : []),
         ...(attachmentMatch ? [{ label: t.matchedAttachment, value: attachmentMatch.filename?.trim() || t.untitledAttachment }] : []),
       ],
       links: [
+        // Each row is one mail, so it opens that mail, not its conversation's latest one.
         {
           rel: "open",
-          href: attachmentMatch
-            ? messageHref(mailboxId, requirePublicId(messageIds, attachmentMatch.messageId))
-            : message.conversationId
-              ? conversationHref(mailboxId, requirePublicId(conversationIds, message.conversationId))
-              : messageHref(mailboxId, messageId),
+          href: messageHref(mailboxId, attachmentMatch ? requirePublicId(messageIds, attachmentMatch.messageId) : messageId),
         },
         ...(attachmentMatch
           ? [
