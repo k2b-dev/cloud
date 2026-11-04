@@ -24,6 +24,17 @@ export const formatMailMessageDateTime = (input: string | Date, context: DateCon
   `${dates.formatTime(input, context)} ${dates.formatDate(input, context)}`;
 
 const QUOTED_LINE = /^\s*>/u;
+const SIGNATURE_DELIMITER = /^-- ?$/u;
+/** Lines such as "---------- Forwarded message ---------" that mail programs put above a forwarded original. */
+export const FORWARD_MARKER =
+  /forwarded message|weitergeleitete nachricht|anfang der weitergeleiteten nachricht|message transf[ée]r[ée]|mensaje reenviado|messaggio inoltrato|doorgestuurd bericht/iu;
+/** The verb of an attribution such as "On Monday, Alex wrote:" or "Am Montag schrieb Alex:". */
+export const ATTRIBUTION_VERB = /wrote|schrieb|écrit|escribió|scrisse|schreef|skrev/iu;
+/** A short paragraph that ends with a colon and names who wrote the quote below it. */
+export const isAttribution = (text: string): boolean => {
+  const trimmed = text.trim();
+  return trimmed.length <= 300 && trimmed.split("\n").length <= 3 && trimmed.endsWith(":") && ATTRIBUTION_VERB.test(trimmed);
+};
 const PLAIN_WEB_URL = /\bhttps?:\/\/[^\s<>"'`]+/giu;
 const CID_SOURCE = /\bsrc=(["'])cid:([^"']+)\1/giu;
 const REMOTE_IMAGE_ATTRIBUTE =
@@ -98,7 +109,8 @@ export const referencedRemoteImageIds = (html: string): string[] => {
   return [...ids];
 };
 
-export const splitPlainMessageSegments = (value: string): PlainMessageSegment[] => {
+/** Splits text into runs of `>` quoted lines and other lines; blank lines between quoted lines stay in the quote. */
+const splitQuotedLineRuns = (value: string): PlainMessageSegment[] => {
   const lines = value.replace(/\r\n?/gu, "\n").split("\n");
   const nextNonEmptyIsQuoted = new Array<boolean>(lines.length).fill(false);
   let nextIsQuoted = false;
@@ -129,6 +141,50 @@ export const splitPlainMessageSegments = (value: string): PlainMessageSegment[] 
     currentLines.push(line);
   }
   flush();
+  return segments;
+};
+
+const firstNonEmptyLine = (value: string): string => value.split("\n").find((line) => line.trim()) ?? "";
+
+/**
+ * Splits plain text into visible content and the quoted history at its end. Only the last `>` block counts as
+ * history: the sender wrote something of their own above it, nothing but blank lines or a "-- " signature follows
+ * it, and it is either the only quote or introduced by an attribution such as "On Monday, Alex wrote:". Inline
+ * answers, bottom-posted replies, a lone `>` line, quote-only messages, and forwarded originals stay visible.
+ */
+export const splitPlainMessageSegments = (value: string): PlainMessageSegment[] => {
+  const runs = splitQuotedLineRuns(value);
+  const historyIndex = runs.findLastIndex((run) => run.kind === "quote");
+  const history = runs[historyIndex];
+  const before = runs
+    .slice(0, Math.max(0, historyIndex))
+    .map((run) => run.text)
+    .join("\n");
+  const after = runs
+    .slice(historyIndex + 1)
+    .map((run) => run.text)
+    .join("\n");
+  const beforeLines = before.trimEnd().split("\n");
+  const attributionStart = beforeLines.findLastIndex((line) => !line.trim()) + 1;
+  const attributed = isAttribution(beforeLines.slice(attributionStart).join("\n"));
+  const own = attributed ? beforeLines.slice(0, attributionStart).join("\n") : before;
+  const isHistory =
+    history !== undefined &&
+    own.trim() !== "" &&
+    (!after.trim() || SIGNATURE_DELIMITER.test(firstNonEmptyLine(after))) &&
+    (attributed || runs.filter((run) => run.kind === "quote").length === 1) &&
+    !FORWARD_MARKER.test(before) &&
+    !FORWARD_MARKER.test(firstNonEmptyLine(history.text));
+  const segments: PlainMessageSegment[] = [];
+  const pushContent = (text: string) => {
+    const previous = segments.at(-1);
+    if (previous?.kind === "content") previous.text = `${previous.text}\n${text}`;
+    else segments.push({ kind: "content", text });
+  };
+  runs.forEach((run, index) => {
+    if (isHistory && index === historyIndex) segments.push(run);
+    else pushContent(run.text);
+  });
   return segments;
 };
 
@@ -167,7 +223,7 @@ export const splitPlainTextLinks = (value: string): PlainTextLinkSegment[] => {
 
 export const messagePreviewText = (plainText: string | null, forwardText: string | undefined, maxLength = 240): string => {
   const source = messageForwardTextOf({ plainText, forwardText });
-  const content = splitPlainMessageSegments(source).find((segment) => segment.kind === "content" && segment.text.trim())?.text ?? source;
+  const content = splitQuotedLineRuns(source).find((segment) => segment.kind === "content" && segment.text.trim())?.text ?? source;
   const normalized = content.replace(/\s+/gu, " ").trim();
   return normalized.length > maxLength ? `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…` : normalized;
 };

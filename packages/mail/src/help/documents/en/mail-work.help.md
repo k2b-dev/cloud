@@ -154,7 +154,7 @@ By default, Mail shows the HTML version of a message and adapts its colors to da
 
 HTML messages keep a limited set of layout, typography, color, spacing, and table styles. Scripts, forms, embedded objects, external stylesheets, and other active content are removed. Remote images stay blocked separately until you choose to load them.
 
-Mail collapses the quoted history of earlier messages. Choose **Show quoted text** to expand it and **Hide quoted text** to collapse it again. An expanded quote stays open while new activity or other live updates arrive.
+Mail collapses the quoted history of earlier messages at the end of a message. Choose **Show quoted text** to expand it and **Hide quoted text** to collapse it again. Quotes between the lines of a reply and forwarded messages stay visible. An expanded quote stays open while new activity or other live updates arrive.
 
 The top actions take the conversation out of the folder that you view, such as Inbox. This also applies when your newest reply is stored in Sent. In views that span folders, such as **All mail** or **Needs action**, they take it out of every folder where it is filed. Your copies in Sent and Drafts stay where they are, and so do messages in Junk, Trash, or the **All Mail** folder of Gmail. The exception is a conversation that is only there.
 
