@@ -398,12 +398,17 @@ export const localTurnFields = (input: {
   localTools: "ask" | "off";
   workspace: string;
   client: { kind: "cli" | "acp"; name?: string };
+  /** Offer Bash only where its question always reaches a person. */
+  bash?: boolean;
 }) => {
   const skills = input.localTools === "ask" ? localSkillCatalog(input.context) : [];
   return {
     clientToolIds:
       input.localTools === "ask"
-        ? ["local_bash", ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill" || skills.length > 0)]
+        ? [
+            ...(input.bash === false ? [] : ["local_bash"]),
+            ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill" || skills.length > 0),
+          ]
         : [],
     client: { ...input.client, cwd: input.workspace, os: `${osType()} ${osRelease()}`, shell: "/bin/bash", localTools: input.localTools },
     localContext: { instructions: input.context.instructions, skills },

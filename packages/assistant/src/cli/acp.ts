@@ -67,6 +67,7 @@ import {
 } from "./acp-updates";
 import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
 import { localTurnFields, readSelectedLocalSkill } from "./interactive";
+import { deniedLocalBashResult } from "./local-bash";
 import { createLocalContextReader, discoverLocalContext, type LocalContext, type LocalSkill } from "./local-context";
 import { classifyLocalPath, resolveLocalPath } from "./local-paths";
 import { createLocalSessionFolder, type LocalQuestionKind, runLocalTool } from "./local-tools";
@@ -95,6 +96,8 @@ const builtins: AvailableCommand[] = [
   { name: "project", description: "Choose a Project for this chat", input: { hint: "number from the list" } },
   { name: "skills", description: "List local and Cloud Skills" },
 ];
+const BASH_NEEDS_FORMS = "Local Bash needs an editor with form support. Run commands in the editor's terminal or with cld chat.";
+
 const diagnostic = (text: string) => {
   process.stderr.write(`${terminalSafeText(text)}\n`);
 };
@@ -326,6 +329,8 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
           properties: {
             decision: {
               type: "string",
+              // Zed shows the titled oneOf choices; T3 Code builds its choices only from enum and answers with the value.
+              enum: ["yes", "no"],
               oneOf: [
                 { const: "yes", title: presentation.name },
                 { const: "no", title: presentation.reject },
@@ -618,6 +623,8 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
       names: new Set(["local_bash", ...AI_LOCAL_TOOL_NAMES]),
       receipts,
       run: async (call: { name: string; args: unknown; callId: string }, signal: AbortSignal) => {
+        // An editor may answer permission prompts automatically. A command could then read cld's login and act as the person.
+        if (call.name === "local_bash" && !forms) return deniedLocalBashResult(BASH_NEEDS_FORMS);
         s.context ??= await s.contextReader();
         return runLocalTool(
           call,
@@ -865,6 +872,7 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
         localTools: s.localTools,
         workspace: s.cwd,
         client: { kind: "acp", ...(clientName ? { name: clientName } : {}) },
+        bash: forms,
       });
       const submission = await submitAssistantTurn({
         ...streamOptions(),
