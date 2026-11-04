@@ -219,6 +219,12 @@ test("a folder lists its contents, files before images, and keeps rarer commands
   expect(menu).toEqual(["Rename", "Duplicate", "Move to…", "Copy to…", "Move to trash"]);
   [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].at(-1)!.click();
   expect(trashed).toEqual(["Fotos"]);
+  // Every section carries its icon (UI-27), and the technical details are the shared properties under "More about".
+  const sections = [...dom.root.querySelectorAll(".k2b-detail-panel__section")];
+  expect(sections.length).toBeGreaterThan(2);
+  for (const section of sections) expect(section.querySelector(".k2b-detail-panel__section-icon i")).not.toBeNull();
+  expect(dom.root.querySelector(".k2b-detail-panel__group-title")?.textContent).toBe("More about this folder");
+  expect(dom.root.querySelector(".k2b-detail-properties")?.textContent).toContain("TypeFolder");
 });
 
 test("tree branches cannot cross full cloud base identities or accept a superseded branch response", async () => {
