@@ -48,7 +48,7 @@ export const appAccessMessages = i18n.define({
       change: "Change",
       add: "Add a person, group or service account",
       signedIn: "All signed-in people",
-      signedInDescription: "Everyone with an account in this Cloud",
+      signedInDescription: "Every person with an account in this Cloud, including guests",
       group: ({ count }: { count: number }) =>
         `Group · ${count === 0 ? "no people" : count === 1 ? "1 person" : `${count.toLocaleString("en")} people`}`,
       fixedSignedIn: "All signed-in people. The app sets this rule; there is nothing to configure here.",
@@ -130,7 +130,7 @@ export const appAccessMessages = i18n.define({
       change: "Ändern",
       add: "Person, Gruppe oder Dienstkonto hinzufügen",
       signedIn: "Alle angemeldeten Personen",
-      signedInDescription: "Jede Person mit Konto in dieser Cloud",
+      signedInDescription: "Jede Person mit Konto in dieser Cloud, auch Gäste",
       group: ({ count }: { count: number }) =>
         `Gruppe · ${count === 0 ? "keine Personen" : count === 1 ? "1 Person" : `${count.toLocaleString("de")} Personen`}`,
       fixedSignedIn: "Alle angemeldeten Personen. Das legt die App fest; hier gibt es dazu nichts einzustellen.",

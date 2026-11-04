@@ -14,7 +14,7 @@ describe("principalLabel", () => {
       en: "Unknown agent",
       de: "Unbekannter Agent",
     },
-    { principal: { type: "authenticated" }, en: "All users (including guests)", de: "Alle Benutzer einschließlich Gäste" },
+    { principal: { type: "authenticated" }, en: "All signed-in people", de: "Alle angemeldeten Personen" },
     { principal: { type: "public" }, en: "Public", de: "Öffentlich" },
   ];
   for (const locale of ["en", "de"] as const) {

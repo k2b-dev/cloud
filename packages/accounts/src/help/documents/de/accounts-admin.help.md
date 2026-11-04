@@ -61,14 +61,14 @@ Die Person kann sich dann anmelden und erneut ein Gerät koppeln.
 ## Schlüssel, Geräte, Benachrichtigungen und Anfragen steuern {icon="shield-lock"}
 
 :::reference
-- **Dienstkonten:** Liste aktive oder widerrufene API-Schlüssel auf und filtere nach personen- oder ressourcengebundenen Eigentümern. Widerrufe einen aktiven Schlüssel, wenn sein Zugriff enden muss. Ein Agenten-Schlüssel mit **Alt, begrenzt** hat **Ersetzen**: Es erstellt einen neuen Schlüssel, der wie der Agent handelt, und zeigt ihn einmal. Widerrufe den alten Schlüssel, wenn das Programm den neuen nutzt.
+- **Dienstkonten:** Liste aktive oder widerrufene API-Schlüssel auf und filtere nach personen- oder ressourcengebundenen Eigentümern. Widerrufe einen aktiven Schlüssel, wenn sein Zugriff enden muss. Ein Agenten-Schlüssel mit **Alt, begrenzt** hat **Ersetzen**: Es erstellt einen neuen Schlüssel, der wie der Agent handelt, und zeigt ihn einmal. Widerrufe den alten Schlüssel, wenn das Programm den neuen nutzt. Automatische App-Schlüssel sind standardmäßig ausgeblendet; wähle **Anzeigen** über der Liste, um sie einzublenden.
 - **Anmeldegeräte:** Die Seite einer Person zeigt die Geräte, die ihre App-Anmeldungen bestätigen, mit Kopplungsdatum und letzter Verwendung. Widerrufe dort ein verlorenes Gerät. Bestehende Sitzungen bleiben angemeldet, und Cloud benachrichtigt die Person.
 - **Benachrichtigungen:** Erstelle Entwürfe für Benachrichtigungen, prüfe die Empfängervorschau und schließe den Batch ab. Prüfe danach die Zustellzähler oder die fehlgeschlagenen Empfänger.
 - **Anfragen:** Erstelle Konten aus offenen Anfragen oder lehne Anfragen ab. Gibst du beim Ablehnen eine Begründung an, sendet Cloud sie per E-Mail. Bestehende Anfragen bleiben verfügbar, wenn neue Anfragen in der Cloud-Administration ausgeschaltet sind.
 :::
 
 :::info Änderungen im Audit-Protokoll nachverfolgen
-Das **Audit-Protokoll** erfasst Konto- und Zugriffsänderungen. Filtere nach Dienstkonto, um die Aktivität von API-Schlüsseln zu untersuchen.
+Das **Audit-Protokoll** erfasst Konto- und Zugriffsänderungen. Filtere nach Dienstkonto, um die Aktivität von API-Schlüsseln zu untersuchen. Automatische App-Einträge sind standardmäßig ausgeblendet; wähle **Anzeigen** über der Liste, um sie innerhalb des gewählten Zeitraums und der Filter einzublenden.
 :::
 
 ## POSIX-Gruppe erstellen {icon="users"}

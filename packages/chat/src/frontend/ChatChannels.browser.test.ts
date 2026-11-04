@@ -400,7 +400,7 @@ test("disabled authenticated discovery explains removal without an impossible pr
     await dialog.getByText(t.authenticatedDiscoveryDisabled + " " + t.removeDisabledAudience, { exact: true }).waitFor();
     expect(await dialog.getByRole("button", { name: t.retry, exact: true }).count()).toBe(0);
     expect(await dialog.getByRole("button", { name: t.save, exact: true }).isEnabled()).toBe(false);
-    const remove = dialog.getByRole("button", { name: t.removeName({ name: "All signed-in accounts" }), exact: true });
+    const remove = dialog.getByRole("button", { name: t.removeName({ name: "All signed-in people" }), exact: true });
     await remove.focus();
     await page.keyboard.press("Enter");
     await dialog.getByText(t.discoveryAudience({ count: 0 }), { exact: true }).waitFor();
