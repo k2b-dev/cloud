@@ -427,11 +427,11 @@ itself grows instead of reaching into its neighbour; devices without a touch
 screen keep the compact options, and grid tiles are already larger.
 `SelectChip` uses menu items, which follow the same rule.
 
-The option list of `Select`, `MultiSelectInput`, `AutocompleteSelect`, and
 A `Combobox` option with `disabled: true` stays in the results, greyed and not
 pickable; arrow keys pass over it. Say why in its `description`, such as
 someone who is already on a list.
 
+The option list of `Select`, `MultiSelectInput`, `AutocompleteSelect`, and
 `Combobox` starts at its trigger's left edge and sizes like a menu: it is at
 least `12rem` and never narrower than the trigger, and it grows so that each
 option label stays on one line until the viewport ends. A description wraps at
