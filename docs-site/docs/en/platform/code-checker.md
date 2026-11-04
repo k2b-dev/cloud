@@ -3,7 +3,7 @@ title: Code checker
 navTitle: Code checker
 section: Platform services
 order: 681
-description: Check Code types, inspect operation and target permissions, and build an immutable runner version.
+description: Check Code types, review called operations and targets, and build an immutable runner version.
 tags: [code, checker, permissions, runner]
 updated: 2026-11-01
 ---
@@ -21,36 +21,29 @@ The server check is authoritative; a local result does not grant access.
 The checker supplies the output contract for `cld code check`. The Core CLI
 module connects the command to this contract; `checkCode` does not install CLI
 commands.
-A successful check lists each operation, its target, the source file and line,
-and whether that operation at that target already has access:
-
-```text
-Erlaubnisse
-  work-shop.item.create  an work-shop.workshop imported-shop  code.ts:5  vorhanden
-  work-shop.item.move    an work-shop.workshop owner-shop     code.ts:6  neu
-  work-shop.item.move    an work-shop.workshop imported-shop  code.ts:6  neu
-KI  ja
-Zeitplan  weekly  0 8 * * 1
-```
+A successful check lists each operation, its target, source file and line as
+review evidence. It does not report or grant current access. Core compares this
+list with the running version's manifest to label entries `new` or `existing`.
+Dynamic handles have a target type with `id: null` in this evidence.
 
 The CLI can resolve resource titles through authorized readers. The checker
 returns coordinates, never titles or a claim that the person can grant them.
-`new` means the supplied existing permission list does not contain that exact
-operation and target. An existing operation at another target does not cover it.
-Additional `refs` targets appear as separate rows for the same operation.
+`new` means the supplied comparison list does not contain that exact operation
+and target. This comparison never limits runtime calls. Additional `refs`
+targets appear as separate rows for the same operation.
 
 A failure has diagnostics with a stable `code`, a human-readable `message`, and
 one-based `file`, `line`, and `column`. It has no manifest or executable bundle.
-For example, a dynamic resource target reports `code_dynamic_target` and asks
-the author to declare the targets as constants. TypeScript errors retain their
+TypeScript errors retain their
 `TS` number, such as `TS2589` for an excessively deep type instantiation.
 
 ## Keep targets and registrations readable
 
-Resource-owned Code requires finite string literal IDs. Imported constants and
-`as const` tuples are supported, including unions of known literals. Personal
-Code and `code_run` may have dynamic IDs; those permission rows retain the target
-Type and use a null ID. An app-wide operation has a null target.
+All Code modes accept dynamic resource IDs. Imported constants and `as const`
+tuples produce known target IDs in review evidence. Dynamic permission rows
+retain the target Type and use a null ID. An app-wide operation has a null
+target. `manifest.permissions` is a non-binding review aid: the target checks
+current rights at execution, regardless of static evidence.
 
 Call SDK methods directly on a handle or on `app`. A handle may be assigned to a
 variable or passed through a typed function. Detaching a method, including using
@@ -125,12 +118,11 @@ binds the SDK to the supplied bridge before evaluating user modules, then calls
 the selected schedule. For `code_run`, the entry module exports a default
 function; the runner export `run` passes it the input.
 
-The checker's permission list guides activation. The dispatcher derives the version mandate from these operation/target pairs
-and checks every invocation against that mandate as well as current resource
-access. Existing resource grants alone never authorize a call omitted from the
-version mandate. Literal types can be lied about with casts; static analysis is
-not a runtime authorization proof. The version service must deduplicate permissions by operation and target when
-constructing that mandate, while retaining source rows for review.
+The checker's permission list is non-binding review evidence. A version entry
+binds the runner to the approved immutable version and its subject. The bridge
+applies policy to each actual call and the target checks current resource
+rights. An operation's absence from static evidence is not a rights decision.
+Literal types and casts never prove runtime authority.
 Only modules reachable through runtime imports from the entry contribute
 permissions and schedules. The checker compares that graph with the modules
 loaded by the bundler and rejects a mismatch with `code_import_elided`. If this

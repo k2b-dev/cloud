@@ -3,7 +3,6 @@ export type {
   CodeHandle,
   CodeHttp,
   CodeHttpResult,
-  CodeLiteralId,
   CodeNavigationItem,
   CodeRequest,
   CodeScheduleHandler,

@@ -1,10 +1,15 @@
+import { sql } from "@k2b/cloud";
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import type { CodeCheckRequest, CodeCheckResult } from "@k2b/cloud/code";
-import { CloudResourceReaderViewSchema, capabilityActionPolicy, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
+import {
+  CloudResourceReaderViewSchema,
+  CodeCheckedVersionManifestSchema,
+  capabilityActionPolicy,
+  resolveCapabilityResourceReader,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson } from "./access";
 import { activateCodeVersion } from "./activation";
-import { reconcileCodeAccess } from "./activation-maintenance";
 import { createCodeCheckRequest } from "./authoring-check";
 import type { CodeAuthoringCommand, CodeAuthoringData, CodeAuthoringInput, CodeAuthoringPermission } from "./authoring-contracts";
 import { type Code, codeQueryContracts } from "./contracts";
@@ -128,7 +133,6 @@ async function describeCheck(
       title,
       typeTitle,
       own,
-      needsTargetAdmin: code.owner.kind !== "person" && permission.status === "new" && !own,
     });
   }
   return { version: 1, result, manifest: { ...result.manifest, entry: request.entry, policyRows: [...policyRows].sort() }, permissions };
@@ -136,10 +140,13 @@ async function describeCheck(
 async function check(input: CodeAuthoringInput<"check">, context: CodeContext, presentation = true) {
   const request = await createCodeCheckRequest(input.codeId, input.files, input.entry ?? "code.ts", context);
   const { code } = await readCode(input.codeId, context);
-  const access = await reconcileCodeAccess({ codeId: input.codeId }, context);
-  request.existingPermissions = access
-    .filter((grant) => grant.state === "present")
-    .flatMap((grant) => grant.operations.map((operation) => ({ operation, target: grant.target })));
+  if (code.activeVersionId) {
+    const [active] = await sql<
+      { manifest: unknown }[]
+    >`SELECT manifest FROM code.versions WHERE id=${code.activeVersionId}::uuid AND code_id=${code.id}`;
+    const manifest = CodeCheckedVersionManifestSchema.safeParse(active?.manifest);
+    if (manifest.success) request.existingPermissions = manifest.data.permissions;
+  }
   const result = await createRunnerCodeCheckHost(context).check(request, context.signal);
   return describeCheck(request, result, code, context, presentation);
 }

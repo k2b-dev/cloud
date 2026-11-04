@@ -14,17 +14,21 @@ export async function migrate(db: SQL = sql): Promise<void> {
     await tx`CREATE TABLE IF NOT EXISTS code.cleanup_jobs (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(), sequence BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
       code_id TEXT NOT NULL REFERENCES code.codes(id) ON DELETE CASCADE,
-      kind TEXT NOT NULL CHECK(kind IN ('code.access.rm','code.delete')),
-      grant_id UUID UNIQUE, target JSONB,
+      kind TEXT NOT NULL CHECK(kind='code.delete'),
       attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      claimed_until TIMESTAMPTZ, last_error TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CHECK((kind='code.access.rm') = (grant_id IS NOT NULL AND target IS NOT NULL))
+      claimed_until TIMESTAMPTZ, last_error TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`.simple();
+    // Ordinary shares disappear with the deleted Code account through auth.access's FK.
+    // Retire obsolete remote-removal jobs; the durable account deletion remains queued.
+    await tx`DELETE FROM code.cleanup_jobs WHERE kind='code.access.rm'`.simple();
+    await tx`ALTER TABLE code.cleanup_jobs DROP COLUMN IF EXISTS grant_id, DROP COLUMN IF EXISTS target`.simple();
+    await tx`ALTER TABLE code.cleanup_jobs DROP CONSTRAINT IF EXISTS cleanup_jobs_kind_check`.simple();
+    await tx`ALTER TABLE code.cleanup_jobs ADD CONSTRAINT cleanup_jobs_kind_check CHECK(kind='code.delete')`.simple();
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS cleanup_jobs_delete ON code.cleanup_jobs(code_id) WHERE kind='code.delete'`.simple();
     await tx`CREATE INDEX IF NOT EXISTS cleanup_jobs_sequence ON code.cleanup_jobs(kind,sequence)`.simple();
     await tx`CREATE INDEX IF NOT EXISTS cleanup_jobs_busy ON code.cleanup_jobs(kind,id) WHERE claimed_until IS NOT NULL OR attempts>0`.simple();
     await tx`CREATE INDEX IF NOT EXISTS cleanup_jobs_code ON code.cleanup_jobs(code_id,kind)`.simple();
-    // A personal owner's ID remains an immutable tombstone until external cleanup finishes.
+    // A personal owner's ID remains an immutable tombstone until account cleanup finishes.
     // Attribution still uses SET NULL; deleting an activator must never delete resource Code.
     await tx`ALTER TABLE code.codes DROP CONSTRAINT IF EXISTS codes_owner_user_id_fkey`.simple();
     await tx`ALTER TABLE code.codes ALTER COLUMN created_at SET DEFAULT clock_timestamp()`.simple();

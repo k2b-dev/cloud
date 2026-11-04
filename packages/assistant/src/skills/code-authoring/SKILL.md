@@ -23,9 +23,9 @@ versioned JSON result intact; these are the same contracts as `cld code`.
    a complete replacement project. Retain it for the next write. These drafts
    stay in the chat until submit; pull retrieves the last submitted version.
 4. Send `{codeId,files,entry}` to `code_check`. Read diagnostics and permissions,
-   including file/line, target, new/existing, own and needsTargetAdmin. Explain
-   the consequences. Fix errors before continuing. Resource Code uses literal
-   target IDs, not dynamic IDs or computed handles.
+   including file/line, target, new/existing and own. Explain the consequences.
+   These rows are non-binding review evidence; dynamic IDs are allowed. Target
+   apps check current account rights on each call. Fix check errors before continuing.
 5. Add declarative `test/NAME.json` fixtures with a fixed `now` (Unix ms),
    integer `seed`, explicit fake replies in `mocks`, and named `runs`.
    Send fixtures separately as `tests` to `code_test`; they are never real

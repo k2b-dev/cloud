@@ -7,7 +7,7 @@ import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
 import { codeActivationCleanupOutbox, codeActivationOutbox } from "./code/activation-maintenance";
 import { createCodeAuthoringChatTools } from "./code/chat-tools";
-import { codeAccessCleanupOutbox, codeDeletionOutbox, codeOwnerDeletedOutbox } from "./code/lifecycle";
+import { codeDeletionOutbox, codeOwnerDeletedOutbox } from "./code/lifecycle";
 import { codePolicyPauseOutbox } from "./code/policy-outbox";
 import { startCodeRunRetention } from "./code/retention";
 import { startCodeScheduling } from "./code/scheduling-runtime";
@@ -200,7 +200,6 @@ export const startCoreServices = async (
     codeActivationOutbox.start();
     codeActivationCleanupOutbox.start();
     codeOwnerDeletedOutbox.start();
-    codeAccessCleanupOutbox.start();
     codeDeletionOutbox.start();
     await browserNotifications.start();
     await aiNotifications.start();
@@ -262,7 +261,6 @@ export const startCoreServices = async (
     await codeActivationOutbox.stop();
     await codeActivationCleanupOutbox.stop();
     await codeOwnerDeletedOutbox.stop();
-    await codeAccessCleanupOutbox.stop();
     await codeDeletionOutbox.stop();
     await stopCodeRunRetention?.();
     stopCodeRunRetention = undefined;
@@ -313,7 +311,6 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     await codeActivationOutbox.stop();
     await codeActivationCleanupOutbox.stop();
     await codeOwnerDeletedOutbox.stop();
-    await codeAccessCleanupOutbox.stop();
     await codeDeletionOutbox.stop();
     await stopCodeRunRetention?.();
     stopCodeRunRetention = undefined;

@@ -197,7 +197,6 @@ export const listSpaceAccess = async (spaceId: string, db: SQL = sql, display: C
     permission: row.permission,
     createdAt: row.created_at.toISOString(),
     serviceAccountKind: row.service_account_kind ?? undefined,
-    ...(row.service_account_kind === "code" ? { grantId: row.access_id } : {}),
     displayName: row.user_id
       ? row.user_display_name || row.user_uid || undefined
       : row.group_id

@@ -215,8 +215,8 @@ an external write.
 
 Internet origins share the existing mandate budget of 50 grants with capability
 operations. The checker rejects origin lists beyond that budget and counts
-personal operation grants when internet access is declared. Activation also
-checks the complete grant plan.
+personal operation grants when internet access is declared. The check remains a static internet-origin budget; activation creates no
+target grant plan.
 
 Call observations retain placeholders. Core redacts raw, prefixed,
 JSON-escaped, percent-encoded and base64 credential echoes from response bytes

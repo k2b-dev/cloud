@@ -38,9 +38,9 @@ cld code test ./code/example/box_1234 --trace --json
 cld code simulate ./code/example/box_1234 --fixture test/monday.json --json
 ```
 
-Check reports every operation, target title and ID, source file and line.
-A newly required target grant is marked “neu, braucht den Admin des …” in
-German output. Unavailable titles fall back to the resource Type and ID.
+Check reports operations, stored target handles, source files and lines as
+review evidence. This list grants no access and does not limit runtime targets.
+Dynamic target handles are allowed; the target checks current rights per call.
 Pages, webhooks and databases show a dash in Phase 1; their later syntax is
 rejected by the checker.
 
@@ -89,10 +89,10 @@ cld code activate ./code/example/box_1234 --activation-id 11111111-1111-4111-811
 cld code run monday ./code/example/box_1234 --key monday-manual-1 --json
 ```
 
-In a terminal, `cld code activate` without flags lists every operation at every
-target, asks once and reports the result; a person drives that. Without a terminal it
-never asks: it refuses unless `--yes` and `--activation-id` are set. As an agent, use
-the flags, and never pass `--yes` for a person who has not seen the list.
+In a terminal, `cld code activate` shows the version and execution subject, asks
+for confirmation and reports the result. Without a terminal it refuses unless
+`--yes` and `--activation-id` are set. Use those flags only after the person
+has agreed to switch on that version. Activation never creates target shares.
 
 Activate uses the project's base version unless `--version <UUID>` is set.
 It requires `--yes` and a caller-chosen `--activation-id`. Reuse that ID after
@@ -101,7 +101,7 @@ receipt; it does not mean the version is already running. A terminal failed
 or cancelled receipt exits 1.
 
 Activation requires a normal person's session or personal OAuth credential,
-current owner administration and every target permission, plus any required
+current owner administration and credential authority, plus any required
 version approval. Phone sessions, API keys and machine identities cannot
 activate. CI may check, test and push using its granted credential; the CLI
 also refuses activate when its host reports CI. Do not use a person's
@@ -252,10 +252,10 @@ C19 chat tools use the same schemas and `codeAuthoringServices`.
 
 `result` in check is `CodeCheckResultSchema`; `manifest` is the complete
 submission manifest or null on check failure. Permission rows contain
-`operation`, `target`, `title`, `typeTitle`, `own`, `needsTargetAdmin`, `file`, `line`, optional `entrypoints` (the schedules whose handler makes the call), and `status`.
-Unavailable titles are null; status is `new` or `existing`. Existing grants
-are observed live rather than inferred from old source. Personal Code never
-needs target-admin grants; `needsTargetAdmin` is always false for it.
+`operation`, `target`, `title`, `typeTitle`, `own`, `file`, `line`, optional `entrypoints` (the schedules whose handler makes the call), and `status`.
+Unavailable titles are null; status is `new` or `existing` relative to the
+running version's manifest. Permission rows are review evidence, not a grant
+plan. Activation never creates or restores target access.
 
 Errors from executed commands use
 `{version:1,error:{code,message,details}}`; details is null unless the owning

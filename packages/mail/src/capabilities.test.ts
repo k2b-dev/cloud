@@ -876,11 +876,9 @@ describe("mail capabilities", () => {
     expect(typeViewIssues(manifest, "mailbox")).toEqual([]);
     expect(mailCapabilities.types.conversation.icon).toBe("ti ti-mail");
     expect(manifest.queries.map((query) => query.localId).sort()).toEqual(
-      [...Object.keys(mailCapabilities.queries), "code.access.list", "mailbox.readable"].sort(),
+      [...Object.keys(mailCapabilities.queries), "mailbox.readable"].sort(),
     );
-    expect(manifest.actions.map((action) => action.localId).sort()).toEqual(
-      [...Object.keys(mailCapabilities.actions), "code.access.set", "code.access.rm"].sort(),
-    );
+    expect(manifest.actions.map((action) => action.localId).sort()).toEqual(Object.keys(mailCapabilities.actions).sort());
     const mailboxReader = manifest.queries.find((query) => query.localId === "mailbox.read");
     expect(mailboxReader?.inputSchema).toHaveProperty("properties.id.description", expect.stringContaining("List mailboxes"));
     expect(mailCapabilities.queries["mailbox.list"].description).toContain("Normal entry for mailbox-scoped Mail work");

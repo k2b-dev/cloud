@@ -36,7 +36,6 @@ export const CodeAuthoringPermissionSchema = z
     title: z.string().nullable(),
     typeTitle: z.string().nullable(),
     own: z.boolean(),
-    needsTargetAdmin: z.boolean(),
     file: z.string(),
     line: z.number().int().positive(),
     /** Sorted entrypoints whose handler makes this call, as the checker placed it; absent when it could not. */

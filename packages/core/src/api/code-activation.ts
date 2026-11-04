@@ -2,18 +2,10 @@ import { type AuthContext, auth, getLocale, middleware, v } from "@k2b/cloud/ser
 import { Hono } from "hono";
 import { ZodError } from "zod";
 import { type CodeContext, CodeDataError } from "../code/access";
-import {
-  activateCodeVersion,
-  cancelCodeActivation,
-  checkCodeActivation,
-  previewCodeActivation,
-  readCodeActivation,
-} from "../code/activation";
+import { activateCodeVersion, cancelCodeActivation, previewCodeActivation, readCodeActivation } from "../code/activation";
 import { codeActivationContracts } from "../code/activation-contracts";
-import { reconcileCodeAccess } from "../code/activation-maintenance";
 import { listCodeCleanupJobs } from "../code/lifecycle";
 import { codeLifecycleContracts } from "../code/lifecycle-contracts";
-import { codeGrantDetailsContracts, readCodeGrantDetails } from "../code/target-access";
 import { CodeVersionError } from "../code/versions";
 
 /** Interactive credentials enter only Core. Invocation, sandbox, API-key and phone identities cannot activate. */
@@ -63,13 +55,6 @@ export const createCodeActivationRoutes = () => {
       (c) => run(context(c), (ctx) => previewCodeActivation(c.req.valid("json"), ctx)),
     )
     .post(
-      "/activation/check",
-      auth.requireOAuthScope("write", "admin"),
-      middleware.openapi({ tags: ["Code"], summary: "Ask each target whether this person could switch a Code version on" }),
-      v("json", codeActivationContracts.check.input),
-      (c) => run(context(c), (ctx) => checkCodeActivation(c.req.valid("json"), ctx)),
-    )
-    .post(
       "/activation/read",
       auth.readOnly,
       middleware.openapi({ tags: ["Code"], summary: "Read a durable Code activation" }),
@@ -82,19 +67,5 @@ export const createCodeActivationRoutes = () => {
       middleware.openapi({ tags: ["Code"], summary: "Cancel an unfinished Code activation" }),
       v("json", codeActivationContracts.cancel.input),
       (c) => run(context(c), (ctx) => cancelCodeActivation(c.req.valid("json"), ctx)),
-    )
-    .post(
-      "/access",
-      auth.readOnly,
-      middleware.openapi({ tags: ["Code"], summary: "Reconcile explicit target access without restoring grants" }),
-      v("json", codeActivationContracts.access.input),
-      (c) => run(context(c), (ctx) => reconcileCodeAccess(c.req.valid("json"), ctx)),
-    )
-    .post(
-      "/access/target",
-      auth.readOnly,
-      middleware.openapi({ tags: ["Code"], summary: "Read Code grant details at a target the person manages" }),
-      v("json", codeGrantDetailsContracts.input),
-      (c) => run(context(c), (ctx) => readCodeGrantDetails(c.req.valid("json"), ctx, c.req.raw)),
     );
 };

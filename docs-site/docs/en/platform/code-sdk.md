@@ -56,11 +56,11 @@ A Type named `app` uses `.app(id)`, alongside the app-wide `.app()` factory.
 resource-owned Code. A handle grants no access: the dispatcher and the owning
 application check permissions on every call.
 
-In resource-owned Code, IDs must have string literal types. Constants imported
-from another file and members of an `as const` tuple work. An ordinary
-`string`, including one read from a Query result, a dynamic template or a
-branded dynamic string, is a type error. The checker uses the literals to identify targets for activation; TypeScript types do not
-replace runtime permission checks.
+All Code modes accept string IDs, including values from Query results and
+dynamic templates. Literal IDs remain visible in checker review evidence;
+dynamic ones retain only their Type there. The target checks the account's
+current rights at execution. A handle or setting that names a target grants
+no access.
 
 ## Supply additional targets and retry keys
 

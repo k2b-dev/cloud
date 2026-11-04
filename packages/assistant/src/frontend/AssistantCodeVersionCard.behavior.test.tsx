@@ -1,31 +1,12 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { type CodeVersionPreview, type CodeVersionPreviewRow, codeVersionPageHref } from "./code-activation";
+import { type CodeVersionPreview, codeVersionPageHref } from "./code-activation";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 const codeId = "c_info01";
 const versionId = "66666666-6666-4666-8666-666666666666";
 
-const row = (patch: Partial<CodeVersionPreviewRow>): CodeVersionPreviewRow => ({
-  target: { type: "spaces.space", id: "sp_2lg8" },
-  operations: ["spaces.task.create"],
-  own: false,
-  isNew: true,
-  check: "manages",
-  title: "Logistics",
-  typeTitle: "Space",
-  icon: "ti ti-layout-kanban",
-  managers: [],
-  ...patch,
-});
-const own = row({
-  target: { type: "mail.mailbox", id: "m_info" },
-  operations: ["mail.conversation.move"],
-  own: true,
-  title: "info@example.test",
-  typeTitle: "mailbox",
-});
 const preview = (patch: Partial<CodeVersionPreview> = {}): CodeVersionPreview => ({
   codeId,
   title: "Code of info@",
@@ -38,7 +19,6 @@ const preview = (patch: Partial<CodeVersionPreview> = {}): CodeVersionPreview =>
   allowed: { allowed: true },
   readiness: { state: "ready" },
   place: { title: "info@example.test", typeTitle: "mailbox", href: "/app/mail/m_info" },
-  rows: [own, row({})],
   ...patch,
 });
 
@@ -76,39 +56,16 @@ const mount = async (routes: Record<string, (body: unknown) => { status?: number
 const button = (root: Element, name: string) =>
   [...root.querySelectorAll("button, a")].find((element) => element.textContent?.includes(name)) as HTMLElement | undefined;
 
-test("someone who manages every target sees the rights, Switch on and the difference", async () => {
-  const { dom } = await mount({ "activation/preview": () => ({ json: { data: preview() } }) });
+test("version preview offers switching on without inspecting or granting target rights", async () => {
+  const { dom, calls } = await mount({ "activation/preview": () => ({ json: { data: preview() } }) });
   const text = dom.root.textContent ?? "";
   expect(text).toContain("Version 5 of “Code of info@” is ready.");
-  expect(text).toContain("mail.conversation.move");
-  expect(text).toContain("on its own mailbox");
-  expect(text).toContain("belongs to info@example.test");
-  expect(text).toContain("at Space Logistics (sp_2lg8)");
-  expect(text).toContain("you manage it");
+  expect(text).toContain("service account");
+  expect(text).not.toContain("Logistics");
+  expect(text).not.toContain("you manage");
   expect(button(dom.root, "Switch on")).toBeDefined();
   expect(button(dom.root, "Difference")?.getAttribute("href")).toBe(`/app/mail/m_info/code?tab=versions&version=${versionId}`);
-});
-
-test("someone who cannot switch on learns why and who can, and copies a link for them", async () => {
-  const blocked = row({ check: "blocked", managers: [{ name: "Ben Schulz", firstName: "Ben" }] });
-  const { dom } = await mount({ "activation/preview": () => ({ json: { data: preview({ rows: [own, blocked] }) } }) });
-  const text = dom.root.textContent ?? "";
-  expect(text).toContain("needs the admin of Logistics");
-  expect(text).toContain("Only someone who manages mailbox and Space can switch this on: Ben Schulz.");
-  expect(text).toContain("Until then version 4 keeps running.");
-  expect(button(dom.root, "Switch on")).toBeUndefined();
-  expect(button(dom.root, "Copy link for Ben")).toBeDefined();
-  expect(button(dom.root, "Difference")).toBeDefined();
-});
-
-test("a target the person may not read stays an ID, with no name of who manages it", async () => {
-  const hidden = row({ check: "blocked", title: null, typeTitle: null });
-  const { dom } = await mount({ "activation/preview": () => ({ json: { data: preview({ rows: [own, hidden] }) } }) });
-  const text = dom.root.textContent ?? "";
-  expect(text).toContain("at sp_2lg8");
-  expect(text).toContain("Only someone who manages sp_2lg8 can switch this on.");
-  expect(button(dom.root, "Copy link")?.textContent).toContain("Copy link");
-  expect(text).not.toContain("Logistics");
+  expect(calls.map((call) => call.route)).toEqual(["activation/preview"]);
 });
 
 test("switching on runs Core's activation and the card becomes one line, the same after a reload", async () => {
@@ -116,7 +73,7 @@ test("switching on runs Core's activation and the card becomes one line, the sam
   const { dom, calls, activated } = await mount({
     "activation/preview": () => ({
       json: {
-        data: on ? preview({ running: 5, rows: [], activated: { at: "2026-10-31T14:20:00.000Z", byYou: true, byName: null } }) : preview(),
+        data: on ? preview({ running: 5, activated: { at: "2026-10-31T14:20:00.000Z", byYou: true, byName: null } }) : preview(),
       },
     }),
     activate: () => {
@@ -137,11 +94,11 @@ test("switching on runs Core's activation and the card becomes one line, the sam
 test("a refusal says nothing changed and offers to try again with a new identity", async () => {
   const { dom, calls } = await mount({
     "activation/preview": () => ({ json: { data: preview() } }),
-    activate: () => ({ json: { data: { state: "failed", failure: { reason: "The target refused." } } } }),
+    activate: () => ({ json: { data: { state: "failed", failure: { reason: "Owner authority changed." } } } }),
   });
   button(dom.root, "Switch on")!.click();
   await tick();
-  expect(dom.root.textContent).toContain("The target refused. Nothing changed, version 4 keeps running.");
+  expect(dom.root.textContent).toContain("Owner authority changed. Nothing changed, version 4 keeps running.");
   button(dom.root, "Try again")!.click();
   await tick();
   const ids = calls.filter((call) => call.route === "activate").map((call) => (call.body as { activationId: string }).activationId);
@@ -161,7 +118,7 @@ test("a lost answer asks Core's status and never starts a second activation", as
   expect(calls.filter((call) => call.route === "activation/read")).toHaveLength(1);
 });
 
-test("a phone sees the rights and why it cannot switch on; waiting for approval offers no switch", async () => {
+test("a phone sees why it cannot switch on; waiting for approval offers no switch", async () => {
   const phone = await mount({
     "activation/preview": () => ({ json: { data: preview({ allowed: { allowed: false, reason: "phone" } }) } }),
   });
@@ -174,7 +131,7 @@ test("a phone sees the rights and why it cannot switch on; waiting for approval 
 });
 
 test("an older version, no access and an outage each say so; the outage retries", async () => {
-  const older = await mount({ "activation/preview": () => ({ json: { data: preview({ latest: 6, rows: [] }) } }) });
+  const older = await mount({ "activation/preview": () => ({ json: { data: preview({ latest: 6 }) } }) });
   expect(older.dom.root.textContent).toContain("Version 5 was replaced by version 6.");
   for (const undo of restore.splice(0)) undo();
   const denied = await mount({ "activation/preview": () => ({ status: 403, json: {} }) });
@@ -201,7 +158,7 @@ test("the Code page is the place's own /code page, or a personal Code's page in 
 test("an activation whose person is hidden or gone is credited to nobody", async () => {
   const { dom } = await mount({
     "activation/preview": () => ({
-      json: { data: preview({ running: 5, rows: [], activated: { at: "2026-10-31T14:20:00.000Z", byYou: false, byName: null } }) },
+      json: { data: preview({ running: 5, activated: { at: "2026-10-31T14:20:00.000Z", byYou: false, byName: null } }) },
     }),
   });
   expect(dom.root.textContent).toContain("Version 5 switched on");

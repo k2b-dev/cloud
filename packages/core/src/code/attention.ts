@@ -1,12 +1,10 @@
 import { sql } from "@k2b/cloud";
-import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import { z } from "zod";
 import { type CodeContext, CodeOwnerUnavailableError, codePermission, codePerson } from "./access";
-import { reconcileCodeAccess } from "./activation-maintenance";
 import { type Code, CodeIdSchema, CodeOwnerSchema, CodeSchema } from "./contracts";
 import { type CodeRow, listCodes, mapCode } from "./store";
 
-/** Why an owner's Code needs someone: its newest run of an entrypoint failed, a target removed access, or a version waits for approval. */
+/** Why an owner's Code needs someone: its newest run of an entrypoint failed, a call was refused by its target, or a version waits for approval. */
 export const CodeAttentionReasonSchema = z.enum(["run_failed", "access_missing", "approval_pending"]);
 export type CodeAttentionReason = z.infer<typeof CodeAttentionReasonSchema>;
 
@@ -22,7 +20,7 @@ export const codeAttentionContracts = {
   },
   /**
    * What one owner's readable Code is, in numbers: automations of the running version, or of the newest one before it
-   * runs, and the targets it holds access to, by type. For settings and for delete dialogs that say what goes along.
+   * runs, and an empty legacy access summary. For settings and for delete dialogs that say what goes along.
    */
   summary: {
     input: z.object({ owner: CodeOwnerSchema.describe("Exact Code owner.") }).strict(),
@@ -70,8 +68,6 @@ export const CODE_ATTENTION_CACHE_MS = 30_000;
 const CACHE_LIMIT = 1_000;
 /** An owner has at most one Code; a page of 20 bounds an owner query in any case. */
 const OWNER_LIMIT = 20;
-/** Target apps answer slowly at worst; past this, access is simply not judged for this answer. */
-export const CODE_ATTENTION_ACCESS_BUDGET_MS = 2_000;
 const cache = new Map<string, { at: number; settled: boolean; reasons: Promise<CodeAttentionReason[]> }>();
 
 const failedRun = async (code: Code) => {
@@ -93,30 +89,18 @@ const pendingApproval = async (code: Code) => {
   return row?.pending === true;
 };
 
-/** At most one reconciliation per Code is in flight, also after the attention answer stopped waiting for it. */
-const scans = new Map<string, ReturnType<typeof reconcileCodeAccess>>();
-export const scanCodeAccess = (code: Code, context: CodeContext, reconcile = reconcileCodeAccess) => {
-  let scan = scans.get(code.id);
-  if (!scan) {
-    scan = reconcile({ codeId: code.id }, context)
-      .catch(() => [])
-      .finally(() => scans.delete(code.id));
-    scans.set(code.id, scan);
-  }
-  return scan;
-};
-
-const computeReasons = async (code: Code, context: CodeContext): Promise<CodeAttentionReason[]> => {
-  // Each signal is a convenience for the owner's navigation; one that cannot be read is simply absent.
-  const [failed, pending, access] = await Promise.all([
+const computeReasons = async (code: Code, _context: CodeContext): Promise<CodeAttentionReason[]> => {
+  const [failed, pending, refusal] = await Promise.all([
     failedRun(code).catch(() => false),
     pendingApproval(code).catch(() => false),
-    // A target that cannot answer in time says nothing about access; only a confirmed removal counts.
-    Promise.race([scanCodeAccess(code, context), Bun.sleep(CODE_ATTENTION_ACCESS_BUDGET_MS).then(() => [])]),
+    sql<{ refused: boolean }[]>`SELECT EXISTS(
+      SELECT 1 FROM (SELECT DISTINCT ON (entrypoint) state,first_refused_call_ordinal FROM code.runs
+        WHERE code_id=${code.id} AND state IN ('succeeded','failed') ORDER BY entrypoint,created_at DESC) latest
+      WHERE state='failed' AND first_refused_call_ordinal IS NOT NULL) AS refused`.catch(() => []),
   ]);
   return [
     ...(failed ? (["run_failed"] as const) : []),
-    ...(access.some((grant) => grant.state === "removed") ? (["access_missing"] as const) : []),
+    ...(refusal[0]?.refused ? (["access_missing"] as const) : []),
     ...(pending ? (["approval_pending"] as const) : []),
   ];
 };
@@ -160,7 +144,7 @@ export const CODE_ATTENTION_CANDIDATES = 50;
 /**
  * Owner Code that needs the caller, whichever owner it has. Candidates come from stored state alone, in Code ID order:
  * paused, a failed newest run of an entrypoint, or a pending approval. Each shows only when the caller may edit it, with
- * the same cached reasons as `attention`. Removed access is live, so it shows with the failed run it causes. An owner
+ * the same cached reasons as `attention`. Missing access is reported from the latest finished run of each entrypoint. An owner
  * that cannot answer leaves out what it cannot confirm instead of failing the list.
  */
 export async function listCodeAttention(input: z.infer<typeof codeAttentionContracts.list.input>, context: CodeContext) {
@@ -213,20 +197,11 @@ export async function readCodeSummary(input: z.infer<typeof codeAttentionContrac
     FROM code.codes c JOIN code.versions v ON v.code_id=c.id
     WHERE c.id=ANY(${sql.array(ids, "text")})
     ORDER BY c.id, (v.id=c.active_version_id) IS TRUE DESC, v.number DESC`;
-  const grants = await sql<{ code_id: string; type: string; count: number }[]>`SELECT code_id,target->>'type' AS type,count(*)::int AS count
-    FROM code.target_grants WHERE code_id=ANY(${sql.array(ids, "text")}) AND state='granted' GROUP BY code_id,target->>'type'`;
-  const titles = new Map<string, string>();
-  for (const appId of [...new Set(grants.map((grant) => grant.type.split(".")[0] ?? ""))].filter(Boolean).slice(0, OWNER_LIMIT)) {
-    const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority).catch(() => null);
-    for (const type of (catalog?.ok ? catalog.data?.manifest.types : undefined) ?? []) titles.set(`${appId}.${type.localId}`, type.title);
-  }
   return {
     items: ids.map((codeId) => ({
       codeId,
       automations: entrypoints.find((row) => row.code_id === codeId)?.automations ?? 0,
-      access: grants
-        .filter((grant) => grant.code_id === codeId)
-        .map((grant) => ({ type: grant.type, title: titles.get(grant.type) ?? grant.type, count: grant.count })),
+      access: [],
     })),
   };
 }

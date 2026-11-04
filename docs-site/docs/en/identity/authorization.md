@@ -744,13 +744,9 @@ lookup requires a target that the caller manages, as described in
 
 The target application's access list supplies authorized Code names; see
 [Code account handles](/en/docs/identity/code-service-account-handles).
-Legacy Code rows also carry `grantId` for the
-[Code access contract](/en/docs/platform/capabilities#code-access-at-the-target).
-Until the adapter migration is complete, the legacy Code section reads grant
-details from [`POST /api/code/access/target`](/en/docs/platform/code-activation)
-and removes them through `POST /api/resources/code-access/remove`, sending the
-current application's ID. Both routes accept only same-origin
-`application/json` requests.
+Activation-created shares are normal access entries too. Activation no longer
+inspects, grants or removes target shares. Restoring access requires an explicit
+normal share operation by a target manager.
 
 `createAccess` and `updateAccess` reject `admin` for a Code account, and the
 database rejects direct inserts and updates too. Code accounts inherit no
@@ -797,8 +793,8 @@ const result = await sql.begin(async (tx) => {
 });
 ```
 
-Code access adapters remain available during the activation migration. Normal
-grants and their revocation do not depend on them.
+Code access adapters have been removed. Normal grants and their revocation
+use the same permission-aware service as other principals.
 
 To share a Code itself with its editors and readers, spread
 `codeSharing(locale)` from `@k2b/cloud/access/ui` into the editor. It offers

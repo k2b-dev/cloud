@@ -15,7 +15,6 @@ test("check presentation rows declare every field a checker permission can carry
       title: "Logistik",
       typeTitle: "Space",
       own: false,
-      needsTargetAdmin: true,
       file: "code.ts",
       line: 4,
       entrypoints: ["lieferungenEintragen"],

@@ -57,10 +57,10 @@ A credential's scopes still limit reads and writes.
 
 Each resource or application Code has its own credentialless service account.
 Its stable machine name is `code:<resource-type>:<resource-id>` or
-`code:app:<app-id>`. Its display name comes from the owner's live reader:
-“Code of …” (“Code von …” in German). The label needs permission to read the owner, independently of Code editorship.
-An unavailable reader supplies no cached replacement title. Creating the account grants no target permissions;
-activation owns those grants.
+`code:app:<app-id>`. Its handle and stored owner title support the authorized display rules in
+[Code account handles](/en/docs/identity/code-service-account-handles). Creating
+the account or activating Code grants no target permissions. Target managers
+use normal sharing to grant View or Edit.
 
 ## Immutable versions
 
@@ -96,14 +96,17 @@ check current permissions in Core's Code service.
 | `core.code.run.read` | `codeId`, `runId`, optional numeric `cursor`, `content`, `offset`, `length` | Run metadata; editor-only `contents` |
 | `core.code.automation.list` | `codeId` | The running version's automations with `kind`, `cron`, `nextRunAt`, newest `lastRun` and `missingTargets`, plus every `removedTargets` entry |
 | `core.code.run.count` | `since`, at most 7 days ago | `runs` and `failed` of the caller's own personal Code since then |
-| `core.code.summary` | Exact `owner` | For each readable Code: `automations` of the running or newest version, and `access` as targets per type with `title` and `count`. For settings and delete dialogs |
+| `core.code.summary` | Exact `owner` | For each readable Code: `automations` of the running or newest version, and an empty `access` array; Core does not inventory target rights. For settings and delete dialogs |
 | `core.code.attention` | Exact `owner` | Visible Code items with `reasons`: `run_failed`, `access_missing`, `approval_pending` |
 | `core.code.attention.list` | Optional `cursor` | Across owners: resource or application Code the caller may edit that needs them, with `lastRunAt` and the same `reasons` plus `paused`; checks 50 candidates per page and returns `nextCursor`, also on empty pages |
 
 `core.code.attention` serves an owner's navigation. The reasons per Code are
 the same for every reader, so Core keeps them for 30 seconds and computes one
-at a time; who sees which Code is checked on every request. A target app that
-does not answer within two seconds counts as no missing access.
+at a time; who sees which Code is checked on every request. Missing access
+comes from a recorded `target_refused` call in the latest failed run, never
+from target-rights inspection. `missingTargets` and `removedTargets` retain
+that recorded reference for editors, with no fetched title; readers receive no
+refused target IDs. A successful later run clears the indication.
 `core.code.attention.list` serves a person's own list when no owner is known.
 It finds candidates from stored state, so missing access shows with the failed
 run it causes, and it reuses the same reasons.
@@ -235,7 +238,7 @@ and types (`CodeOwner`, `Code`, `CodeVersion`, `CodeRun`, `CodeCall`,
 `CodeCallRefusalKind`, `CodeRefusedCall`),
 `codeQueryContracts`, `CODE_TABLES`, permission-aware reads and version/share
 services. `CODE_TABLES.shares` names `code.shares`, which links editor/reader
-shares to `auth.access`; it is separate from target Code grants. Use
+shares to `auth.access`; it is separate from normal shares granted to the Code service account. Use
 `addCodeShare` and `removeCodeShare` to edit these shares. Repeated shares for
 one principal update the existing access entry. Share and version writes lock
 the Code row and recheck permission within that transaction. Other applications

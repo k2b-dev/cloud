@@ -1,8 +1,8 @@
 import { getApp, sql } from "@k2b/cloud";
 import type { SQL } from "bun";
 import { CodeOwnerUnavailableError } from "./access";
-import { readCodeResourceOwnerTitle } from "./activation-transport";
 import type { Code } from "./contracts";
+import { readCodeResourceOwnerTitle } from "./owner-transport";
 
 /** Read the current owner's title independently of whoever activated resource Code. */
 export async function readCodeRunOwnerTitle(code: Code, db: SQL = sql, signal?: AbortSignal): Promise<string | null> {

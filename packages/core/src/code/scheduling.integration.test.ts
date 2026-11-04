@@ -24,10 +24,10 @@ import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
-import * as ownerTransport from "./activation-transport";
 import { verifyCodeSubmission } from "./authoring-check";
 import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
 import { claimCodeWork } from "./dispatch";
+import * as ownerTransport from "./owner-transport";
 import {
   completeCodeJob,
   createRunnerCodeCheckHost,

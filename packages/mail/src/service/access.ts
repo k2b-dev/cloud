@@ -66,7 +66,7 @@ type DbAccess = {
 export type MailboxAccessScope = "mailbox" | "assigned";
 
 /** A mailbox grant as the access API returns it; `scope` is present only for an assigned-only grant. */
-export type MailboxAccessEntry = AccessEntry & { scope?: "assigned"; grantId?: string };
+export type MailboxAccessEntry = AccessEntry & { scope?: "assigned" };
 
 const principalFromRow = (row: DbAccess): Principal => {
   if (row.user_id) return { type: "user", userId: row.user_id };
@@ -81,7 +81,6 @@ const mapAccess = (row: DbAccess): MailboxAccessEntry => ({
   principal: principalFromRow(row),
   permission: row.permission,
   createdAt: (row.created_at instanceof Date ? row.created_at : new Date(row.created_at)).toISOString(),
-  ...(row.service_account_kind === "code" ? { grantId: row.id } : {}),
   ...(row.scope === "assigned" ? { scope: "assigned" as const } : {}),
 });
 

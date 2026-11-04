@@ -159,24 +159,9 @@ test("the rule fails an intentionally wrong repository without an enforcement fl
   }
 });
 
-test("platform-generated Code access Actions keep their reserved dynamic input contract", () => {
-  const manifest = compileCapabilities(
-    "third-party",
-    defineCapabilities({
-      protocolVersion: 2,
-      code: {
-        access: {
-          app: {
-            manages: () => true,
-            grant: () => ({ granted: true as const, level: "write" }),
-            revoke: () => true,
-            list: () => [],
-          },
-        },
-      },
-    }),
-  ).manifest;
-  expect(manifest.actions.map((action) => action.localId)).toEqual(["code.access.rm", "code.access.set"]);
+test("owner-only Code declarations generate no target-rights Actions", () => {
+  const manifest = compileCapabilities("third-party", defineCapabilities({ protocolVersion: 2, code: {} })).manifest;
+  expect(manifest.actions).toEqual([]);
   expect(capabilityTargetGaps(manifest)).toEqual([]);
 });
 

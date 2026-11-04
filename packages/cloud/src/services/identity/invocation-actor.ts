@@ -52,7 +52,6 @@ export type InvocationPrincipalClaims = Pick<
   | "workload_type"
   | "workload_id"
   | "workload_run"
-  | "code_access"
   | "parent_invocation_id"
 >;
 
@@ -61,7 +60,6 @@ const provenance = (claims: InvocationPrincipalClaims): NonNullable<RequestActor
   callingAppId: claims.act.sub.slice("app:".length),
   credentialKind: claims.credential_kind,
   invocationId: claims.jti,
-  ...(claims.code_access ? { codeAccess: claims.code_access } : {}),
   ...(claims.parent_invocation_id ? { parentInvocationId: claims.parent_invocation_id } : {}),
   requestId: claims.request_id ?? null,
   ...(claims.mandate_id

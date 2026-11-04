@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
-import { type CodeAccessGrant, sql } from "@k2b/cloud";
+import { sql } from "@k2b/cloud";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CodeCheckedVersionManifest, User } from "@k2b/cloud/contracts";
@@ -17,21 +17,12 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migratePwa } from "../migrate/core/pwa";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
-import {
-  activateCodeVersion,
-  cancelCodeActivation,
-  checkCodeActivation,
-  previewCodeActivation,
-  processCodeActivation,
-  readCodeActivation,
-} from "./activation";
-import { cleanupCodeActivation, codeActivationCleanupOutbox, reconcileCodeAccess } from "./activation-maintenance";
-import { type CodeActivationTransport, CodeActivationTransportError } from "./activation-transport";
+import { activateCodeVersion, cancelCodeActivation, previewCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
+import { cleanupCodeActivation, codeActivationCleanupOutbox } from "./activation-maintenance";
 import * as authoringChecks from "./authoring-check";
 import type { Code } from "./contracts";
 import { CODE_SETTINGS, codeSettings } from "./settings";
-import { codeBundleHash, codeSourceHash, findCode } from "./store";
-import { readCodeGrantDetails } from "./target-access";
+import { codeBundleHash, codeSourceHash, findCode, insertCodeRun } from "./store";
 import { submitCodeVersion } from "./versions";
 
 const fixed = new Date("2026-10-31T12:00:00.000Z");
@@ -111,68 +102,15 @@ databaseSuite()("durable Code activation", () => {
     readersSpy: ReturnType<typeof spyOn<typeof provider, "readResourcePrincipals">>,
     catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
   let ordinal = 0;
-  const live = new Map<string, CodeAccessGrant>(),
-    tombstones = new Set<string>();
-  const sets: Array<{ id: string; dryRun: boolean; grantId: string; person: string }> = [];
-  const removals: string[] = [];
-  let ownerAdministrator = ownerId;
-  let targetReadable = true;
-  let denyDry: string | null = null,
-    denySet: string | null = null,
-    crashAt: string | null = null,
-    crashAfter = false,
-    revoked = false,
-    listDown = false;
-  const transport: CodeActivationTransport = {
-    set: async (input) => {
-      sets.push({ id: input.item.target.id, dryRun: input.dryRun, grantId: input.item.grantId, person: input.activatingPerson });
-      if (input.item.owner && input.activatingPerson !== adminId && input.activatingPerson !== ownerAdministrator)
-        return { granted: false, reasonCode: "not_manager", reason: "Owner administrator changed." };
-      if (tombstones.has(input.item.grantId)) return { granted: false, reasonCode: "removed", reason: "Removed by the target manager." };
-      if (input.item.target.id === (input.dryRun ? denyDry : denySet))
-        return {
-          granted: false,
-          reasonCode: "not_manager",
-          reason: "Only this target is blocked.",
-          readable: targetReadable,
-          title: "Fixture target",
-          managerUserIds: [nextOwnerId],
-        };
-      if (!input.dryRun && input.item.target.id === crashAt && !crashAfter) throw new CodeActivationTransportError("crash", true);
-      const existing = live.get(input.item.grantId);
-      if (existing) return { granted: true, grantId: existing.grantId, level: existing.level };
-      if (!input.dryRun)
-        live.set(input.item.grantId, {
-          grantId: input.item.grantId,
-          principal: input.principal,
-          target: input.item.target,
-          level: "write",
-        });
-      if (!input.dryRun && input.item.target.id === crashAt && crashAfter) throw new CodeActivationTransportError("lost_response", true);
-      return {
-        granted: true,
-        grantId: input.item.grantId,
-        level: "write",
-        readable: targetReadable,
-        title: "Fixture target",
-        managerUserIds: [ownerId],
-      };
-    },
-    notificationManagers: async () => [ownerId],
-    list: async (_app, principal) => {
-      if (listDown) throw new Error("Provider offline");
-      return [...live.values()].filter((g) => g.principal === principal);
-    },
-    remove: async (appId, _principal, grantId) => {
-      expect(appId).toBe("example");
-      removals.push(grantId);
-      live.delete(grantId);
-      tombstones.add(grantId);
-    },
-  };
+  let ownerAdministrator = ownerId,
+    revoked = false;
+  const ownerChecks: string[] = [];
   const deps = {
-    transport,
-    catalog: async () => catalog,
+    readOwner: async (_ref: unknown, ctx: CodeContext) => {
+      const id = ctx.authority.actor.kind === "user" ? ctx.authority.actor.user.id : "";
+      ownerChecks.push(id);
+      return { title: "Owner", admin: id === ownerAdministrator };
+    },
     restoreAuthority: async (row: { activating_person: string | null }) =>
       revoked ? null : row.activating_person === adminId ? administrator : context(row.activating_person ?? ownerId),
   };
@@ -261,13 +199,8 @@ databaseSuite()("durable Code activation", () => {
   });
   beforeEach(() => {
     ownerAdministrator = ownerId;
-    targetReadable = true;
-    live.clear();
-    tombstones.clear();
-    sets.length = 0;
-    removals.length = 0;
-    denyDry = denySet = crashAt = null;
-    crashAfter = revoked = listDown = false;
+    revoked = false;
+    ownerChecks.length = 0;
   });
   afterAll(async () => {
     serverCheck?.mockRestore();
@@ -277,120 +210,6 @@ databaseSuite()("durable Code activation", () => {
     setSystemTime();
   });
 
-  test("a target's dry-run no changes nothing and identifies exactly that target", async () => {
-    const code = await newCode(),
-      submitted = await version(code);
-    denyDry = "B";
-    const process = await start(code, submitted.version.id);
-    await run(process.id);
-    expect(await status(code, process.id)).toMatchObject({
-      state: "failed",
-      failure: { target: { type: "example.item", id: "B" }, code: "not_manager" },
-    });
-    expect(live.size).toBe(0);
-    expect(sets.every((set) => set.dryRun)).toBe(true);
-    expect((await findCode(code.id))!.activeVersionId).toBeNull();
-    expect(await sql`SELECT id FROM auth.mandates WHERE workload_id=${submitted.version.id}`).toHaveLength(0);
-  });
-  test("the preview says what switching on would do before anyone clicks, and changes nothing", async () => {
-    const code = await newCode(),
-      submitted = await version(code);
-    const ready = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
-    expect(ready).toMatchObject({
-      number: submitted.version.number,
-      running: null,
-      activated: null,
-      allowed: { allowed: true },
-      automations: [{ entrypoint: "run", title: "Lieferungen eintragen" }],
-    });
-    expect(ready.rows.map((row) => [row.target.id, row.own, row.check, row.isNew, row.title])).toEqual([
-      [code.owner.kind === "resource" ? code.owner.ref.id : "", true, "manages", false, "Fixture target"],
-      ["A", false, "manages", true, "Fixture target"],
-      ["B", false, "manages", true, "Fixture target"],
-    ]);
-    expect(sets.every((set) => set.dryRun)).toBe(true);
-    expect(live.size).toBe(0);
-    expect((await findCode(code.id))!.activeVersionId).toBeNull();
-    expect(await sql`SELECT id FROM code.activations WHERE code_id=${code.id}`).toHaveLength(0);
-    expect(await sql`SELECT grant_id FROM code.target_grants WHERE code_id=${code.id}`).toHaveLength(0);
-  });
-  test("the preview names who manages a refusing target only for a person who may read it", async () => {
-    const code = await newCode(),
-      submitted = await version(code);
-    await sql`UPDATE auth.users SET display_name='Ben Schulz', given_name='Ben' WHERE id=${nextOwnerId}::uuid`;
-    denyDry = "B";
-    const row = (rows: { target: { id: string } }[], id: string) => rows.find((item) => item.target.id === id);
-    const readable = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
-    expect(row(readable.rows, "B")).toMatchObject({
-      check: "blocked",
-      title: "Fixture target",
-      managers: [{ name: "Ben Schulz", firstName: "Ben" }],
-    });
-    targetReadable = false;
-    try {
-      const unreadable = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
-      expect(row(unreadable.rows, "B")).toMatchObject({ check: "blocked", title: null, typeTitle: null, icon: null, managers: [] });
-    } finally {
-      targetReadable = true;
-      await sql`UPDATE auth.users SET display_name='', given_name='' WHERE id=${nextOwnerId}::uuid`;
-    }
-  });
-  test("the preview of a running or replaced version asks no target; a credential that cannot switch on is told and asks none", async () => {
-    const code = await newCode(),
-      first = await version(code);
-    const activation = await start(code, first.version.id);
-    await run(activation.id);
-    sets.length = 0;
-    const on = await previewCodeActivation({ codeId: code.id, versionId: first.version.id }, owner, deps);
-    expect(on).toMatchObject({ running: first.version.number, rows: [], activated: { byYou: true, byName: null } });
-    const second = await version(code, ["A", "B"], first.version.id);
-    const third = await version(code, ["A", "B"], second.version.id);
-    const replaced = await previewCodeActivation({ codeId: code.id, versionId: second.version.id }, owner, deps);
-    expect(replaced).toMatchObject({ latest: third.version.number, rows: [] });
-    expect(sets).toHaveLength(0);
-    const apiKey: CodeContext = {
-      ...owner,
-      authority: { ...owner.authority, credentialKind: "api_key", scopes: ["write"], credentialProof: undefined },
-    };
-    const blocked = await previewCodeActivation({ codeId: code.id, versionId: third.version.id }, apiKey, deps);
-    expect(blocked.allowed).toEqual({ allowed: false, reason: "credential" });
-    expect(blocked.rows.every((item) => item.check === "has" || item.check === "unknown")).toBe(true);
-    expect(sets).toHaveLength(0);
-  });
-  test("an application that cannot list its grants leaves its targets unchecked, not the whole preview", async () => {
-    const code = await newCode(),
-      submitted = await version(code);
-    const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
-      ...deps,
-      transport: {
-        ...transport,
-        list: async () => {
-          throw new CodeActivationTransportError("target_unavailable", true);
-        },
-      },
-    });
-    expect(preview.rows.filter((row) => !row.own).map((row) => [row.target.id, row.check])).toEqual([
-      ["A", "unknown"],
-      ["B", "unknown"],
-    ]);
-  });
-  test("the preview refuses someone who may not edit the Code", async () => {
-    const code = await newCode(),
-      submitted = await version(code);
-    await expect(previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, context(nextOwnerId), deps)).rejects.toThrow();
-  });
-  test("an unregistered target fails visibly before target effects", async () => {
-    const code = await newCode(),
-      submitted = await version(code),
-      activation = await start(code, submitted.version.id);
-    await processCodeActivation(activation.id, { ...deps, catalog: async () => null });
-    expect(await status(code, activation.id)).toMatchObject({
-      state: "failed",
-      failure: { code: "target_unavailable", target: { type: "example.item", id: "A" } },
-    });
-    expect(sets).toHaveLength(0);
-    expect(live.size).toBe(0);
-  });
   test("personal activation creates its owner's version mandate without resource grants", async () => {
     const id = `c_c9p${String(++ordinal).padStart(4, "0")}`;
     await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by) VALUES(${id},'person',${ownerId}::uuid,'Personal',${ownerId}::uuid)`;
@@ -399,7 +218,7 @@ databaseSuite()("durable Code activation", () => {
       activation = await start(code, submitted.version.id);
     await run(activation.id);
     expect((await status(code, activation.id)).state).toBe("active");
-    expect(sets).toHaveLength(0);
+    expect(ownerChecks).toHaveLength(0);
     const [mandate] = await sql<
       { subject_kind: string; subject_user_id: string; policy: unknown }[]
     >`SELECT * FROM auth.mandates WHERE workload_id=${submitted.version.id}`;
@@ -407,6 +226,7 @@ databaseSuite()("durable Code activation", () => {
     expect(mandate!.policy).toBeNull();
     expect(mandate).toMatchObject({ owner_app_id: "runner", state: "active", confirmation_deadline: null });
   });
+
   test("personal policy-free activation requires the owner's browser, never OAuth, phone or key", async () => {
     const id = `c_c9p${String(++ordinal).padStart(4, "0")}`;
     await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by) VALUES(${id},'person',${ownerId}::uuid,'Personal',${ownerId}::uuid)`;
@@ -419,7 +239,7 @@ databaseSuite()("durable Code activation", () => {
     await expect(
       activateCodeVersion({ codeId: code.id, versionId: submitted.version.id, activationId: crypto.randomUUID() }, oauth),
     ).rejects.toMatchObject({ code: "FORBIDDEN", message: "Personal Code activation requires its owner's browser session." });
-    expect((await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, oauth, deps)).allowed).toEqual({
+    expect((await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, oauth)).allowed).toEqual({
       allowed: false,
       reason: "credential",
     });
@@ -440,26 +260,7 @@ databaseSuite()("durable Code activation", () => {
     }
     expect(await sql`SELECT id FROM auth.mandates WHERE workload_id=${submitted.version.id}`).toHaveLength(0);
   });
-  test("same permissions reuse grants and require only owner authority", async () => {
-    const code = await newCode(),
-      first = await version(code),
-      activation = await start(code, first.version.id);
-    await run(activation.id);
-    expect((await status(code, activation.id)).state).toBe("active");
-    const grants = [...live.keys()];
-    sets.length = 0;
-    denyDry = "A";
-    denySet = "A";
-    const second = await version(code, ["A", "B"], first.version.id),
-      next = await start(code, second.version.id);
-    await run(next.id);
-    expect((await status(code, next.id)).state).toBe("active");
-    expect([...live.keys()]).toEqual(grants);
-    expect(sets.length).toBeGreaterThan(0);
-    expect(sets.every((set) => set.id.startsWith("owner-") && set.dryRun)).toBe(true);
-    const [mandate] = await sql<{ policy: unknown }[]>`SELECT policy FROM auth.mandates WHERE workload_id=${second.version.id}`;
-    expect(mandate!.policy).toBeNull();
-  });
+
   test("explicit reactivation reuses an unchanged mandate but never resumes a separately paused mandate", async () => {
     const code = await newCode(),
       submitted = await version(code, ["A"]),
@@ -477,192 +278,8 @@ databaseSuite()("durable Code activation", () => {
     expect((await sql<{ state: string }[]>`SELECT state FROM auth.mandates WHERE id=${firstStatus.mandateId}::uuid`)[0]!.state).toBe(
       "paused",
     );
-    expect(live.size).toBe(1);
   });
-  test("parallel workers serialize one activation and never issue a second set", async () => {
-    const code = await newCode(),
-      submitted = await version(code),
-      activation = await start(code, submitted.version.id);
-    await Promise.allSettled([run(activation.id), run(activation.id)]);
-    await run(activation.id);
-    expect((await status(code, activation.id)).state).toBe("active");
-    expect(sets.filter((set) => !set.dryRun).map((set) => set.id)).toEqual(["A", "B"]);
-    expect(live.size).toBe(2);
-  });
-  test("two distinct activations of the same Code complete in series", async () => {
-    const code = await newCode(),
-      first = await version(code, ["A"]),
-      next = await version(code, ["B"], first.version.id);
-    const a = await start(code, first.version.id),
-      b = await start(code, next.version.id);
-    const entered = Promise.withResolvers<void>();
-    const firstRun = processCodeActivation(a.id, {
-      ...deps,
-      restoreAuthority: async (row) => {
-        entered.resolve();
-        return deps.restoreAuthority(row);
-      },
-    });
-    await entered.promise;
-    const secondRun = processCodeActivation(b.id, {
-      ...deps,
-      restoreAuthority: async (row) => {
-        expect((await status(code, a.id)).state).toBe("active");
-        return deps.restoreAuthority(row);
-      },
-    });
-    await Promise.allSettled([firstRun, secondRun]);
-    await run(b.id);
-    expect((await status(code, b.id)).state).toBe("active");
-    expect((await findCode(code.id))!.activeVersionId).toBe(next.version.id);
-    expect(sets.filter((set) => !set.dryRun).map((set) => set.id)).toEqual(["A", "B"]);
-  });
-  test("a broader target permission requires that target administrator again", async () => {
-    const code = await newCode(),
-      first = await version(code, ["A"]),
-      active = await start(code, first.version.id);
-    await run(active.id);
-    const oldGrants = [...live.keys()];
-    const next = await version(code, ["A"], first.version.id, "item.add"),
-      activation = await start(code, next.version.id);
-    sets.length = 0;
-    denyDry = "A";
-    await run(activation.id);
-    expect((await status(code, activation.id)).failure?.target).toEqual({ type: "example.item", id: "A" });
-    expect(sets.some((set) => set.id === "A" && set.dryRun)).toBe(true);
-    expect(sets.every((set) => set.dryRun)).toBe(true);
-    expect([...live.keys()]).toEqual(oldGrants);
-    expect((await findCode(code.id))!.activeVersionId).toBe(first.version.id);
-  });
-  test("a new owner administrator can reuse existing target permission; the previous one cannot", async () => {
-    const code = await newCode(),
-      first = await version(code, ["A"]),
-      active = await start(code, first.version.id);
-    await run(active.id);
-    const oldGrants = [...live.keys()],
-      next = await version(code, ["A"], first.version.id);
-    ownerAdministrator = nextOwnerId;
-    const previous = await start(code, next.version.id);
-    await run(previous.id);
-    expect((await status(code, previous.id)).failure?.target?.id).toBe(code.owner.kind === "resource" ? code.owner.ref.id : "");
-    const [share] = await sql<
-      { id: string }[]
-    >`INSERT INTO auth.access(user_id,permission) VALUES(${nextOwnerId}::uuid,'write') RETURNING id`;
-    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${code.id},${share!.id}::uuid)`;
-    sets.length = 0;
-    denyDry = "A";
-    const activation = await start(code, next.version.id, context(nextOwnerId));
-    await run(activation.id);
-    expect((await status(code, activation.id)).state).toBe("active");
-    expect(sets.every((set) => set.id.startsWith("owner-") && set.dryRun && set.person === nextOwnerId)).toBe(true);
-    expect([...live.keys()]).toEqual(oldGrants);
-  });
-  test("crash between targets and a lost set response resume with the same proof grantId, never a duplicate", async () => {
-    const code = await newCode(),
-      submitted = await version(code),
-      activation = await start(code, submitted.version.id);
-    crashAt = "B";
-    await expect(run(activation.id)).rejects.toThrow("crash");
-    expect(live.size).toBe(1);
-    const first = [...live.keys()][0];
-    crashAfter = true;
-    await expect(run(activation.id)).rejects.toThrow("lost_response");
-    expect(live.size).toBe(2);
-    crashAt = null;
-    await run(activation.id);
-    expect((await status(code, activation.id)).state).toBe("active");
-    expect(live.size).toBe(2);
-    expect(live.has(first!)).toBe(true);
-    expect(new Set(sets.filter((set) => set.id === "B").map((set) => set.grantId)).size).toBe(1);
-  });
-  test("late refusal rolls back only this process's own grants and preserves the active version", async () => {
-    const code = await newCode(),
-      first = await version(code, ["A"]),
-      active = await start(code, first.version.id);
-    await run(active.id);
-    const oldGrant = [...live.keys()][0]!,
-      next = await version(code, ["A", "B", "C"], first.version.id);
-    denySet = "C";
-    const activation = await start(code, next.version.id);
-    await run(activation.id);
-    expect((await status(code, activation.id)).state).toBe("failed");
-    expect(live.has(oldGrant)).toBe(true);
-    expect(removals).not.toContain(oldGrant);
-    expect(live.size).toBe(1);
-    expect((await findCode(code.id))!.activeVersionId).toBe(first.version.id);
-  });
-  test("removed target grant is observed but never restored by reconciliation or a crashed retry", async () => {
-    const code = await newCode(),
-      submitted = await version(code),
-      activation = await start(code, submitted.version.id);
-    crashAt = "B";
-    await expect(run(activation.id)).rejects.toThrow();
-    const removed = [...live.keys()][0]!;
-    live.delete(removed);
-    tombstones.add(removed);
-    crashAt = null;
-    await run(activation.id);
-    expect((await status(code, activation.id)).state).toBe("failed");
-    expect(live.has(removed)).toBe(false);
-    const next = await start(code, submitted.version.id);
-    await run(next.id);
-    const active = [...live.keys()][0]!;
-    const removedGrant = live.get(active)!;
-    live.delete(active);
-    tombstones.add(active);
-    sets.length = 0;
-    // Without an audit event of the removal, who removed it stays unknown.
-    expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
-      expect.objectContaining({ grantId: active, state: "removed", removedBy: null, removedAt: null }),
-    );
-    // The platform's code.access.rm audits each removal; events for another account or target never answer.
-    const audit = (principal: string, target: { type: string; id: string }, at: string) =>
-      sql`INSERT INTO audit.events(action,outcome,actor_user_id,target_type,target_id,metadata,created_at)
-        VALUES('code.access.rm','allowed',${ownerId}::uuid,${target.type},${target.id},
-          ${JSON.stringify({ appId: "example", grantId: active, principal })}::text::jsonb,${at}::timestamptz)`;
-    await audit(crypto.randomUUID(), removedGrant.target, "2026-10-31T11:30:00.000Z");
-    await audit(removedGrant.principal, { type: removedGrant.target.type, id: "elsewhere" }, "2026-10-31T11:40:00.000Z");
-    await audit(removedGrant.principal, removedGrant.target, "2026-10-31T11:20:00.000Z");
-    // An event that names another app for this target is not this removal either.
-    await sql`INSERT INTO audit.events(action,outcome,actor_user_id,target_type,target_id,metadata,created_at)
-      VALUES('code.access.rm','allowed',${nextOwnerId}::uuid,${removedGrant.target.type},${removedGrant.target.id},
-        ${JSON.stringify({ appId: "other", grantId: active, principal: removedGrant.principal })}::text::jsonb,'2026-10-31T11:50:00.000Z'::timestamptz)`;
-    expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
-      // The Code page names who confirmed the grant and when, and who removed it at the target and when.
-      expect.objectContaining({
-        grantId: active,
-        state: "removed",
-        activatedBy: expect.any(String),
-        activatedAt: expect.any(String),
-        activatedVersionId: expect.any(String),
-        removedBy: ownerId,
-        removedAt: "2026-10-31T11:20:00.000Z",
-      }),
-    );
-    expect(sets).toHaveLength(0);
-    expect(live.has(active)).toBe(false);
-  });
-  test("removing an active grant makes a later activation require that target's authority again", async () => {
-    const code = await newCode(),
-      first = await version(code, ["A"]),
-      active = await start(code, first.version.id);
-    await run(active.id);
-    const removed = [...live.keys()][0]!;
-    live.delete(removed);
-    tombstones.add(removed);
-    const next = await version(code, ["A"], first.version.id);
-    denyDry = "A";
-    const blocked = await start(code, next.version.id);
-    await run(blocked.id);
-    expect((await status(code, blocked.id)).state).toBe("failed");
-    expect(live.size).toBe(0);
-    denyDry = null;
-    const explicit = await start(code, next.version.id);
-    await run(explicit.id);
-    expect((await status(code, explicit.id)).state).toBe("active");
-    expect(live.size).toBe(1);
-    expect(live.has(removed)).toBe(false);
-  });
+
   test("phone, service-account, API-key and invocation credentials cannot activate", async () => {
     const code = await newCode(),
       submitted = await version(code);
@@ -705,32 +322,7 @@ databaseSuite()("durable Code activation", () => {
       start(code, submitted.version.id, { ...owner, authority: { ...owner.authority, credentialKind: "api_key", scopes: ["write"] } }),
     ).rejects.toThrow("browser");
   });
-  test("production authority restore reads a real session and stops after its revocation", async () => {
-    const code = await newCode(),
-      submitted = await version(code),
-      signIn = await createTestBrowserSignIn(ownerId);
-    const signed: CodeContext = {
-      ...owner,
-      authority: {
-        ...owner.authority,
-        credentialProof: {
-          kind: "session",
-          userId: ownerId,
-          sid: signIn.sid,
-          authEpoch: 0,
-          expiresAt: "2099-01-01T00:00:00Z",
-        },
-      },
-    };
-    const activation = await start(code, submitted.version.id, signed);
-    crashAt = "B";
-    await expect(processCodeActivation(activation.id, { transport, catalog: deps.catalog })).rejects.toThrow("crash");
-    expect(live.size).toBe(1);
-    await sql`UPDATE auth.session_families SET revoked_at=now() WHERE sid=${signIn.sid}::uuid`;
-    await processCodeActivation(activation.id, { transport, catalog: deps.catalog });
-    expect((await status(code, activation.id)).failure?.code).toBe("authority_revoked");
-    expect(live.size).toBe(0);
-  });
+
   test("a pending non-admin activation requires a fresh explicit process after administrator promotion", async () => {
     const code = await newCode(),
       submitted = await version(code),
@@ -751,40 +343,13 @@ databaseSuite()("durable Code activation", () => {
     const activation = await start(code, submitted.version.id, signed);
     try {
       await sql`UPDATE auth.users SET admin=TRUE WHERE id=${ownerId}::uuid`;
-      await processCodeActivation(activation.id, { transport, catalog: deps.catalog });
+      await processCodeActivation(activation.id, { readOwner: deps.readOwner });
       expect(await status(code, activation.id)).toMatchObject({ state: "failed", failure: { code: "authority_changed" } });
-      expect(live.size).toBe(0);
     } finally {
       await sql`UPDATE auth.users SET admin=FALSE WHERE id=${ownerId}::uuid`;
     }
   });
-  test("revoked activating authority compensates its grants without needing the revoked credential", async () => {
-    const code = await newCode(),
-      submitted = await version(code),
-      activation = await start(code, submitted.version.id);
-    crashAt = "B";
-    await expect(run(activation.id)).rejects.toThrow();
-    revoked = true;
-    await run(activation.id);
-    expect((await status(code, activation.id)).state).toBe("failed");
-    expect(live.size).toBe(0);
-  });
-  test("cleanup preserves the grants of a waiting activation", async () => {
-    const code = await newCode(),
-      first = await version(code, ["A"]),
-      active = await start(code, first.version.id);
-    await run(active.id);
-    const next = await version(code, ["B", "C"], first.version.id),
-      pending = await start(code, next.version.id);
-    crashAt = "C";
-    await expect(run(pending.id)).rejects.toThrow();
-    const waitingIds = [...live.keys()];
-    await cleanupCodeActivation(code.id, transport, async () => {});
-    expect([...live.keys()]).toEqual(waitingIds);
-    crashAt = null;
-    await run(pending.id);
-    expect((await status(code, pending.id)).state).toBe("active");
-  });
+
   test("a cleanup delivery cannot consume a new cleanup request committed before its acknowledgement", async () => {
     const code = await newCode(),
       submitted = await version(code, ["A"]),
@@ -795,99 +360,17 @@ databaseSuite()("durable Code activation", () => {
     >`SELECT * FROM code.activation_outbox WHERE code_id=${code.id} AND kind='cleanup'`;
     expect(row).toBeDefined();
     await codeActivationCleanupOutbox.dispatch(row!, async () => {
-      await cleanupCodeActivation(code.id, transport, async () => {});
+      await cleanupCodeActivation(code.id);
       await sql`INSERT INTO code.activation_outbox(code_id,kind) VALUES(${code.id},'cleanup')`;
     });
     expect(await sql`SELECT id FROM code.activation_outbox WHERE code_id=${code.id} AND kind='cleanup'`).toHaveLength(1);
   });
-  test("enqueue and cancellation return while a worker is inside a target request", async () => {
-    const code = await newCode(),
-      first = await version(code, ["A"]),
-      next = await version(code, ["B"], first.version.id);
-    const active = await start(code, first.version.id),
-      entered = Promise.withResolvers<void>(),
-      release = Promise.withResolvers<void>();
-    const worker = processCodeActivation(active.id, {
-      ...deps,
-      transport: {
-        ...transport,
-        set: async (input, ctx) => {
-          if (!input.dryRun) {
-            entered.resolve();
-            await release.promise;
-          }
-          return transport.set(input, ctx);
-        },
-      },
-    });
-    try {
-      await entered.promise;
-      const queued = await start(code, next.version.id);
-      expect(queued.state).toBe("pending");
-      expect((await cancelCodeActivation({ codeId: code.id, activationId: active.id }, owner)).state).toBe("rolling_back");
-      await expect(run(queued.id)).rejects.toThrow("activation_busy");
-    } finally {
-      release.resolve();
-      await worker;
-    }
-    expect((await status(code, active.id)).state).toBe("cancelled");
-    expect(live.size).toBe(0);
-  });
-  test("cancellation after the final checkpoint prevents the active-version commit", async () => {
-    const code = await newCode(),
-      submitted = await version(code, ["A"]),
-      activation = await start(code, submitted.version.id);
-    let cancelled = false;
-    await processCodeActivation(activation.id, {
-      ...deps,
-      transport: {
-        ...transport,
-        list: async (app, principal) => {
-          if (live.size && !cancelled) {
-            cancelled = true;
-            await cancelCodeActivation({ codeId: code.id, activationId: activation.id }, owner);
-          }
-          return transport.list(app, principal);
-        },
-      },
-    });
-    expect(cancelled).toBe(true);
-    expect(await status(code, activation.id)).toMatchObject({ state: "cancelled", failure: { code: "cancelled" } });
-    expect((await findCode(code.id))!.activeVersionId).toBeNull();
-    expect(await sql`SELECT id FROM auth.mandates WHERE workload_id=${submitted.version.id}`).toHaveLength(0);
-    expect(live.size).toBe(0);
-  });
-  test("cancellation during rollback preserves the target's original refusal", async () => {
-    const code = await newCode(),
-      submitted = await version(code),
-      activation = await start(code, submitted.version.id);
-    denySet = "B";
-    await expect(
-      processCodeActivation(activation.id, {
-        ...deps,
-        transport: {
-          ...transport,
-          remove: async () => {
-            throw new Error("Cleanup offline");
-          },
-        },
-      }),
-    ).rejects.toThrow("Cleanup offline");
-    const refused = { target: { type: "example.item", id: "B" }, code: "not_manager" };
-    expect(await cancelCodeActivation({ codeId: code.id, activationId: activation.id }, owner)).toMatchObject({
-      state: "rolling_back",
-      failure: refused,
-    });
-    await run(activation.id);
-    expect(await status(code, activation.id)).toMatchObject({ state: "failed", failure: refused });
-    expect(live.size).toBe(0);
-  });
-  test("old versions retain grants and mandate until their last queued or running run finishes", async () => {
+
+  test("old versions retain their entry until their last queued or running run finishes", async () => {
     const code = await newCode(),
       first = await version(code, ["A"]),
       active = await start(code, first.version.id);
     await run(active.id);
-    const oldGrant = [...live.keys()][0]!;
     const [runRow] = await sql<
       { id: string }[]
     >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,payload_bytes,calls_limit,created_at)
@@ -895,346 +378,222 @@ databaseSuite()("durable Code activation", () => {
     const next = await version(code, ["B"], first.version.id),
       activation = await start(code, next.version.id);
     await run(activation.id);
-    await expect(cleanupCodeActivation(code.id, transport, async () => {})).rejects.toThrow("draining");
-    expect(live.has(oldGrant)).toBe(true);
+    await expect(cleanupCodeActivation(code.id)).rejects.toThrow("draining");
     await sql`UPDATE code.runs SET state='succeeded',ended_at=${fixed} WHERE id=${runRow!.id}::uuid`;
-    await cleanupCodeActivation(code.id, transport, async () => {});
-    expect(live.has(oldGrant)).toBe(false);
+    await cleanupCodeActivation(code.id);
     expect((await sql<{ state: string }[]>`SELECT state FROM auth.mandates WHERE workload_id=${first.version.id}`)[0]!.state).toBe(
       "revoked",
     );
   });
-  test("owner deletion leaves the grant journal for durable lifecycle cleanup", async () => {
-    const code = await newCode(),
-      submitted = await version(code, ["A"]),
-      activation = await start(code, submitted.version.id);
-    await run(activation.id);
-    const grants = [...live.keys()];
-    await sql`UPDATE code.codes SET state='deleting',active_version_id=NULL WHERE id=${code.id}`;
-    await cleanupCodeActivation(code.id, transport, async () => {
-      throw new Error("Deleted Code must not send activation notices");
-    });
-    expect(removals).toEqual([]);
-    expect([...live.keys()]).toEqual(grants);
-    expect(await sql`SELECT grant_id FROM code.target_grants WHERE code_id=${code.id} AND state='granted'`).toHaveLength(grants.length);
-    expect(await sql`SELECT id FROM code.activations WHERE id=${activation.id}::uuid`).toHaveLength(1);
-  });
-  test("the check before the click asks every target like an activation and writes nothing", async () => {
-    const code = await newCode(),
-      submitted = await version(code, ["A", "B"]);
-    denyDry = "B";
-    sets.length = 0;
-    const answer = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
-    expect(sets.every((set) => set.dryRun)).toBe(true);
-    expect(answer.targets.find((item) => item.target.id === "A")).toEqual({
-      target: { type: "example.item", id: "A" },
-      state: "granted",
-      failure: null,
-    });
-    const refused = answer.targets.find((item) => item.target.id === "B")!;
-    expect(refused).toMatchObject({ state: "refused", failure: { code: "not_manager", title: "Fixture target", readable: true } });
-    expect(refused.failure?.managerNames).toHaveLength(1);
-    expect(await sql`SELECT id FROM code.activations WHERE code_id=${code.id}`).toHaveLength(0);
-    expect(await sql`SELECT grant_id FROM code.target_grants WHERE code_id=${code.id}`).toHaveLength(0);
-    // The check never tells an ID's title or managers to someone who may not read that target.
-    targetReadable = false;
-    const hidden = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
-    const unreadable = hidden.targets.find((item) => item.target.id === "B")!;
-    expect(unreadable.failure).toMatchObject({ code: "not_manager", readable: false });
-    expect(JSON.stringify(unreadable)).not.toContain("Fixture target");
-    expect(JSON.stringify(unreadable)).not.toContain(nextOwnerId);
-    // A target that does not answer leaves the decision to activating.
-    targetReadable = true;
-    const silent = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
-      ...deps,
-      transport: {
-        ...transport,
-        set: async () => {
-          throw new CodeActivationTransportError("target_unavailable", true);
+
+  test("activation and preview never ask target apps, even for unknown and dynamic manifest targets", async () => {
+    const code = await newCode();
+    const submitted = await version(code, ["A", "B"]);
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async () => {
+          throw new Error("No target requests during activation");
         },
-      },
-    });
-    expect(silent.targets.every((item) => item.state === "unknown" && item.failure === null)).toBe(true);
-    // An application that cannot list its grants leaves its targets unknown instead of guessing that they are new.
-    sets.length = 0;
-    const unlisted = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
-      ...deps,
-      transport: {
-        ...transport,
-        list: async () => {
-          throw new CodeActivationTransportError("target_unavailable", true);
-        },
-      },
-    });
-    expect(unlisted.targets.find((item) => item.target.id === "A")).toMatchObject({ state: "unknown", failure: null });
-    expect(unlisted.targets.find((item) => item.target.id === "B")).toMatchObject({ state: "unknown", failure: null });
-    expect(sets.some((set) => set.id === "A" || set.id === "B")).toBe(false);
-    // Only a person who could start this activation may ask.
-    await expect(
-      checkCodeActivation(
-        { codeId: code.id, versionId: submitted.version.id },
-        { ...owner, authority: { ...owner.authority, credentialKind: "api_key" } },
-        deps,
+        { preconnect: globalThis.fetch.preconnect },
       ),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
-  });
-  test("unreadable target refusal persists and returns neither title nor managers; readable refusal keeps both", async () => {
-    for (const readable of [false, true]) {
-      targetReadable = readable;
-      const code = await newCode(),
-        submitted = await version(code, ["B"]),
-        activation = await start(code, submitted.version.id);
-      denyDry = "B";
+    );
+    try {
+      const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner);
+      expect(preview).not.toHaveProperty("rows");
+      const activation = await start(code, submitted.version.id);
       await run(activation.id);
-      const result = await status(code, activation.id);
-      expect(result.state).toBe("failed");
-      expect(result.failure).toMatchObject({ target: { type: "example.item", id: "B" }, code: "not_manager", readable });
-      const [saved] = await sql<
-        { failure: unknown; plan: unknown }[]
-      >`SELECT failure,plan FROM code.activations WHERE id=${activation.id}::uuid`;
-      expect(JSON.stringify(saved!.plan)).not.toContain("managerUserIds");
-      expect(JSON.stringify(saved!.plan)).not.toContain("Fixture target");
-      if (readable) {
-        expect(result.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
-        expect(saved!.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
-        // The page needs names; they exist only in the answer to someone who just passed the reader check.
-        expect(result.failure?.managerNames).toHaveLength(1);
-        expect(saved!.failure).not.toHaveProperty("managerNames");
-        // Losing read access also removes presentation on an existing status response.
-        readersSpy.mockResolvedValueOnce({ state: "checked", readable: [] });
-        const hidden = await status(code, activation.id);
-        expect(hidden.failure).not.toHaveProperty("title");
-        expect(hidden.failure).not.toHaveProperty("managerUserIds");
-        expect(hidden.failure).not.toHaveProperty("managerNames");
-      } else {
-        expect(result.failure).toMatchObject({ reason: "Einschalten kann nur, wer dieses Ziel verwaltet" });
-        for (const value of [result, saved]) {
-          expect(JSON.stringify(value)).not.toContain("Fixture target");
-          expect(JSON.stringify(value)).not.toContain(nextOwnerId);
-          expect(JSON.stringify(value)).not.toContain("managerUserIds");
-        }
-      }
+      expect((await status(code, activation.id)).state).toBe("active");
+      expect((await findCode(code.id))!.activeVersionId).toBe(submitted.version.id);
+      const [entry] = await sql`SELECT * FROM auth.mandates WHERE workload_id=${submitted.version.id}`;
+      expect(entry).toMatchObject({
+        owner_app_id: "runner",
+        subject_service_account_id: code.serviceAccountId,
+        policy: null,
+        state: "active",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(ownerChecks.length).toBeGreaterThan(0);
+    } finally {
+      fetchSpy.mockRestore();
     }
   });
-  test("Core outage reasons remain useful when the target is unreadable", async () => {
-    const code = await newCode(),
-      submitted = await version(code, ["A"]),
-      activation = await start(code, submitted.version.id);
-    targetReadable = false;
-    crashAt = "A";
-    await expect(run(activation.id)).rejects.toThrow("crash");
-    expect((await status(code, activation.id)).failure).toEqual({
-      target: { type: "example.item", id: "A" },
-      code: "activation_retry",
-      reason: "Activation is waiting for a dependency. Retry is automatic; the old version stays active.",
-    });
-    const failure = {
-      target: { type: "app", id: "example" },
-      code: "target_unavailable",
-      reason: "The target operation catalog is unavailable. Activate again after the application is ready.",
-    };
-    await sql`UPDATE code.activations SET failure=${JSON.stringify(failure)}::text::jsonb WHERE id=${activation.id}::uuid`;
-    expect((await status(code, activation.id)).failure).toEqual(failure);
-  });
-  test("saved answers without a reader decision use the current viewer's read access", async () => {
-    const code = await newCode(),
-      submitted = await version(code, ["B"]),
-      activation = await start(code, submitted.version.id);
-    denyDry = "B";
-    await run(activation.id);
-    const failure = {
-      target: { type: "example.item", id: "B" },
-      code: "not_manager",
-      reason: "Fixture target requires management",
-      title: "Fixture target",
-      managerUserIds: [nextOwnerId],
-    };
-    await sql`UPDATE code.activations SET failure=${JSON.stringify(failure)}::text::jsonb WHERE id=${activation.id}::uuid`;
-    readersSpy.mockResolvedValueOnce({ state: "checked", readable: [] });
-    const hidden = await status(code, activation.id);
-    expect(hidden.failure).toEqual({
-      target: failure.target,
-      code: failure.code,
-      reason: "Einschalten kann nur, wer dieses Ziel verwaltet",
-      readable: false,
-    });
-    expect(JSON.stringify(hidden)).not.toContain("Fixture target");
-    expect(JSON.stringify(hidden)).not.toContain(nextOwnerId);
-    expect((await status(code, activation.id)).failure).toEqual({ ...failure, managerNames: [nextOwnerId] });
-    // A guest who may read the target learns no other person's name, as in directory search.
-    const guest = {
-      ...owner,
-      authority: { ...owner.authority, actor: { kind: "user" as const, user: { ...person(ownerId), roles: ["guest" as const] } } },
-    };
-    const asGuest = await readCodeActivation({ codeId: code.id, activationId: activation.id }, guest);
-    expect(asGuest.failure).not.toHaveProperty("managerNames");
-  });
-  test("unreadable Cloud-admin activation uses server-only recipients and still sends each notice once", async () => {
-    targetReadable = false;
-    const code = await newCode(),
-      submitted = await version(code, ["A"]),
-      activation = await start(code, submitted.version.id, administrator);
-    await run(activation.id);
-    expect((await status(code, activation.id)).state).toBe("active");
-    const [saved] = await sql<{ plan: unknown }[]>`SELECT plan FROM code.activations WHERE id=${activation.id}::uuid`;
-    expect(JSON.stringify(saved!.plan)).not.toContain("managerUserIds");
-    expect(JSON.stringify(saved!.plan)).not.toContain("Fixture target");
-    expect(
-      await sql`SELECT grant_id FROM code.target_grants WHERE activation_id=${activation.id}::uuid AND cardinality(manager_user_ids)>0`,
-    ).toHaveLength(0);
-    const delivered: string[] = [];
-    const notify = async (input: { userId: string; target: { id: string } }) => {
-      expect(input.userId).toBe(ownerId);
-      delivered.push(input.target.id);
-    };
-    await cleanupCodeActivation(code.id, transport, notify);
-    await cleanupCodeActivation(code.id, transport, notify);
-    expect(delivered.sort()).toEqual(["A", code.owner.kind === "resource" ? code.owner.ref.id : ""].sort());
-    expect(
-      await sql`SELECT target FROM code.activation_notices WHERE activation_id=${activation.id}::uuid AND jsonb_typeof(target)<>'object'`,
-    ).toHaveLength(0);
-  });
-  test("persisted target objects route rollback to the provider and remove every newly applied grant", async () => {
+  test("an explicit Code editor cannot bypass the current owner manager check", async () => {
     const code = await newCode(),
       submitted = await version(code),
       activation = await start(code, submitted.version.id);
-    denySet = "B";
+    ownerAdministrator = nextOwnerId;
     await run(activation.id);
-    expect((await status(code, activation.id)).state).toBe("failed");
-    const rows = await sql<
-      { target: { type: string; id: string }; state: string }[]
-    >`SELECT target,state FROM code.target_grants WHERE activation_id=${activation.id}::uuid ORDER BY target->>'id'`;
-    expect(rows.map((row) => row.target)).toEqual([
-      { type: "example.item", id: "A" },
-      { type: "example.item", id: "B" },
-    ]);
-    expect(rows.every((row) => row.state === "released")).toBe(true);
-    expect(removals).toHaveLength(2);
-    expect(live.size).toBe(0);
-    const [saved] = await sql<
-      { authority: unknown; plan: unknown; failure: unknown; mandate_policy: unknown }[]
-    >`SELECT authority,plan,failure,mandate_policy FROM code.activations WHERE id=${activation.id}::uuid`;
-    expect(Array.isArray(saved!.plan)).toBe(true);
-    expect(typeof saved!.failure).toBe("object");
-    expect(typeof saved!.mandate_policy).toBe("object");
+    expect(await status(code, activation.id)).toMatchObject({ state: "failed", failure: { code: "not_owner_manager", target: null } });
+    expect((await findCode(code.id))!.activeVersionId).toBeNull();
+    expect(await sql`SELECT id FROM auth.mandates WHERE workload_id=${submitted.version.id}`).toHaveLength(0);
   });
-  test("Cloud-admin activation changes no personal shares and emits one durable notice per affected target", async () => {
+  test("owner unavailability retries without changing the active version; revoked authority stops it", async () => {
     const code = await newCode(),
-      submitted = await version(code, ["A"]),
-      activation = await start(code, submitted.version.id, administrator);
+      first = await version(code),
+      active = await start(code, first.version.id);
+    await run(active.id);
+    const next = await version(code, ["C"], first.version.id),
+      activation = await start(code, next.version.id);
+    await expect(
+      processCodeActivation(activation.id, {
+        ...deps,
+        readOwner: async () => {
+          throw new Error("Owner offline");
+        },
+      }),
+    ).rejects.toThrow("Owner offline");
+    expect((await status(code, activation.id)).state).toBe("waiting");
+    expect((await findCode(code.id))!.activeVersionId).toBe(first.version.id);
+    revoked = true;
     await run(activation.id);
-    expect((await status(code, activation.id)).state).toBe("active");
-    const delivered: string[] = [];
-    const notify = async (input: { target: { id: string } }) => {
-      delivered.push(input.target.id);
-    };
-    await cleanupCodeActivation(code.id, transport, notify);
-    await cleanupCodeActivation(code.id, transport, notify);
-    expect(delivered.sort()).toEqual(["A", code.owner.kind === "resource" ? code.owner.ref.id : ""].sort());
-    expect(await sql`SELECT id FROM auth.access WHERE user_id=${adminId}::uuid`).toHaveLength(0);
+    expect(await status(code, activation.id)).toMatchObject({ state: "failed", failure: { code: "authority_revoked" } });
+    expect((await findCode(code.id))!.activeVersionId).toBe(first.version.id);
   });
-  test("activation identities are idempotent and cancellation compensates an interrupted process", async () => {
+  test("enqueue and cancel remain available during an owner check; cancellation prevents the atomic switch", async () => {
     const code = await newCode(),
       submitted = await version(code),
       activation = await start(code, submitted.version.id);
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const worker = processCodeActivation(activation.id, {
+      ...deps,
+      readOwner: async (...args) => {
+        entered.resolve();
+        await release.promise;
+        return deps.readOwner(...args);
+      },
+    });
+    try {
+      await entered.promise;
+      expect((await start(code, submitted.version.id)).state).toBe("pending");
+      expect((await cancelCodeActivation({ codeId: code.id, activationId: activation.id }, owner)).state).toBe("rolling_back");
+    } finally {
+      release.resolve();
+      await worker;
+    }
+    expect((await status(code, activation.id)).state).toBe("cancelled");
+    expect((await findCode(code.id))!.activeVersionId).toBeNull();
+    expect(await sql`SELECT id FROM auth.mandates WHERE workload_id=${submitted.version.id}`).toHaveLength(0);
+  });
+  test("parallel duplicate deliveries are idempotent and one version has one confirmed entry", async () => {
+    const code = await newCode(),
+      submitted = await version(code),
+      activation = await start(code, submitted.version.id);
+    const attempts = await Promise.allSettled([run(activation.id), run(activation.id)]);
+    expect(attempts.some((a) => a.status === "fulfilled")).toBe(true);
+    await run(activation.id);
+    expect((await status(code, activation.id)).state).toBe("active");
+    expect(await sql`SELECT id FROM auth.mandates WHERE workload_id=${submitted.version.id}`).toHaveLength(1);
     expect((await activateCodeVersion({ codeId: code.id, versionId: submitted.version.id, activationId: activation.id }, owner)).id).toBe(
       activation.id,
     );
-    crashAt = "B";
-    await expect(run(activation.id)).rejects.toThrow();
-    await cancelCodeActivation({ codeId: code.id, activationId: activation.id }, owner);
-    await run(activation.id);
-    expect((await status(code, activation.id)).state).toBe("cancelled");
-    expect(live.size).toBe(0);
-    await migrateActivation();
-    await migrateActivation();
-    expect(await sql`SELECT id FROM code.activations WHERE id=${activation.id}::uuid AND cancel_requested`).toHaveLength(1);
-    expect(
-      (await sql<{ index: string | null }[]>`SELECT to_regclass('code.activation_outbox_cleanup')::text AS index`)[0]!.index,
-    ).toBeNull();
-    expect((await status(code, activation.id)).state).toBe("cancelled");
   });
-  test("share-dialog details show only grants the target lists for the viewer, with directory-visible names", async () => {
+  test("preview retains local activator attribution without any target-manager lookup", async () => {
     const code = await newCode(),
       submitted = await version(code),
       activation = await start(code, submitted.version.id);
     await run(activation.id);
-    await sql`UPDATE auth.users SET display_name='Ben Schulz' WHERE id=${ownerId}::uuid`;
-    const grants = [...live.values()];
-    const atA = grants.find((grant) => grant.target.id === "A")!,
-      atB = grants.find((grant) => grant.target.id === "B")!;
-    const principal = atA.principal;
-    const listed: Array<{ appId: string; operation: string; input: unknown }> = [];
-    // The viewer manages only A: the target's own code.access.list returns just that grant.
-    const invoke: typeof provider.invokeCodeAccess = async (params) => {
-      listed.push({ appId: params.appId, operation: params.operation, input: params.input });
-      return Response.json({ data: [atA] });
+    await sql`UPDATE auth.users SET display_name='Activation owner' WHERE id=${ownerId}::uuid`;
+    const [share] = await sql`INSERT INTO auth.access(user_id,permission) VALUES(${nextOwnerId}::uuid,'write') RETURNING id`;
+    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${code.id},${share!.id}::uuid)`;
+    const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, context(nextOwnerId));
+    expect(preview.activated).toMatchObject({ byYou: false, byName: "Activation owner" });
+    const hidden = context(nextOwnerId);
+    if (hidden.authority.actor.kind === "user") hidden.authority.actor.user.roles = ["guest"];
+    expect((await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, hidden)).activated?.byName).toBeNull();
+  });
+
+  test("migration preserves active, draining and ordinary shares, finishes obsolete compensation and runs once", async () => {
+    const code = await newCode(),
+      obsolete = await version(code),
+      obsoleteActivation = await start(code, obsolete.version.id);
+    await run(obsoleteActivation.id);
+    const prior = await version(code, ["A"], obsolete.version.id),
+      first = await start(code, prior.version.id);
+    await run(first.id);
+    const current = await version(code, ["A"], prior.version.id),
+      active = await start(code, current.version.id);
+    await run(active.id);
+    await insertCodeRun({ codeId: code.id, versionId: prior.version.id, trigger: "manual", entrypoint: "run", input: null });
+    const submitted = await version(code, ["A", "B"], current.version.id),
+      pending = await start(code, submitted.version.id),
+      cancelling = await start(code, submitted.version.id),
+      failed = await start(code, submitted.version.id);
+    const oldFailure = {
+      target: { type: "example.item", id: "old" },
+      code: "not_manager",
+      reason: "Original reason",
+      managerNames: ["Old manager"],
     };
-    const [{ updated_at: activatedAt }] = await sql<
-      [{ updated_at: Date }]
-    >`SELECT updated_at FROM code.activations WHERE id=${activation.id}::uuid`;
-    const request = new Request("http://core.invalid/api/code/access/target");
-    const input = { appId: "example", grants: [atA, atB].map((grant) => ({ grantId: grant.grantId, principal })) };
-    expect(await readCodeGrantDetails(input, owner, request, { invoke })).toEqual([
-      {
-        grantId: atA.grantId,
-        operations: ["example.item.change"],
-        automations: ["run"],
-        automationTitles: { run: "Lieferungen eintragen" },
-        activatedBy: { id: ownerId, name: "Ben Schulz" },
-        activatedAt: activatedAt.toISOString(),
-      },
-    ]);
-    expect(listed).toEqual([{ appId: "example", operation: "list", input: { principal } }]);
-    // The automation comes from the running version's checker evidence; a call it could not place names none.
-    expect(await readCodeGrantDetails(input, owner, request, { invoke: async () => Response.json({ data: [atB] }) })).toEqual([
-      expect.objectContaining({ grantId: atB.grantId, automations: [] }),
-    ]);
-    // A guest sees when, but not another person's name.
-    const guest: CodeContext = {
-      ...owner,
-      authority: {
-        ...owner.authority,
-        actor: { kind: "user", user: { ...person(nextOwnerId), roles: ["guest"] } },
-        accessSubject: { type: "user", userId: nextOwnerId },
-      },
+    await sql`UPDATE code.activations SET state='failed',failure=${JSON.stringify(oldFailure)}::text::jsonb WHERE id=${failed.id}::uuid`;
+    await sql`UPDATE code.activations SET state='applying' WHERE id=${pending.id}::uuid`;
+    await sql`UPDATE code.activations SET state='rolling_back',failure=${JSON.stringify({ target: { type: "example.item", id: "old" }, code: "cancelled", reason: "Cancelled", managerNames: ["Old manager"] })}::text::jsonb WHERE id=${cancelling.id}::uuid`;
+    // These are the actual old table contracts, including ownership and version FKs.
+    await sql`CREATE TABLE code.target_grants (
+      grant_id UUID PRIMARY KEY, code_id TEXT NOT NULL REFERENCES code.codes(id) ON DELETE CASCADE,
+      activation_id UUID NOT NULL REFERENCES code.activations(id) ON DELETE CASCADE,
+      target JSONB NOT NULL, operations TEXT[] NOT NULL, level TEXT,
+      state TEXT NOT NULL CHECK(state IN ('planned','attempting','granted','removed','released')),
+      manager_user_ids UUID[] NOT NULL DEFAULT '{}')`;
+    await sql`CREATE TABLE code.version_grants (
+      version_id UUID NOT NULL REFERENCES code.versions(id) ON DELETE CASCADE,
+      grant_id UUID NOT NULL REFERENCES code.target_grants(grant_id) ON DELETE CASCADE,
+      PRIMARY KEY(version_id,grant_id))`;
+    await sql`CREATE TABLE code.a4_target_shares(access_id UUID REFERENCES auth.access(id) ON DELETE CASCADE, target_id TEXT)`;
+    const share = async (permission: "read" | "write", target: string) => {
+      const [row] = await sql<{ id: string }[]>`INSERT INTO auth.access(service_account_id,permission)
+        VALUES(${code.serviceAccountId}::uuid,${permission}::auth.permission_level) RETURNING id`;
+      await sql`INSERT INTO code.a4_target_shares VALUES(${row!.id}::uuid,${target})`;
+      return row!.id;
     };
-    expect(await readCodeGrantDetails(input, guest, request, { invoke })).toEqual([
-      expect.objectContaining({ grantId: atA.grantId, activatedBy: null, activatedAt: expect.any(String) }),
-    ]);
-    // A grant named with another Code account, or one the target does not list, stays hidden.
-    const other = crypto.randomUUID();
-    expect(
-      await readCodeGrantDetails({ appId: "example", grants: [{ grantId: atA.grantId, principal: other }] }, owner, request, {
-        invoke: async () => Response.json({ data: [{ ...atA, principal: other }] }),
-      }),
-    ).toEqual([]);
-    expect(await readCodeGrantDetails(input, owner, request, { invoke: async () => Response.json({ data: [] }) })).toEqual([]);
-    expect(
-      await readCodeGrantDetails(input, owner, request, {
-        invoke: async () => Response.json({ code: "FORBIDDEN", message: "x" }, { status: 403 }),
-      }),
-    ).toEqual([]);
-    // Another application cannot vouch for this grant, and a listed target must be the recorded one.
-    expect(await readCodeGrantDetails({ ...input, appId: "other" }, owner, request, { invoke })).toEqual([]);
-    expect(
-      await readCodeGrantDetails(input, owner, request, {
-        invoke: async () => Response.json({ data: [{ ...atA, target: { type: "example.item", id: "B" } }] }),
-      }),
-    ).toEqual([]);
-    // An unavailable or malformed list is a failure the dialog can retry, not "nothing to show".
-    await expect(
-      readCodeGrantDetails(input, owner, request, {
-        invoke: async () => Response.json({ code: "UNAVAILABLE", message: "x" }, { status: 503 }),
-      }),
-    ).rejects.toThrow("unavailable");
-    await expect(readCodeGrantDetails(input, owner, request, { invoke: async () => Response.json({ data: "x" }) })).rejects.toThrow(
-      "invalid answer",
-    );
+    const activeShare = await share("write", "active"),
+      drainingShare = await share("read", "draining"),
+      ordinaryShare = await share("read", "ordinary"),
+      abandonedShare = await share("write", "pending"),
+      cancelledShare = await share("write", "cancelled"),
+      obsoleteShare = await share("read", "obsolete");
+    const journal = async (grantId: string, activationId: string, state: "attempting" | "granted") =>
+      sql`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,level,state)
+        VALUES(${grantId}::uuid,${code.id},${activationId}::uuid,'{"type":"example.item","id":"fixture"}',ARRAY['example.item.change'],'write',${state})`;
+    await journal(obsoleteShare, obsoleteActivation.id, "granted");
+    await journal(activeShare, active.id, "granted");
+    await journal(drainingShare, first.id, "granted");
+    await journal(abandonedShare, pending.id, "attempting");
+    await journal(cancelledShare, cancelling.id, "granted");
+    // A stale journal without a real share must not create one.
+    await journal(crypto.randomUUID(), pending.id, "granted");
+    await sql`INSERT INTO code.version_grants VALUES(${obsolete.version.id}::uuid,${obsoleteShare}::uuid),(${current.version.id}::uuid,${activeShare}::uuid),(${prior.version.id}::uuid,${drainingShare}::uuid)`;
+    const retained = [activeShare, drainingShare, ordinaryShare].sort();
+    const before = await sql`SELECT * FROM auth.access WHERE id=ANY(${sql.array(retained, "uuid")}) ORDER BY id`;
+    const junctionBefore =
+      await sql`SELECT * FROM code.a4_target_shares WHERE access_id=ANY(${sql.array(retained, "uuid")}) ORDER BY access_id`;
+    await migrateActivation();
+    for (const attempt of [pending, cancelling])
+      expect(await status(code, attempt.id)).toMatchObject({ state: "cancelled", failure: { target: null } });
+    expect((await findCode(code.id))?.activeVersionId).toBe(current.version.id);
+    expect((await sql`SELECT failure FROM code.activations WHERE id=${failed.id}::uuid`)[0]!.failure).toEqual({
+      target: null,
+      code: oldFailure.code,
+      reason: oldFailure.reason,
+    });
+    expect(await sql`SELECT * FROM code.a4_target_shares ORDER BY access_id`).toEqual(junctionBefore);
+    expect((await sql`SELECT to_regclass('code.target_grants') AS table`)[0]!.table).toBeNull();
+    expect(await sql`SELECT * FROM auth.access WHERE service_account_id=${code.serviceAccountId}::uuid ORDER BY id`).toEqual(before);
+    expect((await sql`SELECT failure FROM code.activations WHERE id=${cancelling.id}::uuid`)[0]!.failure).toEqual({
+      target: null,
+      code: "activation_model_changed",
+      reason: "Start a new activation after the access-model update.",
+    });
+    const fresh = await start(code, submitted.version.id);
+    await migrateActivation();
+    expect((await status(code, fresh.id)).state).toBe("pending");
+    await run(fresh.id);
+    expect((await status(code, fresh.id)).state).toBe("active");
+    expect(await sql`SELECT * FROM auth.access WHERE service_account_id=${code.serviceAccountId}::uuid ORDER BY id`).toEqual(before);
   });
 });
 
-// The session fixture's file-level cleanup runs before the private database is removed.
+// Imported session fixtures clean their rows in file-level hooks before this final drop.
 afterAll(async () => {
   await database?.drop();
 });

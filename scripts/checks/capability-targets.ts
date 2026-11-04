@@ -31,7 +31,7 @@ export const capabilityTargetGaps = (manifest: CapabilityManifest): string[] => 
     });
   };
   return manifest.actions
-    .filter((action) => action.target === undefined && !action.localId.startsWith("code.access."))
+    .filter((action) => action.target === undefined)
     .flatMap((action) => {
       const exempt = action.code === false ? (reviewedInputIds[`${manifest.appId}.${action.localId}`] ?? []) : [];
       const fields = [...new Set(idPaths(action.inputSchema))].filter((field) => !exempt.includes(field));

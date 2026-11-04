@@ -354,7 +354,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
           if (["code_init", "code_write", "code_pull"].includes(event.name)) project = codeAuthoringContracts.pull.data.parse(event.result);
           if (event.name === "code_check")
             expect(codeAuthoringContracts.check.data.parse(event.result).permissions).toEqual([
-              { ...permission, status: "new", title: null, typeTitle: "Space", own: false, needsTargetAdmin: false },
+              { ...permission, status: "new", title: null, typeTitle: "Space", own: false },
             ]);
           if (event.name === "code_test" || event.name === "code_simulate")
             expect(codeAuthoringContracts.test.data.parse(event.result).ok).toBe(true);
@@ -504,7 +504,6 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
           title: null,
           typeTitle: null,
           own: false,
-          needsTargetAdmin: false,
         },
       ]);
       expect(JSON.stringify(second)).toBe(JSON.stringify(first));

@@ -25,11 +25,8 @@ import { CodeRefusalNotice } from "./CodeRefusalNotice";
 import { CodeSecretsTab } from "./CodeSecrets";
 import { loadCodeRunCalls } from "./calls";
 import {
-  ActivationCheckSchema,
   ActivationSchema,
-  type CodeActivationCheck,
   type CodeActivationStatus,
-  type CodePageActivationRow,
   type CodePageAutomation,
   type CodePageCall,
   type CodePageData,
@@ -87,25 +84,6 @@ const activationRequest = async (
     return parsed.success ? { ok: true, data: parsed.data.data } : { ok: false, message: null, definite: false };
   } catch {
     return { ok: false, message: null, definite: false };
-  }
-};
-
-/** Asks each target before the click. Null when Core cannot say; switching on then decides, as it always does. */
-const loadActivationCheck = async (codeId: string, versionId: string): Promise<CodeActivationCheck["targets"] | null> => {
-  try {
-    const response = await fetch("/api/code/activation/check", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ codeId, versionId }),
-      // The same patience as following an activation; after that, switching on decides.
-      signal: AbortSignal.timeout(ACTIVATION_POLLS * ACTIVATION_POLL_MS),
-    });
-    if (!response.ok) return null;
-    const parsed = wrapped(ActivationCheckSchema).safeParse(await response.json());
-    return parsed.success ? parsed.data.data.targets : null;
-  } catch {
-    return null;
   }
 };
 
@@ -1320,7 +1298,7 @@ type ActivationView =
   | { kind: "unknown" }
   | { kind: "failed"; failure: NonNullable<CodeActivationStatus["failure"]> | null; message: string | null };
 
-/** "Switch on": lists every operation at every target, then runs Core's durable activation and shows its result. */
+/** "Switch on": reviews the version, then runs Core's durable activation and shows its result. */
 async function openActivationDialog(params: { data: CodePageData; state: CodePageReady; version: CodePageVersion; text: PageText }) {
   const t = params.text.t();
   await prompts.dialog<void>((close) => <ActivationDialog {...params} close={() => close()} />, {
@@ -1339,26 +1317,15 @@ function ActivationDialog(props: {
 }) {
   const t = props.text.t;
   const [view, setView] = createSignal<ActivationView>({ kind: "idle" });
-  const [checking, setChecking] = createSignal(false);
-  const [checked, setChecked] = createSignal<CodeActivationCheck["targets"]>([]);
   let disposed = false;
   onCleanup(() => {
     disposed = true;
   });
   const running = () => props.state.active?.number ?? null;
-  const rows = (): CodePageActivationRow[] => props.state.waitingTargets ?? [];
-  const failedTarget = () => {
-    const current = view();
-    return current.kind === "failed" ? current.failure?.target : null;
-  };
   const newAutomations = () =>
     (props.state.automations ?? [])
       .filter((automation) => automation.isNew)
       .map((automation) => `„${automation.title ?? automation.entrypoint}“`);
-  const blocked = () => {
-    const current = view();
-    return current.kind === "failed" && current.failure?.code === "not_manager";
-  };
   // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
   // Only a confirmed terminal result or a refusal starts a new identity.
   const pending = pendingActivation(props.state.code.id, props.version.id);
@@ -1426,85 +1393,17 @@ function ActivationDialog(props: {
   };
   // A dialog opened while an earlier attempt is unresolved continues with that attempt.
   if (resumed) void check();
-  // Otherwise each target answers first, so a refusal shows before the click; the button waits for that answer.
-  else if (props.data.activation.allowed) {
-    setChecking(true);
-    void loadActivationCheck(props.state.code.id, props.version.id).then((targets) => {
-      if (disposed) return;
-      setChecking(false);
-      setChecked(targets ?? []);
-      const refused = (targets ?? []).filter((item) => item.state === "refused" && item.failure);
-      const first = refused.find((item) => item.failure?.code === "not_manager") ?? refused[0];
-      if (first) setView({ kind: "failed", failure: first.failure, message: null });
-    });
-  }
-  const verdict = (row: CodePageActivationRow) =>
-    checked().find((item) => item.target.type === row.target.ref.type && item.target.id === row.target.ref.id);
-  const targetByRef = (ref: { type: string; id: string } | null | undefined) =>
-    ref ? (rows().find((row) => row.target.ref.type === ref.type && row.target.ref.id === ref.id)?.target ?? null) : null;
-  const rowBlocked = (row: CodePageActivationRow) => {
-    const failed = failedTarget();
-    const answer = verdict(row);
-    return (
-      (blocked() && failed?.type === row.target.ref.type && failed.id === row.target.ref.id) ||
-      (answer?.state === "refused" && answer.failure?.code === "not_manager")
-    );
-  };
-  const rowRight = (row: CodePageActivationRow): JSX.Element => {
-    if (rowBlocked(row))
-      return (
-        <span class="cloud-code__bad">
-          <i class="ti ti-lock" aria-hidden="true" /> {t().notAdmin}
-        </span>
-      );
-    const answer = verdict(row);
-    if (answer?.state === "refused")
-      return (
-        <span class="cloud-code__bad">
-          <i class="ti ti-alert-triangle" aria-hidden="true" /> {t().refusedAtTarget}
-        </span>
-      );
-    if ((row.target.own && props.data.canManageOwner) || answer?.state === "granted")
-      return (
-        <span class="cloud-code__ok">
-          <i class="ti ti-check" aria-hidden="true" />{" "}
-          {t().youManage({ name: row.target.own ? props.data.owner.title : props.text.targetName(row.target) })}
-        </span>
-      );
-    if (!row.isNew)
-      return <span class="text-dimmed">{t().alreadyHas({ version: props.state.active?.number ?? props.version.number })}</span>;
-    if (checking())
-      return (
-        <span class="text-secondary">
-          <i class="ti ti-loader-2 animate-spin" aria-hidden="true" /> {t().checkingTarget}
-        </span>
-      );
-    return <span class="text-secondary">{t().checkedAtTarget}</span>;
-  };
-  /** Only the own place is named; a foreign target stays its type and ID, whatever the refusal carries. */
-  const blockedReadable = () => {
-    const current = view();
-    if (current.kind !== "failed" || !current.failure?.target) return false;
-    return targetByRef(current.failure.target)?.own === true;
-  };
   const failureText = (): string | null => {
     const current = view();
     if (current.kind !== "failed") return null;
     if (!current.failure) return current.message ?? t().activationUnavailable;
-    const target = targetByRef(current.failure.target);
-    const name = target ? props.text.targetName(target) : (current.failure.target?.id ?? props.data.owner.title);
-    if (current.failure.code === "not_manager")
-      return blockedReadable()
-        ? t().blockedNotAdmin({ target: name, owner: props.data.owner.title })
-        : t().blockedNotAdminUnreadable({ id: current.failure.target?.id ?? "" });
-    if (current.failure.code === "removed") return t().accessRemovedAtTarget({ target: name });
     return t().failedGeneric({ reason: current.failure.reason });
   };
   const progressText = () => {
     const current = view();
     if (current.kind === "unknown") return t().activationUnknown({ running: running() });
     if (current.kind !== "progress") return null;
-    if (current.state === "waiting") return t().waitingTarget({ running: running() });
+    if (current.state === "waiting") return t().waitingOwner({ running: running() });
     if (current.state === "applying" || current.state === "rolling_back") return t().applying;
     return t().checking;
   };
@@ -1512,28 +1411,6 @@ function ActivationDialog(props: {
   return (
     <div class="cloud-code__dialog">
       <p>{personal(props.data) ? t().personalActivateIntro : t().activateIntro({ name: props.data.owner.title })}</p>
-      <p class="cloud-code__label">{t().operationAtTarget}</p>
-      <ul class="cloud-code__list">
-        <For each={rows()}>
-          {(row) => (
-            <li class="cloud-code__row cloud-code__row--access" data-blocked={rowBlocked(row) ? "" : undefined}>
-              <span class="cloud-code__kind" aria-hidden="true">
-                <i class={row.target.icon ?? (row.target.own ? "ti ti-home" : "ti ti-target-arrow")} />
-              </span>
-              <span class="cloud-code__cell">
-                <span class="cloud-code__ops">
-                  <For each={row.operations}>{(operation) => <Op>{operation}</Op>}</For>
-                </span>
-                <span class="cloud-code__sub">
-                  {props.text.targetLabel(row.target)}
-                  <Show when={row.isNew}> · {t().newAccess}</Show>
-                </span>
-              </span>
-              <span class="cloud-code__right">{rowRight(row)}</span>
-            </li>
-          )}
-        </For>
-      </ul>
       <Show when={(props.state.internet.waiting?.filter((origin) => !props.state.internet.active?.includes(origin)).length ?? 0) > 0}>
         <p class="cloud-code__label">{t().internet}</p>
         <ul class="cloud-code__list">
@@ -1579,38 +1456,30 @@ function ActivationDialog(props: {
         {(failure) => (
           <NoticeCard
             tone="danger"
-            icon={blocked() ? "ti ti-lock" : "ti ti-alert-triangle"}
+            icon="ti ti-alert-triangle"
             title={failure()}
-            detail={[t().nothingChanged({ running: running() }), blocked() ? t().shareLink : ""].filter(Boolean).join(" ")}
+            detail={t().nothingChanged({ running: running() })}
             role="alert"
           />
         )}
       </Show>
       <div class="cloud-code__dialog-actions">
-        <Show when={blocked()}>
-          <Button type="button" variant="secondary" onClick={() => void copyPageLink(props.data, t())}>
-            <i class="ti ti-link" aria-hidden="true" />
-            {t().copyLink}
-          </Button>
-        </Show>
         <Button type="button" variant="secondary" onClick={() => props.close()}>
           {view().kind === "idle" ? t().cancel : t().close}
         </Button>
         <Button
           type="button"
           variant="primary"
-          disabled={!props.data.activation.allowed || blocked() || busy() || checking()}
+          disabled={!props.data.activation.allowed || busy()}
           loading={busy() && view().kind === "progress" && (view() as { state: string }).state !== "waiting"}
           onClick={() => void (view().kind === "unknown" ? check() : start())}
         >
           <i class="ti ti-power" aria-hidden="true" />
-          {blocked()
-            ? t().switchOn
-            : view().kind === "unknown"
-              ? t().checkStatus
-              : view().kind === "failed"
-                ? t().tryAgain
-                : t().switchOnVersion({ version: props.version.number })}
+          {view().kind === "unknown"
+            ? t().checkStatus
+            : view().kind === "failed"
+              ? t().tryAgain
+              : t().switchOnVersion({ version: props.version.number })}
         </Button>
       </div>
     </div>

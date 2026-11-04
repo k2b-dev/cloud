@@ -53,7 +53,6 @@ const checked: CodeAuthoringData<"check"> = {
       file: "code.ts",
       line: 3,
       own: true,
-      needsTargetAdmin: false,
       status: "existing",
     },
     {
@@ -64,7 +63,6 @@ const checked: CodeAuthoringData<"check"> = {
       file: "code.ts",
       line: 8,
       own: false,
-      needsTargetAdmin: true,
       status: "new",
     },
   ],
@@ -139,7 +137,7 @@ test("check prints chapter 11 permissions with exact targets and source lines", 
   expect(run.printed.join("\n")).toMatchInlineSnapshot(`
 "Erlaubnisse
   example.conversation.move   am eigenen Postfach Rechnungen (box_1234)   code.ts:3
-  other.task.create           an Space Buchhaltung (sp_4kd2)   code.ts:8  ← neu, braucht den Admin des Space
+  other.task.create           an Space Buchhaltung (sp_4kd2)   code.ts:8
 KI           ja
 Seiten       —
 Webhook      —
@@ -217,9 +215,10 @@ test("activation without confirmation, in CI, or refused by server never reports
   expect(await code.run(denied.ctx)).toBe(1);
   expect(denied.printed).toEqual([failure]);
 });
-const previewOf = (overrides: Record<string, unknown> = {}): Record<string, unknown> & { rows: Record<string, unknown>[] } => ({
+const previewOf = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   codeId: "c_1234",
   title: "Code von info@",
+  ownerKind: "resource",
   versionId: uuid,
   number: 5,
   running: 4,
@@ -227,29 +226,7 @@ const previewOf = (overrides: Record<string, unknown> = {}): Record<string, unkn
   activated: null,
   allowed: { allowed: true },
   readiness: { state: "ready" },
-  place: { title: "info@moebel-beispiel.de", typeTitle: "Postfach", href: "/app/mail/m_1" },
-  rows: [
-    {
-      target: { type: "mail.mailbox", id: "m_1" },
-      operations: ["mail.conversation.move"],
-      own: true,
-      isNew: true,
-      check: "manages",
-      title: "info@moebel-beispiel.de",
-      typeTitle: "Postfach",
-      managers: [],
-    },
-    {
-      target: { type: "spaces.space", id: "sp_2lg8" },
-      operations: ["spaces.task.create"],
-      own: false,
-      isNew: true,
-      check: "manages",
-      title: "Logistik",
-      typeTitle: "Space",
-      managers: [],
-    },
-  ],
+  place: null,
   ...overrides,
 });
 const receipt = (state: string, failure: unknown = null) => ({
@@ -271,7 +248,7 @@ const activationResponses =
         ? Response.json({ data: receipt(state) })
         : Response.json({ version: 1, activation: receipt(state) });
 
-test("activate lists what the version gets, asks once, and only then switches on", async () => {
+test("activate explains current service-account rights, asks once, then switches on", async () => {
   const { directory } = await project();
   const run = context(["activate", directory], {}, "text", activationResponses(previewOf()));
   const asked: string[] = [];
@@ -283,13 +260,11 @@ test("activate lists what the version gets, asks once, and only then switches on
   expect(await code.run(run.ctx)).toBe(0);
   expect(asked).toEqual(["Einschalten? [j/N] "]);
   const output = run.printed.join("\n");
-  expect(output).toContain("Version 5 von „Code von info@“ einschalten. Der Code handelt dann im Namen von info@moebel-beispiel.de.");
+  expect(output).toContain(
+    "Version 5 von „Code von info@“ einschalten. Der Code läuft als sein Dienstkonto mit dessen aktuellen Rechten am Ziel.",
+  );
   expect(output).toContain("Adresse: keine, nur Automationen");
-  expect(output).toContain("mail.conversation.move");
-  expect(output).toContain("am eigenen Postfach");
-  expect(output).toContain("✓ du verwaltest info@moebel-beispiel.de");
-  expect(output).toContain("an Space Logistik (sp_2lg8)");
-  expect(output).toContain("← neu, braucht den Admin des Space  ✓ du verwaltest ihn");
+  expect(output).not.toContain("sp_2lg8");
   expect(output).toContain("✓ v5 eingeschaltet von dir");
   expect(run.requests.map((item) => item.path)).toEqual(["/api/code/activation/preview", "/api/code/authoring/activate"]);
 });
@@ -307,9 +282,9 @@ test("a script gets its receipt at once and a missing running version is not cla
   expect(pending.requests.some((item) => item.path.endsWith("/activation/read"))).toBe(false);
 });
 
-test("Core's current refusal decides what is named, not the earlier preview", async () => {
+test("Core reports an owner authority refusal without any target rights", async () => {
   const { directory } = await project();
-  const failure = { target: { type: "spaces.space", id: "sp_2lg8" }, code: "not_manager", reason: "Nur Verwalter.", readable: false };
+  const failure = { target: null, code: "not_owner_manager", reason: "Nur Verwalter des Besitzers." };
   const run = context(["activate", directory], {}, "text", (path) =>
     path.endsWith("/activation/preview")
       ? Response.json({ data: previewOf() })
@@ -318,7 +293,7 @@ test("Core's current refusal decides what is named, not the earlier preview", as
   run.ctx.confirm = async () => true;
   expect(await code.run(run.ctx)).toBe(1);
   const refusal = run.printed.slice(-3).join("\n");
-  expect(refusal).toContain("Du bist nicht Admin von sp_2lg8.");
+  expect(refusal).toContain("Nur Verwalter des Besitzers.");
   expect(refusal).not.toContain("Logistik");
 });
 
@@ -329,43 +304,6 @@ test("declining changes nothing and says what keeps running", async () => {
   expect(await code.run(run.ctx)).toBe(1);
   expect(run.printed.at(-1)).toBe("Nichts eingeschaltet, v4 läuft weiter.");
   expect(run.requests.map((item) => item.path)).toEqual(["/api/code/activation/preview"]);
-});
-
-test("a refusing target stops before the question and names the manager and the link", async () => {
-  const { directory } = await project();
-  const blocked = previewOf();
-  blocked.rows[1] = { ...blocked.rows[1]!, check: "blocked", managers: [{ name: "Ben Schulz", firstName: "Ben" }] };
-  const run = context(["activate", directory], {}, "text", activationResponses(blocked));
-  run.ctx.confirm = async () => {
-    throw new Error("Must not ask");
-  };
-  expect(await code.run(run.ctx)).toBe(1);
-  const output = run.printed.join("\n");
-  expect(output).toContain("✗ du bist nicht Admin");
-  expect(output).toContain(
-    "✗ Du bist nicht Admin von Space Logistik. Einschalten kann nur, wer Postfach info@moebel-beispiel.de und Space Logistik verwaltet.",
-  );
-  expect(output).toContain("Das kann hier: Ben Schulz. Nichts eingeschaltet, v4 läuft weiter.");
-  expect(output).toContain("Link für Ben: https://cloud.test/app/mail/m_1");
-  expect(run.requests.map((item) => item.path)).toEqual(["/api/code/activation/preview"]);
-});
-
-test("an unreadable refusing target stays an ID, without names", async () => {
-  const { directory } = await project();
-  const blocked = previewOf();
-  blocked.rows[1] = {
-    ...blocked.rows[1]!,
-    check: "blocked",
-    title: null,
-    typeTitle: null,
-    managers: [{ name: "Ben Schulz", firstName: "Ben" }],
-  };
-  const run = context(["activate", directory], {}, "text", activationResponses(blocked));
-  run.ctx.confirm = async () => true;
-  expect(await code.run(run.ctx)).toBe(1);
-  const output = run.printed.join("\n");
-  expect(output).toContain("Du bist nicht Admin von sp_2lg8.");
-  expect(output).not.toContain("Ben");
 });
 
 test("without a preview nothing is switched on unless --yes confirmed it", async () => {
@@ -571,7 +509,7 @@ test("personal check never asks for target-admin grants", async () => {
   const { directory } = await project();
   const personal = {
     ...checked,
-    permissions: checked.permissions.map((permission) => ({ ...permission, own: false, needsTargetAdmin: false })),
+    permissions: checked.permissions.map((permission) => ({ ...permission, own: false })),
   };
   const run = context(["check", directory], {}, "text", () => Response.json(personal));
   expect(await code.run(run.ctx)).toBe(0);

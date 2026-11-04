@@ -706,37 +706,15 @@ for the invocation and review contract.
 
 ## Code access to a Space
 
-A Space can be a target for resource-owned Code. Core activates its access
-with `spaces.code.access.set`, lists it with `spaces.code.access.list`, and
-removes a grant with `spaces.code.access.rm`. The target is
-`{ type: "spaces.space", id: spaceId }`, using the public Space ID.
-Spaces does not declare Code owners in Phase 1.
+A Space manager grants a Code service account View or Edit in the Space's
+normal share dialog, using its exact handle. The same dialog changes or removes
+the share. No Code declaration or adapter is needed; Spaces does not declare
+Code owners in Phase 1. Capabilities use `{ type: "spaces.space", id: spaceId }`
+with the public Space ID and check the account's current rights on every call.
 
-Spaces chooses the smallest level covering every requested operation: `read`
-for readers, or `write` for changes and Queries that require write access,
-such as assignee and writable-destination discovery. It refuses the entire
-request with a reason when any operation is unknown, belongs to another app,
-requires template administration, edits a person’s comment, or has a Mail
-workflow marked `code: false`. Code never receives an administrative level
-or counts as a Space manager. Forced task claims and releases still require
-admin and remain unavailable to Code. The version mandate still limits individual
-operations at each target.
-
-Only the Code account’s explicit grants count. Public, group, and
-all-signed-in access do not give it access to another Space. Removing a grant
-changes permission checks immediately; overlapping grants remain independent.
-Ordinary access lists include `grantId` for Code entries. Change those grants
-through Core using that ID; normal share updates and removals refuse them.
-Person and other service-account sharing keeps its existing behavior.
-
-See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target)
-for activation proofs, dry runs, retry safety, and cleanup.
-
-Code activation checks the person's current target administration rights in the
-same transaction as the grant. Changes to target shares or manager-group
-membership wait until that transaction completes. Adapter dry runs identify
-human managers, including nested manager-group members. Generated answers return
-the Space title and `managerUserIds` only when the activating person passes the
-existing Space `access.readable` check. Core obtains activation-notification
-recipients through its separate server-only lookup. Code accounts never appear
-among these managers.
+Code never receives Manage, inherits group, public or signed-in rights, or
+counts as a Space manager. Operations that need administration or declare
+`code: false` retain those restrictions. Activation and version approval grant
+no Space access. Removing a share takes effect at the next permission check;
+reactivation cannot restore it. See
+[Code with access](/en/docs/identity/authorization#code-with-access).

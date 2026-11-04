@@ -175,14 +175,14 @@ export const codePageMessages = i18n.define({
       waitingReadyNew: ({ version, running }: { version: number; running: number | null }) =>
         running === null ? "It runs once someone switches it on." : `Until someone switches it on, version ${running} keeps running.`,
       waitingReadyFirst: "Nothing runs until someone switches it on.",
-      needsNewAccess: ({ operations }: { operations: string }) => `It newly needs ${operations}.`,
+      needsNewAccess: ({ operations }: { operations: string }) => `The new version calls ${operations}.`,
       waitingApprovalTitle: ({ version }: Version) => `Version ${version} is waiting for approval.`,
       waitingApproval: ({ running }: { running: number | null }) =>
         running === null
           ? "A Cloud administrator reviews the code difference. Afterwards someone can switch it on."
           : `A Cloud administrator reviews the code difference. Until then version ${running} keeps running.`,
       activatedTitle: ({ version }: Version) => `Version ${version} is switched on.`,
-      activatedDescription: "Its automations run from now on. Each target shows its access under “Code with access”.",
+      activatedDescription: "Its automations run from now on. Access is managed in each target’s share dialog.",
       // A refused call of a failed run: a fact, never the run's cause.
       refusedTargetLead: ({ type }: { type: string | null }) => (type ? `No access to ${type} ` : "No access to "),
       refusedApp: ({ name }: Name) => `The app ${name} refused a call.`,
@@ -310,43 +310,28 @@ export const codePageMessages = i18n.define({
       personalErrorTitle: "This Code could not be loaded",
       personalErrorDescription: "Your chats and running automations are not affected.",
       personalNoAccessDescription: "Only its owner and people it is shared with see this Code.",
-      personalActivateIntro:
-        "From then on the Code may do exactly these operations with your rights, nothing else. Cloud reads them from the Code.",
+      personalActivateIntro: "From then on this version runs with your current rights. Cloud policy applies to every call.",
       errorTitle: ({ name }: Name) => `The Code of ${name} could not be loaded`,
       errorDescription: ({ name }: Name) => `${name} and running automations are not affected.`,
       // Activation
       activateTitle: ({ version }: Version) => `Switch on version ${version}?`,
       activateIntro: ({ name }: Name) =>
-        `From then on the Code acts on behalf of ${name}, not on yours. It may do exactly these operations at these targets, nothing else. Cloud reads them from the Code.`,
-      operationAtTarget: "Operation at target",
-      alreadyHas: ({ version }: Version) => `version ${version} already has it`,
+        `From then on this version runs as the service account of ${name}, with its current rights. Switching on does not change target access.`,
       newAccess: "new",
-      youManage: ({ name }: Name) => `you administer ${name}`,
-      checkedAtTarget: "checked when switching on",
-      checkingTarget: "checking",
-      refusedAtTarget: "not possible right now",
-      notAdmin: "you are not an administrator",
       newAutomations: ({ version, names }: { version: number; names: string }) => `New in version ${version}: ${names}.`,
       cancel: "Cancel",
       close: "Close",
       phoneBlocked: "Code cannot be switched on from a phone. Open Cloud in a browser on a computer to switch it on.",
       credentialBlocked: "Code can only be switched on in a signed-in browser.",
-      checking: "Cloud checks every target …",
-      applying: "Cloud sets the access at every target …",
-      waitingTarget: ({ running }: { running: number | null }) =>
+      checking: "Cloud checks the owner and version …",
+      applying: "Cloud switches the active version …",
+      waitingOwner: ({ running }: { running: number | null }) =>
         running === null
-          ? "A target is not answering right now. Cloud keeps trying by itself."
-          : `A target is not answering right now. Cloud keeps trying by itself; version ${running} keeps running meanwhile.`,
-      blockedNotAdmin: ({ target, owner }: { target: string; owner: string }) =>
-        `You are not an administrator of ${target}. Only someone who administers ${owner} and ${target} can switch this on.`,
+          ? "The owner check is unavailable right now. Cloud keeps trying by itself."
+          : `The owner check is unavailable right now. Cloud keeps trying by itself; version ${running} keeps running meanwhile.`,
       nothingChanged: ({ running }: { running: number | null }) =>
         running === null ? "Nothing was switched on." : `Nothing was switched on; version ${running} keeps running.`,
-      blockedNotAdminUnreadable: ({ id }: { id: string }) =>
-        `You are not an administrator of this target (${id}). Only someone who administers this target can switch this on.`,
-      shareLink: "Send the link to someone who administers it.",
       failedGeneric: ({ reason }: { reason: string }) => `Switching on did not work: ${reason}`,
-      accessRemovedAtTarget: ({ target }: { target: string }) =>
-        `Access was removed at ${target} while switching on. Switch on again to set it once more.`,
       activationUnavailable: "Cloud could not start switching on. Nothing changed.",
       activationUnknown: ({ running }: { running: number | null }) =>
         running === null
@@ -477,14 +462,14 @@ export const codePageMessages = i18n.define({
       waitingReadyNew: ({ running }: { version: number; running: number | null }) =>
         running === null ? "Sie läuft, sobald jemand sie einschaltet." : `Bis jemand sie einschaltet, läuft Version ${running} weiter.`,
       waitingReadyFirst: "Bis jemand sie einschaltet, läuft nichts.",
-      needsNewAccess: ({ operations }: { operations: string }) => `Sie braucht neu ${operations}.`,
+      needsNewAccess: ({ operations }: { operations: string }) => `Die neue Version ruft ${operations} auf.`,
       waitingApprovalTitle: ({ version }: Version) => `Version ${version} wartet auf Freigabe.`,
       waitingApproval: ({ running }: { running: number | null }) =>
         running === null
           ? "Ein Cloud-Admin prüft den Code-Unterschied. Danach kann sie jemand einschalten."
           : `Ein Cloud-Admin prüft den Code-Unterschied. Bis dahin läuft Version ${running} weiter.`,
       activatedTitle: ({ version }: Version) => `Version ${version} ist eingeschaltet.`,
-      activatedDescription: "Ihre Automationen laufen ab jetzt. Jedes Ziel zeigt den Zugriff unter „Code mit Zugriff“.",
+      activatedDescription: "Ihre Automationen laufen ab jetzt. Zugriff wird im Teilen-Dialog des jeweiligen Ziels verwaltet.",
       refusedTargetLead: ({ type }: { type: string | null }) => (type ? `Kein Zugriff auf ${type} ` : "Kein Zugriff auf "),
       refusedApp: ({ name }: Name) => `Die App ${name} hat einen Aufruf abgelehnt.`,
       refusedActionThere: ({ action }: Action) => `Der Code wollte dort „${action}“.`,
@@ -607,42 +592,27 @@ export const codePageMessages = i18n.define({
       personalErrorTitle: "Dieser Code konnte nicht geladen werden",
       personalErrorDescription: "Deine Chats und laufende Automationen sind nicht betroffen.",
       personalNoAccessDescription: "Nur wer den Code besitzt oder mit wem er geteilt ist, sieht ihn.",
-      personalActivateIntro:
-        "Ab dann darf der Code genau diese Operationen mit deinen Rechten ausführen, sonst nichts. Cloud liest sie aus dem Code.",
+      personalActivateIntro: "Ab dann läuft diese Version mit deinen aktuellen Rechten. Die Cloud-Richtlinie gilt bei jedem Aufruf.",
       errorTitle: ({ name }: Name) => `Der Code von ${name} konnte nicht geladen werden`,
       errorDescription: ({ name }: Name) => `${name} und laufende Automationen sind nicht betroffen.`,
       activateTitle: ({ version }: Version) => `Version ${version} einschalten?`,
       activateIntro: ({ name }: Name) =>
-        `Ab dann handelt der Code im Namen von ${name}, nicht in deinem. Er darf genau diese Operationen an diesen Zielen, sonst nichts. Cloud liest sie aus dem Code.`,
-      operationAtTarget: "Operation an Ziel",
-      alreadyHas: ({ version }: Version) => `hat Version ${version} schon`,
+        `Ab dann läuft diese Version als Dienstkonto von ${name}, mit dessen aktuellen Rechten. Einschalten ändert keinen Zugriff auf Ziele.`,
       newAccess: "neu",
-      youManage: ({ name }: Name) => `du verwaltest ${name}`,
-      checkedAtTarget: "wird beim Einschalten geprüft",
-      checkingTarget: "wird geprüft",
-      refusedAtTarget: "geht gerade nicht",
-      notAdmin: "du bist nicht Admin",
       newAutomations: ({ version, names }: { version: number; names: string }) => `Neu in Version ${version}: ${names}.`,
       cancel: "Abbrechen",
       close: "Schließen",
       phoneBlocked: "Am Telefon lässt sich Code nicht einschalten. Öffne Cloud im Browser an einem Computer, um ihn einzuschalten.",
       credentialBlocked: "Code lässt sich nur in einem angemeldeten Browser einschalten.",
-      checking: "Cloud prüft jedes Ziel …",
-      applying: "Cloud setzt den Zugriff an jedem Ziel …",
-      waitingTarget: ({ running }: { running: number | null }) =>
+      checking: "Cloud prüft Besitzer und Version …",
+      applying: "Cloud wechselt die aktive Version …",
+      waitingOwner: ({ running }: { running: number | null }) =>
         running === null
-          ? "Ein Ziel antwortet gerade nicht. Cloud versucht es von selbst weiter."
-          : `Ein Ziel antwortet gerade nicht. Cloud versucht es von selbst weiter; so lange läuft Version ${running} weiter.`,
-      blockedNotAdmin: ({ target, owner }: { target: string; owner: string }) =>
-        `Du bist nicht Admin von ${target}. Einschalten kann nur, wer ${owner} und ${target} verwaltet.`,
+          ? "Die Prüfung des Besitzers ist gerade nicht erreichbar. Cloud versucht es von selbst weiter."
+          : `Die Prüfung des Besitzers ist gerade nicht erreichbar. Cloud versucht es von selbst weiter; so lange läuft Version ${running} weiter.`,
       nothingChanged: ({ running }: { running: number | null }) =>
         running === null ? "Es wurde nichts eingeschaltet." : `Es wurde nichts eingeschaltet, Version ${running} läuft weiter.`,
-      blockedNotAdminUnreadable: ({ id }: { id: string }) =>
-        `Du bist nicht Admin von diesem Ziel (${id}). Einschalten kann nur, wer dieses Ziel verwaltet.`,
-      shareLink: "Schick den Link an jemanden, der es verwaltet.",
       failedGeneric: ({ reason }: { reason: string }) => `Einschalten hat nicht geklappt: ${reason}`,
-      accessRemovedAtTarget: ({ target }: { target: string }) =>
-        `Während des Einschaltens wurde der Zugriff an ${target} entfernt. Schalte erneut ein, um ihn noch einmal zu setzen.`,
       activationUnavailable: "Cloud konnte das Einschalten nicht starten. Es hat sich nichts geändert.",
       activationUnknown: ({ running }: { running: number | null }) =>
         running === null

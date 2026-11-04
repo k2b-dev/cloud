@@ -40,7 +40,7 @@ function printDiff(ctx: CloudCliContext, files: CodeVersionDiffFile[]) {
     for (const line of file.lines) ctx.print(`${line.kind === "add" ? "+" : line.kind === "del" ? "-" : " "}${line.text}`);
   }
 }
-/** Chapter 11 permission list: operation, live target title/ID, one-based source location and newly needed administrator. */
+/** Operation review: authorized target title/ID, source location and difference from the running version. */
 export function printCodeCheck(ctx: CloudCliContext, data: CodeAuthoringData<"check">) {
   const t = (en: string, de: string) => localizeCloudCliText(ctx.options.locale, { en, de });
   if (!data.result.ok) {
@@ -62,8 +62,7 @@ export function printCodeCheck(ctx: CloudCliContext, data: CodeAuthoringData<"ch
       ? `${type} ${permission.title ? `${permission.title} ` : ""}${permission.target.id === null ? t("(dynamic target)", "(dynamisches Ziel)") : `(${permission.target.id})`}`.trim()
       : t("application", "App");
     const place = permission.own ? t(`at own ${target}`, `am eigenen ${target}`) : t(`at ${target}`, `an ${target}`);
-    const newly = permission.needsTargetAdmin ? t(`  ← new, needs the admin of ${type}`, `  ← neu, braucht den Admin des ${type}`) : "";
-    ctx.print(`  ${permission.operation.padEnd(27)} ${place}   ${permission.file}:${permission.line}${newly}`);
+    ctx.print(`  ${permission.operation.padEnd(27)} ${place}   ${permission.file}:${permission.line}`);
   }
   ctx.print(`${t("AI", "KI").padEnd(13)}${data.result.manifest.ai ? t("yes", "ja") : t("no", "nein")}`);
   ctx.print(`${t("Pages", "Seiten").padEnd(13)}—`);

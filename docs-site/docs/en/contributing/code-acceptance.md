@@ -25,11 +25,11 @@ No application stack or external mailbox is needed.
 
 The story covers Lea checking resource Code for `rechnung@beispiel.test`,
 Ben activating it, a Monday schedule creating a Space task, and personal Code
-creating a mail draft. It asserts the permission preview, ordered calls,
+creating a mail draft. It asserts the operation review, ordered calls,
 idempotency, an update-only version, access removal and cleanup after mailbox
-deletion, including a live target grant restored by an explicit manager activation
-before deletion. Removed access is attributed through the real Code page model
-and failed call history. The fixture uses `Sp4kd2` for the conceptual `sp_4kd2`, following
+deletion. Target managers grant or revoke access through normal sharing;
+re-activation never restores a revoked share. The real Code page model shows
+refusals from failed call history. The fixture uses `Sp4kd2` for the conceptual `sp_4kd2`, following
 Spaces' six-character public ID contract.
 
 Additional assertions cover a foreign Space shared with all signed-in people,
@@ -39,7 +39,7 @@ in its thrown error. The HTTP version goes through the CLI/chat authoring
 service, which selects the current credential bindings and reruns the real
 checker before saving. Personal Code also needs internet approval: the suite
 asserts rejection before approval, the declared origin and policy row in the
-saved version, and the exact HTTP grant in the activated mandate.
+saved version, and the policy-free version entry created by activation.
 
 Two production Runner supervisors share Core's real Postgres and NATS
 coordination. The suite delivers controlled `runNow` ticks and ignores unrelated
@@ -51,7 +51,7 @@ by the in-process execution engine; the separate Runner isolation tests own
 workerd confinement. Provider delivery and external HTTP responses stay in
 process. Action delivery uses the real invocation middleware, signature
 verification, current mandate resolution and domain services. Owner titles use
-the signed account-inspection route. Catalog and person-reader transport is
+the signed, read-only owner projection. Catalog and person-reader transport is
 replaced by direct fixture delivery; its network authentication is outside this
 suite. Core's call bridge and app proof verification execute.
 

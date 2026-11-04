@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
-import { randomUUID } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
@@ -14,7 +13,6 @@ import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import * as access from "./access";
-import { codeActivationTransport } from "./activation-transport";
 import { clearCodeAttentionCache, listCodeAttention, readCodeSummary } from "./attention";
 import { listCodeAutomations } from "./automations";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -60,13 +58,12 @@ const subjectOf = (context: access.CodeContext) =>
 databaseSuite()("Core Code that needs its administrators, and own run counts", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   const spies: Array<{ mockRestore(): void }> = [];
-  let removedGrant = "";
-  let spaceGrants: "present" | "removed" = "removed";
   /** Mailbox ids the manager administers; an unavailable owner throws like a provider outage. */
   const managed = new Set(["box-failed", "box-removed", "box-paused", "box-fine", "box-down"]);
   const finishedRun = async (codeId: string, versionId: string, state: "succeeded" | "failed", at: Date) => {
     const runId = await insertCodeRun({ codeId, versionId, trigger: "schedule", entrypoint: "sort", input: null });
     await sql`UPDATE code.runs SET state=${state},created_at=${at},started_at=${at},ended_at=${at} WHERE id=${runId}::uuid`;
+    return runId;
   };
   const mailboxCode = async (id: string) => {
     const code = await createCode(
@@ -95,12 +92,6 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     for (const [name, id] of Object.entries(ids))
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${name},'local','user',${name === "admin"})`;
     spies.push(
-      // The Space app lists the Code's grants; after removal it lists none.
-      spyOn(codeActivationTransport, "list").mockImplementation(async (_appId, principal) =>
-        spaceGrants === "present"
-          ? [{ grantId: removedGrant, principal, target: { type: "spaces.space", id: "sp_2lg8" }, level: "write" }]
-          : [],
-      ),
       spyOn(codeSettings, "get").mockImplementation(async (key) => {
         const definition = Object.entries(CODE_SETTINGS).find(([name]) => name === key)?.[1];
         if (!definition) throw new Error(`Unexpected setting ${key}`);
@@ -126,16 +117,10 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     await sql`UPDATE code.codes SET state='paused' WHERE id=${paused.code.id}`;
     // Switched on with access at a Space, which the Space's administrator later removed; then a run failed.
     const removed = await mailboxCode("box-removed");
-    const activationId = randomUUID();
-    removedGrant = randomUUID();
-    await sql`INSERT INTO code.activations(id,code_id,version_id,locale,cloud_admin,state)
-      VALUES(${activationId}::uuid,${removed.code.id},${removed.versionId}::uuid,'en',false,'active')`;
-    await sql`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
-      VALUES(${removedGrant}::uuid,${removed.code.id},${activationId}::uuid,${JSON.stringify({ type: "spaces.space", id: "sp_2lg8" })}::text::jsonb,
-        ${sql.array(["spaces.task.create"], "text")},'granted')`;
-    await sql`INSERT INTO code.version_grants(version_id,grant_id) VALUES(${removed.versionId}::uuid,${removedGrant}::uuid)`;
     await sql`UPDATE code.codes SET state='active',active_version_id=${removed.versionId}::uuid WHERE id=${removed.code.id}`;
-    await finishedRun(removed.code.id, removed.versionId, "failed", new Date("2026-10-31T09:50:00.000Z"));
+    const refusedRun = await finishedRun(removed.code.id, removed.versionId, "failed", new Date("2026-10-31T09:50:00.000Z"));
+    await sql`INSERT INTO code.calls(run_id,ordinal,kind,call,state,refusal_kind,ended_at) VALUES(${refusedRun}::uuid,1,'action',${JSON.stringify({ capability: "spaces.task.create", target: { type: "spaces.space", id: "sp_2lg8" } })}::text::jsonb,'failed','target_refused',now())`;
+    await sql`UPDATE code.runs SET first_refused_call_ordinal=1 WHERE id=${refusedRun}::uuid`;
     const down = await mailboxCode("box-down");
     await sql`UPDATE code.codes SET state='paused' WHERE id=${down.code.id}`;
 
@@ -155,7 +140,7 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     await database?.drop();
   });
 
-  test("a Code's automations name the removed access only the one that needs it, its newest run and its next run", async () => {
+  test("automations report the refused target only on the failed entrypoint and clear it after a successful run", async () => {
     managed.add("box-autos");
     const entry = (entrypoint: string, cron: string | null) => ({
       kind: cron ? ("schedule" as const) : ("manual" as const),
@@ -181,14 +166,6 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
       { codeId: code.id, sourceFiles: { "code.ts": "export {};" }, bundle: "export {};", manifest, baseVersionId: null },
       ctx(ids.manager),
     );
-    const activationId = randomUUID();
-    const grantId = randomUUID();
-    await sql`INSERT INTO code.activations(id,code_id,version_id,locale,cloud_admin,state)
-      VALUES(${activationId}::uuid,${code.id},${version.id}::uuid,'en',false,'active')`;
-    await sql`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
-      VALUES(${grantId}::uuid,${code.id},${activationId}::uuid,${JSON.stringify({ type: "spaces.space", id: "sp_2lg8" })}::text::jsonb,
-        ${sql.array(["spaces.task.create"], "text")},'granted')`;
-    await sql`INSERT INTO code.version_grants(version_id,grant_id) VALUES(${version.id}::uuid,${grantId}::uuid)`;
     await sql`UPDATE code.codes SET state='active',active_version_id=${version.id}::uuid WHERE id=${code.id}`;
     const run = async (entrypoint: string, state: string, at: string) => {
       const runId = await insertCodeRun({ codeId: code.id, versionId: version.id, trigger: "schedule", entrypoint, input: null });
@@ -199,8 +176,9 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     // A skipped tick is no result.
     await run("sort", "skipped", "2026-10-31T09:00:00.000Z");
     const failedRun = await run("deliver", "failed", "2026-10-31T09:50:00.000Z");
-    await sql`INSERT INTO code.calls(run_id,ordinal,kind,call,state,ended_at)
-      VALUES(${failedRun}::uuid,1,'action',${JSON.stringify({ capability: "spaces.task.create", target: { type: "spaces.space", id: "sp_2lg8" } })}::text::jsonb,'failed',now())`;
+    await sql`INSERT INTO code.calls(run_id,ordinal,kind,call,state,refusal_kind,ended_at)
+      VALUES(${failedRun}::uuid,1,'action',${JSON.stringify({ capability: "spaces.task.create", target: { type: "spaces.space", id: "sp_2lg8" } })}::text::jsonb,'failed','target_refused',now())`;
+    await sql`UPDATE code.runs SET first_refused_call_ordinal=1 WHERE id=${failedRun}::uuid`;
     const nextRun = async (_codeId: string, entrypoint: string) => (entrypoint === "sort" ? "2026-11-02T06:00:00.000Z" : null);
     clearCodeAttentionCache();
     const listed = await listCodeAutomations({ codeId: code.id }, ctx(ids.manager), nextRun);
@@ -218,6 +196,11 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
       ["deliver", "schedule", null, "failed", ["sp_2lg8"]],
       ["byHand", "manual", null, null, []],
     ]);
+    // A later successful run clears the historical refusal, without asking the target.
+    await run("deliver", "succeeded", "2026-10-31T10:00:00.000Z");
+    const recovered = await listCodeAutomations({ codeId: code.id }, ctx(ids.manager), nextRun);
+    expect(recovered.removedTargets).toEqual([]);
+    expect(recovered.items.find((item) => item.entrypoint === "deliver")?.missingTargets).toEqual([]);
     // A paused Code has no next run, whatever the scheduler still holds.
     await sql`UPDATE code.codes SET state='paused' WHERE id=${code.id}`;
     const paused = await listCodeAutomations({ codeId: code.id }, ctx(ids.manager), nextRun);
@@ -241,16 +224,6 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
       ["box-paused", ["paused"]],
       ["box-removed", ["run_failed", "access_missing"]],
     ]);
-    // While the Space still lists the grant, the failure has another cause.
-    spaceGrants = "present";
-    clearCodeAttentionCache();
-    try {
-      const present = await listCodeAttention({}, ctx(ids.manager));
-      expect(present.items.find((item) => item.code.title === "Code box-removed")?.reasons).toEqual(["run_failed"]);
-    } finally {
-      spaceGrants = "removed";
-      clearCodeAttentionCache();
-    }
     expect(result.items.find((item) => item.code.title === "Code box-failed")?.lastRunAt).toBe("2026-10-31T09:41:00.000Z");
     // Someone who administers none of the owners sees nothing, also as a Cloud admin.
     expect((await listCodeAttention({}, ctx(ids.other))).items).toEqual([]);

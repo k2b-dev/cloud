@@ -1,19 +1,15 @@
-import { CodeAccessTargetSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { CodeIdSchema } from "./contracts";
 
 /** Pending durable cleanup for Administration › Code (C22). Completed jobs disappear.
  * waiting means retry is automatic; lastError is a stable code, never a remote error body.
- * A code.delete job waits until every code.access.rm job has completed.
  */
 export const CodeCleanupJobSchema = z
   .object({
     id: z.uuid(),
     codeId: CodeIdSchema,
     title: z.string(),
-    kind: z.enum(["code.access.rm", "code.delete"]),
-    grantId: z.uuid().nullable(),
-    target: CodeAccessTargetSchema.nullable(),
+    kind: z.literal("code.delete"),
     state: z.enum(["pending", "running", "waiting"]),
     attempts: z.number().int().nonnegative(),
     lastError: z.string().nullable(),
