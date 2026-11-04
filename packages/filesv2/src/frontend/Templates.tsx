@@ -1,4 +1,4 @@
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { openAccessDialog } from "@k2b/cloud/access/ui";
 import { query } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -17,7 +17,7 @@ import {
   TextInput,
   toast,
 } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import { TEMPLATE_LIMIT } from "../document-assets";
 import type { FileTemplate } from "../template-contracts";
@@ -72,6 +72,44 @@ export function TemplateList(props: { admin?: boolean; onSelect?: (template: Fil
       await run(async () => read(await apiDelete(item.id), t().failed));
   };
   const apiDelete = async (id: string) => apiClient.templates.admin[":id"].$delete({ param: { id } });
+  // The access dialog closes with this list; nothing is sent after the page changed.
+  const owner = new AbortController();
+  onCleanup(() => owner.abort());
+  // A plain guard, not a loading state: a disabled button could not take focus back when the dialog closes.
+  let openingAccess = false;
+  const editAccess = async (item: FileTemplate) => {
+    if (openingAccess) return;
+    openingAccess = true;
+    try {
+      const entries = await read(
+        await apiClient.templates.admin[":id"].grants.$get({ param: { id: item.id } }, { init: { signal: owner.signal } }),
+        t().failed,
+      );
+      if (owner.signal.aborted) return;
+      await openAccessDialog({
+        resourceName: item.name,
+        subtitle: t().accessDialogSubtitle,
+        initialEntries: entries,
+        allowedLevels: [{ level: "read", label: t().use }],
+        grantAccess: async (principal) => {
+          // The dialog offers no public access here; the narrowing keeps the request type honest.
+          if (principal.type === "public") throw new Error(t().failed);
+          return read(await apiClient.templates.admin[":id"].grants.$post({ param: { id: item.id }, json: { principal } }), t().failed);
+        },
+        // Templates have one level, so there is nothing to change.
+        updateAccess: async () => {},
+        revokeAccess: async (accessId) => {
+          await read(await apiClient.templates.admin[":id"].grants[":accessId"].$delete({ param: { id: item.id, accessId } }), t().failed);
+        },
+        extraSections: <InlineGuidance>{t().grantsHint}</InlineGuidance>,
+        signal: owner.signal,
+      });
+    } catch (error) {
+      if (!owner.signal.aborted) toast.error(error instanceof Error ? error.message : t().failed);
+    } finally {
+      openingAccess = false;
+    }
+  };
   return (
     <div class="flex min-w-0 flex-col gap-3">
       <Show when={props.admin}>
@@ -161,12 +199,7 @@ export function TemplateList(props: { admin?: boolean; onSelect?: (template: Fil
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() =>
-                            void dialogCore.open(
-                              (close) => <TemplateAccess id={row.id} name={row.name} close={() => close(null)} />,
-                              panelDialogOptions,
-                            )
-                          }
+                          onClick={() => void editAccess(row)}
                         >
                           {t().permissions}
                         </Button>
@@ -326,54 +359,6 @@ function TemplateForm(props: {
           {busy() ? t().saving : t().save}
         </Button>
       </PanelDialog.Footer>
-    </PanelDialog>
-  );
-}
-function TemplateAccess(props: { id: string; name: string; close: () => void }) {
-  const t = useAssetMessages();
-  const entries = query.create({
-    source: () => props.id,
-    load: async (id, { abortSignal }) =>
-      read(await apiClient.templates.admin[":id"].grants.$get({ param: { id } }, { init: { signal: abortSignal } }), t().failed),
-  });
-  return (
-    <PanelDialog>
-      <PanelDialog.Header title={t().permissions} subtitle={props.name} close={props.close} />
-      <PanelDialog.Body>
-        <InlineGuidance>{t().grantsHint}</InlineGuidance>
-        <Show when={!entries.loading()} fallback={<Placeholder state="loading" title={t().loading} />}>
-          <Show
-            when={entries.data()}
-            fallback={
-              <Placeholder state="error" title={t().failed} action={<Button onClick={() => void entries.refresh()}>{t().retry}</Button>} />
-            }
-          >
-            {(items) => (
-              <PermissionEditor
-                initialEntries={items()}
-                canEdit
-                allowPublic={false}
-                allowServiceAccounts={true}
-                allowedLevels={[{ level: "read", label: t().use }]}
-                grantAccess={async (principal) => {
-                  if (principal.type === "public") throw new Error(t().failed);
-                  return read(
-                    await apiClient.templates.admin[":id"].grants.$post({ param: { id: props.id }, json: { principal } }),
-                    t().failed,
-                  );
-                }}
-                updateAccess={async () => {}}
-                revokeAccess={async (accessId) => {
-                  await read(
-                    await apiClient.templates.admin[":id"].grants[":accessId"].$delete({ param: { id: props.id, accessId } }),
-                    t().failed,
-                  );
-                }}
-              />
-            )}
-          </Show>
-        </Show>
-      </PanelDialog.Body>
     </PanelDialog>
   );
 }
