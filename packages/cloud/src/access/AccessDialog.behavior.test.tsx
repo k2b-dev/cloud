@@ -346,4 +346,55 @@ describe("AccessDialog", () => {
       dom.cleanup();
     }
   });
+
+  test("a stored public denial shows as off, and switching it on grants the first level with the resource's own warning", async () => {
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
+    delegateEvents(["click", "input"], dom.document);
+    const { AccessDialog } = await import("./AccessDialog");
+    const calls: string[] = [];
+    const denied: AccessEntry = {
+      id: "00000000-0000-4000-8000-000000000004",
+      principal: { type: "public" },
+      permission: "none",
+      createdAt: "2026-11-03T00:00:00.000Z",
+    };
+    const dispose = render(
+      () => (
+        <AccessDialog
+          resourceName="Board"
+          initialEntries={[mia, denied]}
+          allowPublic
+          publicWarning="Visitors can open the app and send its published forms without signing in."
+          allowedLevels={[{ level: "read", label: "Open" }]}
+          grantAccess={async (principal, permission) => ({ id: "x", principal, permission, createdAt: "now" })}
+          updateAccess={async (id, permission) => {
+            calls.push(`update ${id.slice(-1)} ${permission}`);
+          }}
+          revokeAccess={async (id) => {
+            calls.push(`revoke ${id.slice(-1)}`);
+          }}
+          close={() => {}}
+        />
+      ),
+      dom.root,
+    );
+    const publicSwitch = () => dom.root.querySelector<HTMLInputElement>('input[aria-label="Public with link"]')!;
+    try {
+      expect(publicSwitch().checked).toBe(false);
+      expect(dom.root.textContent).not.toContain("Visitors can open the app");
+      publicSwitch().click();
+      await waitFor(() => dom.root.textContent?.includes("1 change") === true, "one change");
+      expect(publicSwitch().checked).toBe(true);
+      expect(dom.root.textContent).toContain("Visitors can open the app and send its published forms without signing in.");
+      expect(dom.root.textContent).not.toContain("Nobody can change anything without signing in.");
+      // Off again restores the stored denial: nothing to save.
+      publicSwitch().click();
+      await waitFor(() => !dom.root.textContent?.includes("1 change"), "no change");
+      expect(calls).toEqual([]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
 });

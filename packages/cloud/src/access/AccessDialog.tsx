@@ -65,6 +65,11 @@ export type AccessDialogProps = {
   allowPublic?: boolean;
   /** The link a public resource is reached by, offered to copy while public access is on. */
   publicLink?: string;
+  /**
+   * What public access lets visitors do, when it is more than viewing. The default says that nobody changes anything
+   * without signing in; a resource that accepts anonymous input, such as a published form, must say so here.
+   */
+  publicWarning?: string;
   /** Offer agents in the search. Defaults to true. */
   allowAgents?: boolean;
   /** The signed-in person, marked "You" in the list. */
@@ -181,7 +186,7 @@ export function AccessDialog(
               {change.kind === "remove" ? t().publicChangeOff : t().publicChangeOn}
             </>
           ),
-          detail: change.kind === "remove" ? undefined : t().publicWarning,
+          detail: change.kind === "remove" ? undefined : (props.publicWarning ?? t().publicWarning),
         };
       if (type === "authenticated")
         return {
@@ -436,12 +441,20 @@ export function AccessDialog(
   const GeneralRow = (rowProps: { type: "authenticated" | "public" }) => {
     const principal: Principal = { type: rowProps.type };
     const row = () => generalRow(rowProps.type);
-    const on = () => Boolean(row()?.next);
+    // A stored denial is off: nobody of that audience gets in.
+    const granted = (level: DraftLevel | null | undefined) => Boolean(level && level.permission !== "none");
+    const on = () => granted(row()?.next);
     const toggle = (value: boolean) =>
       edit((current) => {
         const existing = draftRows(current).find((candidate) => candidate.principal.type === rowProps.type);
-        if (value) return addPrincipal(current, principal, { displayName: "" }, existing?.previous ?? firstLevel(principal));
-        return existing ? removeRow(current, existing) : current;
+        if (value) {
+          if (!existing?.entry) return addPrincipal(current, principal, { displayName: "" }, existing?.previous ?? firstLevel(principal));
+          // A stored grant comes back with its level; a stored denial turns into the first level offered.
+          return setLevel(current, existing, granted(existing.previous) ? existing.previous! : firstLevel(principal));
+        }
+        if (!existing) return current;
+        // Switching off again restores a stored denial instead of removing it.
+        return existing.entry && existing.previous?.permission === "none" ? restoreRow(current, existing) : removeRow(current, existing);
       });
     const description = () => {
       const level = row()?.next ?? null;
@@ -565,9 +578,9 @@ export function AccessDialog(
                 </Show>
                 <Show when={props.allowPublic === true || generalRow("public")}>
                   <GeneralRow type="public" />
-                  <Show when={generalRow("public")?.next}>
+                  <Show when={(generalRow("public")?.next?.permission ?? "none") !== "none"}>
                     <li class="flex flex-col gap-2 pb-2 sm:pl-11">
-                      <NoticeCard tone="warning">{t().publicWarning}</NoticeCard>
+                      <NoticeCard tone="warning">{props.publicWarning ?? t().publicWarning}</NoticeCard>
                       <Show when={props.publicLink}>
                         {(link) => (
                           <div class="flex items-center gap-2 [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1">
