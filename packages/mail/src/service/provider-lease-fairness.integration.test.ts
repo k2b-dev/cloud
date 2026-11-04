@@ -1823,6 +1823,48 @@ suite("mail provider lease fairness", () => {
     }
   });
 
+  test("a large hydration repair gives the newest twelve bodies their own jobs, also when it runs again", async () => {
+    const mailbox = await connect("repair-many");
+    await deliverAndSync(mailbox, 14, "repair-many");
+    const failed = await sql<{ id: string }[]>`
+      UPDATE mail.message_contents SET hydration_status = 'failed', hydration_attempt = 5, hydration_error_code = 'HYDRATION_INTERRUPTED'
+      WHERE mailbox_id = ${mailbox.mailboxId}::uuid
+      RETURNING id
+    `;
+    expect(failed).toHaveLength(14);
+    const newest = await sql<{ id: string }[]>`
+      SELECT id FROM mail.message_contents WHERE mailbox_id = ${mailbox.mailboxId}::uuid ORDER BY internal_date DESC, id DESC LIMIT 12
+    `;
+    const repairOnce = async (key: string): Promise<Array<{ messageId: string } | { mailboxId: string }>> => {
+      const queued: Array<{ messageId: string } | { mailboxId: string }> = [];
+      const messageJobs = spyOn(syncRuntime, "enqueueMessageHydration").mockImplementation(async (messageId) => {
+        queued.push({ messageId });
+      });
+      const mailboxJobs = spyOn(syncRuntime, "enqueueMailboxHydration").mockImplementation(async (mailboxId) => {
+        queued.push({ mailboxId });
+      });
+      try {
+        const repair = await createMailCommand({
+          context,
+          mailboxId: mailbox.mailboxId,
+          input: { kind: "hydrate_missing", idempotencyKey: `${key}-${suffix}` },
+          enqueue: false,
+        });
+        if (!repair.ok) throw new Error(JSON.stringify(repair.error));
+        await runMaintenanceUntilDone({ commandId: repair.data.id });
+      } finally {
+        messageJobs.mockRestore();
+        mailboxJobs.mockRestore();
+      }
+      return queued;
+    };
+    // More would hold back the mailbox's later commands, which share the command class.
+    const expected = [...newest.map((row) => ({ messageId: row.id })), { mailboxId: mailbox.mailboxId }];
+    expect(await repairOnce("repair-many-first")).toEqual(expected);
+    // A second run finds nothing left to reset and still queues the same bodies.
+    expect(await repairOnce("repair-many-again")).toEqual(expected);
+  });
+
   test("an opened message's body takes the next turn after the holder, ahead of twenty waiting folder checks", async () => {
     const mailbox = await connect("open-body");
     const [header] = await deliverAndSync(mailbox, 1, "open-body");
