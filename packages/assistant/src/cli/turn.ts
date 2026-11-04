@@ -112,6 +112,7 @@ const submitDraftBody = async (
   body: unknown,
   codeHost: boolean,
   signal?: AbortSignal,
+  known?: ConversationDetail,
 ): Promise<{ body: unknown; clear?: () => Promise<unknown> }> => {
   if (!body || typeof body !== "object") return { body };
   const input = z
@@ -136,7 +137,7 @@ const submitDraftBody = async (
       localContext: AiLocalContextSchema.optional(),
     })
     .parse(body);
-  const detail = await readConversationDetail(ctx, conversationId, signal);
+  const detail = known ?? (await readConversationDetail(ctx, conversationId, signal));
   if (detail.conversation.draft.content.length > 0) {
     throw new Error("This conversation has an unsent composer draft. Send or clear it in Assistant before using the CLI.");
   }
@@ -186,6 +187,9 @@ export const submitAssistantTurn = async (input: {
   onThinkingDelta?: (delta: string) => void;
   waitingApprovals?: ReadonlySet<string>;
   onSubmitted?: (submitted: TurnSubmission) => void;
+  drain?: Parameters<typeof streamAssistantTurn>[0]["drain"];
+  /** A chat read the caller just made, so the draft check needs no second one. */
+  detail?: ConversationDetail;
 }): Promise<{ submitted: TurnSubmission; result?: AssistantTurnStreamResult }> => {
   const streamResponse = input.watch
     ? await input.ctx.fetch(`${AI_API}${conversationPath(input.conversationId, "/stream")}`, {
@@ -197,7 +201,7 @@ export const submitAssistantTurn = async (input: {
   let submitted: TurnSubmission;
   try {
     const { body, clear } = input.path.endsWith("/turns")
-      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.codeHost ?? input.watch, input.signal)
+      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.codeHost ?? input.watch, input.signal, input.detail)
       : { body: input.body };
     // A stop before the turn starts empties the draft again instead of leaving the message in the composer. Once
     // sent, the request completes, so a stop can abort the turn it started.
@@ -227,6 +231,7 @@ export const submitAssistantTurn = async (input: {
       onToolBlock: input.onToolBlock,
       onThinkingDelta: input.onThinkingDelta,
       waitingApprovals: input.waitingApprovals,
+      drain: input.drain,
     }),
   };
 };

@@ -1123,3 +1123,19 @@ test("receipts stay bounded and never drop a result still to deliver", () => {
   expect(receipts.has("call-0")).toBe(false);
   expect(receipts.has(`call-${CLIENT_CALL_RECEIPTS_MAX}`)).toBe(true);
 });
+
+test("a long streamed reply costs time in proportion to its length", async () => {
+  const stream = async (count: number) => {
+    const events = [...Array.from({ length: count }, () => delta("long", "word ".repeat(20))), finished([])];
+    const started = performance.now();
+    const output = await run([events], "jsonl");
+    const elapsed = performance.now() - started;
+    expect(output.lines.filter((line) => typeof line === "object" && line !== null && "delta" in line)).toHaveLength(count);
+    return elapsed;
+  };
+  await stream(500);
+  const short = await stream(2_000);
+  const long = await stream(20_000);
+  // Ten times the text takes about ten times as long; comparing the whole text per delta took about a hundred.
+  expect(long / short).toBeLessThan(40);
+});

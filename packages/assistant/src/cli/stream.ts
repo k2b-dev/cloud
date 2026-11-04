@@ -95,6 +95,19 @@ const presentedPath = (name: string, result: unknown): string | null =>
 const isTerminalStatus = (status: string): status is "completed" | "failed" | "aborted" =>
   status === "completed" || status === "failed" || status === "aborted";
 
+/** A consumer that stopped reading must not keep a Stop from ending the stream. */
+const untilDrainedOrStopped = (drained: Promise<void> | undefined, signal: AbortSignal): Promise<void> | undefined =>
+  drained &&
+  new Promise<void>((resolve) => {
+    const done = () => {
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    signal.addEventListener("abort", done, { once: true });
+    if (signal.aborted) done();
+    void drained.then(done, done);
+  });
+
 export const streamAssistantTurn = async (input: {
   ctx: CloudCliContext;
   conversationId: string;
@@ -108,6 +121,8 @@ export const streamAssistantTurn = async (input: {
   onToolBlock?: (block: Extract<AiTurnBlock, { kind: "tool" }>) => void;
   onThinkingDelta?: (delta: string) => void;
   waitingApprovals?: ReadonlySet<string>;
+  /** Awaited after every event, so a consumer that falls behind pauses reading instead of queueing without bound. */
+  drain?: () => Promise<void> | undefined;
 }): Promise<AssistantTurnStreamResult> => {
   const { ctx, conversationId } = input;
   const approvedTools = new Set(input.approveTools ?? []);
@@ -498,7 +513,15 @@ export const streamAssistantTurn = async (input: {
       const currentText = existing && (existing.kind === "text" || existing.kind === "thinking") ? existing.text : "";
       const block = { id: event.blockId, kind: event.blockKind, text: currentText + event.delta };
       blocks.set(event.blockId, block);
-      if (event.blockKind === "text") emitLiveText(block.id, block.text);
+      const printed = event.blockKind === "text" ? ids.get(block.id) : undefined;
+      // The common case continues the last printed block: append the delta without comparing the whole text again.
+      if (printed && printed === printedBlocks.at(-1) && printed.text === currentText) {
+        if (!event.delta) return null;
+        printed.text = block.text;
+        emittedText += event.delta;
+        if (ctx.options.output === "text") writeText(event.delta);
+        if (printed.id !== undefined) emitJsonText(printed, event.delta);
+      } else if (event.blockKind === "text") emitLiveText(block.id, block.text);
       else {
         input.onThinkingDelta?.(event.delta);
         emitJsonLine({ type: "thinking_delta", blockId: event.blockId, delta: event.delta });
@@ -579,6 +602,7 @@ export const streamAssistantTurn = async (input: {
           if (next.done) break;
           const event = next.value;
           const result = await handleEvent(event);
+          await untilDrainedOrStopped(input.drain?.(), abort.signal);
           if (result) {
             if (result.status !== "needs_attention") {
               abort.abort();

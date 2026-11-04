@@ -16,6 +16,7 @@ import type { AiConversation, AiPendingTurnAction, AiPeopleModels, AiStreamSseEv
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import module from "../cli";
 import { createAcpAgent, runAcpConnection } from "./acp";
+import { createAcpSessionStore } from "./acp-sessions";
 
 const resources: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -258,7 +259,10 @@ const harness = async (
       forms.push(params);
       return options.form?.(params) ?? { action: "accept", content: { decision: "yes" } };
     });
-  const bridge = createAcpAgent(ctx);
+  const state = await mkdtemp(join(tmpdir(), "cld-acp-state-"));
+  resources.push(() => rm(state, { recursive: true, force: true }));
+  const store = createAcpSessionStore(ctx.options, state);
+  const bridge = createAcpAgent(ctx, { sessions: store });
   const connection = app.connect(bridge.app);
   resources.push(async () => {
     connection.close();
@@ -303,6 +307,7 @@ const harness = async (
     submitted,
     connection,
     bridge,
+    store,
   };
 };
 
@@ -345,10 +350,11 @@ describe("Assistant ACP", () => {
       sessionId: h.session.sessionId,
       update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "thinking" } },
     });
-    expect(h.updates.some((u) => u.update.sessionUpdate === "session_info_update")).toBe(true);
-    expect(h.defaults.get(`assistant.acpSession.${h.session.sessionId}`)).toBe("chat");
-    expect(h.defaults.get("assistant.acpChat.chat")).toBe(h.session.sessionId);
-    expect(h.defaults.has("assistant.acpSessions")).toBe(false);
+    // A new chat's title follows the response.
+    while (!h.updates.some((u) => u.update.sessionUpdate === "session_info_update")) await Bun.sleep(5);
+    expect(await h.store.chat(h.session.sessionId)).toBe("chat");
+    expect(await h.store.sessions()).toEqual(new Map([["chat", h.session.sessionId]]));
+    expect([...h.defaults.keys()].filter((key) => key.startsWith("assistant.acp"))).toEqual([]);
   });
   test("standard approvals offer chat memory and carry the ACP header", async () => {
     const h = await harness({ action: approval(), permission: () => ({ outcome: { outcome: "selected", optionId: "chat" } }) });
@@ -617,7 +623,7 @@ describe("Assistant ACP", () => {
   test("session list pages through all conversations", async () => {
     const conversations = Array.from({ length: 53 }, (_, i) => ({ ...initialConversation(), id: `chat-${i}` }));
     const h = await harness({ conversations });
-    h.defaults.set("assistant.acpChat.chat-52", "saved-session");
+    await h.store.set("saved-session", "chat-52");
     const first = await h.acp.request("session/list", { cwd: h.cwd });
     expect(first.sessions.map((s) => s.sessionId)).toEqual(conversations.slice(0, 50).map((c) => c.id));
     expect(first.nextCursor).toBe("2");
@@ -691,9 +697,20 @@ describe("Assistant ACP", () => {
     });
   });
   test("running Cloud turn is followed before submitting the next message", async () => {
-    const h = await harness({ activeTurn: true });
+    let running = false;
+    const h = await harness({
+      intercept: (path, method) => {
+        if (!running || method !== "GET" || !path.endsWith("/conversations/chat")) return undefined;
+        running = false;
+        return Response.json({ conversation: initialConversation(), activeTurn: { turnId: "turn", status: "running" } });
+      },
+    });
+    await h.send("Start");
+    running = true;
+    const before = h.requests.length;
     h.streams.push([h.delta("Previous"), h.done()], [h.delta("Next"), h.done()]);
     await h.send("Continue");
+    h.requests.splice(0, before);
     expect(h.text()).toContain("Previous");
     expect(h.text()).toContain("Next");
     const streamIndices = h.requests.flatMap((r, i) => (r.path.endsWith("/stream") ? [i] : []));
@@ -925,20 +942,24 @@ describe("ACP turn outcome and cancellation", () => {
   ] as const)
     test(`Stop ends ${label} that hangs`, async () => {
       let waiting = false;
+      let armed = false;
       const h = await harness({
         intercept: (path, method, init) => {
-          if (method !== "GET" || path !== read) return undefined;
+          if (!armed || method !== "GET" || path !== read) return undefined;
           waiting = true;
           return new Promise<Response>((_, reject) =>
             init?.signal?.addEventListener("abort", () => reject(new DOMException("Cancelled", "AbortError")), { once: true }),
           );
         },
       });
+      if (read === "/api/ai/conversations/chat") await h.send("Start");
+      armed = true;
       const pending = h.send(text);
       await waitFor(() => waiting);
       await h.acp.notify("session/cancel", { sessionId: h.session.sessionId });
+      const sent = h.requests.length;
       expect(await pending).toEqual({ stopReason: "cancelled" });
-      expect(h.requests.some((r) => r.path.endsWith("/draft") || r.path.endsWith("/turns"))).toBe(false);
+      expect(h.requests.slice(sent).some((r) => r.path.endsWith("/draft") || r.path.endsWith("/turns"))).toBe(false);
     });
 
   test("a request paused after the editor leaves cannot keep cld running", async () => {
@@ -1053,4 +1074,166 @@ test("a local append whose result did not reach Cloud is sent again after resume
   expect(delivered).toHaveLength(2);
   expect(delivered[1]?.body).toEqual(delivered[0]?.body);
   expect(h.permissions.filter((p) => p.toolCall.kind === "edit")).toHaveLength(1);
+});
+
+describe("ACP round trips and bounded state", () => {
+  test("a message in an existing chat costs four requests: chat, stream, draft, turn", async () => {
+    const h = await harness();
+    await h.send("First");
+    await Bun.sleep(20);
+    const before = h.requests.length;
+    expect(await h.send("Second")).toEqual({ stopReason: "end_turn" });
+    await Bun.sleep(20);
+    expect(h.requests.slice(before).map((r) => `${r.method} ${r.path}`)).toEqual([
+      "GET /api/ai/conversations/chat",
+      "GET /api/ai/conversations/chat/stream",
+      "PUT /api/ai/conversations/chat/draft",
+      "POST /api/ai/conversations/chat/turns",
+    ]);
+  });
+
+  test("session list reads no profile defaults and the session store stays bounded", async () => {
+    const h = await harness({ conversations: Array.from({ length: 50 }, (_, i) => ({ ...initialConversation(), id: `chat-${i}` })) });
+    let reads = 0;
+    const getDefault = h.ctx.getDefault;
+    h.ctx.getDefault = async (key) => {
+      reads++;
+      return getDefault(key);
+    };
+    await h.store.set("known", "chat-7");
+    const list = await h.acp.request("session/list", {});
+    expect(list.sessions[7]?.sessionId).toBe("known");
+    expect(reads).toBe(0);
+
+    const state = await mkdtemp(join(tmpdir(), "cld-acp-bound-"));
+    resources.push(() => rm(state, { recursive: true, force: true }));
+    const small = createAcpSessionStore(h.ctx.options, state, 3);
+    for (const [i, chat] of ["a", "b", "c", "d"].entries()) {
+      await small.set(`session-${chat}`, chat);
+      await Bun.sleep(i === 0 ? 20 : 5);
+    }
+    expect([...(await small.sessions()).keys()].sort()).toEqual(["b", "c", "d"]);
+  });
+
+  test("resuming a session whose chat is gone forgets it", async () => {
+    const h = await harness();
+    await h.store.set("gone-session", "gone");
+    await expect(h.acp.request("session/resume", { sessionId: "gone-session", cwd: h.cwd, mcpServers: [] })).rejects.toMatchObject({
+      code: -32002,
+    });
+    expect(await h.store.chat("gone-session")).toBeUndefined();
+  });
+
+  test("a session from the profile defaults resumes once and moves to the store", async () => {
+    const h = await harness();
+    h.defaults.set("assistant.acpSession.old-session", "chat");
+    h.defaults.set("assistant.acpChat.chat", "old-session");
+    await h.acp.request("session/resume", { sessionId: "old-session", cwd: h.cwd, mcpServers: [] });
+    expect(await h.store.chat("old-session")).toBe("chat");
+    expect([...h.defaults.keys()].filter((key) => key.startsWith("assistant.acp"))).toEqual([]);
+  });
+
+  test("Stop reaches Cloud while the editor has stopped reading updates", async () => {
+    const state = process.env.XDG_STATE_HOME;
+    process.env.XDG_STATE_HOME = await mkdtemp(join(tmpdir(), "cld-acp-xdg-"));
+    const xdg = process.env.XDG_STATE_HOME;
+    resources.push(async () => {
+      if (state === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = state;
+      await rm(xdg, { recursive: true, force: true });
+    });
+    const h = await harness({ hold: true });
+    // Distinct calls never coalesce, so the queue passes its high-water mark.
+    h.streams.push(
+      Array.from({ length: 100 }, (_, i) => h.block({ ...tool("read_file", "running"), id: `block-${i}`, callId: `call-${i}` })),
+    );
+    let holding = false;
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const replies: Array<{ id?: number; result?: { sessionId?: string } }> = [];
+    let pending = "";
+    const output = new WritableStream<Uint8Array>({
+      async write(chunk) {
+        if (holding) await released;
+        pending += new TextDecoder().decode(chunk);
+        const parts = pending.split("\n");
+        pending = parts.pop() ?? "";
+        for (const part of parts) if (part.trim()) replies.push(JSON.parse(part));
+      },
+    });
+    const input = new TransformStream<Uint8Array>();
+    const writer = input.writable.getWriter();
+    const running = runAcpConnection(h.ctx, input.readable, output);
+    const send = (value: object) => writer.write(new TextEncoder().encode(`${JSON.stringify({ jsonrpc: "2.0", ...value })}\n`));
+    const waitFor = async (condition: () => boolean, ms = 3_000) => {
+      const end = performance.now() + ms;
+      while (!condition() && performance.now() < end) await Bun.sleep(5);
+      return condition();
+    };
+    await send({ id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } });
+    await waitFor(() => replies.some((r) => r.id === 1));
+    await send({ id: 2, method: "session/new", params: { cwd: h.cwd, mcpServers: [] } });
+    await waitFor(() => replies.some((r) => r.id === 2));
+    const sessionId = replies.find((r) => r.id === 2)?.result?.sessionId;
+    holding = true;
+    await send({ id: 3, method: "session/prompt", params: { sessionId, prompt: [{ type: "text", text: "Read" }] } });
+    await waitFor(() => h.requests.some((r) => r.path.endsWith("/turns")));
+    await Bun.sleep(100);
+    await send({ method: "session/cancel", params: { sessionId } });
+    expect(await waitFor(() => h.requests.some((r) => r.path.endsWith("/abort")))).toBe(true);
+    release();
+    await writer.close();
+    await running;
+  });
+
+  test("a slow editor gets adjacent text coalesced instead of one update per delta", async () => {
+    const state = process.env.XDG_STATE_HOME;
+    process.env.XDG_STATE_HOME = await mkdtemp(join(tmpdir(), "cld-acp-xdg-"));
+    const xdg = process.env.XDG_STATE_HOME;
+    resources.push(async () => {
+      if (state === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = state;
+      await rm(xdg, { recursive: true, force: true });
+    });
+    const h = await harness();
+    h.streams.push([...Array.from({ length: 300 }, () => h.delta("x")), h.done()]);
+    const lines: Array<{ id?: number; method?: string; params?: SessionNotification; result?: { sessionId?: string } }> = [];
+    let pending = "";
+    const waiters: Array<() => void> = [];
+    const output = new WritableStream<Uint8Array>({
+      async write(chunk) {
+        await Bun.sleep(2);
+        pending += new TextDecoder().decode(chunk);
+        const parts = pending.split("\n");
+        pending = parts.pop() ?? "";
+        for (const part of parts) if (part.trim()) lines.push(JSON.parse(part));
+        for (const wake of waiters.splice(0)) wake();
+      },
+    });
+    const input = new TransformStream<Uint8Array>();
+    const writer = input.writable.getWriter();
+    const running = runAcpConnection(h.ctx, input.readable, output);
+    const call = async (id: number, method: string, params: unknown) => {
+      await writer.write(new TextEncoder().encode(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`));
+      while (!lines.some((line) => line.id === id)) await new Promise<void>((resolve) => waiters.push(resolve));
+      return lines.find((line) => line.id === id)!;
+    };
+    await call(1, "initialize", { protocolVersion: 1, clientCapabilities: {} });
+    const session = await call(2, "session/new", { cwd: h.cwd, mcpServers: [] });
+    const sessionId = session.result?.sessionId;
+    await call(3, "session/prompt", { sessionId, prompt: [{ type: "text", text: "Write" }] });
+    await writer.close();
+    await running;
+    const chunks = lines.flatMap((line) =>
+      line.method === "session/update" &&
+      line.params?.update.sessionUpdate === "agent_message_chunk" &&
+      line.params.update.content.type === "text"
+        ? [line.params.update.content.text]
+        : [],
+    );
+    expect(chunks.join("")).toContain("x".repeat(300));
+    expect(chunks.length).toBeLessThan(100);
+  });
 });

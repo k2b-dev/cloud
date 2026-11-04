@@ -33,14 +33,17 @@ export const toolKind = (name: string): ToolKind => {
   if (["local_bash", "code_run"].includes(name)) return "execute";
   return name === "todo_write" ? "think" : "other";
 };
+/** Longest raw tool input or output, in JSON characters, that an update carries. */
+export const RAW_MAX_CHARS = 16_000;
 export const boundedRaw = (value: unknown): unknown => {
   const json = JSON.stringify(value);
-  return json !== undefined && json.length <= 16_000 ? value : undefined;
+  return json !== undefined && json.length <= RAW_MAX_CHARS ? value : undefined;
 };
 export const toolContent = (text: string): ToolCallContent[] => [
   { type: "content", content: { type: "text", text: terminalSafeText(text) } },
 ];
-export const toolCall = (block: ToolBlock, cwd: string): ToolCall => {
+export const toolCall = (block: ToolBlock, cwd: string, fits = false): ToolCall => {
+  const raw = (value: unknown) => (fits ? value : boundedRaw(value));
   const args = block.args;
   const paths: string[] = [];
   if ((block.name.startsWith("local_") || block.name === "load_local_skill") && args && typeof args === "object") {
@@ -64,8 +67,8 @@ export const toolCall = (block: ToolBlock, cwd: string): ToolCall => {
     kind: toolKind(block.name),
     status: block.status === "running" ? "in_progress" : block.status === "completed" ? "completed" : failed ? "failed" : "pending",
     locations: [...new Set(paths)].map((path) => ({ path: resolveLocalPath(path, cwd) })),
-    ...(boundedRaw(args) !== undefined ? { rawInput: args } : {}),
-    ...(boundedRaw(result) !== undefined ? { rawOutput: result } : {}),
+    ...(raw(args) !== undefined ? { rawInput: args } : {}),
+    ...(raw(result) !== undefined ? { rawOutput: result } : {}),
     content: failed ? toolContent(typeof error === "string" ? error : (JSON.stringify(error) ?? block.status)) : [],
   };
 };
