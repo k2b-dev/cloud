@@ -95,6 +95,8 @@ Accounts app and through `cld accounts service-accounts`. For one account,
 `DELETE /api/admin/identity/service-accounts/<id>/api-keys/<key-id>` revokes
 one; a key of another account answers `404`. Both routes require an
 administrator.
+The Accounts key list hides automatic app runtime keys by default; **Show**
+includes them, while CLI and administrator API lists always include them.
 
 New **Full access** keys act as their account. Send `access: "full"` and omit
 `scopes`; issuance stores `read`, `write`, and `admin`. The lower of the

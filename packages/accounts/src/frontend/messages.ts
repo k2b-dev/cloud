@@ -590,6 +590,18 @@ export const accountsMessages = i18n.define({
           one: "1 API key",
           other: `${count} API keys`,
         }),
+      automaticAppKeysHidden: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: "1 automatic app key is hidden.", other: `${count} automatic app keys are hidden.` }),
+      automaticAppKeysShown: "Automatic app keys are visible. They rotate automatically and will disappear with the switch to app keys.",
+      automaticAppAuditHidden: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", {
+          one: "1 automatic app entry is hidden.",
+          other: `${count} automatic app entries are hidden.`,
+        }),
+      automaticAppAuditShown:
+        "Automatic app entries are visible. They come from rotating app keys and disappear with the switch to app keys.",
+      showAutomatic: "Show",
+      hideAutomatic: "Hide",
       noServiceAccounts: "No API keys found.",
       allClear: "All clear",
       allClearDescription: "No pending requests and no credentials are about to expire",
@@ -1515,6 +1527,22 @@ export const accountsMessages = i18n.define({
           one: "1 API Key",
           other: `${count} API Keys`,
         }),
+      automaticAppKeysHidden: ({ count }) =>
+        i18n.plural(count, "de", {
+          one: "1 automatischer App-Schlüssel ist ausgeblendet.",
+          other: `${count} automatische App-Schlüssel sind ausgeblendet.`,
+        }),
+      automaticAppKeysShown:
+        "Automatische App-Schlüssel sind sichtbar. Sie rotieren selbst und verschwinden mit der Umstellung auf App-Schlüssel.",
+      automaticAppAuditHidden: ({ count }) =>
+        i18n.plural(count, "de", {
+          one: "1 automatischer App-Eintrag ist ausgeblendet.",
+          other: `${count} automatische App-Einträge sind ausgeblendet.`,
+        }),
+      automaticAppAuditShown:
+        "Automatische App-Einträge sind sichtbar. Sie stammen von rotierenden App-Schlüsseln und verschwinden mit der Umstellung auf App-Schlüssel.",
+      showAutomatic: "Anzeigen",
+      hideAutomatic: "Ausblenden",
       noServiceAccounts: "Keine API Keys gefunden.",
       allClear: "Alles erledigt",
       allClearDescription: "Keine offenen Anfragen und keine bald ablaufenden Zugangsdaten",

@@ -29,6 +29,7 @@ type AuditState = {
   outcome: "" | AuditOutcome;
   provider: "" | "local" | "ipa";
   days: number;
+  automatic: boolean;
   page: number;
 };
 
@@ -60,6 +61,7 @@ const buildAuditUrl = (state: Partial<AuditState> = {}): string => {
     outcome: "",
     provider: "",
     days: 30,
+    automatic: false,
     page: 1,
     ...state,
   };
@@ -72,6 +74,7 @@ const buildAuditUrl = (state: Partial<AuditState> = {}): string => {
   if (merged.outcome) params.set("outcome", merged.outcome);
   if (merged.provider) params.set("provider", merged.provider);
   if (merged.days !== 30) params.set("days", String(merged.days));
+  if (merged.automatic) params.set("automatic", "1");
   if (merged.page > 1) params.set("page", String(merged.page));
   const query = params.toString();
   return query ? `/app/accounts/audit?${query}` : "/app/accounts/audit";
@@ -96,14 +99,21 @@ export default ssr<AuthContext>(async (c) => {
     outcome: parseOutcome(c.req.query("outcome")),
     provider: parseProvider(c.req.query("provider")),
     days: parseDays(c.req.query("days")),
+    automatic: c.req.query("automatic") === "1",
     page: parsePage(c.req.query("page")),
   };
   const perPage = 100;
+  const automaticParams = new URL(c.req.url).searchParams;
+  automaticParams.delete("page");
+  if (state.automatic) automaticParams.delete("automatic");
+  else automaticParams.set("automatic", "1");
+  const automaticUrl = `/app/accounts/audit?${automaticParams}`;
   const [pendingRequests, eventsPage] = await Promise.all([
     accountsService.accountRequest.countPending(),
     audit.list({
       pagination: { page: state.page, perPage },
       filter: {
+        automatic: state.automatic ? "include" : "hide",
         search: state.search || undefined,
         actor: state.actor || undefined,
         target: state.target || undefined,
@@ -219,6 +229,7 @@ export default ssr<AuthContext>(async (c) => {
               outcome={state.outcome}
               provider={state.provider}
               days={state.days}
+              automatic={state.automatic}
             />
           </div>
 
@@ -262,6 +273,15 @@ export default ssr<AuthContext>(async (c) => {
                 </ButtonLink>
               ) : null}
             </div>
+          ) : null}
+
+          {state.automatic || (eventsPage.hiddenAutomaticCount ?? 0) > 0 ? (
+            <p class="text-xs text-dimmed">
+              {state.automatic ? t.automaticAppAuditShown : t.automaticAppAuditHidden({ count: eventsPage.hiddenAutomaticCount ?? 0 })}{" "}
+              <a href={automaticUrl} class="font-medium text-primary hover:underline">
+                {state.automatic ? t.hideAutomatic : t.showAutomatic}
+              </a>
+            </p>
           ) : null}
 
           {eventsPage.items.length === 0 ? (
