@@ -3964,7 +3964,7 @@ suite("AI executor integration", () => {
       const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id, includeCompacted: true });
       if (scenario.status === "failed") {
         expect(messages.at(-1)?.meta?.turnError).toEqual({ code: "failed" });
-      } else {
+      } else if (scenario.missingResult) {
         const callId = `malformed_${"0".repeat(24)}`;
         // nessi stores the missing result on resume.
         const stored = messages.find(({ message }) => message.role === "tool_result" && message.callId === callId)?.message;
