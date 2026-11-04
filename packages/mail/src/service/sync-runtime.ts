@@ -2447,7 +2447,7 @@ export const syncFolderBatch = async (
     ttlMs: SYNC_LEASE_MS,
   });
   if (!lock) throw Object.assign(new Error("Mail sync resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
-  await countServedFolderTurn(folder.remote_resource_id);
+  await countServedFolderTurn(resource);
   let runId: string | null = null;
   let selectedBindingId: string | null = null;
   let selectedSecretRevision: number | null = null;
