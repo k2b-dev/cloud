@@ -1,29 +1,123 @@
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { type AccessDialogProps, type FoundServiceAccount, openAccessDialog } from "@k2b/cloud/access/ui";
+import { coreClient } from "@k2b/cloud/clients/core";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
-import { Button, InlineGuidance, NoticeCard, useLocale } from "@k2b/ui";
-import { createResource, createSignal, For, Show } from "solid-js";
+import { Button, InlineGuidance, NoticeCard } from "@k2b/ui";
+import { createResource, For, Show } from "solid-js";
 import type { artifactClient } from "./client";
 import { PUBLIC_APP_SHARING } from "./contracts";
 import { MachinePermissions } from "./MachinePermissions";
 import { artifactMessages } from "./messages";
+import { runnerHref } from "./runner-contracts";
 
-/** The same access contract in Studio and operator administration; public links follow PUBLIC_APP_SHARING. */
-export function StudioPermissions(props: {
-  artifactId?: string;
+type StudioProjects = Awaited<ReturnType<typeof artifactClient.projects>>;
+
+/** A Code account by its exact identifier. Core answers only someone who manages this app; names and UUIDs find nothing. */
+export const findStudioServiceAccount = async (
+  artifactId: string,
+  handle: string,
+  signal: AbortSignal,
+): Promise<FoundServiceAccount | null> => {
+  const response = await coreClient.accounts.entities.$get(
+    {
+      query: {
+        search: handle.trim(),
+        target_type: "assistant.app",
+        target_id: artifactId,
+        kinds: "service_account",
+        service_account_kinds: "code",
+      },
+    },
+    { init: { signal } },
+  );
+  if (!response.ok) throw new Error(response.statusText);
+  const found = (await response.json()).items.find(
+    (item) => item.kind === "service_account" && item.serviceAccount.kind === "code" && item.serviceAccount.handle === handle.trim(),
+  );
+  if (!found || found.kind !== "service_account") return null;
+  return {
+    principal: { type: "service_account", serviceAccountId: found.serviceAccount.id },
+    display: { displayName: found.serviceAccount.name, serviceAccountKind: "code" },
+  };
+};
+
+export type StudioAccessOptions = {
+  artifactId: string;
+  title: string;
+  published: boolean;
+  /** Operator administration: grants run with the administrator's recovery authority. */
   administrative?: boolean;
+  viewerUserId?: string;
+  locale: string;
   entries: AccessEntry[];
-  loadProjects: () => ReturnType<typeof artifactClient.projects>;
+  /** Projects whose members can use the app; loaded inside the dialog, so a failure never blocks sharing. */
+  loadProjects: () => Promise<StudioProjects>;
   grant: (principal: Principal, level: "read" | "admin") => Promise<AccessEntry | null>;
   change: (id: string, level: "read" | "admin" | null) => Promise<unknown>;
-}) {
-  const locale = useLocale(),
-    t = () => artifactMessages.resolve([locale()]).t;
-  const [machineRevision, setMachineRevision] = createSignal(0);
-  const [publicIds, setPublicIds] = createSignal(props.entries.filter((e) => e.principal.type === "public").map((e) => e.id));
-  const [addingPublic, setAddingPublic] = createSignal(false);
-  const [projects, { refetch }] = createResource(props.loadProjects);
+  findServiceAccount?: (handle: string, signal: AbortSignal) => Promise<FoundServiceAccount | null>;
+  /** The opener's lifetime: aborting it closes the dialog without sending anything still pending. */
+  signal?: AbortSignal;
+};
+
+/**
+ * Studio sharing in the shared access dialog, in Studio and in operator administration. Use and Manage are the app's
+ * levels; Code accounts get Use like a person. Machine rights stay a Studio capability and save on their own.
+ */
+export const studioAccessDialogProps = (options: StudioAccessOptions): AccessDialogProps => {
+  const t = artifactMessages.resolve([options.locale]).t;
+  return {
+    resourceName: options.title,
+    subtitle: t.studioApp,
+    initialEntries: options.entries,
+    viewerUserId: options.viewerUserId,
+    signal: options.signal,
+    allowPublic: PUBLIC_APP_SHARING,
+    publicWarning: t.publicAccessHelp,
+    publicLink: options.published ? new URL(runnerHref(options.artifactId), location.origin).href : undefined,
+    allowedLevels: (principal) =>
+      principal.type === "public"
+        ? [{ level: "read", label: t.use }]
+        : [
+            { level: "read", label: t.use },
+            { level: "admin", label: t.manage },
+          ],
+    entryDetail: (entry) => (entry.serviceAccountKind === "code" ? entry.serviceAccountDescription : undefined),
+    findServiceAccount: options.findServiceAccount ?? ((handle, signal) => findStudioServiceAccount(options.artifactId, handle, signal)),
+    grantAccess: async (principal, level) => {
+      if (level === "write") throw new Error(t.INVALID_INPUT);
+      const entry = await options.grant(principal, level);
+      if (!entry) throw new Error(t.REQUEST_FAILED);
+      return entry;
+    },
+    updateAccess: async (id, level) => {
+      if (level === "write") throw new Error(t.INVALID_INPUT);
+      await options.change(id, level);
+    },
+    revokeAccess: async (id) => {
+      await options.change(id, null);
+    },
+    // A getter, so the sections are built inside the dialog and their requests end when it closes.
+    get extraSections() {
+      return <StudioAccessNotes {...options} />;
+    },
+  };
+};
+
+/** Opens Studio sharing. Resolves `true` when changes were saved. */
+export const openStudioAccess = (options: StudioAccessOptions) => openAccessDialog(studioAccessDialogProps(options));
+
+/** What the access list alone does not say: how the app reaches Cloud, projects, public links, and machine rights. */
+export function StudioAccessNotes(props: StudioAccessOptions) {
+  const t = () => artifactMessages.resolve([props.locale]).t;
+  const [projects, { refetch }] = createResource(() => props.loadProjects());
   return (
     <div class="flex flex-col gap-3">
+      <NoticeCard tone="info" title={t().sharedCodeTitle} detail={t().sharedCodeHelp} />
+      <Show when={!props.published}>
+        <NoticeCard tone="warning" title={t().unpublishedAccess} detail={t().unpublishedAccessHelp} />
+      </Show>
+      <Show when={!PUBLIC_APP_SHARING && props.entries.some((entry) => entry.principal.type === "public")}>
+        <NoticeCard tone="warning" title={t().publicSharingOffTitle} detail={t().publicSharingOffHelp} />
+      </Show>
       <Show when={projects.loading}>
         <InlineGuidance loading>{t().loading}</InlineGuidance>
       </Show>
@@ -42,54 +136,7 @@ export function StudioPermissions(props: {
           </ul>
         </NoticeCard>
       </Show>
-      <Show when={addingPublic() || publicIds().length}>
-        <Show
-          when={PUBLIC_APP_SHARING}
-          fallback={<NoticeCard tone="warning" title={t().publicSharingOffTitle} detail={t().publicSharingOffHelp} />}
-        >
-          <NoticeCard tone="warning" title={t().publicAccessTitle} detail={t().publicAccessHelp} />
-        </Show>
-      </Show>
-      <PermissionEditor
-        initialEntries={props.entries}
-        canEdit
-        allowPublic={PUBLIC_APP_SHARING}
-        allowServiceAccounts
-        allowedLevels={(principal) =>
-          principal.type === "public"
-            ? [{ level: "read", label: t().use }]
-            : [
-                { level: "read", label: t().use },
-                { level: "admin", label: t().manage },
-              ]
-        }
-        grantAccess={async (principal, level) => {
-          if (level === "write" || (principal.type === "public" && level !== "read")) throw new Error(t().INVALID_INPUT);
-          setAddingPublic(principal.type === "public");
-          try {
-            const entry = await props.grant(principal, level);
-            if (!entry) throw new Error(t().REQUEST_FAILED);
-            if (principal.type === "public") setPublicIds((ids) => [...ids, entry.id]);
-            setMachineRevision((value) => value + 1);
-            return entry;
-          } finally {
-            setAddingPublic(false);
-          }
-        }}
-        updateAccess={async (id, level) => {
-          if (level === "write" || (publicIds().includes(id) && level !== "read")) throw new Error(t().INVALID_INPUT);
-          await props.change(id, level);
-          setMachineRevision((value) => value + 1);
-        }}
-        revokeAccess={async (id) => {
-          await props.change(id, null);
-          setMachineRevision((value) => value + 1);
-          setPublicIds((ids) => ids.filter((value) => value !== id));
-        }}
-      />
-      <Show when={props.artifactId}>
-        {(id) => <MachinePermissions artifactId={id()} administrative={props.administrative} revision={machineRevision()} />}
-      </Show>
+      <MachinePermissions artifactId={props.artifactId} administrative={props.administrative} />
     </div>
   );
 }

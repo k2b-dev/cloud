@@ -2,17 +2,12 @@ import { Combobox, type ComboboxOption, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import type { Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import { accessMessages } from "./messages";
+import { principalKey } from "./principal-key";
 import { principalLabel } from "./principal-label";
 import { serviceAccountKindDisplay } from "./service-account-kind";
 
-export const principalKey = (p: Principal) =>
-  p.type === "user"
-    ? `u:${p.userId}`
-    : p.type === "group"
-      ? `g:${p.groupId}`
-      : p.type === "service_account"
-        ? `s:${p.serviceAccountId}`
-        : p.type;
+export { principalKey };
+
 type Entity =
   | { kind: "user"; user: { id: string; displayName: string; uid: string; mail: string | null; avatarHash?: string | null } }
   | { kind: "group"; group: { id: string; name: string; description: string | null } }

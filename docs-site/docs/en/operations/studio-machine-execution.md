@@ -16,7 +16,7 @@ Deploy the Assistant migration and runtime assets together. No new service,
 environment variable, personal account or default execution grant is required.
 
 Existing app grants retain their meaning. Machine execution and effect rights
-start empty. App managers configure them in Studio permissions. Machine secrets
+start empty. App managers configure them under **Machine execution** in the app's access dialog. Machine secrets
 are separate from personal secrets and are encrypted with the existing Cloud
 secret service.
 

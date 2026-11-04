@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { Button, NoticeCard, Placeholder, prompts, useLocale } from "@k2b/ui";
-import { type Accessor, createResource, createSignal, For, Show } from "solid-js";
+import { type Accessor, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { advancedMessages } from "./advanced-messages";
 import { artifactClient } from "./client";
 import { openDatabaseDialog, openDataDialog } from "./DataDialogs";
@@ -8,7 +8,7 @@ import { artifactMessages } from "./messages";
 import { openPublicationInfo, publishArtifact } from "./publication";
 import { runnerHref } from "./runner-contracts";
 import { openSecretsDialog } from "./SecretsDialog";
-import { StudioPermissions } from "./StudioPermissions";
+import { openStudioAccess } from "./StudioPermissions";
 import type { ArtifactBundle, ArtifactSummary } from "./service";
 export function createArtifactActions(props: {
   userId: string;
@@ -22,10 +22,8 @@ export function createArtifactActions(props: {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t,
     a = () => advancedMessages.resolve([locale()]).t;
-  const [sharing, setSharing] = createSignal<ArtifactSummary>();
   const [busy, setBusy] = createSignal(false),
     [error, setError] = createSignal("");
-  const [access] = createResource(() => sharing()?.id, artifactClient.access);
   async function action(run: () => Promise<unknown>) {
     if (busy()) return;
     setBusy(true);
@@ -62,35 +60,26 @@ export function createArtifactActions(props: {
     });
   };
   const edit = (id: string) => action(async () => navigateTo((await artifactClient.editChat(id)).href));
-  const share = async (item: ArtifactSummary) => {
-    setSharing(item);
-    await prompts.dialog<void>(
-      () => (
-        <div class="assistant-version-list">
-          <NoticeCard tone="info" title={t().sharedCodeTitle} detail={t().sharedCodeHelp} />
-          <Show when={!item.publishedRevision}>
-            <NoticeCard tone="warning" title={t().unpublishedAccess} detail={t().unpublishedAccessHelp} />
-          </Show>
-          <Show when={!access.loading} fallback={<Placeholder state="loading" title={t().loading} />}>
-            <Show when={!access.error && access()} fallback={<Placeholder state="error" title={t().loadFailed} />}>
-              {(entries) => (
-                <StudioPermissions
-                  artifactId={item.id}
-                  entries={entries()}
-                  loadProjects={() => artifactClient.projects(item.id)}
-                  grant={(principal, level) => artifactClient.grant(item.id, principal, level)}
-                  change={(id, level) => artifactClient.changeGrant(item.id, id, level)}
-                />
-              )}
-            </Show>
-          </Show>
-        </div>
-      ),
-      { title: `${t().share} · ${item.title}`, size: "medium" },
-    );
-    setSharing(undefined);
-    await props.refresh?.();
-  };
+  // Sharing ends with the page that opened it: nothing opens or stays open after navigating away.
+  const owner = new AbortController();
+  onCleanup(() => owner.abort());
+  const share = (item: ArtifactSummary) =>
+    action(async () => {
+      const entries = await artifactClient.access(item.id);
+      if (owner.signal.aborted) return;
+      await openStudioAccess({
+        signal: owner.signal,
+        artifactId: item.id,
+        title: item.title,
+        published: Boolean(item.publishedRevision),
+        viewerUserId: props.userId,
+        locale: locale(),
+        entries,
+        loadProjects: () => artifactClient.projects(item.id),
+        grant: (principal, level) => artifactClient.grant(item.id, principal, level),
+        change: (id, level) => artifactClient.changeGrant(item.id, id, level),
+      });
+    });
   const publish = async (item: ArtifactSummary) => {
     if (props.app?.()?.id === item.id && props.editorDirty?.()) {
       await prompts.alert(a().saveBeforePublish, { title: t().publish });
