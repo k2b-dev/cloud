@@ -13,7 +13,6 @@ import {
   type User,
 } from "@/contracts";
 import { spacesService } from "@/service";
-import { getSpaceMemberPermission } from "@/service/access";
 import { spacesLive } from "@/service/live";
 import { spacesPublicResources } from "@/service/public-resources";
 import type { ReactionViewer } from "@/service/reactions";
@@ -911,7 +910,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
   // Who has access is shown only to people with access of their own; public access alone never shows it.
   const [eventCursor, memberPermission] = await Promise.all([
     loadEventCursor(params.spaceId),
-    getSpaceMemberPermission({ spaceId: params.spaceId, subject: { type: "user", userId: params.user.id } }),
+    spacesService.space.permission.member({ spaceId: params.spaceId, subject: { type: "user", userId: params.user.id } }),
   ]);
   const snapshotDay = calendar.formatDateKey(new Date(), params.dateConfig);
   const context = await loadWorkspaceContext(params, authorized.value);
