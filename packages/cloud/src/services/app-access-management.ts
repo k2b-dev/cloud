@@ -21,6 +21,7 @@ import { recursiveGroupIdsSubquery } from "./accounts/group-sql";
 import { hasInstallationAdminInTransaction } from "./accounts/installation-admin";
 import { canUseApp } from "./app-access";
 import { audit } from "./audit";
+import { getFreeIpaAdminGroups } from "./freeipa-config";
 import { getIdentityRuntimeConfig } from "./identity/runtime-config";
 import type { ServiceAccount } from "./service-accounts";
 import { loadJwtSession } from "./session/user";
@@ -414,10 +415,6 @@ export const changeAppAccess = async (params: {
 }): Promise<{ entry?: AccessEntry; canUse: boolean }> => {
   const rule = requireConfigurable(params.app);
   const { app, authority, change } = params;
-  // Runtime settings use the global pool. Resolve them before reserving a connection;
-  // all grant checks, callbacks and candidate domain reads below must share db under the app lock.
-  const groupsAdmin =
-    params.canManage && !params.repair && canWriteList(authority, app.id) ? (await getIdentityRuntimeConfig()).groupsAdmin : [];
   const result = await sql.begin(async (db) => {
     if (
       !(await lockAccessMutationAuthority(
@@ -433,6 +430,7 @@ export const changeAppAccess = async (params: {
       ))
     )
       throw new AppAccessManagementError("FORBIDDEN", "Access denied.", 403);
+    const groupsAdmin = params.canManage && !params.repair && canWriteList(authority, app.id) ? await getFreeIpaAdminGroups(db) : [];
     await db`INSERT INTO auth.app_access_state (app_id) VALUES (${app.id}) ON CONFLICT DO NOTHING`;
     const [state] = await db<
       { configured_at: Date | null }[]

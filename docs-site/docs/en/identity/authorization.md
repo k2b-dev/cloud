@@ -713,7 +713,8 @@ configuration that names a target supplies no permission.
 #### Retain manager authority while changing a grant
 
 Use `lockAccessMutationAuthority` from `@k2b/cloud/server` in the same SQL
-transaction that changes the share. Pass the current `subject` and either the
+READ COMMITTED transaction that changes the share. Other isolation levels are
+refused. Pass the current `subject` and either the
 recipient `principal` on create or the `accessId` on update/removal. An access
 ID may also be a SQL fragment selecting the internal UUID from an application's
 public short ID. A subject whose account is missing, inactive or expired fails the check.
@@ -722,11 +723,19 @@ Acquire this lock before the resource lock. Then lock the target with the same
 lock used by every grant or ownership change and recheck the current manager's
 permission on that transaction's connection, including credential ceilings.
 The helper retains account, person and directory authority; it grants no
-permission. Identity or directory contention throws `AccessMutationBusyError`, aborting the
-transaction instead of waiting while holding identity locks. It carries HTTP
-409 and `retryable: true`; pass that response through so the caller can retry.
-Directory table maintenance, including autovacuum and analyze, can cause the
-same conflict even when no membership is changing.
+permission. It waits for settings and directory writers or maintenance before
+locking people and accounts. That wait uses at most half the ordinary
+10-second request budget: five seconds across all directory tables. It releases
+partial locks before waiting, so directory writers can finish even when they
+update tables in another order. A shorter transaction statement or lock timeout
+still applies, and the helper restores the previous statement timeout after
+waiting.
+
+An exhausted directory wait or a conflicting identity row lock throws
+`AccessMutationBusyError`, aborting the transaction. It carries HTTP 409 and
+`retryable: true`; pass that response through so the caller can retry the
+complete operation. A grant that waited for a revocation must recheck the
+manager's permission after acquiring the target lock.
 Only trusted initialization or recovery paths may pass `subject: null`.
 
 ```ts
