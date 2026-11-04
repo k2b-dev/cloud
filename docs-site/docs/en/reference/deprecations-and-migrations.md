@@ -12,7 +12,7 @@ updated: 2026-11-04
 
 ## AI providers use their OpenAI-compatible endpoints
 
-Cloud now uses Nessi 1.0, which has one chat adapter for OpenAI-compatible
+Cloud now uses Nessi 1.1, which has one chat adapter for OpenAI-compatible
 endpoints. Every provider type keeps its name, stored connection and context
 window. An address stored for a native API reaches the same service's
 OpenAI-compatible API: Anthropic and Ollama addresses get `/v1`, and a Gemini
