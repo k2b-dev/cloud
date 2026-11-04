@@ -8,6 +8,13 @@ import type { AccessEntry } from "../contracts/shared";
 // icon unless it has a photo.
 const hues = { group: "#22c55e", authenticated: "#3b82f6" } as const;
 
+/**
+ * Accounts that run code show the code icon: the account of an object, and Code's own service accounts, which keep
+ * their kind `code` where the code lane adds it, so the dialog can still refuse them Manage.
+ */
+const codeKinds: ReadonlySet<string> = new Set(["resource_bound", "code"]);
+const runsCode = (kind: string | undefined) => kind !== undefined && codeKinds.has(kind);
+
 /** The 32px avatar of an access entry in the expanded editor and on the denial page. */
 export default function PrincipalAvatar(props: {
   entry: Pick<AccessEntry, "principal" | "avatarHash" | "serviceAccountKind">;
@@ -33,9 +40,7 @@ export default function PrincipalAvatar(props: {
       fallback={
         // The account of an object runs its code: it shows the code icon in the square of service accounts unless it
         // has a picture.
-        props.entry.principal.type === "service_account" &&
-        props.entry.serviceAccountKind === "resource_bound" &&
-        !props.entry.avatarHash ? (
+        props.entry.principal.type === "service_account" && runsCode(props.entry.serviceAccountKind) && !props.entry.avatarHash ? (
           <Avatar name={props.label} icon="ti ti-code" shape="square" size="sm" class="h-8 w-8" />
         ) : props.entry.principal.type === "service_account" ? (
           <CloudAvatar
