@@ -2,7 +2,7 @@
 title: Code account handle migration
 navTitle: Code account handles
 section: Operations
-order: 1256
+order: 1257
 description: Apply the additive migration that assigns handles to existing Code accounts without changing their grants.
 tags: [code, operations, migration]
 updated: 2026-11-03

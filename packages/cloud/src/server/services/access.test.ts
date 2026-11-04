@@ -11,8 +11,9 @@ import {
   getEffectivePermission,
   getEffectivePermissions,
   listUsersWithAccess,
-  resolveDisplayNames,
 } from "./access";
+
+import { resolveDisplayNames } from "./access-display";
 
 type Fixture = {
   accessIds: string[];
@@ -390,12 +391,12 @@ test("resolveDisplayNames batches each kind once and leaves missing names absent
       return [{ id: "11111111-1111-4111-8111-111111111111", name: "Research agent", kind: "agent" }];
     };
     Bun.plugin({ name: "principal-display-sql-fixture", setup(build) {
-      build.onLoad({ filter: /server\\/services\\/access[.]ts$/ }, async ({ path }) => ({
+      build.onLoad({ filter: /server\\/services\\/access-display[.]ts$/ }, async ({ path }) => ({
         contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.principalDisplaySql;'),
         loader: "ts",
       }));
     } });
-    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access.ts", import.meta.url).pathname)});
+    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
     const present = "11111111-1111-4111-8111-111111111111", missing = "22222222-2222-4222-8222-222222222222";
     const entries = [
       { principal: { type: "user", userId: present } },
@@ -448,7 +449,7 @@ test("Code titles are resolved in the existing batch only for a managed target",
       appId: id, types: [{ localId: "item", title: "Postfach", codeAccount: { name: "Code eines Postfachs", description: "Dienstkonto eines Postfachs" } }], code: { pages: { item: "/app/demo/{id}/code" } },
     } });
     Bun.plugin({ name: "code-display-fixture", setup(build) {
-      build.onLoad({ filter: /server\\/services\\/access[.]ts$/ }, async ({ path }) => ({
+      build.onLoad({ filter: /server\\/services\\/access-display[.]ts$/ }, async ({ path }) => ({
         contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.codeDisplaySql;'), loader: "ts",
       }));
       build.onLoad({ filter: /code-account-display[.]ts$/ }, async ({ path }) => ({
@@ -457,7 +458,7 @@ test("Code titles are resolved in the existing batch only for a managed target",
           .replace('import { resolveCapabilityManifestPresentation } from "../../_internal/capabilities";', 'const resolveCapabilityManifestPresentation = (manifest) => manifest;'), loader: "ts",
       }));
     } });
-    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access.ts", import.meta.url).pathname)});
+    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
     const entries = [
       { principal: { type: "service_account", serviceAccountId: present }, displayName: "Stale secret", serviceAccountHref: "/old-secret" },
       { principal: { type: "service_account", serviceAccountId: app } },

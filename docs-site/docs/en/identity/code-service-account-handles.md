@@ -2,7 +2,7 @@
 title: Find a Code service account
 navTitle: Code account handles
 section: Identity and access
-order: 353
+order: 359
 description: Find Code accounts by their copyable handle and show owner titles only within managed target resources.
 tags: [code, identity, permissions, service-accounts]
 updated: 2026-11-03

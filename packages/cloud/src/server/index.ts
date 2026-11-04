@@ -94,12 +94,12 @@ export {
   paginateItems,
   password,
   recursiveServiceAccountGroupIdsSubquery,
-  resolveDisplayNames,
   services,
   tryCatch,
   unwrap,
   updateAccess,
 } from "./services";
+export { resolveDisplayNames } from "./services/access-display";
 export { type CodeAccountDisplayContext, codeAccountOwner, codeAccountPresenter, codeMessages } from "./services/code-account-display";
 export { getDateConfig, getTimeZone, TIMEZONE_COOKIE, time } from "./time";
 export { getWidgetRequest } from "./widget-request";

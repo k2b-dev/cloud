@@ -160,8 +160,8 @@ describe("Code with access in a share dialog", () => {
         expect(await tab.locator("[data-code-access-row]").first().textContent()).toContain(
           "spaces.task.create · für „lieferungenEintragen“",
         );
-        await tab.getByRole("button", { name: "Zugriff von „Code von info@“ entfernen" }).click();
-        const confirm = tab.getByRole("dialog", { name: "Zugriff von „Code von info@“ entfernen?" });
+        await tab.getByRole("button", { name: "Zugriff von „Code von info@moebel-beispiel.de“ entfernen" }).click();
+        const confirm = tab.getByRole("dialog", { name: "Zugriff von „Code von info@moebel-beispiel.de“ entfernen?" });
         await confirm.waitFor();
         expect(await confirm.textContent()).toContain("„lieferungenEintragen“ kann hier dann nichts mehr tun");
         await shot(tab, `${width}-confirm`);
@@ -215,7 +215,11 @@ describe("Code with access in a share dialog", () => {
         await tab.getByText("Code von Einkauf").waitFor();
         const layout = await snapshot(tab);
         expect(layout.overflow).toBeLessThanOrEqual(0);
-        expect(new Set(layout.rows.map((row) => row?.height)).size).toBe(1);
+        const wraps = await tab
+          .getByText("Code von info@moebel-beispiel.de", { exact: true })
+          .evaluate((element) => element.getBoundingClientRect().height > Number.parseFloat(getComputedStyle(element).lineHeight));
+        expect(wraps).toBe(width < 600);
+        if (width >= 600) expect(new Set(layout.rows.map((row) => row?.height)).size).toBe(1);
         await shot(tab, `${width}-compact`);
       } finally {
         await tab.close();
@@ -233,7 +237,8 @@ describe("Code with access in a share dialog", () => {
     }
     const readOnly = await open(1440, { accounts: (route) => route.fulfill({ json: details }) }, "?readonly=1");
     try {
-      await readOnly.getByText("Code von info@").waitFor();
+      await readOnly.getByText("Code eines Postfachs", { exact: true }).first().waitFor();
+      expect(await readOnly.getByText("Code von info@moebel-beispiel.de", { exact: true }).count()).toBe(0);
       expect(await readOnly.locator("section button").count()).toBe(0);
       await shot(readOnly, "1440-readonly");
       await readOnly.evaluate(() => document.documentElement.classList.add("dark"));

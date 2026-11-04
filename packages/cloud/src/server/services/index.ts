@@ -30,7 +30,6 @@ export {
   hasPermission,
   listUsersWithAccess,
   PERMISSION_LEVELS,
-  resolveDisplayNames,
   updateAccess,
 } from "./access";
 export { freeipa } from "./freeipa";
