@@ -43,6 +43,7 @@ const entries: AccessEntry[] = [
 ];
 
 const [legacyEntries, setLegacyEntries] = createSignal(entries.filter(isCodeAccessEntry));
+const [lastUpdate, setLastUpdate] = createSignal("");
 
 // Exercise the retained legacy component independently of the normal A1 editor.
 dialogCore.open(
@@ -59,9 +60,14 @@ dialogCore.open(
             grantAccess={async () => {
               throw new Error("Not used");
             }}
-            updateAccess={async () => {}}
+            updateAccess={async (accessId, permission) => {
+              setLastUpdate(`${accessId}:${permission}`);
+            }}
             revokeAccess={async () => {}}
           />
+          <output data-access-updated hidden>
+            {lastUpdate()}
+          </output>
           <CodeAccessSection
             entries={query.get("ordinary") === "1" ? [] : legacyEntries()}
             expanded={query.get("compact") !== "1"}
