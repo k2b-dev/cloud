@@ -402,7 +402,7 @@ export const streamAssistantTurn = async (input: {
 
   const handleEvent = async (event: AiStreamSseEvent): Promise<AssistantTurnStreamResult | null> => {
     if (event.type === "state") {
-      title = event.conversation.title;
+      title = event.conversation?.title ?? title;
       if (!targetTurnId) {
         targetTurnId = event.activeTurn?.turnId ?? null;
         if (!targetTurnId) {
