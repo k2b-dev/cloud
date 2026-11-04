@@ -13,6 +13,10 @@ export type DraftDisplay = { displayName: string; avatarHash?: string | null; se
 
 /** A row the dialog shows: a stored entry with its pending change, or a principal only the draft adds. */
 export type DraftRow = {
+  /**
+   * One per row: a stored row by its entry, so a principal with both a grant and a denial keeps two rows; an added row
+   * by its principal, which the draft adds once.
+   */
   key: string;
   /** The stored entry; absent for a principal the draft adds. */
   entry?: AccessEntry;
@@ -43,6 +47,8 @@ export type AccessDraft = {
 
 const sameLevel = (a: DraftLevel | null, b: DraftLevel | null) => a?.permission === b?.permission && a?.scope === b?.scope;
 const levelOf = (entry: AccessEntry): DraftLevel => ({ permission: entry.permission, ...(entry.scope ? { scope: entry.scope } : {}) });
+const storedKey = (entry: AccessEntry) => `e:${entry.id}`;
+const addedKey = (principal: Principal) => `n:${principalKey(principal)}`;
 
 export const emptyDraft = (base: readonly AccessEntry[]): AccessDraft => ({ base, levels: new Map(), removed: new Set(), added: [] });
 
@@ -51,7 +57,7 @@ export const draftRows = (draft: AccessDraft): DraftRow[] => [
   ...draft.base.map((entry) => {
     const previous = levelOf(entry);
     return {
-      key: principalKey(entry.principal),
+      key: storedKey(entry),
       entry,
       principal: entry.principal,
       display: { displayName: entry.displayName ?? "", avatarHash: entry.avatarHash, serviceAccountKind: entry.serviceAccountKind },
@@ -60,7 +66,7 @@ export const draftRows = (draft: AccessDraft): DraftRow[] => [
     };
   }),
   ...draft.added.map((added) => ({
-    key: principalKey(added.principal),
+    key: addedKey(added.principal),
     principal: added.principal,
     display: added.display,
     previous: null,
@@ -81,7 +87,7 @@ const resultEntries = (draft: AccessDraft): AccessEntry[] =>
     row.next
       ? [
           {
-            id: row.entry?.id ?? row.key,
+            id: row.key,
             principal: row.principal,
             permission: row.next.permission,
             ...(row.next.scope ? { scope: row.next.scope } : {}),
@@ -92,18 +98,24 @@ const resultEntries = (draft: AccessDraft): AccessEntry[] =>
       : [],
   );
 
+/** How many entries manage the resource after saving, counted as the resource's rules count them. */
+export const managerCount = (
+  draft: AccessDraft,
+  effective: (entries: readonly AccessEntry[]) => readonly AccessEntry[] = (entries) => entries,
+): number => effective(resultEntries(draft)).filter((entry) => !entry.scope && isManagerEntry(entry)).length;
+
 /** Keys of rows that are the only manager after saving: they cannot lose Manage or be removed. */
 export const lastManagerKeys = (
   draft: AccessDraft,
   effective: (entries: readonly AccessEntry[]) => readonly AccessEntry[] = (entries) => entries,
 ): Set<string> => {
   const managers = effective(resultEntries(draft)).filter((entry) => !entry.scope && isManagerEntry(entry));
-  return new Set(managers.length === 1 ? [principalKey(managers[0]!.principal)] : []);
+  return new Set(managers.length === 1 ? [managers[0]!.id] : []);
 };
 
 export const setLevel = (draft: AccessDraft, row: DraftRow, level: DraftLevel): AccessDraft => {
   if (!row.entry)
-    return { ...draft, added: draft.added.map((added) => (principalKey(added.principal) === row.key ? { ...added, level } : added)) };
+    return { ...draft, added: draft.added.map((added) => (addedKey(added.principal) === row.key ? { ...added, level } : added)) };
   const levels = new Map(draft.levels);
   if (sameLevel(levelOf(row.entry), level)) levels.delete(row.entry.id);
   else levels.set(row.entry.id, level);
@@ -122,7 +134,7 @@ export const addPrincipal = (draft: AccessDraft, principal: Principal, display: 
 };
 
 export const removeRow = (draft: AccessDraft, row: DraftRow): AccessDraft => {
-  if (!row.entry) return { ...draft, added: draft.added.filter((added) => principalKey(added.principal) !== row.key) };
+  if (!row.entry) return { ...draft, added: draft.added.filter((added) => addedKey(added.principal) !== row.key) };
   const removed = new Set(draft.removed);
   removed.add(row.entry.id);
   const levels = new Map(draft.levels);
@@ -147,7 +159,7 @@ export const applied = (draft: AccessDraft, change: DraftChange, saved?: AccessE
     return {
       ...draft,
       base: [...draft.base, saved],
-      added: draft.added.filter((added) => principalKey(added.principal) !== change.row.key),
+      added: draft.added.filter((added) => addedKey(added.principal) !== change.row.key),
     };
   }
   const id = change.row.entry!.id;
@@ -169,11 +181,20 @@ export const applied = (draft: AccessDraft, change: DraftChange, saved?: AccessE
 const strength: Record<PermissionLevel, number> = { none: 0, read: 1, write: 2, admin: 3 };
 
 /**
- * Saving order: new grants first, then raised levels, then lowered levels, removals last, so a handover of Manage
- * raises the new manager before the old one steps down and the resource never passes through no manager.
+ * Saving order: new grants first, then whatever widens access (raised levels and removed denials), then lowered
+ * levels, removals last, so a handover of Manage gives the new manager Manage before the old one steps down and the
+ * resource never passes through no manager.
  */
 export const saveOrder = (changes: readonly DraftChange[]): DraftChange[] => {
   const rank = (change: DraftChange) =>
-    change.kind === "add" ? 0 : change.kind === "remove" ? 3 : strength[change.to.permission] > strength[change.from.permission] ? 1 : 2;
+    change.kind === "add"
+      ? 0
+      : change.kind === "remove"
+        ? change.from.permission === "none"
+          ? 1
+          : 3
+        : strength[change.to.permission] > strength[change.from.permission]
+          ? 1
+          : 2;
   return [...changes].sort((a, b) => rank(a) - rank(b));
 };
