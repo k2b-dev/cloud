@@ -1,4 +1,4 @@
-import { accessMemberEntries } from "@k2b/cloud/access/ui";
+import { accessMemberEntries } from "@k2b/cloud/access/members";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { SaveFilesButton } from "@k2b/cloud/browser/files";
 import { importOnDemand } from "@k2b/cloud/browser/reload";

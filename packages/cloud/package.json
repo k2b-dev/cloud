@@ -89,6 +89,7 @@
     "./ai/tools": "./src/ai/runtime-tools.ts",
     "./ai/ui": "./src/ai/ui.tsx",
     "./account/ui": "./src/account/ui.ts",
+    "./access/members": "./src/access/access-members.ts",
     "./access/ui": "./src/access/ui.ts",
     "./approvals/ui": "./src/approvals/ui.ts",
     "./ssr": "./src/ssr/index.ts",

@@ -189,6 +189,8 @@ suite("mail access to assigned conversations", () => {
       expect(refused.ok).toBe(false);
       if (!refused.ok) expect(refused.error.status).toBe(403);
     }
+    // The later tests count this mailbox's grants; the colleague leaves again.
+    if (granted.ok) expect((await revokeMailboxAccess({ context: owner.context, mailboxId, accessId: granted.data.id })).ok).toBe(true);
   });
 
   test("assigned-only grants allow read or write for people and groups, once per principal", async () => {
