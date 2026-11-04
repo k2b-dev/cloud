@@ -437,15 +437,80 @@ describe("ChatWorkspace interactions", () => {
     // A system chat's timeline goes back to its threads; that page carries the way back to the chat list.
     const backToThreads = dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__back a[aria-label="Back to the threads"]');
     expect(backToThreads?.getAttribute("href")).toBe("/pwa/chat/c/Chat01/threads");
+    const length = dom.window.history.length;
     backToThreads!.click();
     await settle();
     expect(dom.window.location.pathname).toBe("/pwa/chat/c/Chat01/threads");
-    const backToChats = dom.root.querySelector(".chat-threads-page .chat-conversation__back a");
+    expect(dom.window.history.length).toBe(length);
+    const backToChats = dom.root.querySelector<HTMLAnchorElement>(".chat-threads-page .chat-conversation__back a");
     expect(backToChats?.getAttribute("href")).toBe("/pwa/chat");
     expect(backToChats?.getAttribute("aria-label")).toBe("Back to chats, 40 unread");
     expect(backToChats?.querySelector(".chat-conversation__back-count")?.textContent).toBe("40");
+    backToChats!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat");
+    expect(dom.window.history.length).toBe(length);
     expect(consoleErrors).toEqual([]);
   });
+  test("the app traverses list and chat with header Back and Forward", async () => {
+    snapshots.set(conversation.id, {
+      threads: noThreads,
+      cursor: "c.0",
+      conversation,
+      page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
+      focus: null,
+    });
+    await mount(false, [conversation], null, "en", "write", { url: "/pwa/chat", app: true });
+    const length = dom.window.history.length;
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/pwa/chat/c/Chat01"]')!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat/c/Chat01");
+    expect(dom.window.history.length).toBe(length + 1);
+    dom.root.querySelector<HTMLAnchorElement>(".chat-conversation__back a")!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat");
+    expect(dom.window.history.length).toBe(length + 1);
+    dom.window.history.forward();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat/c/Chat01");
+    expect(dom.root.querySelector(".chat-conversation__header")?.textContent).toContain("Secret board");
+  });
+
+  test("the app keeps the known list predecessor when replacing a threaded chat with its threads", async () => {
+    const threadedChat = { ...conversation, threads: 1 };
+    snapshots.set(conversation.id, {
+      threads: noThreads,
+      cursor: "c.0",
+      conversation: threadedChat,
+      page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
+      focus: null,
+    });
+    await mount(false, [threadedChat], null, "en", "write", { url: "/pwa/chat", app: true });
+    const length = dom.window.history.length;
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/pwa/chat/c/Chat01"]')!.click();
+    await settle();
+    dom.root.querySelector<HTMLAnchorElement>(".chat-conversation__back a")!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat/c/Chat01/threads");
+    expect(dom.window.history.state).toEqual({ chatFromList: true });
+    dom.root.querySelector<HTMLAnchorElement>(".chat-threads-page .chat-conversation__back a")!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat");
+    expect(dom.window.history.length).toBe(length + 1);
+    dom.window.history.forward();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat/c/Chat01/threads");
+  });
+
+  test("the app replaces a directly opened chat with its list when going Back", async () => {
+    await mount(true, [conversation], null, "en", "write", { url: "/pwa/chat/c/Chat01", app: true });
+    const length = dom.window.history.length;
+    dom.root.querySelector<HTMLAnchorElement>(".chat-conversation__back a")!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat");
+    expect(dom.window.history.length).toBe(length);
+  });
+
   test("Back excludes an open archived chat and refreshes its total when that chat is read", async () => {
     const archivedChat = { ...conversation, archived: true, unread: 3 };
     const listedChat = { ...conversation, id: "Chat02", unread: 2 };
