@@ -51,8 +51,12 @@ const germanText: Record<string, string> = {
   "Capabilities and fixed inputs": "Capabilities und feste Eingaben",
   "Runs work independently using the completed chat context at their start. Files and memories remain live.":
     "Läufe arbeiten unabhängig mit dem abgeschlossenen Chatverlauf beim Start. Dateien und Erinnerungen bleiben aktuell.",
-  "Changes apply immediately. At least one administrator must remain.":
-    "Änderungen gelten sofort. Mindestens eine Person muss Administrator bleiben.",
+  "Changes apply when you save them. At least one administrator must remain.":
+    "Änderungen gelten, sobald du sie speicherst. Mindestens eine Person mit Verwaltungsrecht muss bleiben.",
+  "Edit access": "Zugriff bearbeiten",
+  "Project · Assistant": "Projekt · Assistent",
+  "Skill · Assistant": "Skill · Assistent",
+  "Access could not be reloaded.": "Der Zugriff konnte nicht neu geladen werden.",
   "Could not update Project access": "Projektzugriff konnte nicht geändert werden",
   "Link a Skill": "Skill verknüpfen",
   "Search Skills…": "Skills suchen…",
@@ -298,8 +302,6 @@ const germanText: Record<string, string> = {
   "Search skills": "Skills durchsuchen",
   "See when Assistant learned from completed private-chat turns, consolidated workflows, and exactly what changed.":
     "Zeigt, wann der Assistent aus abgeschlossenen privaten Chats und zusammengeführten Abläufen gelernt hat und was geändert wurde.",
-  "Share this skill through Cloud permissions. At least one administrator must remain.":
-    "Teile diesen Skill über Cloud-Berechtigungen. Mindestens eine Person muss Administrator bleiben.",
   Sharing: "Teilen",
   "Skill deleted": "Skill gelöscht",
   "Skill name": "Name des Skills",
