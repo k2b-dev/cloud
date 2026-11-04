@@ -78,6 +78,11 @@ export type AccessDialogProps = {
   findServiceAccount?: (handle: string, signal: AbortSignal) => Promise<FoundServiceAccount | null>;
   /** A further section, such as the resource's object API keys. */
   extraSections?: JSX.Element;
+  /**
+   * Closes the dialog without asking, for example when the settings that opened it close. Nothing pending is sent
+   * afterwards; changes already saved stay saved.
+   */
+  signal?: AbortSignal;
 };
 
 /** Opens the access dialog. Resolves `true` when changes were saved. */
@@ -88,6 +93,7 @@ export const openAccessDialog = async (props: AccessDialogProps): Promise<boolea
     ),
     {
       panelClassName: "k2b-dialog k2b-dialog--large",
+      signal: props.signal,
       ariaLabel: accessDialogMessages.resolve([document.documentElement.lang || "en"]).t.title({ name: props.resourceName }),
     },
   )) === true;
