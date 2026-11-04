@@ -13,6 +13,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { DetailAccess, DetailLinks, DetailPresence, DetailProperties, DetailTags } = await import("./DetailSections");
 const { LocaleProvider } = await import("../intl/locale");
+const { default: DetailPanel } = await import("./DetailPanel");
 
 const render = (element: () => JSX.Element, locale = "en") =>
   renderToString(() =>
@@ -105,6 +106,58 @@ describe("DetailLinks, DetailProperties, DetailTags", () => {
     expect(text(html)).toContain("Links to 2");
     expect(text(render(() => createComponent(DetailLinks, { incoming: [], outgoing: [] })))).toBe("Links None yet");
   });
+  test("links keep their rows while the rest loads or failed, and end with the footer", () => {
+    const loading = render(() =>
+      createComponent(DetailLinks, { incoming: [], outgoing: [{ id: "b", title: "Glossary", href: "/b" }], state: "loading" }),
+    );
+    expect(text(loading)).toContain("Links to 1 Glossary");
+    expect(loading).toContain('role="status"');
+    expect(text(loading)).not.toContain("None yet");
+    const failed = render(() =>
+      createComponent(DetailLinks, {
+        incoming: [],
+        outgoing: [{ id: "b", title: "Glossary", href: "/b" }],
+        state: "error",
+        onRetry: () => undefined,
+      }),
+    );
+    expect(text(failed)).toContain("Glossary Could not load all links Try again");
+    const empty = render(() =>
+      createComponent(DetailLinks, {
+        incoming: [],
+        outgoing: [],
+        get footer() {
+          return createComponent(DetailPanel.Action, { type: "button", title: "Add link" });
+        },
+      }),
+    );
+    expect(text(empty)).toBe("Links None yet Add link");
+  });
+  test("link rows carry a description, an external target, a menu, and a disabled state", () => {
+    const html = render(() =>
+      createComponent(DetailLinks, {
+        incoming: [],
+        outgoing: [
+          {
+            id: "pr",
+            title: "Fix the ramp",
+            description: "k2b/cloud#12",
+            href: "https://example.com/pr/12",
+            target: "_blank",
+            rel: "noreferrer",
+            menuItems: [{ label: "Unlink", action: () => undefined }],
+            menuLabel: "More actions for Fix the ramp",
+          },
+          { id: "gone", title: "Old task", description: "No longer available", href: "/gone", disabled: true },
+        ],
+      }),
+    );
+    expect(text(html)).toContain("Fix the ramp k2b/cloud#12");
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('aria-label="More actions for Fix the ramp"');
+    expect(html).not.toContain('href="/gone"');
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>/);
+  });
   test("properties are label and value rows; a value with href is a link", () => {
     const html = render(() =>
       createComponent(DetailProperties, {
@@ -117,6 +170,16 @@ describe("DetailLinks, DetailProperties, DetailTags", () => {
     );
     expect(html).toMatch(/<dt>Length<\/dt>/);
     expect(html).toContain('href="/versions"');
+    const withCommand = render(() =>
+      createComponent(DetailProperties, {
+        items: [{ id: "id", label: "ID", value: "c-12" }],
+        defaultOpen: true,
+        get children() {
+          return createComponent(DetailPanel.Action, { type: "button", title: "Copy Cloud ID" });
+        },
+      }),
+    );
+    expect(text(withCommand)).toContain("ID c-12 Copy Cloud ID");
   });
   test("tags are chips or None yet with a hint", () => {
     expect(render(() => createComponent(DetailTags, { tags: [{ id: "x", label: "ramp", href: "/tags/ramp" }] }))).toContain(
