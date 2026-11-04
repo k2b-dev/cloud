@@ -16,6 +16,7 @@ import {
   enqueueFolderSync,
   enqueueMailboxHydration,
   enqueueMailboxSync,
+  enqueueMessageHydration,
   executeBindingRediscovery,
   FOLDER_SYNC_REQUEST_MS,
   requestedSyncProgress,
@@ -209,8 +210,11 @@ const executeFolderRebuild = async (command: DbMaintenanceCommand, folderId: str
   return { ...result, queued: enqueueWork };
 };
 
+// The repair queues at most this many bodies, newest first.
+const HYDRATION_REPAIR_LIMIT = 500;
+
 const executeHydrationRetry = async (mailboxId: string, enqueueWork: boolean): Promise<JsonRecord> => {
-  const reset = await sql<{ id: string }[]>`
+  const reset = await sql<{ id: string; internal_date: Date }[]>`
     UPDATE mail.message_contents
     SET
       hydration_status = CASE WHEN plain_text IS NOT NULL OR sanitized_html IS NOT NULL THEN 'body' ELSE 'envelope' END,
@@ -223,7 +227,7 @@ const executeHydrationRetry = async (mailboxId: string, enqueueWork: boolean): P
         -- A download whose worker stopped before it saved; a running one renews its claim every minute.
         OR (hydration_status = 'hydrating' AND hydration_claimed_at < now() - interval '15 minutes')
       )
-    RETURNING id
+    RETURNING id, internal_date
   `;
   const queued = await sql<{ id: string }[]>`
     SELECT id
@@ -231,9 +235,18 @@ const executeHydrationRetry = async (mailboxId: string, enqueueWork: boolean): P
     WHERE mailbox_id = ${mailboxId}::uuid
       AND hydration_status IN ('envelope', 'headers', 'body')
     ORDER BY internal_date DESC, id DESC
-    LIMIT 500
+    LIMIT ${HYDRATION_REPAIR_LIMIT}
   `;
-  if (enqueueWork && queued.length > 0) await enqueueMailboxHydration(mailboxId);
+  if (enqueueWork) {
+    // A repaired body has its own job, which ranks with commands: on an account with hundreds of
+    // folders, mailbox hydration waits about a full round of folder checks for each turn.
+    const repaired = reset
+      .toSorted((a, b) => b.internal_date.getTime() - a.internal_date.getTime() || b.id.localeCompare(a.id))
+      .slice(0, HYDRATION_REPAIR_LIMIT);
+    for (const message of repaired) await enqueueMessageHydration(message.id);
+    // The mailbox's own job still loads every other pending body, as before.
+    if (queued.length > 0) await enqueueMailboxHydration(mailboxId);
+  }
   return { reset: reset.length, queued: enqueueWork ? queued.length : 0 };
 };
 

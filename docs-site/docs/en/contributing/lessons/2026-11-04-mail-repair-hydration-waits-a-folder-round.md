@@ -1,0 +1,6 @@
+### A hydration repair waited a full round of folder checks per body
+
+- **What happened:** On a production account with 354 folders, bodies that an operator retried with `mail repair hydration` waited about 957 s for the provider lease.
+- **Root cause:** The repair reset the failed bodies and queued only the mailbox's hydration job. That job asks for the lease with `background` priority and no head start. Folder checks ask with `sync` priority and a 60-second head start, and one round over 354 folders takes longer than 60 s. So the job waited behind about every folder check of the account. The per-message hydration job, which ranks with commands, already existed but was not used.
+- **Error class:** Work that a person explicitly asked for runs at background priority behind a queue that grows with the size of the account.
+- **Guard:** The repair queues one per-message job for each reset body, newest first and at most its existing 500. `provider-lease-fairness.integration.test.ts` runs a one-message repair and then lets the job it queued ask for the lease, behind one holder and 354 waiting folder checks. The job must get the next turn: the folder check first in line is refused. The test fails with the old repair both at the queued job and at the turn order.
