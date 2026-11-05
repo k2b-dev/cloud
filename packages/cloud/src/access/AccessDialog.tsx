@@ -565,7 +565,8 @@ export function AccessDialog(
                 </a>
               )}
             </Show>
-            <span class="contents max-sm:hidden">{mark(row())}</span>
+            {/* Only breakpoint-scoped display classes: an app stylesheet that repeats `contents` or `inline-flex` comes later and would show both marks. */}
+            <span class="max-sm:hidden sm:contents">{mark(row())}</span>
           </span>
           {/*
             A service account's line carries its level, so it wraps on a phone instead of cutting it off. On a phone the
@@ -580,7 +581,7 @@ export function AccessDialog(
             }}
           >
             <Show when={mark(row())}>
-              {(badge) => <span class="mr-1.5 inline-flex h-5 items-center align-top sm:hidden">{badge()}</span>}
+              {(badge) => <span class="mr-1.5 h-5 items-center align-top max-sm:inline-flex sm:hidden">{badge()}</span>}
             </Show>
             {kindLine(row())}
           </span>
