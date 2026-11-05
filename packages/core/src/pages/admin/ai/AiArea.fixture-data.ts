@@ -85,6 +85,13 @@ export const aiFixtureCatalog = (): AiFixtureCatalog => ({
       dataBoundary: "private",
     }),
     provider({ id: "openai", type: "openai", label: "OpenAI", credentialSet: false, status: "unknown" }),
+    provider({
+      id: "gemini-api",
+      type: "openai-compatible",
+      label: "Gemini API",
+      baseUrl: "https://generativelanguage.example/v1beta/openai/",
+      dataBoundary: "restricted",
+    }),
   ],
   models: [
     model({ id: "gpt-oss-120b", providerId: "cortecs", label: "GPT-OSS", description: "Für die meisten Aufgaben" }),
@@ -123,6 +130,7 @@ export const aiFixtureCatalog = (): AiFixtureCatalog => ({
       contextWindow: null,
       maxOutputTokens: null,
     }),
+    model({ id: "gemini-artikel", providerId: "gemini-api", label: "Gemini Artikeltexte", description: "Nur für Apps" }),
   ],
   variants: [
     variant("gpt-oss-120b", "standard", "Ausgewogen", "medium"),
@@ -136,6 +144,7 @@ export const aiFixtureCatalog = (): AiFixtureCatalog => ({
     variant("qwen", "gruendlich", "Gründlich", "high"),
     variant("qwen", "standard", "Schnell", "low"),
     variant("whisper", "standard", "Standard", null),
+    variant("gemini-artikel", "standard", "Standard", "low"),
   ],
   assignments: {
     fast: "mistral-small",
@@ -157,6 +166,7 @@ export const aiFixtureOverview = (catalog: AiFixtureCatalog): AiAdminOverview =>
       id: entry.id,
       type: entry.type,
       label: entry.label,
+      dataBoundary: entry.dataBoundary,
       enabled: entry.enabled,
       status: entry.status,
       statusCode: entry.statusCode,

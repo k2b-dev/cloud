@@ -1,3 +1,7 @@
+import { AppWorkspaceSidebarItemStatus, type AppWorkspaceSidebarItemStatusProps } from "./AppWorkspaceSidebarItemStatus";
+
+export type { AppWorkspaceSidebarItemStatusProps } from "./AppWorkspaceSidebarItemStatus";
+
 import { Link, type LinkNavigateEvent, type NavigationScrollMode } from "@k2b/ssr/nav";
 import {
   children,
@@ -59,6 +63,7 @@ import {
   isAppWorkspaceWidthShare,
 } from "./app-workspace-width";
 import BottomSheet, { bottomSheetAdaptiveOptions } from "./BottomSheet";
+import { DETAILS_ICON } from "./DetailsToggle";
 import { PageTitle, usePageTrail } from "./PageTitle";
 import type { ScrollAreaProps } from "./ScrollArea";
 import { SidebarItemPreview } from "./SidebarItemPreview";
@@ -301,6 +306,11 @@ export type AppWorkspaceMainPaneProps = {
   description?: JSX.Element;
   /** Levels mode: a small mark before the level title, such as the colour dot of the object's container. */
   lead?: JSX.Element;
+  /**
+   * Levels mode: the level's own parent inside the same column, such as a sub-view of a detail that replaces the
+   * detail in place. Its back step shows at every width and replaces the shared step to the level before.
+   */
+  back?: { href: string; label: string };
   /** Controls at the end of the level head. */
   actions?: JSX.Element;
   /**
@@ -539,31 +549,6 @@ export type AppWorkspaceSidebarItemActionProps = {
 export type AppWorkspaceSidebarItemActionsProps = {
   children: JSX.Element;
   visibility?: AppWorkspaceSidebarAccessoryVisibility;
-};
-/**
- * Unread state for the trailing `meta` slot. Every mark keeps a fixed width,
- * so the row keeps its height and the label its start in every state.
- */
-export type AppWorkspaceSidebarItemStatusProps = {
-  /**
-   * A positive number shows a count (above 99 as "99+") and sets the label in
-   * a stronger weight; `true` shows a quiet dot for new activity that should
-   * not draw attention, such as in a muted conversation.
-   */
-  unread?: number | boolean;
-  /** Marks unread items that mention the person with "@". */
-  mention?: boolean;
-  /**
-   * Shows a muted bell, and the item reads as set aside: its label in the muted ink without unread weight, and a
-   * mention count without its fill.
-   */
-  muted?: boolean;
-  /**
-   * Items that wait for the person, such as requests to approve, in the unread slot instead of `unread`. `label` is
-   * the phrase a screen reader hears, for example "3 waiting". `0` stays as a muted count, for a count that dropped
-   * to zero while the row is still shown; leave the prop out when nothing waits.
-   */
-  waiting?: { count: number; label: string };
 };
 export type AppWorkspaceNavTreeProps = {
   children: JSX.Element;
@@ -933,16 +918,31 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                           actions={pane.props.actions}
                           lead={pane.props.lead}
                         >
-                          <Show when={levelIndex() > 1 && depth() > 1}>
-                            <IconButtonLink
-                              class="k2b-app-workspace__level-back"
-                              href={levels()[depth() - 2]?.props.href}
-                              label={workspaceMessages().backTo({ page: levels()[levelIndex() - 2]?.props.label ?? "" })}
-                              navigation={props.onLevelNavigate ? "enhanced" : "document"}
-                              onNavigate={props.onLevelNavigate ? navigateBack : undefined}
-                            >
-                              <i class="ti ti-chevron-left" aria-hidden="true" />
-                            </IconButtonLink>
+                          <Show
+                            when={pane.props.back}
+                            fallback={
+                              <Show when={levelIndex() > 1 && depth() > 1}>
+                                <IconButtonLink
+                                  class="k2b-app-workspace__level-back"
+                                  href={levels()[depth() - 2]?.props.href}
+                                  label={workspaceMessages().backTo({ page: levels()[levelIndex() - 2]?.props.label ?? "" })}
+                                  navigation={props.onLevelNavigate ? "enhanced" : "document"}
+                                  onNavigate={props.onLevelNavigate ? navigateBack : undefined}
+                                >
+                                  <i class="ti ti-chevron-left" aria-hidden="true" />
+                                </IconButtonLink>
+                              </Show>
+                            }
+                          >
+                            {(back) => (
+                              <IconButtonLink
+                                class="k2b-app-workspace__level-back k2b-app-workspace__level-back--own"
+                                href={back().href}
+                                label={workspaceMessages().backTo({ page: back().label })}
+                              >
+                                <i class="ti ti-chevron-left" aria-hidden="true" />
+                              </IconButtonLink>
+                            )}
                           </Show>
                         </LevelHead>
                         <div
@@ -1032,9 +1032,9 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
           data-app-workspace-detail-toggle=""
           data-workspace-detail-reopen={props.onOpen ? "true" : undefined}
           disabled={props.available === false}
-          class="k2b-app-workspace__detail-toggle"
+          class="k2b-app-workspace__detail-toggle k2b-details-toggle"
         >
-          <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
+          <i class={DETAILS_ICON} aria-hidden="true" />
           {workspaceMessages().details}
         </Button>
       </Show>
@@ -1448,71 +1448,6 @@ const AppWorkspaceSidebarItemActions = (props: AppWorkspaceSidebarItemActionsPro
     {props.children}
   </div>
 );
-const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps): JSX.Element => {
-  const workspaceMessages = useWorkspaceMessages();
-  const waiting = () => (props.waiting && Number.isFinite(props.waiting.count) ? Math.max(0, Math.floor(props.waiting.count)) : null);
-  const count = () => waiting() ?? (typeof props.unread === "number" && props.unread >= 1 ? Math.floor(props.unread) : 0);
-  const dot = () => waiting() === null && props.unread === true;
-  // The marks are decorative; the row's accessible name gets one phrase instead,
-  // which says no more than the "99+" a capped count shows.
-  const description = () =>
-    [
-      waiting() !== null
-        ? (props.waiting?.label ?? "")
-        : count() > 99
-          ? workspaceMessages().sidebarUnreadMany
-          : count()
-            ? workspaceMessages().sidebarUnread({ count: count() })
-            : dot()
-              ? workspaceMessages().sidebarNewActivity
-              : "",
-      props.mention ? workspaceMessages().sidebarMentioned : "",
-      props.muted ? workspaceMessages().sidebarMuted : "",
-    ]
-      .filter(Boolean)
-      .join(", ");
-  // The unread slot stays reserved at the end, and the marks that change most
-  // often sit outermost, so new activity or a mention never moves another mark.
-  // The element itself stays when there is nothing to show: empty, it takes no
-  // space, and it still keeps the row's label on one line, so the first count
-  // never re-wraps the label and moves the rows below.
-  return (
-    <span
-      class="k2b-app-workspace__sidebar-status"
-      data-unread={waiting() !== null ? undefined : count() ? "count" : dot() ? "dot" : undefined}
-      data-waiting={waiting() === null ? undefined : waiting() ? "count" : "zero"}
-      data-muted={props.muted ? "true" : undefined}
-    >
-      <Show when={description()}>
-        <Show when={props.mention}>
-          <span class="k2b-app-workspace__sidebar-status-mention" aria-hidden="true">
-            @
-          </span>
-        </Show>
-        <Show when={props.muted}>
-          <span class="k2b-app-workspace__sidebar-status-muted" aria-hidden="true">
-            <i class="ti ti-bell-off" />
-          </span>
-        </Show>
-        <span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true">
-          <Show
-            when={count() || waiting() === 0}
-            fallback={
-              <Show when={dot()}>
-                <span class="k2b-app-workspace__sidebar-status-dot" />
-              </Show>
-            }
-          >
-            <span class="k2b-app-workspace__sidebar-status-count" data-mention={props.mention ? "true" : undefined}>
-              {count() > 99 ? "99+" : count()}
-            </span>
-          </Show>
-        </span>
-        <span class="k2b-sr-only">, {description()}</span>
-      </Show>
-    </span>
-  );
-};
 
 type AppWorkspaceSidebarRowProps = {
   children: JSX.Element;

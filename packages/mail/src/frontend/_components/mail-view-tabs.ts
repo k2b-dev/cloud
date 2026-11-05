@@ -1,6 +1,7 @@
 import type { ViewTab } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import type { ConversationView } from "../../contracts";
+import { MAIL_EVENTS_VIEW } from "../../mail-events-route";
 import type { ConversationViewCounts } from "../../service/messages";
 import type { SavedConversationView } from "../../service/saved-views";
 
@@ -15,10 +16,12 @@ type MailboxTabView = (typeof MAILBOX_TAB_VIEWS)[number];
 export const mailboxCurrentTab = (state: {
   scheduledMode: boolean;
   draftsMode: boolean;
+  eventsMode: boolean;
   folderId: string | null;
   activeView: ConversationView | null;
   savedViewId: string | null;
 }): string | null => {
+  if (state.eventsMode) return MAIL_EVENTS_VIEW;
   if (state.scheduledMode || state.draftsMode || state.folderId || state.activeView === "send_problems") return null;
   if (state.savedViewId) return `saved:${state.savedViewId}`;
   return state.activeView ?? "all";
@@ -28,9 +31,11 @@ export const mailboxViewTabs = (input: {
   mailboxId: string;
   viewCounts: ConversationViewCounts;
   savedViews: readonly SavedConversationView[];
-  /** A person who sees only assigned conversations has no Unassigned view. */
+  /** A person who sees only assigned conversations has no Unassigned view and no Events tab: the feed spans the mailbox. */
   assignedOnly: boolean;
-  labels: { all: string } & Record<MailboxTabView, string>;
+  labels: { all: string; events: string } & Record<MailboxTabView, string>;
+  /** Marks Events until the person first opens it. */
+  eventsBadge?: string;
   formatCount: (count: number) => string;
 }): ViewTab[] => [
   { id: "all", label: input.labels.all, href: `/app/mail/${input.mailboxId}` },
@@ -46,6 +51,19 @@ export const mailboxViewTabs = (input: {
     icon: view.scope === "private" ? "ti ti-user" : "ti ti-users",
     href: `/app/mail/${input.mailboxId}?savedView=${view.id}`,
   })),
+  // Events is no work view: it stays after More, at every width.
+  ...(input.assignedOnly
+    ? []
+    : [
+        {
+          id: MAIL_EVENTS_VIEW,
+          label: input.labels.events,
+          icon: "ti ti-history",
+          href: `/app/mail/${input.mailboxId}?view=${MAIL_EVENTS_VIEW}`,
+          pinned: true,
+          ...(input.eventsBadge ? { badge: input.eventsBadge } : {}),
+        },
+      ]),
 ];
 
 /**

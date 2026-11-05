@@ -5,10 +5,12 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-10-24
+updated: 2026-11-03
 ---
 
 # Resource authorization
+
+See [Who may do what](/en/docs/identity/access-model) for the access model.
 
 The service that reads or changes a resource checks its permission.
 
@@ -76,8 +78,16 @@ type Principal =
 | User | One user |
 | Group | Direct and nested members |
 | Service account | One machine identity: resource-bound, standalone, or agent |
-| Authenticated | Any authenticated user or service account |
+| Authenticated | Any signed-in person, including guests |
 | Public | Every caller, including anonymous requests |
+
+The authenticated tier means **All signed-in people**. It matches only
+`AccessSubject.type === "user"`, including guests. Sessions, personal API keys
+(`user_delegated`), a person's OAuth credentials, invocations, and mandates
+retain that person's access subject. Agents and other service accounts need
+a direct or group grant: authenticating a machine does not make it a person.
+Public grants retain their existing behavior. Before upgrading, run the
+[people-only access inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people).
 
 ### Discover principals safely
 
@@ -224,10 +234,9 @@ For a standalone or agent service account it includes:
 
 - the direct service-account grant;
 - direct and nested local group grants;
-- authenticated grants;
 - public grants.
 
-A resource-bound account matches direct, authenticated, and public grants,
+A resource-bound account matches direct and public grants,
 but has no independent group membership.
 
 A standalone or agent account has no resource binding, so it is not capped to
@@ -242,6 +251,34 @@ To decide one resource for many subjects, for example the readers of a
 per subject, in the same order, with one query instead of one per subject, by
 the same rules. `accessIds` accepts an array or a Bun `SQLQuery` selecting one
 uuid column, so large grant sets can stay in the database.
+
+### Show who has access
+
+Everyone with access of their own may see who else has access to a resource
+and with which role, read-only. Access of one's own is a direct, group, or
+authenticated grant. Public access alone never shows the list: anyone with the
+link reads a public resource. Decide it on the server with
+`getMemberPermission({ accessIds, subject })`. It follows the rules of
+`getEffectivePermission` without the public tier and returns `none` for an
+anonymous caller. Return the list as `AccessMember` values from
+`@k2b/cloud/contracts`, through `toAccessMember(entry)`: principal, role,
+display name, avatar, and service-account kind, without grant IDs, dates, or
+scopes. Keep the full `AccessEntry` list for people who may manage access.
+
+```ts
+import { toAccessMember } from "@k2b/cloud/contracts";
+import { getMemberPermission, hasPermission } from "@k2b/cloud/server";
+
+const member = await getMemberPermission({ accessIds: entries.map((entry) => entry.id), subject });
+if (!hasPermission(member, "read")) return respond(c, fail(err.forbidden("No access")));
+return respond(c, ok(entries.map(toAccessMember)));
+```
+
+Cap a service account's member permission by its credential scopes, as for
+every other check. Make the same decision before the page shows the section,
+so a public-link reader neither gets the list nor sees an empty section. The
+`DetailAccess` section of a [detail panel](/en/docs/frontend/detail-panels)
+renders the result.
 
 ### Resolve the caller's group IDs
 
@@ -487,10 +524,15 @@ If linking a new entry fails, remove it again. Protect grant mutations with
 ### Keep at least one manager
 
 A resource keeps at least one manager: an `admin` entry for a user, a group,
-all signed-in users, or a standalone or agent service account. A group counts
+all signed-in people, or a standalone or agent service account. A group counts
 regardless of its current members. Public entries never count, and neither do
 resource-bound or user-delegated service accounts: they disappear with their
 key or their user without passing the resource's rules.
+
+`isManagerEntry(entry)` classifies grant rows for last-manager protection.
+An authenticated admin row always counts because it keeps the resource
+manageable by people. The helper takes only the entry; authorize callers with
+the resource resolver before changing grants.
 
 Check every change of an existing grant with `ensureManagerRemains()` from
 `@k2b/cloud/server`, on administration routes too. Lock the resource row, then
@@ -641,6 +683,76 @@ retries. The caller explains why editing stopped and provides recovery.
 Re-enable editing after reading the canonical list; old failed changes and
 their retries are then cleared.
 
+### Edit access in a dialog
+
+`openAccessDialog()` from `@k2b/cloud/access/ui` opens who may use one resource
+as one list, with "What changes" below it. Nothing applies before **Save**: rows
+show what is pending ("New", "before View", "Will be removed" with **Undo**),
+and the summary lists each change once. Save asks again only when someone loses
+access, then calls the same `grantAccess`, `updateAccess`, and `revokeAccess`
+seams as `PermissionEditor`, one at a time: new grants first, then raised levels
+and removed denials, then lowered levels, other removals last, so the resource
+always keeps a manager. A failed call stops the
+save; changes already saved stay saved, and the dialog keeps exactly the open
+ones with **Try again**. Closing with open changes asks before discarding them.
+
+The last entry that manages the resource keeps Manage: its lower levels and its
+removal are disabled, counted on the result after saving (`effectiveEntries`
+applies as in the editor). "All signed-in people" and "Public with link" are
+switches under **General** (`allowAuthenticated`, `allowPublic`, `publicLink`).
+Turning on public access warns that nobody changes anything without signing in;
+pass `publicWarning` when visitors can do more, for example send a published
+form. Each stored entry is its own row, so a principal with a grant and a denial
+shows both. A **General** switch follows that audience's denial when one is
+stored and shows off; turning it on changes the denial into the first offered
+level, and further entries of the audience appear in the list. Removing a denial
+asks nothing, because nobody loses access by it, and **Undo** is disabled when
+it would leave the resource without a manager.
+The search offers people, groups, and agents; it never finds the account of an
+object or app by name. Someone already on the list stays in the results, greyed
+with their level, and a search without results names what was searched.
+
+Each row's level opens a menu of the offered levels, each with one sentence on
+what it means, and **Remove** at its foot. Pass `description` in
+`allowedLevels` for wording that fits the resource; otherwise the dialog uses
+general sentences. Read-only (`canEdit: false`) names who manages the resource,
+shows **General** in words, and offers only **Close**. Pass `loadEntries(signal)`
+instead of `initialEntries` to open the dialog at once: rows that are still
+loading take the list's place, and a failure offers **Try again**.
+
+Pass `findServiceAccount(handle, signal)` to add such service accounts by their
+handle. Send the resource as the lookup's target: your server answers only
+someone who manages that resource, returns nothing for any other identifier,
+and never searches by name. Without the callback the **Service accounts**
+section shows existing rows only. `extraSections` adds further sections, such
+as the resource's object API keys. The caller builds them before the dialog
+owns them, so they cannot rely on cleanup; tie their requests to the `signal`
+you pass. The dialog is a presentation of the same
+grants; the service still checks every change.
+
+**Service accounts** lists only the accounts that Code of an object or an app
+runs as, with the kind `code`. The account behind an object's API keys
+(`resource_bound`) is labelled "API key" and has its own **API keys** section.
+It is never called a service account.
+
+When the dialog opens from settings that can close on their own, pass their
+`signal`. Aborting it closes the dialog without asking and sends nothing that is
+still pending; changes already saved stay saved, and the dialog resolves
+`false`. Reload the list after any change your seams saved, also when the
+dialog resolves `false`: a save can fail halfway and the person can discard
+the rest.
+
+Settings open the dialog from a summary instead of a second list:
+`AccessSummary` from `@k2b/cloud/access/ui` shows a few faces and one line such
+as "3 people, groups and agents · All signed-in people: off · 1 service
+account". It counts each principal once, at its strongest grant, and leaves out
+a part without entries. API keys keep their own section. The faces open the
+full list with each level. Pass the same `allowedLevels` and `effectiveEntries` as to the
+dialog, so the levels read in the app's words and shadowed grants do not count.
+Put **Edit access** with the `ti-lock-access` icon beside it. Someone who
+cannot open the dialog still needs the full list, for example the read-only
+`PermissionEditor`.
+
 ### Confirm access changes
 
 A `beforeChange` confirmation keeps its opener focusable so Cancel can return
@@ -742,9 +854,9 @@ kind:
 | Kind | Icon | Label |
 | --- | --- | --- |
 | `agent` | `ti-robot` | Agent |
-| `standalone` | `ti-key` | Service account |
-| `resource_bound` | `ti-box` | Resource-bound service account |
-| `user_delegated` | `ti-user-key` | User-bound service account |
+| `standalone` | `ti-key` | Agent (API key only) |
+| `resource_bound` | `ti-key` | API key |
+| `user_delegated` | `ti-user-key` | Personal |
 
 Picker and entity-search results for resource-bound accounts show the app,
 resource type, and resource ID instead of the label, because several such

@@ -67,3 +67,39 @@ test("a hung database cannot hold gateway startup beyond its cancellation budget
   await expect(startup).rejects.toThrow("HTTP remains closed");
   expect(read).not.toHaveBeenCalled();
 });
+
+test("startup retries Valkey cleanup before reading the stored proxy list", async () => {
+  const load = spyOn(settings, "loadCache")
+    .mockRejectedValueOnce(Object.assign(new Error("Max reconnection attempts reached"), { code: "ERR_REDIS_CONNECTION_CLOSED" }))
+    .mockResolvedValue();
+  const read = spyOn(settings, "read").mockResolvedValue({ stored: "none", value: DEFAULT_TRUSTED_PROXIES });
+  const warning = spyOn(console, "warn").mockImplementation(() => {});
+  const proxies = await loadTrustedProxies();
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(proxies.check("127.0.0.1", "ipv4")).toBe(true);
+  expect(warning).toHaveBeenCalled();
+});
+
+test.each([
+  { code: "ERR_REDIS_CONNECTION_TIMEOUT", message: "Connection timed out" },
+  { code: "ERR_REDIS_SERVER_ERROR", message: "LOADING data" },
+  { code: "ERR_REDIS_SERVER_ERROR", message: "-LOADING data" },
+])("startup retries temporary Valkey replies: %s", async (failure) => {
+  const load = spyOn(settings, "loadCache")
+    .mockRejectedValueOnce(Object.assign(new Error(failure.message), { code: failure.code }))
+    .mockResolvedValue();
+  spyOn(settings, "read").mockResolvedValue({ stored: "none", value: DEFAULT_TRUSTED_PROXIES });
+  spyOn(console, "warn").mockImplementation(() => {});
+  const signal = new AbortController().signal;
+  await loadTrustedProxies(signal);
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(load).toHaveBeenLastCalledWith(signal);
+});
+
+test("permanent Valkey server errors fail without retry", async () => {
+  const failure = Object.assign(new Error("WRONGPASS invalid credentials"), { code: "ERR_REDIS_SERVER_ERROR" });
+  const load = spyOn(settings, "loadCache").mockRejectedValue(failure);
+  await expect(loadTrustedProxies()).rejects.toBe(failure);
+  expect(load).toHaveBeenCalledTimes(1);
+});

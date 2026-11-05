@@ -1388,6 +1388,13 @@ export const accountsAppService = {
         hasNext: page * perPage < total,
       };
     },
+    /** Open requests for the administration's badge; counts without reading rows. */
+    countPending: async (): Promise<number> => {
+      const [row] = await sql<{ total: number }[]>`
+        SELECT COUNT(*)::int AS total FROM auth.account_requests WHERE status = 'pending'
+      `;
+      return row?.total ?? 0;
+    },
     get: async (config: { id: string; access: { userId: string; isAdmin: boolean } }) => {
       const rows: DbRow[] = await sql`
         SELECT r.id, r.user_id, u.mail AS email, u.given_name AS first_name, u.sn AS last_name,

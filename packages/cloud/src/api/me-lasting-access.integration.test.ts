@@ -94,7 +94,7 @@ suite("personal access requires a confirmed browser sign-in", () => {
     const response = await post("/api-keys", oauthToken, { name: "Neu" }, "de");
     expect(await response.json()).toMatchObject({
       code: "BROWSER_SIGN_IN_REQUIRED",
-      message: "API-Schlüssel und Passkeys legst du im Browser an.",
+      message: "API Keys und Passkeys legst du im Browser an.",
     });
   });
 

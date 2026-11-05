@@ -286,7 +286,9 @@ export const withAppPwaTransaction = async <T>(
       // Discount that precision as well as the clock query's round trip.
       authorityEnd = Math.min(authorityEnd, started + deadline.getTime() - time.getTime() - 1);
       clearTimeout(expiryTimer);
-      expiryTimer = setTimeout(() => expiry.abort(), Math.max(0, authorityEnd - performance.now()));
+      // The request budget bounds the transaction. A later authority needs no timer, and
+      // timer delays above 2^31-1 ms (about 24.8 days) would fire at once.
+      if (authorityEnd < requestEnd) expiryTimer = setTimeout(() => expiry.abort(), Math.max(0, authorityEnd - performance.now()));
     }
     check();
   };

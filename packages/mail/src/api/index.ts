@@ -74,6 +74,7 @@ import {
   MAX_MAILBOX_PREFERENCES,
   type MailCommand,
   type MailCommandInput,
+  mailActivityKindSchema,
   mailboxComposeLogoSchema,
   mailboxGrantAccessSchema,
   mailboxSchema,
@@ -172,6 +173,7 @@ import {
   mailboxAccess,
   mailboxDetails,
   mailboxes,
+  messageBodyRequests,
   messageInspector,
   messages,
   notificationTargets,
@@ -311,6 +313,23 @@ const collaboratorQuerySchema = z.object({
 });
 const activityQuerySchema = cursorQuerySchema.extend({
   conversationId: ResourceShortIdSchema.optional(),
+  kind: z
+    .string()
+    .max(200)
+    .optional()
+    .transform((value) => (value ? [...new Set(value.split(",").filter(Boolean))] : undefined))
+    .pipe(z.array(mailActivityKindSchema).optional())
+    .describe(
+      "Comma-separated event kinds of the mailbox's event feed: assignment, sent, draft, status (done or reopened), comment, automation. Without it, every recorded action is listed.",
+    ),
+  actor: z.string().uuid().optional().describe("Only events this principal caused"),
+  mine: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true")
+    .describe(
+      "Only events that concern the caller: their own, ones that assign or unassign them, and ones on conversations assigned to them",
+    ),
 });
 const workspaceRouteQuerySchema = z.object({
   href: z.string().trim().min(1).max(MAX_MAIL_WORKSPACE_HREF_LENGTH),
@@ -1547,6 +1566,10 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .get("/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, mailboxAccess.listMailboxAccess(requestContext(c), internalMailboxId(c))),
   )
+  // Who has access, read-only, for everyone with mailbox-wide access of their own.
+  .get("/mailboxes/:mailboxId/access/members", v("param", mailboxParamSchema), async (c) =>
+    respondPublic(c, mailboxAccess.listMailboxAccessMembers(requestContext(c), internalMailboxId(c))),
+  )
   .post("/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), v("json", mailboxGrantAccessSchema), async (c) => {
     const input = await internalInput(c, c.req.valid("json"));
     if (input.permission === "none") return respondPublic(c, fail(err.badInput("Access permission cannot be none")));
@@ -1761,10 +1784,13 @@ const mailOperationsApi = new Hono<MailApiContext>()
     ),
   )
   .get("/mailboxes/:mailboxId/activity", v("param", mailboxParamSchema), v("query", activityQuerySchema), async (c) => {
+    const { kind, actor, ...query } = c.req.valid("query");
     const result = await collaboration.listActivity({
       context: requestContext(c),
       mailboxId: internalMailboxId(c),
-      ...(await internalInput(c, c.req.valid("query"))),
+      ...(await internalInput(c, query)),
+      kinds: kind,
+      actorId: actor,
     });
     return respondPublic(c, projectActivityResult(result));
   })
@@ -2423,6 +2449,20 @@ const mailOperationsApi = new Hono<MailApiContext>()
     };
     return respondMessages(c, messages.getMessage({ context: requestContext(c), ...params }));
   })
+  // Loading a body the caller may read changes nothing they could not read before, so read access suffices.
+  .post(
+    "/mailboxes/:mailboxId/messages/:messageId/body-request",
+    auth.readOnly,
+    v("param", mailboxAndIdParamSchema("messageId")),
+    v("json", z.object({ retry: z.boolean().optional() }).strict()),
+    async (c) => {
+      const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; messageId: string };
+      return respondPublic(
+        c,
+        messageBodyRequests.requestMessageBody({ context: requestContext(c), ...params, retry: c.req.valid("json").retry === true }),
+      );
+    },
+  )
   .post("/mailboxes/:mailboxId/messages/:messageId/security-report", v("param", mailboxAndIdParamSchema("messageId")), async (c) =>
     respondPublic(
       c,

@@ -1,4 +1,4 @@
-import { describe, expect, setSystemTime, test } from "bun:test";
+import { describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import { createEffect } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
@@ -10,6 +10,14 @@ import {
   settingsCloseBlocked,
   settingsInteractionBlocked,
 } from "../src/frontend/settings-contract";
+
+/** Opens a row's level menu and picks a level, as a person would. */
+const chooseLevel = (row: Element, level: string) => {
+  row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+  Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]'))
+    .find((option) => option.textContent?.includes(level))!
+    .click();
+};
 
 const flush = async () => {
   for (let index = 0; index < 10; index += 1) await Promise.resolve();
@@ -184,11 +192,21 @@ describe("Venue settings lifecycle behavior", () => {
     dom.cleanup();
   });
 
-  test("keeps the access editor mounted while a saved change refreshes settings", async () => {
+  test("access changes save in the access dialog, keep the settings open meanwhile, and reload them once", async () => {
     const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
     const originalFetch = globalThis.fetch;
     const reload = deferred<Response>();
     let reads = 0;
+    const writes: string[] = [];
+    let closed: boolean | undefined;
+    const owner: AccessEntry = {
+      id: "access-0",
+      principal: { type: "user", userId: "mia" },
+      displayName: "Mia Hoffmann",
+      permission: "admin",
+      createdAt: "2026-08-11T00:00:00.000Z",
+    };
     let saved: AccessEntry = {
       id: "access-1",
       principal: { type: "user", userId: "ada" },
@@ -196,10 +214,11 @@ describe("Venue settings lifecycle behavior", () => {
       permission: "read",
       createdAt: "2026-08-11T00:00:00.000Z",
     };
-    const payload = () => ({ venue, openingRules: [], overrides: [], templates: [], accessEntries: [saved], apiKeys: [] });
+    const payload = () => ({ venue, openingRules: [], overrides: [], templates: [], accessEntries: [owner, saved], apiKeys: [] });
     globalThis.fetch = Object.assign(
-      async (_input: RequestInfo | URL, init?: RequestInit) => {
+      async (input: RequestInfo | URL, init?: RequestInit) => {
         if (init?.method === "PATCH") {
+          writes.push(String(input));
           saved = { ...saved, permission: "write" };
           return new Response(null, { status: 204 });
         }
@@ -210,36 +229,144 @@ describe("Venue settings lifecycle behavior", () => {
     );
     setSystemTime(new Date("2026-10-17T12:00:00.000Z"));
     const { SettingsDialog } = await import("../src/frontend/_components/venue-workspace/settings.tsx");
-    delegateEvents(["click"], dom.document);
+    delegateEvents(["click", "input"], dom.document);
     const dispose = render(
-      () => SettingsDialog({ dashboard, accessEntries: [saved], apiKeys: [], initialTab: "access", close: () => {} }),
+      () =>
+        SettingsDialog({
+          dashboard,
+          accessEntries: [owner, saved],
+          apiKeys: [],
+          initialTab: "access",
+          close: (changed) => {
+            closed = changed;
+          },
+        }),
       dom.root,
     );
-    const chip = () => dom.root.querySelector<HTMLButtonElement>("button.k2b-select-chip");
-    const waitFor = async (condition: () => boolean) => {
+    const button = (text: string) =>
+      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
+    const accessDialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
+    const waitFor = async (condition: () => boolean, label: string) => {
       for (let attempt = 0; attempt < 200; attempt += 1) {
         if (condition()) return;
         await Bun.sleep(10);
       }
-      throw new Error("Timed out waiting for Venue access refresh");
+      throw new Error(`Timed out waiting for ${label}`);
     };
     try {
-      await waitFor(() => reads === 1 && chip() !== null);
+      await waitFor(() => reads === 1 && !!button("Edit access"), "the settings");
       await flush();
-      const original = chip()!;
-      Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
-        .find((item) => item.textContent?.startsWith("Staff"))!
-        .click();
-      await waitFor(() => reads === 2);
-      expect(chip() === original).toBe(true);
-      expect(original.disabled).toBe(true);
-      expect(original.textContent).toBe("Staff");
+      button("Edit access")!.click();
+      await waitFor(() => accessDialog()?.textContent?.includes("Ada Lovelace") === true, "the access dialog");
+      // The settings stay open while the access dialog is.
+      dom.root.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click();
+      expect(closed).toBeUndefined();
+      const row = Array.from(accessDialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes("Ada Lovelace"))!;
+      chooseLevel(row, "Staff");
+      await waitFor(() => accessDialog()?.textContent?.includes("1 change") === true, "one change");
+      expect(writes).toEqual([]);
+      button("Save")!.click();
+      await waitFor(() => !accessDialog() && reads === 2, "the save and its reload");
+      expect(writes).toHaveLength(1);
       reload.resolve(Response.json(payload()));
-      await waitFor(() => chip() !== null && !chip()!.disabled);
-      expect(chip() === original).toBe(true);
-      expect(original.textContent).toBe("Staff");
+      await waitFor(() => dom.root.textContent?.includes("Staff") === true, "the list to show the saved level");
+      expect(reads).toBe(2);
+      // Once the reload finished, closing reports the change, so the workspace reloads.
+      await waitFor(() => {
+        dom.root.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click();
+        return closed !== undefined;
+      }, "the settings to close");
+      expect(closed).toBe(true);
     } finally {
       dispose();
+      globalThis.fetch = originalFetch;
+      setSystemTime();
+      dom.cleanup();
+    }
+  });
+
+  test("a half-failed, discarded access save still reloads the settings, and a failed reload hides editing until it is read", async () => {
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
+    const originalFetch = globalThis.fetch;
+    let reads = 0;
+    const writes: string[] = [];
+    let closed: boolean | undefined;
+    const person = (id: string, name: string, permission: AccessEntry["permission"]): AccessEntry => ({
+      id,
+      principal: { type: "user", userId: id },
+      displayName: name,
+      permission,
+      createdAt: "2026-08-11T00:00:00.000Z",
+    });
+    const entries = [person("mia", "Mia Hoffmann", "admin"), person("ada", "Ada Lovelace", "read"), person("bob", "Bob Marley", "read")];
+    const payload = () => ({ venue, openingRules: [], overrides: [], templates: [], accessEntries: entries, apiKeys: [] });
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "PATCH" || init?.method === "DELETE") {
+          writes.push(`${init.method} ${String(input).split("/access/")[1]}`);
+          return init.method === "PATCH" ? new Response(null, { status: 204 }) : Response.json({ message: "offline" }, { status: 503 });
+        }
+        reads += 1;
+        return reads === 1 ? Response.json(payload()) : Response.json({ message: "offline" }, { status: 503 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    setSystemTime(new Date("2026-10-17T12:00:00.000Z"));
+    const { prompts } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    const error = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const { SettingsDialog } = await import("../src/frontend/_components/venue-workspace/settings.tsx");
+    delegateEvents(["click", "input"], dom.document);
+    const dispose = render(
+      () =>
+        SettingsDialog({
+          dashboard,
+          accessEntries: entries,
+          apiKeys: [],
+          initialTab: "access",
+          close: (changed) => {
+            closed = changed;
+          },
+        }),
+      dom.root,
+    );
+    const button = (text: string) =>
+      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
+    const accessDialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
+    const row = (name: string) => Array.from(accessDialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
+    const waitFor = async (condition: () => boolean, label: string) => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (condition()) return;
+        await Bun.sleep(10);
+      }
+      throw new Error(`Timed out waiting for ${label}`);
+    };
+    try {
+      await waitFor(() => reads === 1 && !!button("Edit access"), "the settings");
+      await flush();
+      button("Edit access")!.click();
+      await waitFor(() => accessDialog()?.textContent?.includes("Bob Marley") === true, "the access dialog");
+      chooseLevel(row("Ada Lovelace"), "Staff");
+      row("Bob Marley").querySelector<HTMLButtonElement>('button[aria-label="Remove Bob Marley"]')!.click();
+      await waitFor(() => accessDialog()?.textContent?.includes("2 changes") === true, "two changes");
+      button("Save")!.click();
+      await waitFor(() => !!accessDialog()?.querySelector('[role="alert"]'), "the failed removal");
+      expect(writes).toEqual(["PATCH ada", "DELETE bob"]);
+      button("Cancel")!.click();
+      await waitFor(() => !accessDialog() && reads === 2, "one reload after the dialog");
+      // The reload failed: the saved change is reported, and editing waits until the settings are read again.
+      await waitFor(() => error.mock.calls.length === 1, "the reload failure");
+      await waitFor(() => !button("Edit access"), "editing to wait for a fresh read");
+      await waitFor(() => {
+        dom.root.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click();
+        return closed !== undefined;
+      }, "the settings to close");
+      expect(closed).toBe(true);
+    } finally {
+      dispose();
+      confirm.mockRestore();
+      error.mockRestore();
       globalThis.fetch = originalFetch;
       setSystemTime();
       dom.cleanup();

@@ -2,13 +2,14 @@ import { Link, type LinkNavigateEvent, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { query as queries } from "@k2b/stdlib/solid";
 import { Button, IconButton, Placeholder, SegmentedControl, type ToastHandle, toast, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, For, on, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
 import { createRetryToasts } from "../frontend/lib/feedback";
 import { overviewMessages } from "../frontend/overview-messages";
 import { saveCompletion } from "./completion";
 import { myTasksMessages } from "./messages";
+import { refreshOnReturn } from "./refresh-on-return";
 import { workSchedule } from "./schedule";
 
 export type WorkItem = OverviewWork["items"][number];
@@ -105,6 +106,9 @@ export default function MyTasks(props: Props) {
     }
     return list;
   };
+  // Keep each surviving row's DOM (and focus) when a fresh snapshot has new object identities.
+  const itemsById = createMemo(() => new Map(items().map((item) => [item.shortId, item])));
+  const rowIds = createMemo(() => [...itemsById().keys()]);
   const counts = () => work.data()?.counts ?? props.initialWork.counts;
   createEffect(
     on(
@@ -142,6 +146,11 @@ export default function MyTasks(props: Props) {
       return false;
     }
   };
+
+  refreshOnReturn(() => {
+    work.abort();
+    void refresh();
+  });
 
   const save = (item: WorkItem, completed: boolean) => saveCompletion({ item, completed, userId: props.userId, locale: locale() });
 
@@ -270,13 +279,14 @@ export default function MyTasks(props: Props) {
         }
       >
         <ul class="spaces-pwa__list" aria-label={t.tasks} aria-busy={work.refreshing() || undefined}>
-          <For each={items()}>
-            {(item) => {
-              const when = () => schedule(item);
+          <For each={rowIds()}>
+            {(id) => {
+              const item = () => itemsById().get(id)!;
+              const when = () => schedule(item());
               return (
-                <li class="spaces-pwa__row" aria-current={item.shortId === props.selected ? "true" : undefined}>
+                <li class="spaces-pwa__row" aria-current={item().shortId === props.selected ? "true" : undefined}>
                   <Show
-                    when={!item.startsAt}
+                    when={!item().startsAt}
                     fallback={
                       <span class="spaces-pwa__event" role="img" aria-label={t.event}>
                         <i class="ti ti-calendar-event" aria-hidden="true" />
@@ -285,29 +295,29 @@ export default function MyTasks(props: Props) {
                   >
                     <IconButton
                       class="spaces-pwa__check"
-                      label={t.complete({ title: item.title })}
+                      label={t.complete({ title: item().title })}
                       tooltip={false}
                       disabled={!ready()}
-                      onClick={() => complete(item)}
+                      onClick={() => complete(item())}
                     >
                       <i class="ti ti-circle" aria-hidden="true" />
                     </IconButton>
                   </Show>
                   <Link
                     class="spaces-pwa__copy"
-                    href={props.taskHref(item, view())}
+                    href={props.taskHref(item(), view())}
                     scroll="preserve"
-                    onNavigate={props.onOpen ? (event) => props.onOpen?.(item, event) : undefined}
+                    onNavigate={props.onOpen ? (event) => props.onOpen?.(item(), event) : undefined}
                   >
-                    <span class="spaces-pwa__title">{item.title}</span>
+                    <span class="spaces-pwa__title">{item().title}</span>
                     <span class="spaces-pwa__meta">
                       <span class="spaces-pwa__space">
                         <span
                           class="spaces-pwa__dot"
-                          style={{ "background-color": item.spaceColor ?? "var(--k2b-text-muted)" }}
+                          style={{ "background-color": item().spaceColor ?? "var(--k2b-text-muted)" }}
                           aria-hidden="true"
                         />
-                        {item.spaceName}
+                        {item().spaceName}
                       </span>
                       <Show when={when()}>
                         {(info) => (

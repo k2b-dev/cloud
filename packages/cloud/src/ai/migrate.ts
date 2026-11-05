@@ -683,6 +683,8 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS remember_tool_name TEXT`.simple();
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS allow_chat BOOLEAN NOT NULL DEFAULT FALSE`.simple();
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS consumed_inline BOOLEAN NOT NULL DEFAULT FALSE`.simple();
+  // When Cloud Login devices were woken for the approval; set once, so a closed tab never wakes them twice.
+  await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS push_woken_at TIMESTAMPTZ`.simple();
 
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_pending_actions_turn_call
@@ -2733,7 +2735,7 @@ export const migrateAiModelClassesInTransaction = async (db: typeof sql): Promis
       name TEXT NOT NULL,retargeted BOOLEAN NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`;
   await db`CREATE TABLE IF NOT EXISTS ai.providers (
-      id TEXT PRIMARY KEY, type TEXT NOT NULL, label TEXT NOT NULL, base_url TEXT, data_boundary TEXT NOT NULL CHECK(data_boundary IN ('hosted','private')),
+      id TEXT PRIMARY KEY, type TEXT NOT NULL, label TEXT NOT NULL, base_url TEXT, data_boundary TEXT NOT NULL CHECK(data_boundary IN ('hosted','private','restricted')),
       enabled BOOLEAN NOT NULL DEFAULT true, logo TEXT, status TEXT NOT NULL DEFAULT 'unknown' CHECK(status IN ('unknown','ok','unreachable','key_rejected','error')),
       status_code TEXT, status_message TEXT, status_checked_at TIMESTAMPTZ,
       revision INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -2766,6 +2768,8 @@ export const migrateAiModelClassesInTransaction = async (db: typeof sql): Promis
       variant_id TEXT REFERENCES ai.model_variants(id), revision INTEGER NOT NULL DEFAULT 1,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL
     )`;
+  await db`ALTER TABLE ai.providers DROP CONSTRAINT IF EXISTS providers_data_boundary_check`;
+  await db`ALTER TABLE ai.providers ADD CONSTRAINT providers_data_boundary_check CHECK(data_boundary IN ('hosted','private','restricted'))`;
   await db`ALTER TABLE ai.models DROP CONSTRAINT IF EXISTS models_kind_check`;
   await db`ALTER TABLE ai.models ADD CONSTRAINT models_kind_check CHECK(kind IN ('chat','transcription','live-transcription'))`;
   await db`ALTER TABLE ai.model_assignments DROP CONSTRAINT IF EXISTS model_assignments_slot_check`;

@@ -249,7 +249,8 @@ describe("Cloud layouts SSR", () => {
         expect(html.includes('data-shell-focus="true"'), path + " focus").toBe(hidden);
         expect(html.includes('data-cloud-shell-focus-toggle="hide"'), path + " hide").toBe(controls);
         expect(html.includes('data-cloud-shell-focus-toggle="show"'), path + " show").toBe(controls);
-        expect(html.includes('class="cloud-shell-show"')).toBe(controls);
+        expect(html.includes("data-cloud-shell-focus-return")).toBe(controls);
+        expect(html.includes('class="cloud-shell-show"')).toBe(false);
         expect(html.includes("data-cloud-shell-reveal")).toBe(controls);
       }
     } finally {
@@ -268,7 +269,7 @@ describe("Cloud layouts SSR", () => {
     const html = await (await server.request("/layout")).text();
     expect(html).toContain('data-layout-full-page="true"');
     const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
-    expect(css).toContain('html:has(.cloud-app-canvas[data-layout-full-page="true"])');
+    expect(css).toContain('html:has(> body > .cloud-app-canvas[data-layout-full-page="true"])');
     expect(css).toContain("overscroll-behavior: none;");
   });
   test("the shell reserves a stable scrollbar gutter on the page scroller it owns", async () => {
@@ -294,7 +295,7 @@ describe("Cloud layouts SSR", () => {
     const mobileStart = css.indexOf("@media not all and (min-width: 768px) {");
     const mobileShell = css.slice(mobileStart, css.indexOf("\n}", mobileStart));
     expect(mobileShell).toMatch(
-      /html:has\(\.cloud-app-canvas:not\(\[data-layout-full-page\], \[data-layout-authenticated\]\)\) \{ scrollbar-gutter: stable; \}/,
+      /html:has\(> body > \.cloud-app-canvas:not\(\[data-layout-full-page\], \[data-layout-authenticated\]\)\) \{ scrollbar-gutter: stable; \}/,
     );
   });
   test("admin children inherit the request locale during SSR", async () => {

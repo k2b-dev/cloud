@@ -1,4 +1,4 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { type AuthContext, createAccess, respond } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
@@ -7,6 +7,7 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import chatApi from "../api";
 import { messageFixtures } from "../api/messages.test-fixture";
+import { app } from "../config";
 import { countAudience } from "./channels";
 import { DiscoveryPreviewSchema, MemberPageSchema } from "./contracts";
 import { chatLiveChannels } from "./live-channels";
@@ -208,7 +209,7 @@ suite("channel authorization, publication and audience bounds", () => {
     expect(await chatLiveChannels.list.authorize(`l:${chat.shortId}`, [viewer])).toEqual(new Set());
   });
 
-  test("audience counts deduplicate overlapping groups and terminate on cycles", async () => {
+  test("audience counts deduplicate cyclic groups and count only people for authenticated access", async () => {
     const owner = await f.person("Owner");
     const first = await f.person("First");
     const shared = await f.person("Shared");
@@ -225,11 +226,32 @@ suite("channel authorization, publication and audience bounds", () => {
     const response = await preview(owner.headers, entries);
     expect(response.status).toBe(200);
     expect(DiscoveryPreviewSchema.parse(await response.json())).toEqual({ audienceCount: 3, includesAuthenticated: false });
-    await sql.begin(async (tx) => {
-      await tx`SET LOCAL statement_timeout = '9s'`;
-      expect(await countAudience(tx, entries, owner.context)).toMatchObject({ ok: true, data: { audienceCount: 3 } });
-      expect((await tx<{ timeout: string }[]>`SELECT current_setting('statement_timeout') AS timeout`)[0]?.timeout).toBe("9s");
-    });
+    const setting = spyOn(app.settings, "get").mockResolvedValue(true);
+    const rollback = new Error("rollback audience fixtures");
+    try {
+      await expect(
+        sql.begin(async (tx) => {
+          await tx`SET LOCAL statement_timeout = '9s'`;
+          expect(await countAudience(tx, entries, owner.context)).toMatchObject({ ok: true, data: { audienceCount: 3 } });
+          expect((await tx<{ timeout: string }[]>`SELECT current_setting('statement_timeout') AS timeout`)[0]?.timeout).toBe("9s");
+          const [people] = await tx<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM auth.users
+          WHERE account_expires IS NULL OR account_expires > now()`;
+          if (!people) throw new Error("Missing people count");
+          await tx`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id) VALUES
+          ('Audience standalone', 'standalone', NULL, NULL, NULL),
+          ('Audience agent', 'agent', NULL, NULL, NULL),
+          ('Audience bound', 'resource_bound', 'chat', 'conversation', 'audience-fixture')`;
+          const audience = [...entries, { principal: { type: "authenticated" as const }, permission: "read" as const }];
+          expect(await countAudience(tx, audience, owner.context)).toEqual({
+            ok: true,
+            data: { audienceCount: people.count, includesAuthenticated: true },
+          });
+          throw rollback;
+        }),
+      ).rejects.toBe(rollback);
+    } finally {
+      setting.mockRestore();
+    }
   });
 
   test("audience timeout returns a visible 503 without a partial count and leaves the transaction usable", async () => {
@@ -248,13 +270,7 @@ suite("channel authorization, publication and audience bounds", () => {
       await Promise.race([locked.promise, blocker]);
       await sql.begin(async (tx) => {
         await tx`SET LOCAL statement_timeout = '9s'`;
-        const result = await countAudience(
-          tx,
-          [{ principal: { type: "group", groupId }, permission: "read" }],
-          owner.context,
-          undefined,
-          1,
-        );
+        const result = await countAudience(tx, [{ principal: { type: "group", groupId }, permission: "read" }], owner.context, 1);
         // A copy: Bun's toMatchObject writes its asymmetric matchers into the object it checks.
         expect({ ...result }).toMatchObject({ ok: false, code: "AUDIENCE_UNAVAILABLE", status: 503, error: expect.any(String) });
         expect(result).not.toHaveProperty("data");

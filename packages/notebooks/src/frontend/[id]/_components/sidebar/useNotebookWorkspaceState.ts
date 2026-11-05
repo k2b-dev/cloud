@@ -1,6 +1,7 @@
 import { query } from "@k2b/stdlib/solid";
 import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { apiClient } from "@/api/client";
+import type { PageTemplateSummary } from "@/lib/page-templates";
 import type { SidebarTreeSort } from "../../../../lib/sidebar-tree";
 import { NOTE_SOFT_NAVIGATED_EVENT, NOTE_TITLE_CHANGED_EVENT } from "../detail/events";
 import { createSidebarList } from "./sidebar-list";
@@ -13,6 +14,7 @@ type WorkspaceState = {
   favoriteNoteIds: string[];
   tags: TagSummary[];
   attachmentCount: number;
+  pageTemplates: PageTemplateSummary[];
 };
 
 type LoadedWorkspaceState = {
@@ -44,6 +46,7 @@ export function useNotebookWorkspaceState(ctx: NotebookContext, sort: () => Side
           favoriteNoteIds: ctx.favoriteNoteIds,
           tags: ctx.tags,
           attachmentCount: ctx.attachmentCount,
+          pageTemplates: ctx.pageTemplates,
         },
       },
     },
@@ -63,6 +66,7 @@ export function useNotebookWorkspaceState(ctx: NotebookContext, sort: () => Side
   const favoriteNoteIds = createMemo(() => new Set(current()?.favoriteNoteIds ?? ctx.favoriteNoteIds));
   const tags = createMemo(() => current()?.tags ?? ctx.tags);
   const attachmentCount = createMemo(() => current()?.attachmentCount ?? ctx.attachmentCount);
+  const pageTemplates = createMemo(() => current()?.pageTemplates ?? ctx.pageTemplates);
   /** A title typed in the editor shows in the sidebar before the next save reaches every reader. */
   const titleOf = (note: { id: string; title: string }) => optimisticTitles().get(note.id) ?? note.title;
 
@@ -154,6 +158,7 @@ export function useNotebookWorkspaceState(ctx: NotebookContext, sort: () => Side
     selectedNoteId,
     tags,
     attachmentCount,
+    pageTemplates,
     workspaceError: () => workspace.error() ?? refreshError() ?? tree.error() ?? list.error(),
     workspaceRefreshing: () => workspace.refreshing() || refreshing(),
     refreshWorkspace,

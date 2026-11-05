@@ -372,6 +372,41 @@ Keep Core's identity key-encryption keys and the Core/OAuth broker secret out
 of the gateway. Their absence does not make it a separate trust boundary.
 See [runtime configuration](/en/docs/operations/runtime-configuration#set-infrastructure-variables).
 
+## Preserve the browser mutation origin
+
+All Cloud applications require an `Origin` exactly equal to the public origin
+of the stored `app.url` setting for cookie-bearing `POST`, `PUT`, `PATCH` and
+`DELETE` requests and cookie-authenticated WebSocket upgrades. Preserve `Origin`
+and `Sec-Fetch-Site` through the reverse proxy and gateway. Foreign and same-site sibling origins are
+rejected with `403 INVALID_ORIGIN` for HTTP mutations, including logout and SSR
+form actions. A missing or `null` Origin passes only with `Sec-Fetch-Site:
+same-origin`, which a page with `Referrer-Policy: no-referrer` sends with its
+own form posts; without either header the request is rejected. Refused WebSocket upgrades lose session authority; live sockets
+close with `1008 forbidden_origin` to stop reconnecting.
+Do not replace these headers with the proxy's or upstream service's address.
+
+When upgrading, check `app.url` against the address people use. Scripts that
+mutate state with session cookies must send that canonical Origin; prefer an
+explicit Bearer credential for integrations. WOPI, OAuth protocol endpoints,
+signed app-approval commands, token-bound shares, webhooks and ingest retain
+their own credential checks. Their declared sessionless paths cannot gain
+session authority from an attached Cloud cookie. See [Route policies](/en/docs/identity/route-policies#send-browser-mutations-from-the-cloud-origin)
+for the application contract.
+
+Application authors must run their own state-changing Cloud cookie routes through
+`app.start()` too. A separate HTTP server needs the same exact Origin check
+against the public Cloud origin before authenticating cookies or reading the
+body. Pages on another origin cannot mutate Cloud state with Cloud session
+cookies. Keep cookie-authenticated actions on the Cloud origin. For requests
+from a cross-origin embed, use a protocol with its own credential and narrowly
+declared `sessionlessRoutes`; those routes receive no Cloud session authority. Adding a
+CORS allowance or an `access.publicRoutes` entry does not exempt a cookie route.
+
+OAuth clients navigating to `/oauth/logout` now show a confirmation before the
+browser signs out. Cloud server capability and sync-operations transports set
+the canonical Origin when forwarding a session to Core; the originating
+application has already applied the same mandatory ingress check.
+
 ## Prepare the common infrastructure
 
 | Requirement | Used for | Operator responsibility |
@@ -984,6 +1019,11 @@ apps start returning them: older strict reference schemas may reject the new
 fields. Core adds nullable columns to its existing Assistant reference index
 through its normal startup migration; no operator configuration is needed.
 See [result references](/en/docs/platform/capabilities).
+
+Universal Search result metadata may now carry a `format` for dates. Upgrade
+Core before the apps: Core accepts the search of apps built by earlier
+releases, but an earlier Core leaves out the search of an app built by this
+release until Core is upgraded. See [Search](/en/docs/platform/search).
 
 During the rollout to this release, and during a rollback to the previous
 version, replicas of the previous version write no liveness key. While they
@@ -2315,3 +2355,19 @@ apps through `cld admin apps keys` or Core’s administrator API. Enrollment use
 the same app-bound service account as workload credentials. Keep the current
 runtime configuration when enrolling; see [App keys](/en/docs/operations/app-keys)
 for the supported commands and recovery steps.
+
+### Cloud app static assets
+
+Rebuild applications to let the Cloud app retain their versioned static files.
+`defineApp()` supplies an internal build catalog at `/_internal/pwa-assets`; the
+Cloud app reads it directly from registered Core, shell, and part services. No
+new gateway route or operator setting is needed. Deploy the complete `_ssr` and
+`public` output beside the server bundle as before. The catalog hashes the final
+uncompressed files, including any build rewrites.
+
+The network-served worker pins the active catalogs and verifies SHA-256 on every
+cache read. An app whose catalog does not answer is left out until the next worker
+update; its files then load from the network. Worker updates remove entries absent from those builds. Static cache
+storage is limited to 16 MiB; storage denial or eviction falls back to the network.
+Pages and API responses remain network-only. See
+[Offline and updates](/en/docs/frontend/mobile-app-pages#offline-and-updates).

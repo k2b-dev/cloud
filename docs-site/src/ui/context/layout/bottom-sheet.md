@@ -46,7 +46,9 @@ more than 60 px requests dismissal once. Dragging the body scrolls its content.
 There are no snap points or second modal lifecycle. `dismissDisabled` disables the handle;
 use the shared dismiss guard to protect Escape, backdrop, and header dismissal
 as well. Set `handle={false}` to omit the handle, or `dismissLabel` to override
-its inherited locale label.
+its inherited locale label. `tone` gives the sheet a
+[dialog tone](/en/ui/layout/panel-dialog#tone); on a phone the edge runs along
+all four sides of the sheet.
 
 `Header`, `Body`, `Footer`, `Section`, and `Tabs` use the same props as
 `PanelDialog`. The sheet keeps one body scrollport, a bounded viewport height,

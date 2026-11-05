@@ -255,9 +255,9 @@ describe("saving files into a provider in a browser", () => {
         expect(await page.locator("#icon button").getAttribute("aria-label")).toBe("Save report.pdf to Drive");
         await page.locator("#save").click();
         await row(page, "Home").waitFor();
-        // Focus starts on the first folder once the app's root arrived, so the keyboard continues there.
-        await page.waitForFunction(() => document.activeElement?.matches('dialog [role="gridcell"]'));
-        expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Home");
+        // Focus starts on the open app in the sources, like a system save dialog's sidebar.
+        await page.waitForFunction(() => document.activeElement?.matches('dialog .cloud-file-dialog__source[aria-current="true"]'));
+        expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Drive");
         const frame = await dialogBox(page);
         if (view === phone) expect(frame).toEqual([0, 0, phone.width, phone.height]);
         // The read-only app is a place to choose from, never one to save into, so Drive is the only one and opens.

@@ -8,11 +8,14 @@ order: 100
 
 Chat is for conversations with other people, notes for yourself, and channels you subscribe to.
 
+
+Forms, search, chat info and the channel and thread pages load when you open them. While they load, a notice stays in that view. If loading fails, choose **Try again** there.
+
 ## Start a chat {icon="message-plus"}
 
 :::steps
 1. Choose **New chat**.
-2. Keep **Chat** selected and choose the people or service accounts for the chat.
+2. Keep **Chat** selected and choose the people, agents or service accounts for the chat.
 3. Enter a name if you want one.
 4. Choose **Start chat**.
 :::
@@ -68,7 +71,7 @@ Existing members keep their access when you change the audience.
 5. Choose **New channel**.
 :::
 
-If the operator allows it, you can choose **Everyone with a Cloud account**. This includes guests and service accounts.
+If the operator allows it, you can choose **Every person with a Cloud account**. This includes guests. Agents and service accounts need their own access.
 If confirmation is missing, reopen **New chat → Channel** and choose **Try again** to resume the same request.
 
 ## If confirmation is missing {icon="refresh"}

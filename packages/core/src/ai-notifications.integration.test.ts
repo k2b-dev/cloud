@@ -1,6 +1,6 @@
 import { beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
-import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi } from "@k2b/cloud/ai";
+import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi, watchAiConversation } from "@k2b/cloud/ai";
 import { assertCapabilityReview } from "@k2b/cloud/capabilities/testing";
 import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
 import type { CapabilityActionCallReview } from "@k2b/cloud/contracts/capabilities";
@@ -8,7 +8,7 @@ import { notifications } from "@k2b/cloud/services";
 import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
 import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
-import { databaseSuite } from "../../../scripts/fixtures/test-infra";
+import { databaseSuite, testFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import { createAiNotificationService } from "./ai-notifications";
 import { app } from "./config";
@@ -211,8 +211,6 @@ suite("Core AI completion notifications", () => {
       WHERE definition_id=${app.notifications.approvalWaiting.id} AND recipient_user_id=${userId}::uuid ORDER BY created_at,id`),
     ];
     try {
-      const browser = await ask(true);
-      expect(await service.notifyApprovalWaiting(browser)).toEqual({ scanned: 0, sent: 0, failed: 0 });
       const unlinked = await ask(false, false);
       expect(await service.notifyApprovalWaiting(unlinked)).toEqual({ scanned: 0, sent: 0, failed: 0 });
       const expired = await ask();
@@ -225,7 +223,8 @@ suite("Core AI completion notifications", () => {
       const stale = await ask();
       await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${userId}::uuid`;
       expect(await service.notifyApprovalWaiting(stale)).toEqual({ scanned: 0, sent: 0, failed: 0 });
-      const first = await ask(false, true, "de");
+      // A chat started in the browser counts once no tab watches it.
+      const first = await ask(true, true, "de");
       expect((await service.notifyApprovalWaiting(first)).failed).toBe(0);
       expect(await service.notifyApprovalWaiting(first)).toEqual({ scanned: 0, sent: 0, failed: 0 });
       expect(rendered.at(-1)).toEqual({ locale: "de", body: "Mail senden?\nIch frage, weil das Cloud verlässt." });
@@ -267,6 +266,74 @@ suite("Core AI completion notifications", () => {
       ]);
     } finally {
       render.mockRestore();
+      await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
+  testFor("database", "nats")("a watched chat holds its approval notice until the last tab closes", async () => {
+    const uid = `approval-watch-${crypto.randomUUID()}`;
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,mail)
+      VALUES(${uid},'local','user',${`${uid}@example.test`}) RETURNING id`;
+    if (!user) throw new Error("Missing fixture user");
+    const userId = user.id;
+    const service = createAiNotificationService(app.notifications);
+    try {
+      const ask = async () => {
+        const chat = await aiConversations.createConversation({ ownerUserId: userId });
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelId: "mock",
+          runConfig: { kind: "chat", input: "Send", signedInSession: true },
+          userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
+        });
+        const request = await approvals.request({
+          appId: "mail",
+          action: "draft.send",
+          requester: { kind: "assistant_turn", appId: "assistant", ref: `${turn.id}/send` },
+          subjectId: userId,
+          approverUserId: userId,
+          assurance: "confirm",
+          sentence: "Mail: Send draft",
+          input: {},
+          expiresInMs: 600_000,
+        });
+        if (!request.ok) throw new Error("Missing approval");
+        await aiConversations.savePendingTurnAction({
+          approvalId: request.id,
+          conversationId: chat.id,
+          turnId: turn.id,
+          callId: "send",
+          kind: "approval",
+          status: "pending",
+          name: "mail.draft.send",
+          args: {},
+          allowAlways: false,
+          approvalScope: "draft",
+          resolvedEvent: null,
+        });
+        return { id: request.id, chatId: chat.id };
+      };
+      const notices = async () =>
+        (
+          await sql<{ idempotency_key: string }[]>`SELECT idempotency_key FROM notifications.events
+          WHERE definition_id=${app.notifications.approvalWaiting.id} AND recipient_user_id=${userId}::uuid ORDER BY created_at,id`
+        ).map((row) => row.idempotency_key);
+      const older = await ask();
+      const open = await ask();
+      const closed = async () => void (await service.notifyApprovalWaiting(open.id));
+      const tabs = await Promise.all([1, 2].map(() => watchAiConversation(open.chatId, closed)));
+      // The newest request shows in a tab, so the notice names the older one from the closed chat.
+      expect(await service.notifyApprovalWaiting(open.id)).toMatchObject({ scanned: 1, sent: 1 });
+      expect(await notices()).toEqual([`approval:${older.id}`]);
+      await sql`UPDATE notifications.events SET created_at=created_at-interval '16 minutes'
+        WHERE definition_id=${app.notifications.approvalWaiting.id} AND recipient_user_id=${userId}::uuid`;
+      expect(await service.notifyApprovalWaiting(open.id)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+      // Two tabs close on two replicas at once; the request is noticed once.
+      await Promise.all(tabs.map((tab) => tab.release()));
+      expect(await notices()).toEqual([`approval:${older.id}`, `approval:${open.id}`]);
+      expect(await service.notifyApprovalWaiting(open.id)).toEqual({ scanned: 0, sent: 0, failed: 0 });
+    } finally {
       await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }

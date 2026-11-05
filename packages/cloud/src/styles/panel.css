@@ -374,8 +374,8 @@
   background: var(--k2b-surface);
 }
 
-html:has([data-cloud-panel-page]),
-html:has([data-cloud-panel-page]) body {
+html:has(> body > [data-cloud-panel-page]),
+body:has(> [data-cloud-panel-page]) {
   background: var(--k2b-surface);
 }
 

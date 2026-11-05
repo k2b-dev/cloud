@@ -71,3 +71,24 @@ export const logDatabaseFailure = (
       typeof value?.constraint === "string" ? value.constraint : typeof value?.constraint_name === "string" ? value.constraint_name : null,
   });
 };
+
+/**
+ * Where a database write failed, never what it wrote: the SQLSTATE, the refused parameter number,
+ * and the table, column and constraint Postgres names. The rest of its context, such as the JSON
+ * line it could not parse or a parameter's value, can quote content and is left out.
+ */
+export const databaseErrorFacts = (
+  error: unknown,
+): { sqlState?: string; parameter?: number; table?: string; column?: string; constraint?: string } => {
+  const value = error as { where?: unknown; table?: unknown; column?: unknown } | null;
+  const sqlState = databaseErrorCode(error);
+  const parameter = typeof value?.where === "string" ? /\bparameter \$(\d{1,4})\b/u.exec(value.where)?.[1] : undefined;
+  const constraint = databaseErrorConstraint(error);
+  return {
+    ...(sqlState ? { sqlState } : {}),
+    ...(parameter ? { parameter: Number(parameter) } : {}),
+    ...(typeof value?.table === "string" && value.table ? { table: value.table } : {}),
+    ...(typeof value?.column === "string" && value.column ? { column: value.column } : {}),
+    ...(constraint ? { constraint } : {}),
+  };
+};

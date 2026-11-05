@@ -53,6 +53,7 @@ for (const terminal of [false, true]) {
         decisions.push(decision);
         throw new Error("The response was lost");
       },
+      recheck: noop,
       revoke: noop,
       syncPush: noop,
       forget: noop,
@@ -152,6 +153,7 @@ for (const terminal of [false, true]) {
         decisions.push(decision);
         throw new Error("The response was lost");
       },
+      recheck: noop,
       revoke: noop,
       syncPush: noop,
       forget: noop,
@@ -252,6 +254,7 @@ test("the sheet says when the sign-in started, on the device's clock in its lang
         act: noop,
         decideChange: noop,
         decide: noop,
+        recheck: noop,
         revoke: noop,
         syncPush: noop,
         forget: noop,

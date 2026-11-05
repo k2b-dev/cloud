@@ -130,7 +130,8 @@ export function AnchoredPopover(props: AnchoredPopoverProps): JSX.Element {
       }
       setSheet(props.sheet !== false && typeof matchMedia === "function" && matchMedia(sheetQuery).matches);
       setShown(anchor);
-      if (!surface.matches(":popover-open")) surface.showPopover();
+      // Without the popover API, as in test DOMs, the panel stays in the flow instead of the top layer.
+      if (!surface.matches(":popover-open") && typeof surface.showPopover === "function") surface.showPopover();
       place();
       queueMicrotask(() => (props.initialFocus?.() ?? surface)?.focus({ preventScroll: true }));
     });

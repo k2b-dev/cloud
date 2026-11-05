@@ -1,4 +1,5 @@
 import type { MailAutomationAction } from "../../contracts";
+import { mailFolderNames } from "../../folder-names";
 import type { MailWorkflowCatalogSnapshot } from "../../workflows/catalog";
 
 export type AutomationActionKind = MailAutomationAction["kind"];
@@ -15,6 +16,36 @@ export const MAIL_AUTOMATION_STATUSES = ["needs_action", "waiting", "done"] as c
 
 export const mailAutomationDestinationFolders = (catalog: MailWorkflowCatalogSnapshot) =>
   catalog.folders.filter((folder) => folder.role !== "junk" && folder.role !== "trash");
+
+/**
+ * The destination picker's options. Standard folders show their localized names, also as parents in a path; the
+ * server's path stays beside a changed label.
+ */
+export const mailAutomationDestinationOptions = (
+  catalog: MailWorkflowCatalogSnapshot,
+  locale: string,
+): { id: string; label: string; description?: string }[] => {
+  const folderName = mailFolderNames(locale);
+  const byPath = new Map(catalog.folders.map((folder) => [folder.path ?? folder.name, folder]));
+  const shownPaths = new Map<string, string>();
+  const shownPath = (folder: MailWorkflowCatalogSnapshot["folders"][number]): string => {
+    const serverPath = folder.path ?? folder.name;
+    const known = shownPaths.get(serverPath);
+    if (known !== undefined) return known;
+    const shown = folder.role ? folderName({ role: folder.role, name: folder.name }) : folder.name;
+    const suffix = ` / ${folder.name}`;
+    const parentPath = serverPath.endsWith(suffix) ? serverPath.slice(0, -suffix.length) : null;
+    const parent = parentPath === null ? undefined : byPath.get(parentPath);
+    const path = parentPath === null ? shown : `${parent ? shownPath(parent) : parentPath} / ${shown}`;
+    shownPaths.set(serverPath, path);
+    return path;
+  };
+  return mailAutomationDestinationFolders(catalog).map((folder) => {
+    const serverPath = folder.path ?? folder.name;
+    const label = shownPath(folder);
+    return label === serverPath ? { id: folder.id, label } : { id: folder.id, label, description: serverPath };
+  });
+};
 
 export const initialMailAutomationAction = (kind: AutomationActionKind, catalog?: MailWorkflowCatalogSnapshot): MailAutomationAction => {
   if (kind === "junk" || kind === "trash" || kind === "mark_read") return { kind };

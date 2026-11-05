@@ -94,7 +94,7 @@ Three states are deliberately distinct:
 - **stuck** — open past the abandonment threshold. Nothing is working on these; a process died mid-run and left the span open. Stuck is counted across all retained spans rather than within the window, because an abandonment is old by definition and a windowed count would hide it.
 - **anomalous** — finished, but took longer than that threshold. These come from sweeps closing orphaned spans long after the fact and are excluded from the duration percentiles so those describe real runs.
 
-`--health failed` means the most recent run of a source failed, i.e. it is unhealthy right now — it does not list every source that has ever failed. `--health stuck` lists sources with abandoned spans. Use `jobs runs --source <id>` for run history and `jobs show` for a single run with its recorded events, which is the closest thing a background job has to a log. These commands are read-only; trigger a schedule from the admin UI.
+`--health failed` means the most recent run of a source failed, i.e. it is unhealthy right now — it does not list every source that has ever failed. `--health stuck` lists sources with abandoned spans. Fast successful runs are counted by minute in Gateway Ops rather than stored individually. Slow successes and recovered retries also enter those counters; do not add counts to trace totals. Use `jobs runs --source <id>` for diagnostic run history and `jobs show` for a single run with its recorded events, which is the closest thing a background job has to a log. These commands are read-only; trigger a schedule from the admin UI.
 
 Backfills process existing records. Sync pump runs appear under `--type backfill`;
 their source is the pump ID. Inspect the returned source with `jobs runs` and
@@ -351,11 +351,15 @@ access, and so on).
 cld admin agents create "Release agent" --profile release-agent --yes
 cld admin agents ls --json
 cld admin agents rotate-secret "Release agent" --profile release-agent --yes
+cld admin agents keys create "Release agent" --name automation
+cld admin agents keys list "Release agent"
+cld admin agents keys revoke "Release agent" <key-id> --yes
 cld admin agents revoke "Release agent" --yes
 ```
 
-`create` creates the account and a confidential OAuth client with the scopes of
-a `cld login` session (`openid profile email offline_access read write`), then
+`create` creates the account and a confidential OAuth client with the scopes
+`openid profile email offline_access read write admin`, so the agent acts as
+far as its grants reach; `admin` gives no administrator role. It then
 writes the client ID and secret into the local `cld` profile named by
 `--profile`. The secret is never printed, also not with `--json`; add `--fd0`
 to keep it in fd0 instead of the config file, and `--server` when the profile
@@ -363,6 +367,13 @@ should target another origin than the administrator's. If the client or the
 profile cannot be created, the new account is disabled again. Afterwards the
 agent runs `cld --profile release-agent …` and `cld` obtains and renews its
 access tokens itself.
+
+`keys create` issues an API key that acts as the agent and prints it once;
+`--models` limits it to AI models, `--expires` sets an ISO 8601 expiry. There
+are no scope flags. `keys list` shows each key's metadata and access: `full`,
+`models`, or `legacy, limited` for an older key that keeps its narrower scopes.
+To replace such a key, create a new one and revoke the old one with
+`keys revoke`, which revokes only a key of the named agent.
 
 `revoke` disables the account: its tokens, secret, and API keys stop working
 at once. `rotate-secret` regenerates the client secret and updates the local
@@ -532,7 +543,7 @@ retain their response envelope and pagination fields.
 
 Interrupted-call token amounts can be estimates; balances expose the number of
 `estimated` calls separately from `unknown`. Estimates count toward limits.
-The `authenticated` principal also matches service accounts. Raw call history
+The `authenticated` principal matches people, including guests and their delegated credentials. Agents and other service accounts need their own grant or a group. Raw call history
 is retained for 8,760 hours (the maximum quota window), with bounded cleanup;
 usage history in balances is not a lifetime total. Reset IDs remain durable.
 

@@ -5,7 +5,14 @@ import { withProviderErrors } from "./provider-errors";
 
 afterEach(() => mock.restore());
 
-for (const mode of ["complete", "complete-error", "stream", "stream-error", "stream-issue"] as const)
+const expectedStatus = {
+  stream: "ok",
+  "stream-issue": "error",
+  "stream-rejected": "key_rejected",
+  "stream-error": "unreachable",
+  "stream-stopped": "error",
+} as const;
+for (const mode of ["stream", "stream-error", "stream-issue", "stream-rejected", "stream-stopped"] as const)
   test(`provider status is settled before ${mode} returns`, async () => {
     const statusStarted = Promise.withResolvers<void>();
     const statusFinished = Promise.withResolvers<void>();
@@ -18,18 +25,19 @@ for (const mode of ["complete", "complete-error", "stream", "stream-error", "str
       family: "openai-compatible",
       model: "fixture",
       capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: false },
-      complete: async () => {
-        if (mode === "complete-error") throw new TypeError("fixture");
-        return { message: { role: "assistant", content: [] }, finishReason: "stop" };
-      },
-      async *stream() {
+      async *stream(request) {
         if (mode === "stream-error") throw new TypeError("fixture");
-        if (mode === "stream-issue") yield { type: "issue", issue: { kind: "provider_error", message: "fixture", retryable: false } };
+        // nessi reports the settled request before the error event.
+        if (mode === "stream-rejected") request.onTransport?.({ startedAt: Date.now(), headersAt: Date.now(), status: 401 });
+        if (mode === "stream-issue" || mode === "stream-rejected")
+          yield { type: "issue", issue: { kind: "provider_error", message: "fixture", retryable: false } };
+        // The provider stopped the answer itself, as a failed complete() reported it before.
+        if (mode === "stream-stopped") yield { type: "usage", usage: { input: 1, output: 0, total: 1 }, finishReason: "error" };
       },
     };
     const safe = withProviderErrors(provider, "fixture");
     let settled = false;
-    const call = (mode.startsWith("complete") ? safe.complete({ messages: [] }) : Array.fromAsync(safe.stream({ messages: [] }))).then(
+    const call = Array.fromAsync(safe.stream({ messages: [] })).then(
       () => {
         settled = true;
       },
@@ -48,9 +56,7 @@ for (const mode of ["complete", "complete-error", "stream", "stream-error", "str
       await Bun.sleep(0);
       expect(settled).toBe(false);
       expect(status).toHaveBeenCalledTimes(1);
-      expect(status.mock.calls[0]?.[1].status).toBe(
-        mode === "complete" || mode === "stream" ? "ok" : mode === "stream-issue" ? "error" : "unreachable",
-      );
+      expect(status.mock.calls[0]?.[1].status).toBe(expectedStatus[mode]);
     } finally {
       statusFinished.resolve();
       await call;

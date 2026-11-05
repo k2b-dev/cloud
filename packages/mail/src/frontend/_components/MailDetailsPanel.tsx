@@ -1,3 +1,4 @@
+import { accessMemberEntries } from "@k2b/cloud/access/members";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { SaveFilesButton } from "@k2b/cloud/browser/files";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
@@ -5,14 +6,17 @@ import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Avatar,
-  AvatarStack,
   announce,
   Button,
   ButtonLink,
   ColorInput,
   DateTimePicker,
   DescriptionList,
+  DetailAccess,
   DetailPanel,
+  DetailPresence,
+  type DetailPresencePerson,
+  DetailProperties,
   Discussion,
   Dropdown,
   type DropdownItem,
@@ -39,6 +43,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
 import type { ConversationDraftSummary } from "../../contracts";
+import type { MailboxAccessMember } from "../../service/access";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "../../service/collaboration";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
 import type { ConversationLocalTags, LocalTag } from "../../service/local-tags";
@@ -47,7 +52,7 @@ import type { ConversationReminder } from "../../service/reminders";
 import type { MailDetailErrors, MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import MailConversationContext, { type MailContextParts } from "./MailConversationContext";
-import { canPreviewAttachment, openAttachmentPreview, saveSource } from "./MailMessageAttachments";
+import { canPreviewAttachment, downloadUrl, openAttachmentPreview, saveSource } from "./MailMessageAttachments";
 import { createRelatedConversations, MailRelatedConversationsView } from "./MailRelatedConversations";
 import { presentMailActivity } from "./mail-activity-presentation";
 import { useMailCloudId } from "./mail-cloud-id";
@@ -80,17 +85,6 @@ const cloudAvatarSource = (userId: string | null | undefined, avatarHash: string
   userId && avatarHash ? `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}` : undefined;
 
 type InspectorTab = "headers" | "source";
-
-/** Starts a download of a file the browser cannot preview. */
-const downloadUrl = (href: string, name: string) => {
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = name;
-  link.rel = "noopener";
-  document.body.append(link);
-  link.click();
-  link.remove();
-};
 
 /**
  * The details panel while the conversation's details load: the outline's own rows at their real heights, so nothing
@@ -146,7 +140,21 @@ export default function MailDetailsPanel(props: {
   initialCommentsCursor: string | null;
   assignableUsers: MailAssignableUser[];
   presence: ConversationPresenceParticipant[];
-  /** The viewer, listed last among the people here and never in the header's avatar stack. */
+  /** Whether the people here are known yet; `unavailable` after a heartbeat failed. */
+  presenceState?: "loading" | "live" | "unavailable";
+  onRetryPresence?: () => void;
+  /**
+   * Who has access to the mailbox, read-only; `null` for people who see only their assigned conversations.
+   * `load` starts the one read of the page after the first paint; `manage` is only there for administrators.
+   */
+  access?: {
+    members: readonly MailboxAccessMember[];
+    state: "ready" | "loading" | "error";
+    load: () => void;
+    retry: () => void;
+    manage?: () => void;
+  } | null;
+  /** The viewer, the fixed "You" among the people here. */
   currentUserId?: string;
   activity: MailActivityEvent[];
   initialReminder: ConversationReminder | null;
@@ -167,6 +175,44 @@ export default function MailDetailsPanel(props: {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const canAssign = () => props.canWrite && props.mailboxWide;
+
+  // "Here now" always stands first, as in every app: alone it reads "Only you", so people coming and going change
+  // only its content and never move the panel.
+  const presencePeople = createMemo<DetailPresencePerson[]>(() => {
+    const people = props.presence.map((participant) => ({
+      id: participant.userId,
+      name: participant.displayName,
+      shortName: participant.displayName.split(/\s+/)[0] || participant.displayName,
+      src: cloudAvatarSource(participant.userId, participant.avatarHash),
+      activity: participant.mode === "composing" ? ("writing" as const) : ("reading" as const),
+      self: participant.userId === props.currentUserId,
+    }));
+    // The viewer is here even before the first heartbeat answers.
+    if (props.currentUserId && !people.some((person) => person.self)) {
+      const me = props.assignableUsers.find((user) => user.id === props.currentUserId);
+      if (me)
+        people.push({
+          id: me.id,
+          name: me.displayName,
+          shortName: me.displayName.split(/\s+/)[0] || me.displayName,
+          src: cloudAvatarSource(me.id, me.avatarHash),
+          activity: "reading",
+          self: true,
+        });
+    }
+    return people;
+  });
+  // Who has access loads once per page, after the first paint, also when the section becomes available later.
+  createEffect(() => props.access?.load());
+  const accessEntries = (members: readonly MailboxAccessMember[]) => {
+    const entries = accessMemberEntries(members, { currentUserId: props.currentUserId, locale: locale() });
+    // Access to assigned conversations only is part of the role.
+    return entries.map((entry, index) =>
+      members.filter((member) => member.permission !== "none")[index]?.scope === "assigned"
+        ? { ...entry, role: `${entry.role} · ${details().assignedConversationsOnly}` }
+        : entry,
+    );
+  };
   const retryToast = createRetryToasts();
   const cloudId = useMailCloudId();
   const [inspectorLoading, setInspectorLoading] = createSignal<InspectorTab | null>(null);
@@ -703,65 +749,64 @@ export default function MailDetailsPanel(props: {
       <Show when={comment.body}>{(body) => <MarkdownView markdown={body()} headingScale="compact" />}</Show>
     </Discussion.Item>
   );
-  const technicalDetails = () => (
+  /** The facts of the newest message; the commands that inspect or save it follow them. */
+  const technicalItems = () =>
+    [
+      {
+        label: t().subject,
+        value: (
+          <span class="block truncate" title={props.subject}>
+            {props.subject || t().noSubject}
+          </span>
+        ),
+      },
+      {
+        label: t().from,
+        value: (
+          <span class="block truncate" title={addressList(latestMessage()?.from ?? [])}>
+            {addressList(latestMessage()?.from ?? []) || t().unknown}
+          </span>
+        ),
+      },
+      {
+        label: t().toLabel,
+        value: (
+          <span class="block truncate" title={addressList(latestMessage()?.to ?? [])}>
+            {addressList(latestMessage()?.to ?? []) || t().undisclosed}
+          </span>
+        ),
+      },
+      {
+        label: t().thread,
+        value: t().messageCount({ count: props.messages.length }),
+      },
+      ...(attachmentCount() > 0
+        ? [
+            {
+              label: t().files,
+              value: t().attachmentCount({ count: attachmentCount() }),
+            },
+          ]
+        : []),
+      ...(latestMessage()?.messageId
+        ? [
+            {
+              label: t().messageId,
+              value: <span class="block truncate font-mono text-xs">{latestMessage()?.messageId}</span>,
+            },
+          ]
+        : []),
+      ...(latestMessage()
+        ? [
+            { label: t().size, value: formatFileViewSize(latestMessage()!.sizeBytes) },
+            { label: t().content, value: latestMessage()!.contentType ?? t().unavailable },
+            { label: t().mirror, value: latestMessage()!.hydrationStatus },
+          ]
+        : []),
+    ].map((item, index) => ({ id: String(index), ...item }));
+
+  const technicalActions = () => (
     <>
-      <DescriptionList
-        layout="rows"
-        size="sm"
-        items={[
-          {
-            term: t().subject,
-            description: (
-              <span class="block truncate" title={props.subject}>
-                {props.subject || t().noSubject}
-              </span>
-            ),
-          },
-          {
-            term: t().from,
-            description: (
-              <span class="block truncate" title={addressList(latestMessage()?.from ?? [])}>
-                {addressList(latestMessage()?.from ?? []) || t().unknown}
-              </span>
-            ),
-          },
-          {
-            term: t().toLabel,
-            description: (
-              <span class="block truncate" title={addressList(latestMessage()?.to ?? [])}>
-                {addressList(latestMessage()?.to ?? []) || t().undisclosed}
-              </span>
-            ),
-          },
-          {
-            term: t().thread,
-            description: t().messageCount({ count: props.messages.length }),
-          },
-          ...(attachmentCount() > 0
-            ? [
-                {
-                  term: t().files,
-                  description: t().attachmentCount({ count: attachmentCount() }),
-                },
-              ]
-            : []),
-          ...(latestMessage()?.messageId
-            ? [
-                {
-                  term: t().messageId,
-                  description: <span class="block truncate font-mono text-xs">{latestMessage()?.messageId}</span>,
-                },
-              ]
-            : []),
-          ...(latestMessage()
-            ? [
-                { term: t().size, description: formatFileViewSize(latestMessage()!.sizeBytes) },
-                { term: t().content, description: latestMessage()!.contentType ?? t().unavailable },
-                { term: t().mirror, description: latestMessage()!.hydrationStatus },
-              ]
-            : []),
-        ]}
-      />
       <Show when={latestMessage()}>
         {(message) => (
           <div class="mt-3 flex flex-wrap items-center gap-2">
@@ -887,7 +932,11 @@ export default function MailDetailsPanel(props: {
   ];
 
   const attachmentsSection = () => (
-    <DetailPanel.Section title={t().attachments} count={merged().files.length > 0 ? merged().files.length : undefined}>
+    <DetailPanel.Section
+      title={t().attachments}
+      icon="ti ti-paperclip"
+      count={merged().files.length > 0 ? merged().files.length : undefined}
+    >
       <Show when={merged().files.length > 0} fallback={<p class="mail-details-none">{details().noAttachments}</p>}>
         <FileGrid
           rows={merged().files}
@@ -985,6 +1034,12 @@ export default function MailDetailsPanel(props: {
 
   const body = (parts?: MailContextParts) => (
     <>
+      <DetailPresence
+        people={presencePeople()}
+        state={props.presenceState ?? "live"}
+        onRetry={props.onRetryPresence}
+        note={presencePeople().length <= 1 ? details().presenceAlone : undefined}
+      />
       <Show when={props.conversationSummary?.summary}>
         {(summary) => (
           // ✦ and the AI ink only when the AI wrote the text (F3); a person's summary stays neutral.
@@ -1020,6 +1075,7 @@ export default function MailDetailsPanel(props: {
         {(draft) => (
           <DetailPanel.Section
             title={t().draftsAvailable({ count: props.conversationDrafts.length })}
+            icon="ti ti-pencil"
             count={props.conversationDrafts.length}
           >
             <DetailPanel.Action
@@ -1037,6 +1093,7 @@ export default function MailDetailsPanel(props: {
 
       <DetailPanel.Section
         title={details().properties}
+        icon="ti ti-list-details"
         actions={
           <Show when={canAssign()}>
             <Tooltip.Anchor content={t().createTag}>
@@ -1142,10 +1199,48 @@ export default function MailDetailsPanel(props: {
         />
       </DetailPanel.Section>
 
+      {/* Order of use (UI-27): fields, then the team's notes, then what belongs to the conversation. */}
+      <Show when={props.conversationId} keyed>
+        {(_conversationId) => (
+          <Discussion
+            label={details().teamNotes}
+            icon="ti ti-message-circle"
+            count={commentsCursor() ? undefined : visibleComments().length}
+          >
+            <Discussion.List
+              error={props.detailErrors.comments ? details().notesUnavailable : undefined}
+              onRetry={props.onReconcile}
+              fold={3}
+              hasMore={commentsCursor() !== null}
+              loadingMore={loadingOlderComments()}
+              loadingLabel={t().loadingTeamNotes}
+              loadMoreLabel={t().loadEarlierTeamNotes}
+              onLoadMore={loadOlderComments}
+            >
+              <For each={visibleComments()}>{(comment) => commentItem(comment)}</For>
+            </Discussion.List>
+
+            <Show when={!props.detailErrors.comments}>
+              <Discussion.Composer
+                label={t().addInternalComment}
+                placeholder={details().noteForTeam}
+                submitLabel={t().postComment}
+                onSubmit={async (body) => {
+                  await addComment.mutate(body);
+                  const error = addComment.error();
+                  if (error) throw error;
+                }}
+              />
+            </Show>
+          </Discussion>
+        )}
+      </Show>
+
       <Show when={parts}>
         {(context) => (
           <DetailPanel.Section
             title={details().linked}
+            icon="ti ti-arrows-exchange"
             count={
               context().spacesCount() !== undefined && !related.loading() && !related.error()
                 ? (context().spacesCount() ?? 0) + (related.data()?.length ?? 0) || undefined
@@ -1180,42 +1275,23 @@ export default function MailDetailsPanel(props: {
 
       {attachmentsSection()}
 
-      <Show when={props.conversationId} keyed>
-        {(_conversationId) => (
-          <Discussion label={details().teamNotes} count={commentsCursor() ? undefined : visibleComments().length}>
-            <Discussion.List
-              error={props.detailErrors.comments ? details().notesUnavailable : undefined}
-              onRetry={props.onReconcile}
-              fold={3}
-              hasMore={commentsCursor() !== null}
-              loadingMore={loadingOlderComments()}
-              loadingLabel={t().loadingTeamNotes}
-              loadMoreLabel={t().loadEarlierTeamNotes}
-              onLoadMore={loadOlderComments}
-            >
-              <For each={visibleComments()}>{(comment) => commentItem(comment)}</For>
-            </Discussion.List>
-
-            <Show when={!props.detailErrors.comments}>
-              <Discussion.Composer
-                label={t().addInternalComment}
-                placeholder={details().noteForTeam}
-                submitLabel={t().postComment}
-                onSubmit={async (body) => {
-                  await addComment.mutate(body);
-                  const error = addComment.error();
-                  if (error) throw error;
-                }}
-              />
-            </Show>
-          </Discussion>
-        )}
-      </Show>
-
       <DetailPanel.Group title={details().moreAbout}>
+        {/* Read-only for everyone with mailbox-wide access; assigned-only readers never get the list. */}
+        <Show when={props.access}>
+          {(access) => (
+            <DetailAccess
+              entries={accessEntries(access().members)}
+              state={access().state}
+              onRetry={access().retry}
+              note={details().accessWholeMailbox}
+              manage={access().manage ? { label: details().manageAccess, onClick: () => access().manage?.() } : undefined}
+            />
+          )}
+        </Show>
         <Show when={parts?.showPeople()}>
           <DetailPanel.Section
             title={details().people}
+            icon="ti ti-users"
             count={parts?.peopleNames().length || undefined}
             collapsible
             summary={parts?.peopleNames().join(" · ")}
@@ -1225,6 +1301,7 @@ export default function MailDetailsPanel(props: {
         </Show>
         <DetailPanel.Section
           title={details().activity}
+          icon="ti ti-activity"
           count={activityItems().length || undefined}
           collapsible
           summary={
@@ -1272,9 +1349,9 @@ export default function MailDetailsPanel(props: {
             </div>
           </Show>
         </DetailPanel.Section>
-        <DetailPanel.Section title={details().technicalDetails} collapsible summary={details().technicalSummary}>
-          {technicalDetails()}
-        </DetailPanel.Section>
+        <DetailProperties title={details().technicalDetails} summary={details().technicalSummary} items={technicalItems()}>
+          {technicalActions()}
+        </DetailProperties>
       </DetailPanel.Group>
     </>
   );
@@ -1298,25 +1375,6 @@ export default function MailDetailsPanel(props: {
           }
           title={props.subject || t().noSubject}
           subtitle={metaLine()}
-          meta={
-            <Show when={props.presence.some((participant) => participant.userId !== props.currentUserId)}>
-              <AvatarStack
-                people={props.presence.map((participant) => ({
-                  id: participant.userId,
-                  name: participant.displayName,
-                  src: cloudAvatarSource(participant.userId, participant.avatarHash),
-                  self: participant.userId === props.currentUserId,
-                  detailIcon: participant.mode === "composing" ? "ti ti-pencil" : "ti ti-eye",
-                  detail: participant.mode === "composing" ? t().composing : t().viewing,
-                }))}
-                title={t().activeCollaborators}
-                label={`${t().activeCollaborators}: ${props.presence
-                  .filter((participant) => participant.userId !== props.currentUserId)
-                  .map((participant) => participant.displayName)
-                  .join(", ")}`}
-              />
-            </Show>
-          }
           primaryActions={
             props.canWrite ? (
               <Button

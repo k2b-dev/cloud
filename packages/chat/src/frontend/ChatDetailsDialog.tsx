@@ -1,25 +1,10 @@
-import { Button, IconInput, LocaleProvider, prompts, TextInput } from "@k2b/ui";
+import { Button, IconInput, TextInput } from "@k2b/ui";
 import { createSignal, type JSX, Show } from "solid-js";
-import { chatMessages } from "../messages";
 import { type ChatDialogStore, type Conversation, DialogActions, DialogError, errorMessage, useChatMessages } from "./chat-dialog";
 
-type DetailsProps = { store: ChatDialogStore; conversation: Conversation; locale: string };
+export type DetailsProps = { store: ChatDialogStore; conversation: Conversation; locale: string };
 
 /** Writers change the name, icon, and purpose; a system message in the chat records each change. */
-export const openChatDetailsDialog = (props: DetailsProps): Promise<void | undefined> =>
-  prompts.dialog<void>(
-    (close, context) => (
-      // A prompt renders outside the workspace, so its content gets the workspace's locale again.
-      <LocaleProvider locale={props.locale}>
-        <ChatDetailsDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
-      </LocaleProvider>
-    ),
-    {
-      title: chatMessages.resolve([props.locale]).t.chatDetails,
-      icon: "ti ti-pencil",
-      size: "medium",
-    },
-  );
 
 export function ChatDetailsDialog(
   props: DetailsProps & { setDismissHandler: (handler: () => void) => void; close: () => void },

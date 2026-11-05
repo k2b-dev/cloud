@@ -53,6 +53,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
   const TAG_SHORT_ID = "Tag001";
   const calls: string[] = [];
   let permission = "read";
+  let memberPermission = "read";
   let itemSpaceId = SPACE_ID;
   let listedCommentRecurrenceId: string | null | undefined;
   let listedFilter: { tagIds?: string[]; columnIds?: string[] } | undefined;
@@ -195,7 +196,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
           calls.push("space.getDetail");
           return { ...space, columns: [column], virtualColumns: [], tags: [tag], templates: [] };
         },
-        permission: { get: async () => permission },
+        permission: { get: async () => permission, member: async () => memberPermission },
       },
       item: {
         listFiltered: async (params: { filter?: { tagIds?: string[]; columnIds?: string[]; pageSize?: number } }) => {
@@ -279,7 +280,24 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
         href: `/app/spaces/${SPACE_SHORT_ID}`,
         cookieHeader: `settings-app-spaces=${encodeURIComponent(JSON.stringify({ spaces: { [SPACE_SHORT_ID]: { view: "table" } } }))}`,
       });
-      expect(state).toMatchObject({ kind: "ok", currentView: "table", query: "" });
+      expect(state).toMatchObject({ kind: "ok", currentView: "table", query: "", accessVisible: true });
+    });
+
+    test("shows who has access only to people with access of their own", async () => {
+      memberPermission = "none";
+      try {
+        const state = await loadSpacesWorkspaceState({
+          authority: null,
+          user: { id: USER_ID, roles: ["user"] },
+          spaceId: SPACE_ID,
+          spaceShortId: SPACE_SHORT_ID,
+          href: `/app/spaces/${SPACE_SHORT_ID}`,
+        });
+        // Public access alone reads the space but never shows who else has access.
+        expect(state).toMatchObject({ kind: "ok", accessVisible: false });
+      } finally {
+        memberPermission = "read";
+      }
     });
 
     test("captures the live cursor after authorization and before snapshot queries", async () => {

@@ -1,3 +1,4 @@
+import { beginAppAction } from "../browser/app-actions";
 import { liveDictationWorklet } from "./live-dictation-pcm";
 
 export type DictationErrorCode =
@@ -103,6 +104,7 @@ export const createLiveDictationSource = ({ app }: { app: string }): DictationSo
       .map((device) => ({ id: device.deviceId, label: device.label }));
   },
   start({ deviceId, signal }) {
+    const finishAction = beginAppAction();
     const queue: DictationEvent[] = [];
     let wake: (() => void) | undefined;
     let ended = false;
@@ -143,6 +145,7 @@ export const createLiveDictationSource = ({ app }: { app: string }): DictationSo
     const finish = (silent = false) => {
       if (ended) return;
       ended = true;
+      finishAction();
       if (silent) queue.length = 0;
       clearTimeout(socketDeadline);
       clearTimeout(stopDeadline);

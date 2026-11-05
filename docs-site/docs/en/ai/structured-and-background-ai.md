@@ -5,7 +5,7 @@ section: AI
 order: 1060
 description: Run validated model tasks outside an interactive chat request.
 tags: [ai, structured-output, background]
-updated: 2026-10-18
+updated: 2026-11-04
 ---
 
 # Structured and background AI
@@ -65,9 +65,9 @@ The returned value includes the parsed output, a resolved `model` reference, usa
 structured-output metadata.
 
 Structured tasks and context compaction keep their previous reasoning requests:
-`low` for OpenAI, OpenRouter, vLLM and OpenAI-compatible profiles, a zero thinking
-budget for Gemini, and no thinking field for Anthropic, Mistral and Ollama, which
-keep their model defaults. The profile thinking level does not apply. Profile
+`low` for OpenAI, OpenRouter, vLLM and OpenAI-compatible profiles, `none` for
+Gemini, and no thinking field for Anthropic, Mistral and Ollama, which keep their
+model defaults. The profile thinking level does not apply. Profile
 `extraBody` still applies and can override nested provider parameters; see
 [Thinking level](/en/docs/ai/models-and-providers#set-the-thinking-level).
 
@@ -575,6 +575,41 @@ AI off produces `ai_disabled`; all classes empty produces `ai_no_model`.
 Missing, disabled, forbidden or incompatible models produce
 `model_policy_mismatch`. Budget exhaustion fails without fallback. Show errors
 for work a person started. Optional titles and enrichment skip unavailable AI.
+
+## Use a model without a data-protection commitment
+
+A provider with `dataBoundary: "restricted"` makes no data-protection
+commitment, see [Choose the data boundary](/en/docs/ai/models-and-providers#choose-the-data-boundary).
+Only application server code reaches its models, and only by naming the
+variant ID:
+
+- `runAiStructured({ model: { id } })` with its default model resolution;
+- `executeAiTask` with `model: { id }` and that default resolution;
+- `runApplicationAiTask` without `usageSubject`.
+
+```ts
+const { productTextModel } = await settings.read();
+const result = await runAiStructured({
+  task: "product-description",
+  appId: "inventory",
+  model: { id: productTextModel },
+  input: article.facts,
+  output: ProductText,
+});
+```
+
+Store the ID in an application setting and let the administrator enter it.
+The application decides and is responsible for what it sends to such a model.
+To offer a list, call `listAiModels({ kind: "selectable", allowedDataBoundaries: ["restricted"] })`;
+without an explicit `allowedDataBoundaries` that names `restricted`, model
+lists and policies leave these models out.
+
+A class request never resolves to a `restricted` model. Workflows, code,
+`runApplicationAiTask` with `usageSubject` and every chat surface reject one
+with `model_policy_mismatch` and `fields.boundary: "restricted"`. A deleted or
+disabled model fails with `model_policy_mismatch` and `fields.model` naming
+the stored ID; show that error so an administrator can choose another model.
+Provider failures keep `provider_error`.
 ## Reuse durable AI from an application job
 
 Use `runApplicationAiTask()` from `@k2b/cloud/ai` when an application-owned

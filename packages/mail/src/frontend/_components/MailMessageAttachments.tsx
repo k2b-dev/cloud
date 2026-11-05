@@ -2,14 +2,16 @@ import { type SaveFileSource, SaveFilesButton } from "@k2b/cloud/browser/files";
 import { fileIcons } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
-  Button,
   CopyButton,
   canPreviewFile,
   dialogCore,
+  FileGrid,
+  FileTypeIcon,
   FileView,
   type FileViewContent,
   type FileViewPreviewKind,
   Format,
+  fileKindLabel,
   formatFileViewSize,
   getFileViewPreviewKind,
   IconButton,
@@ -21,11 +23,13 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { CreateAttachmentLinkInput, CreatedAttachmentLink } from "../../contracts";
 import { readApiError } from "./api-response";
 import { promptAttachmentLinkOptions } from "./attachment-link-ui";
+import { isThumbnailImage } from "./mail-detail-attachments";
+import { mailDetailsMessages } from "./mail-details-messages";
 import { mailMessageMessages } from "./mail-message-messages";
 import { attachmentPreviewKind } from "./mail-message-presentation";
 
@@ -186,6 +190,22 @@ export const openAttachmentPreview = (attachment: Attachment, downloadHref: stri
   );
 };
 
+/** Starts a download of a file the browser cannot preview. */
+export const downloadUrl = (href: string, name: string) => {
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = name;
+  link.rel = "noopener";
+  document.body.append(link);
+  link.click();
+  link.remove();
+};
+
+/**
+ * A message's attachments where it is read: the count, the first few with an image preview or their type icon, and
+ * "Show all N", which opens files as rows and images as tiles in place. A click opens the preview; a format without
+ * one downloads. Each row carries its own actions.
+ */
 export default function MailMessageAttachments(props: {
   mailboxId: string;
   messageId: string;
@@ -194,9 +214,16 @@ export default function MailMessageAttachments(props: {
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailMessageMessages.resolve([locale()]).t);
+  const details = createMemo(() => mailDetailsMessages.resolve([locale()]).t);
   let disposed = false;
   const baseUrl = (attachment: Attachment) =>
     `/api/mail/mailboxes/${props.mailboxId}/messages/${props.messageId}/attachments/${attachment.id}`;
+  const fileName = (attachment: Attachment) => attachment.filename ?? messages().attachment;
+  const openAttachment = (attachment: Attachment) => {
+    const href = baseUrl(attachment);
+    if (canPreviewAttachment(attachment)) void openAttachmentPreview(attachment, href, `${href}?inline=true`);
+    else downloadUrl(href, fileName(attachment));
+  };
 
   const createLink = mutations.create<CreatedAttachmentLink, { attachment: Attachment; input: CreateAttachmentLinkInput }>({
     mutation: async ({ attachment, input }, { abortSignal }) => {
@@ -231,68 +258,77 @@ export default function MailMessageAttachments(props: {
   };
 
   return (
-    <div class="mt-4">
-      <div class="mb-1.5 flex items-center justify-between gap-2 pr-2">
-        <p class="text-xs font-medium text-dimmed">{messages().attachments}</p>
+    <section class="mail-message-attachments" aria-label={messages().attachments} data-mail-message-attachments>
+      <div class="mail-message-attachments__head">
+        <p class="mail-message-attachments__count">
+          <i class="ti ti-paperclip" aria-hidden="true" />
+          {messages().attachmentCount({ count: props.attachments.length })}
+        </p>
         <Show when={props.attachments.length > 1}>
           <SaveFilesButton
             all
             size="xs"
-            class="text-sm"
+            variant="ghost"
             files={() => props.attachments.map((attachment) => saveSource(attachment, baseUrl(attachment)))}
           />
         </Show>
       </div>
-      <div class="flex flex-col gap-1.5">
-        <For each={props.attachments}>
-          {(attachment) => {
-            const downloadHref = baseUrl(attachment);
-            const previewHref = `${downloadHref}?inline=true`;
-            return (
-              <div class="flex min-h-8 min-w-0 items-center gap-1.5 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-2 py-0.5">
-                <i class="ti ti-paperclip shrink-0 text-sm text-dimmed" aria-hidden="true" />
-                <span class="min-w-0 flex-1 truncate text-xs font-medium text-primary">
-                  {attachment.filename ?? attachment.contentType}
-                </span>
-                <span class="shrink-0 text-xs text-dimmed">{formatFileViewSize(attachment.sizeBytes)}</span>
-                <Show when={canPreviewAttachment(attachment)}>
-                  <Button
-                    variant="ghost"
-                    type="button"
-                    class="mail-attachment-preview"
-                    onClick={() => void openAttachmentPreview(attachment, downloadHref, previewHref)}
-                  >
-                    <i class="ti ti-eye" aria-hidden="true" />
-                    {messages().preview}
-                  </Button>
-                </Show>
-                <Show when={props.canShare}>
-                  <IconButton
-                    type="button"
-                    class="!h-7 !w-7 !p-0 text-sm"
-                    label={messages().shareNamed({ name: attachment.filename ?? messages().attachment.toLowerCase() })}
-                    disabled={createLink.loading()}
-                    onClick={() => void shareAttachment(attachment)}
-                  >
-                    <i class={`ti ${createLink.loading() ? "ti-loader-2 animate-spin" : "ti-link"}`} aria-hidden="true" />
-                  </IconButton>
-                </Show>
-                <SaveFilesButton class="!h-7 !w-7 !p-0 text-sm" files={() => [saveSource(attachment, downloadHref)]} />
-                <IconButtonLink
-                  class="!h-7 !w-7 !p-0 text-sm"
-                  href={downloadHref}
-                  label={messages().downloadNamed({ name: attachment.filename ?? messages().attachment.toLowerCase() })}
+      <FileGrid
+        rows={props.attachments}
+        getRowId={(attachment) => attachment.id}
+        label={messages().attachments}
+        layout="list"
+        limit={3}
+        actionVisibility="progressive"
+        groups={(rows) => [
+          { id: "files", label: details().files, rows: rows.filter((attachment) => !isThumbnailImage(attachment)) },
+          { id: "images", label: details().images, rows: rows.filter(isThumbnailImage), layout: "tiles" },
+        ]}
+        renderPreview={(attachment) =>
+          isThumbnailImage(attachment) ? (
+            <img src={`${baseUrl(attachment)}?inline=true`} alt="" loading="lazy" decoding="async" />
+          ) : (
+            <FileTypeIcon name={fileName(attachment)} mediaType={attachment.contentType} />
+          )
+        }
+        renderLabel={fileName}
+        renderMeta={(attachment) =>
+          [
+            fileKindLabel({ name: fileName(attachment), mediaType: attachment.contentType }, locale()),
+            formatFileViewSize(attachment.sizeBytes, locale()),
+          ].join(" · ")
+        }
+        renderActions={(attachment) => (
+          <>
+            <Show when={props.canShare}>
+              <Tooltip.Anchor content={messages().shareNamed({ name: fileName(attachment) })}>
+                <IconButton
+                  size="sm"
+                  variant="ghost"
+                  label={messages().shareNamed({ name: fileName(attachment) })}
+                  disabled={createLink.loading()}
+                  onClick={() => void shareAttachment(attachment)}
                 >
-                  <i class="ti ti-download" aria-hidden="true" />
-                  <span class="sr-only">
-                    {messages().downloadNamed({ name: attachment.filename ?? messages().attachment.toLowerCase() })}
-                  </span>
-                </IconButtonLink>
-              </div>
-            );
-          }}
-        </For>
-      </div>
-    </div>
+                  <i class={`ti ${createLink.loading() ? "ti-loader-2 animate-spin" : "ti-link"}`} aria-hidden="true" />
+                </IconButton>
+              </Tooltip.Anchor>
+            </Show>
+            <Tooltip.Anchor content={messages().downloadNamed({ name: fileName(attachment) })}>
+              <IconButtonLink
+                size="sm"
+                variant="ghost"
+                href={baseUrl(attachment)}
+                download={fileName(attachment)}
+                label={messages().downloadNamed({ name: fileName(attachment) })}
+              >
+                <i class="ti ti-download" aria-hidden="true" />
+              </IconButtonLink>
+            </Tooltip.Anchor>
+            <SaveFilesButton size="sm" variant="ghost" files={() => [saveSource(attachment, baseUrl(attachment))]} />
+          </>
+        )}
+        onOpen={openAttachment}
+      />
+    </section>
   );
 }

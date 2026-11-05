@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { TraceSourceGroup } from "@k2b/cloud/services";
 import type { SyncScheduleRow } from "../sync/service";
-import { buildBackgroundJobRows, filterBackgroundJobRows, normalizeScheduleMetadata } from "./service";
+import { buildBackgroundJobRows, filterBackgroundJobRows, jobDiagnostics, normalizeScheduleMetadata } from "./service";
 
 const schedule = (overrides: Partial<SyncScheduleRow> = {}): SyncScheduleRow => ({
   schedulerId: "gateway-ops-lifecycle",
@@ -62,6 +62,14 @@ const group = (source: string, overrides: Partial<TraceSourceGroup> = {}): Trace
 });
 
 describe("jobs observability service", () => {
+  test("the jobs API and overview omit the error rate of the retained diagnostic sample", () => {
+    const diagnostic = group("inventory:import", { runs: 1, succeeded: 0, failed: 1, errorRate: 100 });
+    expect(jobDiagnostics(diagnostic)).not.toHaveProperty("errorRate");
+    const rows = buildBackgroundJobRows([schedule({ meta: { source: diagnostic.source } })], [diagnostic, group("trace-only")]);
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row.trace).not.toHaveProperty("errorRate");
+    expect(rows.find((row) => row.source === diagnostic.source)?.trace?.failed).toBe(1);
+  });
   test("normalizes scheduler meta with safe fallbacks", () => {
     expect(normalizeScheduleMetadata(schedule())).toEqual({
       appId: "gateway-ops",
@@ -152,6 +160,31 @@ describe("jobs observability service", () => {
         .sort(),
     ).toEqual(["auth:ipa:backfill", "gateway:health-webhook-check", "mail:sender-rule-backfill"]);
   });
+});
+
+test("a minute-only success clears a previous failure in health filters", () => {
+  const source = "inventory:import";
+  const recovered = buildBackgroundJobRows(
+    [],
+    [
+      group(source, {
+        latestStatus: "error",
+        latestSuccessAt: "2026-07-09T12:00:00.100Z",
+      }),
+    ],
+  );
+  expect(filterBackgroundJobRows(recovered, { health: "failed" })).toHaveLength(0);
+  expect(filterBackgroundJobRows(recovered, { health: "healthy" })).toHaveLength(1);
+  const failedLater = buildBackgroundJobRows(
+    [],
+    [
+      group(source, {
+        latestStatus: "error",
+        latestSuccessAt: "2026-07-09T11:59:00.000Z",
+      }),
+    ],
+  );
+  expect(filterBackgroundJobRows(failedLater, { health: "failed" })).toHaveLength(1);
 });
 
 describe("partial scheduler availability", () => {

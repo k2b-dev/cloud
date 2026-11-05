@@ -15,6 +15,39 @@ import { render } from "solid-js/web";
 import { LocaleProvider, VirtualFeed } from ${JSON.stringify(resolve(packageRoot, "dist/browser/index.js"))};
 
 const options = window.fixtureOptions ?? {};
+// Count geometry access during the synchronous first mount, before observer callbacks can run.
+window.mountMeasurements = { heightWrites: 0, heightReads: 0, rowReads: 0 };
+window.firstVisibleMeasurements = null;
+if (options.measureMount) {
+  // CSS declaration properties are named DOM properties, not prototype setters in every engine.
+  const style = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "style");
+  const declarations = new WeakMap();
+  Object.defineProperty(HTMLElement.prototype, "style", { ...style, get() {
+    const declaration = style.get.call(this);
+    if (!this.classList.contains("k2b-virtual-feed__feed")) return declaration;
+    if (!declarations.has(declaration)) declarations.set(declaration, new Proxy(declaration, {
+      get(target, key) {
+        const value = Reflect.get(target, key, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+      set(target, key, value) {
+        if (key === "height") window.mountMeasurements.heightWrites++;
+        return Reflect.set(target, key, value, target);
+      },
+    }));
+    return declarations.get(declaration);
+  }});
+  const clientHeight = Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight");
+  Object.defineProperty(Element.prototype, "clientHeight", { ...clientHeight, get() {
+    if (this.classList.contains("k2b-virtual-feed__viewport")) window.mountMeasurements.heightReads++;
+    return clientHeight.get.call(this);
+  }});
+  const rect = Element.prototype.getBoundingClientRect;
+  Element.prototype.getBoundingClientRect = function() {
+    if (this.classList.contains("k2b-virtual-feed__item")) window.mountMeasurements.rowReads++;
+    return rect.call(this);
+  };
+}
 const visible = options.count ?? 300;
 const older = options.older ?? 0;
 const WORDS = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda omicron sigma omega".split(" ");
@@ -84,7 +117,10 @@ const list = () =>
     getKey: (item) => item.id,
     estimateSize: (item) => (32 + (item.image ? 180 : item.lines * 20)) * (options.estimateScale ?? 1),
     label: "Activity",
-    onVisibleChange: (visible) => window.visibleChanges.push(visible ? { first: visible.first.seq, last: visible.last.seq } : null),
+    onVisibleChange: (visible) => {
+      window.firstVisibleMeasurements ??= { ...window.mountMeasurements };
+      window.visibleChanges.push(visible ? { first: visible.first.seq, last: visible.last.seq } : null);
+    },
     itemLabel: (item) => "Entry " + item.seq,
     get hasOlder() {
       return first > 0;
@@ -474,6 +510,7 @@ const open = async (
     separators?: boolean;
     marker?: string;
     cached?: boolean;
+    measureMount?: boolean;
   } = {},
   context: BrowserContextOptions = {},
 ): Promise<Page> => {
@@ -514,7 +551,19 @@ const close = async (page: Page) => {
 /** Scrolls as the reader does; the feed tells it from its own corrections by the changed scrollTop. */
 const scrollBy = (page: Page, dy: number) => page.evaluate((dy) => feed.viewport().scrollBy(0, dy), dy);
 
+declare const firstVisibleMeasurements: { heightWrites: number; heightReads: number; rowReads: number };
+
 describe(`VirtualFeed in ${browserName}`, () => {
+  test("measures the initial range before writing its final height once", async () => {
+    const page = await open({ measureMount: true, estimateScale: 0.6, separators: true, marker: "m290" });
+    const measured = await page.evaluate(() => firstVisibleMeasurements);
+    expect(measured.rowReads).toBeGreaterThan(0);
+    expect(measured.heightWrites).toBe(1);
+    // One read captures mount height, one supplies every correction, edge check and visibility report.
+    expect(measured.heightReads).toBe(2);
+    expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
+    await close(page);
+  });
   test("starts at the end and stays there when an item arrives, the last row grows, or the footer grows", async () => {
     const page = await open();
     expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);

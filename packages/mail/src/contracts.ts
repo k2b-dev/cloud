@@ -9,6 +9,7 @@ import type {
 import { z } from "zod";
 import { contactResolveMatchSchema, normalizedContactEmailSchema } from "./app-integration-contracts";
 import { MAX_COMMAND_OUTCOME_IDS, MAX_CONVERSATION_ACTION_MESSAGES } from "./command-outcomes";
+import { MAIL_ACTIVITY_KINDS, type MailActivityKind } from "./mail-activity-kinds";
 import { RESOURCE_SHORT_ID_PATTERN } from "./resource-short-id";
 
 export const DEFAULT_CONVERSATION_REFERENCE_PATTERN = "REF-{{ short_id }}";
@@ -2056,6 +2057,9 @@ export const conversationViewSchema = z.enum([
 ]);
 export type ConversationView = z.infer<typeof conversationViewSchema>;
 
+export const mailActivityKindSchema = z.enum(MAIL_ACTIVITY_KINDS);
+export type { MailActivityKind };
+
 export const mergeConversationsInputSchema = z
   .object({
     sourceConversationId: ResourceShortIdSchema,
@@ -3455,8 +3459,9 @@ export type ConversationDraftSummary = Pick<MailDraft, "id" | "intent" | "subjec
   createdByDisplayName: string;
 };
 
-/** A draft as the Drafts folder lists it. */
-export type DraftFolderItem = ConversationDraftSummary & Pick<MailDraft, "conversationId" | "to" | "cc" | "bcc">;
+/** A draft as the Drafts folder lists it; `revision` lets the list delete exactly the draft it shows. */
+export type DraftFolderItem = ConversationDraftSummary &
+  Pick<MailDraft, "conversationId" | "to" | "cc" | "bcc" | "revision"> & { attachmentCount: number };
 
 export type DraftFolderPage = {
   items: DraftFolderItem[];

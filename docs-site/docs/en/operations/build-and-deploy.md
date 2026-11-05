@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-28
+updated: 2026-11-04
 ---
 
 # Build and deploy
@@ -167,6 +167,10 @@ artifact. The build sets `WORKSPACE_ROOT` and `DIST_DIR` before importing it.
 The build precompresses supported static files with Brotli and gzip.
 
 The application's `app.css` and `favicon.svg` URLs carry `?v=<content hash>`.
+Core minifies the workspace-wide `global.css` during the production build. The template
+preloads the three regular text faces; Tabler icons request their font through CSS when
+used.
+
 The shared stylesheets (`fonts.css`, `tabler-icons.css`, and `global.css`)
 carry Core's registered release. URLs stay the same across restarts, and all
 applications use the same shared stylesheet URLs. Core's `/branding/favicon`
@@ -750,6 +754,34 @@ with a 15-minute idle deadline; status traffic does not renew them. Logout,
 authority invalidation and device revocation close access to its visits.
 Revocation and domain completion serialize in Postgres. Audit records include
 app, owner, device and visit identifiers, without QR or signature content.
+
+Applications can register a shared device once. `setup()` adds the
+`_cloud_pwa_registrations` table and a nullable `registration_id` column; both
+changes are additive. A registered browser keeps a persistent guest cookie for
+up to 400 days but holds no authority on its own. Each use still follows the
+12-hour and web-session rules above. Takeovers and unregistrations are audited
+as `app_pwa.registration.*`. To retire a lost or stolen device, unregister it
+in the application's staff screen. Taking a device over requires the
+six-digit presence code it shows. A registration whose browser is gone can no
+longer be taken over and stays listed as free: revoke such orphaned
+registrations.
+
+During a rolling upgrade, an older application replica does not know
+registrations. It never grants access through them, but registered devices can
+lose their registration:
+
+- A bootstrap on an older replica rewrites the guest cookie as a session cookie,
+  even while a use is running. The registration is lost the next time the PWA
+  restarts.
+- Without a running use, an older replica's bootstrap issues a new browser
+  credential at once.
+- A registration QR claimed on an older replica pairs an ordinary device and
+  creates no registration.
+
+Finish the rollout before registering devices. Rolling back to an older
+version loses all registrations in practice, and the `registrations/*` staff
+routes return 404. The rows remain until a later upgrade, but their devices
+must be registered again.
 
 Guest operations hold authority locks only for their bounded request
 transaction. Category-policy reads also hold a shared settings-table lock, and

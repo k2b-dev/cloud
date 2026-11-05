@@ -1,9 +1,9 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, ButtonLink, ChoiceChips, ChoiceList, DetailPanel, InlineGuidance, toast, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, ChoiceChips, ChoiceList, DetailPanel, InlineGuidance, useLocale } from "@k2b/ui";
 import { createSignal, type JSX, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import type { NotificationsSchema, NotificationUpdateSchema } from "../service/contracts";
-import { type Conversation, errorMessage, useChatMessages } from "./chat-dialog";
+import { type Conversation, useChatMessages } from "./chat-dialog";
 import { untilLabel } from "./chat-format";
 
 type Notifications = z.infer<typeof NotificationsSchema>;
@@ -193,32 +193,4 @@ export default function ChatNotificationSettings(props: {
  * "You follow" in an item discussion's head: writing there follows it, and a press ends or resumes following. The
  * button keeps its place and size while it saves; a failure leaves the state as it was and says so.
  */
-export function FollowToggle(props: { following: boolean; onToggle: (on: boolean) => Promise<unknown> }): JSX.Element {
-  const t = useChatMessages();
-  const [saving, setSaving] = createSignal(false);
-  const toggle = async () => {
-    if (saving()) return;
-    setSaving(true);
-    try {
-      await props.onToggle(!props.following);
-    } catch (failure) {
-      toast.error(errorMessage(failure, t().followFailed));
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <Button
-      size="sm"
-      variant={props.following ? "subtle" : "ghost"}
-      class="chat-follow"
-      aria-pressed={props.following}
-      loading={saving()}
-      tooltip={t().followHint}
-      onClick={() => void toggle()}
-    >
-      <i class={props.following ? "ti ti-bell-ringing" : "ti ti-bell-plus"} aria-hidden="true" />
-      {props.following ? t().followOn : t().followOff}
-    </Button>
-  );
-}
+export { FollowToggle } from "./FollowToggle";

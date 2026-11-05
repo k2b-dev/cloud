@@ -1,4 +1,4 @@
-import { logger, trace } from "@k2b/cloud/services";
+import { logger } from "@k2b/cloud/services";
 import { listWorkflowRuns } from "@k2b/cloud/workflows/store";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { AutomationLogPage, AutomationLogQuery, Mailbox, MailWorkflow, SenderIdentity } from "../contracts";
@@ -10,7 +10,6 @@ import type { AutomaticReplyConfiguration } from "./automatic-reply-configuratio
 import * as automaticReplies from "./automatic-reply-configuration";
 import {
   type MailAutomationActivityItem,
-  mailBackfillWorkflowId,
   projectMailBackfillActivity,
   projectMailWorkflowActivity,
   summarizeMailAutomationActivity,
@@ -106,26 +105,13 @@ const loadActivityItems = async (
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1_000);
   const [runs, backfills] = await Promise.all([
     listWorkflowRuns({ appId: "mail", scopeId: mailboxId, since, limit }),
-    trace.list(
-      { page: 1, perPage: limit, offset: 0 },
-      {
-        filter: {
-          appId: "mail",
-          source: "mail:incoming-automation-backfill",
-          category: "backfill",
-          window: "30d",
-          attributeEquals: { "mail.mailbox.id": mailboxId },
-        },
-      },
-    ),
+    incomingAutomations.listIncomingAutomationBackfillActivity(context, mailboxId, since, limit),
   ]);
+  if (!backfills.ok) throw new Error(backfills.error.message);
   const replyWorkflowIds = new Set(replies.map((configuration) => configuration.workflowId));
   const automationResult = await incomingAutomations.listIncomingAutomationActivityMetadata(context, mailboxId, [
     ...runs.map((run) => run.workflowId),
-    ...backfills.spans.flatMap((span) => {
-      const workflowId = mailBackfillWorkflowId(span);
-      return workflowId ? [workflowId] : [];
-    }),
+    ...backfills.data.map((backfill) => backfill.workflowId),
   ]);
   if (!automationResult.ok) throw new Error(automationResult.error.message);
   const automations: IncomingAutomationActivityMetadata[] = automationResult.data;
@@ -139,7 +125,7 @@ const loadActivityItems = async (
     ...runs.map((run) =>
       projectMailWorkflowActivity({ mailboxId, run, replyWorkflowIds, incomingAutomationWorkflowIds, workflowNames, locale }),
     ),
-    ...backfills.spans.map((span) => projectMailBackfillActivity({ mailboxId, span, automationNames, locale })),
+    ...backfills.data.map((backfill) => projectMailBackfillActivity({ mailboxId, backfill, automationNames, locale })),
   ]
     .toSorted((left, right) => right.occurredAt.localeCompare(left.occurredAt))
     .slice(0, limit);

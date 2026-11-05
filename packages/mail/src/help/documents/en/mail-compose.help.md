@@ -89,7 +89,8 @@ Mail shows a temporary connection problem separately and does not ask you to tak
 
 Drafts live in Cloud as shared drafts.
 
-- **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer. The count is in the workspace head. Each row starts with the subject and shows recipients, a preview, the edit time, and who started the draft.
+- **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer. The count is in the workspace head. Each draft looks like a conversation row: the recipients stand where the sender is, an orange **Draft** tag comes before the subject, and the row shows the preview, an attachment mark, and the edit time. In the columns view, the **Started by** column shows who started the draft.
+- **Delete from the list:** Open the draft's **…** menu or right-click the row, then choose **Delete draft**. On a focused row, you can also press Delete or Backspace. Mail asks before it deletes the draft. The draft stays when somebody has it open in the composer or changed it in the meantime, and Mail tells you why. Drafts that are scheduled or being sent are not in this folder; cancel them in **Outbox** first.
 - **Reply indicator:** A conversation with drafts shows an indicator on Reply.
 - **CLI:** `cld mail draft list` lists these drafts, together with drafts that are scheduled or being sent.
 - **Provider copy:** When the provider allows it, Mail keeps a copy of each draft in the provider's Drafts folder, so other mail programs show it. Drafts that another mail program saves there appear in Mail as shared drafts.
@@ -107,7 +108,7 @@ If the draft was already sent or discarded, a later save from another program ap
 If another session schedules, sends, or discards the draft, every open composer reloads the current draft state. It stops saving and stops renewing its editing lease. The composer stays read-only and allows no second send or takeover. Unsaved local text stays visible. You can copy it or save it as a new independent draft. When the original message belongs to a conversation, **Open message** returns to it.
 
 :::warning Discard draft removes the draft for everyone
-**Discard draft** removes the shared draft for everyone with access to the mailbox. To keep the draft, return to the mailbox instead.
+**Discard draft** in the composer and **Delete draft** in the Drafts folder remove the shared draft for everyone with access to the mailbox. To keep the draft, return to the mailbox instead.
 :::
 
 ## Use signatures and snippets {icon="pencil"}
@@ -235,7 +236,7 @@ Scheduled delivery and Undo Send require an active mailbox transport. When someo
 
 A message waits and shows **Waiting for sign-in** when it is due and one of these applies:
 
-- the mailbox needs a new sign-in;
+- the mailbox needs a new sign-in, also because its outgoing mail server refused the password;
 - someone replaced its password, and the mailbox or the sending identity is not verified with the new password yet.
 
 Mail tells you once. It sends the message as soon as the account is reconnected, still dated when it goes out. If nobody reconnects the account within six days after the due time, the message shows **Couldn’t send** and returns to Drafts. Mail then tells you again.
@@ -244,7 +245,7 @@ Mail tells you once. It sends the message as soon as the account is reconnected,
 
 Choose the delivery status below an outgoing message. It shows what happened and the safest next step.
 
-If Mail cannot reach the mail server before it hands the message over, nothing was sent. Mail keeps the message and tries again several times over a few minutes. The delivery status shows the next attempt. The same happens when the mailbox is reconnecting at that moment, or when Mail restarted before it handed the message over. If the problem lasts, the message shows **Couldn’t send**. A message whose mailbox needs a new sign-in waits longer, as described above.
+If Mail cannot reach the mail server before it hands the message over, nothing was sent. Mail keeps the message and tries again several times over a few minutes. The delivery status shows the next attempt. The same happens when the mailbox is reconnecting at that moment, or when Mail restarted before it handed the message over. If the problem lasts, the message shows **Couldn’t send**. A message whose mailbox needs a new sign-in waits longer, as described above. If the mail server rejects the message for now, for example because of a sending limit, Mail tries again with growing pauses for up to an hour. If it still fails, the message shows **Couldn’t send** and returns to Drafts.
 
 - **Couldn’t send:** Mail knows that the message was not sent. Choose **Review and resend** to reopen the kept draft before you try again. Errors with recipients, size, or delivery options use a more specific review label.
 - **Partially sent:** The receiving server accepted some recipients but not others. Mail stores the message in the Sent folder like other sent mail. If that does not work immediately, Mail tries again over the next few minutes. Choose **Review remaining recipients** to create an independent draft with only the addresses that the server did not accept.

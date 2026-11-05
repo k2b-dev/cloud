@@ -4,6 +4,8 @@ import { decodeJwt, SignJWT } from "jose";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
+import { type AuthContext, auth } from "../server/middleware/auth";
+import { sessionOriginGuard } from "../server/middleware/session-origin";
 import { freeipa } from "../server/services";
 import { accounts } from "../services/accounts";
 import { audit } from "../services/audit";
@@ -25,15 +27,18 @@ const issuer = "http://localhost:3000";
 const unused = async (): Promise<never> => {
   throw new Error("No notification expected");
 };
-const router = new Hono().route("/api/me", me).route(
-  "/api/auth",
-  createAuthRoutes({
-    sendMagicLink: unused,
-    sendIpaLoginHint: unused,
-    sendPasswordReset: unused,
-    sendNewBrowserSignIn: async () => {},
-  }),
-);
+const router = new Hono()
+  .use(sessionOriginGuard())
+  .route("/api/me", me)
+  .route(
+    "/api/auth",
+    createAuthRoutes({
+      sendMagicLink: unused,
+      sendIpaLoginHint: unused,
+      sendPasswordReset: unused,
+      sendNewBrowserSignIn: async () => {},
+    }),
+  );
 const post = (path: string, token: string, body: unknown = {}) =>
   router.request(path, {
     method: "POST",
@@ -140,6 +145,51 @@ suite("password changes end other sign-ins", () => {
   });
   afterAll(async () => {
     for (const [key, value] of previous) await settings.set(key, value);
+  });
+
+  test("foreign and missing Origins cannot log out or sign out other browser sessions", async () => {
+    for (const path of ["/api/auth/logout", "/api/me/sign-ins/sign-out-others"]) {
+      for (const origin of [undefined, "null", "https://evil.localhost:3000", "https://evil.example.test"]) {
+        const headers = new Headers({ Cookie: `session_token=${a}`, "Sec-Fetch-Site": "same-site" });
+        if (origin) headers.set("Origin", origin);
+        const response = await router.request(path, { method: "POST", headers });
+        expect(response.status).toBe(403);
+        expect(response.headers.has("set-cookie")).toBe(false);
+        expect(await session.authenticate(a)).not.toBeNull();
+        expect(await session.authenticate(b)).not.toBeNull();
+      }
+    }
+    expect((await post("/api/auth/logout", a)).status).toBe(200);
+    expect(await session.authenticate(a)).toBeNull();
+    expect(await session.authenticate(b)).not.toBeNull();
+  });
+
+  test("app and web session mutations reach SSR form handlers only with the canonical Origin", async () => {
+    const phone = await createTestAppSession(userId);
+    let writes = 0;
+    const forms = new Hono<AuthContext>()
+      .use(sessionOriginGuard())
+      .use(auth.requireRole("authenticated"))
+      .post("/app/example/action", async (c) => {
+        await c.req.parseBody();
+        writes++;
+        return c.json({ kind: c.get("sessionKind") });
+      });
+    for (const [name, token, kind] of [
+      ["session_token", a, "web"],
+      ["pwa_session", phone.token, "app"],
+    ]) {
+      const headers = { Cookie: `${name}=${token}`, "Content-Type": "application/x-www-form-urlencoded" };
+      expect((await forms.request("/app/example/action", { method: "POST", headers, body: "decision=approve" })).status).toBe(403);
+      const accepted = await forms.request("/app/example/action", {
+        method: "POST",
+        headers: { ...headers, Origin: issuer },
+        body: "decision=approve",
+      });
+      expect(accepted.status).toBe(200);
+      expect(await accepted.json()).toEqual({ kind });
+    }
+    expect(writes).toBe(2);
   });
 
   test("a password sign-in overlapping a password change gets no session", async () => {

@@ -1,5 +1,5 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { announce, Button, IconButton, Placeholder, prompts, Select, SelectChip, Tooltip, useLocale } from "@k2b/ui";
+import { Avatar, announce, Button, IconButton, Placeholder, prompts, Select, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
@@ -63,7 +63,7 @@ type PermissionEditorProps = {
 
   /** Revoke an existing entry. Any entry can be revoked except the last
    *  manager: once exactly one entry manages the resource (`admin` for a
-   *  person, group, all signed-in users, or a standalone or agent service
+   *  person, group, all signed-in people, or a standalone or agent service
    *  account), its row can neither be lowered nor removed. */
   revokeAccess: (accessId: string) => Promise<void>;
 
@@ -77,7 +77,7 @@ type PermissionEditorProps = {
   /** Allow granting `public` access from this editor. */
   allowPublic?: boolean;
 
-  /** Allow granting access to every authenticated user. Defaults to
+  /** Allow granting access to every signed-in person, including guests. Defaults to
    *  true; resources with an explicit principal allowlist can disable it. */
   allowAuthenticated?: boolean;
 
@@ -121,7 +121,7 @@ const defaultLabels = (t: ReturnType<typeof accessMessages.resolve>["t"]): Recor
   none: { label: t.noAccess, icon: "ti-ban" },
 });
 
-type ResolvedLevel = {
+export type ResolvedLevel = {
   level: GrantableLevel;
   scope: string | undefined;
   /** Unique per option: the level, prefixed by its scope. */
@@ -131,12 +131,15 @@ type ResolvedLevel = {
   description: string | undefined;
 };
 
-const levelKey = (level: PermissionLevel, scope: string | undefined): string => (scope ? `${scope}:${level}` : level);
+export const levelKey = (level: PermissionLevel, scope: string | undefined): string => (scope ? `${scope}:${level}` : level);
 
 /** Resolve the AllowedLevel union into a flat shape the renderer can
  *  loop over. Falls back to the default View / Edit / Manage list when
  *  no override is given. */
-const resolveAllowedLevels = (allowed: AllowedLevel[] | undefined, t: ReturnType<typeof accessMessages.resolve>["t"]): ResolvedLevel[] => {
+export const resolveAllowedLevels = (
+  allowed: AllowedLevel[] | undefined,
+  t: ReturnType<typeof accessMessages.resolve>["t"],
+): ResolvedLevel[] => {
   const defaults = defaultLabels(t);
   const list = allowed && allowed.length > 0 ? allowed : (["read", "write", "admin"] as GrantableLevel[]);
   return list.map((entry) => {
@@ -660,20 +663,26 @@ function AccessEntryRow(props: {
               </div>
             }
           >
-            <CloudAvatar
-              username={displayName()}
-              userId={
-                props.entry.principal.type === "user"
-                  ? props.entry.principal.userId
-                  : props.entry.principal.type === "service_account"
-                    ? props.entry.principal.serviceAccountId
-                    : undefined
-              }
-              avatarHash={props.entry.avatarHash}
-              kind={props.entry.principal.type === "service_account" ? "service_account" : "user"}
-              size="xs"
-              class="h-7 w-7"
-            />
+            {/* The account behind an object's API keys shows the key, as in the expanded rows. */}
+            <Show
+              when={!(props.entry.serviceAccountKind === "resource_bound" && !props.entry.avatarHash)}
+              fallback={<Avatar name={displayName()} icon="ti ti-key" shape="square" size="xs" class="h-7 w-7" />}
+            >
+              <CloudAvatar
+                username={displayName()}
+                userId={
+                  props.entry.principal.type === "user"
+                    ? props.entry.principal.userId
+                    : props.entry.principal.type === "service_account"
+                      ? props.entry.principal.serviceAccountId
+                      : undefined
+                }
+                avatarHash={props.entry.avatarHash}
+                kind={props.entry.principal.type === "service_account" ? "service_account" : "user"}
+                size="xs"
+                class="h-7 w-7"
+              />
+            </Show>
           </Show>
         </Show>
 
@@ -695,7 +704,7 @@ function AccessEntryRow(props: {
                   : props.entry.principal.type === "group"
                     ? t().group
                     : props.entry.principal.type === "authenticated"
-                      ? (props.signedInDescription ?? t().signedInDescription)
+                      ? (props.signedInDescription ?? t().signedInPermission({ level: display().label.toLocaleLowerCase(locale()) }))
                       : props.entry.principal.type === "service_account"
                         ? (props.entry.serviceAccountKind && serviceAccountKindDisplay(props.entry.serviceAccountKind, t()).label) ||
                           t().standaloneServiceAccount

@@ -45,7 +45,7 @@ Die Aktionsschaltflächen zeigen, was gerade möglich ist. Eine ausgeschaltete A
 - **Suche neu aufbauen** ersetzt nur die abgeleiteten Suchabschnitte.
 - **Unterhaltungsansicht reparieren** verknüpft verwaiste Nachrichten und aktualisiert Zusammenfassungen. Es entfernt Kopien eigener Mail-Entwürfe, die eine frühere Synchronisierung als Nachrichten importiert hat. Manuelle Zuordnungen von Unterhaltungen, Kommentare, Referenzen, Zuweisungen und der Zustand der Unterhaltungen bleiben erhalten.
 
-Ist das Ergebnis eines Befehls beim Anbieter unklar, bietet Mail nur **Anbietervorgang abgleichen** an. Der Abgleich prüft den Zustand beim Anbieter, bevor er das Ergebnis festlegt. Mail bietet keinen blinden neuen Versuch an, wenn ein Vorgang beim Anbieter schon begonnen haben könnte. Ein blinder neuer Versuch könnte die Aktion doppelt ausführen. **Vorgang erneut versuchen** und **Vorgang abbrechen** gibt es nur für Wartungsbefehle, die beim Anbieter lesen und deren Wirkung beim Anbieter nicht begonnen hat.
+Ist das Ergebnis eines Befehls beim Anbieter unklar, bietet Mail nur **Anbietervorgang abgleichen** an. Der Abgleich prüft den Zustand beim Anbieter, bevor er das Ergebnis festlegt. Bei einem Versand nutzt Mail die gespeicherte Antwort des Mailservers oder sucht die Nachricht im Ordner Gesendet und sendet sie nie ein zweites Mal. Mail bietet keinen blinden neuen Versuch an, wenn ein Vorgang beim Anbieter schon begonnen haben könnte. Ein blinder neuer Versuch könnte die Aktion doppelt ausführen. **Vorgang erneut versuchen** und **Vorgang abbrechen** gibt es nur für Wartungsbefehle, die beim Anbieter lesen und deren Wirkung beim Anbieter nicht begonnen hat.
 
 Die Cloud-Administration sieht dieselbe geschwärzte Zusammenfassung unter **Administration → Mail**. Sie enthält Zahlen, Zustände, Zeitstempel, verfügbare Capabilities, IDs und Fehlercodes. Sie enthält keine Betreffzeilen, Adressen, Nachrichtentexte, Anhangsnamen, Anbieter-Endpunkte, Zugangsdaten oder rohen Fehler des Anbieters.
 
@@ -182,7 +182,7 @@ Agenten ändern Abonnements beim Anbieter mit `cld mail folder subscribe` und `c
 - **Ansehen** zum Lesen, Suchen, Kommentieren und für persönliche Erinnerungen.
 - **Bearbeiten** für den Versand, Vorgänge an E-Mails beim Anbieter und Änderungen an der Zusammenarbeit.
 - **Verwalten** für Transport, Freigabe, Regeln, Workflows und den Lebenszyklus des Postfachs.
-- **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten** für Personen, Gruppen, Agenten und eigenständige Dienstkonten, die nur an den ihnen zugewiesenen Unterhaltungen arbeiten. Was sie damit tun können, steht in [Gemeinsam in einem Postfach arbeiten](/app/mail/help/mail-collaboration).
+- **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten** für Personen, Gruppen und Agenten, die nur an den ihnen zugewiesenen Unterhaltungen arbeiten. Was sie damit tun können, steht in [Gemeinsam in einem Postfach arbeiten](/app/mail/help/mail-collaboration).
 
 **Verwaltungszugriff für automatische Antworten** ist eine Einstellung des Postfachs über der Zugriffsliste:
 
@@ -221,7 +221,7 @@ Die CLI bietet dieselben Werkzeuge zur Wiederherstellung:
 
 - `cld mail admin mailbox list` findet Postfächer, auch solche, die die aktuelle Administration nicht öffnen kann.
 - `cld mail admin mailbox get <mailbox>` zeigt einen geschwärzten Betriebsdatensatz.
-- `cld mail admin mailbox access list|grant|set|revoke <mailbox>` ändert direkten Zugriff für Nutzer, Gruppen oder Dienstkonten.
+- `cld mail admin mailbox access list|grant|set|revoke <mailbox>` ändert direkten Zugriff für Nutzer, Gruppen, Agenten oder Dienstkonten.
 - `cld mail admin storage show|reconcile` liest oder aktualisiert die Speicherdaten.
 
 **Speicherbestand aktualisieren** reiht einen Abgleich im Hintergrund ein. Die Seite und `cld mail admin storage show` zeigen bis zum Ende dieses Auftrags weiter den letzten abgeschlossenen Stand. Das Einreihen aktualisiert die Zahlen nicht sofort. Diese Werte sind Betriebsdaten, keine Speicherkontingente, und sie erlauben keinen Blick in Inhalte.

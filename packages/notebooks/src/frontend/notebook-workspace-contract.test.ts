@@ -32,10 +32,10 @@ describe("Notebooks workspace contract", () => {
     expect(openSettings).toContain("openNotebookSettingsDialog");
   });
 
-  test("uses the shared presence stack", async () => {
+  test("uses the shared presence section", async () => {
     const source = await Bun.file(resolve(import.meta.dir, "[id]/_components/detail/NotebookDetailPanel.island.tsx")).text();
 
-    expect(source).toContain("<AvatarStack people={people()}");
+    expect(source).toContain("<DetailPresence");
   });
 
   test("uses shared tree rows and action visibility for note navigation", async () => {

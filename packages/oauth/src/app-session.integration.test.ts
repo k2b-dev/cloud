@@ -55,6 +55,21 @@ suite("OAuth refuses the Cloud app's session", () => {
     if (createdUsers.length > 0) await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(createdUsers)}::uuid[])`;
   });
 
+  test("OAuth end-session GET cannot revoke a session; its POST awaits revocation", async () => {
+    const userId = await person();
+    const token = await createTestSession(userId);
+    const headers = { cookie: `session_token=${token}`, origin: ISSUER, "x-forwarded-for": uniqueCallerAddress() };
+    const probe = new Hono<AuthContext>().get("/probe", auth.requireRole("authenticated"), (c) => c.text("signed in"));
+    expect((await probe.request("/probe", { headers })).status).toBe(200);
+    const navigation = await oauthRoutes.request("/oauth/logout", { headers });
+    expect(navigation.headers.get("set-cookie")).toBeNull();
+    expect((await probe.request("/probe", { headers })).status).toBe(200);
+    const logout = await oauthRoutes.request("/oauth/logout", { method: "POST", headers });
+    expect(logout.status).toBe(302);
+    expect(logout.headers.get("set-cookie")).toContain("session_token=");
+    expect((await probe.request("/probe", { headers })).status).toBe(401);
+  });
+
   test("the device page and its decision need a web session", async () => {
     const userId = await person();
     const { token } = await createTestAppSession(userId);

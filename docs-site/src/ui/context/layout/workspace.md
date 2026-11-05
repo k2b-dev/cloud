@@ -192,7 +192,10 @@ any island:
 
 Both stay one constant label ("Navigation", "Details"); the shared controller
 runs them and keeps their `aria-expanded` current, so the button needs no click
-handler of its own. Keep the head where a page has no such toolbar: removing it
+handler of its own. Render the Details button with `DetailsToggle`: every app
+shows Details with the same info circle (`DETAILS_ICON`), a different shape
+from the side panel's rectangle with an arrow, and the button shows the
+selection fill while its panel is open, without a border or shadow. Keep the head where a page has no such toolbar: removing it
 must not remove a way to the navigation or the details at any width.
 
 ## Compose the regions
@@ -379,6 +382,12 @@ applies the destination state. Otherwise it is a normal document link. When a
 level change hides the focused control, such as the back step itself or a row
 of a list the phone no longer shows, focus moves to the title of the selected
 level.
+
+A level whose content has its own parent inside the same column, such as a
+sub-view that replaces an object's detail in place, passes `back` with that
+parent's `href` and name. Its back step then shows at every width, also beside
+the levels before it, and replaces the shared step to the level before; the
+shallower level keeps its own `href`.
 
 Each level head is a 46 px row without a line under it: the `label` as the
 title, an optional one-line `description`, and trailing `actions`. Mark the
@@ -1032,6 +1041,10 @@ state visible with the default `"always"` value.
 ```
 
 ### Unread counts, dots, and mentions
+
+Import `AppWorkspaceSidebarItemStatus` directly from `@k2b/ui` in small islands that
+need only the unread mark. It has the same props and behavior as
+`AppWorkspace.SidebarItemStatus`, which remains available.
 
 Put `SidebarItemStatus` in `meta`, `SidebarItemMeta`, or a `NavTree.Item`
 `meta` to show what is new in a conversation, inbox, or feed:

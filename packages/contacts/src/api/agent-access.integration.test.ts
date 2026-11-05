@@ -1,13 +1,21 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import type { AuthContext } from "@k2b/cloud/server";
+import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
 import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
+import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
+import { app } from "../config";
 import { contactsService } from "../service";
 import contactsApi from ".";
+
+const gatedApi = new Hono<AuthContext>()
+  .use(requireAppAccess(app.meta, async () => new Response("denied", { status: 403 })))
+  .route("/api/contacts", contactsApi);
 
 const suite = databaseSuite();
 setDefaultTimeout(30_000);
@@ -36,7 +44,7 @@ const apiAs = async (account: { id: string }, scopes: string[]) => {
   if (!created.ok) throw new Error(created.error.message);
   const authorization = `Bearer ${created.data.token}`;
   return (path: string, init?: { method?: string; body?: unknown }) =>
-    contactsApi.request(path, {
+    gatedApi.request(`/api/contacts${path === "/" ? "" : path}`, {
       method: init?.method ?? "GET",
       headers: { authorization, ...(init?.body === undefined ? {} : { "content-type": "application/json" }) },
       ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
@@ -189,7 +197,7 @@ sharingSuite("Contact book sharing by machine managers", () => {
         await sql`INSERT INTO contacts.book_access (book_id, access_id) VALUES (${book.id}::uuid, ${ownerGrant!.id}::uuid)`;
         const cookie = `session_token=${await createTestSession(owner!.id)}`;
         const human = (path: string, method: string, body?: unknown) =>
-          contactsApi.request(path, {
+          gatedApi.request(`/api/contacts${path === "/" ? "" : path}`, {
             method,
             headers: { cookie, "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
             ...(body === undefined ? {} : { body: JSON.stringify(body) }),

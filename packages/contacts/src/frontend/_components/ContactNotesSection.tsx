@@ -206,6 +206,7 @@ export default function ContactNotesSection(props: Props) {
   return (
     <Discussion
       ref={sectionRoot}
+      icon="ti ti-message-circle"
       label={t().comments}
       count={notesPage().total}
       actions={

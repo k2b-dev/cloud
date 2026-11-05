@@ -423,6 +423,13 @@ export default function MailOperationalSettings(props: {
           <i class="ti ti-search app-accent-text" aria-hidden="true" />
           {healthSummary().search}
         </span>
+        {/* A message whose body failed to load is that message's state; the mailbox stays active. */}
+        <Show when={props.health.hydration.failed > 0}>
+          <span class="flex items-center gap-1.5" data-mail-failed-message-count>
+            <i class="ti ti-mail-off app-accent-text" aria-hidden="true" />
+            {messages().failedMessageCount({ count: props.health.hydration.failed })}
+          </span>
+        </Show>
       </div>
 
       <section class="flex flex-col gap-3">
