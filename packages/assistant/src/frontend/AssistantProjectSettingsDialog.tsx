@@ -1,4 +1,4 @@
-import { type GrantableLevel, openAccessDialog, PermissionEditor } from "@k2b/cloud/access/ui";
+import { AccessSummary, type GrantableLevel, openAccessDialog } from "@k2b/cloud/access/ui";
 import type { AiProject, AiProjectAccess } from "@k2b/cloud/ai";
 import { AiModelField } from "@k2b/cloud/ai/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
@@ -247,7 +247,7 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
               >
                 <SettingsGroup.Action>
                   <Button size="sm" variant="secondary" disabled={!access.data()} onClick={runEditAccess}>
-                    <i class="ti ti-pencil" aria-hidden="true" />
+                    <i class="ti ti-lock-access" aria-hidden="true" />
                     {text("Edit access")}
                   </Button>
                 </SettingsGroup.Action>
@@ -268,15 +268,7 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
                     />
                   }
                 >
-                  {(entries) => (
-                    <PermissionEditor
-                      initialEntries={entries()}
-                      canEdit={false}
-                      grantAccess={grantAccess}
-                      updateAccess={updateAccess}
-                      revokeAccess={revokeAccess}
-                    />
-                  )}
+                  {(entries) => <AccessSummary entries={entries()} />}
                 </Show>
                 <Show when={access.data() && access.error()}>
                   <NoticeCard tone="warning" title={text("Access could not be reloaded.")}>

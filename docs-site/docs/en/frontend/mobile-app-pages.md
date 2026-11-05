@@ -5,7 +5,7 @@ section: Frontend
 order: 835
 description: Add application pages for devices to the installable Cloud app.
 tags: [mobile, pwa, routing, layout]
-updated: 2026-10-23
+updated: 2026-11-04
 ---
 
 # Pages in the Cloud app
@@ -65,8 +65,10 @@ mark; `0`, an error, or another answer shows none.
 a `PwaPartSummary`: `{ "count": n, "text": "…" }`. Start shows `text` under
 the part instead of its `description`, and the sidebar shows `count` quietly
 beside a part without a `badge`. Write `text` in the request's locale, as one
-line of at most 200 characters, such as "5 tasks for you · 1 today". Until the
-route answers, or when it fails, Start shows the `description`.
+line of at most 200 characters, such as "5 tasks for you · 1 today". Start reserves an
+empty summary line until the route answers, and clears it when a read fails. The line
+stays the same height when live text arrives; long text is truncated visually. Parts
+without a summary route keep their `description`.
 
 Both routes are read once a minute and when the app returns to the
 foreground, and must be among the application's own paths. Chat answers both
@@ -193,7 +195,9 @@ Automatic is the default and follows the device.
 
 App pages switch at once, without the cross-fade that web pages use between
 documents. A browser ignores taps while such a transition runs, so a quick
-second tap in the tab bar would be lost.
+second tap in the tab bar would be lost. Inside a part, a navigation with
+`@k2b/ssr/nav` keeps its view transition, and only the content takes part:
+the shell's header, tab bar, and sidebar show the next page at once.
 
 A tab or sidebar row switches at the first touch. The item shows as selected, the header
 shows the title of the tab's page, and the content area is empty. The page
@@ -352,13 +356,34 @@ own gesture, such as a drag handle, sets its own `touch-action`.
 
 ## Offline and updates
 
-The Cloud app's service worker handles only navigations below `/pwa/` and
-caches nothing. Every page and every API response comes from the network.
+The Cloud app keeps public, versioned JavaScript and stylesheets on the device,
+so revisiting a part can reuse them even after the browser clears its HTTP cache.
+Content-hashed fonts can also be kept; fonts with stable filenames still use the
+network. Files enter this separate cache when used, up to 16 MiB across the app.
+The oldest files leave first when space is needed, and a worker update removes
+files outside the currently registered builds. The browser may evict this cache.
+
+Each file is checked against the final build's SHA-256 digest before reuse.
+The worker obtains those digests through its own network-served source;
+application pages cannot supply them. Application authors get this behavior
+through `defineApp()` without an application-owned worker. Applications built
+before this contract continue to use the network until rebuilt.
+
+Every page and every API response still comes from the network. HTML, private
+responses, account data, and unversioned scripts never enter the worker cache.
+Public static files need no cleanup on sign-out or unpairing; account drafts
+still follow [Keep drafts](#keep-drafts).
 When the installation cannot be reached or the gateway cannot reach the
 application, the app shows its offline page with **Try again**. While a part's
 application is not registered, its pages show the app's not-found page. An
 open page shows a "You're offline" notice above the tab bar until the
 connection returns.
+
+A cached part does not become an offline application: starting or reloading it
+without the network shows the offline page, because its document and data are
+never stored. An already open part retains its current display and can load a
+previously cached static chunk, but fetching new data or saving still needs a
+connection.
 
 Parts have no offline mode of their own. Write actions need the network: keep
 the action available, report a failure in a toast with **Retry**, and never
@@ -382,11 +407,16 @@ Unnamed development builds do not identify a release.
 On returning to the foreground with a new version, the app reloads the current
 address when no field the person types into (text, numbers, dates, and times)
 is focused, no unsaved typing or account draft remains, and no modal dialog is
-open. Otherwise it shows a persistent quiet notice with the installation's
+open, and no write, upload, AI answer, or dictation is running. Otherwise it shows a persistent quiet notice with the installation's
 name, such as **New version of Example Cloud · Reload** (**Neue Version von
 Example Cloud · Neu laden** in German), in the work area's toast rail. Its action reloads the current page; stored drafts
 restore after mounting. The hourly check offers the same notice and never
 interrupts work with an automatic reload. There is no extra polling.
+
+Typed API writes, capability Actions, provider uploads, the AI chat controller,
+and live dictation hold automatic update reloads by default. GET reads and idle
+live subscriptions do not. Once an action settles, the next foreground check
+may reload; settling alone never reloads the page.
 
 Parts use the draft helper for text they intend to save or send. For other
 text fields, automatic reloads also defer when input differs from the field's
@@ -438,9 +468,10 @@ result at once and saves in the background, as described in
 ### Judge loading speed
 
 Judge loading speed on a production build. In production, the device's
-browser keeps stylesheets, scripts, and fonts in its cache, so a tab switch
-usually loads only its page. After an application restarts or updates, its
-first page loads its stylesheets again. A development stack serves the same
+browser keeps stylesheets, scripts, and fonts in its HTTP cache. The Cloud app
+also keeps verified versioned files in its worker cache, so a tab switch
+usually loads only its page and current data. After an application updates, its
+first page loads files for the new build. A development stack serves the same
 files uncompressed and asks the server again for each of them on every
 page. Over a slow or remote connection, such as a VPN, a tab switch then takes
 a second or more, while the same switch in production takes a few hundred

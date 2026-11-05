@@ -1,6 +1,7 @@
 import { cliAmbiguityText, localizeCloudCliText } from "@k2b/cloud/cli";
 import {
   AccessEntrySchema,
+  AccessMemberSchema,
   createPagination,
   ErrorResponseSchema,
   GrantAccessSchema,
@@ -1088,6 +1089,30 @@ const app = new Hono<AuthContext>()
         bookId: internalBookId!,
       });
       return respond(c, entries.ok ? ok(entries.data.items) : entries);
+    },
+  )
+
+  // List who has access, read-only
+  .get(
+    "/books/:bookId/access/members",
+    documentRoute({
+      tags: ["Contacts"],
+      summary: "List who has access",
+      description:
+        "Names and roles of everyone with access to a book, read-only. Requires read access of one's own: public access alone does not show who else has access.",
+      ...requiresAuth,
+      responses: {
+        ...bookScopedResponses,
+        200: jsonResponse(z.array(AccessMemberSchema), "Who has access"),
+      },
+    }),
+    async (c) => {
+      const internalBookId = await resolvePublicId("books", c.req.param("bookId") ?? "");
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
+      return respond(
+        c,
+        await contactsService.book.access.members({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), bookId: internalBookId }),
+      );
     },
   )
 

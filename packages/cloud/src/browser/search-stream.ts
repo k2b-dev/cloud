@@ -16,6 +16,8 @@ export type SearchRun = {
   providers: string[];
   status: Record<string, SearchAppStatus>;
   blocks: SearchBlock[];
+  /** Apps that found more rows than they listed. */
+  more: Record<string, boolean>;
   unsupportedTags: string[];
   /** The stream has ended; a retried app may still search afterwards. */
   done: boolean;
@@ -28,6 +30,7 @@ export const emptySearchRun = (): SearchRun => ({
   providers: [],
   status: {},
   blocks: [],
+  more: {},
   unsupportedTags: [],
   done: false,
   failed: false,
@@ -53,6 +56,7 @@ export const applySearchLine = (run: SearchRun, line: SearchStreamLine): SearchR
     ...run,
     status: { ...run.status, [line.provider]: line.status },
     blocks: items.length ? [...run.blocks, { appId: line.provider, items }] : run.blocks,
+    more: { ...run.more, [line.provider]: line.more === true },
   };
 };
 

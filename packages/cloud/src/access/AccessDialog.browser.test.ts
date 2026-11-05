@@ -97,8 +97,9 @@ describe("AccessDialog in a browser", () => {
         const before = await Promise.all(["Jonas Weber", "Logistik", "Lagerbot", "Lea Schmitt"].map((name) => rowTop(page, name)));
         const lea = page.locator("dialog li", { hasText: "Lea Schmitt" });
         await lea.locator("button[aria-haspopup]").first().click();
+        // The level menu offers each level with what it means, as in the approved mockup.
         await page
-          .locator('[role="option"]', { hasText: locale === "de" ? "Bearbeiten" : "Edit" })
+          .locator('[role="dialog"] [role="radio"]', { hasText: locale === "de" ? "Bearbeiten" : "Edit" })
           .last()
           .click();
         await page.locator(`dialog button[aria-label="${locale === "de" ? "Lagerbot entfernen" : "Remove Lagerbot"}"]`).click();

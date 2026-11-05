@@ -20,7 +20,7 @@ export const PublicReferencedByPageSchema = z
   })
   .strict();
 
-type PublicReferencedByPage = z.infer<typeof PublicReferencedByPageSchema>;
+export type PublicReferencedByPage = z.infer<typeof PublicReferencedByPageSchema>;
 
 export const toPublicReferencedByPage = (page: ReferencedByPage): PublicReferencedByPage =>
   PublicReferencedByPageSchema.parse({

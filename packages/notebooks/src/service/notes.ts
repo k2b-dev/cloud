@@ -246,7 +246,8 @@ const mapToNoteVersion = (row: DbNoteVersion): NoteVersion => ({
   contributors: typeof row.contributors === "string" ? JSON.parse(row.contributors) : row.contributors,
 });
 
-const defaultDateConfig = async (): Promise<DateContext> => {
+/** The installation's zone and language, for callers without a request of their own such as capabilities. */
+export const defaultDateConfig = async (): Promise<DateContext> => {
   const [timeZone, locale] = await Promise.all([settingsGet<string>("app.timezone"), settingsGet<string>("app.locale")]);
   return {
     timeZone: dates.normalizeTimeZone(String(timeZone || "").trim(), "UTC"),

@@ -1020,6 +1020,11 @@ fields. Core adds nullable columns to its existing Assistant reference index
 through its normal startup migration; no operator configuration is needed.
 See [result references](/en/docs/platform/capabilities).
 
+Universal Search result metadata may now carry a `format` for dates. Upgrade
+Core before the apps: Core accepts the search of apps built by earlier
+releases, but an earlier Core leaves out the search of an app built by this
+release until Core is upgraded. See [Search](/en/docs/platform/search).
+
 During the rollout to this release, and during a rollback to the previous
 version, replicas of the previous version write no liveness key. While they
 run, a replica that stops can still delete the shared registry entry once, and
@@ -2350,3 +2355,19 @@ apps through `cld admin apps keys` or Core’s administrator API. Enrollment use
 the same app-bound service account as workload credentials. Keep the current
 runtime configuration when enrolling; see [App keys](/en/docs/operations/app-keys)
 for the supported commands and recovery steps.
+
+### Cloud app static assets
+
+Rebuild applications to let the Cloud app retain their versioned static files.
+`defineApp()` supplies an internal build catalog at `/_internal/pwa-assets`; the
+Cloud app reads it directly from registered Core, shell, and part services. No
+new gateway route or operator setting is needed. Deploy the complete `_ssr` and
+`public` output beside the server bundle as before. The catalog hashes the final
+uncompressed files, including any build rewrites.
+
+The network-served worker pins the active catalogs and verifies SHA-256 on every
+cache read. An app whose catalog does not answer is left out until the next worker
+update; its files then load from the network. Worker updates remove entries absent from those builds. Static cache
+storage is limited to 16 MiB; storage denial or eviction falls back to the network.
+Pages and API responses remain network-only. See
+[Offline and updates](/en/docs/frontend/mobile-app-pages#offline-and-updates).

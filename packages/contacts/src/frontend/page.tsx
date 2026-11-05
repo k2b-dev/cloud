@@ -110,6 +110,7 @@ export default ssr<AuthContext>(async (c) => {
   const selectedPublicContact = projectedSelected[0] ?? null;
   const bookIds = new Map(internalBooks.map((book, index) => [book.id, books[index]!.id]));
   const adminBookIds = permissions.adminBookIds.map((id) => bookIds.get(id)!).filter(Boolean);
+  const memberBookIds = permissions.memberBookIds.map((id) => bookIds.get(id)!).filter(Boolean);
   const writableBooks = permissions.writableBooks
     .map((book) => ({ ...book, id: bookIds.get(book.id)! }))
     .filter((book) => Boolean(book.id));
@@ -173,6 +174,7 @@ export default ssr<AuthContext>(async (c) => {
               bookNames={bookNames}
               writableBooks={writableBooks}
               adminBookIds={adminBookIds}
+              memberBookIds={memberBookIds}
               currentUserId={user.id}
               showEmpty={false}
               initialFavoriteKeys={favoriteKeys}

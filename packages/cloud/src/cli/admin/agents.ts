@@ -308,12 +308,12 @@ export const agentCommands = [
     args: { agent: arg.required({ valueLabel: "agent-id-or-name" }), keyId: arg.required({ valueLabel: "key-id" }) },
     flags: { yes: confirmFlag("Revoke this agent API key") },
     async run({ ctx, args, flags }) {
-      requireYes(ctx, flags.yes, "Revoking an agent API key requires --yes.", "Agent-API-Schlüssel widerrufen erfordert --yes.");
+      requireYes(ctx, flags.yes, "Revoking an agent API key requires --yes.", "Einen API Key eines Agenten zu widerrufen erfordert --yes.");
       const keyId = z.uuid().parse(args.keyId);
       const agent = await resolveAgent(ctx, args.agent);
       // The route revokes only a key of this agent; another account's key answers 404.
       const result = await apiJson(ctx, "DELETE", `${keysPath(agent.id)}/${encodeURIComponent(keyId)}`);
-      if (!printStructured(ctx, result)) ctx.print(cliText(ctx, { en: "API key revoked.", de: "API-Schlüssel widerrufen." }));
+      if (!printStructured(ctx, result)) ctx.print(cliText(ctx, { en: "API key revoked.", de: "API Key widerrufen." }));
     },
   }),
   command("agents avatar show", {

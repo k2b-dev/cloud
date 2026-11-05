@@ -4,6 +4,14 @@ import * as navigation from "@k2b/ssr/nav";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 
+/** Opens a row's level menu and picks a level, as a person would. */
+const chooseLevel = (row: Element, level: string) => {
+  row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+  Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]'))
+    .find((option) => option.textContent?.includes(level))!
+    .click();
+};
+
 /** happy-dom has no Popover API; the actions menu opens through it. */
 const installPopoverApi = (dom: DomTestHarness) => {
   const prototype = dom.window.HTMLElement.prototype as unknown as Record<string, unknown>;
@@ -133,9 +141,7 @@ describe("Contacts administration access", () => {
     try {
       await waitFor(() => ui.dialog()?.textContent?.includes("Ada Lovelace") === true, "the access dialog");
       const row = Array.from(ui.dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes("Ada Lovelace"))!;
-      Array.from(row.querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes("Edit"))!
-        .click();
+      chooseLevel(row, "Edit");
       await waitFor(() => ui.dialog()?.textContent?.includes("1 change") === true, "one change");
       expect(writes).toEqual([]);
       ui.button("Save")!.click();
@@ -172,9 +178,7 @@ describe("Contacts administration access", () => {
     try {
       await waitFor(() => ui.dialog()?.textContent?.includes("Ben Albers") === true, "the access dialog");
       const row = (name: string) => Array.from(ui.dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
-      Array.from(row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes("Edit"))!
-        .click();
+      chooseLevel(row("Lea Schmitt"), "Edit");
       row("Ben Albers").querySelector<HTMLButtonElement>('button[aria-label="Remove Ben Albers"]')!.click();
       await waitFor(() => ui.dialog()?.textContent?.includes("2 changes") === true, "two changes");
       ui.button("Save")!.click();

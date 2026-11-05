@@ -5,7 +5,7 @@ section: Frontend
 order: 825
 description: Build an object's detail panel from the shared sections, in one order of use, with every state and one text edge.
 tags: [detail panel, presence, access, links, properties, tags, progressive disclosure]
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # Detail panels
@@ -88,6 +88,22 @@ role. People who read only through a public link never see the section. Make
 this decision on the server, both for the list endpoint and for the page that
 decides whether to show the section; see
 [Show who has access](/en/docs/identity/authorization#show-who-has-access).
+Turn the list into the section's rows with `accessMemberEntries(members, {
+currentUserId, locale })` from `@k2b/cloud/access/ui`: it names every
+principal and role in the words of the access dialog, marks the viewer as
+"You", and leaves out grants without a permission. Load the list once per
+page after the first paint and pass `state="loading"` until it arrives.
+
+```tsx
+import { accessMemberEntries } from "@k2b/cloud/access/ui";
+
+<DetailAccess
+  entries={accessMemberEntries(members(), { currentUserId, locale: locale() })}
+  state={accessState()}
+  onRetry={loadAccess}
+/>
+```
+
 Pass "Manage access" only to people who may change access. The section never
 changes a grant itself.
 

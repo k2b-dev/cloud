@@ -33,6 +33,8 @@ const detailSectionMessages = i18n.define({
         more > 0 ? `Linked from ${names} and ${more} more` : `Linked from ${names}`,
       linksToSummary: ({ names, more }: { names: string; more: number }) =>
         more > 0 ? `Links to ${names} and ${more} more` : `Links to ${names}`,
+      linksLoading: "Loading links",
+      linksFailed: "Could not load all links",
       properties: "Properties",
       tags: "Tags",
     },
@@ -61,6 +63,8 @@ const detailSectionMessages = i18n.define({
       linksTo: ({ count }) => `Verweist auf ${count}`,
       linkedBySummary: ({ names, more }) => (more > 0 ? `Verlinkt von ${names} und ${more} weiteren` : `Verlinkt von ${names}`),
       linksToSummary: ({ names, more }) => (more > 0 ? `Verweist auf ${names} und ${more} weitere` : `Verweist auf ${names}`),
+      linksLoading: "Lädt Verknüpfungen",
+      linksFailed: "Nicht alle Verknüpfungen konnten geladen werden",
       properties: "Eigenschaften",
       tags: "Tags",
     },

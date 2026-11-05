@@ -2615,11 +2615,67 @@ describe("mail capabilities", () => {
       subject: "Quarterly report",
       snippet: "The report is ready",
       from: [{ name: "Ada", address: "ada@example.test" }],
+      to: [{ name: null, address: "team@example.test" }],
       internalDate: "2026-08-04T10:00:00.000Z",
+      folderPath: null,
+      attachmentCount: 0,
       attachmentMatch: null,
     };
     const page = (items: unknown[]) => ({ ok: true, data: { items, nextCursor: null, backend: "native" } }) as never;
     const searchFailed = { ok: false, error: { code: "INTERNAL", message: "Mail search failed", status: 500 } } as const;
+
+    test("lists every matching mail newest first with what tells similar mails apart", async () => {
+      const list = spyOn(mailboxes, "listMailboxes").mockResolvedValue({
+        ok: true,
+        data: [mailboxRow(internalMailboxId, "Support"), mailboxRow(otherMailboxId, "Sales")],
+      } as never);
+      const older = {
+        ...hit,
+        subject: "Changes from 1 November",
+        from: [{ name: "Ben", address: "ben@example.test" }],
+        internalDate: "2026-10-30T08:00:00.000Z",
+      };
+      const newer = {
+        ...hit,
+        id: "34343434-3434-4434-8434-343434343434",
+        subject: "Changes from 1 November",
+        from: [{ name: null, address: "carla@example.test" }],
+        to: ["Ada", "Ben", "Dan", "Eve"].map((name) => ({ name, address: `${name.toLowerCase()}@example.test` })),
+        internalDate: "2026-11-02T09:30:00.000Z",
+        folderPath: "Projects / Moves",
+        attachmentCount: 2,
+      };
+      const query = spyOn(search, "searchMessages").mockImplementation(async ({ mailboxId }) =>
+        page(mailboxId === internalMailboxId ? [older] : [newer]),
+      );
+      spyOn(publicResources, "publicIds").mockImplementation(async (_kind, ids) => new Map(ids.map((id) => [id, id])) as never);
+
+      const result = await mailCapabilities.queries.search.run({ query: "changes", tags: [], limit: 31 }, { ...context, locale: "en" });
+
+      if (!result.ok) throw new Error("Expected search results");
+      expect(list.mock.calls[0]?.[1]).toBe(200);
+      for (const call of query.mock.calls)
+        expect(call[0]).toMatchObject({ request: { sort: "newest", limit: 31 }, groupByConversation: false });
+      const [first, second] = result.data.data;
+      expect(first?.context).toBe("carla@example.test · Sales");
+      expect(first?.metadata).toEqual([
+        { label: "From", value: "carla@example.test" },
+        { label: "Recipients", value: "Ada, Ben, Dan +1" },
+        { label: "Date", value: "2026-11-02T09:30:00.000Z", format: "date-time" },
+        { label: "Folder", value: "Projects / Moves" },
+        { label: "Mailbox", value: "Sales" },
+        { label: "Attachments", value: "2" },
+      ]);
+      // Both mails share one conversation; each row opens its own mail.
+      expect(first?.links[0]?.href).toEndWith(`?message=${newer.id}`);
+      expect(second?.links[0]?.href).toEndWith(`?message=${older.id}`);
+      expect(second?.context).toBe("Ben · Support");
+      expect(second?.metadata?.find((entry) => entry.label === "Date")).toEqual({
+        label: "Date",
+        value: "2026-10-30T08:00:00.000Z",
+        format: "date-time",
+      });
+    });
 
     test("keeps the results of answering mailboxes and names the mailbox that failed", async () => {
       spyOn(mailboxes, "listMailboxes").mockResolvedValue({

@@ -1,5 +1,5 @@
 import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
-import { hasRole } from "@k2b/cloud/contracts";
+import { hasRole, type PermissionLevel } from "@k2b/cloud/contracts";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { extractNamedBlockSummaries } from "@k2b/editor/markdown/lib/named-blocks";
@@ -138,7 +138,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     selected.note && !isVersionsMode && !isGraphMode && !isBookMode
       ? await notebooksService.note.getByShortId({ shortId: selected.note.id })
       : null;
-  const [attachmentCount, tags, favoriteRows, commentsPage] = await Promise.all([
+  const [attachmentCount, tags, favoriteRows, commentsPage, pageTemplates] = await Promise.all([
     notebooksService.attachment.count({ notebookId }),
     notebooksService.tag.listForNotebook({ notebookId }),
     notebooksService.note.favorites.listIds({ notebookId, userId: user.id }),
@@ -150,6 +150,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
           pagination: { page: 1, perPage: 30 },
         })
       : Promise.resolve(null),
+    notebooksService.pageTemplate.list({ notebookId, permission, locale }),
   ]);
   // The margin's comments arrive with the page, so its first render already shows them where they belong.
   const initialAnnotations =
@@ -198,6 +199,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     attachmentCount,
     favoriteNoteIds: favoriteRows.map((row) => row.noteId),
     tags,
+    pageTemplates: pageTemplates.ok ? pageTemplates.data : [],
     workspaceCursor,
     dateConfig: getDateConfig(c),
     sidebarFilter,
@@ -452,8 +454,9 @@ export const loadSidebarWithoutNote = async (params: {
   sort: NotebookContext["settings"]["treeSort"];
   locale: string;
   filter: SidebarFilter;
+  permission: PermissionLevel;
 }) => {
-  const [sidebarTree, sidebarList] = await Promise.all([
+  const [sidebarTree, sidebarList, pageTemplates] = await Promise.all([
     notebooksService.note.sidebar.tree({
       notebookId: params.notebook.id,
       sort: params.sort,
@@ -462,8 +465,9 @@ export const loadSidebarWithoutNote = async (params: {
       selectedNoteId: null,
     }),
     loadFirstListPage(params.notebook.id, params.userId, params.filter),
+    notebooksService.pageTemplate.list({ notebookId: params.notebook.id, permission: params.permission, locale: params.locale }),
   ]);
-  return { sidebarTree, sidebarList };
+  return { sidebarTree, sidebarList, pageTemplates: pageTemplates.ok ? pageTemplates.data : [] };
 };
 
 /** The first page of the sidebar filter in the address, so the server and the first render show the same list. */

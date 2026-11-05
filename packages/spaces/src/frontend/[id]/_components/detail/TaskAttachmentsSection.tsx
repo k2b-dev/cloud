@@ -235,7 +235,7 @@ export default function TaskAttachmentsSection(props: {
 
   return (
     <>
-      <DetailPanel.Section title={t.attachments} count={media().length || undefined}>
+      <DetailPanel.Section title={t.attachments} icon="ti ti-paperclip" count={media().length || undefined}>
         <div class="flex flex-col gap-2">
           <Show when={media().length > 0}>
             {/* Videos as rows first, then images as tiles: the short list keeps the order of the full one. */}

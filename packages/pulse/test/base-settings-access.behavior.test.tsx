@@ -4,6 +4,14 @@ import { delegateEvents, isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { PulseBase } from "../src/contracts";
 
+/** Opens a row's level menu and picks a level, as a person would. */
+const chooseLevel = (row: Element, level: string) => {
+  row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+  Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]'))
+    .find((option) => option.textContent?.includes(level))!
+    .click();
+};
+
 const base: PulseBase = {
   id: "base-1",
   shortId: "base-1",
@@ -135,9 +143,7 @@ describe("Pulse base settings: access", () => {
       await waitFor(() => panel()?.textContent?.includes("Ben Albers") === true, "the access dialog");
     };
     const stageTwoChanges = async () => {
-      Array.from(row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes("Edit"))!
-        .click();
+      chooseLevel(row("Lea Schmitt"), "Edit");
       row("Ben Albers").querySelector<HTMLButtonElement>('button[aria-label="Remove Ben Albers"]')!.click();
       await waitFor(() => panel()?.textContent?.includes("2 changes") === true, "two changes");
     };

@@ -33,7 +33,7 @@ const snapshot = (view: OverviewView, items: OverviewWork["items"], mine = items
   items,
 });
 
-type Call = { method: string; path: string; search: string; body: unknown };
+type Call = { method: string; path: string; search: string; body: unknown; signal?: AbortSignal | null };
 type Answer = Response | Promise<Response> | "offline";
 const mockFetch = (route: (call: Call) => Answer | undefined) => {
   const calls: Call[] = [];
@@ -42,7 +42,7 @@ const mockFetch = (route: (call: Call) => Answer | undefined) => {
       async (input: string | URL | Request, init?: RequestInit) => {
         const url = new URL(String(input), "http://localhost/");
         const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
-        const call = { method: init?.method ?? "GET", path: url.pathname, search: url.search, body };
+        const call = { method: init?.method ?? "GET", path: url.pathname, search: url.search, body, signal: init?.signal };
         calls.push(call);
         const answer = route(call) ?? Response.json({ message: "Unavailable" }, { status: 503 });
         if (answer === "offline") throw new TypeError("Failed to fetch");
@@ -587,6 +587,57 @@ else {
       await waitFor(() => titles(page.dom).includes("Book the band"), "upcoming work");
       expect(fetch.calls[0]).toMatchObject({ method: "GET", path: WORK, search: "?view=upcoming" });
       expect(page.dom.window.location.pathname + page.dom.window.location.search).toBe("/pwa/spaces?view=upcoming");
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+  test("foreground refresh coalesces online, replaces the canonical list, and keeps surviving row focus and scroll", async () => {
+    const fetch = mockFetch((call) =>
+      call.path === WORK
+        ? Response.json(snapshot("mine", [{ ...tents, title: "Tents booked" }, task("Item03", "Book the chairs")]))
+        : undefined,
+    );
+    const page = mount();
+    try {
+      const button = checkButton(page.dom, "Order the tents")!;
+      button.focus();
+      page.dom.root.scrollTop = 120;
+      Object.defineProperty(page.dom.document, "visibilityState", { configurable: true, value: "hidden" });
+      page.dom.document.dispatchEvent(new Event("visibilitychange"));
+      await Bun.sleep(120);
+      expect(fetch.calls).toHaveLength(0);
+      Object.defineProperty(page.dom.document, "visibilityState", { configurable: true, value: "visible" });
+      page.dom.document.dispatchEvent(new Event("visibilitychange"));
+      page.dom.window.dispatchEvent(new page.dom.window.Event("online"));
+      await waitFor(() => titles(page.dom).includes("Book the chairs"), "foreground list");
+      expect(titles(page.dom)).toEqual(["Tents booked", "Book the chairs"]);
+      expect(fetch.calls).toHaveLength(1);
+      expect(checkButton(page.dom, "Tents booked")).toBe(button);
+      expect(page.dom.document.activeElement).toBe(button);
+      expect(page.dom.root.scrollTop).toBe(120);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("an older foreground response cannot replace the newer read after another return", async () => {
+    const pending: ((response: Response) => void)[] = [];
+    const fetch = mockFetch((call) => (call.path === WORK ? new Promise<Response>((resolve) => pending.push(resolve)) : undefined));
+    const page = mount();
+    try {
+      Object.defineProperty(page.dom.document, "visibilityState", { configurable: true, value: "visible" });
+      page.dom.window.dispatchEvent(new page.dom.window.Event("online"));
+      await waitFor(() => pending.length === 1, "older read");
+      page.dom.document.dispatchEvent(new Event("visibilitychange"));
+      await waitFor(() => pending.length === 2, "newer read");
+      expect(fetch.calls[0]?.signal?.aborted).toBe(true);
+      pending[1]!(Response.json(snapshot("mine", [flyer])));
+      await waitFor(() => titles(page.dom).length === 1, "new list");
+      pending[0]!(Response.json(snapshot("mine", [tents])));
+      await Bun.sleep(20);
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
     } finally {
       page.dispose();
       fetch.restore();

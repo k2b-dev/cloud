@@ -1,6 +1,7 @@
-import { type Accessor, createMemo, createSignal, onCleanup } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
+import { beginAppAction, fetchAppAction } from "../../browser/app-actions";
 import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
 import type { AiModelRequest } from "../../shared/ai-models";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
@@ -273,7 +274,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   };
 
   const request = async <T>(path: string, init: RequestInit, fallback: string): Promise<T> => {
-    const response = await fetch(url(path), { ...init, headers: { "Content-Type": "application/json", ...init.headers } });
+    const response = await fetchAppAction(url(path), { ...init, headers: { "Content-Type": "application/json", ...init.headers } });
     if (!response.ok) throw new AiRequestError(await readError(response, fallback), response.status);
     return (await response.json()) as T;
   };
@@ -307,6 +308,11 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     const status = runStatus();
     return status === "streaming" || status === "waiting_for_action" || status === "stopping";
   };
+
+  // The SSE subscription is a GET that stays open while idle too. Only an active answer holds update reloads.
+  createEffect(() => {
+    if (running()) onCleanup(beginAppAction());
+  });
 
   // ---- streaming --------------------------------------------------------
 
@@ -774,7 +780,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     const upload = (async () => {
       const form = new FormData();
       form.append("file", file);
-      const response = await fetch(url(`/conversations/${conversationId}/files`), { method: "POST", body: form });
+      const response = await fetchAppAction(url(`/conversations/${conversationId}/files`), { method: "POST", body: form });
       if (!response.ok) throw new Error(await readError(response, `Failed to upload ${file.name}`));
       const body = (await response.json()) as { file: { path: string; mediaType: string; size: number; version: number } };
       return { path: body.file.path, mediaType: body.file.mediaType, size: body.file.size, version: body.file.version };
