@@ -65,6 +65,8 @@ export const pwaMessages = i18n.define({
       failedAction: ({ action }: { action: string }) => `${action} failed.`,
       unconfirmedAction: ({ action }: { action: string }) => `${action} not confirmed.`,
       waitingForNetwork: "Waiting for network",
+      recording: "Recording. Stop it first, then send.",
+      transcribing: "The recording becomes text. Sending waits for it.",
       discarded: ({ count }: { count: number }) => (count === 1 ? "1 file was not attached." : `${count} files were not attached.`),
     },
     de: {
@@ -128,6 +130,8 @@ export const pwaMessages = i18n.define({
       failedAction: ({ action }: { action: string }) => `${action} fehlgeschlagen.`,
       unconfirmedAction: ({ action }: { action: string }) => `${action} nicht bestätigt.`,
       waitingForNetwork: "Wartet auf Netz",
+      recording: "Aufnahme läuft. Erst stoppen, dann senden.",
+      transcribing: "Die Aufnahme wird zu Text. Senden wartet darauf.",
       discarded: ({ count }: { count: number }) =>
         count === 1 ? "1 Datei wurde nicht angehängt." : `${count} Dateien wurden nicht angehängt.`,
     },
