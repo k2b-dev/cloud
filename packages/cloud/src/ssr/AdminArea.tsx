@@ -79,12 +79,12 @@ export function AdminArea(props: AdminAreaProps) {
 
 /** The save status in a level head. A phone has no room there; `AdminAreaSaveStatusFoot` shows it at the bottom. */
 export const AdminAreaSaveStatusHead = () => (
-  <div class="hidden md:block">
+  <div class="max-md:hidden md:block">
     <SettingsSaveStatus />
   </div>
 );
 export const AdminAreaSaveStatusFoot = () => (
-  <div class="sticky bottom-0 flex justify-end bg-(--k2b-surface) px-2 py-3 md:hidden">
+  <div class="sticky bottom-0 justify-end bg-(--k2b-surface) px-2 py-3 max-md:flex md:hidden">
     <SettingsSaveStatus />
   </div>
 );

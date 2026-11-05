@@ -523,10 +523,11 @@ export function AccessDialog(
           {/* As in the approved mockup: the mark sits beside the name, and on a phone in the line below it. */}
           <span class="flex min-w-0 items-center gap-2 text-[15px] font-medium text-primary">
             <span class="truncate">{nameOf(row())}</span>
-            <span class="contents max-sm:hidden">{mark(row())}</span>
+            {/* Only breakpoint-scoped display classes: an app stylesheet that repeats `contents` or `inline-flex` comes later and would show both marks. */}
+            <span class="max-sm:hidden sm:contents">{mark(row())}</span>
           </span>
           <span class="flex min-w-0 items-center gap-2 text-[13px] text-dimmed">
-            <span class="contents sm:hidden">{mark(row())}</span>
+            <span class="max-sm:contents sm:hidden">{mark(row())}</span>
             <span class="truncate">{kindLine(row())}</span>
           </span>
         </span>
