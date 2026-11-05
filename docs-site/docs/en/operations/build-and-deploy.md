@@ -176,6 +176,14 @@ carry Core's registered release. URLs stay the same across restarts, and all
 applications use the same shared stylesheet URLs. Core's `/branding/favicon`
 keeps its unversioned URL.
 
+Core's icon stylesheet references the complete Tabler WOFF2 font at
+`/public/fonts/tabler-icons-<sha256>.woff2`. The filename hashes the font bytes;
+production serves it with immutable cache headers. The existing verified
+Cloud app asset catalog includes this font and its SHA-256, so a warm service
+worker can serve it after the HTTP cache is cleared. The unversioned
+`/public/tabler-icons.woff2` alias remains available for older cached CSS;
+new CSS does not reference it, and the verified catalog excludes it.
+
 In production, these files use `immutable` only when the requested version
 matches the serving process's version. Other requests use `no-cache` with an
 ETag: revalidation takes one round trip and sends no body if the file is
