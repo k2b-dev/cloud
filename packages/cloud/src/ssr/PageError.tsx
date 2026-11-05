@@ -9,12 +9,15 @@ import MinimalLayout from "./MinimalLayout";
 import PwaLayout from "./PwaLayout";
 import { pageErrorMessages } from "./page-error-messages";
 import { pwaMessages } from "./pwa-messages";
-import { getDisplayRuntimeContext } from "./runtime";
+import { getRuntimeContext } from "./runtime";
 
-/** The part a page of the mobile app belongs to, by its owner, in the reader's language. */
+/**
+ * The part a page of the mobile app belongs to, by its owner, in the reader's language. Read from the whole registry:
+ * the display view leaves out apps with declared access until it is preloaded, and the owner names only itself here.
+ */
 const pwaPartName = (c: Context): string | undefined => {
   const owner = c.get("page").pwaOwner;
-  const app = owner ? getDisplayRuntimeContext(c).apps.find((candidate) => candidate.id === owner && candidate.pwa) : undefined;
+  const app = owner ? getRuntimeContext(c).apps.find((candidate) => candidate.id === owner && candidate.pwa) : undefined;
   return app ? resolveAppPresentation(app, getLocale(c)).name : undefined;
 };
 

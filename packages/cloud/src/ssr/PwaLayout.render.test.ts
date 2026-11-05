@@ -208,6 +208,10 @@ describe("ssr.pwaAccess", () => {
       const german = await render("/pwa/admin-only", { "Accept-Language": "de" });
       expect(german.document.querySelector(".k2b-placeholder")?.textContent).toContain("Lager ist für dich nicht freigegeben");
       expect(german.document.querySelector('.k2b-placeholder a[href="/pwa/"]')?.textContent).toBe("Zum Start");
+      // A part with declared access is left out of the display view until it is preloaded; its own page still names it.
+      apps = [shell, part("inventory", "Inventory", { access: { kind: "signedIn" } })];
+      const declared = await render("/pwa/admin-only");
+      expect(declared.document.querySelector(".k2b-placeholder")?.textContent).toContain("Inventory is not available to you");
     } finally {
       apps = [];
     }
