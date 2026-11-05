@@ -23,8 +23,8 @@ Application authors put objects in the sidebar and views of the open object
 in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and
 quiet secondary actions share that row while the workspace width permits;
 filters wrap and the quiet filtered result count disappears first. Put the
-one filled primary action in `Head.primary`; on phones the shell leaves its
-place beside the bottom bar. See [Objects on the left, views in the head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head)
+one filled primary action in `Head.primary`; on phones it is the round button
+at the end of the head. See [Objects on the left, views in the head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head)
 for the complete rule and API.
 
 ## Know the shell at each width
@@ -35,7 +35,7 @@ when people navigate.
 
 | Width | Signed-in pages | Anonymous pages |
 | --- | --- | --- |
-| Below 768 px (phones) | App gradient with a title row, search, help, and the app menu; a soft content card and a floating bar with Home and the first apps of the app bar | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
+| Below 768 px (phones) | App gradient with a title row, search, help, and the app menu; a soft content card down to the screen's bottom edge | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
 | 768 to 1023 px (tablets) | No header. A 60 px app bar in a rounded gradient container sits beside the app card. Both have 20 px corners, 8 px spacing to the window edges, and 8 px between them | The same header controls; header, content, and footer as cards on the app background |
 | From 1024 px | No header. The 56 px app bar sits on the app background. The app area is a card whose spacing grows from 4 px at 1024 px to 8 px at 1440 px and whose radius grows from 10 px to 14 px. Wider windows keep those dimensions | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
 
@@ -67,22 +67,19 @@ above the home indicator.
 
 Below 768 px, including narrow tablet split views, the signed-in canvas
 shows the app gradient. Its title row has no line or surface fill and holds
-the app's name, search, help, and the app menu in that order. **Home** moves
-from the header to the first place of the floating bottom bar. The bar then
-shows the first four links of the person's app bar, shortcuts included, in
-the same order. When the current app comes later, it takes the fourth place,
-so the bar always marks it. The open item is the surface color on the bar's
-app gradient. Home is marked on the start page that `/` opens. When the
-person changes their app bar, the bar follows without a reload.
+the app's name, search, help, and the app menu in that order. There is no
+bottom bar and no panel button: the app menu leads with **Home** (**Start** in
+German) before the shortcuts and apps of the person's app bar and every other
+app, and help opens the panel, whose tabs lead to the other panels.
 
-The phone's content is a soft card with 28 px top corners. A regular signed-in
-page scrolls inside that card (`main`), while the window stays still. Content
-wider than the card scrolls sideways inside it, as from 768 px. The card
-keeps space for the bar at its end and when scrolling to a focused control.
-The bar sits 8 px above the bottom safe area; the title row and canvas keep
-the top and side safe areas. Anonymous phones retain Home in the header, its
-bottom line, a flat surface, and document scrolling. The device app's own flat
-bottom bar is unchanged.
+The phone's content is a soft card with 28 px top corners that reaches the
+screen's bottom edge. A regular signed-in page scrolls inside that card
+(`main`), while the window stays still. Content wider than the card scrolls
+sideways inside it, as from 768 px. The card's content ends above the bottom
+safe area; the title row and canvas keep the top and side safe areas. The
+app's primary action stays the round button at the end of the workspace head.
+Anonymous phones retain Home in the header, its bottom line, a flat surface,
+and document scrolling. The device app's own flat bottom bar is unchanged.
 
 Applications need no changes for any of this. `AppWorkspace` adds its compact
 navigation between 768 and 1023 px on its own; see
@@ -464,8 +461,8 @@ content.
 
 The layout places the profile menu with CSS:
 
-- Below 768 px, the app menu in the header holds the profile actions; the
-  title row has no avatar. Home and the apps are in the bottom bar.
+- Below 768 px, the app menu in the header holds Home, the apps, and the
+  profile actions; the title row has no avatar.
 - From 768 px, the avatar is the last control of the app bar, below search and
   help. Its menu opens beside the app bar and grows upward from the avatar.
 
@@ -502,8 +499,8 @@ other Cloud application.
 ## Show a count on the app icon
 
 An application can show how many items wait for the signed-in person, such as
-unread mentions, as a count on its icon in the app bar, the phone bar, and
-the app grid.
+unread mentions, as a count on its icon in the app bar and the app grid,
+which is also the phone's app menu.
 Declare a route the application serves:
 
 ```ts

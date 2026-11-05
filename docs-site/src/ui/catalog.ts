@@ -490,6 +490,7 @@ export const documentedOnlyUiCatalogExports = {
   truncateMiddle: "Documented ReferenceChip helper for shortening titles by whole graphemes.",
   REFERENCE_CHIP_MAX_CHARACTERS: "Documented ReferenceChip maximum visible title length.",
   prefersReducedMotion: "Documented OS and host preference helper in the Motion guide (/en/ui/motion).",
+  attachSheetHandle: "Draggable, keyboard-operable handle for sheets with more than one height; documented on the BottomSheet page.",
   measureScrollFade: "Documented ScrollArea helper that measures a scrollport's fades at once for a reader in the same frame.",
   formatShortcut: "Documented Kbd formatter for plain text labels and spoken names.",
   matchParts: "Documented MatchText helper for hosts that render search matches in their own markup.",

@@ -29,7 +29,11 @@ const verifyPanelGeometry = async (page: Page, width: number) => {
   const box = await page.locator("#cloud-panel").boundingBox();
   expect(box).not.toBeNull();
   expect(box!.width).toBe(width >= 1280 ? 416 : width >= 768 ? 344 : width);
-  if (width < 768) expect(box!.height).toBe(522);
+  // On a phone the panel sheet opens at full height: it reaches the bottom edge and leaves only the top bar above it.
+  if (width < 768) {
+    expect(box!.y + box!.height).toBe(900);
+    expect(box!.height).toBeGreaterThan(900 * 0.9);
+  }
   expect(box!.x >= 0 && box!.x + box!.width <= width).toBe(true);
   console.info("panel geometry", JSON.stringify({ viewport: width, ...box }));
 };

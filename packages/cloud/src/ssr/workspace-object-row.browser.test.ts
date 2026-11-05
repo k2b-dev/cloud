@@ -53,8 +53,8 @@ describe("phone object row", () => {
           await last.focus();
           await settled(page);
           const lastBox = (await last.boundingBox())!;
-          const barBox = (await page.locator(".cloud-tab-bar").boundingBox())!;
-          expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(barBox.y);
+          // No dock covers the card's end: the focused last row stays above the window's bottom edge.
+          expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(page.viewportSize()!.height);
           expect(await page.locator(".k2b-app-workspace__main").evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
           if (caller === "mail" || caller === "contacts") {
             const primary = page.getByRole("link", { name: "New object", exact: true });

@@ -388,17 +388,16 @@ describe("Cloud layouts SSR", () => {
     expect(html).not.toContain("min-w-0 items-center max-lg:hidden lg:flex");
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
     expect(html).toContain('class="layout-rail w-14 shrink-0 flex-col max-md:hidden md:flex"');
-    // Home stays in the rail; phones get Home and the person's apps in the bar, as server markup outside the shell's
-    // islands, so focus on it survives their mount.
+    // Home stays in the rail. Phones have no bottom dock: their title row holds search, help and the app menu, which
+    // leads with Start, and no panel button; help opens the panel there.
     const chrome = withoutIslands(html);
     expect(chrome).toMatch(/<aside class="layout-rail[^"]*"><div class="layout-rail-logo[^"]*"><a href="\/" aria-label="Home">/);
-    expect(chrome.match(/<header[\s\S]*?<\/header>/)?.[0]).not.toContain('href="/"');
-    const bar = chrome.slice(chrome.indexOf('class="cloud-tab-bar"'));
-    expect(bar).toContain('href="/"');
-    expect(bar).toContain('data-tab="home"');
-    const start = bar.match(/<a href="\/"[^>]*>([\s\S]*?)<\/a>/)?.[1];
-    expect(start).toContain('<span class="k2b-truncate-fade">Home</span>');
-    for (const app of badgeApps) expect(bar).toContain(`href="${app.nav.href}"`);
+    const header = html.match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
+    expect(withoutIslands(header)).not.toContain('href="/"');
+    expect(html).not.toContain("cloud-tab-bar");
+    expect(header).toContain('aria-label="Open help"');
+    expect(header).toContain('aria-label="Open apps"');
+    expect(header).not.toContain("data-cloud-panel-toggle");
     // The page trail travels as JSON that cannot end its script element or carry markup.
     const source = html.match(/<script type="application\/json" data-k2b-page-trail>([^<]*)<\/script>/)?.[1] ?? "";
     expect(source).toContain("\\u003cnotes>");
@@ -646,7 +645,8 @@ test("page swap replaces only the content column and its page data", async () =>
       // Not a keyed region: nav keeps keyed regions across pushes, and a new page starts at the top as after a load.
       expect(column.querySelector("main")?.getAttribute("data-scroll-preserve")).toBe("cloud-main");
       expect(column.querySelector("main")?.getAttribute("data-scroll-page")).toBe("");
-      for (const selector of ["#cloud-panel", ".layout-rail", ".cloud-tab-bar", ".cloud-shell-reveal"]) {
+      expect(canvas.querySelector(".cloud-tab-bar")).toBeNull();
+      for (const selector of ["#cloud-panel", ".layout-rail", ".cloud-shell-reveal"]) {
         expect(canvas.querySelector(selector)).not.toBeNull();
         expect(column.querySelector(selector)).toBeNull();
       }

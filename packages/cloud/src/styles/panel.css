@@ -298,7 +298,10 @@
   }
 }
 
-/* Sheet: from the bottom, a little over half the height; the grabber makes it full. */
+/* Sheet: from the bottom, at full height below the title row, so a question or a long answer is never cut off. The
+   grabber drags it between full and a little over half the height and switches with a press; while it drags it
+   follows the finger without a transition, and the snap after it takes the sheet transition, which reduced motion
+   makes instant. */
 @media not all and (min-width: 768px) {
   .cloud-app-canvas[data-panel-sheet="open"] > .cloud-panel {
     position: fixed;
@@ -306,18 +309,19 @@
     inset-inline: 0;
     bottom: 0;
     display: block;
+    height: calc(100dvh - 2.875rem - env(safe-area-inset-top, 0px));
+    transition: height var(--k2b-motion-sheet) var(--k2b-ease-out);
+  }
+
+  .cloud-app-canvas[data-panel-sheet="open"] > .cloud-panel[data-sheet-detent="half"] {
     height: 58dvh;
   }
 
-  /* The page's last row scrolls up above the sheet. Only the end of the page
+  /* The page's last row scrolls up above the half-height sheet. Only the end of the page
      grows, so nothing above it moves; full pages own their own scrollers. */
   .cloud-app-canvas[data-layout-authenticated][data-panel-sheet="open"]:not([data-layout-full-page]) .layout-content-main {
-    padding-bottom: max(58dvh, var(--cloud-tab-bar-space, 0px));
-    scroll-padding-bottom: max(58dvh, var(--cloud-tab-bar-space, 0px));
-  }
-
-  .cloud-app-canvas[data-panel-sheet="open"] > .cloud-panel[data-panel-size="full"] {
-    height: calc(100dvh - 2.875rem - env(safe-area-inset-top, 0px));
+    padding-bottom: 58dvh;
+    scroll-padding-bottom: 58dvh;
   }
 
   .cloud-panel__card {
@@ -337,10 +341,15 @@
     align-items: center;
     justify-content: center;
     width: 100%;
-    height: 1.25rem;
+    height: 1.5rem;
     padding: 0;
     border: 0;
     background: transparent;
+    cursor: grab;
+  }
+
+  .cloud-panel[data-sheet-dragging] .cloud-panel__grabber {
+    cursor: grabbing;
   }
 
   .cloud-panel__grabber > span {

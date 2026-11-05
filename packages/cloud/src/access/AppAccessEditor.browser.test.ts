@@ -781,9 +781,12 @@ for (const width of [390, 768, 1440]) {
         // Administration stays available for repair; its presence never grants application use.
         expect(data.apps.map((app: { id: string }) => app.id).sort()).toEqual(allowed ? ["admin", "home", "invoices"] : ["admin", "home"]);
         expect(data.theme).toBe("dark");
-        const navigation = page.locator(width >= 768 ? ".layout-rail" : ".cloud-tab-bar");
-        expect(await navigation.getByRole("link", { name: "Invoices", exact: true }).count()).toBe(allowed ? 1 : 0);
-        expect(await navigation.locator('a[href^="/fictional/hidden"]').count()).toBe(0);
+        // Phones have no bottom dock: the app menu below is their way to the apps.
+        if (width >= 768) {
+          const navigation = page.locator(".layout-rail");
+          expect(await navigation.getByRole("link", { name: "Invoices", exact: true }).count()).toBe(allowed ? 1 : 0);
+          expect(await navigation.locator('a[href^="/fictional/hidden"]').count()).toBe(0);
+        } else expect(await page.locator(".cloud-tab-bar").count()).toBe(0);
         // Open via the real shell control, including the phone menu variant.
         const chrome = page.locator(width >= 768 ? ".layout-rail" : ".layout-header");
         await chrome.getByRole("button", { name: "Open apps", exact: true }).click();

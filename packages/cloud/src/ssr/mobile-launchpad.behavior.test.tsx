@@ -60,9 +60,21 @@ test("the public mobile launcher keeps profile actions and filters apps without 
     expect(document.querySelector("dialog .cloud-mobile-profile")).not.toBeNull();
     expect(document.querySelector("dialog .launchpad-panel")).toBeNull();
     expect(document.querySelectorAll('dialog a[href="/me"]')).toHaveLength(1);
+    // Phones have no dock and no Home button in the title row: the app menu leads with Start, before every app.
+    const start = document.querySelector<HTMLAnchorElement>("dialog a[data-cloud-launchpad-start]");
+    expect(start?.getAttribute("href")).toBe("/");
+    expect(start?.textContent).toBe("Home");
+    expect(
+      start!.compareDocumentPosition(document.querySelector("dialog .launchpad-app")!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     const input = document.querySelector<HTMLInputElement>("dialog input")!;
+    input.value = "home";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(document.querySelector("dialog a[data-cloud-launchpad-start]")).not.toBeNull();
+    expect(document.querySelector("dialog")?.textContent).not.toContain("No matching apps.");
     input.value = "MAIL";
     input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(document.querySelector("dialog a[data-cloud-launchpad-start]")).toBeNull();
     expect(document.querySelectorAll("dialog .launchpad-app")).toHaveLength(1);
     expect(document.querySelector("dialog .launchpad-app")?.getAttribute("href")).toBe("/app/mail");
     input.value = "no-match";
@@ -73,6 +85,35 @@ test("the public mobile launcher keeps profile actions and filters apps without 
     window.dispatchEvent(new Event("pagehide"));
     await Bun.sleep(20);
     dispose();
+    dom.cleanup();
+  }
+});
+
+test("the phone app menu names Start in the page's language, and only for a signed-in person", async () => {
+  const dom = createDomTestHarness();
+  dom.window.innerWidth = 390;
+  document.documentElement.lang = "de";
+  const { AppLaunchpadButton: AppLaunchpad } = await import("./app-launchpad");
+  const apps = [{ id: "mail", label: "Mail", href: "/app/mail", iconClass: "ti ti-mail" }];
+  const open = async (profile?: { name: string; theme: "light" }) => {
+    const root = document.createElement("div");
+    dom.root.append(root);
+    const dispose = render(() => createComponent(AppLaunchpad, { variant: "header", apps, legalLinks: [], profile }), root);
+    root.querySelector<HTMLButtonElement>("button")!.click();
+    for (let attempt = 0; !document.querySelector("dialog .launchpad-app") && attempt < 100; attempt += 1) await Bun.sleep(10);
+    const start = document.querySelector("dialog a[data-cloud-launchpad-start]");
+    const label = start?.textContent ?? null;
+    window.dispatchEvent(new Event("pagehide"));
+    await Bun.sleep(20);
+    dispose();
+    return label;
+  };
+  try {
+    expect(await open({ name: "Test user", theme: "light" })).toBe("Start");
+    // Anonymous phones keep Home as the logo in their header.
+    expect(await open()).toBeNull();
+  } finally {
+    document.documentElement.lang = "";
     dom.cleanup();
   }
 });
