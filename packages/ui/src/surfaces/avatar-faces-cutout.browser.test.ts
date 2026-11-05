@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Overlapping faces sit in rows that change colour on hover and selection, often in a cell that clips. The gap
 // between two faces must show whatever lies behind them, and nothing may paint outside a face: a ring in a fixed
@@ -86,6 +86,7 @@ describe("Overlapping faces", () => {
         await page.setContent(
           `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" data-theme="${theme}" style="margin:8px">${hosts}</body></html>`,
         );
+        await settled(page);
         for (const [index, name] of Object.keys(GROUPS).entries()) {
           const { width, height, boxes, at } = await paint(page, `#host-${index}`);
           expect(boxes.length, name).toBeGreaterThan(1);
