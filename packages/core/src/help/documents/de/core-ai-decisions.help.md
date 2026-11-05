@@ -1,6 +1,7 @@
 ---
 id: core-ai-decisions
 title: Ein Entscheidungsmodell fragen
+kind: task
 icon: ti ti-sparkles
 description: Informationen in Gustav, Code oder der CLI mit Wahrscheinlichkeiten einordnen.
 order: 600

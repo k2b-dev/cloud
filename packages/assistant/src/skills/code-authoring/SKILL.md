@@ -59,14 +59,17 @@ Check category before interpreting urgency: urgent wording in spam does not make
 it urgent support. Use fictional fixtures for tests, including urgent spam and
 urgent support. Choose thresholds for the cost of mistakes. This example reads
 only and returns a review flag; any later effect is a separate authorized call.
+The module below can run once through `code_run` (load `assistant-code-mode`).
+For lasting Code, save it as a helper and call it from a schedule. Schedule
+callbacks return `void`; use the flag inside the callback to decide any later action.
 
 <!-- ai1-mail-triage -->
 ```ts
-import { app, core } from "@sdk";
+import { core } from "@sdk";
 
-app.schedule("0 8 * * 1", async () => {
+export default async function triage() {
   // Fictional mail; in real Code, read the mail through its authorized SDK first.
-  const result = await core.ai.decide({
+  const result = await core.app().ai.decide({
     task: "mail.triage",
     state: { subject: "Urgent: claim your prize", text: "Act now to receive a prize." },
     questions: {
@@ -82,7 +85,5 @@ app.schedule("0 8 * * 1", async () => {
   if (category?.type !== "choice" || category.choice !== "support" || category.confidence < 0.9) return false;
   const urgent = result.answers.urgent;
   return urgent?.type === "noul" && urgent.probability >= 0.9;
-}, { name: "triage" });
-
-export default app;
+}
 ```

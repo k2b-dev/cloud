@@ -1,6 +1,7 @@
 ---
 id: core-ai-decisions
 title: Ask a decision model
+kind: task
 icon: ti ti-sparkles
 description: Classify information with probabilities in Gustav, Code or the CLI.
 order: 600
@@ -8,10 +9,10 @@ order: 600
 
 Ask Gustav to classify information with a decision model when you need a category,
 yes/no estimate or score with probabilities. A Cloud administrator must first
-assign a decision model in the AI settings. You also need permission to use it
+assign a decision model in the AI settings. You also need access to it
 and enough AI allowance. Code uses the allowance of its person or service account.
-Resource- and app-owned Code accounts need their own model grant and, when
-quotas are enabled, their own allowance grant; personal defaults do not apply.
+Resource- and app-owned Code accounts need their own model access and, when
+quotas are enabled, their own allowance; personal defaults do not apply.
 The Cloud-Admin's Code policy decides whether a version using AI needs approval.
 
 ## Classify a message {icon="mail"}

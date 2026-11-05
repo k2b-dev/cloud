@@ -235,17 +235,17 @@ marks this call as **AI** (**KI**); the Cloud-Admin policy controls release.
 The caller's person or service account pays from its own AI allowance.
 
 Ask category first. Ask urgency together with category or after it, never alone.
-This example returns a review flag only for confidently classified support
-messages. Urgent spam stays outside that category. Thresholds depend on the cost
+This one-off `code_run` example returns a review flag only for confidently
+classified support messages. Urgent spam stays outside that category. Thresholds depend on the cost
 of mistakes; probabilities are estimates. The example changes no records.
 
 <!-- ai1-mail-triage -->
 ```ts
-import { app, core } from "@sdk";
+import { core } from "@sdk";
 
-app.schedule("0 8 * * 1", async () => {
+export default async function triage() {
   // Fictional mail; in real Code, read the mail through its authorized SDK first.
-  const result = await core.ai.decide({
+  const result = await core.app().ai.decide({
     task: "mail.triage",
     state: { subject: "Urgent: claim your prize", text: "Act now to receive a prize." },
     questions: {
@@ -261,10 +261,12 @@ app.schedule("0 8 * * 1", async () => {
   if (category?.type !== "choice" || category.choice !== "support" || category.confidence < 0.9) return false;
   const urgent = result.answers.urgent;
   return urgent?.type === "noul" && urgent.probability >= 0.9;
-}, { name: "triage" });
-
-export default app;
+}
 ```
+
+For lasting Code, save this function in a helper module and call it from a
+schedule. Schedule callbacks return `void`; use the flag inside the callback
+when deciding whether a separate authorized action is appropriate.
 
 Optional images and `model: { id }`, provider-dependent image support, quota
 failures and byte limits follow

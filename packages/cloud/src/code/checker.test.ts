@@ -89,9 +89,8 @@ const schedule = (body: string) =>
   `import { app, owner, work_shop } from "@sdk";\napp.schedule("0 8 * * 1", async () => {\n${body}\n}, { name: "weekly" });\nexport default app;`;
 
 test("core.ai.decide is AI in the generated SDK and mail triage checks category before urgency", async () => {
-  const sdk = generateCodeSdk([compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } })], {
-    mode: "personal",
-  });
+  const manifests = [compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } })];
+  const sdk = generateCodeSdk(manifests, { mode: "code_run" });
   const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
   const skill = await Bun.file(resolve(import.meta.dir, "../../../assistant/src/skills/code-authoring/SKILL.md")).text();
   const snippet = (text: string) => text.split("<!-- ai1-mail-triage -->")[1]!.split("```ts\n")[1]!.split("```")[0]!.trim();
@@ -105,8 +104,6 @@ test("core.ai.decide is AI in the generated SDK and mail triage checks category 
   if (!checked.ok) throw new Error(JSON.stringify(checked.diagnostics));
   expect(checked.manifest.ai).toBe(true);
   expect(checked.permissions).toMatchObject([{ operation: "core.ai.decide", target: null }]);
-  await writeFile(join(directory, "triage.mjs"), checked.bundle);
-  const triage = await import(join(directory, "triage.mjs"));
   const response = (choice: string) => ({
     answers: {
       category: {
@@ -118,8 +115,37 @@ test("core.ai.decide is AI in the generated SDK and mail triage checks category 
       urgent: { type: "noul", probability: 0.99, value: true },
     },
   });
-  expect(await triage.triage(null, { call: async () => response("spam") })).toBe(false);
-  expect(await triage.triage(null, { call: async () => response("support") })).toBe(true);
+  for (const category of ["spam", "support"]) {
+    // Each runner execution gets its own module and binds the bridge only once.
+    const path = join(directory, `triage-${category}.mjs`);
+    await writeFile(path, checked.bundle);
+    const triage = await import(path);
+    const calls: string[] = [];
+    expect(
+      await triage.run(null, {
+        call: async (operation: string) => {
+          calls.push(operation);
+          return response(category);
+        },
+      }),
+    ).toBe(category === "support");
+    expect(calls).toEqual(["core.ai.decide"]);
+  }
+  // Lasting Code can reuse the exact example as a helper in a void-returning schedule.
+  const lasting = await check("", {
+    sdk: generateCodeSdk(manifests, { mode: "personal" }),
+    aiOperations: ["core.ai.decide"],
+    files: {
+      "code.ts": `import { app } from "@sdk";
+import triage from "./triage";
+app.schedule("0 8 * * 1", async () => { await triage(); }, { name: "triage" });
+export default app;`,
+      "triage.ts": source,
+    },
+  });
+  expect(lasting).toMatchObject({ ok: true, manifest: { ai: true } });
+  if (!lasting.ok) throw new Error(JSON.stringify(lasting.diagnostics));
+  expect(lasting.permissions).toMatchObject([{ operation: "core.ai.decide", target: null }]);
 });
 
 test("checks imported literal constants, refs and finite unions, with source lines, new/existing status, AI and hashes", async () => {
