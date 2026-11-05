@@ -84,7 +84,8 @@ export default function MyTasks(props: Props) {
 
   const work = queries.create<OverviewView, OverviewWork>({
     source: view,
-    initial: { source: props.initialView, data: props.initialWork },
+    // A list mounted again after another list showed starts in the address's view; its server list may be another.
+    initial: props.initialWork.view === props.initialView ? { source: props.initialView, data: props.initialWork } : undefined,
     load: async (view, { abortSignal }) => {
       const read = ++reads;
       const response = await apiClient.overview.work.$get({ query: { view } }, { init: { signal: abortSignal } });
@@ -177,6 +178,8 @@ export default function MyTasks(props: Props) {
         const outcome = await save(change.item, target);
         if (outcome === "saved") {
           patch(id, { saved: target });
+          // An open search reads its matches again, so it shows what the server kept.
+          if (props.searching && term()) void matches.invalidate().catch(() => undefined);
           props.onCompletedChange?.(id, target);
           continue;
         }
@@ -345,7 +348,7 @@ export default function MyTasks(props: Props) {
   const found = () => {
     const data = matches.data();
     if (!data || data.term !== term()) return undefined;
-    return data.items.filter((item) => !shown(changes().get(item.shortId))?.done);
+    return data.items.filter((item) => changes().get(item.shortId)?.done !== true);
   };
   const foundById = createMemo(() => new Map((found() ?? []).map((item) => [item.shortId, item])));
   const foundIds = createMemo(() => [...foundById().keys()]);

@@ -21,6 +21,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import { SpaceLiveEventSchema } from "@/live-events";
 import { createRetryToasts } from "../frontend/lib/feedback";
 import { saveCompletion } from "./completion";
+import { PWA_MAX_STATUS_PAGES, PWA_STATUS_PAGE_SIZE } from "./limits";
 import { myTasksMessages } from "./messages";
 import { listHref, type SpaceListFilter, spaceHref } from "./paths";
 import { refreshOnReturn } from "./refresh-on-return";
@@ -165,8 +166,10 @@ export default function SpaceList(props: Props) {
   refreshOnReturn(() => void refresh());
 
   // The list follows the Space's own channel; every change reads it again, which keeps rows and focus in place.
+  // Only losing or regaining access restarts the channel; a fresh read of the Space does not.
+  const readable = createMemo(() => space.data()?.space !== null);
   createEffect(() => {
-    if (current()?.space === null) return;
+    if (!readable()) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const soon = () => {
       clearTimeout(timer);
@@ -208,10 +211,14 @@ export default function SpaceList(props: Props) {
     if (!folded(status) && group && group.pages === 0 && group.total > 0) void loadPage(status.id, 1);
   };
 
+  // Pages read for another filter never mix into this one.
+  createEffect(on(key, () => setPageState(new Map()), { defer: true }));
   const loadPage = async (statusId: string, page: number) => {
     if (pageState().get(statusId) === "loading") return;
     setPageState((map) => new Map(map).set(statusId, "loading"));
+    const asked = key();
     const result = await readPage(props.spaceShortId, props.filter, statusId, page).catch(() => undefined);
+    if (asked !== key()) return;
     if (result === null) {
       setPageState((map) => withoutKey(map, statusId));
       return void refresh();
@@ -457,12 +464,20 @@ export default function SpaceList(props: Props) {
           </button>
         </h3>
         <Show when={!folded(status())}>
-          <Show when={group().rows.length || group().total === 0} fallback={<SkeletonRows count={Math.min(3, group().total)} />}>
+          <Show
+            when={group().rows.length || group().total === 0 || pageState().get(group().statusId) === "failed"}
+            fallback={<SkeletonRows count={Math.min(3, group().total)} />}
+          >
             <ul class="spaces-pwa__list" aria-labelledby={headId()}>
               <For each={ids()}>{(id) => row(() => rowsById().get(id)!)}</For>
             </ul>
           </Show>
-          <Show when={left() && group().rows.length}>
+          <Show when={left() && group().pages >= PWA_MAX_STATUS_PAGES}>
+            <p class="spaces-pwa__more">{t().more({ count: left().toLocaleString(locale()) })}</p>
+          </Show>
+          <Show
+            when={left() && group().pages < PWA_MAX_STATUS_PAGES && (group().rows.length || pageState().get(group().statusId) === "failed")}
+          >
             <div class="spaces-pwa-space__more">
               <Show
                 when={pageState().get(group().statusId) === "failed"}
@@ -473,7 +488,7 @@ export default function SpaceList(props: Props) {
                     loading={pageState().get(group().statusId) === "loading"}
                     onClick={() => void loadPage(group().statusId, group().pages + 1)}
                   >
-                    {t().loadMore({ count: Math.min(left(), 30).toLocaleString(locale()) })}
+                    {t().loadMore({ count: Math.min(left(), PWA_STATUS_PAGE_SIZE).toLocaleString(locale()) })}
                   </Button>
                 }
               >

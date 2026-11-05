@@ -8,12 +8,8 @@ import { spacesService } from "@/service/index";
 import { loadSpacesSidebar } from "@/service/overview";
 import { resolvePublicId, resolveSpacePublicIds, spacesPublicResources } from "@/service/public-resources";
 import { isTaskOverdue } from "@/task-overdue";
+import { PWA_MAX_STATUS_PAGES, PWA_STATUS_PAGE_SIZE } from "./limits";
 import type { SpaceListFilter } from "./paths";
-
-/** Rows of one status per page, as a board column on the web shows them. */
-export const PWA_STATUS_PAGE_SIZE = 30;
-/** The most pages of one status a single read returns, such as when the list reads again what it already shows. */
-const MAX_PAGES_PER_READ = 20;
 
 /** A status of a Space, a column on the web board; a done status completes its tasks. */
 export type PwaStatus = { id: string; name: string; color: string; done: boolean };
@@ -52,7 +48,7 @@ export type PwaSpace = {
 /** A Space the title switches to, with one fact: how much is open, or that the reader may only read it. */
 export type PwaSpaceEntry = { shortId: string; name: string; color: string; openCount: number; canWrite: boolean; pinned: boolean };
 
-const positive = z.coerce.number().int().min(1).max(10_000).catch(1);
+const positive = z.coerce.number().int().min(1).max(PWA_MAX_STATUS_PAGES).catch(1);
 
 /** The pages of each status a read covers: `load=<status>:<pages>`; open statuses default to one, done ones to none. */
 export const parsePwaSpaceLoad = (url: URL): Map<string, number> =>
@@ -60,7 +56,7 @@ export const parsePwaSpaceLoad = (url: URL): Map<string, number> =>
     url.searchParams.getAll("load").flatMap((entry) => {
       const [statusId, pages] = entry.split(":");
       const count = Number(pages);
-      return statusId && Number.isInteger(count) && count >= 0 ? [[statusId, Math.min(count, MAX_PAGES_PER_READ)] as const] : [];
+      return statusId && Number.isInteger(count) && count >= 0 ? [[statusId, Math.min(count, PWA_MAX_STATUS_PAGES)] as const] : [];
     }),
   );
 

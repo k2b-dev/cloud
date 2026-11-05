@@ -418,7 +418,7 @@ export default function SpacesPwa(props: Props) {
                   <Match when={list().kind === "mine"}>
                     <MyTasks
                       userId={props.userId}
-                      initialView={props.initialWork.view}
+                      initialView={view()}
                       initialWork={props.initialWork}
                       dateConfig={props.dateConfig}
                       selected={selection()?.shortId}

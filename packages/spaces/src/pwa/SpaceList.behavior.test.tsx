@@ -55,9 +55,13 @@ const space = (groups: PwaGroup[], extra: Partial<PwaSpace> = {}): PwaSpace => (
 const firstPage = Array.from({ length: 30 }, (_, index) => row(`Item${String(index + 10)}`, `Task ${index + 1}`));
 
 let liveApply: (() => Promise<void>) | undefined;
+let liveReady: ((ready: boolean) => void) | undefined;
 let liveClosed = 0;
+let subscriptions = 0;
 spyOn(await import("@k2b/cloud/browser/live"), "liveConnection").mockImplementation(() => ({
   subscribe: (_channel, _scope, handlers) => {
+    subscriptions += 1;
+    liveReady = (ready) => handlers.caughtUp?.(ready);
     liveApply = () =>
       handlers.apply([{ data: handlers.parse({ type: "item.updated", spaceId: "Space1", itemId: "Item01" }), cursor: "1" }]);
     return {
@@ -105,7 +109,9 @@ afterEach(() => {
   calls.length = 0;
   route = () => undefined;
   liveApply = undefined;
+  liveReady = undefined;
   liveClosed = 0;
+  subscriptions = 0;
 });
 
 const mount = (initial: PwaSpace | null | undefined, options: { online?: boolean; searching?: boolean; locale?: string } = {}) => {
@@ -305,6 +311,44 @@ else {
     expect(root.querySelector('a[href="/pwa/spaces"]')?.textContent).toContain("To My tasks");
     // Without access the Space's channel closes.
     await waitFor(() => liveClosed > 0, "the closed channel");
+  });
+
+  test("a fresh read keeps the one live subscription, so a caught-up channel reads the Space once", async () => {
+    mount(space([inbox([row("Item01", "Order the tents")]), done()]));
+    route = () => Response.json(space([inbox([row("Item01", "Order the tents"), row("Item02", "Write the flyer")]), done()]));
+    await waitFor(() => liveReady !== undefined, "the subscription");
+    liveReady!(true);
+    await waitFor(() => calls.length === 1, "the read after catching up");
+    await Bun.sleep(400);
+    expect(subscriptions).toBe(1);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("a page asked for under another filter never mixes into the new one", async () => {
+    const { root } = mount(space([inbox(firstPage, 42), done()]));
+    let answerPage: (response: Response) => void = () => {};
+    route = ({ search }) =>
+      search.get("status")
+        ? new Promise<Response>((resolve) => {
+            answerPage = resolve;
+          })
+        : Response.json(
+            space([inbox([row("Item01", "Order the tents")]), done([], 0)], { filter: { mine: true, tagIds: [], search: "" } }),
+          );
+    button(root, "Load 12 more")!.click();
+    root.querySelector<HTMLButtonElement>(".spaces-pwa-space__filters button")!.click();
+    await waitFor(() => titles(root).length === 1, "the narrower list");
+    answerPage(Response.json(inbox([row("Late01", "Unassigned task")], 42)));
+    await Bun.sleep(20);
+    expect(titles(root)).toEqual(["Order the tents"]);
+  });
+
+  test("a done status whose first page fails offers Retry instead of waiting", async () => {
+    const { root } = mount(space([inbox([row("Item01", "Order the tents")]), done()]));
+    route = () => "offline";
+    root.querySelectorAll<HTMLButtonElement>(".spaces-pwa-space__group-head")[1]!.click();
+    await waitFor(() => root.textContent?.includes("More could not be loaded.") ?? false, "the failed first page");
+    expect(button(root, "Try again")).toBeDefined();
   });
 
   test("an empty Space says so, and the German list names its parts in German", async () => {
