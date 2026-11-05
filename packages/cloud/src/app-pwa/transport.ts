@@ -1,6 +1,7 @@
 import { type Context, Hono } from "hono";
 import { setCookie } from "hono/cookie";
 import { z } from "zod";
+import { PWA_LIMITS } from "../contracts/pwa";
 import { resolveLocale } from "../server/locale";
 import type { AuthContext } from "../server/middleware/auth";
 import { rateLimit } from "../server/middleware/rate-limit";
@@ -202,7 +203,10 @@ export const createAppPwaRouter = (service: AppPwaService) => {
   router.post(`${staffBase}/visits/issue`, async (c) => {
     const signIn = await staff(c);
     const input = parse(
-      z.strictObject({ requestId: AppPwaId, deviceId: AppPwaId, subject: z.unknown(), push: z.boolean().optional() }),
+      z.union([
+        z.strictObject({ requestId: AppPwaId, deviceId: AppPwaId, subject: z.unknown(), push: z.boolean().optional() }),
+        z.strictObject({ requestId: AppPwaId, registrationId: AppPwaId, subject: z.unknown(), push: z.literal(true) }),
+      ]),
       await body(c),
     );
     return c.json(await service.issueVisit(signIn, input, c.req.raw.signal));
@@ -221,6 +225,11 @@ export const createAppPwaRouter = (service: AppPwaService) => {
     );
     return c.json(await service.takeOverDevice(signIn, input, c.req.raw.signal));
   });
+  router.post(`${staffBase}/registrations/rename`, async (c) => {
+    const signIn = await staff(c);
+    const input = parse(registrationIdInput.extend({ name: z.string().trim().min(1).max(PWA_LIMITS.nameMaxLength) }), await body(c));
+    return c.json(await service.renameRegistration(signIn, input, c.req.raw.signal));
+  });
   router.post(`${staffBase}/registrations/revoke`, async (c) => {
     const signIn = await staff(c);
     const input = parse(registrationIdInput, await body(c));
@@ -228,8 +237,18 @@ export const createAppPwaRouter = (service: AppPwaService) => {
   });
   router.post(`${staffBase}/visits/revoke`, async (c) => {
     const signIn = await staff(c);
-    const input = parse(z.strictObject({ deviceId: AppPwaId, visitId: AppPwaId }), await body(c));
-    return c.json(await service.revokeVisit(signIn, input.deviceId, input.visitId, c.req.raw.signal));
+    const input = parse(
+      z.union([z.strictObject({ deviceId: AppPwaId, visitId: AppPwaId }), z.strictObject({ registrationId: AppPwaId, visitId: AppPwaId })]),
+      await body(c),
+    );
+    return c.json(
+      await service.revokeVisit(
+        signIn,
+        "registrationId" in input ? { registrationId: input.registrationId } : input.deviceId,
+        input.visitId,
+        c.req.raw.signal,
+      ),
+    );
   });
   // Exposing only fetch prevents app authors from accidentally appending an unguarded generic guest route.
   return {

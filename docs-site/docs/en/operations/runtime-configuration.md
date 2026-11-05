@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-10-31
+updated: 2026-11-05
 ---
 
 # Runtime configuration
@@ -48,6 +48,25 @@ remove plaintext from existing Valkey persistence files, replicas that have
 not applied the deletions, or backups. Handle those copies under the
 installation's incident-response and backup policy before considering the
 upgrade complete.
+
+## Registered App-PWA staff push
+
+Applications may opt in to staff pushes to registered devices with
+`registeredDevices: { push: "staff" }`. The default pairing and takeover
+behavior stays unchanged. See [App-PWA sessions](/en/docs/identity/app-pwa-sessions#send-a-visit-without-a-qr)
+for authorization, request shapes, and the rule for existing uses.
+
+Application `setup()` adds the `visit_only` boolean column to its reserved
+`_cloud_pwa_devices` table, defaulting existing rows to `false`. Run the normal
+application startup migration before serving the new protocol. The existing
+application database backup contract covers the column; no new infrastructure,
+configuration variable, or polling write is needed.
+
+Before enabling the option, update all replicas of that application to this
+package version. Older processes do not enforce visit-only access. To roll back,
+stop the application and revoke its visit-only carriers before starting older
+code; otherwise those rows could resume ordinary device access. Keep the
+column in place and leave the persistent browser registrations intact.
 
 ## Platform connection startup
 

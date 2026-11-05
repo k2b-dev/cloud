@@ -5,7 +5,7 @@ section: Identity and access
 order: 535
 description: Let an employee pair a shared device while the application authorizes each customer visit.
 tags: [pwa, devices, visits, sessions, shared devices]
-updated: 2026-11-03
+updated: 2026-11-05
 ---
 
 # Pair devices and open customer visits
@@ -51,8 +51,9 @@ registration needs the staff action `register-device`, not `issue-device`.
 A registered browser stays bound to this application for up to 400 days, the
 upper cookie lifetime that browsers allow. Its guest cookie then persists
 across restarts. The registration itself grants nothing: Cloud data and visits
-reach the device only through a current *use*. The employee who registers it is
-its first user.
+reach the device through a current *use*, or through a live visit when the
+application enables staff push below. The employee who registers it is its
+first user under the default use model.
 
 A use is an ordinary device in the table above, with an owner, the owner's
 current web session, and at most 12 hours. It ends on logout, authority
@@ -61,10 +62,24 @@ registered and shows its waiting screen; it does not return to pairing.
 
 ### Take over a device
 
+This holder-based workflow applies when `registeredDevices.push` is not `"staff"`.
+
 `registrations/list` (`list-registrations`) returns every registered device of
 the application, not only the caller's. Each item has `holder` with the current
 user's ID, display name, use `deviceId`, its expiry, and `visitActive`, or
-`null` when nobody uses it. The staff list falls back to the login name.
+`null` when nobody uses it. The staff list falls back to the login name for
+`holder`. Each item also includes `activeVisit: { id, issuedBy: { displayName },
+issuedAt } | null`. This uses only the issuing employee's display name, or
+`null` for an empty name. `issuedAt` is the visit's original issuance time.
+Visit-only staff pushes have no holder.
+
+Rename a registration with `registrations/rename` and `{ registrationId, name }`.
+It requires `rename-registration`, checked with the existing registration's
+`{ registrationId, name }` target before writing and again before commit.
+The response is `{ id, name }`; names are trimmed, nonempty, and subject to the
+same length limit as device names. The registration list and guest status show
+the new name. Renaming does not change a visit's authority. There is no
+`lastSeenAt`: status polling does not write a presence timestamp.
 
 `registrations/take-over` (`take-over-device`) takes `{ registrationId,
 expectedDeviceId, presenceCode }`. The device shows a six-digit presence code
@@ -93,11 +108,12 @@ own use with `devices/revoke` and its `deviceId`. `registrations/revoke`
 (`revoke-registration`) unregisters the device: its use and visit end, and the
 browser must bootstrap again.
 
-Listing, taking over, and unregistering act on other people's state. By default
+Listing, taking over, renaming, and unregistering act on other people's state.
+By default
 any employee whom `authorizeStaff` admits for the action can do so for every
 registered device of the application. Cloud calls `authorizeStaff` once without
 a target and again with `target: { registrationId, name }` for the registration
-being taken over or unregistered, and for each listed registration. These
+being changed or pushed to, and for each listed registration. These
 checks repeat before the transaction commits. Return `false` to narrow the
 action, for example to one location's devices. A listed registration that the
 app refuses is left out of the page.
@@ -121,7 +137,65 @@ The visit opens immediately, bound to that device's browser, and appears on the
 next `status` poll. `qr` is `null`. `authorizeVisit` still decides the subject,
 and deadlines start at issuance. A live visit on the device returns
 `409 ACTIVE_VISIT`; end or revoke it first. Repeating the request ID returns
-the same visit. Nobody else can push to a device.
+the same visit. This owner-scoped request remains unchanged by the opt-in below.
+
+To let any admitted employee send a visit to an application-owned registered
+device, set this option in `createAppPwa()`:
+
+```ts
+registeredDevices: { push: "staff" },
+```
+
+Then send `{ requestId, registrationId, subject, push: true }` to `visits/issue`
+instead of `deviceId`. Cloud checks `issue-visit` without a target and with
+`{ registrationId, name }`, and separately checks `authorizeVisit`; both checks
+repeat before commit, including retries. No holder, takeover, or presence code
+is needed. New registrations start on the neutral waiting screen and grant
+no device access before a visit. Without this option, this request returns
+`403 FORBIDDEN` and the existing device ownership and takeover rules apply.
+With the option enabled,
+`registrations/take-over` returns `403 FORBIDDEN`; use staff push instead of
+starting a holder-based use. Before enabling it, make sure `authorizeStaff`
+checks `target` for any location or device restrictions your application needs.
+
+The visit is bound to the **issuing employee's current web session**. It ends
+on that session's logout, expiry, or authority invalidation, even if the
+registering employee remains signed in. The registration itself stays valid.
+Resource operations intersect the explicit device ceiling with the issuer's
+current grants. No resource operation or Core query can fall back to device
+access after this visit ends. Guest status then returns `device: null`,
+`visit: null`, and the registration with `holder: null`.
+
+A push atomically replaces an idle old-style use, including one held by another
+employee. A live visit on either kind of use returns `409 ACTIVE_VISIT` and is
+never replaced. Concurrent pushes serialize on the registration: exactly one
+opens a visit and the other receives `ACTIVE_VISIT`. The replaced use does not
+resume after the visit ends.
+
+The response keeps `{ id, state, expiresAt, idleExpiresAt, qr, qrExpiresAt }`,
+with `state: "active"` and `qr: null`. The 15-minute idle and 60-minute total
+limits and command attempt reconciliation are unchanged. Reusing a request ID
+in the same issuing session returns the existing visit; changing its validated
+input returns `409 ATTEMPT_CONFLICT`. A retry can return `410 REVOKED`
+after a later push replaces the previous visit binding; a retry never opens another visit.
+
+Any employee admitted for `revoke-visit` on that registration can end a visit
+with `visits/revoke` and `{ registrationId, visitId }`, using `activeVisit.id`
+from the staff registration list; the response is
+`{ state: "revoked" }`. This also works for an old-style visit on the same
+registration. The existing `{ deviceId, visitId }` owner command remains.
+Guest `visit/end` and a completing domain command retain their behavior.
+`app_pwa.visit.pushed`, `app_pwa.visit.revoked`, and `app_pwa.visit.completed`
+include `registrationId` and `issuedByUserId`. A staff action records the
+acting employee separately as the audit actor; ending another employee's visit
+preserves the original issuer. A push also records the replaced
+`previousDeviceId` and `previousOwnerUserId`; the previous owner is `null` for
+a visit-only or expired binding.
+
+Wrong or mixed target shapes return `400 INVALID_INPUT`. A missing target
+returns `404 NOT_FOUND`, and an expired or revoked registration returns
+`410 EXPIRED` or `410 REVOKED`. Target authorization failures are
+`403 FORBIDDEN`; a dead issuing web session is `401 WEB_SESSION_REQUIRED`.
 
 ### Recover on the device
 
@@ -136,13 +210,16 @@ authority from a registration.
 | Action | Authority |
 | --- | --- |
 | Issue a device, list it, or revoke it | Current authenticated web session, application staff authorization, and device ownership |
-| Push a visit to a device | Current web session, `issue-visit` and visit authorization, and ownership of that active device |
-| Register a shared device | Current web session and `register-device` authorization; the registering employee becomes its first user |
+| Push by `registrationId` (opt-in) | Current issuing web session, `issue-visit` authorization for that registration, and visit authorization; no holder or presence code |
+| End a registered visit (opt-in) | Current web session and `revoke-visit` authorization for that registration |
+| Rename a registration | Current web session and `rename-registration` authorization for that registration |
+| Push a visit by `deviceId` | Current web session, `issue-visit` and visit authorization, and ownership of that active device |
+| Register a shared device | Current web session and `register-device` authorization; the registering employee becomes its first user by default; staff-push registrations start neutral |
 | List registered devices or unregister one | Current web session and application staff authorization for that registration; app-wide unless the app narrows it, no device ownership |
-| Take over a registered device | Same as listing, plus the presence code shown on that device and confirmation of a live holder |
+| Take over a registered device | Same as listing, plus the presence code shown on that device and confirmation of a live holder; unavailable with staff push enabled |
 | Open, read, or complete a customer's visit | Paired device and browser, current visit, and the application's visit and document rules |
 | Suggest addresses through an allowlisted Core query | Current pairing and visit, charged to the owner’s Geo budget |
-| Use a declared Cloud resource operation | Explicit device permission ceiling intersected with the owner's current resource grants |
+| Use a declared Cloud resource operation | Explicit device permission ceiling intersected with the owner's current resource grants; for staff-pushed registered visits, the owner is the issuer and the visit must be live |
 
 The owner can issue visits from another currently authorized web browser while
 the original pairing session remains valid.
@@ -171,7 +248,8 @@ The closed guest route `core/query/address.autocomplete` accepts
 as other guest operations. With an explicit `visitId`, the visit must be live;
 an expired, ended, or revoked visit never falls back to device authority.
 Without `visitId`, a live visit still binds the call. After that visit ends,
-device mode resumes while the pairing remains valid. Queries never renew a visit.
+device mode resumes while the pairing remains valid. A staff-pushed registered
+visit never resumes device mode. Queries never renew a visit.
 
 ```ts
 const response = await fetch(`${guestApiPath}/core/query/address.autocomplete`, {
@@ -335,7 +413,8 @@ GET mutation. Rate limiting uses Cloud's existing request budget.
 
 The staff protocol provides `bootstrap`, `devices/issue`, `devices/list`,
 `devices/status`, `devices/revoke`, `visits/issue`, `visits/revoke`,
-`registrations/list`, `registrations/take-over`, and `registrations/revoke`. Lists
+`registrations/list`, `registrations/take-over`, `registrations/rename`, and
+`registrations/revoke`. Lists
 return `{ items, next }`; pass `after: next` for another bounded page. Issuance
 returns `qr` and `qrExpiresAt` alongside state. Treat QR content as a transient
 secret: do not log, persist in browser storage, or put it in a navigated URL.
