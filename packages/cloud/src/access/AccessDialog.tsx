@@ -16,7 +16,7 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import type { CloudResourceRef } from "../contracts/capabilities";
-import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
+import { type AccessEntry, CODE_ACCOUNT_HANDLE_PATTERN, type Principal, type ServiceAccountKind } from "../contracts/shared";
 import { accessDialogMessages } from "./access-dialog-messages";
 import {
   type AccessDraft,
@@ -161,9 +161,13 @@ export function AccessDialog(
       : level.permission === "none"
         ? access().noAccess
         : (levels(principal).find((option) => option.key === levelKey(level.permission, level.scope))?.label ?? level.permission);
-  /** The level a new row starts with: the first the resource offers, with its scope. */
+  /**
+   * The level a new row starts with: the first the resource offers, with its scope. A service account of an object
+   * starts with Edit where the resource offers it, as in the approved mockup: its code usually writes.
+   */
   const firstLevel = (principal: Principal, kind?: ServiceAccountKind): DraftLevel => {
-    const option = levels(principal, kind)[0];
+    const options = levels(principal, kind);
+    const option = (isObjectAccount(kind) && options.find((candidate) => candidate.level === "write" && !candidate.scope)) || options[0];
     return option ? { permission: option.level, ...(option.scope ? { scope: option.scope } : {}) } : { permission: "read" };
   };
   const nameOf = (row: DraftRow) =>
@@ -194,7 +198,9 @@ export function AccessDialog(
   const objectAccountRows = () => rows().filter((row) => isObjectAccount(row.display.serviceAccountKind));
   const showGeneral = () =>
     props.allowAuthenticated !== false || props.allowPublic === true || rows().some((row) => generalPrincipal(row.principal));
-  const showObjectAccounts = () => (canEdit() && findServiceAccount() !== undefined) || objectAccountRows().length > 0;
+  /** Read-only, the section shows only who is listed: no controls and no empty section. */
+  const canAddObjectAccounts = () => findServiceAccount() !== undefined && canEdit();
+  const showObjectAccounts = () => canAddObjectAccounts() || objectAccountRows().length > 0;
 
   const edit = (next: (current: AccessDraft) => AccessDraft) => {
     if (!canEdit() || saving()) return;
@@ -232,6 +238,11 @@ export function AccessDialog(
             </>
           ),
         };
+      // Code acts with everything its level allows, not only with what it calls today.
+      const codeDetail = (level: DraftLevel) =>
+        isObjectAccount(change.row.display.serviceAccountKind)
+          ? t().codeMayAll({ level: levelLabel(change.row.principal, level) })
+          : undefined;
       if (change.kind === "add")
         return {
           tone: "add",
@@ -241,6 +252,7 @@ export function AccessDialog(
               {t().gains({ level: levelLabel(change.row.principal, change.level) })}
             </>
           ),
+          detail: codeDetail(change.level),
         };
       if (change.kind === "remove")
         return {
@@ -259,6 +271,7 @@ export function AccessDialog(
             {name}: {levelLabel(change.row.principal, change.from)} → {levelLabel(change.row.principal, change.to)}
           </>
         ),
+        detail: codeDetail(change.to),
       };
     });
 
@@ -301,6 +314,8 @@ export function AccessDialog(
               displayName: saved.displayName ?? display.displayName,
               avatarHash: saved.avatarHash !== undefined ? saved.avatarHash : display.avatarHash,
               serviceAccountKind: saved.serviceAccountKind ?? display.serviceAccountKind,
+              serviceAccountDescription: saved.serviceAccountDescription ?? display.serviceAccountDescription,
+              serviceAccountHref: saved.serviceAccountHref ?? display.serviceAccountHref,
             }),
           );
         } else if (change.kind === "change") {
@@ -338,6 +353,8 @@ export function AccessDialog(
 
   // ── Rows ──────────────────────────────────────────────────────────────
   const kindLine = (row: DraftRow) => {
+    // A service account of an object always reads as the server describes it, with its level.
+    if (row.principal.type === "service_account" && isObjectAccount(row.display.serviceAccountKind)) return accountLine(row);
     if (row.entry && props.entryDetail) {
       const detail = props.entryDetail(row.entry);
       if (detail) return detail;
@@ -345,10 +362,19 @@ export function AccessDialog(
     if (row.principal.type === "user") return row.principal.userId === props.viewerUserId ? t().you : t().person;
     if (row.principal.type === "group") return t().group;
     if (row.principal.type === "service_account")
-      return isObjectAccount(row.display.serviceAccountKind)
-        ? t().serviceAccount
-        : ((row.display.serviceAccountKind && serviceAccountKindDisplay(row.display.serviceAccountKind, access()).label) ?? t().agent);
+      return (row.display.serviceAccountKind && serviceAccountKindDisplay(row.display.serviceAccountKind, access()).label) ?? t().agent;
     return "";
+  };
+  /**
+   * A service account of an object says what it is, as the server describes it, and what it may: "Service account of a
+   * mailbox · may edit". Read-only, the level stands there alone instead of beside the row.
+   */
+  const accountLine = (row: DraftRow) => {
+    const description = row.display.serviceAccountDescription || t().serviceAccount;
+    const level = row.next ?? row.previous;
+    if (!level || level.permission === "none") return description;
+    const label = levelLabel(row.principal, level);
+    return canEdit() ? `${description} · ${t().accountMay({ level: label })}` : t().accountMayAlone({ level: label });
   };
   const mark = (row: DraftRow) => {
     if (!row.previous) return <StatusBadge class="shrink-0" tone="ok" icon={null} label={t().markNew} />;
@@ -402,17 +428,39 @@ export function AccessDialog(
         />
         <span class="min-w-0 flex-[1_1_10rem]">
           <span class="flex min-w-0 items-center gap-2 text-[15px] font-medium text-primary">
-            <span class="min-w-0 break-words">{nameOf(row())}</span>
+            {/* The server offers a link only to whom it may lead: the owner's Code page, or Administration › Code. */}
+            <Show when={row().display.serviceAccountHref} fallback={<span class="min-w-0 break-words">{nameOf(row())}</span>}>
+              {(href) => (
+                // A new tab keeps the draft: nothing here is saved yet.
+                <a class="min-w-0 break-words hover:underline" href={href()} target="_blank" rel="noopener">
+                  {nameOf(row())}
+                </a>
+              )}
+            </Show>
             {mark(row())}
           </span>
-          <span class="block truncate text-[13px] text-dimmed">{kindLine(row())}</span>
+          {/* A service account's line carries its level, so it wraps on a phone instead of cutting it off. */}
+          <span
+            class="block text-[13px] text-dimmed"
+            classList={{
+              truncate: !isObjectAccount(row().display.serviceAccountKind),
+              "break-words": isObjectAccount(row().display.serviceAccountKind),
+            }}
+          >
+            {kindLine(row())}
+          </span>
         </span>
         <Show
           when={row().next && canEdit()}
           fallback={
             <Show
               when={!row().next && canEdit()}
-              fallback={<span class="shrink-0 text-sm text-secondary">{levelLabel(row().principal, row().next)}</span>}
+              fallback={
+                // A service account names its level in the line under its name.
+                <Show when={!isObjectAccount(row().display.serviceAccountKind)}>
+                  <span class="shrink-0 text-sm text-secondary">{levelLabel(row().principal, row().next)}</span>
+                </Show>
+              }
             >
               {/* Undo takes the place of level and remove, so the row keeps its size and nothing below moves. */}
               <span class="ml-auto flex shrink-0 items-center justify-end gap-1">
@@ -536,32 +584,63 @@ export function AccessDialog(
   const [handle, setHandle] = createSignal("");
   const [lookup, setLookup] = createSignal<"idle" | "searching" | "none" | "failed">("idle");
   const [found, setFound] = createSignal<FoundServiceAccount | null>(null);
+  let addingArea: HTMLLIElement | undefined;
   let lookupAbort: AbortController | undefined;
   onCleanup(() => lookupAbort?.abort());
-  const findAccount = async () => {
-    const value = handle().trim();
-    if (!value || !findServiceAccount()) return;
-    lookupAbort?.abort();
+  /** A complete identifier is looked up as it is typed or pasted; the hit is offered below the field. */
+  const findAccount = async (value: string) => {
+    const find = findServiceAccount();
+    if (!find) return;
     const controller = new AbortController();
     lookupAbort = controller;
-    setFound(null);
     setLookup("searching");
     try {
-      const result = await findServiceAccount()!(value, controller.signal);
+      const result = await find(value, controller.signal);
       if (controller.signal.aborted || disposed) return;
       setFound(result);
       setLookup(result ? "idle" : "none");
+      // The hit appears below the field; the sheet keeps both in view.
+      queueMicrotask(() => addingArea?.scrollIntoView?.({ block: "nearest" }));
     } catch {
       if (!controller.signal.aborted && !disposed) setLookup("failed");
     }
   };
+  const changeHandle = (value: string) => {
+    // A changed identifier ends the lookup for the old one, so its answer never appears.
+    lookupAbort?.abort();
+    setHandle(value);
+    setFound(null);
+    if (CODE_ACCOUNT_HANDLE_PATTERN.test(value.trim())) void findAccount(value.trim());
+    else setLookup("idle");
+  };
+  const openAdding = () => {
+    setHandleOpen(true);
+    // On a phone the sheet brings the field and its hit into view itself.
+    queueMicrotask(() => addingArea?.scrollIntoView?.({ block: "nearest" }));
+  };
+  const closeAdding = () => {
+    lookupAbort?.abort();
+    setHandleOpen(false);
+    setHandle("");
+    setFound(null);
+    setLookup("idle");
+  };
+  /** Descriptions of service accounts the search for people found, so their row keeps the server's line. */
+  const foundDescriptions = new Map<string, string>();
+  const withDescription = (principal: Principal, display: DraftDisplay): DraftDisplay => {
+    const description = principal.type === "service_account" ? foundDescriptions.get(principal.serviceAccountId) : undefined;
+    return description ? { ...display, serviceAccountDescription: description } : display;
+  };
   const addFound = (account: FoundServiceAccount) => {
     edit((current) =>
-      addPrincipal(current, account.principal, account.display, firstLevel(account.principal, account.display.serviceAccountKind)),
+      addPrincipal(
+        current,
+        account.principal,
+        { ...account.display, ...(account.description ? { serviceAccountDescription: account.description } : {}) },
+        firstLevel(account.principal, account.display.serviceAccountKind),
+      ),
     );
-    setFound(null);
-    setHandle("");
-    setHandleOpen(false);
+    closeAdding();
   };
 
   return (
@@ -590,6 +669,8 @@ export function AccessDialog(
                 findServiceAccount() &&
                 (async (value, signal) => {
                   const account = await findServiceAccount()!(value, signal);
+                  if (account?.description && account.principal.type === "service_account")
+                    foundDescriptions.set(account.principal.serviceAccountId, account.description);
                   // The hit says where it goes, since it joins Service accounts rather than the list below the search.
                   return (
                     account && { ...account, description: t().serviceAccountJoins({ kind: account.description ?? t().serviceAccount }) }
@@ -597,7 +678,9 @@ export function AccessDialog(
                 })
               }
               onSelect={(principal, display) =>
-                edit((current) => addPrincipal(current, principal, display, firstLevel(principal, display.serviceAccountKind)))
+                edit((current) =>
+                  addPrincipal(current, principal, withDescription(principal, display), firstLevel(principal, display.serviceAccountKind)),
+                )
               }
             />
           </Show>
@@ -653,100 +736,90 @@ export function AccessDialog(
                 </>
               }
               actions={
-                <Show when={findServiceAccount() && canEdit() && !handleOpen()}>
-                  {/* Button styles sit outside the utility layer, so a wrapper hides it. */}
-                  <span class="max-sm:hidden">
-                    <Button variant="secondary" size="sm" disabled={saving()} onClick={() => setHandleOpen(true)}>
-                      <i class="ti ti-plus" aria-hidden="true" />
-                      {t().addServiceAccount}
-                    </Button>
-                  </span>
+                // Beside the title at every width, as in the approved mockup; gone while the field is open.
+                <Show when={canAddObjectAccounts() && !handleOpen()}>
+                  {/* A phone has room beside the title only for the short label; the name stays complete. */}
+                  <Button variant="secondary" size="sm" disabled={saving()} aria-label={t().addServiceAccount} onClick={openAdding}>
+                    <i class="ti ti-plus" aria-hidden="true" />
+                    <span class="max-sm:hidden">{t().addServiceAccount}</span>
+                    <span class="sm:hidden">{t().add}</span>
+                  </Button>
                 </Show>
               }
             >
-              {/* A phone has no room beside the title; the action opens the section instead. */}
-              <Show when={findServiceAccount() && canEdit() && !handleOpen()}>
-                <span class="self-start sm:hidden">
-                  <Button variant="secondary" size="sm" disabled={saving()} onClick={() => setHandleOpen(true)}>
-                    <i class="ti ti-plus" aria-hidden="true" />
-                    {t().addServiceAccount}
-                  </Button>
-                </span>
-              </Show>
-              <ul class="flex flex-col">
-                <For each={objectAccountRows().map((row) => row.key)}>
-                  {(key) => <Show when={rows().find((row) => row.key === key)}>{(row) => <AccessRow row={row()} />}</Show>}
-                </For>
-                <Show when={handleOpen()}>
-                  <li class="flex flex-col gap-2 pb-2 sm:pl-11">
-                    <form
-                      class="flex items-center gap-2 [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void findAccount();
-                      }}
-                    >
-                      <TextInput
-                        aria-label={t().serviceAccountHandle}
-                        placeholder={t().serviceAccountHandlePlaceholder}
-                        value={handle}
-                        onValueChange={(value) => {
-                          // A changed identifier ends the lookup for the old one, so its answer never appears.
-                          lookupAbort?.abort();
-                          setHandle(value);
-                          setLookup("idle");
-                          setFound(null);
-                        }}
-                        autofocus
-                      />
-                      <Button type="submit" variant="secondary" loading={lookup() === "searching"} disabled={!handle().trim()}>
-                        {t().serviceAccountFind}
-                      </Button>
-                      <Button
-                        variant="text"
-                        onClick={() => {
-                          lookupAbort?.abort();
-                          setHandleOpen(false);
-                          setHandle("");
-                          setFound(null);
-                          setLookup("idle");
+              {/* Only rows or the open field make a list, so nothing stands empty before the text below. */}
+              <Show when={objectAccountRows().length > 0 || handleOpen()}>
+                <ul class="flex flex-col">
+                  <For each={objectAccountRows().map((row) => row.key)}>
+                    {(key) => <Show when={rows().find((row) => row.key === key)}>{(row) => <AccessRow row={row()} />}</Show>}
+                  </For>
+                  <Show when={handleOpen()}>
+                    <li ref={addingArea} class="flex flex-col gap-2 py-2">
+                      <form
+                        class="flex items-center gap-2 [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const account = found();
+                          const value = handle().trim();
+                          if (account) addFound(account);
+                          else if (lookup() === "searching") return;
+                          // Enter asks again for a complete identifier, so a failed lookup can be retried.
+                          else if (CODE_ACCOUNT_HANDLE_PATTERN.test(value)) void findAccount(value);
+                          else setLookup("none");
                         }}
                       >
-                        {t().cancel}
-                      </Button>
-                    </form>
-                    <Show when={found()}>
-                      {(account) => (
-                        <div class="flex items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2">
-                          <PrincipalAvatar
-                            entry={{
-                              principal: account().principal,
-                              avatarHash: account().display.avatarHash,
-                              serviceAccountKind: account().display.serviceAccountKind,
-                            }}
-                            label={account().display.displayName}
-                          />
-                          <span class="min-w-0 flex-[1_1_10rem]">
-                            {/* A long title wraps on a phone instead of pushing Add out of the sheet. */}
-                            <span class="block min-w-0 break-words text-[15px] font-medium text-primary">
-                              {account().display.displayName}
+                        <TextInput
+                          icon="ti ti-code"
+                          aria-label={t().serviceAccountHandle}
+                          placeholder={t().serviceAccountHandlePlaceholder}
+                          value={handle}
+                          onValueChange={changeHandle}
+                          autofocus
+                        />
+                        <Button variant="text" size="sm" onClick={closeAdding}>
+                          {t().cancel}
+                        </Button>
+                      </form>
+                      <Show when={found()}>
+                        {(account) => (
+                          <button
+                            type="button"
+                            class="flex w-full items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2 text-left hover:bg-[var(--ui-surface-muted)]"
+                            disabled={saving()}
+                            onClick={() => addFound(account())}
+                          >
+                            <PrincipalAvatar
+                              entry={{
+                                principal: account().principal,
+                                avatarHash: account().display.avatarHash,
+                                serviceAccountKind: account().display.serviceAccountKind,
+                              }}
+                              label={account().display.displayName}
+                            />
+                            <span class="min-w-0 flex-[1_1_10rem]">
+                              {/* A long title wraps on a phone instead of pushing the mark out of the sheet. */}
+                              <span class="block min-w-0 break-words text-[15px] font-medium text-primary">
+                                {account().display.displayName}
+                              </span>
+                              <span class="block break-words text-[13px] text-dimmed">{account().description || t().serviceAccount}</span>
                             </span>
-                            <span class="block truncate text-[13px] text-dimmed">{t().serviceAccount}</span>
-                          </span>
-                          <Button size="sm" onClick={() => addFound(account())}>
-                            {t().add}
-                          </Button>
-                        </div>
-                      )}
-                    </Show>
-                    <Show when={lookup() === "none" || lookup() === "failed"}>
-                      <p class="text-[13px] text-dimmed" role="status">
-                        {lookup() === "none" ? t().serviceAccountNotFound : t().serviceAccountLookupFailed}
-                      </p>
-                    </Show>
-                  </li>
-                </Show>
-              </ul>
+                            <StatusBadge class="shrink-0" tone="neutral" icon={null} label={access().codeServiceAccount} />
+                          </button>
+                        )}
+                      </Show>
+                      <Show when={lookup() !== "idle"}>
+                        <p class="text-[13px] text-dimmed" role="status">
+                          {lookup() === "searching"
+                            ? t().serviceAccountSearching
+                            : lookup() === "none"
+                              ? t().serviceAccountNotFound
+                              : t().serviceAccountLookupFailed}
+                        </p>
+                      </Show>
+                    </li>
+                  </Show>
+                </ul>
+              </Show>
               {/* As in the approved mockup: one note under the rows, or the empty text; neither while adding. */}
               <Show when={!handleOpen()}>
                 <p class="text-[13px] text-dimmed">

@@ -51,8 +51,9 @@ or a Cloud-admin role. An omitted permission grants no manager presentation.
 
 For resource Code, managers receive `Code of <owner title>`; other viewers
 receive only a localized resource-type label. An app's Code is named
-`Code of <App>` for everyone. Its administration link is returned only when
-`cloudAdmin` is true. Resource links use the owner's registered Code page and
+`Code of <App>` for everyone, with the app's name in the viewer's language. Its
+link to that app's Code in Administration › Code
+(`/admin/code?sec=code&app=<appId>`) is returned only when `cloudAdmin` is true. Resource links use the owner's registered Code page and
 are returned only in a managed target context.
 
 Resolved rows include `serviceAccountKind`, a manager-only `serviceAccountHandle`,

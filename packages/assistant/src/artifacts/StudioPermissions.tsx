@@ -50,7 +50,6 @@ export const studioAccessDialogProps = (options: StudioAccessOptions): AccessDia
             { level: "read", label: t.use },
             { level: "admin", label: t.manage },
           ],
-    entryDetail: (entry) => (entry.serviceAccountKind === "code" ? entry.serviceAccountDescription : undefined),
     grantAccess: async (principal, level) => {
       if (level === "write") throw new Error(t.INVALID_INPUT);
       const entry = await options.grant(principal, level);

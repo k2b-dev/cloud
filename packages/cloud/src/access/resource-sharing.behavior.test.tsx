@@ -151,20 +151,30 @@ if (!isServer)
         dom.root,
       );
       const button = (text: string) =>
-        Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((node) => node.textContent?.trim() === text);
+        Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find(
+          (node) => node.getAttribute("aria-label") === text || node.textContent?.trim() === text,
+        );
+      const inline = type === "mail.mailbox";
+      const hit = () =>
+        inline
+          ? button("Hinzufügen")
+          : Array.from(dom.root.querySelectorAll<HTMLButtonElement>("li button")).find((node) =>
+              node.textContent?.includes("Code von info@beispiel.de"),
+            );
       try {
         expect(dom.root.textContent).toContain("Dienstkonten");
         button("Dienstkonto hinzufügen")!.click();
         const field = dom.root.querySelector<HTMLInputElement>('input[aria-label="Kennung des Dienstkontos"]')!;
         field.value = "Code von info@beispiel.de";
         field.dispatchEvent(new Event("input", { bubbles: true }));
-        button("Suchen")!.click();
-        await waitFor(() => Boolean(dom.root.querySelector('[role="status"]')));
+        if (inline) button("Suchen")!.click();
+        else field.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        await waitFor(() => dom.root.textContent?.includes("Kein Dienstkonto mit dieser Kennung") === true);
         expect(requests).toHaveLength(0);
         field.value = handle;
         field.dispatchEvent(new Event("input", { bubbles: true }));
-        button("Suchen")!.click();
-        await waitFor(() => Boolean(button("Hinzufügen")));
+        if (inline) button("Suchen")!.click();
+        await waitFor(() => Boolean(hit()));
         expect(requests).toHaveLength(1);
         expect(requests[0]!.pathname).toBe("/api/accounts/entities");
         expect(Object.fromEntries(requests[0]!.searchParams)).toMatchObject({
@@ -174,13 +184,13 @@ if (!isServer)
           kinds: "service_account",
           service_account_kinds: "code",
         });
-        button("Hinzufügen")!.click();
-        if (type !== "mail.mailbox") {
+        hit()!.click();
+        if (!inline) {
           expect(grants).toEqual([]);
           button("Speichern")!.click();
         }
         await waitFor(() => grants.length === 1);
-        expect(grants).toEqual(["read"]);
+        expect(grants).toEqual([inline ? "read" : "write"]);
       } finally {
         dispose();
         fetch.mockRestore();

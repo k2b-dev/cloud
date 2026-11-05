@@ -442,10 +442,11 @@ test("Code titles are resolved in the existing batch only for a managed target",
       calls.push("accounts");
       return [
         { id: present, name: "code:demo.item:secret-id", kind: "code", title: "Private mailbox", handle: "code-7k2q9m4xwt", status: "disabled" },
-        { id: app, name: "code:app:workshop", kind: "code", title: "Werkstatt", handle: "code-0123456789", status: "active" },
+        { id: app, name: "code:app:workshop", kind: "code", title: "Workshop", handle: "code-0123456789", status: "active" },
       ];
     };
-    globalThis.codeDisplayCatalog = async (id) => ({ appId: id, appName: id === "workshop" ? "Werkstatt" : "Demo", manifest: {
+    globalThis.codeDisplayCatalog = async (id) => ({ appId: id, appName: id === "workshop" ? "Workshop" : "Demo",
+      appPresentation: id === "workshop" ? { baseLocale: "en", translations: { de: { name: "Werkstatt" } } } : undefined, manifest: {
       appId: id, types: [{ localId: "item", title: "Postfach", codeAccount: { name: "Code eines Postfachs", description: "Dienstkonto eines Postfachs" } }], code: { pages: { item: "/app/demo/{id}/code" } },
     } });
     Bun.plugin({ name: "code-display-fixture", setup(build) {
@@ -470,9 +471,12 @@ test("Code titles are resolved in the existing batch only for a managed target",
     assert.equal(reader[1].serviceAccountHandle, undefined);
     assert.ok(!JSON.stringify(reader).includes("Private mailbox"));
     assert.ok(!JSON.stringify(reader).includes("secret-id"));
+    // The app's name in the viewer's language, never the name stored with the account.
     assert.equal(reader[1].displayName, "Code von Werkstatt");
     assert.equal(reader[1].serviceAccountHref, undefined);
     assert.deepEqual(calls.splice(0), ["accounts"]);
+    assert.equal((await resolveDisplayNames(entries, { locale: "en" }))[1].displayName, "Code of Workshop");
+    calls.splice(0);
     const manager = await resolveDisplayNames(entries, { permission: "admin", locale: "de" });
     assert.equal(manager[0].displayName, "Code von Private mailbox");
     assert.equal(manager[0].serviceAccountHref, "/app/demo/secret-id/code");
@@ -481,7 +485,7 @@ test("Code titles are resolved in the existing batch only for a managed target",
     assert.equal(manager[1].serviceAccountHref, undefined);
     assert.deepEqual(calls.splice(0), ["accounts"]);
     const admin = await resolveDisplayNames(entries, { cloudAdmin: true, locale: "de" });
-    assert.equal(admin[1].serviceAccountHref, "/admin/code");
+    assert.equal(admin[1].serviceAccountHref, "/admin/code?sec=code&app=workshop");
     assert.equal(admin[0].displayName, "Code eines Postfachs");
     assert.equal(admin[0].serviceAccountHandle, undefined);
     assert.equal(admin[1].serviceAccountHandle, undefined);

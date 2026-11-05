@@ -62,11 +62,36 @@ globalThis.fetch = Object.assign(
   },
   { preconnect: originalFetch.preconnect },
 );
+/** Mockup v31 `editor` states: no service accounts by default, two of them in `normal`, the same read-only in `lesen`. */
+const scene = (window as { accessDialogScene?: "normal" | "lesen" }).accessDialogScene;
+const serviceAccounts: AccessEntry[] = [
+  {
+    id: "00000000-0000-4000-8000-000000000006",
+    principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000006" },
+    displayName: scene === "lesen" ? "Code eines Postfachs" : "Code von einkauf@beispiel.de",
+    permission: "write",
+    serviceAccountKind: "code",
+    serviceAccountDescription: "Dienstkonto eines Postfachs",
+    ...(scene === "lesen" ? {} : { serviceAccountHref: "/app/mail/Mb4kd2/code" }),
+    createdAt: "2026-11-03T00:00:00.000Z",
+  },
+  {
+    id: "00000000-0000-4000-8000-000000000007",
+    principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000007" },
+    displayName: "Code von Werkstatt",
+    permission: "read",
+    serviceAccountKind: "code",
+    serviceAccountDescription: "Dienstkonto einer App",
+    createdAt: "2026-11-03T00:00:00.000Z",
+  },
+];
+
 void openAccessDialog({
   target: { type: "spaces.space", id: "Targ01" },
   resourceName: "Einkauf 2027",
   subtitle: "Space · Spaces",
-  initialEntries: entries,
+  initialEntries: scene ? [...entries, ...serviceAccounts] : entries,
+  canEdit: scene !== "lesen",
   viewerUserId: "10000000-0000-4000-8000-000000000001",
   allowPublic: true,
   publicLink: "https://cloud.example.test/s/einkauf-2027",

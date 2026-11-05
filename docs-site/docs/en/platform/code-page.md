@@ -21,11 +21,12 @@ registry, by type and ID.
 
 The page is titled **Code**; screen readers hear whose Code it is.
 
-- **Overview:** the service account the Code runs as ("Runs as service account
-  “Code of info@example.com”") with its handle to copy, also before the first
-  run; the running version; its automations (schedules and manual starts) with
-  status, next run and last run; and its targets as operation at target, read
-  from the handles in the Code. Targets say what the Code calls, not whether it
+- **Overview:** the service account the Code runs as and its handle ("Runs as
+  service account “Code of info@example.com” · Handle code-7k2q9m4xwt") with
+  **Copy**, also before the first run; Administration › Code shows the same line
+  for an app's Code. Then the running version; its automations (schedules and
+  manual starts) with status, next run and last run; and its targets as
+  operation at target, as written in the Code. Targets say what the Code calls, not whether it
   may: whoever manages a target decides that. A newer version that is ready but
   off marks what it newly calls and offers **Switch on**. A version that waits
   for a Cloud admin says so and cannot be switched on yet. When the newest
@@ -61,7 +62,7 @@ The page is titled **Code**; screen readers hear whose Code it is.
   carries. Phone sessions and non-interactive credentials see why they cannot
   switch on.
 
-Only administrators of the owner and editors or readers of the Code see the
+Only people who manage the owner and editors or readers of the Code see the
 page. Readers see runs without their calls and no actions. Every part that
 cannot load shows an error with a way to try again.
 
