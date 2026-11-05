@@ -107,6 +107,7 @@ export const aiSlotLabel = (t: AiAreaMessages, slot: AiModelSlot): string =>
     vision: t.slot_vision,
     audio: t.slot_audio,
     liveAudio: t.slot_liveAudio,
+    decision: t.slot_decision,
   })[slot];
 
 export const aiClassSubtitle = (t: AiAreaMessages, modelClass: AiModelClass): string =>

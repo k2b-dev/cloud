@@ -309,6 +309,7 @@ function ClassesColumn(props: { t: AiAreaMessages; query: AiAreaQuery; overview:
         {row("vision")}
         {row("audio")}
         {row("liveAudio")}
+        {row("decision")}
       </AppWorkspace.SidebarSection>
     </>
   );
@@ -609,11 +610,13 @@ export function AiAreaView(props: AiAreaViewProps) {
     if (query.slot)
       return isAiModelClass(query.slot)
         ? aiClassSubtitle(t, query.slot)
-        : query.slot === "vision"
-          ? t.slotd_vision
-          : query.slot === "liveAudio"
-            ? t.slotd_liveAudio
-            : t.slotd_audio;
+        : query.slot === "decision"
+          ? t.slotd_decision
+          : query.slot === "vision"
+            ? t.slotd_vision
+            : query.slot === "liveAudio"
+              ? t.slotd_liveAudio
+              : t.slotd_audio;
     return undefined;
   };
 

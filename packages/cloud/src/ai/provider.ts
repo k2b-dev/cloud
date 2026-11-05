@@ -101,6 +101,7 @@ const endpoints: Record<Exclude<AiProviderType, "vllm-realtime" | "openai-compat
 };
 
 export const createAiProvider = (profile: AiModelProfile, apiKey?: string, headers?: Record<string, string>): Provider => {
+  if (profile.kind === "decision") throw new Error("Decision models cannot be used for chat generation.");
   if (profile.capabilities.includes("transcription") || profile.capabilities.includes("live-transcription"))
     throw new Error("Transcription profiles cannot be used for chat generation.");
   return withProviderErrors(createAdapter(profile, apiKey, headers), profile.providerId);

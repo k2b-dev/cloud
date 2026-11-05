@@ -540,6 +540,102 @@ value as its global NATS in-flight bound, including unscoped callers. Changing
 that resource setting requires the same deliberate Sync migration as other
 durable consumer configuration changes.
 
+## Ask typed decision questions
+
+Use `runAiDecision()` from `@k2b/cloud/ai` (also exported from `@k2b/cloud`)
+for yes/no, choice and score questions answered with probabilities. It calls a
+decision model through System One. Configure the installation’s
+[decision model](/en/docs/operations/decision-models) first.
+
+```ts
+import { runAiDecision } from "@k2b/cloud/ai";
+
+const result = await runAiDecision({
+  task: "mail.triage",
+  appId: "mail",
+  usageSubject: accessSubject,
+  state: { subject: mail.subject, text: mail.text },
+  questions: {
+    category: {
+      type: "choice",
+      instructions: "What kind of message is this?",
+      criteria: {
+        sales: "Orders and offers",
+        support: "Help with existing orders",
+        spam: "Unsolicited advertising or deceptive messages",
+        other: "Other messages",
+      },
+    },
+    urgent: { type: "noul", instructions: "Does this message need urgent attention?" },
+    severity: {
+      type: "score",
+      instructions: "How severe is the reported problem?",
+      criteria: ["No problem", "Minor problem", "Major problem"],
+    },
+  },
+  signal,
+});
+
+const category = result.answers.category;
+if (
+  (category.choice === "sales" || category.choice === "support") &&
+  category.confidence >= 0.9 &&
+  result.answers.urgent.probability >= 0.9
+) {
+  flagForReview(mail.id);
+}
+```
+
+Authorize the mail read before calling. Read the category first and use urgency
+only within relevant categories. Urgent wording in spam can produce a high
+urgency probability; urgency alone must not drive triage. Choose thresholds for
+the application’s cost of mistakes. A probability is a model estimate, not a
+guarantee. For question variables, use `satisfies DecisionQuestions` or
+`as const` to preserve literal option IDs; `DecisionQuestions`, `DecisionAnswers` and `DecisionImage`
+are exported from `@k2b/cloud/ai`.
+
+`noul` returns `probability` and `value` (`probability >= 0.5`). `choice` returns
+`choice`, `confidence` and per-option `probabilities`. `score` returns the
+probability-weighted `score`, most likely zero-based `level`, `confidence` and
+per-level `probabilities`. The result contains `answers`, the resolved
+`model: { id }` and `usage`; provider response bodies are not exposed.
+
+Omit `model` to use the `decision` slot. An explicit `model: { id }` selects a
+decision model’s standard variant. Chat classes and class fallback do not
+apply. Application server code may use a `restricted` provider only with an
+explicit ID. With `usageSubject`, Cloud excludes restricted providers, checks
+model grants immediately before admission and charges that subject’s Assistant
+allowance. Without it, central background accounting applies. Use
+`allowedDataBoundaries` to narrow either path, for example to `["private"]`.
+Optional `attribution`, `appId` and `traceParent` follow the structured API.
+
+Send 1–128 questions. Choices and scores need at least two alternatives.
+State must serialize as JSON. Cloud estimates the UTF-8 size of serialized
+state and questions at four bytes per token and rejects input beyond the
+configured model context. This is a preflight estimate; a provider may reject
+input that needs more tokens. Optional `images` contain `{ data, mediaType }`,
+with base64 data without a data-URL prefix, and require `vision`. Image support
+depends on both the provider and model. Cloud trusts the administrator’s
+configured `vision` capability; it does not probe whether images are processed.
+As of 2026-11-04, cortecs ignores images on `/v1/systemone`, so use text-only
+decisions there. Existing AI limits apply: 16 images, 10 MiB per image and
+40 MiB total.
+
+Each call has a 60-second deadline and honors `signal`. There is no automatic
+retry. Cloud records metadata-only runs and usage. Missing measurements become
+`usage.estimated: true`; refused calls are booked with zero usage. Admission
+reserves the configured context as the output bound because System One cannot
+accept a smaller output-token cap; insufficient allowance fails before dispatch.
+Images reserve the full context as input too.
+
+`AiDecisionError.code` distinguishes `decision_not_configured`,
+`decision_model_unavailable`, `decision_images_not_supported`,
+`decision_input_invalid` and `decision_input_too_large`. Provider failures use
+`provider_error` (including the internal deadline) or `provider_aborted`
+(for caller cancellation); budget and model-access errors retain the existing
+Cloud codes. Show failures for work a person started. The caller
+owns persistence, cancellation feedback, domain effects and deliberate retries.
+
 ## Request a class
 
 Import `AiModelRequest` and `AiResolvedModelRef` from `@k2b/cloud/ai`:

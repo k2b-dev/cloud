@@ -1,4 +1,6 @@
-import type { GenerateRequest, TransportReport } from "@k2b/nessi/ai";
+import type { TransportReport } from "@k2b/nessi/ai";
+
+export type TransportObserver = { onTransport?: (report: TransportReport) => void };
 
 /**
  * Adds `observe` to the request's transport hook. nessi reports the one request
@@ -6,7 +8,7 @@ import type { GenerateRequest, TransportReport } from "@k2b/nessi/ai";
  * wrapper around the same adapter sees that report. Nothing here logs: the
  * report carries no body or headers, but callers must not log requests either.
  */
-export const observeTransport = (request: GenerateRequest, observe: (report: TransportReport) => void): GenerateRequest => ({
+export const observeTransport = <T>(request: T & TransportObserver, observe: (report: TransportReport) => void): T & TransportObserver => ({
   ...request,
   onTransport: (report) => {
     observe(report);
