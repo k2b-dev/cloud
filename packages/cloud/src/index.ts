@@ -36,8 +36,6 @@ export type { RuntimeCompatibilityIssue } from "./_internal/runtime-compatibilit
 export { assessRuntimeCompatibility } from "./_internal/runtime-compatibility";
 export { buildRuntimeFromRegistry } from "./_internal/runtime-context";
 export { type AppSkillDefinition, skill } from "./ai/app-skills";
-export type { AiDecisionErrorCode, AiDecisionUsage, RunAiDecisionInput, RunAiDecisionResult } from "./ai/decision";
-export { AiDecisionError, runAiDecision } from "./ai/decision";
 export type { AppAccessDeclaration, AppAccessRule, FixedAppAccessRule, ResourceAppAccessAdapter } from "./contracts/app-access";
 export { appAccess } from "./contracts/app-access";
 export { defineCapabilities } from "./contracts/capabilities";
