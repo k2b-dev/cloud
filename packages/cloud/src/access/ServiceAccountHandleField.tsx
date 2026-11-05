@@ -56,9 +56,18 @@ export function ServiceAccountHandleField(props: {
   };
   const add = (account: FoundServiceAccount) => {
     if (props.disabled) return;
-    void Promise.resolve(props.add(account)).catch(() => {
-      if (!disposed) setLookup("failed");
-    });
+    const focused = document.activeElement instanceof HTMLElement && area?.contains(document.activeElement) ? document.activeElement : null;
+    void Promise.resolve(props.add(account))
+      .catch(() => {
+        if (!disposed) setLookup("failed");
+      })
+      .finally(() => {
+        // Saving disabled the focused control. When the field stays open, focus returns there unless the person moved on.
+        if (disposed || !focused) return;
+        queueMicrotask(() => {
+          if (!disposed && (document.activeElement === null || document.activeElement === document.body)) focused.focus();
+        });
+      });
   };
   return (
     <div ref={area} class="flex flex-col gap-2">

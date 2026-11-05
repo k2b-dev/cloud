@@ -141,15 +141,17 @@ describe("Machine storage settings", () => {
           await hit.waitFor();
           expect(await tab.getByRole("button", { name: "Suchen", exact: true }).count()).toBe(0);
           expect(await tab.getByRole("button", { name: "Hinzufügen", exact: true }).count()).toBe(0);
-          await hit.click();
+          // Enter in the field adds the hit, as in the dialog.
+          await tab.getByRole("textbox", { name: "Kennung des Dienstkontos", exact: true }).press("Enter");
           // While the grant saves, the field holds, so a second handle cannot replace the first.
           await tab.getByRole("textbox", { name: "Kennung des Dienstkontos", exact: true, disabled: true }).waitFor();
           expect(await hit.isDisabled()).toBe(true);
           saving.resolve();
           await tab.getByRole("alert").filter({ hasText: "Grant fixture unavailable" }).waitFor();
-          // A failed save keeps the handle and the hit, so the same click retries.
+          // A failed save keeps the handle and the hit and returns focus to the field, so Enter retries.
+          await tab.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Kennung des Dienstkontos");
           expect(await tab.getByRole("textbox", { name: "Kennung des Dienstkontos", exact: true }).inputValue()).toBe(handle);
-          await hit.click();
+          await tab.keyboard.press("Enter");
         } else {
           await tab.getByRole("combobox").last().fill(handle);
           await tab.getByRole("option").filter({ hasText: entry.displayName }).click();
