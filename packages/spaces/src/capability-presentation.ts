@@ -705,6 +705,8 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Ereignis aktualisieren",
           description: "Aktualisieren Sie ausgewählte Ereignisfelder, ohne den Elementtyp zu konvertieren.",
           input: {
+            addAssigneeIds: "Diese Personen- oder Dienstkonto-UUIDs hinzufügen; andere bleiben zugewiesen.",
+            removeAssigneeIds: "Nur diese Personen- oder Dienstkonto-UUIDs entfernen.",
             itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
             assigneeIds:
               "Vollständige Liste der Personen- oder Dienstkonto-UUIDs aus der Liste zuweisbarer Space-Mitglieder. Das arbeitende Konto kann erst nach Freigabe seiner aktiven Übernahme mit task.release entfernt werden.",
@@ -820,8 +822,12 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "task.update": {
           title: "Aufgabe aktualisieren",
-          description: "Aktualisieren Sie ausgewählte Felder einer vorhandenen Aufgabe, ohne deren Elementtyp zu konvertieren.",
+          description:
+            "Aufgabenfelder ändern. Zuständige einzeln mit addAssigneeIds/removeAssigneeIds ändern. Ein neuer Titel braucht den zuvor gelesenen expectedTitle; bei TITLE_CONFLICT neu laden und prüfen.",
           input: {
+            expectedTitle: "Exakter zuvor gelesener Titel; mit title erforderlich. Bei TITLE_CONFLICT neu laden und prüfen.",
+            addAssigneeIds: "Diese Personen- oder Dienstkonto-UUIDs hinzufügen; andere bleiben zugewiesen.",
+            removeAssigneeIds: "Nur diese Personen- oder Dienstkonto-UUIDs entfernen; Übernahmen zuerst freigeben.",
             itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
             assigneeIds:
               "Vollständige Liste der Personen- oder Dienstkonto-UUIDs aus der Liste zuweisbarer Space-Mitglieder. Das arbeitende Konto kann erst nach Freigabe seiner aktiven Übernahme mit task.release entfernt werden.",

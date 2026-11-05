@@ -82,9 +82,12 @@ export function FileSaver(props: {
     queueMicrotask(() => {
       const active = document.activeElement;
       if (active && root?.contains(active) && active.isConnected && active.tagName !== "DIALOG") return;
+      const source = root?.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]');
       const first = folder.items()[0]?.id;
-      if (folder.location() && first) selection.focus(first);
-      else root?.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]')?.focus();
+      // Discovery can finish after the dialog opens; its initial root still starts on the source.
+      if (folder.location()?.trail.length === 1 && source) source.focus();
+      else if (folder.location() && first) selection.focus(first);
+      else source?.focus();
     });
   };
   const folder = createProviderFolder({

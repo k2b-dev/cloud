@@ -219,6 +219,36 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     }
   }, 20_000);
 
+  test("settled() marks animating targets under the resting pointer as hovered", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html>
+        <style>#back { position: fixed; inset: 0 auto auto 0; width: 40px; height: 40px; } #pulse { margin-top: 100px; }</style>
+        <a id="back" href="#">Back</a><div id="pulse">pulse</div>
+        <script>
+          for (const el of document.querySelectorAll("#back, #pulse")) {
+            const run = () => el.animate([{ opacity: 0.5 }, { opacity: 1 }], { duration: 100 }).finished.then(run, () => {});
+            run();
+          }
+        </script>`);
+      // Playwright's pointer rests at the top left; moving it there makes that explicit for every engine.
+      await page.mouse.move(10, 10);
+      let error: unknown;
+      try {
+        await settled(page);
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(Error);
+      if (!(error instanceof Error)) throw new Error("Expected settled() to reject the page that keeps animating");
+      expect(error.message).toMatch(/"target":"a#back"[^}]*"hovered":true/);
+      expect(error.message).toMatch(/"target":"div#pulse"[^}]*"hovered":false/);
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
   test("settled() waits for a view transition that starts after a navigation committed", async () => {
     const context = await browser.newContext();
     try {

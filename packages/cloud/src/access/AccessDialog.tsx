@@ -440,7 +440,8 @@ export function AccessDialog(
           onClick={() => setOpen((value) => !value)}
         >
           <span class="k2b-choice-trigger__value">{levelLabel(row().principal, row().next)}</span>
-          <i class="ti ti-chevron-down" aria-hidden="true" />
+          {/* On a phone the chevron moves closer, so the whole level fits beside a mark like "vorher Bearbeiten". */}
+          <i class="ti ti-chevron-down max-sm:-ml-1.5" aria-hidden="true" />
         </button>
         {/* Mounted only while open, so a long list carries no menu per row. */}
         <Show when={open()}>
@@ -514,19 +515,22 @@ export function AccessDialog(
       );
     };
     return (
-      <li class="flex items-center gap-3 py-2" classList={{ "[&>:first-child]:opacity-50": !row().next }}>
+      <li class="flex items-center py-2 max-sm:gap-2 sm:gap-3" classList={{ "[&>:first-child]:opacity-50": !row().next }}>
         <PrincipalAvatar
           entry={{ principal: row().principal, avatarHash: row().display.avatarHash, serviceAccountKind: row().display.serviceAccountKind }}
           label={nameOf(row())}
         />
         <span class="min-w-0 flex-1 overflow-hidden">
           {/* As in the approved mockup: the mark sits beside the name, and on a phone in the line below it. */}
-          <span class="flex min-w-0 items-center gap-2 text-[15px] font-medium text-primary">
-            <span class="truncate">{nameOf(row())}</span>
-            <span class="contents max-sm:hidden">{mark(row())}</span>
+          <span class="flex min-w-0 items-center gap-2 font-medium text-primary max-sm:text-sm sm:text-[15px]">
+            <span data-access-name="" class="truncate">
+              {nameOf(row())}
+            </span>
+            {/* Only breakpoint-scoped display classes: an app stylesheet that repeats `contents` or `inline-flex` comes later and would show both marks. */}
+            <span class="max-sm:hidden sm:contents">{mark(row())}</span>
           </span>
           <span class="flex min-w-0 items-center gap-2 text-[13px] text-dimmed">
-            <span class="contents sm:hidden">{mark(row())}</span>
+            <span class="max-sm:contents sm:hidden">{mark(row())}</span>
             <span class="truncate">{kindLine(row())}</span>
           </span>
         </span>
@@ -538,8 +542,8 @@ export function AccessDialog(
               fallback={<span class="shrink-0 text-sm text-secondary">{levelLabel(row().principal, row().next)}</span>}
             >
               {/* Undo takes the place of level and remove, so the row keeps its size and nothing below moves. */}
-              <span class="ml-auto flex shrink-0 items-center justify-end gap-1">
-                <span class="flex w-28 justify-end sm:w-40">
+              <span class="ml-auto flex shrink-0 items-center justify-end sm:gap-1">
+                <span class="flex justify-end max-sm:w-[6.875rem] sm:w-40">
                   <Button
                     variant="text"
                     data-access-undo=""
@@ -554,13 +558,13 @@ export function AccessDialog(
                     {t().undo}
                   </Button>
                 </span>
-                <span class="h-9 w-9" aria-hidden="true" />
+                <span class="h-9 w-6" aria-hidden="true" />
               </span>
             </Show>
           }
         >
-          <span class="ml-auto flex shrink-0 items-center gap-1">
-            <span class="w-28 sm:w-40">
+          <span class="ml-auto flex shrink-0 items-center sm:gap-1">
+            <span class="max-sm:w-[6.875rem] sm:w-40">
               {/* A stored denial is shown, never offered: it can only be removed. */}
               <Show
                 when={row().next?.permission !== "none"}
@@ -572,6 +576,7 @@ export function AccessDialog(
             <IconButton
               label={protectedRow() ? t().lastManagerRemove({ level: manageLabel(row().principal) }) : t().remove({ name: nameOf(row()) })}
               variant="ghost"
+              size="xs"
               disabled={saving() || protectedRow()}
               data-access-remove=""
               onClick={(event) => removeFrom(event.currentTarget)}
@@ -615,7 +620,7 @@ export function AccessDialog(
       return mark(current);
     };
     return (
-      <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+      <li class="flex flex-wrap items-center gap-y-1 py-2 max-sm:gap-x-2 sm:gap-x-3">
         <span
           class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--k2b-surface-muted)] text-secondary"
           aria-hidden="true"
@@ -623,16 +628,24 @@ export function AccessDialog(
           <i class={rowProps.type === "public" ? "ti ti-world" : "ti ti-building"} />
         </span>
         <span class="min-w-0 flex-1 basis-40">
-          <span class="flex min-w-0 items-center gap-2 text-[15px] font-medium text-primary">
-            <span class="truncate">{rowProps.type === "public" ? t().publicLabel : t().signedInLabel}</span>
-            {generalMark()}
+          <span class="flex min-w-0 items-center gap-2 font-medium text-primary max-sm:text-sm sm:text-[15px]">
+            <span data-access-name="" class="truncate">
+              {rowProps.type === "public" ? t().publicLabel : t().signedInLabel}
+            </span>
+            {/* As in a people row: beside the name on a wide screen, at the start of the line below on a phone. */}
+            <span class="max-sm:hidden sm:contents">{generalMark()}</span>
           </span>
-          <span class="block truncate text-[13px] text-dimmed">{description()}</span>
+          <span class="block truncate text-[13px] leading-5 text-dimmed">
+            <Show when={generalMark()}>
+              {(badge) => <span class="mr-1.5 h-5 items-center align-top max-sm:inline-flex sm:hidden">{badge()}</span>}
+            </Show>
+            {description()}
+          </span>
         </span>
         {/* On a phone the level moves under the description; the switch stays beside the name. */}
         <Show when={on() && rowProps.type === "authenticated" && canEdit() && row()}>
           {(current) => (
-            <span class="order-3 w-full pl-11 sm:order-none sm:w-40 sm:shrink-0 sm:pl-0">
+            <span class="max-sm:order-3 max-sm:w-full max-sm:pl-10 sm:w-40 sm:shrink-0">
               <LevelMenu row={current()} />
             </span>
           )}
@@ -891,7 +904,7 @@ export function AccessDialog(
                             label={account().display.displayName}
                           />
                           <span class="min-w-0 flex-1 basis-40">
-                            <span class="flex min-w-0 items-center gap-2 text-[15px] font-medium text-primary">
+                            <span class="flex min-w-0 items-center gap-2 font-medium text-primary max-sm:text-sm sm:text-[15px]">
                               {account().display.displayName}
                             </span>
                             <span class="block truncate text-[13px] text-dimmed">{t().serviceAccount}</span>

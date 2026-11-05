@@ -7,6 +7,7 @@ import { sql } from "../runtime/clients";
 import { ratelimit } from "../server/ratelimit";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { getEffectivePermission, hasPermission } from "../server/services/access";
+import { decodeAccountCategoryEnabled } from "../services/account-category-policy";
 import { audit } from "../services/audit";
 import { GeoError } from "../services/geo/errors";
 import { coreGeo } from "../services/geo/service";
@@ -55,6 +56,7 @@ type Device = {
   expires_at: Date | null;
   active_visit_id: string | null;
   registration_id: string | null;
+  visit_only: boolean;
 };
 type Registration = {
   id: string;
@@ -66,6 +68,7 @@ type Registration = {
   state: "active" | "revoked";
 };
 type Visit = {
+  issued_at: Date;
   id: string;
   device_id: string;
   input_digest: string;
@@ -237,15 +240,20 @@ export const createAppPwaService = (options: AppPwaOptions) => {
       return pwaFail("UNAVAILABLE", 503);
     }
   };
-  const record = (
+  const record = async (
     tx: TransactionSQL,
     event: string,
     actor: AppPwaActor | AppPwaWebSignIn,
     deviceId: string | null,
     visitId: string | null = null,
     details: Record<string, string | null> = {},
-  ) =>
-    audit.record(
+  ) => {
+    // Visit provenance is stable even when another employee ends the visit.
+    const [device] = visitId
+      ? await tx<Device[]>`SELECT d.* FROM ${tables.devices} d JOIN ${tables.visits} v
+        ON v.app_id = d.app_id AND v.device_id = d.id WHERE v.app_id = ${appId} AND v.id = ${visitId}::uuid`
+      : [];
+    return audit.record(
       {
         action: `app_pwa.${event}`,
         outcome: "allowed",
@@ -257,11 +265,13 @@ export const createAppPwaService = (options: AppPwaOptions) => {
           visitId,
           actorKind: "kind" in actor ? actor.kind : "web",
           ownerUserId: "kind" in actor ? actor.ownerUserId : actor.userId,
+          ...(device ? { registrationId: device.registration_id, issuedByUserId: device.owner_user_id } : {}),
           ...details,
         },
       },
       tx,
     );
+  };
   const csrf = (credential: string) => pairingSecret.hash(`cloud-app-pwa:csrf:${appId}:${path}:${credential}`);
   const browser = async (tx: TransactionSQL, credential: string, lock = false): Promise<Browser> => {
     parse(AppPwaSecret, credential);
@@ -323,13 +333,25 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         revoked_at: Date | null;
         pwa_device_id: string | null;
         key_state: string;
+        account_expires: Date | null;
+        legal_allowed: boolean;
+        category_value: string | null;
       }[]
-    >`SELECT f.sid,f.auth_epoch,u.auth_epoch AS user_epoch,f.expires_at,f.revoked_at,f.pwa_device_id,k.state AS key_state
+    >`SELECT f.sid,f.auth_epoch,u.auth_epoch AS user_epoch,f.expires_at,f.revoked_at,f.pwa_device_id,k.state AS key_state,
+        u.account_expires, (NOT f.legal_pending OR EXISTS(SELECT 1 FROM auth.legal_acceptances a WHERE a.user_id=u.id)) AS legal_allowed,
+        e.value AS category_value
       FROM auth.session_families f JOIN auth.signing_keys k ON k.kid=f.signing_kid JOIN auth.users u ON u.id=f.user_id
+      LEFT JOIN settings.entries e ON e.key = 'user.category.' ||
+        CASE WHEN u.provider='ipa' THEN 'freeipa' WHEN u.profile='guest' THEN 'guest' ELSE 'login' END || '.enabled'
       WHERE f.sid=ANY(${db().array(
         devices.map((device) => device.initiator_sid),
         "uuid",
       )})`;
+    const visitOnlySessions = new Set(devices.filter((device) => device.visit_only).map((device) => device.initiator_sid));
+    const disabledSessions = new Set<string>();
+    for (const family of families)
+      if (visitOnlySessions.has(family.sid) && !(await decodeAccountCategoryEnabled(family.category_value)))
+        disabledSessions.add(family.sid);
     const byId = new Map(families.map((family) => [family.sid, family]));
     const time = await databaseClock(tx);
     return devices.map((device) => {
@@ -346,6 +368,11 @@ export const createAppPwaService = (options: AppPwaOptions) => {
       ) {
         return { ...view, state: "revoked" };
       }
+      if (
+        device.visit_only &&
+        ((family.account_expires && family.account_expires <= time) || !family.legal_allowed || disabledSessions.has(family.sid))
+      )
+        return { ...view, state: "revoked" };
       return family.expires_at <= time ? { ...view, state: "expired" } : view;
     });
   };
@@ -483,13 +510,25 @@ export const createAppPwaService = (options: AppPwaOptions) => {
     if (visit.device_id !== device.id || visit.browser_hash !== device.browser_hash) return pwaFail("NOT_FOUND", 404);
     return visit;
   };
+  // Only status recovery crosses visit-only carriers on the same registered browser.
+  // Queries, fresh commands, and visit end keep their current-device binding.
+  const reconcilableVisit = async (tx: TransactionSQL, device: Device, visitId: string) => {
+    const visit = await lockVisit(tx, visitId);
+    if (visit.browser_hash !== device.browser_hash) return pwaFail("NOT_FOUND", 404);
+    if (visit.device_id === device.id) return visit;
+    if (!device.visit_only || !device.registration_id) return pwaFail("NOT_FOUND", 404);
+    const [previous] = await tx`SELECT 1 FROM ${tables.devices} WHERE app_id = ${appId} AND id = ${visit.device_id}::uuid
+      AND visit_only AND registration_id = ${device.registration_id}::uuid AND browser_hash = ${device.browser_hash}`;
+    if (!previous) return pwaFail("NOT_FOUND", 404);
+    return visit;
+  };
   const coreActor = async (tx: TransactionSQL, device: Device, beforeCommit: BeforeCommit, visitId?: string): Promise<AppPwaActor> => {
     const currentVisit = visitId ?? device.active_visit_id;
-    if (!currentVisit) return deviceActor(device);
+    if (!currentVisit) return device.visit_only ? pwaFail("REVOKED", 410) : deviceActor(device);
     const visit = await boundVisit(tx, device, currentVisit);
     if (device.active_visit_id !== visit.id) return pwaFail("REVOKED", 410);
     // Device mode resumes after a visit ends. Explicit visit requests never fall back.
-    if (!visitId && !liveVisit(visit, await databaseClock(tx))) return deviceActor(device);
+    if (!visitId && !liveVisit(visit, await databaseClock(tx))) return device.visit_only ? pwaFail("REVOKED", 410) : deviceActor(device);
     beforeCommit.deadline((time) => checkVisit(visit, time));
     checkVisit(visit, await databaseClock(tx));
     return visitActor(device, visit);
@@ -656,7 +695,8 @@ export const createAppPwaService = (options: AppPwaOptions) => {
           // A registration QR keeps this fresh browser bound beyond the issuer's use.
           if (device.registration_id) binding.expires_at = plus(time, limits.registrationSeconds);
           const expires = earlier(plus(time, ttl), authority.family.expires_at, binding.expires_at);
-          await tx`UPDATE ${tables.devices} SET browser_hash = ${binding.credential_hash}, state = 'active', activated_at = ${time}, expires_at = ${expires}
+          device.visit_only = !!device.registration_id && options.registeredDevices?.push === "staff";
+          await tx`UPDATE ${tables.devices} SET browser_hash = ${binding.credential_hash}, state = 'active', activated_at = ${time}, expires_at = ${expires}, visit_only = ${device.visit_only}
           WHERE app_id = ${appId} AND id = ${device.id}::uuid`;
           await tx`UPDATE ${tables.browsers} SET device_id = ${device.id}::uuid, expires_at = ${binding.expires_at}
           WHERE app_id = ${appId} AND credential_hash = ${binding.credential_hash}`;
@@ -677,7 +717,11 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         return {
           ...deviceView(device, finish),
           registration: registration
-            ? registrationGuestView(registration, { displayName: await holderName(tx, device.owner_user_id) }, finish)
+            ? registrationGuestView(
+                registration,
+                device.visit_only ? null : { displayName: await holderName(tx, device.owner_user_id) },
+                finish,
+              )
             : null,
         };
       }, signal),
@@ -723,7 +767,10 @@ export const createAppPwaService = (options: AppPwaOptions) => {
     /** `push: true` opens the visit directly on the issuer's device, bound to its browser, without a QR. */
     issueVisit: (
       signIn: AppPwaWebSignIn,
-      input: { requestId: string; deviceId: string; subject: unknown; push?: boolean },
+      input: { requestId: string; subject: unknown } & (
+        | { deviceId: string; registrationId?: never; push?: boolean }
+        | { registrationId: string; deviceId?: never; push: true }
+      ),
       signal?: AbortSignal,
     ) =>
       staff(
@@ -733,7 +780,77 @@ export const createAppPwaService = (options: AppPwaOptions) => {
           parse(AppPwaId, input.requestId);
           const push = parse(z.boolean().optional(), input.push) === true;
           const subject = bounded(parse(options.subject, input.subject), options.budgets.requestBytes);
-          const device = await ownedDevice(tx, signIn, input.deviceId);
+          let device: Device;
+          let replacement: Record<string, string | null> = {};
+          if (input.registrationId !== undefined) {
+            if (options.registeredDevices?.push !== "staff") return pwaFail("FORBIDDEN", 403);
+            if (!push || input.deviceId !== undefined) return pwaFail("INVALID_INPUT", 400);
+            const registration = await lockRegistration(tx, input.registrationId);
+            await authorizeTarget(tx, signIn, "issue-visit", { registrationId: registration.id, name: registration.name }, beforeCommit);
+            const time = await databaseClock(tx);
+            if (registration.state === "revoked") return pwaFail("REVOKED", 410);
+            if (registration.expires_at <= time) return pwaFail("EXPIRED", 410);
+            beforeCommit.deadline((time) => {
+              if (registration.expires_at <= time) return pwaFail("EXPIRED", 410);
+              return registration.expires_at;
+            });
+            const [binding] = await tx<Browser[]>`SELECT * FROM ${tables.browsers}
+              WHERE app_id = ${appId} AND credential_hash = ${registration.browser_hash}`;
+            if (!binding || binding.expires_at <= time) return pwaFail("EXPIRED", 410);
+            // A request identifies its session-bound carrier, even after another visit has used the registration.
+            const [retry] = await tx<Device[]>`SELECT * FROM ${tables.devices} WHERE app_id = ${appId}
+              AND owner_user_id = ${signIn.userId}::uuid AND initiator_sid = ${signIn.sid}::uuid
+              AND request_id = ${input.requestId}::uuid FOR UPDATE`;
+            if (retry) {
+              if (!retry.visit_only || retry.registration_id !== registration.id) return pwaFail("ATTEMPT_CONFLICT", 409);
+              device = retry;
+            } else {
+              const previous = binding.device_id ? await lockDevice(tx, binding.device_id) : undefined;
+              const [view] = previous ? await staffDeviceViews(tx, [previous]) : [];
+              if (previous?.active_visit_id && view?.state === "active") {
+                const current = await lockVisit(tx, previous.active_visit_id);
+                if (liveVisit(current, await databaseClock(tx))) return pwaFail("ACTIVE_VISIT", 409);
+              }
+              replacement = {
+                previousDeviceId: previous?.id ?? null,
+                previousOwnerUserId: previous && !previous.visit_only && view?.state === "active" ? previous.owner_user_id : null,
+              };
+              // Replace an idle use without presence or takeover. A live visit always wins over a new push.
+              if (previous) await endUse(tx, previous, signIn);
+              device = {
+                id: crypto.randomUUID(),
+                owner_user_id: signIn.userId,
+                initiator_sid: signIn.sid,
+                auth_epoch: authority.user.auth_epoch,
+                name: registration.name,
+                input_digest: appPwaDigest({ registrationId: registration.id }),
+                secret_hash: pairingSecret.hash(pairingSecret.create()),
+                browser_hash: binding.credential_hash,
+                state: "active",
+                qr_expires_at: time,
+                activated_at: time,
+                expires_at: earlier(
+                  plus(time, limits.visitSeconds),
+                  authority.family.expires_at,
+                  binding.expires_at,
+                  registration.expires_at,
+                ),
+                active_visit_id: null,
+                registration_id: registration.id,
+                visit_only: true,
+              };
+              await tx`INSERT INTO ${tables.devices}(app_id,id,request_id,input_digest,owner_user_id,initiator_sid,auth_epoch,name,secret_hash,browser_hash,state,issued_at,qr_expires_at,activated_at,expires_at,registration_id,visit_only)
+                VALUES (${appId},${device.id}::uuid,${input.requestId}::uuid,${device.input_digest},${device.owner_user_id}::uuid,${device.initiator_sid}::uuid,${device.auth_epoch},${device.name},${device.secret_hash},${device.browser_hash},'active',${time},${time},${time},${device.expires_at},${registration.id}::uuid,true)`;
+              // Same lock order as takeover: registration -> previous use/visit -> browser.
+              await tx`SELECT 1 FROM ${tables.browsers} WHERE app_id = ${appId} AND credential_hash = ${binding.credential_hash} FOR UPDATE`;
+              await tx`UPDATE ${tables.browsers} SET device_id = ${device.id}::uuid
+                WHERE app_id = ${appId} AND credential_hash = ${binding.credential_hash}`;
+            }
+          } else {
+            device = await ownedDevice(tx, signIn, input.deviceId);
+            // A visit-only carrier is never an alternate owner-scoped issuance target.
+            if (device.visit_only) return pwaFail("FORBIDDEN", 403);
+          }
           beforeCommit.deadline((time) => checkDevice(device, time, authority.user.auth_epoch));
           // Ownership belongs to the employee, not the browser used to open
           // this staff screen. The pairing family's authority must still live.
@@ -748,7 +865,13 @@ export const createAppPwaService = (options: AppPwaOptions) => {
           await authorizeSubject();
           beforeCommit.authorize(authorizeSubject);
           // Unchanged digest for QR visits keeps retries across an upgrade stable.
-          const digest = appPwaDigest(push ? { deviceId: device.id, subject, push } : { deviceId: device.id, subject });
+          const digest = appPwaDigest(
+            input.registrationId !== undefined
+              ? { registrationId: device.registration_id, subject, push }
+              : push
+                ? { deviceId: device.id, subject, push }
+                : { deviceId: device.id, subject },
+          );
           const [existing] = await tx<
             Visit[]
           >`SELECT * FROM ${tables.visits} WHERE app_id = ${appId} AND device_id = ${device.id}::uuid AND request_id = ${input.requestId}::uuid FOR UPDATE`;
@@ -766,6 +889,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
               if (liveVisit(current, time)) return pwaFail("ACTIVE_VISIT", 409);
             }
             const visit: Visit = {
+              issued_at: time,
               id,
               device_id: device.id,
               input_digest: digest,
@@ -781,7 +905,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
             await tx`INSERT INTO ${tables.visits}(app_id,id,device_id,request_id,input_digest,secret_hash,subject,browser_hash,state,issued_at,qr_expires_at,activated_at,last_used_at,expires_at)
           VALUES (${appId},${id}::uuid,${device.id}::uuid,${input.requestId}::uuid,${digest},${visit.secret_hash},${JSON.stringify(subject)}::text::jsonb,${visit.browser_hash},'active',${time},${time},${time},${time},${visit.expires_at})`;
             await tx`UPDATE ${tables.devices} SET active_visit_id = ${id}::uuid WHERE app_id = ${appId} AND id = ${device.id}::uuid`;
-            await record(tx, "visit.pushed", signIn, device.id, id);
+            await record(tx, "visit.pushed", signIn, device.id, id, replacement);
             checkDevice(device, await databaseClock(tx), authority.user.auth_epoch);
             return { ...visitView(visit, time), qr: null, qrExpiresAt: time.toISOString() };
           }
@@ -885,11 +1009,17 @@ export const createAppPwaService = (options: AppPwaOptions) => {
           );
           authorizations.forEach(beforeCommit.authorize);
           deadlines.forEach(beforeCommit.deadline);
+          const [carrier] = current.device
+            ? await tx<Device[]>`SELECT * FROM ${tables.devices}
+            WHERE app_id = ${appId} AND id = ${current.device.id}::uuid`
+            : [];
+          if (carrier?.visit_only && !current.visit)
+            return { device: null, visit: null, registration: registrationGuestView(registration, null, await databaseClock(tx)) };
           const displayName = await holderName(tx, current.ownerUserId);
           return {
             device: current.device,
             visit: current.visit,
-            registration: registrationGuestView(registration, { displayName }, await databaseClock(tx)),
+            registration: registrationGuestView(registration, carrier?.visit_only ? null : { displayName }, await databaseClock(tx)),
           };
         } catch (error) {
           if (!leaseEnded(error)) throw error;
@@ -976,7 +1106,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         async (tx, device, requestSignal, beforeCommit) => {
           const operation = Object.hasOwn(options.commands ?? {}, route) ? options.commands?.[route] : undefined;
           if (!operation) return pwaFail("NOT_FOUND", 404);
-          const visit = await boundVisit(tx, device, visitId);
+          const visit = await reconcilableVisit(tx, device, visitId);
           const digest = appPwaDigest(operation.parse(bounded(input, options.budgets.requestBytes)));
           const stored = await readAttempt(tx, visit.id, attemptId);
           const timeBefore = await databaseClock(tx);
@@ -1022,7 +1152,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
       guest(
         credential,
         async (tx, device) => {
-          const visit = await boundVisit(tx, device, visitId);
+          const visit = await reconcilableVisit(tx, device, visitId);
           const stored = await readAttempt(tx, visit.id, attemptId);
           // Reconciliation is status-only. Old customer attempts can never reveal
           // stored domain output, even when a new visit now occupies this device.
@@ -1043,12 +1173,33 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         },
         signal,
       ),
-    revokeVisit: (signIn: AppPwaWebSignIn, deviceId: string, visitId: string, signal?: AbortSignal) =>
+    revokeVisit: (signIn: AppPwaWebSignIn, target: string | { registrationId: string }, visitId: string, signal?: AbortSignal) =>
       staff(
         signIn,
         "revoke-visit",
-        async (tx) => {
-          const device = await ownedDevice(tx, signIn, deviceId);
+        async (tx, _authority, beforeCommit) => {
+          let device: Device;
+          if (typeof target === "string") {
+            // Discover the registration without reversing registration -> device lock order.
+            const [identity] = await tx<Device[]>`SELECT * FROM ${tables.devices}
+              WHERE app_id = ${appId} AND id = ${parse(AppPwaId, target)}::uuid AND owner_user_id = ${signIn.userId}::uuid`;
+            if (identity?.visit_only && identity.registration_id) {
+              const registration = await lockRegistration(tx, identity.registration_id);
+              await authorizeTarget(tx, signIn, "revoke-visit", { registrationId: registration.id, name: registration.name }, beforeCommit);
+            }
+            device = await ownedDevice(tx, signIn, target);
+          } else {
+            if (options.registeredDevices?.push !== "staff") return pwaFail("FORBIDDEN", 403);
+            const registration = await lockRegistration(tx, target.registrationId);
+            await authorizeTarget(tx, signIn, "revoke-visit", { registrationId: registration.id, name: registration.name }, beforeCommit);
+            // Resolve the supplied visit under the registration lock, never revoke a different current visit.
+            const [identity] = await tx<
+              Visit[]
+            >`SELECT * FROM ${tables.visits} WHERE app_id = ${appId} AND id = ${parse(AppPwaId, visitId)}::uuid`;
+            if (!identity) return pwaFail("NOT_FOUND", 404);
+            device = await lockDevice(tx, identity.device_id);
+            if (device.registration_id !== registration.id) return pwaFail("NOT_FOUND", 404);
+          }
           const visit = await lockVisit(tx, visitId);
           if (visit.device_id !== device.id) return pwaFail("NOT_FOUND", 404);
           if (visit.state !== "revoked" && visit.state !== "ended") {
@@ -1088,7 +1239,9 @@ export const createAppPwaService = (options: AppPwaOptions) => {
           const views = new Map((await staffDeviceViews(tx, leases)).map((view) => [view.id, view]));
           const ownerIds = [...new Set(leases.map((lease) => lease.owner_user_id))];
           const owners = ownerIds.length
-            ? await tx<{ id: string; name: string }[]>`SELECT id, COALESCE(NULLIF(trim(display_name), ''), uid) AS name
+            ? await tx<
+                { id: string; name: string; display_name: string | null }[]
+              >`SELECT id, NULLIF(trim(display_name), '') AS display_name, COALESCE(NULLIF(trim(display_name), ''), uid) AS name
               FROM auth.users WHERE id = ANY(${db().array(ownerIds, "uuid")})`
             : [];
           const names = new Map(owners.map((owner) => [owner.id, owner.name]));
@@ -1101,14 +1254,26 @@ export const createAppPwaService = (options: AppPwaOptions) => {
           const items: AppPwaRegistrationView[] = rows.map((row) => {
             const lease = leases.find((device) => device.id === row.device_id);
             const view = lease ? views.get(lease.id) : undefined;
+            const visit =
+              lease && view?.state === "active" && row.expires_at > time
+                ? visits.find((visit) => visit.id === lease.active_visit_id && liveVisits.has(visit.id))
+                : undefined;
             return {
               id: row.id,
               name: row.name,
               state: row.expires_at > time ? "active" : "expired",
               registeredAt: row.registered_at.toISOString(),
               expiresAt: row.expires_at.toISOString(),
+              activeVisit:
+                visit && lease
+                  ? {
+                      id: visit.id,
+                      issuedBy: { displayName: owners.find((owner) => owner.id === lease.owner_user_id)?.display_name ?? null },
+                      issuedAt: visit.issued_at.toISOString(),
+                    }
+                  : null,
               holder:
-                lease && view?.state === "active" && row.expires_at > time
+                lease && !lease.visit_only && view?.state === "active" && row.expires_at > time
                   ? {
                       userId: lease.owner_user_id,
                       displayName: names.get(lease.owner_user_id) ?? "",
@@ -1134,6 +1299,8 @@ export const createAppPwaService = (options: AppPwaOptions) => {
       signal?: AbortSignal,
     ) => {
       parse(z.strictObject({ registrationId: AppPwaId, expectedDeviceId: AppPwaId.nullable(), presenceCode: z.string().max(16) }), input);
+      // Staff-push applications have no holder/takeover workflow. Existing applications retain it.
+      if (options.registeredDevices?.push === "staff") return pwaFail("FORBIDDEN", 403);
       // Every attempt counts, also a correct one, so guessing stays bounded per displayed code.
       let limited: boolean;
       try {
@@ -1192,6 +1359,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
             expires_at: earlier(plus(time, ttl), authority.family.expires_at, binding.expires_at, registration.expires_at),
             active_visit_id: null,
             registration_id: registration.id,
+            visit_only: false,
           };
           await tx`INSERT INTO ${tables.devices}(app_id,id,request_id,input_digest,owner_user_id,initiator_sid,auth_epoch,name,secret_hash,browser_hash,state,issued_at,qr_expires_at,activated_at,expires_at,registration_id)
             VALUES (${appId},${device.id}::uuid,${crypto.randomUUID()}::uuid,${device.input_digest},${device.owner_user_id}::uuid,${device.initiator_sid}::uuid,${device.auth_epoch},${device.name},${device.secret_hash},${device.browser_hash},'active',${time},${time},${time},${device.expires_at},${registration.id}::uuid)`;
@@ -1209,6 +1377,32 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         signal,
       );
     },
+    renameRegistration: (signIn: AppPwaWebSignIn, input: { registrationId: string; name: string }, signal?: AbortSignal) =>
+      staff(
+        signIn,
+        "rename-registration",
+        async (tx, _authority, beforeCommit) => {
+          const name = parse(z.string().trim().min(1).max(PWA_LIMITS.nameMaxLength), input.name);
+          const registration = await lockRegistration(tx, input.registrationId);
+          await authorizeTarget(
+            tx,
+            signIn,
+            "rename-registration",
+            { registrationId: registration.id, name: registration.name },
+            beforeCommit,
+          );
+          if (registration.state === "revoked") return pwaFail("REVOKED", 410);
+          if (registration.expires_at <= (await databaseClock(tx))) return pwaFail("EXPIRED", 410);
+          await tx`UPDATE ${tables.registrations} SET name = ${name} WHERE app_id = ${appId} AND id = ${registration.id}::uuid`;
+          await record(tx, "registration.renamed", signIn, null, null, {
+            registrationId: registration.id,
+            previousName: registration.name,
+            name,
+          });
+          return { id: registration.id, name };
+        },
+        signal,
+      ),
     /** Unregister a shared device: its use and visit end and its browser must be registered again. */
     revokeRegistration: (signIn: AppPwaWebSignIn, registrationId: string, signal?: AbortSignal) =>
       staff(
@@ -1246,6 +1440,12 @@ export const createAppPwaService = (options: AppPwaOptions) => {
       guest(
         credential,
         async (tx, device, requestSignal, beforeCommit) => {
+          if (device.visit_only) {
+            if (!device.active_visit_id) return pwaFail("REVOKED", 410);
+            const visit = await boundVisit(tx, device, device.active_visit_id);
+            checkVisit(visit, await databaseClock(tx));
+            beforeCommit.deadline((time) => checkVisit(visit, time));
+          }
           const operation = Object.hasOwn(options.deviceOperations ?? {}, route) ? options.deviceOperations?.[route] : undefined;
           const ceiling = Object.hasOwn(options.devicePermissions ?? {}, route) ? options.devicePermissions?.[route] : undefined;
           if (!operation || !ceiling || !hasPermission(ceiling, operation.permission)) return pwaFail("FORBIDDEN", 403);

@@ -34,8 +34,8 @@ export const rule: Rule = {
         componentRoots: [
           join(workspaceRoot, "packages/pwa/src"),
           join(workspaceRoot, "packages/cloud/src"),
-          join(workspaceRoot, "packages/assistant/src/pwa"),
           join(workspaceRoot, "packages/assistant/src/frontend"),
+          join(workspaceRoot, "packages/assistant/src/pwa"),
         ],
         pattern: "**/*.{island,client}.tsx",
         outdir: output,

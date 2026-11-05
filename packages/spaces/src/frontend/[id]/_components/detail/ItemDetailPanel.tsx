@@ -434,8 +434,13 @@ export default function ItemDetailPanel(props: Props) {
    */
   const updateAssignees = async (assigneeIds: string[]) => {
     const itemId = props.item.id;
+    const before = props.item.assignees?.map((assignee) => assignee.id) ?? [];
+    const delta = {
+      addAssigneeIds: assigneeIds.filter((id) => !before.includes(id)),
+      removeAssigneeIds: before.filter((id) => !assigneeIds.includes(id)),
+    };
     const claim = await resolveAssigneeClaim(props.item.claim, props.currentUserId, props.item.assignees ?? [], assigneeIds, t);
-    if (claim && props.item.id === itemId) await updateMutation.mutate({ assigneeIds, ...claim });
+    if (claim && props.item.id === itemId) await updateMutation.mutate({ ...delta, ...claim });
   };
 
   type CompleteIntent = { itemId: string; completed: boolean } & ClaimFields;
@@ -511,6 +516,7 @@ export default function ItemDetailPanel(props: Props) {
   );
 
   const duplicateIntent = () => ({
+    requestKey: crypto.randomUUID(),
     columnId: props.item.columnId,
     title: `${props.item.title} (Copy)`,
     description: props.item.description ?? undefined,
@@ -682,7 +688,7 @@ export default function ItemDetailPanel(props: Props) {
           shortcut: "m",
           action: async () => {
             await updateMutation.mutate({
-              assigneeIds: [...(props.item.assignees?.map((assignee) => assignee.id) ?? []), props.currentUserId],
+              addAssigneeIds: [props.currentUserId],
             });
           },
         }),

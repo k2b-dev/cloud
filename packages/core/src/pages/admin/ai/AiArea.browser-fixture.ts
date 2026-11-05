@@ -13,6 +13,7 @@ import { type AiFixtureCatalog, aiFixtureCatalog, aiFixtureOverview, aiFixtureUs
 
 /** States the captures and tests switch with `?state=`. */
 export type AiAreaFixtureState =
+  | "decision"
   | "normal"
   | "empty"
   | "unreachable"
@@ -55,8 +56,36 @@ const catalogFor = (state: AiAreaFixtureState): AiFixtureCatalog => {
       providers: [],
       models: [],
       variants: [],
-      assignments: { fast: null, balanced: null, thorough: null, maximum: null, vision: null, audio: null, liveAudio: null },
+      assignments: {
+        fast: null,
+        balanced: null,
+        thorough: null,
+        maximum: null,
+        vision: null,
+        audio: null,
+        liveAudio: null,
+        decision: null,
+      },
     };
+  if (state === "decision") {
+    catalog.models.push({
+      ...catalog.models[0]!,
+      id: "clef",
+      label: "Clef decision",
+      providerModel: "cloudflare/clef",
+      kind: "decision",
+      capabilities: ["vision"],
+      maxOutputTokens: null,
+    });
+    catalog.variants.push({
+      ...catalog.variants[0]!,
+      id: "clef",
+      modelId: "clef",
+      slug: "standard",
+      label: "Standard",
+      reasoningEffort: null,
+    });
+  }
   const cortecs = catalog.providers.find((entry) => entry.id === "cortecs")!;
   if (state === "unreachable") Object.assign(cortecs, { status: "unreachable", statusMessage: "Keine Antwort nach 10 s." });
   if (state === "badkey") Object.assign(cortecs, { status: "key_rejected", statusCode: "401" });

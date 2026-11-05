@@ -23,6 +23,8 @@ export const pageApps: Record<PageId, string[]> = {
   spaces: ["spaces"],
   pwa: ["pwa", "spaces", "chat"],
 };
+/** Started only in local mode for `pwa`: a remote installation measures the Assistant part only where it shows it. */
+export const localPwaApps = ["assistant"];
 
 export function parseArgs(args: string[]) {
   const options: {
@@ -141,6 +143,8 @@ export const pwaStepIds = [
   "launch-timezone",
   "tab-start-chat",
   "tab-chat-start",
+  "tab-start-assistant",
+  "tab-assistant-chat",
   "tab-start-spaces",
   "tab-spaces-start",
   "tab-start-settings",

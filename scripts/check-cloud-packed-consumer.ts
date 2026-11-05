@@ -4,6 +4,7 @@ import { join, resolve, sep } from "node:path";
 import { z } from "zod";
 import { checkPackedRuntime } from "./fixtures/packed-consumer-infrastructure";
 import { packedSiblings, resolvePackedConsumerPins } from "./fixtures/packed-consumer-pins";
+import { packedTypesMatch } from "./fixtures/packed-consumer-surface";
 
 const args = process.argv.slice(2);
 const unknown = args.filter((arg) => arg !== "--help" && arg !== "--release");
@@ -16,9 +17,11 @@ build an island page and run it against disposable services outside the workspac
 Build UI first: bun run --cwd packages/ui build. Requires npm and Docker.
 
 Default: use workspace tarballs for siblings, including unreleased changes.
---release: use exact sibling pins from npm when already published; otherwise
-use a tarball only when its workspace version matches the pin. Registry failures
-fail the check; release mode never falls back to workspace copies.
+--release: use published sibling pins from npm after comparing their TypeScript
+surface with same-version workspace tarballs. An already-published Cloud snapshot
+uses current tarballs for changed sources; a new Cloud release requires a version
+bump. Unpublished sibling pins must match the workspace version. Registry failures
+fail the check.
 --help: print this usage and exit.`);
   process.exit(0);
 }
@@ -94,6 +97,7 @@ const run = async (label: string, cmd: string[], cwd: string, env: Record<string
 try {
   const cloudManifest = z
     .object({
+      version: exactVersion,
       dependencies: z.object({ "@k2b/ui": exactVersion, "@k2b/ssr": exactVersion, "@k2b/editor": exactVersion }),
       peerDependencies: z.record(z.string(), z.string()),
       devDependencies: z.object({ "@types/bun": z.string(), typescript: z.string() }),
@@ -131,13 +135,38 @@ try {
     archives: { "@k2b/ui": uiArchive, "@k2b/ssr": ssrArchive, "@k2b/editor": editorArchive },
     mode,
     isPublished,
+    cloudPublished: mode === "release" && (await isPublished("@k2b/cloud", cloudManifest.version)),
+    publishedTypesMatch: async (name, version, archive) => {
+      // Keep npm's same-name archive separate from the workspace candidate.
+      const registryRoot = join(temporaryRoot, "registry", name.replaceAll("/", "-"));
+      await mkdir(registryRoot, { recursive: true });
+      const output = await run(
+        `Pack published ${name}@${version} for type-surface comparison`,
+        [
+          "npm",
+          "pack",
+          `${name}@${version}`,
+          "--ignore-scripts",
+          "--json",
+          "--registry=https://registry.npmjs.org",
+          "--pack-destination",
+          registryRoot,
+        ],
+        temporaryRoot,
+      );
+      const [published] = packOutput.parse(JSON.parse(output));
+      if (!published) throw new Error(`npm pack produced no archive for ${name}@${version}`);
+      return packedTypesMatch(archive, join(registryRoot, published.filename));
+    },
   });
   for (const name of packedSiblings) {
     const pin = pins[name];
     const origin =
       pin.source === "npm"
         ? "npm (already published)"
-        : `packed tarball (${mode === "release" ? "published by this release" : "workspace"})`;
+        : pin.sourceChanged
+          ? "packed tarball (source changed since npm; already-published Cloud snapshot)"
+          : `packed tarball (${mode === "release" ? "published by this release" : "workspace"})`;
     console.log(`${name}@${pin.pin} from ${origin}`);
   }
   const siblingSpecs = { "@k2b/ui": pins["@k2b/ui"].spec, "@k2b/ssr": pins["@k2b/ssr"].spec, "@k2b/editor": pins["@k2b/editor"].spec };

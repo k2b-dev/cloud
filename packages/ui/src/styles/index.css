@@ -13302,18 +13302,46 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 100%;
   gap: 0.375rem;
   padding: 0.5rem;
-  border: 1px solid var(--k2b-border-strong);
   border-radius: calc(var(--k2b-radius-surface) + 0.25rem);
-  background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-surface);
+}
+
+/* The field a person types into keeps the shared field edge (see `--k2b-edge`): the card of the assistant prompt and
+   the pill of the conversation composer. 2 px drawn inside as a 1 px border plus a 1 px inset in one colour, no drop
+   shadow; hover darkens the fill, focus turns the edge blue, an error red, and disabled drops it to a muted well. A
+   state sets only `--k2b-edge-color` or the fill, so the box and the text stay put. */
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]),
+.k2b-ui .k2b-chat-composer__field {
+  --k2b-edge-color: var(--k2b-edge);
+  border: 1px solid var(--k2b-edge-color);
+  background: var(--k2b-surface);
+  box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color);
   transition:
+    background-color 120ms ease,
     border-color 120ms ease,
     box-shadow 120ms ease;
 }
 
-.k2b-ui .k2b-chat-composer:focus-within {
-  border-color: var(--k2b-ai-border);
-  box-shadow: var(--k2b-shadow-surface);
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):hover,
+.k2b-ui .k2b-chat-composer__field:hover {
+  background: var(--k2b-edge-hover-bg);
+}
+
+.k2b-ui .k2b-chat-composer[data-invalid="true"]:not([data-variant="conversation"]),
+.k2b-ui .k2b-chat-composer[data-invalid="true"] .k2b-chat-composer__field {
+  --k2b-edge-color: var(--k2b-edge-danger);
+}
+
+/* Focus wins over an error, as in every field; the error line stays. */
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):focus-within,
+.k2b-ui .k2b-chat-composer .k2b-chat-composer__field:focus-within {
+  --k2b-edge-color: var(--k2b-edge-focus);
+  background: var(--k2b-surface);
+}
+
+.k2b-ui .k2b-chat-composer[data-disabled="true"]:not([data-variant="conversation"]),
+.k2b-ui .k2b-chat-composer[data-disabled="true"] .k2b-chat-composer__field {
+  --k2b-edge-color: transparent;
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-chat-composer-shell { position: relative; display: grid; gap: 0.5rem; min-width: 0; }
@@ -14024,23 +14052,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem;
 }
 
-/* A quiet well: muted at rest, the surface with a ring while focused. Only paint changes, never the box. */
+/* The pill carries the shared field edge (see `.k2b-chat-composer__field` above). */
 .k2b-ui .k2b-chat-composer__field {
   display: flex;
   flex: 1 1 0;
   min-width: 0;
   align-items: flex-end;
-  border: 1px solid transparent;
   border-radius: 1.125rem;
-  background: var(--k2b-surface-muted);
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease;
-}
-
-.k2b-ui .k2b-chat-composer__field:focus-within {
-  border-color: var(--k2b-border-strong);
-  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__input {
@@ -14090,12 +14108,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: flex-end;
 }
 
-/* The tools lie over the pill's 1px border, so they are as tall as the pill. */
+/* The tools lie over the pill's 1px border, so they are as tall as the pill. Their own transparent 2 px border keeps
+   a fill, such as the listening microphone's, off the pill's edge. */
 .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__icon-action {
   width: 2rem;
   height: 2.25rem;
   margin-block: -1px;
+  border: var(--k2b-edge-width) solid transparent;
   border-radius: 999px;
+  background-clip: padding-box;
 }
 
 .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__icon-action.k2b-chat-composer__microphone-menu {

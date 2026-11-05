@@ -492,3 +492,69 @@ test("the boundary select offers no privacy commitment without moving the form; 
     .waitFor();
   expect(await page.getByRole("option", { name: /Gemini Artikeltexte/ }).count()).toBe(0);
 }, 30_000);
+
+test("manual decision models require context and retain the draft after a rejected save", async () => {
+  const requests: unknown[] = [];
+  await page.route("**/api/admin/core/ai/providers/cortecs/models", async (route) => {
+    requests.push(route.request().postDataJSON());
+    await json(route, { message: "Synthetic decision rejection" }, 400);
+  });
+  await goto("sec=providers&p=cortecs&state=listempty");
+  await page.getByRole("button", { name: "Add models", exact: true }).filter({ visible: true }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Enter a model ID manually").fill("cloudflare/clef");
+  await dialog.getByRole("radio", { name: "Decision", exact: true }).click();
+  await dialog.getByRole("button", { name: /Add 1/ }).click();
+  expect(requests).toHaveLength(0);
+  await dialog.getByLabel(/^Context window/).fill("32768");
+  await dialog.getByRole("button", { name: /Add 1/ }).click();
+  await dialog.getByText("Synthetic decision rejection", { exact: true }).waitFor();
+  expect(requests).toEqual([
+    [expect.objectContaining({ kind: "decision", providerModel: "cloudflare/clef", contextWindow: 32768, capabilities: [] })],
+  ]);
+  expect(await dialog.getByLabel("Enter a model ID manually").inputValue()).toBe("cloudflare/clef");
+}, 30_000);
+
+test("editing a decision model preserves vision and token prices while clearing chat parameters", async () => {
+  const model = catalog.models[0]!;
+  const requests: unknown[] = [];
+  await page.route(`**/api/admin/core/ai/models/${model.id}`, async (route) => {
+    requests.push(route.request().postDataJSON());
+    await json(route, { message: "Synthetic decision rejection" }, 400);
+  });
+  await goto(`sec=providers&p=${model.providerId}&m=${model.id}`);
+  await page.getByRole("radio", { name: "Decision", exact: true }).click();
+  const vision = page.getByLabel("Reads images directly", { exact: true });
+  if (!(await vision.isChecked())) await vision.check();
+  expect(await page.getByLabel(/^Context window/).isVisible()).toBe(true);
+  expect(await page.getByLabel("Uses tools", { exact: true }).count()).toBe(0);
+  await save();
+  await page.getByText("Synthetic decision rejection", { exact: true }).waitFor();
+  expect(requests).toEqual([
+    expect.objectContaining({
+      kind: "decision",
+      capabilities: ["vision"],
+      pricing: model.pricing,
+      maxOutputTokens: null,
+      extraBody: null,
+      temperature: null,
+    }),
+  ]);
+}, 30_000);
+
+test("the decision class offers only decision models and preserves its URL and selection after failure", async () => {
+  const requests: unknown[] = [];
+  await page.route("**/api/admin/core/ai/assignments/decision", async (route) => {
+    requests.push(route.request().postDataJSON());
+    await json(route, { message: "Synthetic decision assignment rejection" }, 400);
+  });
+  await goto("sec=classes&slot=decision&state=decision");
+  expect(new URL(page.url()).searchParams.get("slot")).toBe("decision");
+  const select = page.getByRole("combobox", { name: "Choice", exact: true });
+  await select.click();
+  expect(await page.getByRole("option", { name: /gpt|mistral|whisper/i }).count()).toBe(0);
+  await page.getByRole("option", { name: "Clef decision", exact: true }).click();
+  await page.getByText("Synthetic decision assignment rejection", { exact: true }).waitFor();
+  expect(requests).toEqual([expect.objectContaining({ variantId: "clef" })]);
+  expect(await select.textContent()).toContain("Clef decision");
+}, 30_000);

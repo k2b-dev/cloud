@@ -9,6 +9,7 @@ import { runUnderHeavyLock } from "./heavy-lock";
 import { measureStatic } from "./perf-baseline/assets";
 import { Browsers, measuredLocale, measuredTimeZone } from "./perf-baseline/browser";
 import {
+  localPwaApps,
   pageApps,
   panelVerdict,
   parseArgs,
@@ -80,8 +81,9 @@ The extra pwa group runs WebKit iphone (390x844 @3x), ipad-portrait
 (390x844 @3x, the phone throttle below), with HTTP cache enabled.
 Flows: first/warm/expired-session/timezone launches, relaunch through the
 manifest start_url in a new page of the same context (including its final path),
-two rounds of Start ↔ Chat, Start ↔ Spaces and Start ↔ Settings taps, history back/forward, German/English,
-Light/Dark/Automatic, phone rename, and local check-off followed by Undo.
+two rounds of Start ↔ Chat, Start → Assistant → Chat (where shown), Start ↔ Spaces
+and Start ↔ Settings taps, history back/forward, German/English, Light/Dark/Automatic,
+phone rename, and local check-off followed by Undo.
 Each run repeats first launch, tab rounds and start_url relaunch with workers blocked.
 Per-step timings, document hops and per-asset HTTP cache states are recorded.
 The phone is named perf-<UTC date> and removed at the end. Local mode seeds
@@ -185,7 +187,16 @@ async function run() {
     await mkdir(join(runtime.directory, "tmp"), { recursive: true });
     const apps = options.panel
       ? panelApps
-      : ["core", ...new Set(options.pages.flatMap((id) => pageApps[id]).filter((id) => id !== "core")), "gateway"];
+      : [
+          "core",
+          ...new Set(
+            [
+              ...options.pages.flatMap((id) => pageApps[id]),
+              ...(!options.origin && options.pages.includes("pwa") ? localPwaApps : []),
+            ].filter((id) => id !== "core"),
+          ),
+          "gateway",
+        ];
     if (!options.origin) await runtime.build(apps, options.skipBuild);
     await runtime.start(apps);
     browsers = new Browsers(controller.signal, options.origin ? undefined : await runtime.browserSpki());
