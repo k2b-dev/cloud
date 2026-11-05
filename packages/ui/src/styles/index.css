@@ -13802,7 +13802,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A failed upload offers its way out in the danger colour; an action that waits, such as for the network, reads as
    the attachment's state rather than as a dimmed button. */
 .k2b-ui .k2b-chat-composer__attachment-action[data-tone="danger"] {
-  color: var(--k2b-danger);
+  color: var(--k2b-danger-text);
 }
 
 .k2b-ui .k2b-chat-composer__attachment-action[data-waiting]:disabled {

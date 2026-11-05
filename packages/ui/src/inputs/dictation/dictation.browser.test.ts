@@ -333,6 +333,27 @@ describe("live dictation in the composer", () => {
     });
   }
 
+  test("in an installed app the blocked card names no address bar and no settings path", async () => {
+    const page = await open({ width: 390 });
+    try {
+      // An installed web app runs without browser chrome; the card cannot point at a lock in the address bar.
+      await page.evaluate(() => {
+        const original = window.matchMedia.bind(window);
+        window.matchMedia = (query: string) =>
+          query === "(display-mode: standalone)" ? ({ ...original(query), matches: true } as MediaQueryList) : original(query);
+      });
+      await page.getByRole("button", { name: "Dictate" }).click();
+      await page.evaluate(() => emit({ type: "error", code: "microphone_blocked", retryable: true }));
+      const card = page.getByRole("dialog", { name: "Microphone blocked" });
+      await card.waitFor();
+      expect(await card.textContent()).toContain("This app may not use the microphone. Allow the microphone for it, then try again.");
+      expect(await card.textContent()).not.toContain("address bar");
+      expect(await card.locator("ol").count()).toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  });
+
   test("in a conversation the bar takes the row above the field, and the field stays put", async () => {
     const page = await open({ variant: "conversation", draft: "Hi" });
     try {
