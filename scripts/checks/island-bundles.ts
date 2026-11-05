@@ -13,19 +13,26 @@ const budgets = [
   { file: "packages/cloud/src/ssr/PwaPartCount.island.tsx", kib: 96 },
   { file: "packages/pwa/src/frontend/_components/PairingNotice.island.tsx", kib: 112 },
   { file: "packages/pwa/src/frontend/_components/StartParts.island.tsx", kib: 230 },
+  // The web Assistant renders chat Markdown; KaTeX loads only for math, so it stays out of the static closure.
+  // Measured 2026-11-05: 3,267,899 B with KaTeX, 2,992,646 B without.
+  { file: "packages/assistant/src/frontend/AssistantWorkspace.island.tsx", kib: 2990 },
 ];
 const manifestSchema = z.object({ entries: z.record(z.string(), z.array(z.string())) });
 
 export const rule: Rule = {
   name: "island-bundles",
-  description: "Small PWA islands stay within measured production JavaScript budgets",
+  description: "PWA islands and the web Assistant stay within measured production JavaScript budgets",
   async run({ workspaceRoot }) {
     const output = await mkdtemp(join(tmpdir(), "cloud-island-budgets-"));
     try {
       const cwd = workspaceRoot;
       await buildIslands({
         cwd,
-        componentRoots: [join(workspaceRoot, "packages/pwa/src"), join(workspaceRoot, "packages/cloud/src")],
+        componentRoots: [
+          join(workspaceRoot, "packages/pwa/src"),
+          join(workspaceRoot, "packages/cloud/src"),
+          join(workspaceRoot, "packages/assistant/src/frontend"),
+        ],
         pattern: "**/*.{island,client}.tsx",
         outdir: output,
         verbose: false,
