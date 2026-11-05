@@ -20,7 +20,7 @@ import type { SpaceItemAssignee, SpaceItemTemplate } from "@/contracts";
 import { SpaceLiveEventSchema } from "@/live-events";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
 import { OverviewViewSchema } from "@/overview-contracts";
-import { buildSpaceHref } from "@/routes";
+import { buildSpaceHref, buildSpaceItemHref } from "@/routes";
 import { createRetryToasts } from "../frontend/lib/feedback";
 import { type Outgoing, outbox, sendCreate } from "./create";
 import MyTasks, { type WorkItem } from "./MyTasks";
@@ -31,7 +31,7 @@ import { AddBar, firstOpenStatus, type QuickAddTarget } from "./QuickAdd";
 import { refreshOnReturn } from "./refresh-on-return";
 import SpaceList from "./SpaceList";
 import type { PwaRow, PwaSpace, PwaSpaceEntry } from "./space";
-import TaskDetail, { type TaskDetailState } from "./TaskDetail";
+import TaskDetail, { type OpeningItem, type TaskDetailState } from "./TaskDetail";
 import type { PwaTask } from "./task";
 
 type Props = {
@@ -77,7 +77,7 @@ const readShape = async (spaceShortId: string): Promise<Shape | null> => {
 /** The address of the selection: the list alone, or one task. */
 type Selection = { spaceShortId: string; shortId: string } | null;
 /** What a row hands the task while it loads: its title, Space and date. */
-type Opening = WorkItem;
+type Opening = OpeningItem;
 
 const viewOf = (value: string | null): OverviewView => {
   const parsed = OverviewViewSchema.safeParse(value ?? "mine");
@@ -144,7 +144,7 @@ export default function SpacesPwa(props: Props) {
     if (!selection()) return undefined;
     const data = task.data();
     if (data?.address === address()) {
-      return data.task === "gone" ? { kind: "gone" } : { kind: "ready", task: data.task };
+      return data.task === "gone" ? { kind: "gone" } : { kind: "ready", task: data.task, item: opening() };
     }
     return task.error() ? { kind: "failed", item: opening() } : { kind: "loading", item: opening() };
   };
@@ -257,6 +257,13 @@ export default function SpacesPwa(props: Props) {
         deadline: row.deadline,
         deadlineAllDay: row.deadlineAllDay,
         canWrite: known?.canWrite ?? true,
+        preview: { statusId: row.statusId, statuses: known?.statuses, deadline: row.deadline, people: row.people },
+        ...(() => {
+          // Undo after a move puts the task back between the rows around it.
+          const rows = known?.groups.find((group) => group.statusId === row.statusId)?.rows ?? [];
+          const index = rows.findIndex((candidate) => candidate.shortId === row.shortId);
+          return { nextShortId: rows[index + 1]?.shortId, previousShortId: index > 0 ? rows[index - 1]?.shortId : undefined };
+        })(),
       },
       event,
     );
@@ -435,6 +442,47 @@ export default function SpacesPwa(props: Props) {
       },
     });
   };
+
+  // ------------------------------------------------------------- the task's menu
+  const [editTitle, setEditTitle] = createSignal(0);
+  const loadedTask = () => {
+    const current = detail();
+    return current?.kind === "ready" ? current.task : undefined;
+  };
+  const copyTaskLink = async (task: PwaTask) => {
+    try {
+      await navigator.clipboard.writeText(new URL(buildSpaceItemHref(task.spaceShortId, task.shortId), window.location.origin).href);
+      toast.success(t().linkCopied);
+    } catch {
+      toast.error(t().linkCopyFailed);
+    }
+  };
+  const taskActions = () => (
+    <Show when={loadedTask()}>
+      {(task) => (
+        <Dropdown
+          phone="sheet"
+          variant="touch"
+          position="bottom-right"
+          label={t().moreAboutTask}
+          items={[
+            {
+              label: t().editTitle,
+              icon: "ti ti-pencil",
+              disabled: !task().canWrite || !online(),
+              action: () => setEditTitle((value) => value + 1),
+            },
+            { label: t().openInSpaces, icon: "ti ti-external-link", href: buildSpaceItemHref(task().spaceShortId, task().shortId) },
+            { label: t().copyLink, icon: "ti ti-link", immediate: true, action: () => void copyTaskLink(task()) },
+          ]}
+        >
+          <Dropdown.Trigger iconOnly label={t().moreAboutTask}>
+            <i class="ti ti-dots" aria-hidden="true" />
+          </Dropdown.Trigger>
+        </Dropdown>
+      )}
+    </Show>
+  );
 
   const copyLink = async () => {
     const current = spaceList();
@@ -640,6 +688,7 @@ export default function SpacesPwa(props: Props) {
           <AppWorkspace.MainPane
             id="task"
             label={taskSpace()?.name ?? t().task}
+            actions={taskActions()}
             lead={
               <Show when={taskSpace()?.color}>
                 {(color) => (
@@ -663,6 +712,10 @@ export default function SpacesPwa(props: Props) {
                       onRetry={() => void retryRefresh()}
                       onCompletedChange={detailCompleted}
                       onRefresh={refreshTask}
+                      online={online()}
+                      me={props.me}
+                      editTitle={editTitle()}
+                      onChanged={detailCompleted}
                     />
                   </Show>
                 )}

@@ -1,9 +1,10 @@
 import type { AccessSubject } from "@k2b/cloud/contracts";
 import { hasPermission, type RequestActor } from "@k2b/cloud/server";
-import type { SpaceItemAssignee, SpaceTaskChecklistEntry } from "@/contracts";
+import type { SpaceItemAssignee, SpaceItemClaim, SpaceTaskChecklistEntry } from "@/contracts";
 import { getActorsSpacePermissions } from "@/service/access";
 import { spacesService } from "@/service/index";
-import { resolvePublicId } from "@/service/public-resources";
+import { resolvePublicId, spacesPublicResources } from "@/service/public-resources";
+import type { PwaStatus, PwaTag } from "./space";
 
 /** One task or event as the mobile app shows it, with what the reader may change. */
 export type PwaTask = {
@@ -26,8 +27,16 @@ export type PwaTask = {
   description: string | null;
   /** Tasks only. */
   checklist: Pick<SpaceTaskChecklistEntry, "id" | "label" | "completed">[];
-  /** The reader may check the task and its checklist off. */
+  /** The reader may check the task and its checklist off, and change it. */
   canWrite: boolean;
+  /** The status the task stands in, and every status of its Space in board order. */
+  statusId: string;
+  statuses: PwaStatus[];
+  tags: PwaTag[];
+  /** Who is working on it, if anyone. */
+  claim: SpaceItemClaim | null;
+  /** Unfinished tasks block it; a done status then stays closed. */
+  blocked: boolean;
 };
 
 /**
@@ -48,8 +57,9 @@ export async function loadPwaTask(params: {
   if (!spaceId || !itemId) return null;
   const [permission = "none"] = await getActorsSpacePermissions(spaceId, [{ actor: params.actor, subject: params.subject }]);
   if (!hasPermission(permission, "read")) return null;
-  const [space, item] = await Promise.all([spacesService.space.get({ id: spaceId }), spacesService.item.get({ id: itemId })]);
+  const [space, item] = await Promise.all([spacesService.space.getDetail({ id: spaceId }), spacesService.item.get({ id: itemId })]);
   if (!space || !item || item.spaceId !== spaceId) return null;
+  const [[projected], detail] = await Promise.all([spacesPublicResources.projectItems([item]), spacesPublicResources.projectSpaceDetail(space)]);
   const event = Boolean(item.startsAt || item.endsAt);
   const checklist = event ? [] : await spacesService.item.checklist.list({ itemId });
   return {
@@ -70,5 +80,10 @@ export async function loadPwaTask(params: {
     description: item.description,
     checklist: checklist.map(({ id, label, completed }) => ({ id, label, completed })),
     canWrite: hasPermission(permission, "write"),
+    statusId: projected!.columnId,
+    statuses: detail.columns.map((column) => ({ id: column.id, name: column.name, color: column.color ?? "var(--k2b-text-muted)", done: column.isDone })),
+    tags: (projected!.tags ?? []).map(({ id, name, color }) => ({ id, name, color })),
+    claim: projected!.claim ?? null,
+    blocked: item.completedAt === null && item.activeBlockerCount > 0,
   };
 }

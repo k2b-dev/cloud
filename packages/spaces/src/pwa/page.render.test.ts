@@ -96,6 +96,14 @@ const task: pwaTask.PwaTask = {
     { id: "Check2", label: "Pay the deposit", completed: false },
   ],
   canWrite: false,
+  statusId: "Col001",
+  statuses: [
+    { id: "Col001", name: "Open", color: "#94a3b8", done: false },
+    { id: "Col009", name: "Done", color: "#16a34a", done: true },
+  ],
+  tags: [],
+  claim: null,
+  blocked: false,
 };
 const entries: pwaSpace.PwaSpaceEntry[] = [
   { shortId: "Space1", name: "Summer fair", color: "#16a34a", openCount: 3, canWrite: true, pinned: true },

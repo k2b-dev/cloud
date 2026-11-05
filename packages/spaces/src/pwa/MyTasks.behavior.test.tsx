@@ -428,29 +428,29 @@ else {
     }
   });
 
-  test("names the person working on a task someone else claimed", async () => {
+  test("asks once before taking over a task someone else claimed, then completes it with that claim", async () => {
+    const claim = claimBy("9e7d5c3b-1a2f-4e6d-8c0b-3a5f7e9d1c4b", "Jonas Beispiel");
     const fetch = mockFetch((call) =>
       call.method === "POST"
-        ? Response.json(
-            { message: "Task is claimed; release its current claim before changing ownership or completing it" },
-            { status: 409 },
-          )
+        ? call.body && typeof call.body === "object" && "force" in call.body
+          ? Response.json({})
+          : Response.json({ message: "Task is claimed; release its current claim before changing ownership or completing it" }, { status: 409 })
         : call.path === ITEM
-          ? Response.json(claimBy("9e7d5c3b-1a2f-4e6d-8c0b-3a5f7e9d1c4b", "Jonas Beispiel"))
+          ? Response.json(claim)
           : call.path === WORK
-            ? Response.json(snapshot("mine", [tents, flyer]))
+            ? Response.json(snapshot("mine", [flyer]))
             : undefined,
     );
     const page = mount();
     try {
       checkButton(page.dom, "Order the tents")!.click();
-      await waitFor(() => toasts(page.dom).some((text) => text.includes("Jonas Beispiel")), "claimed notice");
-      expect(toasts(page.dom)).toHaveLength(1);
-      expect(toasts(page.dom)[0]).toContain(
-        "Jonas Beispiel is working on “Order the tents”. Take it over in Spaces on the web to finish it.",
-      );
-      expect(toastAction(page.dom, "Retry")).toBeUndefined();
-      expect(fetch.calls.filter((call) => call.method === "POST")).toHaveLength(1);
+      const confirm = () =>
+        [...page.dom.document.querySelectorAll<HTMLButtonElement>("dialog button")].find((button) => button.textContent?.trim() === "Take over");
+      await waitFor(() => confirm() !== undefined, "the take-over question");
+      expect(page.dom.document.querySelector("dialog")?.textContent).toContain("Jonas Beispiel");
+      confirm()!.click();
+      await waitFor(() => fetch.calls.filter((call) => call.method === "POST").length === 2, "the completion with the claim");
+      expect(fetch.calls.filter((call) => call.method === "POST")[1]?.body).toEqual({ completed: true, claimId: claim.claim.id, force: true });
     } finally {
       page.dispose();
       fetch.restore();

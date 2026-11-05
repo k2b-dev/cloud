@@ -20,6 +20,7 @@ type Props = {
   children: JSX.Element;
   class?: string;
   label: string;
+  onOpenChange?: (open: boolean) => void;
   /** `chip` is a small secondary button, as in the quick add; `plain` leaves the look to `class`, as a property row does. */
   appearance?: "chip" | "plain";
 };
@@ -121,6 +122,7 @@ export default function PeoplePicker(props: Props) {
       note={props.note}
       disabled={props.disabled}
       onOpenChange={(open) => {
+        props.onOpenChange?.(open);
         if (open && directory().state === "idle") void load("");
       }}
       // The search runs on the server; the entries follow its answer.
@@ -138,6 +140,9 @@ export default function PeoplePicker(props: Props) {
         size={props.appearance === "chip" ? "sm" : undefined}
         class={props.class}
         disabled={props.disabled}
+        // The directory loads as soon as a finger or the focus reaches the trigger, so it is usually there on opening.
+        onPointerDown={() => directory().state === "idle" && void load("")}
+        onFocus={() => directory().state === "idle" && void load("")}
       >
         {props.children}
       </Dropdown.Trigger>

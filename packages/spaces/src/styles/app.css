@@ -245,6 +245,33 @@
 .spaces-pwa-task__props dd > i { color: var(--k2b-text-muted); }
 .spaces-pwa-task__props dd[data-overdue] { color: var(--k2b-danger-text); }
 .spaces-pwa-task__props dd[data-overdue] > i { color: var(--k2b-danger-text); }
+/* Each property row of a task opens its own picker; the value stays where it is while it saves, and the fixed slot at
+   the end holds ⌄, the spinner or ↻, so nothing moves. */
+.spaces-pwa-task__props--edit { grid-template-columns: 5.5rem minmax(0, 1fr); align-items: start; row-gap: 0; }
+.spaces-pwa-task__props--edit dt { padding-top: .625rem; }
+.spaces-pwa-task__props--edit dd { min-height: 2.75rem; }
+.spaces-pwa-task__prop { display: grid !important; grid-template-columns: minmax(0, 1fr) 2.75rem; align-items: center; }
+.spaces-pwa-task__prop-value { display: flex; min-width: 0; align-items: center; }
+.spaces-pwa-task__inline { display: inline-flex; min-width: 0; flex: none; align-items: center; gap: .5rem; white-space: nowrap; }
+.k2b-ui .spaces-pwa-task__picker .spaces-pwa-task__inline { flex: 0 1 auto; }
+.spaces-pwa-task__inline[data-overdue] { color: var(--k2b-danger-text); }
+.spaces-pwa-task__muted { color: var(--k2b-text-muted); }
+.spaces-pwa-task__names { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .spaces-pwa-task__picker { display: inline-flex; min-width: 0; max-width: 100%; min-height: 2.75rem; flex: 0 1 auto; align-items: center; gap: .5rem; margin-inline-start: -.5rem; padding: 0 .5rem; border: 0; border-radius: .5rem; background: none; color: var(--k2b-text); font: inherit; cursor: pointer; }
+@media (hover: hover) { .k2b-ui .spaces-pwa-task__picker:hover { background: var(--k2b-app-workspace-hover); } }
+.k2b-ui .spaces-pwa-task__picker:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+.k2b-ui .spaces-pwa-task__picker--date { padding: 0; margin-inline-start: 0; }
+.spaces-pwa-task__sk--value { width: 7rem; margin: 0; }
+.spaces-pwa-task__title-button { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: text; }
+.spaces-pwa-task__title-button:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; border-radius: .25rem; }
+.spaces-pwa-task__title-edit { display: flex; min-width: 0; flex-direction: column; gap: .5rem; }
+/* Two lines always keep their place under the title field: the keys, or a title changed elsewhere. */
+.spaces-pwa-task__title-hint { display: flex; min-height: 2.5rem; flex-direction: column; color: var(--k2b-text-secondary); font-size: .8125rem; line-height: 1.25rem; }
+.spaces-pwa-task__title-hint p { display: flex; min-width: 0; align-items: center; gap: .375rem; margin: 0; }
+.spaces-pwa-task__title-hint[data-tone="warning"] p:first-child { color: var(--k2b-warning-text); }
+.spaces-pwa-task__title-hint-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spaces-pwa-task__link { padding: 0; border: 0; background: none; color: var(--k2b-text); font: inherit; font-weight: 500; text-decoration: underline; text-decoration-color: var(--ui-app-accent-border, currentColor); text-underline-offset: 3px; cursor: pointer; }
+.spaces-pwa-task__title-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 .spaces-pwa-task__avatars { display: inline-flex; }
 .spaces-pwa-task__avatars > * + * { margin-left: -.375rem; }
 .spaces-pwa-task__section { display: flex; flex-direction: column; gap: .375rem; padding-left: 3.25rem; }

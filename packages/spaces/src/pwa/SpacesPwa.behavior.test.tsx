@@ -34,6 +34,14 @@ const work: OverviewWork = {
 };
 const detail = (shortId: string, title: string): PwaTask => ({
   ...row(shortId, title),
+  statusId: "Col001",
+  statuses: [
+    { id: "Col001", name: "Open", color: "#94a3b8", done: false },
+    { id: "Col009", name: "Done", color: "#16a34a", done: true },
+  ],
+  tags: [],
+  claim: null,
+  blocked: false,
   spaceColor: "#16a34a",
   event: false,
   completed: false,
