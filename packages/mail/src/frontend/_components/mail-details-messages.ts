@@ -53,6 +53,10 @@ export const mailDetailsMessages = i18n.define({
       activityUnavailable: "Activity can't load right now.",
       technicalDetails: "Technical details",
       technicalSummary: "Sender, headers, original",
+      accessWholeMailbox: "Applies to the whole mailbox.",
+      assignedConversationsOnly: "Assigned only",
+      manageAccess: "Manage access",
+      presenceAlone: "Whoever opens this conversation appears here.",
     },
     de: {
       kind: "Unterhaltung",
@@ -102,6 +106,10 @@ export const mailDetailsMessages = i18n.define({
       activityUnavailable: "Die Aktivität lässt sich gerade nicht laden.",
       technicalDetails: "Technische Details",
       technicalSummary: "Absender, Kopfzeilen, Original",
+      accessWholeMailbox: "Gilt für das ganze Postfach.",
+      assignedConversationsOnly: "Nur Zugewiesenes",
+      manageAccess: "Zugriff verwalten",
+      presenceAlone: "Wer diese Unterhaltung öffnet, erscheint hier.",
     },
   },
 });
