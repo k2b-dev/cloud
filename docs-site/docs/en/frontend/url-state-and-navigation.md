@@ -232,7 +232,7 @@ swaps emit no event. A listener error does not trigger a document load.
 ## Cloud page swaps
 
 Opt in with `defineApp({ pageSwap: true, ... })`. The default is off.
-Cloud keeps the rail, phone tab bar, panel slot, and provider document.
+Cloud keeps the rail, panel slot, and provider document.
 It replaces the header, banners, warnings, page trail, main content, footer,
 and the page's shell data and Help ids. Regular and full-page layouts can
 swap between each other.

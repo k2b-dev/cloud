@@ -49,12 +49,12 @@
   --k2b-calendar-edge-ceiling: 1;
 }
 
-.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-band, .k2b-calendar-marker__pill, .k2b-calendar-fold__chips > li) {
+.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-band, .k2b-calendar-marker__pill, .k2b-calendar-fold__chips > li, .k2b-calendar-check) {
   --k2b-calendar-edge: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 68%, var(--k2b-text));
 }
 
 @supports (color: oklch(from red l c h)) {
-  .k2b-ui :is(.k2b-calendar-event, .k2b-calendar-band, .k2b-calendar-marker__pill, .k2b-calendar-fold__chips > li) {
+  .k2b-ui :is(.k2b-calendar-event, .k2b-calendar-band, .k2b-calendar-marker__pill, .k2b-calendar-fold__chips > li, .k2b-calendar-check) {
     --k2b-calendar-edge: oklch(
       from var(--k2b-calendar-accent, var(--k2b-text-muted)) clamp(var(--k2b-calendar-edge-floor), l, var(--k2b-calendar-edge-ceiling)) c h
     );
@@ -1049,6 +1049,153 @@
   padding: 0.625rem 0.75rem;
 }
 
+/* The calendar's own detail of an entry: beside it on wide screens, a sheet from the bottom on a phone. */
+.k2b-ui .k2b-calendar-popover[data-kind="event"] {
+  width: min(22rem, calc(100vw - 1rem));
+  padding: 0.75rem 0.875rem 0.875rem;
+}
+
+.k2b-ui .k2b-calendar-popover[data-kind="event"][data-sheet] {
+  inset: auto 0 0;
+  width: 100%;
+  max-height: 80dvh;
+  padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom));
+  border-width: 1px 0 0;
+  border-radius: var(--k2b-radius-surface) var(--k2b-radius-surface) 0 0;
+}
+
+.k2b-ui .k2b-calendar-popover[data-kind="event"][data-sheet]::backdrop {
+  background: rgb(0 0 0 / 0.32);
+}
+
+.k2b-ui .k2b-calendar-detail {
+  outline: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.k2b-ui .k2b-calendar-detail__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+}
+
+.k2b-ui .k2b-calendar-detail__icon {
+  --k2b-calendar-edge: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 68%, var(--k2b-text));
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  box-sizing: border-box;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--k2b-calendar-edge);
+  border-radius: 0.5rem;
+  color: var(--k2b-calendar-edge);
+  background: var(--k2b-calendar-event-surface);
+  font-size: 0.9375rem;
+}
+
+@supports (color: oklch(from red l c h)) {
+  .k2b-ui .k2b-calendar-detail__icon {
+    --k2b-calendar-edge: oklch(
+      from var(--k2b-calendar-accent, var(--k2b-text-muted)) clamp(var(--k2b-calendar-edge-floor), l, var(--k2b-calendar-edge-ceiling)) c h
+    );
+  }
+}
+
+.k2b-ui .k2b-calendar-detail__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0.125rem 0 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-calendar-detail__title[data-done="true"] {
+  color: var(--k2b-text-muted);
+  text-decoration: line-through;
+}
+
+.k2b-ui .k2b-calendar-detail__row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.k2b-ui .k2b-calendar-detail__row > i {
+  flex: none;
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-calendar-detail__row[data-tone="danger"],
+.k2b-ui .k2b-calendar-detail__row[data-tone="danger"] > i {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-calendar-detail__description {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+}
+
+.k2b-ui .k2b-calendar-detail__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-calendar-detail__label {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-calendar-detail__people {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-calendar-detail__people > li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-calendar-detail__links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-calendar-detail__link {
+  width: 100%;
+}
+
+.k2b-ui .k2b-calendar-detail__foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .k2b-ui .k2b-calendar-popover:not(:popover-open) {
   display: none;
 }
@@ -1120,31 +1267,31 @@
   background: var(--k2b-calendar-accent, #3b82f6);
 }
 
-.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator)[data-color="blue"] {
+.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator, .k2b-calendar-detail)[data-color="blue"] {
   --k2b-calendar-accent: #3b82f6;
 }
 
-.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator)[data-color="emerald"] {
+.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator, .k2b-calendar-detail)[data-color="emerald"] {
   --k2b-calendar-accent: #10b981;
 }
 
-.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator)[data-color="amber"] {
+.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator, .k2b-calendar-detail)[data-color="amber"] {
   --k2b-calendar-accent: #f59e0b;
 }
 
-.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator)[data-color="red"] {
+.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator, .k2b-calendar-detail)[data-color="red"] {
   --k2b-calendar-accent: #ef4444;
 }
 
-.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator)[data-color="violet"] {
+.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator, .k2b-calendar-detail)[data-color="violet"] {
   --k2b-calendar-accent: #8b5cf6;
 }
 
-.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator)[data-color="cyan"] {
+.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator, .k2b-calendar-detail)[data-color="cyan"] {
   --k2b-calendar-accent: #06b6d4;
 }
 
-.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator)[data-color="zinc"] {
+.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator, .k2b-calendar-detail)[data-color="zinc"] {
   --k2b-calendar-accent: #a1a1aa;
 }
 
@@ -1241,6 +1388,128 @@
 .k2b-ui .k2b-calendar-event__meta {
   font-size: 0.625rem;
   opacity: 0.7;
+}
+
+/* The entry's icon leads its title in the color of its edge; a phone's month cell is too narrow for it. */
+.k2b-ui .k2b-calendar-event__icon {
+  flex: none;
+  margin-inline-end: 0.3125rem;
+  color: var(--k2b-calendar-edge);
+  font-size: 1.1em;
+  line-height: 0;
+  vertical-align: -0.1em;
+}
+
+.k2b-ui .k2b-calendar-event > .k2b-calendar-event__icon {
+  margin-inline-end: 0;
+}
+
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-calendar-month__segment .k2b-calendar-event__icon {
+    display: none;
+  }
+}
+
+/* Faces and the link count follow the time in the same line and give way first: the time never shortens. The line
+   keeps the time's height, so a band's title keeps the lines the band gave it. */
+.k2b-ui .k2b-calendar-event__row {
+  display: flex;
+  min-width: 0;
+  height: 0.875rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-calendar-event__row > .k2b-calendar-event__meta {
+  flex: none;
+}
+
+.k2b-ui .k2b-calendar-event__title + .k2b-calendar-event__row {
+  margin-top: 0.25rem;
+}
+
+.k2b-ui .k2b-calendar-event__extras {
+  --k2b-avatar-stack-ring: var(--k2b-calendar-event-surface);
+  display: inline-flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline-start: auto;
+  overflow: hidden;
+}
+
+.k2b-ui .k2b-calendar-event__extras .k2b-avatar-stack__faces > .k2b-avatar[data-size] {
+  width: 1rem;
+  height: 1rem;
+  font-size: 0.4375rem;
+}
+
+.k2b-ui .k2b-calendar-event__extras .k2b-avatar-stack__more {
+  color: var(--k2b-text-secondary);
+  font-size: 0.625rem;
+}
+
+.k2b-ui .k2b-calendar-event__links {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-calendar-event__links > i {
+  font-size: 0.75rem;
+}
+
+/* In a one-line entry, such as in the day list, the extras sit at its end. */
+.k2b-ui .k2b-calendar-event:not([data-fill="true"]) > .k2b-calendar-event__row {
+  flex: 1 0 auto;
+  height: auto;
+  margin: 0;
+}
+
+.k2b-ui .k2b-calendar-band {
+  container-type: inline-size;
+}
+
+@container (max-width: 12.5rem) {
+  .k2b-ui .k2b-calendar-band .k2b-calendar-event__links {
+    display: none;
+  }
+}
+
+@container (max-width: 9rem) {
+  .k2b-ui .k2b-calendar-band .k2b-calendar-event__extras {
+    display: none;
+  }
+}
+
+/* Done strikes the title through in every view; an open to-do or deadline in the past turns red. */
+.k2b-ui .k2b-calendar-event[data-done="true"] :is(.k2b-calendar-event__title, [data-calendar-title]) {
+  color: var(--k2b-text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+.k2b-ui .k2b-calendar-event[data-overdue="true"],
+.k2b-ui :is(.k2b-calendar-month__segment, .k2b-calendar-day-list__events li, .k2b-calendar-allday-chip, .k2b-calendar-week__slot) > .k2b-calendar-event[data-overdue="true"][data-bar="true"] {
+  --k2b-calendar-edge: var(--k2b-danger-text);
+  color: var(--k2b-danger-text);
+  background: var(--k2b-danger-surface);
+}
+
+.k2b-ui .k2b-calendar-band[data-overdue="true"] {
+  --k2b-calendar-edge: var(--k2b-danger-text);
+  color: var(--k2b-danger-text);
+  background: var(--k2b-danger-surface);
+}
+
+.k2b-ui .k2b-calendar-band[data-overdue="true"] > .k2b-calendar-event[data-overdue="true"],
+.k2b-ui :is(.k2b-calendar-marker__pill, .k2b-calendar-fold__chips > li[data-checkbox="true"], .k2b-calendar-allday-chip[data-checkbox="true"], .k2b-calendar-week__slot[data-checkbox="true"]) > .k2b-calendar-event[data-overdue="true"] {
+  background: transparent;
 }
 
 .k2b-ui .k2b-calendar-event__description {
@@ -2141,16 +2410,21 @@
   font-size: 0.75rem;
 }
 
+/* The ring takes the place of the title's first letters: centred on its first line, inside the band's padding. */
 .k2b-ui .k2b-calendar-band[data-checkbox="true"] > .k2b-calendar-event {
-  padding-inline-start: 1.5rem;
+  padding-inline-start: 1.625rem;
 }
-
 
 .k2b-ui .k2b-calendar-band > .k2b-calendar-check {
   position: absolute;
   z-index: 3;
-  top: 0.0625rem;
-  left: 0.125rem;
+  top: 0.28125rem;
+  left: 0.40625rem;
+}
+
+.k2b-ui :is(.k2b-calendar-band, .k2b-calendar-marker)[data-overdue="true"] .k2b-calendar-check,
+.k2b-ui :is(.k2b-calendar-allday-chip, .k2b-calendar-week__slot, .k2b-calendar-fold__chips > li):has(> .k2b-calendar-event[data-overdue="true"]) > .k2b-calendar-check {
+  --k2b-calendar-edge: var(--k2b-danger-text);
 }
 
 .k2b-ui .k2b-calendar-band:is([data-size="xs"], [data-size="s"]) > .k2b-calendar-check {
@@ -2243,7 +2517,9 @@
   }
 }
 
-/* A to-do's checkbox draws its check; its title strikes through. */
+/* A to-do's check: a small ring in the entry's edge color in the line of the title, filled with a check once done; the
+   title strikes through. Its box stays the same in both states, and on touch screens an invisible ring around it
+   reaches 44 px without taking room. */
 .k2b-ui .k2b-calendar-check {
   position: relative;
   display: grid;
@@ -2254,7 +2530,8 @@
   margin: -0.25rem;
   padding: 0;
   border: 0;
-  color: color-mix(in srgb, var(--k2b-calendar-accent, #a1a1aa) 80%, var(--k2b-text));
+  border-radius: 999px;
+  color: var(--k2b-calendar-edge);
   background: none;
   cursor: pointer;
 }
@@ -2263,14 +2540,26 @@
   cursor: inherit;
 }
 
+@media (pointer: coarse) {
+  .k2b-ui button.k2b-calendar-check::before {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2.75rem;
+    height: 2.75rem;
+    content: "";
+    transform: translate(-50%, -50%);
+  }
+}
+
 .k2b-ui .k2b-calendar-check svg {
   width: 1rem;
   height: 1rem;
   overflow: visible;
 }
 
-.k2b-ui .k2b-calendar-check rect {
-  fill: var(--k2b-surface);
+.k2b-ui .k2b-calendar-check circle {
+  fill: transparent;
   stroke: currentColor;
   stroke-width: 1.5;
   transform-box: fill-box;
@@ -2280,15 +2569,15 @@
 
 .k2b-ui .k2b-calendar-check path {
   fill: none;
-  stroke: #fff;
-  stroke-dasharray: 11;
-  stroke-dashoffset: 11;
+  stroke: var(--k2b-surface);
+  stroke-dasharray: 8;
+  stroke-dashoffset: 8;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.9;
+  stroke-width: 1.75;
 }
 
-.k2b-ui .k2b-calendar-check[data-checked="true"] rect {
+.k2b-ui .k2b-calendar-check[data-checked="true"] circle {
   fill: currentColor;
 }
 
@@ -2296,14 +2585,13 @@
   stroke-dashoffset: 0;
 }
 
-.k2b-ui button.k2b-calendar-check:not([data-checked="true"]):hover rect {
-  fill: color-mix(in srgb, currentColor 14%, var(--k2b-surface));
+.k2b-ui button.k2b-calendar-check:not([data-checked="true"]):hover circle {
+  fill: color-mix(in srgb, currentColor 16%, transparent);
 }
 
 .k2b-ui .k2b-calendar-check:focus-visible {
-  border-radius: 0.3125rem;
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: var(--k2b-focus-offset);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
 .k2b-ui [data-checked="true"] > .k2b-calendar-event :is(.k2b-calendar-event__title, [data-calendar-title]),
@@ -2317,7 +2605,7 @@
   animation: k2b-calendar-check-draw 340ms 50ms ease-out both;
 }
 
-.k2b-ui .k2b-calendar-check[data-just-checked="true"] rect {
+.k2b-ui .k2b-calendar-check[data-just-checked="true"] circle {
   animation: k2b-calendar-check-pop 320ms ease-out;
 }
 
@@ -2328,7 +2616,7 @@
 
 @keyframes k2b-calendar-check-draw {
   from {
-    stroke-dashoffset: 11;
+    stroke-dashoffset: 8;
   }
   to {
     stroke-dashoffset: 0;

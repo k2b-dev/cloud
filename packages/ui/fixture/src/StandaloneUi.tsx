@@ -43,7 +43,7 @@ export default function StandaloneUi() {
           "min-height": "100vh",
           padding: "24px",
           color: "var(--k2b-text)",
-          background: "var(--k2b-app-background)",
+          background: "var(--k2b-surface-canvas)",
         }}
       >
         <div style={{ display: "grid", gap: "20px", margin: "0 auto", "max-width": "1120px" }}>

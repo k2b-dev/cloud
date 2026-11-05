@@ -286,7 +286,10 @@ describe("Mailbox settings dialog query lifecycle", () => {
       // Found as it is typed: no Find or Search step, the hit with its description and its mark.
       expect(button("Search")).toBeUndefined();
       expect(button("Find")).toBeUndefined();
-      const lookup = requests.find((request) => request.url.pathname === "/api/accounts/entities")!;
+      // The dialog also reads e-mails and the number of people from the directory; the handle lookup is the search.
+      const lookup = requests.find(
+        (request) => request.url.pathname === "/api/accounts/entities" && request.url.searchParams.has("search"),
+      )!;
       expect(Object.fromEntries(lookup.url.searchParams)).toMatchObject({
         search: "code-7k2q9m4xwt",
         target_type: "mail.mailbox",

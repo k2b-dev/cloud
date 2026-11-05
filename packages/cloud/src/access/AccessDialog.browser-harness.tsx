@@ -29,41 +29,55 @@ const entries: AccessEntry[] = [
   person(5, "Lea Schmitt", "read"),
 ];
 
+/** What the directory knows about the listed people, as the search endpoint answers for someone who manages. */
+const mails: Record<string, string> = {
+  "10000000-0000-4000-8000-000000000001": "mia.hoffmann@beispiel.de",
+  "10000000-0000-4000-8000-000000000002": "jonas.weber@beispiel.de",
+  "10000000-0000-4000-8000-000000000005": "lea.schmitt@beispiel.de",
+};
 const originalFetch = globalThis.fetch;
 globalThis.fetch = Object.assign(
-  (input: RequestInfo | URL, init?: RequestInit) => {
+  async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), "https://harness.test");
-    if (
-      url.pathname === "/api/accounts/entities" &&
-      url.searchParams.get("target_type") === "spaces.space" &&
-      url.searchParams.get("target_id") === "Targ01"
-    ) {
-      return Promise.resolve(
-        Response.json({
-          items:
-            url.searchParams.get("search") === "code-7k2q9m4xwt"
-              ? [
-                  {
-                    kind: "service_account",
-                    serviceAccount: {
-                      id: "40000000-0000-4000-8000-000000000001",
-                      kind: "code",
-                      handle: "code-7k2q9m4xwt",
-                      name: "Code von info@beispiel.de",
-                      description: "Dienstkonto eines Postfachs",
-                    },
+    if (url.pathname !== "/api/accounts/entities") return originalFetch(input, init);
+    if (url.searchParams.get("target_type") === "spaces.space" && url.searchParams.get("target_id") === "Targ01") {
+      return Response.json({
+        items:
+          url.searchParams.get("search") === "code-7k2q9m4xwt"
+            ? [
+                {
+                  kind: "service_account",
+                  serviceAccount: {
+                    id: "40000000-0000-4000-8000-000000000001",
+                    kind: "code",
+                    handle: "code-7k2q9m4xwt",
+                    name: "Code von info@beispiel.de",
+                    description: "Dienstkonto eines Postfachs",
                   },
-                ]
-              : [],
-        }),
-      );
+                },
+              ]
+            : [],
+      });
     }
-    return originalFetch(input, init);
+    const ids = url.searchParams.get("user_ids")?.split(",") ?? [];
+    const items = ids.flatMap((id) => (mails[id] ? [{ kind: "user", user: { id, mail: mails[id] } }] : []));
+    return Response.json({ items, pagination: { page: 1, per_page: 1, total: 214, total_pages: 214, has_next: true } });
   },
   { preconnect: originalFetch.preconnect },
 );
-/** Mockup v31 `editor` states: no service accounts by default, two of them in `normal`, the same read-only in `lesen`. */
-const scene = (window as { accessDialogScene?: "normal" | "lesen" }).accessDialogScene;
+
+/**
+ * The test sets these before the harness runs. Scene (mockup v31 `editor` states): no service accounts by default,
+ * two of them in `normal`, the same read-only in `lesen`. State `loading` keeps the list loading until
+ * `finishLoading()`; state `saving` keeps each save pending until `finishSaving()`.
+ */
+const harness = window as unknown as {
+  accessDialogScene?: "normal" | "lesen";
+  accessDialogState?: string;
+  finishLoading?: () => void;
+  finishSaving?: () => void;
+};
+const scene = harness.accessDialogScene;
 const serviceAccounts: AccessEntry[] = [
   {
     id: "00000000-0000-4000-8000-000000000006",
@@ -85,19 +99,36 @@ const serviceAccounts: AccessEntry[] = [
     createdAt: "2026-11-03T00:00:00.000Z",
   },
 ];
+const initialEntries = scene ? [...entries, ...serviceAccounts] : entries;
+const pending = () => Promise.withResolvers<void>();
+const loadGate = pending();
+harness.finishLoading = loadGate.resolve;
+let saveGate = pending();
+harness.finishSaving = () => {
+  saveGate.resolve();
+  saveGate = pending();
+};
+const saving = harness.accessDialogState === "saving";
 
 void openAccessDialog({
   target: { type: "spaces.space", id: "Targ01" },
   resourceName: "Einkauf 2027",
   subtitle: "Space · Spaces",
-  initialEntries: scene ? [...entries, ...serviceAccounts] : entries,
+  ...(harness.accessDialogState === "loading" ? { loadEntries: async () => (await loadGate.promise, initialEntries) } : { initialEntries }),
   canEdit: scene !== "lesen",
   viewerUserId: "10000000-0000-4000-8000-000000000001",
   allowPublic: true,
   publicLink: "https://cloud.example.test/s/einkauf-2027",
   entryDetail: (entry) => (entry.principal.type === "group" ? "Group · 14 people" : undefined),
-  grantAccess: async (principal, permission) => ({ id: crypto.randomUUID(), principal, permission, createdAt: "now" }),
-  updateAccess: async () => {},
-  revokeAccess: async () => {},
+  grantAccess: async (principal, permission) => {
+    if (saving) await saveGate.promise;
+    return { id: crypto.randomUUID(), principal, permission, createdAt: "now" };
+  },
+  updateAccess: async () => {
+    if (saving) await saveGate.promise;
+  },
+  revokeAccess: async () => {
+    if (saving) await saveGate.promise;
+  },
 });
 document.documentElement.dataset.ready = "true";

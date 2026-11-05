@@ -61,6 +61,15 @@ const CHATS: AiConversation[] = [
   chat("pflege", "Pflegehinweise für Samt", 60 * 74, { description: "Kurz gesagt: nur trocken bürsten, nie reiben." }),
 ];
 
+const OLDER: AiConversation[] = [
+  chat("kalk", "Kalkulation Eckbank", 60 * 24 * 9, { description: "Material 412 €, Arbeit 9 Stunden." }),
+  chat("azubi", "Einarbeitung neue Auszubildende", 60 * 24 * 12, { description: "Plan für die ersten zwei Wochen." }),
+  chat("website", "Texte für die Website", 60 * 24 * 20, { description: "Drei Varianten für die Startseite." }),
+];
+const ALL = [...CHATS, ...OLDER];
+const search = (query: string) =>
+  ALL.filter((entry) => `${entry.title} ${entry.description}`.toLocaleLowerCase("de").includes(query.toLocaleLowerCase("de")));
+
 declare global {
   interface Window {
     assistantPwaQuestion: ToolBlock;
@@ -285,14 +294,53 @@ const detailOf = (id: string): Detail | null => {
 };
 
 // ---------------------------------------------------------------- the screen's starting point
+const allQuery = params.get("q") ?? "";
 const address: PwaAddress =
-  screen.startsWith("chat-") || screen === "noai-chat"
+  screen.startsWith("chat-") || screen === "noai-chat" || screen.startsWith("menu")
     ? { level: "chat", id: params.get("chat") ?? (screen === "chat-noaccess" ? "fremd" : "pflege") }
     : screen === "new"
       ? { level: "new" }
-      : { level: "start" };
+      : screen.startsWith("all")
+        ? { level: "all", archived: screen === "all-archive", query: allQuery }
+        : { level: "start" };
 const noAi = has("noai", "noai-admin", "noai-chat");
-const offline = has("offline", "chat-offline", "chat-approval-offline");
+// `mic=blocked`: the device refuses the microphone, as after a person said no.
+if (params.get("mic") === "blocked")
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      getUserMedia: () => Promise.reject(new DOMException("Permission denied", "NotAllowedError")),
+      enumerateDevices: () => Promise.resolve([]),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
+  });
+// `record=1`: an audio model is set up, and the microphone hears a steady tone instead of a person.
+const recording = Boolean(params.get("record"));
+if (recording)
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      getUserMedia: async () => {
+        const context = new AudioContext();
+        const tone = context.createOscillator();
+        const output = context.createMediaStreamDestination();
+        tone.connect(output);
+        tone.start();
+        return output.stream;
+      },
+      enumerateDevices: () => Promise.resolve([]),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
+  });
+// `standalone=1`: the page runs as the installed app, without browser chrome.
+if (params.get("standalone")) {
+  const original = window.matchMedia.bind(window);
+  window.matchMedia = (query: string) =>
+    query === "(display-mode: standalone)" ? Object.create(original(query), { matches: { value: true } }) : original(query);
+}
+const offline = has("offline", "chat-offline", "chat-approval-offline", "all-offline", "menu-offline", "chat-attach-offline");
 if (offline) Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
 const empty = has("start-empty");
 
@@ -314,6 +362,15 @@ const json = (body: unknown, status = 200) =>
 const quietStream = () =>
   new Response(new ReadableStream({ start() {} }), { status: 200, headers: { "content-type": "text/event-stream" } });
 let created = 0;
+let lost = false;
+const dictations: Array<{
+  id: string;
+  sourcePath: string;
+  operationId: string;
+  status: string;
+  disposition: string;
+  text: string | null;
+}> = [];
 const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
   const method = (init?.method ?? "GET").toUpperCase();
@@ -324,7 +381,10 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
   // `pattern:status` refuses with that status, such as 422; a bare pattern fails as the server would, with 500.
   for (const entry of harness.fail) {
     const [pattern, status] = entry.split(":");
-    if (pattern && key.includes(pattern)) return json({ message: "Invented failure" }, Number(status ?? 500));
+    if (!pattern || !key.includes(pattern)) continue;
+    // `pattern:net` stands for an answer that never comes back.
+    if (status === "net") throw new TypeError("Failed to fetch");
+    return json({ message: "Invented failure" }, Number(status ?? 500));
   }
   if (url.pathname.endsWith("/stream")) return quietStream();
   if (url.pathname === "/api/assistant/workspace/sidebar")
@@ -334,7 +394,15 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
       doneCount: 0,
       questions: empty ? { items: [], count: 0 } : { items: [question], count: 1 },
     });
-  if (url.pathname === "/api/ai/conversations/page") return json({ total: 48, page: 1, perPage: 1, hasNext: true, items: [] });
+  if (url.pathname === "/api/ai/conversations/page") {
+    const perPage = Number(url.searchParams.get("perPage") ?? 20);
+    const archived = url.searchParams.get("archived") === "true";
+    const query = url.searchParams.get("q") ?? "";
+    if (perPage === 1) return json({ total: archived ? 12 : 48, page: 1, perPage, hasNext: true, items: [] });
+    const items = archived ? OLDER : query ? search(query) : ALL;
+    return json({ total: query ? items.length : 48, page: Number(url.searchParams.get("page") ?? 1), perPage, hasNext: !query, items });
+  }
+  if (/\/(archive|restore|pin)$/.test(url.pathname)) return json(ALL.find((entry) => url.pathname.includes(`/${entry.id}/`)) ?? {});
   if (method === "POST" && url.pathname === "/api/ai/conversations") {
     created += 1;
     return json(chat(`neu-${created}`, "Neuer Chat", 0));
@@ -344,12 +412,76 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     const found = detailOf(decodeURIComponent(detail[1]!));
     return found ? json(found) : json({ message: "Not found" }, 404);
   }
+  // A recording becomes this text; `transcribe=hold` keeps it on the way, `transcribe=fail` fails it.
+  if (/\/dictations$/.test(url.pathname) && method === "POST") {
+    const mode = params.get("transcribe");
+    const form = init?.body instanceof FormData ? init.body : null;
+    dictations.push({
+      id: `d${dictations.length + 1}`,
+      sourcePath: "/Aufnahme.wav",
+      operationId: String(form?.get("operationId") ?? ""),
+      status: mode === "hold" ? "running" : mode === "fail" ? "failed" : "succeeded",
+      disposition: "pending",
+      text: mode ? null : "Verschick sie an alle.",
+    });
+    return json(dictations.at(-1));
+  }
+  if (/\/dictations$/.test(url.pathname)) return json({ items: dictations, nextCursor: null });
+  const one = /\/dictations\/(d\d+)$/.exec(url.pathname);
+  if (one) {
+    const found = dictations.find((entry) => entry.id === one[1]);
+    return found ? json(found) : json({ message: "Not found" }, 404);
+  }
+  const applied = /\/dictations\/([^/]+)\/apply$/.exec(url.pathname);
+  if (applied) {
+    const found = dictations.find((entry) => entry.id === applied[1]);
+    const body = JSON.parse(String(init?.body)) as { content: Array<{ type: string; text?: string }> };
+    if (found) found.disposition = "applied";
+    // `apply=lost`: the first insertion commits, but its answer never comes back.
+    if (params.get("apply") === "lost" && !lost) {
+      lost = true;
+      throw new TypeError("Failed to fetch");
+    }
+    const text = [...body.content.flatMap((part) => (part.text ? [part.text] : [])), found?.text].filter(Boolean).join("\n\n");
+    return json({ disposition: "applied", draft: { content: [{ type: "text", text }], revision: 3, updatedAt: NOW } });
+  }
+  if (/\/dictations\/discard$/.test(url.pathname)) {
+    for (const entry of dictations) entry.disposition = "discarded";
+    return json({ disposition: "discarded" });
+  }
   if (/\/draft$/.test(url.pathname)) return json({ content: [], revision: 1, updatedAt: NOW });
   if (/\/turns$/.test(url.pathname)) return json({ turn: { id: "turn-new", status: "queued" }, message: null });
   if (/\/viewed$/.test(url.pathname)) return json({});
   return json({});
 };
 window.fetch = Object.assign(answer, { preconnect: () => {} });
+// Uploads report their progress over XMLHttpRequest; `upload=progress` stops at 64 %, `upload=fail` fails.
+class FakeUpload extends EventTarget {}
+class FakeRequest extends EventTarget {
+  upload = new FakeUpload();
+  status = 0;
+  response: unknown = null;
+  responseType = "";
+  open() {}
+  send(form: FormData) {
+    const file = form.get("file");
+    const mode = params.get("upload") ?? "ok";
+    const size = file instanceof File ? file.size : 1;
+    setTimeout(() => {
+      if (!navigator.onLine || mode === "fail") {
+        this.dispatchEvent(new Event("error"));
+        return;
+      }
+      this.upload.dispatchEvent(Object.assign(new Event("progress"), { lengthComputable: true, loaded: size * 0.64, total: size }));
+      if (mode === "progress") return;
+      this.status = 200;
+      this.response = { file: { path: `/${file instanceof File ? file.name : "file"}`, mediaType: "image/jpeg", size, version: 1 } };
+      this.dispatchEvent(new Event("load"));
+    }, 50);
+  }
+  abort() {}
+}
+(window as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = FakeRequest;
 // Live updates connect to Core's socket; here it never opens.
 class QuietSocket extends EventTarget {
   readyState = 0;
@@ -371,7 +503,14 @@ const props: AssistantPwaProps = {
   userId: "robin",
   name,
   icon,
-  status: { ...models, enabled: !noAi, visionModelConfigured: true, ...(noAi ? { options: [] } : {}) },
+  status: {
+    ...models,
+    enabled: !noAi,
+    visionModelConfigured: true,
+    liveDictationAvailable: Boolean(params.get("dictation")),
+    audioModelConfigured: recording,
+    ...(noAi ? { options: [] } : {}),
+  },
   canConfigure: has("noai-admin"),
   timeZone: "Europe/Berlin",
   renderedAt: NOW,
@@ -381,9 +520,25 @@ const props: AssistantPwaProps = {
     ? null
     : { conversations: empty ? [] : CHATS, questions: empty ? { items: [], count: 0 } : { items: [question], count: 1 } },
   initialTotal: empty ? 0 : 48,
+  initialAll:
+    address.level === "all" && !has("all-loading")
+      ? {
+          query: allQuery,
+          page: has("all-error")
+            ? null
+            : {
+                total: allQuery ? search(allQuery).length : 48,
+                page: 1,
+                perPage: 20,
+                hasNext: !allQuery,
+                items: address.archived ? OLDER : allQuery ? search(allQuery) : ALL,
+              },
+          archived: address.archived ? null : 12,
+        }
+      : null,
   initialDetail: address.level === "chat" ? detailOf(address.id) : null,
 };
-const screenOfItsOwn = address.level !== "start";
+const screenOfItsOwn = address.level === "chat" || address.level === "new";
 
 render(
   () => (

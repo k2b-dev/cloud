@@ -13,6 +13,7 @@ export type {
   AppWorkspaceDetailProps,
   AppWorkspaceDetailWidth,
   AppWorkspaceHeadProps,
+  AppWorkspaceLevelSwitcher,
   AppWorkspaceMainPaneProps,
   AppWorkspaceMainProps,
   AppWorkspaceNavTreeItemProps,
@@ -237,6 +238,7 @@ export {
   type AppWorkspaceSwitcherOption,
 } from "./SidebarSwitcher";
 export { measureScrollFade } from "./scroll-fade";
+export { attachSheetHandle, type SheetHandleOptions } from "./sheet-handle";
 export type { TabBarItem, TabBarProps } from "./TabBar";
 export { default as TabBar } from "./TabBar";
 export type { TableOfContentsItem, TableOfContentsProps } from "./TableOfContents";

@@ -201,6 +201,19 @@ describe("Format components SSR", () => {
     expect(fallback).toContain('value="1234.5"');
   });
 
+  test("NumberInput pads initial values to inferred or explicit precision", () => {
+    for (const props of [{ step: 0.01 }, { decimalPlaces: 2 }]) {
+      const html = renderToString(() => createComponent(NumberInput, { ...props, locale: "de", value: 321.4 }));
+      expect(html).toContain('value="321,40"');
+      expect(html).toContain('aria-valuenow="321.4"');
+    }
+  });
+
+  test("NumberInput display uses the same rounding as commit normalization", () => {
+    const html = renderToString(() => createComponent(NumberInput, { value: 1.005, decimalPlaces: 2, step: 0 }));
+    expect(html).toContain('value="1.00"');
+  });
+
   test("passes native attributes through to the rendered element", () => {
     const html = renderToString(() => [
       createComponent(Format.Number, { value: 1, class: "stat", "data-testid": "count" }),

@@ -137,6 +137,8 @@ describe("Contact book settings reconciliation", () => {
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = input instanceof Request ? input.url : String(input);
+        // The dialog reads e-mail addresses and the number of people from the directory; this test is not about them.
+        if (url.includes("/api/accounts/entities")) return Response.json({ items: [] });
         writes.push(`${init?.method} ${url.split("/access/")[1]}`);
         if (init?.method === "DELETE") return Response.json({ message: "offline" }, { status: 503 });
         return new Response(null, { status: 204 });
@@ -215,7 +217,12 @@ describe("Contact book settings reconciliation", () => {
       displayName: "Mia",
     };
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = Object.assign(async () => new Response(null, { status: 204 }), { preconnect: originalFetch.preconnect });
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) =>
+        // The dialog reads e-mail addresses and the number of people from the directory; this test is not about them.
+        String(input).includes("/api/accounts/entities") ? Response.json({ items: [] }) : new Response(null, { status: 204 }),
+      { preconnect: originalFetch.preconnect },
+    );
     const retry = Promise.withResolvers<void>();
     let reloads = 0;
     const onReconcile = mock(async () => {

@@ -23,6 +23,7 @@ import {
 } from "solid-js";
 import { Dynamic, isServer } from "solid-js/web";
 import { Button, ButtonLink, IconButton, IconButtonLink } from "../actions/Button";
+import { Dropdown, type DropdownItem, type DropdownSearch } from "../actions/Dropdown";
 import { useFilterMessages } from "../actions/filter-messages";
 import { dialogCore } from "../feedback/dialog-core";
 import { Tooltip } from "../feedback/Tooltip";
@@ -314,6 +315,12 @@ export type AppWorkspaceMainPaneProps = {
   /** Controls at the end of the level head. */
   actions?: JSX.Element;
   /**
+   * Levels mode: the title opens a menu of places to switch to, such as the person's work and each Space; on a phone
+   * it opens as a sheet. The title stays the level's heading and gains a chevron; the server HTML already says that
+   * it opens a menu.
+   */
+  switcher?: AppWorkspaceLevelSwitcher;
+  /**
    * Levels mode: `"page"` marks the level that holds the page itself, such as a settings form or the list of an
    * area, rather than a column that leads there or a detail beside it. Its title takes the page step of the type
    * scale, above every group title in it, and its content starts at the title's edge without an inset of its own.
@@ -335,6 +342,13 @@ export type AppWorkspaceMainPaneProps = {
   scroll?: boolean;
   scrollFade?: boolean;
   children: JSX.Element;
+};
+/** The places a level title switches between; `label` names the menu, such as "Switch Space". */
+export type AppWorkspaceLevelSwitcher = {
+  label: string;
+  items: readonly DropdownItem[];
+  /** A search field above the places, for a long list. */
+  search?: DropdownSearch;
 };
 export type AppWorkspaceDetailWidth = "sm" | "md" | "lg" | "xl";
 export type AppWorkspaceDetailProps = {
@@ -642,6 +656,7 @@ function LevelHead(props: {
   description?: JSX.Element;
   actions?: JSX.Element;
   lead?: JSX.Element;
+  switcher?: AppWorkspaceLevelSwitcher;
   children: JSX.Element;
 }): JSX.Element {
   // Read each slot once: every read of a JSX prop builds it again, and the
@@ -649,16 +664,49 @@ function LevelHead(props: {
   const description = children(() => props.description);
   const actions = children(() => props.actions);
   const lead = children(() => props.lead);
+  let switchButton: HTMLButtonElement | undefined;
+  const title = () => (
+    <>
+      <Show when={lead()}>
+        <span class="k2b-app-workspace__level-lead">{lead()}</span>
+      </Show>
+      <span class="k2b-truncate-fade">{props.label}</span>
+    </>
+  );
   return (
     <header class="k2b-app-workspace__level-head">
       {props.children}
       <div class="k2b-app-workspace__level-title">
-        <h2 tabIndex={-1}>
-          <Show when={lead()}>
-            <span class="k2b-app-workspace__level-lead">{lead()}</span>
+        <h2 tabIndex={-1} data-switcher={props.switcher ? "" : undefined}>
+          <Show when={props.switcher} fallback={title()}>
+            {(switcher) => (
+              <button
+                ref={switchButton}
+                type="button"
+                class="k2b-app-workspace__level-switch"
+                aria-haspopup="menu"
+                aria-label={`${props.label}, ${switcher().label}`}
+              >
+                {title()}
+                <i class="ti ti-chevron-down k2b-app-workspace__level-switch-chevron" aria-hidden="true" />
+              </button>
+            )}
           </Show>
-          <span class="k2b-truncate-fade">{props.label}</span>
         </h2>
+        {/* The menu stands beside the heading, so its entries never become part of the title. */}
+        <Show when={props.switcher}>
+          {(switcher) => (
+            <Dropdown
+              items={switcher().items}
+              label={switcher().label}
+              search={switcher().search}
+              phone="sheet"
+              variant="touch"
+              position="bottom-left"
+              attach={() => switchButton}
+            />
+          )}
+        </Show>
         <Show when={description()}>
           <p class="k2b-truncate-fade">{description()}</p>
         </Show>
@@ -917,6 +965,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                           description={pane.props.description}
                           actions={pane.props.actions}
                           lead={pane.props.lead}
+                          switcher={pane.props.switcher}
                         >
                           <Show
                             when={pane.props.back}

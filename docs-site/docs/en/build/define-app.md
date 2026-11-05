@@ -88,7 +88,7 @@ See [SSR pages and routing](/en/docs/frontend/ssr-pages-and-routing).
 ## Keep the shell during page navigation
 
 Set `pageSwap: true` to swap `Layout` pages within the app. The default is
-`false`. The rail, phone tab bar, panel slot, and provider document stay mounted.
+`false`. The rail, panel slot, and provider document stay mounted.
 The next server page replaces the content column and its islands.
 
 `focusMode` pages and links to other apps load a document. So does a page
@@ -129,7 +129,7 @@ nav: {
 | `match` | No | `href` without its query | Path used for active navigation |
 | `requiresAuth` | No | — | Hide the link from anonymous visitors |
 | `requiresRoles` | No | — | Show the link, the application's [Help](/en/docs/platform/help#who-can-read-help), and its [Assistant Skills](/en/docs/platform/assistant-skills#who-can-use-an-app-skill) only for matching platform roles; `guest` matches guests |
-| `badge` | No | — | Route whose count the app bar, the phone bar, and the app grid show on the icon; see [Show a count on the app icon](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
+| `badge` | No | — | Route whose count the app bar and the app grid, also the phone's app menu, show on the icon; see [Show a count on the app icon](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 
 Navigation visibility is not authorization. Protect the destination with
 [route policies](/en/docs/identity/route-policies).

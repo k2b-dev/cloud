@@ -131,6 +131,8 @@ if (!isServer)
       dom.document.documentElement.lang = "de";
       delegateEvents(["click", "input", "submit"], dom.document);
       const requests: URL[] = [];
+      // The dialog also reads e-mails and the number of people from the directory; a handle lookup is a search.
+      const lookups = () => requests.filter((url) => url.searchParams.has("search"));
       const grants: string[] = [];
       const fetch = spyOn(globalThis, "fetch").mockImplementation(
         Object.assign(
@@ -198,13 +200,13 @@ if (!isServer)
         field.dispatchEvent(new Event("input", { bubbles: true }));
         field.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
         await waitFor(() => dom.root.textContent?.includes("Kein Dienstkonto mit dieser Kennung") === true);
-        expect(requests).toHaveLength(0);
+        expect(lookups()).toHaveLength(0);
         field.value = handle;
         field.dispatchEvent(new Event("input", { bubbles: true }));
         await waitFor(() => Boolean(hit()));
-        expect(requests).toHaveLength(1);
-        expect(requests[0]!.pathname).toBe("/api/accounts/entities");
-        expect(Object.fromEntries(requests[0]!.searchParams)).toMatchObject({
+        expect(lookups()).toHaveLength(1);
+        expect(lookups()[0]!.pathname).toBe("/api/accounts/entities");
+        expect(Object.fromEntries(lookups()[0]!.searchParams)).toMatchObject({
           search: handle,
           target_type: type,
           target_id: target.id,

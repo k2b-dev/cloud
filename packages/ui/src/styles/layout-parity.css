@@ -3511,6 +3511,71 @@ html {
   min-width: 0;
 }
 
+/* A title that switches places is a button of the title's size: its text, lead and chevron stay where a plain
+   title stands, and only the surface answers hover and focus. */
+.k2b-ui .k2b-app-workspace__level-title > h2[data-switcher] {
+  display: flex;
+  min-width: 0;
+}
+
+/* The switcher's menu lives in the top layer; its host takes no room beside the title. */
+.k2b-ui .k2b-app-workspace__level-title > .k2b-dropdown {
+  display: contents;
+}
+
+.k2b-ui .k2b-app-workspace__level-switch {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline: -0.5rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 0.625rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.k2b-ui .k2b-app-workspace__level-switch > .k2b-app-workspace__level-lead {
+  display: inline-flex;
+  flex: none;
+}
+
+.k2b-ui .k2b-app-workspace__level-switch > .k2b-truncate-fade {
+  display: block;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-app-workspace__level-switch-chevron {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 1.125rem;
+  font-weight: 400;
+}
+
+.k2b-ui .k2b-app-workspace__level-switch:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+.k2b-ui .k2b-app-workspace__level-switch:active,
+.k2b-ui .k2b-app-workspace__level-switch[aria-expanded="true"] {
+  background: var(--k2b-app-workspace-hover);
+}
+
+@media (hover: hover) {
+  .k2b-ui .k2b-app-workspace__level-switch:hover {
+    background: var(--k2b-app-workspace-hover);
+  }
+}
+
 /* The title takes focus only when a level change hid the focused control. */
 .k2b-ui .k2b-app-workspace__level-title > h2:focus {
   outline: none;

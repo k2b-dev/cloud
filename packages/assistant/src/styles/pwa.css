@@ -37,8 +37,8 @@
   color: var(--k2b-text);
   text-decoration: none;
 }
-.assistant-pwa-row:active { background: var(--k2b-hover, var(--k2b-surface-sunken)); }
-@media (hover: hover) { .assistant-pwa-row:hover { background: var(--k2b-hover, var(--k2b-surface-sunken)); } }
+.assistant-pwa-row:active { background: var(--k2b-hover, var(--k2b-surface-muted)); }
+@media (hover: hover) { .assistant-pwa-row:hover { background: var(--k2b-hover, var(--k2b-surface-muted)); } }
 .assistant-pwa-row:focus-visible { outline: 2px solid var(--k2b-focus-ring, var(--k2b-action)); outline-offset: -2px; }
 .assistant-pwa-row[aria-current="page"] { background: var(--ui-app-selected-nav); }
 .assistant-pwa-row__title { min-width: 0; font-size: 0.9375rem; font-weight: 500; white-space: nowrap; overflow: hidden; }
@@ -129,3 +129,25 @@
 .assistant-pwa-row__pin { flex: none; font-size: 0.875rem; }
 .assistant-pwa-hint--warning > .ti { color: var(--k2b-warning-text); }
 button.assistant-pwa-hint__link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+
+/* A recording above the field: its level with Discard and Stop, then its text on the way, a failure, or the result,
+   all on one row of the same height. */
+.assistant-pwa-recording { display: flex; align-items: center; gap: 0.5rem; min-height: 1.875rem; padding: 0 0 0.375rem; color: var(--k2b-text-secondary); font-size: 0.8125rem; }
+.assistant-pwa-recording__text { min-width: 0; }
+
+/* Every chat: the search field above the list keeps a reserved line for why it waits. */
+.assistant-pwa-search { padding: 0.25rem 0.25rem 0.5rem; }
+.assistant-pwa-search__note {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 1.25rem;
+  margin: 0.375rem 0.25rem 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+}
+.assistant-pwa-more { margin: 0.75rem; color: var(--k2b-text-muted); font-size: 0.8125rem; text-align: center; }
+.assistant-pwa-all__lead { color: var(--k2b-text-muted); }
+.assistant-pwa-all__chevron { margin-inline-start: auto; color: var(--k2b-text-muted); }
+.assistant-pwa-empty--quiet > .ti { color: var(--k2b-text-muted); font-size: 1.5rem; }
+.assistant-pwa-sheet-title { margin: 0; padding: 0 0.75rem 0.25rem; font-size: 0.9375rem; font-weight: 600; }

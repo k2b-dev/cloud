@@ -99,7 +99,9 @@ search also stay below `/pwa/chat`; reloading preserves the selected list,
 search, and open thread. The Assistant adds `/pwa/assistant` with `order: 1`:
 recent chats, the questions that wait for the person, and a field on its
 start, and one chat at `/pwa/assistant/c/<chat>` that opens as a `screen` on a
-phone. Its `badge` counts only the questions that wait for an answer.
+phone. Every chat and the archive stay below the part at `/pwa/assistant/chats`
+and `/pwa/assistant/archive`, with the search in the address. Its `badge`
+counts only the questions that wait for an answer.
 
 ## Paths
 
