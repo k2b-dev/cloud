@@ -241,7 +241,10 @@ describe(`Space settings survive access changes in ${browserName}`, () => {
         await input.fill("Jo");
         await dialog.getByRole("option", { name: /Jonas Weber/ }).click();
         // The mark sits beside the name, on a phone in the line below; only one of the two places shows.
-        await dialog.getByText(locale === "de" ? "Neu" : "New", { exact: true }).filter({ visible: true }).waitFor();
+        await dialog
+          .getByText(locale === "de" ? "Neu" : "New", { exact: true })
+          .filter({ visible: true })
+          .waitFor();
         expect(postHeld).toBe(false);
         await dialog.getByRole("button", { name: locale === "de" ? "Speichern" : "Save", exact: true }).click();
         await waitFor(() => postHeld, "the held access POST");
