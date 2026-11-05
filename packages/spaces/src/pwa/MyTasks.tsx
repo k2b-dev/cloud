@@ -1,8 +1,8 @@
 import { Link, type LinkNavigateEvent, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { query as queries } from "@k2b/stdlib/solid";
-import { Button, IconButton, Placeholder, SegmentedControl, type ToastHandle, toast, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
+import { Button, IconButton, Placeholder, SegmentedControl, TextInput, type ToastHandle, toast, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
 import { createRetryToasts } from "../frontend/lib/feedback";
@@ -35,6 +35,13 @@ type Props = {
   revision?: number;
   /** A task was completed or reopened here; `done` is what the server kept. */
   onCompletedChange?: (shortId: string, done: boolean) => void;
+  /** The server's list is older than this mount, such as after a Space was shown in its place; it is read again. */
+  refreshOnMount?: boolean;
+  /** Offline, checking off stays off; the page says why. */
+  online?: boolean;
+  /** The search field stands in place of the views and looks through open tasks in every Space. */
+  searching?: boolean;
+  onSearchClose?: () => void;
 };
 /** Where a checked-off row stood, so Undo puts it back there and only there. */
 type Place = { view: OverviewView; index: number };
@@ -151,6 +158,9 @@ export default function MyTasks(props: Props) {
     work.abort();
     void refresh();
   });
+  onMount(() => {
+    if (props.refreshOnMount) void refresh();
+  });
 
   const save = (item: WorkItem, completed: boolean) => saveCompletion({ item, completed, userId: props.userId, locale: locale() });
 
@@ -244,97 +254,163 @@ export default function MyTasks(props: Props) {
         ? { title: o.nothingToday, description: o.allCaughtUp }
         : { title: o.nothingUpcoming, description: o.allCaughtUp };
 
+  /** One task or event: its check, or a mark for an event, then title, Space and date as a link to the task. */
+  const rowView = (item: () => WorkItem) => {
+    const when = () => schedule(item());
+    return (
+      <li class="spaces-pwa__row" aria-current={item().shortId === props.selected ? "true" : undefined}>
+        <Show
+          when={!item().startsAt}
+          fallback={
+            <span class="spaces-pwa__event" role="img" aria-label={t.event}>
+              <i class="ti ti-calendar-event" aria-hidden="true" />
+            </span>
+          }
+        >
+          <IconButton
+            class="spaces-pwa__check"
+            label={t.complete({ title: item().title })}
+            tooltip={false}
+            disabled={!ready() || props.online === false || !item().canWrite}
+            onClick={() => complete(item())}
+          >
+            <i class="ti ti-circle" aria-hidden="true" />
+          </IconButton>
+        </Show>
+        <Link
+          class="spaces-pwa__copy"
+          href={props.taskHref(item(), view())}
+          scroll="preserve"
+          onNavigate={props.onOpen ? (event) => props.onOpen?.(item(), event) : undefined}
+        >
+          <span class="spaces-pwa__title">{item().title}</span>
+          <span class="spaces-pwa__meta">
+            <span class="spaces-pwa__space">
+              <span
+                class="spaces-pwa__dot"
+                style={{ "background-color": item().spaceColor ?? "var(--k2b-text-muted)" }}
+                aria-hidden="true"
+              />
+              {item().spaceName}
+            </span>
+            <Show when={when()}>
+              {(info) => (
+                <time class="spaces-pwa__when" datetime={info().datetime} data-overdue={info().overdue || undefined}>
+                  <i class={info().icon} aria-hidden="true" />
+                  {info().text}
+                </time>
+              )}
+            </Show>
+          </span>
+        </Link>
+      </li>
+    );
+  };
+
+  // The search: open tasks in every Space, read as the person types and kept until the field closes.
+  const [search, setSearch] = createSignal("");
+  const [term, setTerm] = createSignal("");
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(searchTimer));
+  const typed = (value: string) => {
+    setSearch(value);
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => setTerm(value.trim()), 250);
+  };
+  createEffect(
+    on(
+      () => props.searching,
+      (open) => {
+        if (open) return;
+        clearTimeout(searchTimer);
+        setSearch("");
+        setTerm("");
+      },
+      { defer: true },
+    ),
+  );
+  const matches = queries.create<string, { term: string; items: WorkItem[] }>({
+    source: term,
+    enabled: () => Boolean(props.searching && term()),
+    load: async (value, { abortSignal }) => {
+      const response = await fetch(`${props.listHref("mine")}?q=${encodeURIComponent(value)}`, {
+        headers: { Accept: "application/json" },
+        signal: abortSignal,
+      });
+      if (!response.ok) throw new Error(t.searchFailed);
+      return { term: value, items: (await response.json()) as WorkItem[] };
+    },
+  });
+  /** Matches without the tasks checked off here since. */
+  const found = () => {
+    const data = matches.data();
+    if (!data || data.term !== term()) return undefined;
+    return data.items.filter((item) => !shown(changes().get(item.shortId))?.done);
+  };
+  const foundById = createMemo(() => new Map((found() ?? []).map((item) => [item.shortId, item])));
+  const foundIds = createMemo(() => [...foundById().keys()]);
+
   return (
     <div class="spaces-pwa">
-      <SegmentedControl<OverviewView>
-        ariaLabel={o.workView}
-        value={view}
-        onValueChange={select}
-        options={VIEWS.map((value) => ({
-          value,
-          label: (
-            <>
-              {value === "mine" ? o.forMe : value === "today" ? o.today : o.upcoming}{" "}
-              <span class="spaces-pwa__count">{counts()[value].toLocaleString(locale())}</span>
-            </>
-          ),
-        }))}
-      />
-      <Show
-        when={items().length}
-        fallback={
-          <Placeholder
-            state={work.error() ? "error" : active() ? "empty" : "loading"}
-            icon={work.error() ? "ti ti-alert-circle" : "ti ti-circle-check"}
-            title={work.error() ? o.workLoadFailed : active() ? empty().title : o.loadingWork}
-            description={work.error() ? undefined : active() ? empty().description : undefined}
-            action={
-              work.error() ? (
-                <Button variant="secondary" size="sm" onClick={() => void work.refresh()}>
-                  {o.retry}
-                </Button>
-              ) : undefined
-            }
-          />
-        }
-      >
-        <ul class="spaces-pwa__list" aria-label={t.tasks} aria-busy={work.refreshing() || undefined}>
-          <For each={rowIds()}>
-            {(id) => {
-              const item = () => itemsById().get(id)!;
-              const when = () => schedule(item());
-              return (
-                <li class="spaces-pwa__row" aria-current={item().shortId === props.selected ? "true" : undefined}>
-                  <Show
-                    when={!item().startsAt}
-                    fallback={
-                      <span class="spaces-pwa__event" role="img" aria-label={t.event}>
-                        <i class="ti ti-calendar-event" aria-hidden="true" />
-                      </span>
-                    }
-                  >
-                    <IconButton
-                      class="spaces-pwa__check"
-                      label={t.complete({ title: item().title })}
-                      tooltip={false}
-                      disabled={!ready()}
-                      onClick={() => complete(item())}
-                    >
-                      <i class="ti ti-circle" aria-hidden="true" />
-                    </IconButton>
-                  </Show>
-                  <Link
-                    class="spaces-pwa__copy"
-                    href={props.taskHref(item(), view())}
-                    scroll="preserve"
-                    onNavigate={props.onOpen ? (event) => props.onOpen?.(item(), event) : undefined}
-                  >
-                    <span class="spaces-pwa__title">{item().title}</span>
-                    <span class="spaces-pwa__meta">
-                      <span class="spaces-pwa__space">
-                        <span
-                          class="spaces-pwa__dot"
-                          style={{ "background-color": item().spaceColor ?? "var(--k2b-text-muted)" }}
-                          aria-hidden="true"
-                        />
-                        {item().spaceName}
-                      </span>
-                      <Show when={when()}>
-                        {(info) => (
-                          <time class="spaces-pwa__when" datetime={info().datetime} data-overdue={info().overdue || undefined}>
-                            <i class={info().icon} aria-hidden="true" />
-                            {info().text}
-                          </time>
-                        )}
-                      </Show>
-                    </span>
-                  </Link>
-                </li>
-              );
+      <Show when={props.searching}>
+        <div class="spaces-pwa-space__search" ref={(element) => queueMicrotask(() => element.querySelector("input")?.focus())}>
+          <TextInput
+            aria-label={t.searchAllLabel}
+            placeholder={t.searchAll}
+            value={search}
+            onValueChange={typed}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") props.onSearchClose?.();
             }}
-          </For>
-        </ul>
-        <Show when={hidden()}>{(count) => <p class="spaces-pwa__more">{t.more({ count: count().toLocaleString(locale()) })}</p>}</Show>
+          />
+          <p class="spaces-pwa-space__hits" role="status">
+            {found() ? t.hits({ count: found()!.length }) : matches.error() ? t.searchFailed : ""}
+          </p>
+        </div>
+        <Show when={found()?.length}>
+          <ul class="spaces-pwa__list" aria-label={t.tasks}>
+            <For each={foundIds()}>{(id) => rowView(() => foundById().get(id)!)}</For>
+          </ul>
+        </Show>
+      </Show>
+      <Show when={!props.searching}>
+        <SegmentedControl<OverviewView>
+          ariaLabel={o.workView}
+          value={view}
+          onValueChange={select}
+          options={VIEWS.map((value) => ({
+            value,
+            label: (
+              <>
+                {value === "mine" ? o.forMe : value === "today" ? o.today : o.upcoming}{" "}
+                <span class="spaces-pwa__count">{counts()[value].toLocaleString(locale())}</span>
+              </>
+            ),
+          }))}
+        />
+        <Show
+          when={items().length}
+          fallback={
+            <Placeholder
+              state={work.error() ? "error" : active() ? "empty" : "loading"}
+              icon={work.error() ? "ti ti-alert-circle" : "ti ti-circle-check"}
+              title={work.error() ? o.workLoadFailed : active() ? empty().title : o.loadingWork}
+              description={work.error() ? undefined : active() ? empty().description : undefined}
+              action={
+                work.error() ? (
+                  <Button variant="secondary" size="sm" onClick={() => void work.refresh()}>
+                    {o.retry}
+                  </Button>
+                ) : undefined
+              }
+            />
+          }
+        >
+          <ul class="spaces-pwa__list" aria-label={t.tasks} aria-busy={work.refreshing() || undefined}>
+            <For each={rowIds()}>{(id) => rowView(() => itemsById().get(id)!)}</For>
+          </ul>
+          <Show when={hidden()}>{(count) => <p class="spaces-pwa__more">{t.more({ count: count().toLocaleString(locale()) })}</p>}</Show>
+        </Show>
       </Show>
     </div>
   );

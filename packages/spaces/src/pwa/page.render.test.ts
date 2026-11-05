@@ -12,6 +12,7 @@ import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import * as overview from "../service/overview";
+import * as pwaSpace from "./space";
 import * as pwaTask from "./task";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-pwa-render-"));
@@ -64,6 +65,7 @@ const item = (shortId: string, title: string, extra: Partial<OverviewWork["items
   endsAt: null,
   deadline: null,
   deadlineAllDay: false,
+  canWrite: true,
   ...extra,
 });
 const counts = { mine: 2, today: 2, upcoming: 4 };
@@ -95,11 +97,74 @@ const task: pwaTask.PwaTask = {
   ],
   canWrite: false,
 };
+const entries: pwaSpace.PwaSpaceEntry[] = [
+  { shortId: "Space1", name: "Summer fair", color: "#16a34a", openCount: 3, canWrite: true, pinned: true },
+  { shortId: "Space2", name: "Archive", color: "#64748b", openCount: 0, canWrite: false, pinned: false },
+];
+const spaceRow = (shortId: string, title: string, extra: Partial<pwaSpace.PwaRow> = {}): pwaSpace.PwaRow => ({
+  shortId,
+  title,
+  statusId: "Col001",
+  completed: false,
+  startsAt: null,
+  endsAt: null,
+  deadline: null,
+  deadlineAllDay: true,
+  overdue: false,
+  blocked: false,
+  checklist: null,
+  tags: [],
+  people: [],
+  ...extra,
+});
+const fair: pwaSpace.PwaSpace = {
+  shortId: "Space1",
+  name: "Summer fair",
+  color: "#16a34a",
+  canWrite: true,
+  statuses: [
+    { id: "Col001", name: "Inbox", color: "#94a3b8", done: false },
+    { id: "Col002", name: "Doing", color: "#2563eb", done: false },
+    { id: "Col003", name: "Done", color: "#16a34a", done: true },
+  ],
+  tags: [{ id: "Tag001", name: "Supplier", color: "#0e7490" }],
+  filter: { mine: false, tagIds: [], search: "" },
+  groups: [
+    {
+      statusId: "Col001",
+      total: 2,
+      pages: 1,
+      totalPages: 1,
+      rows: [
+        spaceRow("Item01", "Order the tents", {
+          tags: [{ id: "Tag001", name: "Supplier", color: "#0e7490" }],
+          checklist: { done: 1, total: 2 },
+        }),
+        spaceRow("Item05", "Book the band", { blocked: true, deadline: "2026-10-20", overdue: true }),
+      ],
+    },
+    { statusId: "Col002", total: 0, pages: 1, totalPages: 0, rows: [] },
+    { statusId: "Col003", total: 7, pages: 0, totalPages: 1, rows: [] },
+  ],
+};
+let readable: pwaSpace.PwaSpace | null = fair;
+const entriesSpy = spyOn(pwaSpace, "loadPwaSpaceEntries").mockImplementation(async () => entries);
+const spaceSpy = spyOn(pwaSpace, "loadPwaSpace").mockImplementation(async ({ spaceShortId, filter }) =>
+  spaceShortId === "Space1" && readable ? { ...readable, filter } : null,
+);
+const pageSpy = spyOn(pwaSpace, "loadPwaGroupPage").mockImplementation(async ({ spaceShortId, statusId, page }) =>
+  spaceShortId === "Space1" && statusId === "Col003"
+    ? { statusId, total: 7, pages: page, totalPages: 1, rows: [spaceRow("Item09", "Print posters", { completed: true, statusId })] }
+    : null,
+);
 const taskSpy = spyOn(pwaTask, "loadPwaTask").mockImplementation(async ({ taskShortId }) => (taskShortId === task.shortId ? task : null));
 const loadSpy = spyOn(overview, "loadOverviewWork").mockImplementation(async ({ view }) => ({ view, counts, items: work[view] }));
 const tokenSpy = spyOn(session, "getToken").mockReturnValue(null);
 const sessionSpy = spyOn(session, "authenticateRequest").mockResolvedValue(null);
 const spies = [
+  entriesSpy,
+  spaceSpy,
+  pageSpy,
   taskSpy,
   loadSpy,
   tokenSpy,
@@ -109,6 +174,8 @@ const spies = [
 ];
 afterEach(() => {
   loadSpy.mockClear();
+  spaceSpy.mockClear();
+  readable = fair;
   tokenSpy.mockReturnValue(null);
   sessionSpy.mockResolvedValue(null);
 });
@@ -166,7 +233,7 @@ describe("Spaces in the Cloud app", () => {
     signIn("app");
     const { response, document } = await render("/pwa/spaces");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store, no-transform");
     expect(loadSpy.mock.calls[0]?.[0]).toMatchObject({ userId: person.id, view: "mine" });
     expect(document.querySelector("h1.k2b-mobile-shell__title")?.textContent).toBe("Spaces");
     expect(document.querySelector('link[rel="manifest"]')).not.toBeNull();
@@ -254,7 +321,7 @@ describe("Spaces in the Cloud app", () => {
     signIn("app");
     const { response, document } = await render("/pwa/spaces/Space1/Item01?view=today");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store, no-transform");
     expect(taskSpy.mock.calls.at(-1)?.[0]).toMatchObject({ spaceShortId: "Space1", taskShortId: "Item01" });
     // The list keeps the view the address names; the task is the deepest level, so a phone shows it with a way back.
     expect(loadSpy.mock.calls.at(-1)?.[0]).toMatchObject({ view: "today" });
@@ -312,6 +379,108 @@ describe("Spaces in the Cloud app", () => {
     expect(levels.map((level) => level.getAttribute("data-workspace-level-shown"))).toEqual(["1 2 3", "2 3"]);
     expect(levels[1]?.textContent).toContain("Keine Aufgabe ausgewählt");
     expect(document.querySelector(".spaces-pwa__copy")?.getAttribute("href")).toBe("/pwa/spaces/Space1/Item01");
+  });
+
+  test("the list's title switches between My tasks and every Space, and says so before the island runs", async () => {
+    signIn("app");
+    const { document } = await render("/pwa/spaces");
+    const title = document.querySelector('[data-workspace-main-region="list"] h2 button');
+    expect(title?.getAttribute("aria-haspopup")).toBe("menu");
+    expect(title?.getAttribute("aria-label")).toBe("My tasks, Switch Space");
+    expect(document.querySelector('[data-workspace-main-region="list"] [role="menu"]')?.getAttribute("aria-label")).toBe("Switch Space");
+    expect(document.querySelector('[data-workspace-main-region="list"] button[aria-label="Search tasks"]')).not.toBeNull();
+  });
+
+  test("without any Space, My tasks says how to get one and links to Spaces on the web", async () => {
+    signIn("app");
+    entriesSpy.mockImplementationOnce(async () => []);
+    const { document } = await render("/pwa/spaces", { "Accept-Language": "de" });
+    const placeholder = document.querySelector(".spaces-pwa-space__state .k2b-placeholder");
+    expect(placeholder?.textContent).toContain("Du bist noch in keinem Space");
+    expect(placeholder?.querySelector('a[href="/app/spaces"]')?.textContent).toContain("Spaces im Web öffnen");
+    expect(document.querySelector(".spaces-pwa__list")).toBeNull();
+  });
+
+  test("a Space lists its statuses with their counts and rows, a done status folded, read with the address's filter", async () => {
+    signIn("app");
+    const { response, document } = await render("/pwa/spaces/Space1?mine=1&tag=Tag001");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toContain("private, no-store");
+    expect(spaceSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      spaceShortId: "Space1",
+      filter: { mine: true, tagIds: ["Tag001"], search: "" },
+    });
+    expect(document.querySelector("title")?.textContent).toBe("Summer fair");
+    expect(document.querySelector('[data-workspace-main-region="list"] h2')?.textContent).toBe("Summer fair");
+    const heads = [...document.querySelectorAll(".spaces-pwa-space__group-head")].map((head) => [
+      head.textContent,
+      head.getAttribute("aria-expanded"),
+    ]);
+    // With a filter, a status without a match steps aside; the done status keeps its folded count.
+    expect(heads).toEqual([
+      ["Inbox2", "true"],
+      ["Done7", "false"],
+    ]);
+    const first = document.querySelector(".spaces-pwa-space__row")!;
+    expect(first.querySelector(".spaces-pwa__title")?.textContent).toBe("Order the tents");
+    expect(first.querySelector(".k2b-tag")?.textContent).toBe("Supplier");
+    expect(first.querySelector('[aria-label="Checklist 1 of 2"]')?.textContent).toBe("1/2");
+    const second = document.querySelectorAll(".spaces-pwa-space__row")[1]!;
+    expect(second.querySelector(".spaces-pwa-space__blocked")?.textContent).toBe("Blocked");
+    expect(second.querySelector("time")?.hasAttribute("data-overdue")).toBe(true);
+    expect(document.querySelector('.spaces-pwa-space__filters [aria-pressed="true"]')?.textContent).toContain("Assigned to me");
+    expect(document.querySelector(".spaces-pwa-space__row .spaces-pwa__copy")?.getAttribute("href")).toBe(
+      "/pwa/spaces/Space1/Item01?list=space&mine=1&tag=Tag001",
+    );
+  });
+
+  test("a read-only Space says so under its title and keeps its checks off", async () => {
+    signIn("app");
+    readable = { ...fair, canWrite: false };
+    const { document } = await render("/pwa/spaces/Space1", { "Accept-Language": "de" });
+    expect(document.querySelector(".spaces-pwa-space__note")?.textContent).toBe(
+      "Nur lesen. Du kannst in „Summer fair“ keine Aufgaben ändern.",
+    );
+    expect(
+      [...document.querySelectorAll<HTMLButtonElement>(".spaces-pwa-space__row button.spaces-pwa__check")].every(
+        (button) => button.disabled,
+      ),
+    ).toBe(true);
+  });
+
+  test("a Space the reader may not read is not found, and its page names nothing", async () => {
+    signIn("app");
+    const { response, document } = await render("/pwa/spaces/Secret1");
+    expect(response.status).toBe(404);
+    const placeholder = document.querySelector(".spaces-pwa-space__state .k2b-placeholder");
+    expect(placeholder?.textContent).toContain("This Space cannot be opened");
+    expect(placeholder?.querySelector('a[href="/pwa/spaces"]')?.textContent).toContain("To My tasks");
+  });
+
+  test("answers a Space's address with JSON: the Space with the pages it names, one page of one status, or not found", async () => {
+    signIn("app");
+    const headers = { Cookie: "pwa_session=test-session", Accept: "application/json" };
+    const snapshot = await server.request("https://cloud.example.test/pwa/spaces/Space1?q=tent&load=Col003:2", { headers });
+    expect(snapshot.status).toBe(200);
+    expect(snapshot.headers.get("vary")).toContain("Accept");
+    expect(snapshot.headers.get("cache-control")).toContain("no-transform");
+    expect(((await snapshot.json()) as pwaSpace.PwaSpace).filter).toEqual({ mine: false, tagIds: [], search: "tent" });
+    expect(spaceSpy.mock.calls.at(-1)?.[0].load).toEqual(new Map([["Col003", 2]]));
+    const page = await server.request("https://cloud.example.test/pwa/spaces/Space1?status=Col003&page=1", { headers });
+    expect(((await page.json()) as pwaSpace.PwaGroup).rows.map((row) => row.title)).toEqual(["Print posters"]);
+    for (const path of ["/pwa/spaces/Secret1", "/pwa/spaces/Space1?status=Other1&page=1"]) {
+      const missing = await server.request(`https://cloud.example.test${path}`, { headers });
+      expect(missing.status).toBe(404);
+    }
+  });
+
+  test("a task beside its Space keeps the Space's list and filter, and its way back leads there", async () => {
+    signIn("app");
+    const { document } = await render("/pwa/spaces/Space1/Item01?list=space&tag=Tag001");
+    expect(spaceSpy.mock.calls.at(-1)?.[0]).toMatchObject({ spaceShortId: "Space1", filter: { tagIds: ["Tag001"] } });
+    const levels = [...document.querySelectorAll("[data-workspace-level]")];
+    expect(levels[1]?.querySelector(".k2b-app-workspace__level-back")?.getAttribute("href")).toBe("/pwa/spaces/Space1?tag=Tag001");
+    expect(levels[0]?.querySelector('.spaces-pwa-space__row[aria-current="true"] .spaces-pwa__title')?.textContent).toBe("Order the tents");
   });
 
   test("keeps its catalog complete in every language", () => {

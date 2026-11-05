@@ -148,6 +148,53 @@
 /* Beside the task the list uses its whole column. */
 @container k2b-app-area (min-width: 64rem) { .spaces-pwa-workspace .spaces-pwa { max-width: none; } }
 
+/* The list level owns its scroll, so the bottom edge stays under the thumb: the offline sentence, later the add bar. */
+.spaces-pwa-pane { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+.spaces-pwa-pane__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 .5rem 1rem; }
+.spaces-pwa-pane__bottom { flex: none; display: flex; flex-direction: column; gap: .5rem; padding: .25rem .75rem .75rem; }
+.spaces-pwa__lead-icon { color: var(--ui-app-accent-text, var(--k2b-action)); font-size: 1.125rem; }
+.spaces-pwa__offline { display: flex; align-items: flex-start; gap: .5rem; margin: 0 .25rem; color: var(--k2b-text-secondary); font-size: .875rem; line-height: 1.25rem; }
+.spaces-pwa__offline > .ti { margin-top: .0625rem; color: var(--k2b-text-muted); font-size: 1rem; }
+.k2b-ui .spaces-pwa__check:disabled i { color: var(--k2b-text-muted); opacity: .55; }
+
+/* A Space: its statuses as groups that spacing and a clear head (dot, name, count) separate, as the board on the web.
+   Filters are chips in one row that scrolls sideways; a search field takes their place with a fixed line for its
+   count, so nothing moves while results arrive. */
+.spaces-pwa-space { gap: .75rem; }
+.spaces-pwa-space__note { display: flex; align-items: flex-start; gap: .5rem; margin: 0 .75rem; color: var(--k2b-text-secondary); font-size: .875rem; line-height: 1.25rem; }
+.spaces-pwa-space__note > .ti { margin-top: .0625rem; color: var(--k2b-text-muted); font-size: 1rem; }
+.spaces-pwa-space__filters { display: flex; gap: .5rem; overflow-x: auto; padding: 0 1.5rem 0 .25rem; scrollbar-width: none; mask-image: linear-gradient(90deg, #000 calc(100% - 1.5rem), transparent); }
+.spaces-pwa-space__filters > * { flex: none; }
+.spaces-pwa-space__search { display: flex; flex-direction: column; gap: .25rem; padding: 0 .25rem; }
+.spaces-pwa-space__hits { min-height: 1.25rem; margin: 0 .5rem; color: var(--k2b-text-secondary); font-size: .8125rem; line-height: 1.25rem; }
+.spaces-pwa-space__groups { display: flex; flex-direction: column; gap: 1rem; }
+.spaces-pwa-space__group-title { margin: 0; font: inherit; }
+.spaces-pwa-space__group-head { display: flex; width: 100%; min-height: 2.75rem; align-items: center; gap: .5rem; padding: 0 .75rem 0 1rem; border: 0; border-radius: .625rem; background: none; color: var(--k2b-text); font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.spaces-pwa-space__group-head:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+@media (hover: hover) { .spaces-pwa-space__group-head:not(.spaces-pwa-space__group-head--sk):hover { background: var(--k2b-app-workspace-hover); } }
+.spaces-pwa-space__group-head--sk { cursor: default; }
+.spaces-pwa-space__group-dot { width: .625rem; height: .625rem; flex: none; border-radius: 999px; }
+.spaces-pwa-space__group-name { min-width: 0; font-size: .9375rem; font-weight: 600; overflow-wrap: anywhere; }
+.spaces-pwa-space__group-count { color: var(--k2b-text-muted); font-size: .875rem; font-variant-numeric: tabular-nums; }
+.spaces-pwa-space__group-head > .ti { margin-inline-start: auto; color: var(--k2b-text-muted); }
+.spaces-pwa-space__row .spaces-pwa__meta { row-gap: .25rem; }
+.spaces-pwa-space__row[data-done] .spaces-pwa__title { color: var(--k2b-text-muted); }
+.k2b-ui .spaces-pwa-space__row[data-done] .spaces-pwa__check i { color: var(--k2b-success-text); }
+.spaces-pwa-space__blocked { color: var(--k2b-warning-text); }
+.spaces-pwa-space__people { display: inline-flex; align-items: center; }
+.spaces-pwa-space__people > * + * { margin-left: -.375rem; }
+.spaces-pwa-space__more-people { margin-left: .25rem; color: var(--k2b-text-muted); font-size: .8125rem; }
+.spaces-pwa-space__more { display: flex; min-height: 2.75rem; align-items: center; gap: .5rem; padding-left: 2.75rem; }
+.spaces-pwa-space__more-failed { display: inline-flex; align-items: center; gap: .375rem; color: var(--k2b-danger-text); font-size: .875rem; }
+.spaces-pwa-space__state { padding: 2.5rem .5rem 1rem; }
+.spaces-pwa-space__sk { display: block; height: .875rem; margin: .25rem 0; border-radius: .375rem; }
+.spaces-pwa-space__sk--w0 { width: 72%; }
+.spaces-pwa-space__sk--w1 { width: 54%; }
+.spaces-pwa-space__sk--w2 { width: 64%; }
+.spaces-pwa-space__sk--w3 { width: 46%; }
+.spaces-pwa-space__sk--meta { width: 30%; height: .75rem; }
+.spaces-pwa-space__sk--head { width: 7rem; }
+
 /* One task: a column of at most 44 rem; on a wide screen its head lines up with it. Rows below the title start where
    the title does, after the 2.75 rem check. */
 @container k2b-app-area (min-width: 64rem) {

@@ -24,6 +24,7 @@ const task = (shortId: string, title: string): OverviewWork["items"][number] => 
   endsAt: null,
   deadline: null,
   deadlineAllDay: false,
+  canWrite: true,
 });
 const tents = task("Item01", "Order the tents");
 const flyer = task("Item02", "Write the flyer");

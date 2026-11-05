@@ -19,6 +19,8 @@ const budgets = [
   // The web Assistant renders chat Markdown; KaTeX loads only for math, so it stays out of the static closure.
   // Measured 2026-11-05: 3,267,899 B with KaTeX, 2,992,646 B without.
   { file: "packages/assistant/src/frontend/AssistantWorkspace.island.tsx", kib: 2990 },
+  // The Spaces part: "My tasks", a Space as a list per status, and one task. Measured 2026-11-05: 853,677 B.
+  { file: "packages/spaces/src/pwa/SpacesPwa.island.tsx", kib: 920 },
 ];
 const manifestSchema = z.object({ entries: z.record(z.string(), z.array(z.string())) });
 
@@ -36,6 +38,7 @@ export const rule: Rule = {
           join(workspaceRoot, "packages/cloud/src"),
           join(workspaceRoot, "packages/assistant/src/frontend"),
           join(workspaceRoot, "packages/assistant/src/pwa"),
+          join(workspaceRoot, "packages/spaces/src/pwa"),
         ],
         pattern: "**/*.{island,client}.tsx",
         outdir: output,
