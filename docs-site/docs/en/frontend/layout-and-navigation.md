@@ -23,8 +23,8 @@ Application authors put objects in the sidebar and views of the open object
 in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and
 quiet secondary actions share that row while the workspace width permits;
 filters wrap and the quiet filtered result count disappears first. Put the
-one filled primary action in `Head.primary`; on phones the shell floats it as
-a round button at the screen's bottom end. See [Objects on the left, views in the head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head)
+one filled primary action in `Head.primary`; on phones it is the round button
+at the end of the head. See [Objects on the left, views in the head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head)
 for the complete rule and API.
 
 ## Know the shell at each width
@@ -75,10 +75,9 @@ app, and help opens the panel, whose tabs lead to the other panels.
 The phone's content is a soft card with 28 px top corners that reaches the
 screen's bottom edge. A regular signed-in page scrolls inside that card
 (`main`), while the window stays still. Content wider than the card scrolls
-sideways inside it, as from 768 px. The app's primary action floats as a
-62 px round button 12 px from the end edge and 8 px above the bottom safe
-area; the card keeps its space free at its end and when scrolling to a
-focused control. The title row and canvas keep the top and side safe areas.
+sideways inside it, as from 768 px. The card's content ends above the bottom
+safe area; the title row and canvas keep the top and side safe areas. The
+app's primary action stays the round button at the end of the workspace head.
 Anonymous phones retain Home in the header, its bottom line, a flat surface,
 and document scrolling. The device app's own flat bottom bar is unchanged.
 

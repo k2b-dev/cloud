@@ -1104,7 +1104,7 @@ describe("soft tablet and phone shell", () => {
     }
 
     for (const device of [phone, ipadSplitView]) {
-      test(`${device.width} ${theme}: the soft card reaches the bottom edge, scrolls while the window stays put, and rows clear the primary action's place`, async () => {
+      test(`${device.width} ${theme}: the soft card reaches the bottom edge, scrolls while the window stays put, and rows clear the home indicator`, async () => {
         // A regular page scrolls `main`, a workspace its Main, a page with a ScrollArea that area.
         for (const [path, scroller, row] of [
           ["/app/mail/inbox?plain=1", "main.layout-content-main", ".plain-row"],
@@ -1146,12 +1146,12 @@ describe("soft tablet and phone shell", () => {
               expect(styles.canvasOverflow).toBe("hidden");
               expect(styles.radii).toEqual(["28px", "28px", "0px", "0px"]);
               expect(["auto", "scroll"]).toContain(styles.overflow);
-              expect(styles.padding).toBe(bottom + 8 + 62 + 12);
+              expect(styles.padding).toBe(bottom);
               expect(styles.scrollPadding).toBe(styles.padding);
-              // No dock: the card ends at the window's bottom edge. Its end keeps the floating primary action's place.
+              // No dock: the card ends at the window's bottom edge, and its content above the bottom safe area.
               expect(await page.locator(".cloud-tab-bar").count()).toBe(0);
               expect(styles.mainBottom).toBe(device.height);
-              const actionTop = device.height - bottom - 8 - 62;
+              const contentEnd = device.height - bottom;
               const end = await page.evaluate(
                 ([scroller, row]) => {
                   const area = document.querySelector<HTMLElement>(scroller)!;
@@ -1169,7 +1169,7 @@ describe("soft tablet and phone shell", () => {
               expect({ path, overflowing: end.overflowing }).toEqual({ path, overflowing: true });
               expect(end.scrolled).toBeGreaterThan(0);
               expect(end.document).toBe(0);
-              expect(end.last).toBeLessThanOrEqual(actionTop);
+              expect(end.last).toBeLessThanOrEqual(contentEnd);
               await page.locator(scroller).evaluate((area) => {
                 area.scrollTop = 0;
               });
@@ -1186,7 +1186,7 @@ describe("soft tablet and phone shell", () => {
                 bottom: document.activeElement!.getBoundingClientRect().bottom,
                 document: document.scrollingElement!.scrollTop,
               }));
-              expect(focused.bottom).toBeLessThanOrEqual(actionTop);
+              expect(focused.bottom).toBeLessThanOrEqual(contentEnd);
               expect(focused.document).toBe(0);
             } finally {
               await context.close();

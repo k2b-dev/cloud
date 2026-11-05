@@ -76,8 +76,8 @@ The head follows these rules as well:
   icon and accessible name. If the lead and actions still do not fit, they
   use separate rows. The head measures its own width, including space lost
   to neighboring panels; controls never draw over each other.
-- Exactly one action is filled. On the phone it becomes a round button; a
-  host such as Cloud floats it at the screen's bottom end.
+- Exactly one action is filled. On the phone it becomes a round button at
+  the end of the head.
 - Files keeps its path in the head (exception D1 to "no title").
 
 The sidebar stays resizable; its handle shows on hover and focus. The minimal

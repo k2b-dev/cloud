@@ -443,8 +443,7 @@ solid-island {
 /* Phone overviews: object navigation sits on the shell before the card.
    Only an outer flush workspace with visible stacked navigation hands the
    host's paint to its head/content tracks. The pseudo-element is the first
-   grid item, behind the existing regions, without a new stacking context:
-   the fixed primary action can still sit above it. */
+   grid item, behind the existing regions, without a new stacking context. */
 /* Negated min-width queries keep the exact boundary after CSS compilation;
    fractional max-width approximations can round back up to 768 px. */
 @media not all and (min-width: 768px) {
@@ -470,7 +469,7 @@ solid-island {
         > .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden]),
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden])
       ) {
-      --k2b-workspace-inset-bottom: var(--cloud-phone-action-space);
+      --k2b-workspace-inset-bottom: env(safe-area-inset-bottom, 0px);
 
       &::before {
         content: "";
@@ -501,15 +500,6 @@ solid-island {
       border-top-color: var(--k2b-border);
     }
   }
-}
-
-/* The app's one primary action floats at the end of a signed-in phone's
-   screen; its size and the room the card keeps free for it switch with `md`,
-   as the header and the rail do. */
-.cloud-app-canvas[data-layout-authenticated] {
-  --cloud-phone-action-size: 3.875rem;
-  --cloud-phone-action-end: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
-  --cloud-phone-action-space: calc(var(--cloud-phone-action-end) + var(--cloud-phone-action-size) + 0.75rem);
 }
 
 /* A page whose app has its own navigation (a mailbox, a Space, a book) makes
@@ -550,38 +540,12 @@ solid-island {
   .layout-shell-content[data-workspace-navigation] .layout-header-title-menu {
     display: inline-flex;
   }
+  /* The card reaches the screen's bottom edge; only its content keeps clear
+     of the home indicator. The app's one primary action stays the round
+     button at the end of the workspace head. */
   .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
-    padding-bottom: var(--cloud-phone-action-space);
-    scroll-padding-bottom: var(--cloud-phone-action-space);
-  }
-  /* The app's one primary action (the primary of `AppWorkspace.Head`) is a
-     round button at the screen's bottom end, in reach of the thumb. The card
-     keeps its space free at its end and in its scroll padding, so the button
-     never covers the last row or a focused control. Only the outermost
-     workspace's head offers it. */
-  .cloud-app-canvas[data-layout-authenticated]
-    .k2b-app-workspace:not(.k2b-app-workspace *)
-    > .k2b-app-workspace__head
-    .k2b-app-workspace__head-primary {
-    position: fixed;
-    z-index: 11;
-    right: calc(env(safe-area-inset-right, 0px) + 0.75rem);
-    bottom: var(--cloud-phone-action-end);
-    width: var(--cloud-phone-action-size);
-    min-width: var(--cloud-phone-action-size);
-    height: var(--cloud-phone-action-size);
-    min-height: var(--cloud-phone-action-size);
-    box-shadow:
-      0 10px 28px -14px rgb(9 9 11 / 0.34),
-      0 0 0 1px rgb(9 9 11 / 0.06);
-  }
-  .dark .cloud-app-canvas[data-layout-authenticated]
-    .k2b-app-workspace:not(.k2b-app-workspace *)
-    > .k2b-app-workspace__head
-    .k2b-app-workspace__head-primary {
-    box-shadow:
-      0 12px 30px -14px rgb(0 0 0 / 0.7),
-      0 0 0 1px var(--k2b-border);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    scroll-padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
 

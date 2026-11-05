@@ -148,18 +148,20 @@ requestAnimationFrame(() => { window.serverFrame = window.measureShell(); });
   }
 });
 
-test("390×844: the workspace primary floats at the bottom end without a dock and leaves the last task reachable", async () => {
+test("390×844: without a dock the workspace primary is the round button in the head and the last task stays reachable", async () => {
   const { context, page } = await open(phone, "/app/mail/inbox?list=page&head=1");
   try {
     expect(await page.locator(".cloud-tab-bar").count()).toBe(0);
     const primary = page.getByRole("link", { name: "New task", exact: true });
     const action = await primary.boundingBox();
+    const head = await page.locator(".k2b-app-workspace__head").first().boundingBox();
     expect(action).not.toBeNull();
-    // The round button keeps its place at the bottom end, in reach of the thumb.
-    expect(action!.width).toBe(62);
-    expect(action!.height).toBe(62);
-    expect(phone.width - (action!.x + action!.width)).toBe(12);
-    expect(phone.height - (action!.y + action!.height)).toBe(8);
+    // The round button stays in the head row, as on hosts without a bottom bar; nothing floats over the list.
+    expect(Math.round(action!.width)).toBe(Math.round(action!.height));
+    expect(action!.y).toBeGreaterThanOrEqual(head!.y);
+    expect(action!.y + action!.height).toBeLessThanOrEqual(head!.y + head!.height);
+    expect(action!.x + action!.width).toBeLessThanOrEqual(phone.width);
+    expect(await primary.evaluate((element) => getComputedStyle(element).position)).not.toBe("fixed");
     const assertLastIsClear = async () => {
       const geometry = await page
         .locator(".list-row")
