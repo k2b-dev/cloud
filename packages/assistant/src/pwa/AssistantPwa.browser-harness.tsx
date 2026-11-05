@@ -1,0 +1,429 @@
+import type { AiConversation, AiOpenQuestion, AiStoredMessage, AiTurnBlock } from "@k2b/cloud/ai";
+import type { AiPeopleModels } from "@k2b/cloud/shared";
+import { ButtonLink, LocaleProvider, MobileShell, Placeholder, TabBar, type TabBarItem } from "@k2b/ui";
+import { render } from "solid-js/web";
+import { actionFixtures } from "../../../cloud/src/ai/chat/action-question.fixtures";
+import { AiReaderTimeZoneProvider } from "../../../cloud/src/ai/chat/action-sentences";
+import AssistantPwa, { type AssistantPwaProps } from "./AssistantPwa.island";
+import type { PwaAddress } from "./paths";
+
+/**
+ * Test fixture, not product code: the Assistant part in the Cloud app's frame as `PwaLayout` composes it, with
+ * invented data and the network replaced. `?screen=` picks the state; `window.harness` lets a test change the
+ * network's answers. Every person, chat and file here is made up.
+ */
+const params = new URLSearchParams(location.search);
+const screen = params.get("screen") ?? "start";
+const has = (...names: string[]) => names.includes(screen);
+type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
+
+const NOW = "2026-11-04T09:41:00.000Z";
+const ago = (minutes: number) => new Date(Date.parse(NOW) - minutes * 60_000).toISOString();
+
+// ---------------------------------------------------------------- data (invented)
+const chat = (id: string, title: string, minutes: number, extra: Partial<AiConversation> = {}): AiConversation => ({
+  id,
+  shortId: id,
+  title,
+  titleSource: "user",
+  description: "",
+  descriptionSource: "default",
+  keywords: [],
+  pinnedAt: null,
+  done: null,
+  isDone: false,
+  lastUsedAt: ago(minutes),
+  archivedAt: null,
+  runStatus: "idle",
+  runError: null,
+  unreadCompletion: false,
+  projectId: null,
+  draft: { content: [], revision: 0, updatedAt: null },
+  createdByUserId: "robin",
+  createdAt: ago(minutes + 30),
+  updatedAt: ago(minutes),
+  ...extra,
+});
+const CHATS: AiConversation[] = [
+  chat("weber", "Angebot Polsterei Weber", 1, {
+    runStatus: "running",
+    activity: { completed: 2, total: 4, step: "Ich stelle das Angebot aus den Mails und dem Stoffmuster zusammen …", tool: null },
+  }),
+  chat("retro", "Retro am Freitag absagen", 12, { runStatus: "needs_attention" }),
+  chat("urlaub", "Urlaubsplan Dezember", 70, {
+    unreadCompletion: true,
+    description: "Drei Wochen sind doppelt belegt. Ich habe sie markiert.",
+  }),
+  chat("rechnung", "Rechnung 2026-118 prüfen", 190, { runStatus: "failed", runError: "Die Datei ließ sich nicht lesen." }),
+  chat("lieferanten", "Lieferanten für Leinen", 60 * 26, {
+    pinnedAt: ago(60 * 48),
+    description: "Hier sind fünf Anbieter mit Mindestmenge und Lieferzeit.",
+  }),
+  chat("messe", "Messe Köln: Standplan", 60 * 50, { description: "Der Plan passt auf 24 m² mit zwei Sitzinseln." }),
+  chat("pflege", "Pflegehinweise für Samt", 60 * 74, { description: "Kurz gesagt: nur trocken bürsten, nie reiben." }),
+];
+
+const de = actionFixtures("de");
+const retroQuestion = de.del!.block as ToolBlock;
+const question: AiOpenQuestion = {
+  id: "req-del",
+  conversationId: "retro",
+  conversationTitle: "Retro am Freitag absagen",
+  anchor: retroQuestion.id,
+  short: "Termin Retro am 17.10. löschen",
+  app: { name: "Spaces", icon: "ti ti-layout-kanban", accent: "#4d7c0f" },
+  createdAt: ago(12),
+};
+
+const mark = (text: string, color: string) => ({ kind: "mark" as const, text, color });
+const models: AiPeopleModels = {
+  status: "ok",
+  selection: null,
+  effectiveDefault: { class: "balanced" },
+  classes: [
+    { class: "fast", variantId: "small" },
+    { class: "balanced", variantId: "oss" },
+  ],
+  options: [
+    { id: "small", label: "Mistral Small", description: "Kurze Antworten, schnell", icon: mark("CO", "#0f766e"), classes: ["fast"] },
+    {
+      id: "oss",
+      label: "GPT-OSS",
+      variantLabel: "Ausgewogen",
+      description: "Für die meisten Aufgaben",
+      icon: mark("CO", "#0f766e"),
+      classes: ["balanced"],
+    },
+  ],
+};
+
+const stored = (conversationId: string, seq: number, message: AiStoredMessage["message"], loopId = "turn-1"): AiStoredMessage => ({
+  id: `${conversationId}-m${seq}`,
+  shortId: `${conversationId}-m${seq}`,
+  conversationId,
+  seq,
+  kind: "message",
+  message,
+  loopId,
+  modelId: null,
+  providerModel: null,
+  usage: null,
+  stopReason: null,
+  loopAggregate: null,
+  loopDoneReason: message.role === "assistant" ? "stop" : null,
+  compactedAt: null,
+  meta: null,
+  createdAt: ago(60),
+});
+const capability = (appId: string, appName: string, appIcon: string, appAccent: string, title: string) => ({
+  kind: "capability" as const,
+  appId,
+  appName,
+  appIcon,
+  appAccent,
+  title,
+  capabilityKind: "query" as const,
+});
+const tool = (
+  id: string,
+  name: string,
+  presentation: ReturnType<typeof capability>,
+  status: ToolBlock["status"],
+  extra: Partial<ToolBlock> = {},
+): ToolBlock => ({
+  id: `tool-${id}`,
+  kind: "tool",
+  callId: id,
+  name,
+  args: {},
+  status,
+  presentation,
+  ...(status === "completed" || status === "failed" ? { at: ago(1) } : {}),
+  ...extra,
+});
+const MAIL = capability("mail", "Mail", "ti ti-mail", "#0f766e", "Mails suchen");
+const FILES = capability("files", "Dateien", "ti ti-folder", "#1d4ed8", "Datei lesen");
+const SPACES = capability("spaces", "Spaces", "ti ti-layout-kanban", "#4d7c0f", "Aufgaben lesen");
+const text = (id: string, value: string): AiTurnBlock => ({ id, kind: "text", text: value });
+const LONG_TEXT =
+  "Kurz gesagt: Samt nur trocken pflegen und nie reiben.\n\n" +
+  "1. **Staub** bürstest du einmal pro Woche mit einer weichen Bürste in Strichrichtung ab.\n" +
+  "2. **Flecken** tupfst du sofort mit einem trockenen, hellen Tuch ab. Nicht reiben, sonst bricht der Flor.\n" +
+  "3. **Druckstellen** verschwinden, wenn du sie mit Dampf aus 10 cm Abstand anhebst und danach gegen den Strich bürstest.\n" +
+  "4. **Wasser** vermeidest du ganz. Ein feuchter Fleck lässt einen Rand.\n" +
+  "5. **Sonne** bleicht Samt aus. Stell die Stühle nicht direkt ans Fenster.\n\n" +
+  "Für die Kundschaft kann ich daraus eine kurze Karte zum Ausdrucken machen. Sie passt auf A6 und liegt dann jedem Auftrag bei.";
+const STREAM_TEXT =
+  "Hier ist ein Entwurf für das Angebot an die Polsterei Weber. Ich habe die Maße aus der Mail vom Montag genommen und den Stoff aus deinem Foto erkannt: **Samt „Moos 14“**.\n\n" +
+  "| Posten | Menge | Preis |\n|---|---:|---:|\n| Stühle neu beziehen | 12 | 1.140 € |\n| Stoff Samt Moos 14 | 9 m | 486 € |\n| Abholen und Liefern | 1 | 60 € |\n\n" +
+  "Für die Lieferzeit schaue ich noch, was in Spaces für die Werkstatt";
+
+type Detail = NonNullable<AssistantPwaProps["initialDetail"]>;
+const detailOf = (id: string): Detail | null => {
+  const conversation = CHATS.find((entry) => entry.id === id);
+  if (!conversation) return null;
+  const base = { conversation: { ...conversation, unreadCompletion: false }, hasMoreMessages: false, timeline: [] };
+  if (id === "pflege")
+    return {
+      ...base,
+      messages: [
+        stored(id, 1, { role: "user", content: [{ type: "text", text: "Wie pflege ich Samtbezüge?" }] }),
+        stored(id, 2, { role: "assistant", content: [{ type: "text", text: LONG_TEXT }] }),
+      ],
+      activeTurn: null,
+    };
+  if (id === "weber")
+    return {
+      ...base,
+      messages: [
+        stored(
+          id,
+          1,
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Schreib mir ein Angebot für die Polsterei Weber: 12 Stühle neu beziehen, mit dem Stoff auf dem Foto.",
+              },
+            ],
+          },
+          "turn-w",
+        ),
+      ],
+      activeTurn: {
+        turnId: "turn-w",
+        attempt: 1,
+        status: "running",
+        seq: 4,
+        modelId: "oss",
+        createdAt: ago(1),
+        blocks: [
+          tool("m1", "mail__query__message_dot_search", MAIL, "completed", { result: { data: { count: 4 } } }),
+          tool("f1", "files__query__file_dot_read", FILES, "completed", { result: { data: {} } }),
+          tool("s1", "spaces__query__task_dot_list", SPACES, "running", { progress: "Liest 3 von 8 Aufgaben" }),
+          text("t1", STREAM_TEXT),
+        ],
+      },
+    };
+  if (id === "retro" && params.get("approval")) {
+    // The question after an answer: running, done, declined, or with an outcome nobody knows.
+    const state = params.get("approval");
+    const decided = { ...retroQuestion, approval: undefined, approved: true as const };
+    const block: ToolBlock =
+      state === "running"
+        ? { ...decided, status: "running" }
+        : state === "done"
+          ? { ...decided, status: "completed", at: ago(0), result: { data: {} } }
+          : state === "declined"
+            ? { ...decided, approved: undefined, status: "rejected", isError: true, result: "Rejected", at: ago(0) }
+            : {
+                ...decided,
+                status: "failed",
+                isError: true,
+                at: ago(0),
+                result: "ACTION_OUTCOME_UNKNOWN: Die Antwort ging verloren; nicht automatisch erneut ausführen.",
+                check: { state: "pending", at: ago(0) },
+              };
+    const blocks = [text("t1", de.del!.assistant), block];
+    if (state === "done")
+      blocks.push(text("t2", "Erledigt. Die Retro ist aus dem Kalender von Team Ops. Soll ich den sechs Leuten kurz absagen?"));
+    return {
+      ...base,
+      messages: [stored(id, 1, { role: "user", content: [{ type: "text", text: de.del!.user }] }, "turn-r")],
+      // The turn goes on after the answer; a finished turn would come back as stored messages instead.
+      activeTurn: { turnId: "turn-r", attempt: 1, status: "running", seq: 3, modelId: "oss", createdAt: ago(12), blocks },
+    };
+  }
+  if (id === "retro")
+    return {
+      ...base,
+      messages: [stored(id, 1, { role: "user", content: [{ type: "text", text: de.del!.user }] }, "turn-r")],
+      activeTurn: {
+        turnId: "turn-r",
+        attempt: 1,
+        status: "waiting_for_action",
+        seq: 2,
+        modelId: "oss",
+        createdAt: ago(12),
+        waitingSince: ago(12),
+        blocks: [text("t1", de.del!.assistant), retroQuestion],
+      },
+    };
+  if (id === "rechnung")
+    return {
+      ...base,
+      messages: [
+        stored(id, 1, { role: "user", content: [{ type: "text", text: "Prüf die Rechnung 2026-118 gegen die Bestellung." }] }, "turn-x"),
+      ],
+      activeTurn: {
+        turnId: "turn-x",
+        attempt: 1,
+        status: "running",
+        seq: 3,
+        modelId: "oss",
+        createdAt: ago(3),
+        blocks: [
+          tool("m2", "mail__query__message_dot_search", MAIL, "completed", { result: { data: { count: 1 } } }),
+          tool("f2", "files__query__file_dot_read", FILES, "failed", {
+            isError: true,
+            result: "FILE_TOO_LARGE: Rechnung-2026-118.pdf ist größer als 25 MB und lässt sich nicht lesen.",
+          }),
+          text("t2", "Die Rechnung selbst konnte ich nicht lesen: Die Datei ist größer als 25 MB."),
+        ],
+      },
+    };
+  return { ...base, messages: [], activeTurn: null };
+};
+
+// ---------------------------------------------------------------- the screen's starting point
+const address: PwaAddress =
+  screen.startsWith("chat-") || screen === "noai-chat"
+    ? { level: "chat", id: params.get("chat") ?? (screen === "chat-noaccess" ? "fremd" : "pflege") }
+    : screen === "new"
+      ? { level: "new" }
+      : { level: "start" };
+const noAi = has("noai", "noai-admin", "noai-chat");
+const offline = has("offline", "chat-offline", "chat-approval-offline");
+if (offline) Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
+const empty = has("start-empty");
+
+// ---------------------------------------------------------------- the network: answers a test can change
+type Harness = { requests: string[]; fail: Set<string>; hold: Set<string>; release: () => void };
+const pending: Array<() => void> = [];
+const harness: Harness = {
+  requests: [],
+  fail: new Set(params.get("fail")?.split(",").filter(Boolean) ?? []),
+  hold: new Set(params.get("hold")?.split(",").filter(Boolean) ?? []),
+  release: () => {
+    for (const resume of pending.splice(0)) resume();
+  },
+};
+(window as unknown as { harness: Harness }).harness = harness;
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+/** A stream that stays open and says nothing, like a chat whose answer has not moved on yet. */
+const quietStream = () =>
+  new Response(new ReadableStream({ start() {} }), { status: 200, headers: { "content-type": "text/event-stream" } });
+let created = 0;
+const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+  const method = (init?.method ?? "GET").toUpperCase();
+  const key = `${method} ${url.pathname}`;
+  harness.requests.push(key);
+  if (!navigator.onLine) throw new TypeError("Failed to fetch");
+  for (const pattern of harness.hold) if (key.includes(pattern)) await new Promise<void>((resolve) => pending.push(resolve));
+  // `pattern:status` refuses with that status, such as 422; a bare pattern fails as the server would, with 500.
+  for (const entry of harness.fail) {
+    const [pattern, status] = entry.split(":");
+    if (pattern && key.includes(pattern)) return json({ message: "Invented failure" }, Number(status ?? 500));
+  }
+  if (url.pathname.endsWith("/stream")) return quietStream();
+  if (url.pathname === "/api/assistant/workspace/sidebar")
+    return json({
+      conversations: empty ? [] : CHATS,
+      projects: [],
+      doneCount: 0,
+      questions: empty ? { items: [], count: 0 } : { items: [question], count: 1 },
+    });
+  if (url.pathname === "/api/ai/conversations/page") return json({ total: 48, page: 1, perPage: 1, hasNext: true, items: [] });
+  if (method === "POST" && url.pathname === "/api/ai/conversations") {
+    created += 1;
+    return json(chat(`neu-${created}`, "Neuer Chat", 0));
+  }
+  const detail = /^\/api\/ai\/conversations\/([^/]+)$/.exec(url.pathname);
+  if (detail) {
+    const found = detailOf(decodeURIComponent(detail[1]!));
+    return found ? json(found) : json({ message: "Not found" }, 404);
+  }
+  if (/\/draft$/.test(url.pathname)) return json({ content: [], revision: 1, updatedAt: NOW });
+  if (/\/turns$/.test(url.pathname)) return json({ turn: { id: "turn-new", status: "queued" }, message: null });
+  if (/\/viewed$/.test(url.pathname)) return json({});
+  return json({});
+};
+window.fetch = Object.assign(answer, { preconnect: () => {} });
+// Live updates connect to Core's socket; here it never opens.
+class QuietSocket extends EventTarget {
+  readyState = 0;
+  send() {}
+  close() {}
+}
+(window as unknown as { WebSocket: unknown }).WebSocket = QuietSocket;
+
+// ---------------------------------------------------------------- the frame, as PwaLayout composes it
+const name = params.get("name") ?? "Assistent";
+const icon = "ti ti-sparkles";
+const parts = (): TabBarItem[] => [
+  ...(has("noaccess") ? [] : [{ id: "assistant", label: name, icon, href: "/pwa/assistant", badge: empty || noAi ? undefined : "1" }]),
+  { id: "chat", label: "Chat", icon: "ti ti-messages", href: "/pwa/chat", badge: "3" },
+  { id: "spaces", label: "Spaces", icon: "ti ti-layout-kanban", href: "/pwa/spaces" },
+];
+const current = has("noaccess") ? "" : "assistant";
+const props: AssistantPwaProps = {
+  userId: "robin",
+  name,
+  icon,
+  status: { ...models, enabled: !noAi, visionModelConfigured: true, ...(noAi ? { options: [] } : {}) },
+  canConfigure: has("noai-admin"),
+  timeZone: "Europe/Berlin",
+  renderedAt: NOW,
+  initialLiveCursor: "0",
+  initialAddress: address,
+  initialSidebar: has("start-error")
+    ? null
+    : { conversations: empty ? [] : CHATS, questions: empty ? { items: [], count: 0 } : { items: [question], count: 1 } },
+  initialTotal: empty ? 0 : 48,
+  initialDetail: address.level === "chat" ? detailOf(address.id) : null,
+};
+const screenOfItsOwn = address.level !== "start";
+
+render(
+  () => (
+    <LocaleProvider locale="de">
+      <AiReaderTimeZoneProvider value="Europe/Berlin">
+        <MobileShell
+          header={<MobileShell.Header title={name} />}
+          scroll={has("noaccess")}
+          screen={screenOfItsOwn}
+          footer={
+            <TabBar
+              label="Bereiche"
+              items={[
+                { id: "start", label: "Start", title: "Robin & Co.", icon: "ti ti-home", href: "/pwa/", current: current === "" },
+                ...parts().map((part) => ({ ...part, current: part.id === current })),
+              ]}
+            />
+          }
+          sidebar={
+            <MobileShell.Sidebar
+              label="Bereiche"
+              title="Robin & Co."
+              items={[{ id: "start", label: "Start", icon: "ti ti-home", href: "/pwa/", current: current === "" }]}
+              sections={[{ title: "Apps", items: parts().map((part) => ({ ...part, current: part.id === current })) }]}
+              footer={[{ id: "settings", label: "Einstellungen", icon: "ti ti-settings", href: "/pwa/settings" }]}
+            />
+          }
+        >
+          {has("noaccess") ? (
+            // The platform's 403 page of a part, as PageError renders it for a person without the part's role.
+            <Placeholder
+              state="empty"
+              icon="ti ti-lock"
+              title={`${name} ist für dich nicht freigegeben`}
+              description={`Wer ${name} nutzen darf, legt die Verwaltung fest. Frag dort nach, wenn du es brauchst.`}
+              action={
+                <ButtonLink href="/pwa/" variant="secondary">
+                  Zum Start
+                </ButtonLink>
+              }
+            />
+          ) : (
+            <AssistantPwa {...props} />
+          )}
+        </MobileShell>
+      </AiReaderTimeZoneProvider>
+    </LocaleProvider>
+  ),
+  document.getElementById("root")!,
+);
+document.body.dataset.ready = "true";

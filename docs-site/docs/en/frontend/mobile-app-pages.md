@@ -96,7 +96,10 @@ action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-cloud-app). Chat
 adds `/pwa/chat` with its chats and one conversation, as an example of a list
 beside its detail with a composer at the bottom edge. Its archive and channel
 search also stay below `/pwa/chat`; reloading preserves the selected list,
-search, and open thread.
+search, and open thread. The Assistant adds `/pwa/assistant` with `order: 1`:
+recent chats, the questions that wait for the person, and a field on its
+start, and one chat at `/pwa/assistant/c/<chat>` that opens as a `screen` on a
+phone. Its `badge` counts only the questions that wait for an answer.
 
 ## Paths
 
