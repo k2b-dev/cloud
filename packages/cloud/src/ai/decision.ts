@@ -1,10 +1,17 @@
-import type { DecisionAnswers, DecisionImage, DecisionQuestions, TransportReport, Usage } from "@k2b/nessi/ai";
+import {
+  type DecisionAnswers,
+  type DecisionImage,
+  type DecisionProvider,
+  type DecisionQuestions,
+  systemOneDecision,
+  type TransportReport,
+  type Usage,
+} from "@k2b/nessi/ai";
 import { z } from "zod";
 import type { AccessSubject } from "../server";
 import { logger, type TraceContext, trace } from "../services/logging";
 import type { AiResolvedModelRef } from "../shared/ai-models";
 import { getAiCredential } from "./credentials";
-import { type AiDecisionProvider, systemOneDecisionWithTransport } from "./decision-provider";
 import { AiBackgroundAdmissionError, AiBackgroundCostError, type AiCallContext, beginAiCall, finishAiCall } from "./inference-calls";
 import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";
 import { aiModelAccess } from "./model-access";
@@ -60,7 +67,7 @@ export type RunAiDecisionResult<TQuestions extends DecisionQuestions> = {
   /** Missing provider measurements are returned as a marked estimate. */
   usage: AiDecisionUsage;
 };
-export type AiResolvedDecisionModel = { profile: AiModelProfile; provider: AiDecisionProvider };
+export type AiResolvedDecisionModel = { profile: AiModelProfile; provider: DecisionProvider };
 
 type DecisionSelection = Pick<RunAiDecisionInput<DecisionQuestions>, "model" | "usageSubject" | "allowedDataBoundaries" | "signal">;
 const unavailable = () =>
@@ -97,9 +104,9 @@ export const createAiDecisionProvider = (
   apiKey?: string,
   headers?: Record<string, string>,
   callerSignal?: AbortSignal,
-): AiDecisionProvider => {
+): DecisionProvider => {
   assertProfile(profile, { model: { id: profile.id } });
-  const provider = systemOneDecisionWithTransport(profile.model, { baseURL: profile.baseURL!, apiKey, headers, name: profile.provider });
+  const provider = systemOneDecision(profile.model, { baseURL: profile.baseURL!, apiKey, headers, name: profile.provider });
   return {
     name: provider.name,
     model: provider.model,
