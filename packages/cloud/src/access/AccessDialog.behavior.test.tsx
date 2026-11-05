@@ -693,10 +693,10 @@ describe("AccessDialog", () => {
       const urls: string[] = [];
       const restore = withDirectory(
         [
-        { kind: "user", user: { id: "10000000-0000-4000-8000-000000000002", uid: "lea", displayName: "Lea Schmitt", mail: null } },
-        {
-          kind: "user",
-          user: { id: "10000000-0000-4000-8000-000000000008", uid: "tom", displayName: "Tom Berg", mail: "tom@beispiel.de" },
+          { kind: "user", user: { id: "10000000-0000-4000-8000-000000000002", uid: "lea", displayName: "Lea Schmitt", mail: null } },
+          {
+            kind: "user",
+            user: { id: "10000000-0000-4000-8000-000000000008", uid: "tom", displayName: "Tom Berg", mail: "tom@beispiel.de" },
           },
         ],
         urls,
