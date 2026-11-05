@@ -1,4 +1,3 @@
-import { stat } from "node:fs/promises";
 import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -67,7 +66,9 @@ import {
 } from "./acp-updates";
 import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
 import { localTurnFields, readSelectedLocalSkill } from "./interactive";
+import { deniedLocalBashResult } from "./local-bash";
 import { createLocalContextReader, discoverLocalContext, type LocalContext, type LocalSkill } from "./local-context";
+import { openReviewedFile, reviewedUpload, reviewLocalFile } from "./local-file";
 import { classifyLocalPath, resolveLocalPath } from "./local-paths";
 import { createLocalSessionFolder, type LocalQuestionKind, runLocalTool } from "./local-tools";
 import { AI_API, jsonRequest, readApi, readProjectsApi } from "./shared";
@@ -95,6 +96,8 @@ const builtins: AvailableCommand[] = [
   { name: "project", description: "Choose a Project for this chat", input: { hint: "number from the list" } },
   { name: "skills", description: "List local and Cloud Skills" },
 ];
+const BASH_NEEDS_FORMS = "Local Bash needs an editor with form support. Run commands in the editor's terminal or with cld chat.";
+
 const diagnostic = (text: string) => {
   process.stderr.write(`${terminalSafeText(text)}\n`);
 };
@@ -326,6 +329,8 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
           properties: {
             decision: {
               type: "string",
+              // Zed shows the titled oneOf choices; T3 Code builds its choices only from enum and answers with the value.
+              enum: ["yes", "no"],
               oneOf: [
                 { const: "yes", title: presentation.name },
                 { const: "no", title: presentation.reject },
@@ -364,23 +369,49 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
         if (count) parts.push(`${count} Skills in .agents/skills`);
         else if (found.hasProjectContext && !parts.length) parts.push("Skills in .agents/skills");
         const toolCallId = crypto.randomUUID();
+        const text = `This folder has instructions for the assistant: ${parts.join(", ")}. They go to the model with every message and can steer what it does with your Cloud data.`;
         const call: ToolCall = {
           toolCallId,
           title: "Load this folder's instructions?",
           kind: "other",
           status: "pending",
-          content: toolContent(
-            `This folder has instructions for the assistant: ${parts.join(", ")}. They go to the model with every message and can steer what it does with your Cloud data.`,
-          ),
+          content: toolContent(text),
         };
         await update(s, { sessionUpdate: "tool_call", ...call });
         let answer: string | undefined;
         try {
-          answer = await permission(s, call, [
-            { optionId: "session", name: "Only this session", kind: "allow_once" },
-            { optionId: "folder", name: "Trust this folder", kind: "allow_always" },
-            { optionId: "reject", name: "Don't load", kind: "reject_once" },
-          ]);
+          // Lasting trust only through a form: an editor can answer permission prompts automatically.
+          if (forms) {
+            const response = await form(s, toolCallId, `${call.title}\n${text}`, {
+              type: "object",
+              required: ["decision"],
+              properties: {
+                decision: {
+                  type: "string",
+                  // Zed shows the titled oneOf choices; T3 Code builds its choices only from enum and answers with the value.
+                  enum: ["session", "folder", "reject"],
+                  oneOf: [
+                    { const: "session", title: "Only this session" },
+                    { const: "folder", title: "Trust this folder" },
+                    { const: "reject", title: "Don't load" },
+                  ],
+                },
+              },
+            });
+            if (s.active?.signal.aborted) return cancelled(s);
+            const decision =
+              response.action === "accept" &&
+              response.content != null &&
+              typeof response.content === "object" &&
+              "decision" in response.content
+                ? response.content.decision
+                : undefined;
+            answer = decision === "session" || decision === "folder" ? decision : undefined;
+          } else
+            answer = await permission(s, call, [
+              { optionId: "session", name: "Only this session", kind: "allow_once" },
+              { optionId: "reject", name: "Don't load", kind: "reject_once" },
+            ]);
           return answer === "session" || answer === "folder" ? answer : undefined;
         } finally {
           if (!s.disconnected)
@@ -618,6 +649,8 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
       names: new Set(["local_bash", ...AI_LOCAL_TOOL_NAMES]),
       receipts,
       run: async (call: { name: string; args: unknown; callId: string }, signal: AbortSignal) => {
+        // An editor may answer permission prompts automatically. A command could then read cld's login and act as the person.
+        if (call.name === "local_bash" && !forms) return deniedLocalBashResult(BASH_NEEDS_FORMS);
         s.context ??= await s.contextReader();
         return runLocalTool(
           call,
@@ -748,11 +781,17 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
             continue;
           }
           const path = fileURLToPath(part.uri);
-          const access = classifyLocalPath(path, { workspace: s.cwd });
+          const given = resolveLocalPath(path, s.cwd);
+          const notFound = () => RequestError.invalidParams(undefined, `Attachment not found: ${terminalSafeText(path)}`);
+          // The checked file is the one that is sent, even if the path names another file after the question.
+          const review = await reviewLocalFile(given);
+          if (!review.identity) throw notFound();
+          const rules = [classifyLocalPath(given, { workspace: s.cwd }), classifyLocalPath(review.target, { workspace: s.cwd })];
+          const access = rules.find((rule) => rule.access === "blocked") ?? rules.find((rule) => rule.access === "ask") ?? rules[0]!;
           if (access.access === "blocked")
             throw RequestError.invalidParams(undefined, `Not attached: ${terminalSafeText(path)} is cld's configuration.`);
           // A folder is no attachment; its path tells Assistant where to look with the local tools.
-          if ((await stat(resolveLocalPath(path, s.cwd)).catch(() => undefined))?.isDirectory()) {
+          if (review.identity.directory) {
             text += `\n${path}`;
             continue;
           }
@@ -765,9 +804,23 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
                   : `It is outside ${s.cwd}.`;
             if (!(await ask(s, crypto.randomUUID(), [], `Attach ${path}? ${reason}`, "access", true))) continue;
           }
-          const file = Bun.file(resolveLocalPath(path, s.cwd));
-          if (!(await file.exists())) throw RequestError.invalidParams(undefined, `Attachment not found: ${terminalSafeText(path)}`);
-          files.push(new File([file], basename(path), { type: file.type || guessAiMediaType(path) }));
+          const { file, info } = await openReviewedFile(given, review).catch((error) => {
+            if (error instanceof Error && "code" in error && error.code === "ENOENT") throw notFound();
+            throw RequestError.invalidParams(undefined, terminalSafeText(error instanceof Error ? error.message : String(error)));
+          });
+          try {
+            if (!info.isFile()) throw notFound();
+            const type = Bun.file(given).type || guessAiMediaType(path);
+            // Refuse an oversized image before reading it into memory.
+            if (isAiImageMediaType(type) && info.size > AI_IMAGE_INPUT_MAX_BYTES)
+              throw RequestError.invalidParams(
+                undefined,
+                `Image attachment exceeds the ${AI_IMAGE_INPUT_MAX_BYTES / (1024 * 1024)} MB limit: ${basename(path)}`,
+              );
+            files.push(await reviewedUpload(file, basename(path), type, abort.signal));
+          } finally {
+            await file.close();
+          }
         } else if (part.type === "image") {
           const extension = part.mimeType === "image/jpeg" ? "jpg" : part.mimeType.split("/")[1]?.replaceAll(/[^a-z0-9]/gi, "") || "bin";
           files.push(new File([Buffer.from(part.data, "base64")], `image-${++imageCount}.${extension}`, { type: part.mimeType }));
@@ -865,6 +918,7 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
         localTools: s.localTools,
         workspace: s.cwd,
         client: { kind: "acp", ...(clientName ? { name: clientName } : {}) },
+        bash: forms,
       });
       const submission = await submitAssistantTurn({
         ...streamOptions(),

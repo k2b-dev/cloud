@@ -156,11 +156,13 @@ describe("Mail conversation details in the shared outline", () => {
     const page = await open("normal");
     try {
       expect(await sectionTitles(page)).toEqual([
+        "Gerade hier",
         "Eigenschaften",
+        "Team-Notizen",
         "Verknüpft",
         "Anhänge",
-        "Team-Notizen",
         "Mehr zu dieser Unterhaltung",
+        "Zugriff",
         "Personen",
         "Aktivität",
         "Technische Details",

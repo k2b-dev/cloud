@@ -4,6 +4,14 @@ import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import type { Notebook } from "../sidebar/types";
 
+/** Opens a row's level menu and picks a level, as a person would. */
+const chooseLevel = (row: Element, level: string) => {
+  row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+  Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]'))
+    .find((option) => option.textContent?.includes(level))!
+    .click();
+};
+
 const notebook: Notebook = {
   id: "notes1",
   name: "Research",
@@ -84,18 +92,18 @@ describe("Notebook access settings", () => {
     );
     const { PermissionsSection } = await import("./AccessSection");
     const dispose = render(() => <PermissionsSection notebook={notebook} />, dom.root);
-    const rowElements = () => Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row"));
-    // Each row's name and, for a service account, its kind label.
+    // The summary's list of who has access: each row's name and, for a service account, its kind.
+    const rowElements = () => Array.from(dom.root.querySelectorAll<HTMLElement>(".k2b-avatar-stack__row"));
     const rows = () =>
       rowElements().map((row) =>
-        Array.from(row.querySelectorAll(".min-w-0 > span"))
+        Array.from(row.querySelectorAll(".k2b-avatar-stack__row-name > span"))
           .map((span) => span.textContent)
           .join(" "),
       );
-    await waitFor(() => rowElements().length > 0, "the access list");
+    await waitFor(() => rowElements().length > 0, "the access summary");
     const button = (text: string) =>
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
-    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
     const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
     return {
       dom,
@@ -114,10 +122,11 @@ describe("Notebook access settings", () => {
     };
   };
 
-  test("lists who may use the notebook, agents included, without controls and without API keys", async () => {
+  test("sums up who may use the notebook, agents included, without controls and without API keys", async () => {
     const section = await renderSection([person, agent, apiKey]);
     try {
-      expect(section.rows()).toEqual(["Ada Lovelace", "Research agent (Agent)"]);
+      expect(section.rows()).toEqual(["Ada Lovelace", "Research agent Agent"]);
+      expect(section.dom.root.textContent).toContain("2 people, groups and agents · All signed-in people: off");
       expect(section.dom.root.querySelector('button[aria-label="Remove Ada Lovelace"]')).toBeNull();
       section.button("Edit access")!.click();
       await waitFor(() => section.dialog()?.textContent?.includes("Research agent") === true, "the access dialog");
@@ -134,9 +143,7 @@ describe("Notebook access settings", () => {
     try {
       section.button("Edit access")!.click();
       await waitFor(() => section.dialog()?.textContent?.includes("Ben Albers") === true, "the access dialog");
-      Array.from(section.row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes("Edit"))!
-        .click();
+      chooseLevel(section.row("Lea Schmitt"), "Edit");
       section.row("Ben Albers").querySelector<HTMLButtonElement>('button[aria-label="Remove Ben Albers"]')!.click();
       await waitFor(() => section.dialog()?.textContent?.includes("2 changes") === true, "two changes");
       section.button("Save")!.click();
@@ -159,9 +166,7 @@ describe("Notebook access settings", () => {
     try {
       section.button("Edit access")!.click();
       await waitFor(() => section.dialog()?.textContent?.includes("Lea Schmitt") === true, "the access dialog");
-      Array.from(section.row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes("Edit"))!
-        .click();
+      chooseLevel(section.row("Lea Schmitt"), "Edit");
       section.reads.held = Promise.withResolvers<void>();
       const held = section.reads.held;
       section.button("Save")!.click();
@@ -178,9 +183,7 @@ describe("Notebook access settings", () => {
       section.button("Edit access")!.click();
       await waitFor(() => !!section.dialog(), "the access dialog with the saved list");
       expect(section.dialog()!.textContent).not.toContain("before");
-      expect(Array.from(section.row("Lea Schmitt").querySelectorAll('[aria-selected="true"]')).map((option) => option.textContent)).toEqual(
-        ["Edit"],
-      );
+      expect(section.row("Lea Schmitt").querySelector('button[aria-haspopup="dialog"]')?.textContent).toContain("Edit");
       section.button("Cancel")!.click();
       await waitFor(() => !section.dialog(), "the unchanged dialog to close");
     } finally {

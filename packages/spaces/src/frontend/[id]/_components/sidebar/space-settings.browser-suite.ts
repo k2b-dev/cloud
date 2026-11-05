@@ -240,7 +240,11 @@ describe(`Space settings survive access changes in ${browserName}`, () => {
         await input.waitFor();
         await input.fill("Jo");
         await dialog.getByRole("option", { name: /Jonas Weber/ }).click();
-        await dialog.getByText(locale === "de" ? "Neu" : "New", { exact: true }).waitFor();
+        // The mark sits beside the name, on a phone in the line below; only one of the two places shows.
+        await dialog
+          .getByText(locale === "de" ? "Neu" : "New", { exact: true })
+          .filter({ visible: true })
+          .waitFor();
         expect(postHeld).toBe(false);
         await dialog.getByRole("button", { name: locale === "de" ? "Speichern" : "Save", exact: true }).click();
         await waitFor(() => postHeld, "the held access POST");
@@ -253,9 +257,14 @@ describe(`Space settings survive access changes in ${browserName}`, () => {
         grant.resolve();
         await event;
         expect(eventsSent).toBeGreaterThan(0);
-        // The saved list shows in the settings, which stay open with focus back on Edit access.
+        // The saved list shows in the settings' summary, which stay open with focus back on Edit access.
         await accessTab.waitFor();
-        await dialog.getByText("Jonas Weber").waitFor();
+        await dialog
+          .getByRole("button", {
+            name: locale === "de" ? "Wer Zugriff hat: Mara Lind und 1 weiterer Eintrag" : "Who has access: Mara Lind and 1 more",
+            exact: true,
+          })
+          .waitFor();
         expect(await dialog.count()).toBe(1);
         await settle(page);
         expect(await pageMarker(page)).toBe("first");

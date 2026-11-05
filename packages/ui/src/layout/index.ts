@@ -38,6 +38,7 @@ export type {
   AppWorkspaceWidthShare,
 } from "./AppWorkspace";
 export { appWorkspaceDetailElementId, default as AppWorkspace } from "./AppWorkspace";
+export { AppWorkspaceSidebarItemStatus } from "./AppWorkspaceSidebarItemStatus";
 export { watchAppHostWidth } from "./app-host-width";
 export type { AppWorkspaceControllerOptions } from "./app-workspace-controller";
 export { installAppWorkspaceController, parkWorkspaceDetailDrawers } from "./app-workspace-controller";

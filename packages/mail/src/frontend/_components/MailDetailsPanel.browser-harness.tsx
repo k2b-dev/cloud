@@ -187,6 +187,16 @@ window.mountDetails = (state) => {
               { ...jonas, permission: "write", scope: "mailbox", description: "Vertrieb" },
             ]}
             presence={[]}
+            access={{
+              members: [
+                { principal: { type: "user", userId: "user-lena" }, permission: "admin", displayName: "Lena Hoffmann" },
+                { principal: { type: "user", userId: "user-jonas" }, permission: "write", displayName: "Jonas Weber" },
+                { principal: { type: "group", groupId: "group-sales" }, permission: "read", displayName: "Vertrieb", scope: "assigned" },
+              ],
+              state: "ready",
+              load: () => {},
+              retry: () => {},
+            }}
             currentUserId="user-lena"
             activity={
               empty

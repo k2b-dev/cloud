@@ -173,6 +173,7 @@ describe("Contact birthday calendar dates (#1232)", () => {
           bookNames={{ team: "Team contacts" }}
           writableBooks={[]}
           adminBookIds={[]}
+          memberBookIds={[]}
           currentUserId="user-1"
           showEmpty={false}
           initialFavoriteKeys={[]}
@@ -200,6 +201,33 @@ describe("Contact birthday calendar dates (#1232)", () => {
 });
 
 describe("Contacts detail panels", () => {
+  test("who has access stands first under More about for members of the book, and is absent for public-only readers", () => {
+    const render = (memberBookIds: string[]) =>
+      renderToString(() => (
+        <ContactDetailPanel
+          initialContact={contact}
+          initialContactId={contact.id}
+          initialBookId={contact.bookId}
+          initialNotesPage={{ items: [], page: 1, perPage: 30, total: 0, hasNext: false }}
+          contacts={[contact]}
+          bookNames={{ team: "Team contacts" }}
+          writableBooks={[]}
+          adminBookIds={[]}
+          memberBookIds={memberBookIds}
+          currentUserId="user-1"
+          showEmpty={false}
+          initialFavoriteKeys={[]}
+          timeZone="UTC"
+        />
+      ));
+    const member = render([contact.bookId]);
+    const more = member.slice(member.indexOf("More about this contact"));
+    // The list loads after the first paint and keeps its place meanwhile.
+    expect(more).toMatch(/>Access<\/span>[\s\S]*Loading who has access/);
+    expect(more.indexOf(">Access<")).toBeLessThan(more.indexOf(">Addresses<"));
+    expect(more).not.toContain("Manage access");
+    expect(render([])).not.toContain(">Access<");
+  });
   test("composes contact details from the shared grouped panel contract", () => {
     const html = renderToString(() => (
       <ContactDetailPanel
@@ -211,6 +239,7 @@ describe("Contacts detail panels", () => {
         bookNames={{ team: "Team contacts" }}
         writableBooks={[{ id: "team", name: "Team contacts" }]}
         adminBookIds={["team"]}
+        memberBookIds={[]}
         currentUserId="user-1"
         showEmpty={false}
         initialFavoriteKeys={[]}
@@ -220,12 +249,16 @@ describe("Contacts detail panels", () => {
 
     expect(html).toContain('class="k2b-detail-panel"');
     expect(html).toContain("<h2>Ada Lovelace</h2>");
-    // The shared outline: a kind line instead of an avatar, no section icons, and the rarer details closed under
-    // "More about this contact", each saying in one line what it holds.
+    // The shared outline (UI-27): a kind line instead of an avatar, an icon on every section, the comments after the
+    // fields, and the rarer details closed under "More about this contact", each saying in one line what it holds.
     expect(html).toMatch(/class="k2b-detail-panel__kind"[^>]*>(<[^>]+>)*Contact</);
     expect(html).not.toContain("k2b-detail-panel__header-leading");
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
-    expect(html).not.toContain("k2b-discussion__icon");
+    for (const icon of ["ti-list-details", "ti-address-book", "ti-message-circle", "ti-sitemap", "ti-user", "ti-briefcase"])
+      expect(html).toContain(`ti ${icon}`);
+    expect(html).toContain("k2b-discussion__icon");
+    expect(html).toMatch(
+      />Properties<\/h3>[\s\S]*>Reach<\/h3>[\s\S]*k2b-discussion[\s\S]*>Organization<\/h3>[\s\S]*More about this contact/,
+    );
     expect(html).toContain('class="k2b-detail-panel__primary-actions"');
     // Email is the one main action; Call and Comment stay quiet beside it.
     expect(html).toMatch(/<a href="mailto:ada@example.com" class="k2b-button contacts-details-main[^"]*"[^>]*data-variant="subtle"/);
@@ -290,6 +323,7 @@ describe("Contacts detail panels", () => {
         bookNames={{ team: "Team contacts" }}
         writableBooks={[]}
         adminBookIds={[]}
+        memberBookIds={[]}
         currentUserId="user-1"
         showEmpty={false}
         initialFavoriteKeys={[]}
@@ -384,6 +418,7 @@ describe("Focused address workspace SSR", () => {
           bookNames={{ team: "Team contacts" }}
           writableBooks={writable ? [{ id: "team", name: "Team contacts" }] : []}
           adminBookIds={[]}
+          memberBookIds={[]}
           currentUserId="user-1"
           initialFavoriteKeys={[]}
           timeZone="UTC"

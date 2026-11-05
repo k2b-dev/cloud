@@ -90,6 +90,7 @@ export default ssr<AuthContext>(async (c) => {
     sort: settings.treeSort,
     locale: getLocale(c),
     filter: sidebarFilter,
+    permission,
   });
   const totalPages = Math.max(1, Math.ceil(paginatedResult.total / paginatedResult.perPage));
   const baseHref = buildAttachmentsUrl(notebook.shortId);

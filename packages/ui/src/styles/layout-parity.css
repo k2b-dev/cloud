@@ -4203,6 +4203,44 @@ html[data-k2b-mobile-shell] .k2b-ui,
   flex: none;
 }
 
+/* The frame stands still in a view transition, within the document and
+   between documents: the header, the sidebar, and the footer, such as a tab
+   bar, are groups of their own that show the next page's frame at once, so
+   only the content area takes part in the transition. One shell per page
+   keeps the names unique; a part that is not shown takes no part. While a
+   modal dialog is open, its backdrop lies over the frame, so the frame stays
+   in the page's own picture. */
+html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__header {
+  view-transition-name: k2b-mobile-shell-header;
+}
+
+html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__sidebar {
+  view-transition-name: k2b-mobile-shell-sidebar;
+}
+
+html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main + * {
+  view-transition-name: k2b-mobile-shell-footer;
+}
+
+::view-transition-group(k2b-mobile-shell-header),
+::view-transition-group(k2b-mobile-shell-sidebar),
+::view-transition-group(k2b-mobile-shell-footer) {
+  animation-name: none;
+}
+
+/* The browser's own cross-fade of the pictures ends at once: the old picture
+   is gone and the new one is there from the first frame. The group no longer
+   animates, so the pictures keep their end state themselves. */
+::view-transition-old(k2b-mobile-shell-header),
+::view-transition-old(k2b-mobile-shell-sidebar),
+::view-transition-old(k2b-mobile-shell-footer),
+::view-transition-new(k2b-mobile-shell-header),
+::view-transition-new(k2b-mobile-shell-sidebar),
+::view-transition-new(k2b-mobile-shell-footer) {
+  animation-duration: 0s;
+  animation-fill-mode: both;
+}
+
 /* As high with a title alone as with Back or a 44 px action, so the title and
    the content stay in place between pages. */
 .k2b-ui .k2b-mobile-shell__header {
@@ -4286,6 +4324,12 @@ html[data-k2b-mobile-shell] .k2b-ui,
    the header stands above it as the next page's frame, and the content is
    hidden. */
 .k2b-ui .k2b-mobile-shell[data-k2b-content-heads]:not([data-k2b-switching]) > .k2b-mobile-shell__header {
+  display: none;
+}
+
+/* A screen of its own, such as an open chat on a phone, reaches the bottom
+   edge: the footer steps aside. Beside the sidebar there is no footer. */
+.k2b-ui .k2b-mobile-shell[data-k2b-screen] > .k2b-mobile-shell__main ~ * {
   display: none;
 }
 

@@ -31,6 +31,7 @@ import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
 import { closeCliCodeHost } from "./code-host";
 import { createLineReader, type LineReader } from "./line-reader";
 import { createLocalContextReader, type LocalContext, type LocalSkill, localSkillCatalog, readLocalSkill } from "./local-context";
+import { type LocalFileReview, reviewLocalFile } from "./local-file";
 import { classifyLocalPath, completeLocalPath, extractMessageAttachments, lastMentionToken, resolveLocalPath } from "./local-paths";
 import { createLocalSessionFolder, runLocalTool } from "./local-tools";
 import { jsonRequest, readApi, readProjectsApi } from "./shared";
@@ -398,12 +399,17 @@ export const localTurnFields = (input: {
   localTools: "ask" | "off";
   workspace: string;
   client: { kind: "cli" | "acp"; name?: string };
+  /** Offer Bash only where its question always reaches a person. */
+  bash?: boolean;
 }) => {
   const skills = input.localTools === "ask" ? localSkillCatalog(input.context) : [];
   return {
     clientToolIds:
       input.localTools === "ask"
-        ? ["local_bash", ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill" || skills.length > 0)]
+        ? [
+            ...(input.bash === false ? [] : ["local_bash"]),
+            ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill" || skills.length > 0),
+          ]
         : [],
     client: { ...input.client, cwd: input.workspace, os: `${osType()} ${osRelease()}`, shell: "/bin/bash", localTools: input.localTools },
     localContext: { instructions: input.context.instructions, skills },
@@ -539,6 +545,8 @@ They go to the model with every message and can steer what it does with your Clo
       ask: async (question) => (await readApproval(reader, question)) === "once",
     });
   const preparedAttachments = new Map<string, Awaited<ReturnType<typeof uploadAttachment>>>();
+  // The file each attachment named when it was checked; the upload sends only that file.
+  const attachmentReviews = new Map<string, LocalFileReview>();
   let activeAbort: AbortController | null = null;
   let exitRequested = false;
   const removeInterrupt = reader.onInterrupt((question) => {
@@ -558,7 +566,9 @@ They go to the model with every message and can steer what it does with your Clo
       throw new Error(`Attachment not found: ${terminalSafeText(path)}`);
     }
     if (attachments.some((attached) => realpathSync(resolveLocalPath(attached, workspace)) === target)) return;
-    const access = classifyLocalPath(path, { workspace });
+    const review = await reviewLocalFile(target);
+    const rules = [classifyLocalPath(path, { workspace }), classifyLocalPath(review.target, { workspace })];
+    const access = rules.find((rule) => rule.access === "blocked") ?? rules.find((rule) => rule.access === "ask") ?? rules[0]!;
     if (access.access === "blocked") {
       ctx.error(`Not attached: ${terminalSafeText(path)} is cld's configuration.`);
       return;
@@ -577,6 +587,7 @@ They go to the model with every message and can steer what it does with your Clo
       }
     }
     await validateLocalAttachments([...attachments, target]);
+    attachmentReviews.set(target, review);
     attachments.push(target);
   };
 
@@ -688,7 +699,11 @@ They go to the model with every message and can steer what it does with your Clo
       printResumeHint(ctx, conversation.id, true);
     }
     for (const path of attachments) {
-      if (!preparedAttachments.has(path)) preparedAttachments.set(path, await uploadAttachment(ctx, conversation.id, path));
+      if (!preparedAttachments.has(path))
+        preparedAttachments.set(
+          path,
+          await uploadAttachment(ctx, conversation.id, path, undefined, undefined, attachmentReviews.get(path)),
+        );
     }
     const content = [...attachments.map((path) => preparedAttachments.get(path)!), ...selectedCloud];
     const selectedSkills = [];
@@ -1210,10 +1225,14 @@ export const assistantRootCommand = command("", {
     if (positional && piped) throw new Error("Pass the message either as arguments or through stdin.");
     const message = positional || piped;
     if (!message) throw new Error("Missing message.");
+    // Send the files that were checked, even if a path names another file before the upload.
+    const reviews = new Map<string, LocalFileReview>();
+    for (const path of flags.attach) reviews.set(path, await reviewLocalFile(path));
     await validateLocalAttachments(flags.attach);
     const conversation = await resolveConversation(ctx, { conversationId: flags.chat, title: flags.title, projectId: flags.project });
     const content = [];
-    for (const path of flags.attach) content.push(await uploadAttachment(ctx, conversation.id, path));
+    for (const path of flags.attach)
+      content.push(await uploadAttachment(ctx, conversation.id, path, undefined, undefined, reviews.get(path)));
     const { submitted, result } = await submitAssistantTurn({
       ctx,
       conversationId: conversation.id,

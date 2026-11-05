@@ -29,3 +29,5 @@ Auch Cloud-Administratoren sehen ein Kontaktbuch in Kontakte nur mit Zugriff; **
 :::
 
 Ein Kontaktbuch behält immer mindestens eine Person, Gruppe oder einen Agenten mit Zugriff **Verwalten**; ein API Key zählt nicht.
+
+Wer eigenen Zugriff hat, direkt, über eine Gruppe oder als angemeldete Person, sieht in den Details eines Kontakts unter **Mehr zu diesem Kontakt** › **Zugriff**, wer Zugriff auf das Kontaktbuch hat und mit welcher Stufe. Wer ein öffentliches Kontaktbuch nur liest, sieht diese Liste nicht.

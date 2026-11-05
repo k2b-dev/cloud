@@ -24,6 +24,7 @@ import type {
   View,
   Workflow,
 } from "../../../service";
+import type { ReferencedByPage } from "../../../service/referenced-by";
 import type {
   GridsWorkflowLauncher,
   GridsWorkflowRun,
@@ -132,6 +133,8 @@ export type WorkspaceRecordDetail = {
   snapshots: RecordSnapshotSummary[];
   auditEntries: RecordHistoryEntry[];
   combinedOrigin: CombinedRecordOrigin | null;
+  /** The first page of records that reference this one, so the Links section shows both directions at once. */
+  referencedBy: ReferencedByPage | null;
 };
 
 type WorkspaceEmptyRoute = {

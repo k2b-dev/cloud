@@ -8,6 +8,9 @@ order: 100
 
 Chat is for conversations with other people, notes for yourself, and channels you subscribe to.
 
+
+Forms, search, chat info and the channel and thread pages load when you open them. While they load, a notice stays in that view. If loading fails, choose **Try again** there.
+
 ## Start a chat {icon="message-plus"}
 
 :::steps

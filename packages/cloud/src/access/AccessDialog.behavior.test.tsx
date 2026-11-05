@@ -3,6 +3,14 @@ import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { AccessEntry } from "../contracts/shared";
 
+/** Opens a row's level menu and picks a level, as a person would. */
+const chooseLevel = (row: Element, level: string) => {
+  row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+  Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]'))
+    .find((option) => option.textContent?.includes(level))!
+    .click();
+};
+
 const waitFor = async (condition: () => boolean, label: string) => {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     if (condition()) return;
@@ -18,6 +26,8 @@ const user = (id: string, name: string, permission: AccessEntry["permission"]): 
   createdAt: "2026-11-03T00:00:00.000Z",
   displayName: name,
 });
+// Code's own accounts have the kind `code`, which arrives with the code lane; the contract type does not list it yet.
+const codeKind = "code" as unknown as NonNullable<AccessEntry["serviceAccountKind"]>;
 const mia = user("1", "Mia Hoffmann", "admin");
 const lea = user("2", "Lea Schmitt", "read");
 const bot: AccessEntry = {
@@ -80,10 +90,7 @@ describe("AccessDialog", () => {
     const row = (name: string) => Array.from(dom.root.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
     const button = (text: string) =>
       Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text)!;
-    const choose = (name: string, level: string) =>
-      Array.from(row(name).querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes(level))!
-        .click();
+    const choose = (name: string, level: string) => chooseLevel(row(name), level);
     return {
       dom,
       calls,
@@ -148,10 +155,14 @@ describe("AccessDialog", () => {
     try {
       const remove = ui.row("Mia Hoffmann").querySelector<HTMLButtonElement>("button[aria-label^='Give someone else']")!;
       expect(remove.disabled).toBe(true);
-      const view = Array.from(ui.row("Mia Hoffmann").querySelectorAll<HTMLElement>('[role="option"]')).find((option) =>
+      ui.row("Mia Hoffmann").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+      const view = Array.from(ui.row("Mia Hoffmann").querySelectorAll<HTMLButtonElement>('[role="radio"]')).find((option) =>
         option.textContent?.includes("View"),
       )!;
-      expect(view.getAttribute("aria-disabled") === "true" || view.hasAttribute("disabled")).toBe(true);
+      expect(view.disabled).toBe(true);
+      // The menu says why, and its Remove is off too.
+      expect(ui.row("Mia Hoffmann").textContent).toContain("First give someone else “Manage”.");
+      ui.row("Mia Hoffmann").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
       // Once Lea manages too, Mia may step down.
       ui.choose("Lea Schmitt", "Manage");
       await waitFor(
@@ -276,8 +287,8 @@ describe("AccessDialog", () => {
     const ui = await setup({ findServiceAccount: () => pending.promise });
     try {
       ui.button("Add service account").click();
-      await waitFor(() => !!ui.dom.root.querySelector('input[aria-label="Identifier of the service account"]'), "the identifier field");
-      const input = ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Identifier of the service account"]')!;
+      await waitFor(() => !!ui.dom.root.querySelector('input[aria-label="Handle of the service account"]'), "the identifier field");
+      const input = ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Handle of the service account"]')!;
       input.value = "code-aaaaaaaaaa";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       ui.button("Find").click();
@@ -285,7 +296,7 @@ describe("AccessDialog", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
       pending.resolve({
         principal: { type: "service_account", serviceAccountId: "40000000-0000-4000-8000-000000000001" },
-        display: { displayName: "Code of the old mailbox", serviceAccountKind: "resource_bound" },
+        display: { displayName: "Code of the old mailbox", serviceAccountKind: codeKind },
       });
       await Bun.sleep(30);
       expect(ui.dom.root.textContent).not.toContain("Code of the old mailbox");
@@ -334,9 +345,7 @@ describe("AccessDialog", () => {
     const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
     try {
       await waitFor(() => dialog()?.textContent?.includes("Lea Schmitt") === true, "the dialog");
-      Array.from(row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes("Edit"))!
-        .click();
+      chooseLevel(row("Lea Schmitt"), "Edit");
       row("Lagerbot").querySelector<HTMLButtonElement>('button[aria-label="Remove Lagerbot"]')!.click();
       await waitFor(() => dialog()?.textContent?.includes("2 changes") === true, "two changes");
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button"))
@@ -501,9 +510,7 @@ describe("AccessDialog", () => {
         denialRow().querySelector<HTMLButtonElement>("[data-access-remove]")!.click();
         await waitFor(() => !!denialRow().querySelector("[data-access-undo]"), "the removal mark");
         const miaRow = ui.rows("Mia Hoffmann")[0]!;
-        Array.from(miaRow.querySelectorAll<HTMLElement>('[role="option"]'))
-          .find((option) => option.textContent?.includes("View"))!
-          .click();
+        chooseLevel(miaRow, "View");
         await waitFor(() => ui.dom.root.textContent?.includes("2 changes") === true, "two changes");
         expect(denialRow().querySelector<HTMLButtonElement>("[data-access-undo]")!.disabled).toBe(true);
       } finally {
@@ -519,10 +526,10 @@ describe("AccessDialog", () => {
       permission: "write",
       createdAt: "2026-11-03T00:00:00.000Z",
       displayName: "Code von einkauf@beispiel.de",
-      serviceAccountKind: "resource_bound",
+      serviceAccountKind: codeKind,
     };
     const field = (ui: Awaited<ReturnType<typeof setup>>) =>
-      ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Identifier of the service account"]');
+      ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Handle of the service account"]');
     const openAdding = async (ui: Awaited<ReturnType<typeof setup>>) => {
       ui.button("Add service account").click();
       await waitFor(() => !!field(ui), "the identifier field");
@@ -544,7 +551,7 @@ describe("AccessDialog", () => {
         expect(text()).toContain(empty);
         expect(text()).not.toContain("Code runs as the service account");
         await openAdding(ui);
-        expect(field(ui)!.placeholder).toBe("Identifier from the code page, for example code-7k2q9m4xwt");
+        expect(field(ui)!.placeholder).toBe("Handle from the code page, for example code-7k2q9m4xwt");
         expect(text()).not.toContain(empty);
         await cancelAdding(ui);
         expect(text()).toContain(empty);
@@ -570,6 +577,66 @@ describe("AccessDialog", () => {
       }
     });
 
+    test("a Code account keeps its kind and is never offered Manage, also when added by its handle", async () => {
+      const found = {
+        principal: { type: "service_account" as const, serviceAccountId: "20000000-0000-4000-8000-000000000012" },
+        display: { displayName: "Code von lager@beispiel.de", serviceAccountKind: codeKind },
+      };
+      const ui = await setup({
+        entries: [mia, codeAccount],
+        allowedLevels: ["admin", "write", "read"],
+        findServiceAccount: async () => found,
+      });
+      try {
+        const offered = (name: string) => {
+          ui.row(name).querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+          const labels = Array.from(ui.row(name).querySelectorAll('[role="radio"]')).map((radio) => radio.textContent ?? "");
+          ui.row(name).querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+          return labels;
+        };
+        expect(offered("Code von einkauf@beispiel.de").some((label) => label.includes("Manage"))).toBe(false);
+        expect(offered("Mia Hoffmann").some((label) => label.includes("Manage"))).toBe(true);
+        await openAdding(ui);
+        field(ui)!.value = "code-7k2q9m4xwt";
+        field(ui)!.dispatchEvent(new Event("input", { bubbles: true }));
+        ui.button("Find").click();
+        await waitFor(() => !!ui.button("Add"), "the found account");
+        ui.button("Add").click();
+        // An app whose first level is Manage still starts the Code account below it.
+        await waitFor(() => !!ui.row("Code von lager@beispiel.de"), "the added row");
+        const added = ui.row("Code von lager@beispiel.de");
+        expect(added.querySelector('button[aria-haspopup="dialog"]')?.textContent).not.toContain("Manage");
+        expect(offered("Code von lager@beispiel.de").some((label) => label.includes("Manage"))).toBe(false);
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("the account behind an object's API keys is an API key, never a service account", async () => {
+      const apiKey: AccessEntry = {
+        id: "00000000-0000-4000-8000-000000000011",
+        principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000011" },
+        permission: "read",
+        createdAt: "2026-11-03T00:00:00.000Z",
+        displayName: "Shop-Import",
+        serviceAccountKind: "resource_bound",
+      };
+      const ui = await setup({ entries: [mia, codeAccount, apiKey], findServiceAccount: async () => null });
+      try {
+        const section = (title: string) =>
+          Array.from(ui.dom.root.querySelectorAll("section")).find((item) => item.querySelector("h3")?.textContent?.startsWith(title));
+        expect(section("Service accounts")?.textContent).toContain("Code von einkauf@beispiel.de");
+        expect(section("Service accounts")?.textContent).not.toContain("Shop-Import");
+        expect(section("API keys")?.textContent).toContain("Shop-Import");
+        const row = ui.row("Shop-Import");
+        expect(row.textContent).toContain("API key");
+        expect(row.textContent).not.toContain("Service account");
+        expect(row.querySelector('[data-shape="square"] .ti-key')).not.toBeNull();
+      } finally {
+        ui.cleanup();
+      }
+    });
+
     test("in German the note quotes the resource's name, so any name reads", async () => {
       const { accessDialogMessages } = await import("./access-dialog-messages");
       expect(accessDialogMessages.resolve(["de"]).t.serviceAccountNote({ name: "Der Einkauf" })).toBe(
@@ -588,7 +655,7 @@ describe("AccessDialog", () => {
         entries: [mia],
         findServiceAccount: async () => ({
           principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000011" },
-          display: { displayName: "Code von info@beispiel.de", avatarHash: "abc123", serviceAccountKind: "resource_bound" },
+          display: { displayName: "Code von info@beispiel.de", avatarHash: "abc123", serviceAccountKind: codeKind },
         }),
       });
       try {
@@ -602,6 +669,217 @@ describe("AccessDialog", () => {
           (item) => item.textContent?.includes("Code von info@beispiel.de") && item.querySelector("img"),
         );
         expect(preview?.querySelector("img")?.getAttribute("src")).toContain("rev=abc123");
+      } finally {
+        ui.cleanup();
+      }
+    });
+  });
+
+  describe("states as in the approved mockup", () => {
+    const renderDialog = async (props: Partial<import("./AccessDialog").AccessDialogProps> = {}) => {
+      const dom = createDomTestHarness();
+      dom.document.documentElement.lang = "en";
+      // happy-dom has no Popover API; the search results open through it.
+      const prototype = dom.window.HTMLElement.prototype as unknown as Record<string, unknown>;
+      const open = new WeakSet<object>();
+      const matches = prototype.matches as (this: Element, selector: string) => boolean;
+      Object.assign(prototype, {
+        matches(this: Element, selector: string) {
+          return selector === ":popover-open" ? open.has(this) : matches.call(this, selector);
+        },
+        showPopover(this: object) {
+          open.add(this);
+        },
+        hidePopover(this: object) {
+          open.delete(this);
+        },
+        scrollIntoView() {},
+      });
+      delegateEvents(["click", "input", "keydown"], dom.document);
+      const { AccessDialog } = await import("./AccessDialog");
+      const close = mock((_saved: boolean) => {});
+      const dispose = render(
+        () => (
+          <AccessDialog
+            resourceName="Einkauf 2027"
+            initialEntries={props.loadEntries ? undefined : [mia, lea]}
+            grantAccess={async (principal, permission) => ({ id: "x", principal, permission, createdAt: "now" })}
+            updateAccess={async () => {}}
+            revokeAccess={async () => {}}
+            close={close}
+            {...props}
+          />
+        ),
+        dom.root,
+      );
+      const text = () => dom.root.textContent ?? "";
+      const button = (label: string) =>
+        Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === label);
+      const row = (name: string) => Array.from(dom.root.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
+      return { dom, text, button, row, close, cleanup: () => (dispose(), dom.cleanup()) };
+    };
+    const search = async (dom: ReturnType<typeof createDomTestHarness>, query: string) => {
+      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+      input.focus();
+      input.value = query;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    const withDirectory = (items: unknown[], urls: string[] = []) => {
+      const original = globalThis.fetch;
+      globalThis.fetch = Object.assign(
+        async (input: RequestInfo | URL) => {
+          urls.push(String(input));
+          return Response.json({ items });
+        },
+        { preconnect: original.preconnect },
+      );
+      return () => {
+        globalThis.fetch = original;
+      };
+    };
+
+    test("an empty search names the search and says what to search for", async () => {
+      const restore = withDirectory([]);
+      const ui = await renderDialog();
+      try {
+        await search(ui.dom, "xyz");
+        await waitFor(() => ui.text().includes("Nobody is called “xyz”."), "the empty text");
+        expect(ui.text()).toContain("Search by name, email or group.");
+      } finally {
+        ui.cleanup();
+        restore();
+      }
+    });
+
+    test("someone already on the list stays in the results, greyed with their level", async () => {
+      const urls: string[] = [];
+      const restore = withDirectory(
+        [
+          { kind: "user", user: { id: "10000000-0000-4000-8000-000000000002", uid: "lea", displayName: "Lea Schmitt", mail: null } },
+          {
+            kind: "user",
+            user: { id: "10000000-0000-4000-8000-000000000008", uid: "tom", displayName: "Tom Berg", mail: "tom@beispiel.de" },
+          },
+        ],
+        urls,
+      );
+      const ui = await renderDialog();
+      try {
+        await search(ui.dom, "le");
+        const option = () =>
+          Array.from(ui.dom.root.querySelectorAll<HTMLElement>('[role="option"]')).find((item) =>
+            item.textContent?.includes("Lea Schmitt"),
+          );
+        await waitFor(() => !!option(), "Lea in the results");
+        expect(option()!.getAttribute("aria-disabled")).toBe("true");
+        expect(option()!.textContent).toContain("already has View");
+        // The directory has to return listed people too, or they could never show greyed.
+        expect(urls.some((url) => url.includes("exclude_"))).toBe(false);
+        option()!.click();
+        await Bun.sleep(20);
+        expect(ui.text()).not.toContain("1 change");
+      } finally {
+        ui.cleanup();
+        restore();
+      }
+    });
+
+    test("read-only names who manages, shows General in words, and offers only Close", async () => {
+      const ui = await renderDialog({ canEdit: false });
+      try {
+        expect(ui.text()).toContain("Only those who manage it can change access: Mia Hoffmann.");
+        expect(ui.row("All signed-in people").textContent).toContain("Off");
+        expect(ui.dom.root.querySelector('input[aria-label="All signed-in people"]')).toBeNull();
+        expect(ui.button("Close")).toBeDefined();
+        expect(ui.button("Save")).toBeUndefined();
+        expect(ui.button("Cancel")).toBeUndefined();
+        expect(ui.text()).not.toContain("No changes");
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("read-only names only those who really manage: no denied or scoped managers", async () => {
+      const ben = user("5", "Ben Albers", "admin");
+      const benDenied: AccessEntry = { ...ben, id: "00000000-0000-4000-8000-000000000006", permission: "none" };
+      const ida: AccessEntry = { ...user("7", "Ida Kranz", "admin"), scope: "assigned" };
+      const denied = (entries: readonly AccessEntry[]) => {
+        const keys = new Set(entries.filter((stored) => stored.permission === "none").map((stored) => JSON.stringify(stored.principal)));
+        return entries.filter((stored) => !keys.has(JSON.stringify(stored.principal)));
+      };
+      const ui = await renderDialog({ canEdit: false, initialEntries: [mia, ben, benDenied, ida, lea], effectiveEntries: denied });
+      try {
+        expect(ui.text()).toContain("Only those who manage it can change access: Mia Hoffmann.");
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("loading shows rows that are still coming, without the search; a failure offers Try again", async () => {
+      let attempt = 0;
+      const held = Promise.withResolvers<void>();
+      const ui = await renderDialog({
+        loadEntries: async () => {
+          attempt += 1;
+          if (attempt === 1) throw new Error("offline");
+          await held.promise;
+          return [mia, lea];
+        },
+      });
+      try {
+        await waitFor(() => ui.text().includes("Access could not be loaded."), "the load failure");
+        ui.button("Try again")!.click();
+        await waitFor(() => !!ui.dom.root.querySelector('[aria-busy="true"]'), "the loading rows");
+        expect(ui.dom.root.querySelector("input[role=combobox]")).toBeNull();
+        expect(ui.text()).toContain("Loading access");
+        // General is not known yet either, so it does not claim "Off".
+        expect(ui.text()).not.toContain("All signed-in people");
+        held.resolve();
+        await waitFor(() => ui.text().includes("Lea Schmitt"), "the loaded rows");
+        expect(ui.dom.root.querySelector("input[role=combobox]")).not.toBeNull();
+        expect(ui.text()).toContain("All signed-in people");
+        // Nothing was saved: closing after the load does not tell the caller to reload.
+        ui.button("Cancel")!.click();
+        await waitFor(() => ui.close.mock.calls.length > 0, "the dialog to close");
+        expect(ui.close).toHaveBeenCalledWith(false);
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("the level menu says what each level means and can remove the row", async () => {
+      const ui = await renderDialog();
+      // A checked choice elsewhere on the page must not take the menu's focus.
+      const page = ui.dom.document.createElement("div");
+      page.setAttribute("role", "radio");
+      page.setAttribute("aria-checked", "true");
+      page.tabIndex = 0;
+      ui.dom.document.body.prepend(page);
+      try {
+        ui.row("Lea Schmitt").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+        const menu = () => ui.row("Lea Schmitt").querySelector<HTMLElement>('[role="dialog"]');
+        await waitFor(() => menu()?.contains(ui.dom.document.activeElement) === true, "the focus in the menu");
+        expect(ui.dom.document.activeElement?.getAttribute("aria-checked")).toBe("true");
+        expect(ui.dom.document.activeElement?.textContent).toContain("View");
+        expect(menu()?.textContent).toContain("Sees the content.");
+        expect(menu()?.textContent).toContain("Adds and changes content.");
+        expect(menu()?.textContent).toContain("Also changes settings and access.");
+        Array.from(menu()!.querySelectorAll<HTMLButtonElement>("button"))
+          .find((item) => item.textContent?.trim() === "Remove")!
+          .click();
+        await waitFor(() => ui.row("Lea Schmitt").textContent?.includes("Will be removed") === true, "the removal mark");
+        expect(menu()).toBeNull();
+      } finally {
+        ui.cleanup();
+      }
+    });
+
+    test("all signed-in people says agents and service accounts need their own access", async () => {
+      const ui = await renderDialog();
+      try {
+        ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="All signed-in people"]')!.click();
+        await waitFor(() => ui.text().includes("1 change"), "the change");
+        expect(ui.row("All signed-in people").textContent).toContain("Agents and service accounts need their own access.");
       } finally {
         ui.cleanup();
       }

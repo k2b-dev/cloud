@@ -3,6 +3,7 @@ import {
   AppOverview,
   AppWorkspace,
   type AppWorkspaceNavTreeMove,
+  AppWorkspaceSidebarItemStatus,
   Avatar,
   addPanesItem,
   BottomSheet,
@@ -468,7 +469,7 @@ const WorkspaceDemo = () => {
               <AppWorkspace.SidebarItem href="#discussion-restock" icon="ti ti-hash">
                 <AppWorkspace.SidebarItemLabel>Restock</AppWorkspace.SidebarItemLabel>
                 <AppWorkspace.SidebarItemMeta>
-                  <AppWorkspace.SidebarItemStatus unread={3} mention />
+                  <AppWorkspaceSidebarItemStatus unread={3} mention />
                 </AppWorkspace.SidebarItemMeta>
               </AppWorkspace.SidebarItem>
               <AppWorkspace.SidebarItem href="#discussion-returns" icon="ti ti-hash">

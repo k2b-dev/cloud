@@ -1,4 +1,4 @@
-import type { AccessEntry } from "../contracts/shared";
+import type { AccessEntry, ServiceAccountKind } from "../contracts/shared";
 import { openAccessDialog } from "./AccessDialog";
 
 const person = (id: number, displayName: string, permission: AccessEntry["permission"]): AccessEntry => ({
@@ -41,7 +41,8 @@ void openAccessDialog({
     handle === "code-7k2q9m4xwt"
       ? {
           principal: { type: "service_account", serviceAccountId: "40000000-0000-4000-8000-000000000001" },
-          display: { displayName: "Code of info@example.test", serviceAccountKind: "resource_bound" },
+          // The kind `code` arrives with the code lane; the contract type does not list it yet.
+          display: { displayName: "Code of info@example.test", serviceAccountKind: "code" as unknown as ServiceAccountKind },
         }
       : null,
   grantAccess: async (principal, permission) => ({ id: crypto.randomUUID(), principal, permission, createdAt: "now" }),

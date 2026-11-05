@@ -172,7 +172,7 @@ else {
     }
   });
 
-  test("Start shows what waits in each part once the part has answered, and its description until then or without one", async () => {
+  test("Start reserves a summary line before a reply and after a failed refresh", async () => {
     let answer: Response = Response.json({ count: 3, text: "3 to count" });
     const fetch = mockFetch((_method, path) => (path === "/api/inventory/summary" ? answer : undefined));
     const page = mount(
@@ -196,14 +196,17 @@ else {
     );
     try {
       const row = (href: string) => page.dom.root.querySelector(`a[href="${href}"]`)?.textContent ?? "";
-      expect(row("/pwa/inventory")).toContain("Count what is on the shelf");
+      expect(row("/pwa/inventory")).not.toContain("Count what is on the shelf");
+      expect(page.dom.root.querySelector('a[href="/pwa/inventory"] small')?.textContent).toBe("\u00a0");
       await waitFor(() => row("/pwa/inventory").includes("3 to count"), "summary");
       expect(row("/pwa/inventory")).not.toContain("Count what is on the shelf");
       expect(row("/pwa/notes")).toContain("Your notes");
-      // A part that stops answering falls back to its description instead of a stale line.
+      expect(page.dom.root.querySelector('a[href="/pwa/inventory"]')?.hasAttribute("data-pwa-summary")).toBe(true);
+      expect(page.dom.root.querySelector('a[href="/pwa/notes"]')?.hasAttribute("data-pwa-summary")).toBe(false);
+      // A failed refresh clears the stale summary and keeps the reserved line.
       answer = new Response(null, { status: 503 });
       page.dom.window.dispatchEvent(new page.dom.window.Event("cloud:app-badges-refresh"));
-      await waitFor(() => row("/pwa/inventory").includes("Count what is on the shelf"), "description again");
+      await waitFor(() => page.dom.root.querySelector('a[href="/pwa/inventory"] small')?.textContent === "\u00a0", "reserved line again");
     } finally {
       page.dispose();
       fetch.restore();

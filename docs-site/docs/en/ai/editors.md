@@ -18,6 +18,9 @@ Chats stay in Cloud, where you can continue them on the web.
 The local folder rules are the same as in the terminal: local tools, AGENTS.md,
 Skills, folder trust, and file access follow
 [Work with a local folder in cld](/en/apps/assistant#work-with-a-local-folder-in-cld).
+An editor with form support asks whether to trust the folder through a form.
+Without form support, the editor can load the folder's instructions only for
+the current session, because it can answer permission prompts automatically.
 
 ## Set up cld
 
@@ -100,7 +103,10 @@ with [Cloud Login](/en/apps/cloud-login).
 Local Bash commands, replacing a file, and writing or moving a file that
 becomes instructions for the assistant ask through a form that reaches a
 person even in Full access when the editor supports forms. Without form
-support, these questions use the editor's permission prompt.
+support, Assistant cannot run local Bash commands in the editor: an editor
+can approve its permission prompts automatically, and a command runs with
+your local access, including your `cld` login. Replacing a file and writing
+instructions then use the editor's permission prompt.
 
 Remembered approvals from an editor last at most for that chat. Use
 `/approvals` to list and revoke them. See [Tools and approvals](/en/docs/ai/tools-and-approvals)

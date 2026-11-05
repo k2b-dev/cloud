@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type ClientCapabilities,
   type ClientContext,
   type ContentBlock,
   type CreateElicitationRequest,
   type CreateElicitationResponse,
   client,
+  type Implementation,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
   type SessionNotification,
@@ -71,6 +73,7 @@ const tool = (
 const harness = async (
   options: {
     forms?: boolean;
+    client?: { clientInfo: Implementation; clientCapabilities: ClientCapabilities };
     streams?: AiStreamSseEvent[][];
     action?: AiPendingTurnAction;
     actions?: AiPendingTurnAction[];
@@ -279,8 +282,8 @@ const harness = async (
   const acp: ClientContext = connection.agent;
   const initialize = await acp.request("initialize", {
     protocolVersion: 1,
-    clientInfo: { name: "Test Editor", version: "1" },
-    clientCapabilities: options.forms ? { elicitation: { form: {} } } : {},
+    clientInfo: options.client?.clientInfo ?? { name: "Test Editor", version: "1" },
+    clientCapabilities: options.client?.clientCapabilities ?? (options.forms ? { elicitation: { form: {} } } : {}),
   });
   const initializeRequests = requests.length;
   const session = await acp.request("session/new", { cwd, mcpServers: [] });
@@ -484,37 +487,106 @@ describe("Assistant ACP", () => {
                 : { submitted: false, feedback: "This client cannot show drafts. Put the draft in your reply and ask the user there." },
         });
       });
-  for (const forms of [false, true])
-    test(`Bash uses ${forms ? "a person-facing form" : "execute permission"}`, async () => {
-      const h = await harness({ forms });
-      h.streams.push([
-        h.block(tool("local_bash", "awaiting_client", { command: "printf acp-test" })),
-        h.block({ ...tool("local_bash", "completed"), result: { stdout: "acp-test" } }),
-        h.done(),
-      ]);
+  test("without forms an automatic permission cannot run Bash", async () => {
+    const h = await harness({
+      permission: (request) => ({ outcome: { outcome: "selected", optionId: request.options[0]!.optionId } }),
+    });
+    const marker = join(h.cwd, "ran");
+    h.streams.push([h.block(tool("local_bash", "awaiting_client", { command: `touch ${marker}` })), h.done()]);
+    await h.send("Run");
+    expect(h.requests.find((r) => r.path.endsWith("/turns"))?.body).not.toMatchObject({
+      clientToolIds: expect.arrayContaining(["local_bash"]),
+    });
+    expect(h.permissions).toHaveLength(0);
+    expect(await Bun.file(marker).exists()).toBeFalse();
+    expect(h.requests.find((r) => r.path.includes("/actions/"))?.body).toMatchObject({
+      type: "tool_result",
+      result: { status: "denied", stderr: expect.stringContaining("form support") },
+    });
+  });
+  // Capabilities as sent by T3 Code 0.1.6 (AcpAdapterV2 makeRuntimeInput) and Zed 1.26.2 (agent_servers acp/v1.rs).
+  test.each([
+    {
+      clientInfo: { name: "t3-code", version: "0.0.0" },
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, elicitation: { form: {} } },
+    },
+    {
+      clientInfo: { name: "zed", version: "1.26.2" },
+      clientCapabilities: {
+        fs: { readTextFile: true, writeTextFile: true },
+        terminal: true,
+        auth: { terminal: true },
+        elicitation: { form: {}, url: {} },
+        _meta: { terminal_output: true, "terminal-auth": true },
+      },
+    },
+  ])("$clientInfo.name keeps local Bash through a form", async (client) => {
+    // T3 Code answers a single choice with the option value as a string; Zed returns the selected const.
+    for (const [answer, ran] of [
+      [{ action: "accept", content: { decision: "yes" } }, true],
+      [{ action: "accept", content: { decision: "no" } }, false],
+      [{ action: "decline" }, false],
+    ] as const) {
+      const marker = join(tmpdir(), `cld-acp-editor-${crypto.randomUUID()}`);
+      resources.push(() => rm(marker, { force: true }));
+      const h = await harness({ client, form: () => answer });
+      h.streams.push([h.block(tool("local_bash", "awaiting_client", { command: `touch ${marker}` })), h.done()]);
       await h.send("Run");
-      if (forms)
-        expect(h.forms[0]).toMatchObject({
-          mode: "form",
-          requestedSchema: {
-            required: ["decision"],
-            properties: {
-              decision: {
-                oneOf: [
-                  { const: "yes", title: "Run" },
-                  { const: "no", title: "Reject" },
-                ],
-              },
+      expect(h.requests.find((r) => r.path.endsWith("/turns"))?.body).toMatchObject({
+        clientToolIds: expect.arrayContaining(["local_bash"]),
+      });
+      expect(h.permissions).toHaveLength(0);
+      expect(h.forms[0]).toMatchObject({
+        requestedSchema: {
+          properties: {
+            decision: {
+              enum: ["yes", "no"],
+              oneOf: [
+                { const: "yes", title: "Run" },
+                { const: "no", title: "Reject" },
+              ],
             },
           },
-        });
-      else expect(h.permissions[0]?.toolCall.kind).toBe("execute");
+        },
+      });
+      expect(await Bun.file(marker).exists()).toBe(ran);
       expect(h.requests.find((r) => r.path.includes("/actions/"))?.body).toMatchObject({
         type: "tool_result",
-        result: { stdout: "acp-test", status: "completed" },
+        result: { status: ran ? "completed" : "denied" },
       });
-      expect(h.text()).not.toContain("acp-test");
+    }
+  });
+  test("Bash uses a person-facing form", async () => {
+    const h = await harness({ forms: true });
+    h.streams.push([
+      h.block(tool("local_bash", "awaiting_client", { command: "printf acp-test" })),
+      h.block({ ...tool("local_bash", "completed"), result: { stdout: "acp-test" } }),
+      h.done(),
+    ]);
+    await h.send("Run");
+    expect(h.forms[0]).toMatchObject({
+      mode: "form",
+      requestedSchema: {
+        required: ["decision"],
+        properties: {
+          decision: {
+            oneOf: [
+              { const: "yes", title: "Run" },
+              { const: "no", title: "Reject" },
+            ],
+          },
+        },
+      },
     });
+    expect(h.requests.find((r) => r.path.endsWith("/turns"))?.body).toMatchObject({
+      clientToolIds: expect.arrayContaining(["local_bash"]),
+    });
+    expect(h.requests.find((r) => r.path.includes("/actions/"))?.body).toMatchObject({
+      type: "tool_result",
+      result: { stdout: "acp-test", status: "completed" },
+    });
+    expect(h.text()).not.toContain("acp-test");
+  });
   test("append is an edit, replacement uses a form", async () => {
     const h = await harness({ forms: true });
     await writeFile(join(h.cwd, "notes.md"), "old");
@@ -782,6 +854,42 @@ describe("Assistant ACP", () => {
     expect(await other.send("Work")).toEqual({ stopReason: "end_turn" });
     expect(other.text()).toContain("This step needs the web chat: https://cloud.test/app/assistant?conversation=chat");
   });
+  test("an automatic permission cannot save folder trust", async () => {
+    const h = await harness({
+      permission: (request) => ({
+        outcome: {
+          outcome: "selected",
+          optionId: (request.options.find((o) => o.kind === "allow_always") ?? request.options.find((o) => o.kind === "allow_once"))!
+            .optionId,
+        },
+      }),
+    });
+    await writeFile(join(h.cwd, "AGENTS.md"), "Foreign repository instructions.");
+    await h.send("Work");
+    expect(h.permissions[0]?.options.some((o) => o.kind === "allow_always")).toBeFalse();
+    expect(h.defaults.has("assistant.trustedFolders")).toBeFalse();
+    expect(h.requests.find((r) => r.path.endsWith("/turns"))?.body).toMatchObject({
+      localContext: { instructions: [{ content: "Foreign repository instructions." }] },
+    });
+  });
+  test("a person can trust a folder through a form", async () => {
+    const h = await harness({ forms: true, form: () => ({ action: "accept", content: { decision: "folder" } }) });
+    await writeFile(join(h.cwd, "AGENTS.md"), "Use these instructions.");
+    await h.send("Work");
+    expect(h.permissions).toHaveLength(0);
+    expect(h.forms[0]).toMatchObject({
+      mode: "form",
+      requestedSchema: {
+        properties: {
+          decision: {
+            enum: ["session", "folder", "reject"],
+            oneOf: [{ const: "session" }, { const: "folder" }, { const: "reject" }],
+          },
+        },
+      },
+    });
+    expect(JSON.parse(h.defaults.get("assistant.trustedFolders") ?? "[]")).toContain(h.cwd);
+  });
   test("local folder trust and selected Skills use the terminal contract", async () => {
     const h = await harness({
       manualSkill: true,
@@ -795,7 +903,7 @@ describe("Assistant ACP", () => {
     await writeFile(join(h.cwd, ".agents/skills/work/SKILL.md"), "---\nname: work\ndescription: Work here\n---\nFollow this Skill.");
     await h.send("/skills");
     expect(h.text()).toContain("remote · Cloud · Cloud selected workflow (only with /remote)");
-    expect(h.permissions[0]?.options.map((o) => o.optionId)).toEqual(["session", "folder", "reject"]);
+    expect(h.permissions[0]?.options.map((o) => o.optionId)).toEqual(["session", "reject"]);
     await h.send("/work message");
     expect(h.requests.find((r) => r.path.endsWith("/turns"))?.body).toMatchObject({
       localContext: {
@@ -805,6 +913,34 @@ describe("Assistant ACP", () => {
     });
     await h.send("Next");
     expect(h.requests.filter((r) => r.path.endsWith("/turns"))[1]?.body).toMatchObject({ localContext: { selectedSkills: [] } });
+  });
+  test("an attachment link sends the checked file when its path changes during the question", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "cld-acp-attachment-"));
+    resources.push(() => rm(outside, { recursive: true, force: true }));
+    const safe = join(outside, "safe.txt");
+    const config = join(outside, "config.json");
+    const previous = process.env.CLD_CONFIG;
+    process.env.CLD_CONFIG = config;
+    resources.push(async () => {
+      if (previous === undefined) delete process.env.CLD_CONFIG;
+      else process.env.CLD_CONFIG = previous;
+    });
+    await writeFile(safe, "reviewed attachment");
+    await writeFile(config, "FAKE-CLOUD-TOKEN");
+    let alias = "";
+    const h = await harness({
+      permission: async () => {
+        await rm(alias);
+        await symlink(config, alias);
+        return { outcome: { outcome: "selected", optionId: "once" } };
+      },
+    });
+    alias = join(h.cwd, "alias.txt");
+    await symlink(safe, alias);
+    const { pathToFileURL } = await import("node:url");
+    await h.send("Read", [{ type: "resource_link", uri: pathToFileURL(alias).href, name: "file" }]);
+    expect(h.permissions).toHaveLength(1);
+    expect(await Promise.all(h.uploads.map((file) => file.text()))).toEqual(["reviewed attachment"]);
   });
   test("file links, attachment count and editor cancellation preserve path policy", async () => {
     const h = await harness();
@@ -1401,13 +1537,14 @@ await runAcpConnection(ctx, Bun.stdin.stream(), new WritableStream({ write: (chu
           buffered += decoder.decode(value, { stream: true });
         }
       };
-      send({ id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } });
+      // Local Bash needs an editor with forms.
+      send({ id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: { elicitation: { form: {} } } } });
       await next((line) => line.id === 1);
       send({ id: 2, method: "session/new", params: { cwd: dir, mcpServers: [] } });
       const sessionId = (await next((line) => line.id === 2)).result?.sessionId;
       send({ id: 3, method: "session/prompt", params: { sessionId, prompt: [{ type: "text", text: "Run" }] } });
-      const permission = await next((line) => line.method === "session/request_permission");
-      send({ id: (permission as { id: number }).id, result: { outcome: { outcome: "selected", optionId: "once" } } });
+      const question = await next((line) => line.method === "elicitation/create");
+      send({ id: (question as { id: number }).id, result: { action: "accept", content: { decision: "yes" } } });
       const stderr = child.stderr.getReader();
       let errors = "";
       while (!errors.includes("RESULT")) errors += decoder.decode((await stderr.read()).value);

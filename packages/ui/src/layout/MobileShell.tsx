@@ -22,6 +22,12 @@ export type MobileShellProps = {
    * tab's page loads.
    */
   scroll?: boolean;
+  /**
+   * The content is a screen of its own, such as an open chat on a phone: the footer steps aside, so the content
+   * reaches the bottom edge and pads its safe area itself. Content that opens or leaves such a screen in place calls
+   * `MobileShell.setScreen`.
+   */
+  screen?: boolean;
   class?: string;
 };
 
@@ -62,6 +68,20 @@ const persistentToastInset = (body: HTMLElement): number => {
   const area = body.getBoundingClientRect();
   const top = Math.min(...cards.map((card) => card.getBoundingClientRect().top));
   return Math.max(0, Math.min(area.height, area.bottom - top));
+};
+
+/** On the root while its content is a screen of its own; the footer steps aside. */
+const SCREEN = "data-k2b-screen";
+
+/**
+ * Marks the shell around `from` as showing a screen of its own, or not, after the first paint; the server renders
+ * the first state with the `screen` prop. Does nothing outside a shell.
+ */
+const setMobileShellScreen = (from: Element, screen: boolean): void => {
+  const root = from.closest(".k2b-mobile-shell");
+  if (!root) return;
+  if (screen) root.setAttribute(SCREEN, "");
+  else root.removeAttribute(SCREEN);
 };
 
 /** Marks the link whose page is loading; the tab bar shows it as selected. */
@@ -253,6 +273,7 @@ function MobileShellRoot(props: MobileShellProps): JSX.Element {
         ref={root}
         class={props.class ? `k2b-mobile-shell ${props.class}` : "k2b-mobile-shell"}
         data-k2b-content-heads={props.scroll === false ? "" : undefined}
+        data-k2b-screen={props.screen ? "" : undefined}
       >
         {props.sidebar}
         {props.header}
@@ -404,6 +425,10 @@ function MobileShellSidebar(props: MobileShellSidebarProps): JSX.Element {
  * stays in the area beside it. While it is mounted, the document itself never scrolls, pinch zoom and rubber-banding
  * are off, and the toast rail sits above the footer. Mount one per page, as the page's layout.
  */
-export const MobileShell = Object.assign(MobileShellRoot, { Header: MobileShellHeader, Sidebar: MobileShellSidebar });
+export const MobileShell = Object.assign(MobileShellRoot, {
+  Header: MobileShellHeader,
+  Sidebar: MobileShellSidebar,
+  setScreen: setMobileShellScreen,
+});
 
 export default MobileShell;

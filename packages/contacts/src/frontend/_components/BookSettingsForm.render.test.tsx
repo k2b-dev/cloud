@@ -143,12 +143,13 @@ describe("Contact book settings: Access", () => {
         onReconcile={async () => undefined}
       />
     ));
-  test("lists who may use the book, agents included, and edits it in the access dialog", () => {
+  test("sums up who may use the book, agents included, and edits it in the access dialog", () => {
     const html = renderAccess([person, agent, apiKey]);
 
     expect(html).toContain("Ada Lovelace");
     expect(html).toContain("CRM sync agent");
-    expect(html).toContain("(Agent)");
+    // The summary counts the agent with the people; API keys keep their own section.
+    expect(html).toContain("2 people, groups and agents · All signed-in people: off");
     expect(html).toContain("Edit access");
     // The list only shows what is stored; changing it happens in the dialog.
     expect(html).not.toContain("Remove Ada Lovelace");

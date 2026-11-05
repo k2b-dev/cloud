@@ -81,10 +81,15 @@ stdin and stdout for editors such as T3 Code and Zed. It uses the signed-in
 Cloud profile and the editor's project folder. Chats stay in Cloud.
 Sending, deleting, sharing, and inviting wait for confirmation in Cloud; the
 editor shows the chat link and can only reject these requests. Remembered
-editor approvals last at most for the chat.
+editor approvals last at most for the chat. Local Bash is offered only to
+editors with form support, because an editor can answer its permission prompts
+automatically.
 
 See [Assistant in editors](https://cloud.k2b.dev/en/docs/ai/editors) for setup,
 commands, forms, and session behavior.
+
+An editor saves folder trust only through a form; without forms, folder
+instructions load for one session.
 
 ## Interactive and print modes
 
