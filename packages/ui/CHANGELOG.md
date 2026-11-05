@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.48.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.47.0...npm-ui-v0.48.0) (2026-11-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ui:** `CalendarEvent.dataSpaceItemId` is removed; pass `data: { spaceItemId }` instead, which still renders `data-space-item-id`. Without `onEventActivate`, a click on an entry opens the calendar's own detail instead of following `href` at once. An entry with `checked: false` whose time has passed turns red in every view.
+
+### Features
+
+* **ui:** calendar entries are light with an edge in their color ([#2670](https://github.com/k2b-dev/cloud/issues/2670)) ([dbeac7c](https://github.com/k2b-dev/cloud/commit/dbeac7c865469c23039739088e77c289ad953db9))
+* **ui:** calendar entries draw icons, people, links, and their own detail ([#2672](https://github.com/k2b-dev/cloud/issues/2672)) ([3329ac4](https://github.com/k2b-dev/cloud/commit/3329ac41b2f21699f6b22768c13db538e87f42f2))
+* **ui:** composer attachments show upload progress, and a blocked microphone in an installed app names no browser path ([#2645](https://github.com/k2b-dev/cloud/issues/2645)) ([950166c](https://github.com/k2b-dev/cloud/commit/950166c7c3218021afa9c82a3d6f06688430522d))
+
+
+### Bug Fixes
+
+* **cloud:** the access dialog keeps full level words and marks on a phone ([#2669](https://github.com/k2b-dev/cloud/issues/2669)) ([27e121a](https://github.com/k2b-dev/cloud/commit/27e121a7d24997f7748b8a62c5cd0709dac1d78f))
+* **ui:** overlapping faces show the row behind them and file glyphs stay centred ([#2671](https://github.com/k2b-dev/cloud/issues/2671)) ([c04f100](https://github.com/k2b-dev/cloud/commit/c04f1006c5fb2dac29b8cc1f418c2e45c2340eb3))
+* **ui:** sending from a chat composer creates no stray computations ([#2652](https://github.com/k2b-dev/cloud/issues/2652)) ([63faa5b](https://github.com/k2b-dev/cloud/commit/63faa5b13ee016da6cc6c8424a1f31dbefe8cf2e))
+* **ui:** the chat composer keeps the 2 px field edge and no shadow ([#2655](https://github.com/k2b-dev/cloud/issues/2655)) ([fb16528](https://github.com/k2b-dev/cloud/commit/fb165288fae01af7a70a04f06f2de76d7ccc6275))
+
 ## [0.47.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.46.0...npm-ui-v0.47.0) (2026-11-05)
 
 

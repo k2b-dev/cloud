@@ -3,6 +3,48 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.66.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.65.0...cloud-v0.66.0) (2026-11-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ui:** `CalendarEvent.dataSpaceItemId` is removed; pass `data: { spaceItemId }` instead, which still renders `data-space-item-id`. Without `onEventActivate`, a click on an entry opens the calendar's own detail instead of following `href` at once. An entry with `checked: false` whose time has passed turns red in every view.
+
+### Features
+
+* **ai:** AI providers run on Nessi 1.1, and read-only Queries run in parallel ([#2600](https://github.com/k2b-dev/cloud/issues/2600)) ([4e178b4](https://github.com/k2b-dev/cloud/commit/4e178b46fd30735825e5e7ccc413462a04bf7fe0))
+* **assistant:** a recording in the Cloud app lands in the field on the device ([#2650](https://github.com/k2b-dev/cloud/issues/2650)) ([c9c4f32](https://github.com/k2b-dev/cloud/commit/c9c4f327aac18584df040d27c6f77c0bcfebae52))
+* **assistant:** every chat, search, archive and a chat's menu in the Cloud app ([#2648](https://github.com/k2b-dev/cloud/issues/2648)) ([d4f87e7](https://github.com/k2b-dev/cloud/commit/d4f87e7ebb4426497549c7de969b98d33bede1c6))
+* **assistant:** the Assistant is the first part of the Cloud app ([#2647](https://github.com/k2b-dev/cloud/issues/2647)) ([63f84b7](https://github.com/k2b-dev/cloud/commit/63f84b73152e6db1df0be2d9ac3bd14a28e58b22))
+* **cloud:** apps decide with typed answers from a decision model ([#2611](https://github.com/k2b-dev/cloud/issues/2611)) ([b294bcb](https://github.com/k2b-dev/cloud/commit/b294bcbafbc12e01c5f25acd0eec8de48ed11980))
+* **cloud:** Cloud app parts can keep a fixed place in the tab bar ([#2642](https://github.com/k2b-dev/cloud/issues/2642)) ([d056cfd](https://github.com/k2b-dev/cloud/commit/d056cfd02d4d4a42342f71c0a74a3076eba0788c))
+* **cloud:** Cloud app parts get offline-safe questions, their own name when refused, and full-screen pages ([#2644](https://github.com/k2b-dev/cloud/issues/2644)) ([09d7971](https://github.com/k2b-dev/cloud/commit/09d7971bb6489fe854f110c7ca77bad43a03932e))
+* **cloud:** each Cloud app part shows its app colour ([#2646](https://github.com/k2b-dev/cloud/issues/2646)) ([b4759d2](https://github.com/k2b-dev/cloud/commit/b4759d2eb3eece4a90043c74251766df81102d74))
+* **cloud:** let staff send visits to registered app devices ([#2667](https://github.com/k2b-dev/cloud/issues/2667)) ([04fc702](https://github.com/k2b-dev/cloud/commit/04fc70271bf6370f451ccf2dee8ffadf6700c300))
+* **spaces:** preserve concurrent edits and deduplicate task creation ([#2649](https://github.com/k2b-dev/cloud/issues/2649)) ([8aa51b7](https://github.com/k2b-dev/cloud/commit/8aa51b72bbeba48b125463d507c8126286a91bb2))
+* **ui:** calendar entries are light with an edge in their color ([#2670](https://github.com/k2b-dev/cloud/issues/2670)) ([dbeac7c](https://github.com/k2b-dev/cloud/commit/dbeac7c865469c23039739088e77c289ad953db9))
+* **ui:** calendar entries draw icons, people, links, and their own detail ([#2672](https://github.com/k2b-dev/cloud/issues/2672)) ([3329ac4](https://github.com/k2b-dev/cloud/commit/3329ac41b2f21699f6b22768c13db538e87f42f2))
+* **ui:** composer attachments show upload progress, and a blocked microphone in an installed app names no browser path ([#2645](https://github.com/k2b-dev/cloud/issues/2645)) ([950166c](https://github.com/k2b-dev/cloud/commit/950166c7c3218021afa9c82a3d6f06688430522d))
+
+
+### Bug Fixes
+
+* **chat:** stabilize system chat picker browser tests ([#2661](https://github.com/k2b-dev/cloud/issues/2661)) ([223dfec](https://github.com/k2b-dev/cloud/commit/223dfeca33b8e17fef9eb6abff2e0bbefd479069))
+* **ci:** detect sibling type drift in packed consumers ([#2464](https://github.com/k2b-dev/cloud/issues/2464)) ([2822649](https://github.com/k2b-dev/cloud/commit/2822649e0af47ccf977cfa5dcfcf6c9f76ee5f6d))
+* **cloud:** allow app keys for resource principal reads ([#2676](https://github.com/k2b-dev/cloud/issues/2676)) ([dbf7a07](https://github.com/k2b-dev/cloud/commit/dbf7a079e516d1c287c92b19ca598c7d9e4a5e92)), closes [#2377](https://github.com/k2b-dev/cloud/issues/2377)
+* **cloud:** shared UI shows one responsive variant next to any app stylesheet ([#2664](https://github.com/k2b-dev/cloud/issues/2664)) ([c11fd5b](https://github.com/k2b-dev/cloud/commit/c11fd5bcb4c4e0cf50f7f4aad8a8c89594f667d4))
+* **cloud:** the access dialog keeps full level words and marks on a phone ([#2669](https://github.com/k2b-dev/cloud/issues/2669)) ([27e121a](https://github.com/k2b-dev/cloud/commit/27e121a7d24997f7748b8a62c5cd0709dac1d78f))
+* **ui:** overlapping faces show the row behind them and file glyphs stay centred ([#2671](https://github.com/k2b-dev/cloud/issues/2671)) ([c04f100](https://github.com/k2b-dev/cloud/commit/c04f1006c5fb2dac29b8cc1f418c2e45c2340eb3))
+* **ui:** sending from a chat composer creates no stray computations ([#2652](https://github.com/k2b-dev/cloud/issues/2652)) ([63faa5b](https://github.com/k2b-dev/cloud/commit/63faa5b13ee016da6cc6c8424a1f31dbefe8cf2e))
+* **ui:** the chat composer keeps the 2 px field edge and no shadow ([#2655](https://github.com/k2b-dev/cloud/issues/2655)) ([fb16528](https://github.com/k2b-dev/cloud/commit/fb165288fae01af7a70a04f06f2de76d7ccc6275))
+
+
+### Performance Improvements
+
+* **cloud:** a browser loads KaTeX only for content with math ([#2651](https://github.com/k2b-dev/cloud/issues/2651)) ([6e906bb](https://github.com/k2b-dev/cloud/commit/6e906bb954872c58086655350f3084561cab634b))
+* **cloud:** file providers load when a person chooses files ([#2640](https://github.com/k2b-dev/cloud/issues/2640)) ([61480b8](https://github.com/k2b-dev/cloud/commit/61480b86c7032fba33a1ac1a30fd0cd5b645edde))
+* **cloud:** the icon font is versioned and kept on the device ([#2641](https://github.com/k2b-dev/cloud/issues/2641)) ([779de0a](https://github.com/k2b-dev/cloud/commit/779de0a9ceec05f2536c9ecf3382ab0eaef3dde4))
+
 ## [0.65.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.64.0...cloud-v0.65.0) (2026-11-05)
 
 

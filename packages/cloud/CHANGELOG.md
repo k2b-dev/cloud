@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.59.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.58.0...npm-cloud-v0.59.0) (2026-11-05)
+
+
+### Features
+
+* **ai:** AI providers run on Nessi 1.1, and read-only Queries run in parallel ([#2600](https://github.com/k2b-dev/cloud/issues/2600)) ([4e178b4](https://github.com/k2b-dev/cloud/commit/4e178b46fd30735825e5e7ccc413462a04bf7fe0))
+* **cloud:** apps decide with typed answers from a decision model ([#2611](https://github.com/k2b-dev/cloud/issues/2611)) ([b294bcb](https://github.com/k2b-dev/cloud/commit/b294bcbafbc12e01c5f25acd0eec8de48ed11980))
+* **cloud:** Cloud app parts can keep a fixed place in the tab bar ([#2642](https://github.com/k2b-dev/cloud/issues/2642)) ([d056cfd](https://github.com/k2b-dev/cloud/commit/d056cfd02d4d4a42342f71c0a74a3076eba0788c))
+* **cloud:** Cloud app parts get offline-safe questions, their own name when refused, and full-screen pages ([#2644](https://github.com/k2b-dev/cloud/issues/2644)) ([09d7971](https://github.com/k2b-dev/cloud/commit/09d7971bb6489fe854f110c7ca77bad43a03932e))
+* **cloud:** each Cloud app part shows its app colour ([#2646](https://github.com/k2b-dev/cloud/issues/2646)) ([b4759d2](https://github.com/k2b-dev/cloud/commit/b4759d2eb3eece4a90043c74251766df81102d74))
+* **cloud:** let staff send visits to registered app devices ([#2667](https://github.com/k2b-dev/cloud/issues/2667)) ([04fc702](https://github.com/k2b-dev/cloud/commit/04fc70271bf6370f451ccf2dee8ffadf6700c300))
+
+
+### Bug Fixes
+
+* **cloud:** allow app keys for resource principal reads ([#2676](https://github.com/k2b-dev/cloud/issues/2676)) ([dbf7a07](https://github.com/k2b-dev/cloud/commit/dbf7a079e516d1c287c92b19ca598c7d9e4a5e92)), closes [#2377](https://github.com/k2b-dev/cloud/issues/2377)
+* **cloud:** shared UI shows one responsive variant next to any app stylesheet ([#2664](https://github.com/k2b-dev/cloud/issues/2664)) ([c11fd5b](https://github.com/k2b-dev/cloud/commit/c11fd5bcb4c4e0cf50f7f4aad8a8c89594f667d4))
+* **cloud:** the access dialog keeps full level words and marks on a phone ([#2669](https://github.com/k2b-dev/cloud/issues/2669)) ([27e121a](https://github.com/k2b-dev/cloud/commit/27e121a7d24997f7748b8a62c5cd0709dac1d78f))
+
+
+### Performance Improvements
+
+* **cloud:** a browser loads KaTeX only for content with math ([#2651](https://github.com/k2b-dev/cloud/issues/2651)) ([6e906bb](https://github.com/k2b-dev/cloud/commit/6e906bb954872c58086655350f3084561cab634b))
+* **cloud:** file providers load when a person chooses files ([#2640](https://github.com/k2b-dev/cloud/issues/2640)) ([61480b8](https://github.com/k2b-dev/cloud/commit/61480b86c7032fba33a1ac1a30fd0cd5b645edde))
+* **cloud:** the icon font is versioned and kept on the device ([#2641](https://github.com/k2b-dev/cloud/issues/2641)) ([779de0a](https://github.com/k2b-dev/cloud/commit/779de0a9ceec05f2536c9ecf3382ab0eaef3dde4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.47.0 to 0.48.0
+    * @k2b/editor bumped from 0.6.3 to 0.6.4
+
 ## [0.58.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.57.0...npm-cloud-v0.58.0) (2026-11-05)
 
 
