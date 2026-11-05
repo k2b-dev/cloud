@@ -5,7 +5,7 @@ section: Frontend
 order: 835
 description: Add application pages for devices to the installable Cloud app.
 tags: [mobile, pwa, routing, layout]
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
 # Pages in the Cloud app
@@ -229,6 +229,13 @@ part, render both on one page with
 `PwaLayout bare`, and keep the selection in the address. A reload, Back, and
 rotating then show the same selection. Spaces does this for one task at
 `/pwa/spaces/<space>/<task>`.
+
+Header Back returns to a recorded predecessor by traversing browser history,
+so Forward can reopen the detail. For a direct link without that predecessor,
+replace the current entry with the parent. In Chat, a threaded chat opened
+from the list on a wide screen returns to that list. On a phone, the list opens
+the thread directory first; a thread returns to that directory. Opening Info
+preserves this return path, and closing Info returns to the chat.
 
 On a wide screen, a page whose title the sidebar's head already says passes
 `sidebarTitle`, as Start does. Keep the touch rules at every width: an iPad is
