@@ -137,7 +137,7 @@ describe("Contact book settings reconciliation", () => {
     );
     const onWorkspaceChange = mock(() => {});
     const onReconcile = mock(async () => {});
-    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
     const button = (text: string) =>
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
     const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
@@ -217,7 +217,7 @@ describe("Contact book settings reconciliation", () => {
       if (reloads === 1) throw new Error("offline");
       await retry.promise;
     });
-    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
     const button = (text: string) =>
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
     const waitFor = async (condition: () => boolean, label: string) => {

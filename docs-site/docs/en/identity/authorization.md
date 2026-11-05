@@ -712,7 +712,7 @@ The search offers people, groups, and agents; it never finds the account of an
 object or app by name.
 
 Pass `findServiceAccount(handle, signal)` to add such service accounts by their
-identifier. Send the resource as the lookup's target: your server answers only
+handle. Send the resource as the lookup's target: your server answers only
 someone who manages that resource, returns nothing for any other identifier,
 and never searches by name. Without the callback the **Service accounts**
 section shows existing rows only. `extraSections` adds further sections, such
@@ -727,6 +727,16 @@ still pending; changes already saved stay saved, and the dialog resolves
 `false`. Reload the list after any change your seams saved, also when the
 dialog resolves `false`: a save can fail halfway and the person can discard
 the rest.
+
+Settings open the dialog from a summary instead of a second list:
+`AccessSummary` from `@k2b/cloud/access/ui` shows a few faces and one line such
+as "3 people, groups and agents · All signed-in people: off · 1 service account
+· 1 API key". Parts without entries are left out. The faces open the full list
+with each level. Pass the same `allowedLevels` and `effectiveEntries` as to the
+dialog, so the levels read in the app's words and shadowed grants do not count.
+Put **Edit access** with the `ti-lock-access` icon beside it. Someone who
+cannot open the dialog still needs the full list, for example the read-only
+`PermissionEditor`.
 
 ### Confirm access changes
 

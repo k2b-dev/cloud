@@ -46,16 +46,19 @@ const openDialog = async (dom: DomTestHarness) => {
   Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button"))
     .find((button) => button.textContent?.trim() === "Edit access")!
     .click();
-  await waitFor(() => !!dom.document.querySelector('[role="dialog"] input[role=combobox]'), "the access dialog");
-  return dom.document.querySelector<HTMLElement>('[role="dialog"]')!;
+  await waitFor(
+    () => !!dom.document.querySelector('[role="dialog"]:not(.k2b-avatar-stack__popover) input[role=combobox]'),
+    "the access dialog",
+  );
+  return dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)')!;
 };
 const closeDialog = async (dom: DomTestHarness) => {
-  const dialog = dom.document.querySelector<HTMLElement>('[role="dialog"]');
+  const dialog = dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
   if (!dialog) return;
   Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
     .find((button) => button.textContent?.trim() === "Cancel")
     ?.click();
-  await waitFor(() => !dom.document.querySelector('[role="dialog"]'), "the dialog to close");
+  await waitFor(() => !dom.document.querySelector('[role="dialog"]:not(.k2b-avatar-stack__popover)'), "the dialog to close");
 };
 
 domTest("the base access section turns read-only once a saved change costs the person Manage access", async () => {
