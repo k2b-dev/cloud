@@ -627,7 +627,7 @@ export const accountsAppService = {
         appLog.warn("Account created, but administrator notice could not be rendered", { userId: created.user.id });
       }
       return audit.recordResultAfterSideEffect({
-        action: "accounts.user.create",
+        action: created.reactivated ? "accounts.user.reactivate" : "accounts.user.create",
         actor: auditActor(config.actor),
         target: userTarget(created.user),
         metadata: {

@@ -1758,7 +1758,7 @@ export default function MailComposer(props: {
             <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
             <span class="hidden sm:inline">{t().options}</span>
             <Show when={deliveryOptionsSummary().length > 0}>
-              <span class="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[var(--ui-accent)]" aria-hidden="true" />
+              <span class="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[var(--ui-app-accent-border)]" aria-hidden="true" />
             </Show>
           </Button>
         </Tooltip.Anchor>

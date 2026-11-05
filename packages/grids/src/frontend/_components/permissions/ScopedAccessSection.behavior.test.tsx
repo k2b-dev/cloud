@@ -79,6 +79,8 @@ domTest("the base access section turns read-only once a saved change costs the p
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input instanceof Request ? input.url : input);
       const method = (input instanceof Request ? input.method : init?.method) ?? "GET";
+      // The dialog reads e-mail addresses and the number of people from the directory; this test is not about them.
+      if (url.includes("/api/accounts/entities")) return Response.json({ items: [] });
       requests.push(`${method} ${new URL(url, "http://cloud.test").pathname}`);
       // Lowering their own entry left the person with Edit, and only managers may list the entries.
       if (method === "PATCH") return new Response(null, { status: 204 });
@@ -184,7 +186,10 @@ for (const scopeType of ["base", "customApp"] as const) {
     const requests: URL[] = [];
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL) => {
-        requests.push(new URL(input instanceof Request ? input.url : String(input), "http://cloud.test"));
+        const url = new URL(input instanceof Request ? input.url : String(input), "http://cloud.test");
+        // The dialog reads e-mail addresses and the number of people from the directory; this test is only about the search.
+        if (url.pathname === "/api/accounts/entities" && !url.searchParams.has("search")) return Response.json({ items: [] });
+        requests.push(url);
         return Response.json({ items: [] });
       },
       { preconnect: originalFetch.preconnect },

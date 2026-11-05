@@ -22,7 +22,7 @@ export default function Scanner(props: { state: WorkflowScannerState; endpoint: 
     getRun: (runId) => fetch(runUrl(props.endpoint, runId), { headers: { Accept: "application/json" } }),
   };
   return (
-    <div class="h-[min(42rem,75dvh)] min-h-[28rem] overflow-hidden rounded-[var(--ui-radius-panel)] border border-[var(--ui-border)]">
+    <div class="h-[min(42rem,75dvh)] min-h-[28rem] overflow-hidden rounded-[var(--ui-radius-surface)] border border-[var(--ui-border)]">
       <WorkflowScannerSurface mode="dialog" state={props.state} transport={transport} />
     </div>
   );

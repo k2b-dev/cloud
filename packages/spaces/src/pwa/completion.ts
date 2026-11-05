@@ -61,7 +61,8 @@ export async function sendWithClaim(params: {
     if (response.status === 404) return refused(t.gone({ title: item.title }));
     // Unfinished blockers; the server already words the reason in the person's language.
     if (response.status === 409) return refused(await readResponseError(response, spacesMessages(params.locale).completeBlockersFirst));
-    if (response.status < 500 && response.status !== 429) return refused(await readResponseError(response, t.notAllowed({ space: item.spaceName })));
+    if (response.status < 500 && response.status !== 429)
+      return refused(await readResponseError(response, t.notAllowed({ space: item.spaceName })));
     return "failed";
   };
   // Offline or unreachable: the same Retry as a failed answer.

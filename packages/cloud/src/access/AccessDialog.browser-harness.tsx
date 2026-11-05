@@ -29,10 +29,45 @@ const entries: AccessEntry[] = [
   person(5, "Lea Schmitt", "read"),
 ];
 
+/** What the directory knows about the listed people, as the search endpoint answers for someone who manages. */
+const mails: Record<string, string> = {
+  "10000000-0000-4000-8000-000000000001": "mia.hoffmann@beispiel.de",
+  "10000000-0000-4000-8000-000000000002": "jonas.weber@beispiel.de",
+  "10000000-0000-4000-8000-000000000005": "lea.schmitt@beispiel.de",
+};
+const directoryFetch = window.fetch.bind(window);
+window.fetch = Object.assign(
+  async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input), "https://harness.test");
+    if (url.pathname !== "/api/accounts/entities") return directoryFetch(input, init);
+    const ids = url.searchParams.get("user_ids")?.split(",") ?? [];
+    const items = ids.flatMap((id) => (mails[id] ? [{ kind: "user", user: { id, mail: mails[id] } }] : []));
+    return Response.json({ items, pagination: { page: 1, per_page: 1, total: 214, total_pages: 214, has_next: true } });
+  },
+  { preconnect: window.fetch.preconnect },
+);
+
+/**
+ * State `loading` keeps the list loading until `finishLoading()`; state `saving` keeps each save pending until
+ * `finishSaving()`. The test sets `window.accessDialogState` before the harness runs.
+ */
+const harness = window as unknown as { accessDialogState?: string; finishLoading?: () => void; finishSaving?: () => void };
+const pending = () => Promise.withResolvers<void>();
+const loadGate = pending();
+harness.finishLoading = loadGate.resolve;
+let saveGate = pending();
+harness.finishSaving = () => {
+  saveGate.resolve();
+  saveGate = pending();
+};
+const saving = harness.accessDialogState === "saving";
+
 void openAccessDialog({
   resourceName: "Einkauf 2027",
   subtitle: "Space · Spaces",
-  initialEntries: entries,
+  ...(harness.accessDialogState === "loading"
+    ? { loadEntries: async () => (await loadGate.promise, entries) }
+    : { initialEntries: entries }),
   viewerUserId: "10000000-0000-4000-8000-000000000001",
   allowPublic: true,
   publicLink: "https://cloud.example.test/s/einkauf-2027",
@@ -45,8 +80,15 @@ void openAccessDialog({
           display: { displayName: "Code of info@example.test", serviceAccountKind: "code" as unknown as ServiceAccountKind },
         }
       : null,
-  grantAccess: async (principal, permission) => ({ id: crypto.randomUUID(), principal, permission, createdAt: "now" }),
-  updateAccess: async () => {},
-  revokeAccess: async () => {},
+  grantAccess: async (principal, permission) => {
+    if (saving) await saveGate.promise;
+    return { id: crypto.randomUUID(), principal, permission, createdAt: "now" };
+  },
+  updateAccess: async () => {
+    if (saving) await saveGate.promise;
+  },
+  revokeAccess: async () => {
+    if (saving) await saveGate.promise;
+  },
 });
 document.documentElement.dataset.ready = "true";

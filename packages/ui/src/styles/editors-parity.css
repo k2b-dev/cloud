@@ -679,7 +679,7 @@
   font-family: var(--k2b-font-mono);
   font-size: 0.875rem;
   line-height: 1.35625rem;
-  color: var(--k2b-text-dimmed);
+  color: var(--k2b-text-muted);
   background: var(--k2b-surface);
   font-variant-numeric: tabular-nums;
 }

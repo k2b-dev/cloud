@@ -41,6 +41,11 @@ export const accessDialogMessages = i18n.define({
       signedInOff: "Off. Only those listed above have access.",
       signedInOn: ({ level }: { level: string }) =>
         `Everyone with an account may ${level}, including guests. Agents and service accounts need their own access.`,
+      signedInCountOn: ({ count, level }: { count: number; level: string }) =>
+        i18n.plural(count, "en", {
+          one: `1 person may ${level}, including guests. Agents and service accounts need their own access.`,
+          other: `${count} people may ${level}, including guests. Agents and service accounts need their own access.`,
+        }),
       nobodyNamed: ({ query }: { query: string }) => `Nobody is called “${query}”.`,
       searchHint: "Search by name, email or group.",
       alreadyHas: ({ level }: { level: string }) => `already has ${level}`,
@@ -77,7 +82,7 @@ export const accessDialogMessages = i18n.define({
         i18n.plural(count, "en", { one: "1 change is not saved yet.", other: `${count} changes are not saved yet.` }),
       discard: "Discard",
       keepEditing: "Keep editing",
-      saving: "Saving",
+      saving: "Saving …",
       saveFailed: ({ count }: { count: number }) =>
         i18n.plural(count, "en", {
           one: "Not saved. 1 change is still open; saved changes stay saved.",
@@ -142,6 +147,11 @@ export const accessDialogMessages = i18n.define({
       signedInOff: "Aus. Nur, wer oben steht, hat Zugriff.",
       signedInOn: ({ level }) =>
         `Alle Personen mit Konto dürfen ${level.toLowerCase()}, auch Gäste. Agenten und Dienstkonten brauchen ein eigenes Recht.`,
+      signedInCountOn: ({ count, level }) =>
+        i18n.plural(count, "de", {
+          one: `1 Person darf ${level.toLowerCase()}, auch Gäste. Agenten und Dienstkonten brauchen ein eigenes Recht.`,
+          other: `${count} Personen dürfen ${level.toLowerCase()}, auch Gäste. Agenten und Dienstkonten brauchen ein eigenes Recht.`,
+        }),
       nobodyNamed: ({ query }) => `Niemand heißt „${query}“.`,
       searchHint: "Suche nach Name, E-Mail oder Gruppe.",
       alreadyHas: ({ level }) => `hat schon ${level}`,
@@ -185,7 +195,7 @@ export const accessDialogMessages = i18n.define({
         }),
       discard: "Verwerfen",
       keepEditing: "Weiter bearbeiten",
-      saving: "Speichert",
+      saving: "Speichert …",
       saveFailed: ({ count }) =>
         i18n.plural(count, "de", {
           one: "Nicht gespeichert. 1 Änderung ist noch offen; Gespeichertes bleibt gespeichert.",

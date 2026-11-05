@@ -59,7 +59,10 @@ export async function loadPwaTask(params: {
   if (!hasPermission(permission, "read")) return null;
   const [space, item] = await Promise.all([spacesService.space.getDetail({ id: spaceId }), spacesService.item.get({ id: itemId })]);
   if (!space || !item || item.spaceId !== spaceId) return null;
-  const [[projected], detail] = await Promise.all([spacesPublicResources.projectItems([item]), spacesPublicResources.projectSpaceDetail(space)]);
+  const [[projected], detail] = await Promise.all([
+    spacesPublicResources.projectItems([item]),
+    spacesPublicResources.projectSpaceDetail(space),
+  ]);
   const event = Boolean(item.startsAt || item.endsAt);
   const checklist = event ? [] : await spacesService.item.checklist.list({ itemId });
   return {
@@ -81,7 +84,12 @@ export async function loadPwaTask(params: {
     checklist: checklist.map(({ id, label, completed }) => ({ id, label, completed })),
     canWrite: hasPermission(permission, "write"),
     statusId: projected!.columnId,
-    statuses: detail.columns.map((column) => ({ id: column.id, name: column.name, color: column.color ?? "var(--k2b-text-muted)", done: column.isDone })),
+    statuses: detail.columns.map((column) => ({
+      id: column.id,
+      name: column.name,
+      color: column.color ?? "var(--k2b-text-muted)",
+      done: column.isDone,
+    })),
     tags: (projected!.tags ?? []).map(({ id, name, color }) => ({ id, name, color })),
     claim: projected!.claim ?? null,
     blocked: item.completedAt === null && item.activeBlockerCount > 0,

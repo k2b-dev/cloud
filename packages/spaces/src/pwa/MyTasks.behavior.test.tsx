@@ -434,7 +434,10 @@ else {
       call.method === "POST"
         ? call.body && typeof call.body === "object" && "force" in call.body
           ? Response.json({})
-          : Response.json({ message: "Task is claimed; release its current claim before changing ownership or completing it" }, { status: 409 })
+          : Response.json(
+              { message: "Task is claimed; release its current claim before changing ownership or completing it" },
+              { status: 409 },
+            )
         : call.path === ITEM
           ? Response.json(claim)
           : call.path === WORK
@@ -445,12 +448,18 @@ else {
     try {
       checkButton(page.dom, "Order the tents")!.click();
       const confirm = () =>
-        [...page.dom.document.querySelectorAll<HTMLButtonElement>("dialog button")].find((button) => button.textContent?.trim() === "Take over");
+        [...page.dom.document.querySelectorAll<HTMLButtonElement>("dialog button")].find(
+          (button) => button.textContent?.trim() === "Take over",
+        );
       await waitFor(() => confirm() !== undefined, "the take-over question");
       expect(page.dom.document.querySelector("dialog")?.textContent).toContain("Jonas Beispiel");
       confirm()!.click();
       await waitFor(() => fetch.calls.filter((call) => call.method === "POST").length === 2, "the completion with the claim");
-      expect(fetch.calls.filter((call) => call.method === "POST")[1]?.body).toEqual({ completed: true, claimId: claim.claim.id, force: true });
+      expect(fetch.calls.filter((call) => call.method === "POST")[1]?.body).toEqual({
+        completed: true,
+        claimId: claim.claim.id,
+        force: true,
+      });
     } finally {
       page.dispose();
       fetch.restore();
