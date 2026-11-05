@@ -15,8 +15,11 @@ const shots = process.env.K2B_UI_SHOTS;
 const entry = resolve(import.meta.dir, "control-edge.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { Button, ColorInput, Combobox, DatePicker, NumberInput, Select, TagsInput, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { Button, Chat, ColorInput, Combobox, DatePicker, NumberInput, Select, TagsInput, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const options = [{ value: "one", label: "First" }, { value: "two", label: "Second" }];
+// Both chat composer variants: the assistant prompt's card and the conversation's pill.
+const composer = (variant, extra) =>
+  createComponent(Chat.Composer, { variant, formatting: variant === "conversation", value: "Hello", onValueChange: () => {}, onSubmit: () => {}, ...extra });
 const fields = (invalid) => {
   const error = invalid ? "Check this value" : undefined;
   return [
@@ -30,15 +33,20 @@ const fields = (invalid) => {
     ["date", createComponent(DatePicker, { label: "Due", value: "2026-11-02", onValueChange: () => {}, error })],
     ["color", createComponent(ColorInput, { label: "Colour", value: "#2563eb", onValueChange: () => {}, error })],
     ["compact", createComponent(TextInput, { "aria-label": "Width", variant: "compact", value: "120", error })],
+    ["composer", composer("default", { error })],
+    ["conversation", composer("conversation", { error })],
   ];
 };
-// Disabled fields, also invalid ones, drop the edge and sit as a muted well.
-const disabled = [
+// Disabled fields, also invalid ones, drop the edge and sit as a muted well. Built inside the root, as every
+// component that runs effects needs.
+const disabled = () => [
   ["text", createComponent(TextInput, { label: "Name", value: "Ada", disabled: true, error: "Check this value" })],
   ["number", createComponent(NumberInput, { label: "Count", value: 3, disabled: true })],
   ["select", createComponent(Select, { label: "Kind", value: "one", options, onValueChange: () => {}, disabled: true })],
   ["date", createComponent(DatePicker, { label: "Due", value: "2026-11-02", onValueChange: () => {}, disabled: true, error: "Check this value" })],
   ["color", createComponent(ColorInput, { label: "Colour", value: "#2563eb", onValueChange: () => {}, disabled: true })],
+  ["composer", composer("default", { disabled: true })],
+  ["conversation", composer("conversation", { disabled: true, error: "Check this value" })],
 ];
 render(() => [false, true].map((invalid) =>
   fields(invalid).map(([name, field]) => {
@@ -54,7 +62,7 @@ render(() => [false, true].map((invalid) =>
   cell.style.cssText = "width:260px";
   render(() => createComponent(Button, { variant: "input", children: "Choose a file" }), cell);
   return [cell];
-})()).concat(disabled.map(([name, field]) => {
+})()).concat(disabled().map(([name, field]) => {
   const cell = document.createElement("div");
   cell.dataset.field = name + "-disabled";
   cell.style.cssText = "width:260px";
@@ -79,6 +87,8 @@ const shells: Record<string, { edge: string; focus: string; text: string }> = {
   date: { edge: ".k2b-input-shell", focus: "input", text: "input" },
   color: { edge: ".k2b-color-input__value", focus: ".k2b-color-input__value", text: "code" },
   compact: { edge: ".k2b-input-shell", focus: "input", text: "input" },
+  composer: { edge: ".k2b-chat-composer", focus: "textarea:not(.k2b-chat-composer__measure)", text: "textarea:not(.k2b-chat-composer__measure)" },
+  conversation: { edge: ".k2b-chat-composer__field", focus: "textarea:not(.k2b-chat-composer__measure)", text: "textarea:not(.k2b-chat-composer__measure)" },
   "input-button": { edge: ".k2b-button", focus: ".k2b-button", text: ".k2b-button__label" },
 };
 

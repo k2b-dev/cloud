@@ -2587,6 +2587,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         class={`k2b-chat-composer ${props.class ?? ""}`}
         data-running={running() ? "true" : undefined}
         data-variant={conversation() ? "conversation" : undefined}
+        data-invalid={props.error ? "true" : undefined}
+        data-disabled={props.disabled ? "true" : undefined}
         role="group"
         aria-label={props.label ?? chatMessages().messageComposer}
       >
