@@ -70,15 +70,22 @@ empty summary line until the route answers, and clears it when a read fails. The
 stays the same height when live text arrives; long text is truncated visually. Parts
 without a summary route keep their `description`.
 
+`order` (optional) fixes the part's position on Start, in the sidebar, and in
+the tab bar, which shows the first three parts. Parts with an `order` come
+first, lowest first. Parts without one follow, sorted by name in the reader's
+language; equal orders also sort by name. Use a positive integer for a part
+that people open every day, so its tab stays in the same place in every
+language. People cannot change the order.
+
 Both routes are read once a minute and when the app returns to the
-foreground, and must be among the application's own paths. Chat answers both
-from one route; Spaces only summarizes:
+foreground, and must be among the application's own paths. Chat counts and
+summarizes; Spaces only summarizes:
 
 ```ts
 // Chat
-pwa: { requiresRoles: ["user"], badge: "/api/chat/conversations/unread-count", summary: "/api/chat/conversations/unread-count" },
+pwa: { requiresRoles: ["user"], badge: "/api/chat/badge", summary: "/api/chat/conversations/unread-count", order: 2 },
 // Spaces
-pwa: { requiresRoles: ["user"], summary: "/api/spaces/overview/summary" },
+pwa: { requiresRoles: ["user"], summary: "/api/spaces/overview/summary", order: 3 },
 ```
 
 Do not list `/pwa` paths in `routes`; `defineApp()` throws for them. See

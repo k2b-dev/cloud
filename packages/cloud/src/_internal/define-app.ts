@@ -258,6 +258,12 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
      * part has no `badge`. It may be the badge's route. It must be one of the app's own paths.
      */
     summary?: string;
+    /**
+     * Position of the part in the tab bar, sidebar and Start: parts with an order come first, ascending, so the
+     * most-used parts keep their place in every language; parts without one follow, sorted by localized name. A
+     * positive integer; equal orders also sort by name.
+     */
+    order?: number;
   };
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
@@ -442,7 +448,10 @@ const validateAppPwaPart = (opts: Pick<AppOptions, "id" | "routes" | "pwa">): Ap
   if (!isPwaPartId(opts.id)) {
     throw new Error(`App "${opts.id}" cannot declare pwa; a part needs a plain id other than pwa, settings and offline`);
   }
-  const { badge, summary } = opts.pwa;
+  const { badge, summary, order } = opts.pwa;
+  if (order !== undefined && !(Number.isSafeInteger(order) && order > 0)) {
+    throw new Error(`App "${opts.id}" declares pwa.order ${order}; it must be a positive integer`);
+  }
   for (const [field, path] of [
     ["badge", badge],
     ["summary", summary],
@@ -456,6 +465,7 @@ const validateAppPwaPart = (opts: Pick<AppOptions, "id" | "routes" | "pwa">): Ap
     requiresRoles: opts.pwa.requiresRoles ? [...opts.pwa.requiresRoles] : undefined,
     ...(badge ? { badge } : {}),
     ...(summary ? { summary } : {}),
+    ...(order !== undefined ? { order } : {}),
   };
 };
 
@@ -825,6 +835,7 @@ export const defineApp = <
               requiresRoles: meta.pwa.requiresRoles ? [...meta.pwa.requiresRoles] : undefined,
               ...(meta.pwa.badge ? { badge: meta.pwa.badge } : {}),
               ...(meta.pwa.summary ? { summary: meta.pwa.summary } : {}),
+              ...(meta.pwa.order !== undefined ? { order: meta.pwa.order } : {}),
             }
           : undefined,
         installable: meta.installable,
