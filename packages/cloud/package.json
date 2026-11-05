@@ -11,6 +11,12 @@
   "homepage": "https://github.com/k2b-dev/cloud",
   "bugs": "https://github.com/k2b-dev/cloud/issues",
   "type": "module",
+  "imports": {
+    "#katex-render": {
+      "browser": "./src/shared/markdown/extensions/katex-render.browser.ts",
+      "default": "./src/shared/markdown/extensions/katex-render.ts"
+    }
+  },
   "files": [
     "src",
     "scripts",

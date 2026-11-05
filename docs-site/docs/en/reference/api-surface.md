@@ -365,6 +365,16 @@ copies, and outgoing messages. Its mailbox CSS may override column alignment. Om
 `output` keeps the existing Cloud rendering, including computed table
 formulas; `links: "plain"` alone does not disable formula evaluation.
 
+### Render math in the browser
+
+On the server, `markdown.render()` and `markdown.renderSync()` render `$…$`,
+`$$…$$`, and `math` fences with KaTeX right away. In the browser, KaTeX loads
+only when content has math. Until it arrives, each formula's LaTeX source
+stands at its place. A render inside a Solid memo or JSX expression runs again
+by itself once KaTeX has loaded and then returns the same HTML as the server.
+While a server-rendered page hydrates, it keeps the server's formulas. Render
+Markdown that can contain math in a reactive scope.
+
 ### Evaluate Markdown table cells
 
 Import `evaluateTableCell(row, column, context)` and `EvalResult` from
