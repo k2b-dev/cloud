@@ -189,11 +189,12 @@ for (const width of [1440, 390]) {
         ]
           .filter(visible)
           .map((element) => ({ label: element.textContent, x: element.getBoundingClientRect().left }));
-        // Ink is what a person sees: text, icons, avatars, images, bars. Hover fills and paddings do not count.
+        // Ink is what a person sees: text, icons and their filled tiles, avatars, images, bars. Hover fills and
+        // paddings do not count.
         const inkLeft = (root: Element) => {
           let left = Number.POSITIVE_INFINITY;
           for (const element of root.querySelectorAll(
-            "i, .k2b-avatar, img, svg, [role='progressbar'], .k2b-detail-tag, .k2b-detail-presence__swatch",
+            "i, .k2b-icon-tile, .k2b-avatar, img, svg, [role='progressbar'], .k2b-detail-tag, .k2b-detail-presence__swatch",
           ))
             if (visible(element)) left = Math.min(left, element.getBoundingClientRect().left);
           const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);

@@ -419,9 +419,8 @@
 }
 
 /* In a detail section, a file's type icon stands on the section's text edge
-   like every other row icon; thumbnails already fill their slot. */
-.k2b-ui .k2b-detail-panel__section-body .k2b-file-grid[data-layout="list"] .k2b-file-grid__preview,
-.k2b-ui .k2b-detail-panel__section-body .k2b-file-grid[data-layout="list"] .k2b-file-grid__preview > .k2b-file-type-icon {
+   like every other row icon; thumbnails already fill their slot. The glyph
+   stays centred in its tile. */
+.k2b-ui .k2b-detail-panel__section-body .k2b-file-grid[data-layout="list"] .k2b-file-grid__preview {
   justify-content: flex-start;
-  justify-items: start;
 }
