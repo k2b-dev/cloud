@@ -127,10 +127,16 @@ type DirectoryPage = {
   items: { kind: string; user?: { id: string; mail: string | null } }[];
   pagination?: { total: number };
 };
-const readDirectory = async (params: Record<string, string>, signal: AbortSignal): Promise<DirectoryPage> => {
-  const response = await fetch(`${DIRECTORY}?${new URLSearchParams(params)}`, { signal, credentials: "same-origin" });
-  if (!response.ok) throw new Error(response.statusText);
-  return (await response.json()) as DirectoryPage;
+/** One directory page, or `null` when the directory refuses or answers in another shape. */
+const readDirectory = async (params: Record<string, string>, signal: AbortSignal): Promise<DirectoryPage | null> => {
+  try {
+    const response = await fetch(`${DIRECTORY}?${new URLSearchParams(params)}`, { signal, credentials: "same-origin" });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    return typeof body === "object" && body !== null && Array.isArray((body as DirectoryPage).items) ? (body as DirectoryPage) : null;
+  } catch {
+    return null;
+  }
 };
 
 /**
@@ -199,21 +205,21 @@ export function AccessDialog(
     void (async () => {
       for (let start = 0; start < ids.length; start += DIRECTORY_PAGE) {
         const page = ids.slice(start, start + DIRECTORY_PAGE);
-        const result = await readDirectory(
-          { kinds: "user", user_ids: page.join(","), per_page: String(page.length) },
-          directory.signal,
-        ).catch(() => null);
+        const result = await readDirectory({ kinds: "user", user_ids: page.join(","), per_page: String(page.length) }, directory.signal);
         if (!result) return;
-        const found = result.items.flatMap((item) => (item.user?.mail ? [[item.user.id, item.user.mail] as const] : []));
+        const found = result.items.flatMap((item) =>
+          typeof item?.user?.id === "string" && typeof item.user.mail === "string" ? [[item.user.id, item.user.mail] as const] : [],
+        );
         if (found.length > 0) setMails((current) => new Map([...current, ...found]));
       }
     })();
   });
   // The directory counts the people the viewer may see; a guest sees only themselves, so read-only viewers get no number.
   if (props.allowAuthenticated !== false && canEdit())
-    readDirectory({ kinds: "user", per_page: "1" }, directory.signal)
-      .then((result) => setSignedInCount(result.pagination?.total))
-      .catch(() => {});
+    void readDirectory({ kinds: "user", per_page: "1" }, directory.signal).then((result) => {
+      const total = result?.pagination?.total;
+      if (typeof total === "number") setSignedInCount(total);
+    });
   const changes = createMemo(() => draftChanges(draft()));
   const lastManagers = createMemo(() => lastManagerKeys(draft(), props.effectiveEntries));
   const levels = (principal: Principal): ResolvedLevel[] =>
