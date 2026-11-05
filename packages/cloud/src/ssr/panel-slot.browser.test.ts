@@ -307,13 +307,13 @@ for (const width of [1440, 390]) {
 async function fixture(
   width = 1440,
   cookie?: string,
-  options: { focus?: boolean; hasTouch?: boolean; height?: number; ask?: boolean } = {},
+  options: { focus?: boolean; hasTouch?: boolean; height?: number; ask?: boolean; motion?: boolean } = {},
 ) {
   const context = await browser.newContext({
     viewport: { width, height: options.height ?? 900 },
     locale: "en",
     timezoneId: "UTC",
-    reducedMotion: "reduce",
+    reducedMotion: options.motion ? "no-preference" : "reduce",
     hasTouch: options.hasTouch,
   });
   const personId = crypto.randomUUID();
@@ -661,7 +661,7 @@ test("834px drawer overlays the app without narrowing it", async () => {
 });
 
 // 10: A persisted desktop state cannot reopen a phone sheet after navigation.
-test("390px sheet grows and navigation, popstate and persisted pageshow close it without cookie writes", async () => {
+test("390px sheet shrinks and navigation, popstate and persisted pageshow close it without cookie writes", async () => {
   const before = providerRequests;
   const { context, page } = await fixture(390, "1:fixture:24");
   try {
@@ -670,10 +670,11 @@ test("390px sheet grows and navigation, popstate and persisted pageshow close it
     await settle(page);
     expect(providerRequests).toBe(before);
     await open(page);
-    const sheet = await page.locator(slot).boundingBox();
-    expect(sheet?.height).toBeCloseTo(900 * 0.58, 0);
+    // Full height below the 46 px title row, so nothing in the panel is cut off.
+    expect(await page.locator(slot).boundingBox()).toEqual({ x: 0, y: 46, width: 390, height: 854 });
     await page.locator("[data-cloud-panel-grow]").click();
-    expect(await page.locator(slot).getAttribute("data-panel-size")).toBe("full");
+    expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("half");
+    expect((await page.locator(slot).boundingBox())?.height).toBeCloseTo(900 * 0.58, 0);
     for (const event of ["popstate", "pageshow"]) {
       await page.evaluate(
         (type) => window.dispatchEvent(type === "pageshow" ? new PageTransitionEvent(type, { persisted: true }) : new PopStateEvent(type)),
@@ -683,7 +684,8 @@ test("390px sheet grows and navigation, popstate and persisted pageshow close it
       await open(page);
     }
     expect(await panelCookie(page)).toBe("1:fixture:24");
-    // The half-height sheet leaves the page's top in reach.
+    // Each opening starts at full height again; the half-height sheet leaves the page's top in reach.
+    expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBeNull();
     await page.locator("[data-cloud-panel-grow]").click();
     await page.locator("#next-page").click();
     await page.waitForURL("**/app/fixture/next");
@@ -702,6 +704,7 @@ test("390px sheet leaves room to scroll the page's last row above it", async () 
     await page.goto(`${origin}/app/fixture/long`);
     await page.waitForFunction(() => document.documentElement.dataset.panelHostMounted === "true");
     await open(page);
+    await page.locator("[data-cloud-panel-grow]").click();
     // Scroll to the very end, whether the page or the app card scrolls.
     await page.evaluate(() => {
       const main = document.querySelector<HTMLElement>(".layout-content-main");
@@ -712,6 +715,127 @@ test("390px sheet leaves room to scroll the page's last row above it", async () 
     const last = await page.locator("#last-row").boundingBox();
     const sheet = await page.locator(slot).boundingBox();
     expect(last && sheet && last.y + last.height <= sheet.y).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+// 10d: The handle drags the sheet: it follows the pointer, snaps to the nearest height and closes far below half.
+const sheetHeight = (page: Page) => page.locator(slot).evaluate((element) => element.getBoundingClientRect().height);
+async function dragHandle(page: Page, distance: number, check?: () => Promise<void>) {
+  const box = (await page.locator("[data-cloud-panel-grow]").boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + distance, { steps: 8 });
+  await check?.();
+  // A finger that rests before it lifts carries no speed into the snap.
+  await page.waitForTimeout(150);
+  await page.mouse.up();
+  await settle(page);
+}
+test("390px handle drag follows the pointer, snaps to half and full, and closes far below half", async () => {
+  const { context, page } = await fixture(390);
+  try {
+    await open(page);
+    expect(await sheetHeight(page)).toBe(854);
+    await dragHandle(page, 120, async () => {
+      // Mid-drag the sheet follows the pointer, without a transition.
+      expect(await sheetHeight(page)).toBe(734);
+      expect(await page.locator(slot).getAttribute("data-sheet-dragging")).toBe("");
+    });
+    // 734 px is nearer to full (854) than to half (522).
+    expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("full");
+    expect(await sheetHeight(page)).toBe(854);
+    expect(await page.locator(slot).getAttribute("data-sheet-dragging")).toBeNull();
+    await dragHandle(page, 260);
+    expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("half");
+    expect(await sheetHeight(page)).toBeCloseTo(522, 0);
+    expect(await page.locator("[data-cloud-panel-grow]").getAttribute("aria-label")).toBe("Enlarge panel");
+    // A drag is not also a press: the click after it leaves the height where the drag put it.
+    await dragHandle(page, -250);
+    expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("full");
+    expect(await page.locator("[data-cloud-panel-grow]").getAttribute("aria-label")).toBe("Shrink panel");
+    // The drag stops at full height.
+    await dragHandle(page, -200, async () => expect(await sheetHeight(page)).toBe(854));
+    expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("full");
+    await dragHandle(page, 330);
+    expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("half");
+    await dragHandle(page, 360);
+    await closed(page);
+    expect(await page.locator(slot).isVisible()).toBe(false);
+    expect(await page.locator(slot).evaluate((element) => element.style.height)).toBe("");
+  } finally {
+    await context.close();
+  }
+});
+
+test("390px touch drag on the handle moves the sheet without scrolling the page", async () => {
+  const { context, page } = await fixture(390, undefined, { hasTouch: true });
+  try {
+    await open(page);
+    const box = (await page.locator("[data-cloud-panel-grow]").boundingBox())!;
+    const x = Math.round(box.x + box.width / 2);
+    const y = Math.round(box.y + box.height / 2);
+    expect(await page.locator("[data-cloud-panel-grow]").evaluate((element) => getComputedStyle(element).touchAction)).toBe("none");
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+    for (let step = 1; step <= 10; step++)
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y + step * 30 }] });
+    await page.waitForTimeout(150);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await settle(page);
+    expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("half");
+    expect(await sheetHeight(page)).toBeCloseTo(522, 0);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test("390px handle stays a button: Enter and Space switch the height and keep focus", async () => {
+  const { context, page } = await fixture(390);
+  try {
+    await open(page);
+    const handle = page.locator("[data-cloud-panel-grow]");
+    await handle.focus();
+    await page.keyboard.press("Enter");
+    expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("half");
+    expect(await handle.getAttribute("aria-label")).toBe("Enlarge panel");
+    await page.keyboard.press("Space");
+    expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("full");
+    expect(await handle.getAttribute("aria-label")).toBe("Shrink panel");
+    expect(await handle.evaluate((element) => element === document.activeElement)).toBe(true);
+    expect(await handle.evaluate((element) => element.tagName)).toBe("BUTTON");
+  } finally {
+    await context.close();
+  }
+});
+
+test("390px snap animates only without reduced motion, from the OS setting or the Cloud preference", async () => {
+  // The fixture stills every transition for stable geometry; this test needs the stylesheet's own.
+  const duration = (page: Page) =>
+    page.evaluate(() => {
+      for (const style of document.querySelectorAll("style")) if (style.textContent?.includes("transition:none!important")) style.remove();
+      return getComputedStyle(document.getElementById("cloud-panel")!).transitionDuration;
+    });
+  const reduced = await fixture(390);
+  try {
+    await open(reduced.page);
+    expect(await duration(reduced.page)).toBe("0s");
+  } finally {
+    await reduced.context.close();
+  }
+  const { context, page } = await fixture(390, undefined, { motion: true });
+  try {
+    await open(page);
+    expect(await duration(page)).toBe("0.22s");
+    // The snap after a drag runs on that transition.
+    await dragHandle(page, 260);
+    expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("half");
+    await page.evaluate(() => document.documentElement.setAttribute("data-k2b-motion", "reduced"));
+    expect(await duration(page)).toBe("0s");
   } finally {
     await context.close();
   }

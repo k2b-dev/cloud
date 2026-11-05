@@ -84,21 +84,18 @@ const mountRail = async () => {
   return render(() => createComponent(RailApps, { apps, settings, currentPath: "/app/mail" }), dom.root);
 };
 
-test.each(["rail", "phone bar"])("the retained %s follows the arriving page's rail preferences", async (surface) => {
+test("the retained rail follows the arriving page's rail preferences", async () => {
   const { default: CloudShell } = await import("./CloudShell.island");
   const data: ShellData = { apps, rail: settings, legalLinks: [], profile: { name: "Fixture" }, theme: "system", searchLinks: {} };
   const script = document.createElement("script");
   script.id = "cloud-shell-data";
   script.type = "application/json";
   script.textContent = JSON.stringify(data);
-  const bar = document.createElement("div");
-  bar.className = "cloud-tab-bar__row";
   const mount = document.createElement("div");
-  dom.root.append(script, bar, mount);
+  dom.root.append(script, mount);
   const dispose = render(() => createComponent(CloudShell, { slot: "rail", currentPath: "/" }), mount);
   try {
     expect(mount.querySelector('[data-cloud-rail-apps] a[href="/app/mail"]')).not.toBeNull();
-    expect(bar.querySelector(".cloud-tab-bar__live")).toBeNull();
     const arriving = document.createElement("script");
     arriving.id = script.id;
     arriving.type = script.type;
@@ -112,10 +109,8 @@ test.each(["rail", "phone bar"])("the retained %s follows the arriving page's ra
     });
     script.replaceWith(arriving);
     window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: dom.root } }));
-    const root = surface === "rail" ? mount : bar;
-    const links = surface === "rail" ? "[data-cloud-rail-apps]" : ".cloud-tab-bar__live";
-    expect(root.querySelector(`${links} a[href="/app/mail"]`) === null).toBe(true);
-    expect(root.querySelector(`${links} a[href="/custom"]`) !== null).toBe(true);
+    expect(mount.querySelector('[data-cloud-rail-apps] a[href="/app/mail"]')).toBeNull();
+    expect(mount.querySelector('[data-cloud-rail-apps] a[href="/custom"]')).not.toBeNull();
   } finally {
     dispose();
   }
@@ -464,40 +459,3 @@ test("a Cloud app part's summary keeps its one-line text beside its count; a mis
   }
 });
 
-test("the phone bar shows the rail's count on its app and names it after the label", async () => {
-  const { default: CloudShell } = await import("./CloudShell.island");
-  const data: ShellData = { apps, rail: settings, legalLinks: [], profile: { name: "Fixture" }, theme: "system", searchLinks: {} };
-  const script = document.createElement("script");
-  script.id = "cloud-shell-data";
-  script.type = "application/json";
-  script.textContent = JSON.stringify(data);
-  const bar = document.createElement("div");
-  bar.className = "cloud-tab-bar__row";
-  // The server's bar, with a focused link that the live bar takes over.
-  bar.innerHTML = '<nav class="k2b-tab-bar"><ul><li><a href="/" data-tab="home">Home</a></li></ul></nav>';
-  const mount = document.createElement("div");
-  dom.root.append(script, bar, mount);
-  bar.querySelector<HTMLAnchorElement>('a[data-tab="home"]')!.focus();
-  const dispose = render(() => createComponent(CloudShell, { slot: "rail", currentPath: "/" }), mount);
-  try {
-    await settle();
-    expect(document.activeElement).toBe(bar.querySelector('.cloud-tab-bar__live a[data-tab="home"]'));
-    const chat = bar.querySelector<HTMLAnchorElement>('.cloud-tab-bar__live a[href="/app/chat"]')!;
-    expect(chat.querySelector(".k2b-tab-bar__badge .cloud-app-badge")?.textContent).toBe("3");
-    expect(chat.textContent).toBe("Chat3, 3 new");
-    expect(chat.querySelector(".cloud-app-badge")?.getAttribute("aria-hidden")).toBe("true");
-    // A failing app and an app without a badge show no mark.
-    expect(bar.querySelector('.cloud-tab-bar__live a[href="/app/notes"] .cloud-app-badge')).toBeNull();
-    expect(bar.querySelector('.cloud-tab-bar__live a[href="/app/mail"] .cloud-app-badge')).toBeNull();
-    const home = bar.querySelector<HTMLAnchorElement>('.cloud-tab-bar__live a[data-tab="home"]')!;
-    home.focus();
-    responses["/api/chat/badge"] = () => Response.json({ count: 0 });
-    refreshAppBadges();
-    await settle();
-    // Without a count the server's bar is current again, and the focused destination stays focused there.
-    expect(bar.querySelector(".cloud-tab-bar__live")).toBeNull();
-    expect(document.activeElement).toBe(bar.querySelector('a[data-tab="home"]'));
-  } finally {
-    dispose();
-  }
-});

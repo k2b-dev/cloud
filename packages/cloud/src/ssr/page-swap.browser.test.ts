@@ -268,13 +268,12 @@ test("20 regular/fullPage swaps keep the slot, provider, draft, pending work and
   }
 });
 
-test("rail, phone bar, title and trail follow swaps and Back/Forward", async () => {
+test("rail, title and trail follow swaps and Back/Forward", async () => {
   const f = await fixture(390);
   try {
     const check = async (name: string) => {
       await column(f.page, name);
       expect(await f.page.locator(`.layout-rail .rail-item[href='/app/fixture/${name}'][aria-current=page]`).count()).toBe(1);
-      expect(await f.page.locator(`.cloud-tab-bar a[href='/app/fixture/${name}'][aria-current=page]`).count()).toBe(1);
       const title = name === "B" ? "Full page B" : "Regular page A";
       expect(await f.page.title()).toBe(title);
       expect(await f.page.locator("script[data-k2b-page-trail]").textContent()).toContain(title);
@@ -302,7 +301,6 @@ const shellGeometry = (page: Page) =>
       ".layout-page-head",
       "main.layout-content-main",
       "#cloud-panel",
-      ".cloud-tab-bar",
     ].map((selector) => {
       const element = document.querySelector(selector);
       if (!element) return [selector, null];

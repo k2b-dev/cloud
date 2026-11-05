@@ -23,7 +23,6 @@ import { getLayoutHelp, layoutHelpFailed } from "./help";
 import LayoutFooter from "./LayoutFooter";
 import LayoutHeader from "./LayoutHeader";
 import LayoutRail, { type LayoutAppLink } from "./LayoutRail";
-import LayoutTabBar from "./LayoutTabBar";
 import type { LayoutContext } from "./layout-context";
 import { HELP_VIEW_LIMIT } from "./layout-help-start";
 import type { LayoutBreadcrumb } from "./layout-runtime";
@@ -451,7 +450,6 @@ export default function Layout(props: LayoutProps) {
             );
           })()}
           {panel && <PanelSlot panel={panel} state={panelState} platform={shellData.platform} />}
-          {showRail && <LayoutTabBar currentPath={requestPath(c)} />}
         </ShellDataProvider>
         {!swap && (
           <div data-print-fallback="">

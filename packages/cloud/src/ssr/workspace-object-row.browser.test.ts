@@ -53,8 +53,10 @@ describe("phone object row", () => {
           await last.focus();
           await settled(page);
           const lastBox = (await last.boundingBox())!;
-          const barBox = (await page.locator(".cloud-tab-bar").boundingBox())!;
-          expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(barBox.y);
+          // No dock covers the card's end; the floating primary action, where the app has one, stays clear of the row.
+          expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+          const primary = page.locator(".k2b-app-workspace__head-primary");
+          if (await primary.count()) expect(lastBox.y + lastBox.height).toBeLessThanOrEqual((await primary.first().boundingBox())!.y);
           expect(await page.locator(".k2b-app-workspace__main").evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
           if (caller === "mail" || caller === "contacts") {
             const primary = page.getByRole("link", { name: "New object", exact: true });

@@ -77,7 +77,7 @@ The head follows these rules as well:
   use separate rows. The head measures its own width, including space lost
   to neighboring panels; controls never draw over each other.
 - Exactly one action is filled. On the phone it becomes a round button; a
-  host with a bottom bar, such as Cloud, places it beside the bar.
+  host such as Cloud floats it at the screen's bottom end.
 - Files keeps its path in the head (exception D1 to "no title").
 
 The sidebar stays resizable; its handle shows on hover and focus. The minimal
