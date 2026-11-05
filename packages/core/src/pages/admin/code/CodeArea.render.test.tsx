@@ -264,11 +264,12 @@ test("limits and runners render their data, empty and error states", () => {
     "Wanduhr je Lauf (ms)",
     "Brückenaufrufe je Lauf",
     "Datenbank je Code (Bytes)",
-    "KI-Referenzbudget je Lauf (USD)",
+    "KI-Referenzbudget je Versuch (USD)",
     "Gleichzeitige Läufe je Code",
     "Gleichzeitige Läufe je Besitzer",
   ])
     expect(limits).toContain(label);
+  expect(render({ sec: "limits" }, "normal", "en")).toContain("AI reference budget per attempt (USD)");
   const runners = render({ sec: "runners" });
   expect(runners).toContain('data-section="code-runners"');
   for (const label of ["Instanzen", "Freie Plätze", "Warteschlange", "Längste Wartezeit", "4 s", "8a3c1e20-5d1b-4c2f-9a10-1b2c3d4e5f60"])

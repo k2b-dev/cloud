@@ -46,7 +46,7 @@ operational budgets; administrators can lower them for their installation.
 An owner is the exact personal, resource or application identity, so changing
 an author does not create another owner allowance.
 
-Code enforces the per-run AI reference budget on `core.ai.*` capability calls,
+Code enforces the per-attempt AI reference budget on `core.ai.*` capability calls,
 alongside the effective group policy for **AI**. Zero refuses before model
 invocation with `code_ai_budget_limit`. Each admitted call reserves the attempt's
 remaining budget atomically; parallel calls cannot spend that reservation again.

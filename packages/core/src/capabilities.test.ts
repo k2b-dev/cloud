@@ -301,6 +301,7 @@ describe("Core AI capabilities", () => {
       "ai.chat.search",
       "ai.chats.resources",
       "ai.chats.search",
+      "ai.decide",
       "ai.skill.access.read",
       "ai.skill.read",
       "ai.skill.reference.read",
@@ -374,7 +375,15 @@ describe("Core AI capabilities", () => {
         .filter((query) => query.openWorld)
         .map((query) => query.localId)
         .sort(),
-    ).toEqual(["address.autocomplete", "address.geocode", "address.reverse", "place.search", "route.calculate", "route.update"]);
+    ).toEqual([
+      "address.autocomplete",
+      "address.geocode",
+      "address.reverse",
+      "ai.decide",
+      "place.search",
+      "route.calculate",
+      "route.update",
+    ]);
     expect(manifest.actions.map((action) => action.localId).sort()).toEqual(actions);
     expect(manifest.actions.every((action) => action.openWorld === false)).toBe(true);
     expect(
