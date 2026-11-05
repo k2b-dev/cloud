@@ -1,5 +1,5 @@
 import { AccessEntrySchema, ErrorResponseSchema, GrantAccessSchema } from "@k2b/cloud/contracts";
-import { type AuthContext, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
+import { type AuthContext, getLocale, jsonResponse, type PermissionLevel, respond } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -29,7 +29,7 @@ type AccessRouteConfig = {
   label: string;
   notFound: (messages: GridsApiMessages) => string;
   resolveBaseId: (resourceId: string) => Promise<string | null>;
-  list: (resourceId: string) => ReturnType<typeof listBaseAccess>;
+  list: (resourceId: string, permission: PermissionLevel) => ReturnType<typeof listBaseAccess>;
 };
 
 type AccessRouteDeps = {
@@ -88,7 +88,7 @@ const listResource = async (c: Context<AuthContext>, config: AccessRouteConfig, 
   if (!baseId) return c.json({ message: config.notFound(apiMessages(c)) }, 404);
   const gate = await deps.gate(c, { baseId }, "admin");
   if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-  return c.json(await config.list(id));
+  return c.json(await config.list(id, "admin"));
 };
 
 const grantResource = async (

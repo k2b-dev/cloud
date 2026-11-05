@@ -271,7 +271,12 @@ describe("Venue capabilities", () => {
         expect(hiddenList.ok && hiddenList.data.data).toEqual([]);
 
         const publicVenue = await invokeQuery("venue.read", { id: publicVenueShortId }, otherContext);
-        expect(publicVenue.ok && publicVenue.data.data).toMatchObject({ id: publicVenueShortId, permission: null, publicEnabled: true });
+        expect(publicVenue.ok && publicVenue.data.data).toMatchObject({
+          id: publicVenueShortId,
+          permission: null,
+          publicEnabled: true,
+          view: { permission: "read" },
+        });
         if (publicVenue.ok) {
           expect(publicVenue.data.summary).toContain("Read Venue");
           expect(publicVenue.data.data).not.toHaveProperty("icalToken");
@@ -609,7 +614,18 @@ describe("Venue capabilities", () => {
       const listed = await invokeQuery("venue.list", { limit: 25 }, context);
       expect(listed.ok && listed.data.data).toEqual([expect.objectContaining({ id: grantedVenueShortId, permission: "read" })]);
       const read = await invokeQuery("venue.read", { id: grantedVenueShortId }, context);
-      expect(read.ok).toBe(true);
+      expect(read).toMatchObject({ ok: true, data: { data: { view: { permission: "read" } } } });
+      await sql`UPDATE auth.access SET permission='admin' WHERE id=${accessId}::uuid`;
+      if (context.actor.kind !== "service_account") throw new Error("Expected service-account fixture");
+      const managedContext = { ...context, actor: { ...context.actor, scopes: ["admin"] } } satisfies CapabilityExecutionContext;
+      expect(await invokeQuery("venue.read", { id: grantedVenueShortId }, managedContext)).toMatchObject({
+        ok: true,
+        data: { data: { view: { permission: "admin" } } },
+      });
+      expect(await invokeQuery("venue.read", { id: grantedVenueShortId }, context)).toMatchObject({
+        ok: true,
+        data: { data: { view: { permission: "read" } } },
+      });
       const ungranted = await invokeQuery("venue.read", { id: privateVenueShortId }, context);
       expect(ungranted).toMatchObject({ ok: false, error: { status: 404 } });
     } finally {

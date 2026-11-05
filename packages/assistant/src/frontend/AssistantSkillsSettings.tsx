@@ -81,6 +81,7 @@ const openSkillAccess = async (skill: AiSkillSummary): Promise<void> => {
   const [entries, projects] = access;
   // Changes are collected in the access dialog and saved together.
   await openAccessDialog({
+    target: { type: "core.ai.skill", id: skill.id },
     resourceName: skill.name,
     subtitle: text("Skill · Assistant"),
     initialEntries: entries,

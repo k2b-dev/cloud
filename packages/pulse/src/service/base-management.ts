@@ -274,7 +274,7 @@ export const listBaseAccess = async (baseId: string, user: AccessScope): Promise
     WHERE ba.base_id = ${baseId}::uuid
     ORDER BY a.created_at
   `;
-  return ok(await resolveDisplayNames(rows.map(mapAccessRow)));
+  return ok(await resolveDisplayNames(rows.map(mapAccessRow), { permission: "admin" }));
 };
 
 export const grantBaseAccess = async (params: {
@@ -321,7 +321,7 @@ export const grantBaseAccess = async (params: {
   });
 
   if (!created.ok) return fail(created.error);
-  const [entry] = await resolveDisplayNames([created.data]);
+  const [entry] = await resolveDisplayNames([created.data], { permission: "admin" });
   return entry ? ok(entry) : fail(err.internal("Failed to resolve access entry"));
 };
 

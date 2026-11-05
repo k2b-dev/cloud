@@ -32,9 +32,14 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
   translations: {
     de: {
       types: {
+        template: { title: "Dateivorlage", description: "Eine verwaltete Dateivorlage." },
         entry: { title: "Datei oder Ordner", description: "Eine Datei oder ein Ordner in einer zugänglichen Cloud- oder FreeIPA-Ablage." },
       },
       queries: {
+        "template.read": {
+          title: "Dateivorlage lesen",
+          description: "Vorlagenmetadaten nach derselben Verwalten-Prüfung wie im Teilen-Dialog lesen.",
+        },
         "activity.get": {
           title: "Verlaufseintrag lesen",
           description: "Einen Eintrag mit denselben aktuellen Sichtrechten wie die Verlaufsliste lesen.",

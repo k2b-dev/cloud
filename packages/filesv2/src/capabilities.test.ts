@@ -93,6 +93,15 @@ const changed = async () => {
   if (!changedEntry) throw new Error("expected changed entry fixture");
   return { base, entry: changedEntry };
 };
+let templateReadAllowed = true;
+mock.module("./service/templates", () => ({
+  templateService: {
+    read: async () => {
+      if (!templateReadAllowed) throw new MockFilesError("forbidden", 403);
+      return { id: "10000000-0000-4000-8000-000000000001", name: "Letter" };
+    },
+  },
+}));
 mock.module("./service", () => ({
   FilesError: MockFilesError,
   filesService: {
@@ -1084,6 +1093,10 @@ test("storage failures keep their code and carry the Files message in the caller
 test("every declared Type has a reader open-link case or an explicit reason", async () => {
   const id = await persistedEntryRefId("base", "report.csv");
   const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
+    template: {
+      reader: "template.read",
+      read: async () => filesCapabilities.queries["template.read"].run({ id: "10000000-0000-4000-8000-000000000001" }, context),
+    },
     entry: { reader: "entry.read", read: async () => filesCapabilities.queries["entry.read"].run({ id }, context) },
   };
   expect(Object.keys(cases).sort()).toEqual(Object.keys(filesCapabilities.types).sort());
@@ -1193,5 +1206,19 @@ test("review and execution cannot restore an entry from another target root", as
     ]);
   } finally {
     trashBases.clear();
+  }
+});
+
+test("the template reader supplies Manage only after the template share service admits the caller", async () => {
+  const reader = filesCapabilities.queries["template.read"];
+  const id = "10000000-0000-4000-8000-000000000001";
+  try {
+    templateReadAllowed = true;
+    const result = await reader.run({ id }, context);
+    expect(result).toMatchObject({ ok: true, data: { data: { view: { title: "Letter", permission: "admin" } } } });
+    templateReadAllowed = false;
+    expect(await reader.run({ id }, context)).toMatchObject({ ok: false, error: { status: 403 } });
+  } finally {
+    templateReadAllowed = true;
   }
 });

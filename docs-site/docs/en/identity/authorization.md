@@ -719,8 +719,11 @@ it would leave the resource without a manager.
 The search offers people, groups, and agents; it never finds the account of an
 object or app by name.
 
-Pass `findServiceAccount(handle, signal)` to add such service accounts by their
-identifier. Code accounts (`serviceAccountKind: "code"`) appear in that section,
+Pass the resource reference as `target: { type, id }`. The shared dialog
+provides **Add service account** and exact handle lookup automatically, including
+the same lookup from the search for people. It sends this target to Core, which
+checks current Manage and applies the shared rate limit. Applications do not
+implement a lookup callback. Code accounts (`serviceAccountKind: "code"`) appear in that section,
 never offer Manage, and the section shows one note, naming the resource,
 which includes "Whoever edits the code acts with this right." while accounts
 are listed. The empty section explains how to add one; the note and empty text
@@ -735,9 +738,9 @@ section appears only when accounts are listed.
 as it is typed, and its hit appears below the field with the "Service account"
 badge; choosing it adds the row. A new account starts with Edit where the
 resource offers it, and "What changes" adds "The code may do everything Edit
-allows, not only what it calls today." Send the resource as the lookup's target: your server answers only
+allows, not only what it calls today." Core answers only
 someone who manages that resource, returns nothing for any other identifier,
-and never searches by name. The search for people asks the same callback when
+and never searches by name. The search for people uses the same lookup when
 someone types an exact Code identifier (`code-` and 10 characters, exported as
 `CODE_ACCOUNT_HANDLE_PATTERN` from `@k2b/cloud/contracts`) instead of the
 directory. Its hit carries the "Service account" badge, says that it goes to
@@ -774,6 +777,11 @@ A `code` service account receives `read` or `write` through the target's normal
 Manage even when `allowedLevels` includes it, and uses the normal update and
 revoke callbacks. Each row explains that anyone editing the Code acts with
 this permission. Existing loading, save, failure and retry feedback applies.
+
+`PermissionEditor` also accepts `target: { type, id }`. Editable resource
+sharing then includes **Add service account**, with exact handle lookup and the
+ordinary grant, failure, and retry behavior. Read-only editors offer no lookup.
+Neither editor requires a Code declaration in the application.
 
 `PrincipalPicker` accepts a Code account supplied in a result. It does not add a
 name-search path; the general directory excludes Code accounts. Pass

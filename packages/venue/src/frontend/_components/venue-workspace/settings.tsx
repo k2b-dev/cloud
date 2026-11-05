@@ -396,6 +396,7 @@ export function SettingsDialog(props: {
         if (settingsWriteBlocked() || !entries) throw new Error(t().waitForSettings);
         wroteAccess = false;
         await openAccessDialog({
+          target: { type: "venue.venue", id: currentVenue().id },
           resourceName: currentVenue().name,
           subtitle: t().accessDialogSubtitle,
           initialEntries: visibleAccessEntries(entries),

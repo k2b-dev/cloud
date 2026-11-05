@@ -82,7 +82,7 @@ export const requireBaseAccess = async (
   scope: AccessScope,
   required: PermissionLevel,
   db: typeof sql = sql,
-): Promise<Result<void>> => {
+): Promise<Result<PermissionLevel>> => {
   if (!canRequestPermission(scope, required)) return fail(err.forbidden("Access denied"));
   const bound = boundBaseShortId(scope);
   if (missingBinding(scope, bound)) return fail(err.forbidden("Access denied"));
@@ -105,8 +105,10 @@ export const requireBaseAccess = async (
       AND (${bound}::text IS NULL OR b.short_id = ${bound})
       AND ${principalMatch}
   `;
-  const level = row?.permission ?? "none";
-  return PERMISSION_RANK[level] >= PERMISSION_RANK[required] ? ok() : fail(err.forbidden("Access denied"));
+  const granted = row?.permission ?? "none";
+  const cap = scopedPermission(scope);
+  const level = PERMISSION_RANK[granted] <= PERMISSION_RANK[cap] ? granted : cap;
+  return PERMISSION_RANK[level] >= PERMISSION_RANK[required] ? ok(level) : fail(err.forbidden("Access denied"));
 };
 
 export const listBaseIdsVisibleTo = async (

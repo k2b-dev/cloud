@@ -2,6 +2,7 @@ import { i18n } from "@k2b/stdlib";
 import { resolveCapabilityManifestPresentation } from "../../_internal/capabilities";
 import { getCapability } from "../../_internal/registry";
 import { CloudResourceRefSchema } from "../../contracts/capabilities";
+import type { PermissionLevel } from "../../contracts/shared";
 import { resolveAppIdentityPresentation } from "../../shared/app-presentation";
 
 export const codeMessages = i18n.define({
@@ -39,18 +40,31 @@ export const codeAccountOwner = (name: string) => {
 };
 
 export type CodeAccountDisplayContext = {
+  /** The target service's checked effective permission. Manage presentation is derived automatically. */
+  permission?: PermissionLevel;
   /** The target application checked Manage locally for this viewer and this exact rights list. Defaults to false. */
   canManageTarget?: boolean;
   cloudAdmin?: boolean;
   locale?: string;
 };
-export type CodeAccountPresentation = { displayName: string; serviceAccountDescription: string; serviceAccountHref?: string };
+export type CodeAccountPresentation = {
+  displayName: string;
+  serviceAccountDescription: string;
+  serviceAccountHref?: string;
+  serviceAccountHandle?: string;
+};
 
 /** Registry metadata only: no owner reader, SQL, or app call. Reuse one presenter for an entire rights list. */
 export const codeAccountPresenter = (context: CodeAccountDisplayContext = {}) => {
+  const canManageTarget = context.permission !== undefined ? context.permission === "admin" : context.canManageTarget === true;
   const { t } = codeMessages.resolve(context.locale ? [context.locale] : []);
   const catalogs = new Map<string, ReturnType<typeof getCapability>>();
-  return async (account: { name: string; title: string | null; status?: string }): Promise<CodeAccountPresentation> => {
+  return async (account: {
+    name: string;
+    title: string | null;
+    handle?: string | null;
+    status?: string;
+  }): Promise<CodeAccountPresentation> => {
     const owner = codeAccountOwner(account.name);
     const appId = owner?.kind === "app" ? owner.appId : owner?.ref.type.split(".")[0];
     let catalog = appId ? catalogs.get(appId) : undefined;
@@ -72,14 +86,14 @@ export const codeAccountPresenter = (context: CodeAccountDisplayContext = {}) =>
             context.locale ?? "en",
           ).name
         : null;
-    const visibleTitle = owner?.kind === "app" ? (appTitle ?? account.title) : context.canManageTarget ? account.title : null;
+    const visibleTitle = owner?.kind === "app" ? (appTitle ?? account.title) : canManageTarget ? account.title : null;
     const page = localType ? manifest?.code?.pages?.[localType] : undefined;
     const href =
       owner?.kind === "app"
         ? context.cloudAdmin
           ? `/admin/code?sec=code&app=${encodeURIComponent(owner.appId)}`
           : undefined
-        : owner?.kind === "resource" && context.canManageTarget && page
+        : owner?.kind === "resource" && canManageTarget && page
           ? page.replace("{id}", encodeURIComponent(owner.ref.id))
           : undefined;
     const displayName = visibleTitle
@@ -96,6 +110,7 @@ export const codeAccountPresenter = (context: CodeAccountDisplayContext = {}) =>
         .filter(Boolean)
         .join(" · "),
       ...(href ? { serviceAccountHref: href } : {}),
+      ...(canManageTarget && account.handle ? { serviceAccountHandle: account.handle } : {}),
     };
   };
 };

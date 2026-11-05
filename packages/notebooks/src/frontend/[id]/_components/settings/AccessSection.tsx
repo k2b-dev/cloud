@@ -152,6 +152,7 @@ export function PermissionsSection(props: { notebook: Notebook }) {
     if (!entries) return;
     wrote = false;
     await openAccessDialog({
+      target: { type: "notebooks.notebook", id: props.notebook.id },
       resourceName: props.notebook.name,
       subtitle: t().accessDialogSubtitle,
       initialEntries: visibleEntries(entries),

@@ -44,10 +44,10 @@ the command's resource resolver supplies `AccessResource.target`.
 
 ## Return names from the authorized target
 
-Call `resolveDisplayNames(entries, { canManageTarget, locale, cloudAdmin })`
+Call `resolveDisplayNames(entries, { permission, locale, cloudAdmin })`
 from `@k2b/cloud/server` after your service checks the viewer's current local
-permission. `canManageTarget` is the result of that check, never client input
-or a Cloud-admin role. It defaults to false.
+permission. `permission` is the effective result of that check, never client input
+or a Cloud-admin role. An omitted permission grants no manager presentation.
 
 For resource Code, managers receive `Code of <owner title>`; other viewers
 receive only a localized resource-type label. An app's Code is named
@@ -56,7 +56,7 @@ link to that app's Code in Administration › Code
 (`/admin/code?sec=code&app=<appId>`) is returned only when `cloudAdmin` is true. Resource links use the owner's registered Code page and
 are returned only in a managed target context.
 
-Resolved rows include `serviceAccountKind`, `serviceAccountHandle`,
+Resolved rows include `serviceAccountKind`, a manager-only `serviceAccountHandle`,
 `serviceAccountDescription`, and an optional `serviceAccountHref`. They contain
 no separate private owner-title field. Never forward a manager's response to a
 different viewer. Name resolution adds no SQL statements or owner-app calls:
@@ -105,3 +105,25 @@ endpoint retains exact-handle matching and its user-wide Valkey budget.
 Resource-bound API-key accounts have no handle: the database permits this
 column only for `kind = 'code'`. This lookup does not accept their UUID or
 introduce another identifier.
+
+## Wire a resource share dialog
+
+Pass the resource's public reference as `target: { type, id }` to
+`openAccessDialog()` or `PermissionEditor` from `@k2b/cloud/access/ui`.
+The platform supplies **Add service account** and exact handle search. No
+application lookup function or Code declaration is needed. The target's canonical
+reader returns its current permission in `data.view`; Core admits the lookup
+only for `admin` on that target. A Grids App uses its managing base as the target.
+
+When returning an access list, pass the permission already checked by the target
+service to `resolveDisplayNames(entries, { permission, locale })` from
+`@k2b/cloud/server`. The platform derives manager presentation from `admin`.
+Readers see the resource type; target managers also see its stored title, handle,
+and available Code link. App-owned Code keeps its public app name; its handle
+still requires target management. Omitting the permission reveals no private
+resource title or handle. Installation administration alone does not replace a
+resource's Manage decision.
+
+The `filesv2.template` Type uses `template.read` to check the same administration
+authority as the template share dialog. Its open link leads to the template
+administration page. The reader returns metadata only, never template contents.
