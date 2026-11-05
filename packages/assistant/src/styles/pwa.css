@@ -10,7 +10,7 @@
   width: 1.75rem;
   height: 1.75rem;
   border-radius: 0.5rem;
-  background: var(--ui-app-selected-nav, var(--k2b-selected));
+  background: var(--ui-app-selected-nav);
   color: var(--ui-app-accent-text, var(--k2b-action));
   font-size: 1.125rem;
 }
@@ -40,7 +40,7 @@
 .assistant-pwa-row:active { background: var(--k2b-hover, var(--k2b-surface-sunken)); }
 @media (hover: hover) { .assistant-pwa-row:hover { background: var(--k2b-hover, var(--k2b-surface-sunken)); } }
 .assistant-pwa-row:focus-visible { outline: 2px solid var(--k2b-focus-ring, var(--k2b-action)); outline-offset: -2px; }
-.assistant-pwa-row[aria-current="page"] { background: var(--ui-app-selected-nav, var(--k2b-selected)); }
+.assistant-pwa-row[aria-current="page"] { background: var(--ui-app-selected-nav); }
 .assistant-pwa-row__title { min-width: 0; font-size: 0.9375rem; font-weight: 500; white-space: nowrap; overflow: hidden; }
 .assistant-pwa-row[data-unread] .assistant-pwa-row__title { font-weight: 650; }
 .assistant-pwa-row__when { align-self: baseline; color: var(--k2b-text-muted); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
@@ -121,9 +121,9 @@
 
 .assistant-pwa-full { display: flex; flex: 1; align-items: center; justify-content: center; height: 100%; padding: 1.5rem; }
 
-/* From 64rem of window width the list stands beside the chat, as the shell's levels do: the start's field and the
+/* From 64rem of app-area width the list stands beside the chat, as the shell's levels do: the start's field and the
    way back to the list are already in view there. */
-@media (min-width: 64rem) {
+@container k2b-app-area (min-width: 64rem) {
   .k2b-ui .assistant-pwa-narrow-only { display: none; }
 }
 .assistant-pwa-row__pin { flex: none; font-size: 0.875rem; }

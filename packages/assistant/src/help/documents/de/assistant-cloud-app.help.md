@@ -1,5 +1,6 @@
 ---
 id: assistant-cloud-app
+kind: reference
 title: Assistent in der Cloud-App
 icon: ti ti-device-mobile
 description: In der installierten Cloud-App auf Telefon oder Tablet fragen, Chats lesen und Fragen beantworten.
@@ -7,7 +8,7 @@ updated: 2026-11-05
 order: 130
 ---
 
-Ist dein Gerät mit der Cloud-App gekoppelt, ist der Assistent der erste Tab. Er nutzt dieselben Chats und dieselben Rechte wie der Assistent im Web.
+Ist dein Gerät mit der Cloud-App gekoppelt, ist der Assistent der erste Tab. Er nutzt dieselben Chats und denselben Zugriff wie der Assistent im Web.
 
 ## Start {icon="home"}
 

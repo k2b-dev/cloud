@@ -16,8 +16,7 @@ export const pwaMessages = i18n.define({
         `Chrome on this device is signed in to ${cloud} as ${name}. Changes in the app may be saved to that account. Sign out of ${cloud} in Chrome.`,
       errorAction: "Back to Start",
       partForbidden: ({ name }: { name: string }) => `${name} is not available to you`,
-      partForbiddenDescription: ({ name }: { name: string }) =>
-        `Your administrators decide who may use ${name}. Ask them if you need it.`,
+      partForbiddenDescription: ({ name }: { name: string }) => `Your administrators decide who may use ${name}. Ask them if you need it.`,
     },
     de: {
       tabs: "App",
