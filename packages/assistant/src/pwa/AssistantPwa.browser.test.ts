@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
-import { startAssistantPwaHarness } from "./AssistantPwa.browser-fixture";
+import { launchBrowser, settled } from "../../../ui/test/browser";
+import { pinAssistantPwaClock, startAssistantPwaHarness } from "./AssistantPwa.browser-fixture";
 
 // Which columns stand side by side, where the field sits, and whether the tab bar steps aside are layout results of the
 // shipped cascade, which happy-dom does not model. A real engine lays out the part in the Cloud app's frame with
@@ -30,14 +30,20 @@ const open = async (query: string, size = PHONE): Promise<Page> => {
     locale: "de-DE",
   });
   const page = await context.newPage();
-  await page.clock.setFixedTime(new Date("2026-11-04T09:41:00.000Z"));
+  await page.addInitScript(pinAssistantPwaClock, Date.parse("2026-11-04T09:41:00.000Z"));
   await page.goto(`${harness.url}?${query}`);
   await page.waitForSelector("body[data-ready]", { state: "attached" });
   return page;
 };
 const field = (page: Page) => page.locator("textarea[aria-label]:visible");
-const box = async (page: Page, selector: string) => (await page.locator(selector).first().boundingBox())!;
-const tabBarShown = (page: Page) => page.evaluate(() => getComputedStyle(document.querySelector(".k2b-tab-bar")!).display !== "none");
+const box = async (page: Page, selector: string) => {
+  await settled(page);
+  return (await page.locator(selector).first().boundingBox())!;
+};
+const tabBarShown = async (page: Page) => {
+  await settled(page);
+  return page.evaluate(() => getComputedStyle(document.querySelector(".k2b-tab-bar")!).display !== "none");
+};
 
 describe("The Assistant part on a phone", () => {
   test("the start lists recent chats above the field; a chat opens as a screen of its own and Back returns", async () => {
