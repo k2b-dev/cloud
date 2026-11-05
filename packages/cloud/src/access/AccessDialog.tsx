@@ -16,7 +16,7 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
 import { accessDialogMessages } from "./access-dialog-messages";
 import {
@@ -119,6 +119,25 @@ const isCodeAccount = (kind: string | undefined) => kind === "code";
 /** The account behind an object's API keys: shown as an API key, never as a service account. */
 const isApiKeyAccount = (kind: ServiceAccountKind | undefined) => kind === "resource_bound";
 const generalPrincipal = (principal: Principal) => principal.type === "authenticated" || principal.type === "public";
+/** The directory the search reads; it answers only with what the viewer may see. */
+const DIRECTORY = "/api/accounts/entities";
+/** The most entries one directory page returns. */
+const DIRECTORY_PAGE = 100;
+type DirectoryPage = {
+  items: { kind: string; user?: { id: string; mail: string | null } }[];
+  pagination?: { total: number };
+};
+/** One directory page, or `null` when the directory refuses or answers in another shape. */
+const readDirectory = async (params: Record<string, string>, signal: AbortSignal): Promise<DirectoryPage | null> => {
+  try {
+    const response = await fetch(`${DIRECTORY}?${new URLSearchParams(params)}`, { signal, credentials: "same-origin" });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    return typeof body === "object" && body !== null && Array.isArray((body as DirectoryPage).items) ? (body as DirectoryPage) : null;
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Who may use one resource, as one list with "What changes" below it. Nothing applies before Save; a removal asks
@@ -167,6 +186,40 @@ export function AccessDialog(
   });
 
   const rows = createMemo(() => draftRows(draft()));
+
+  // ── Directory ─────────────────────────────────────────────────────────
+  // Each person's e-mail and the number of signed-in people come from the directory the search uses, so the dialog
+  // shows only what the viewer may see there. Until they arrive, or when the directory refuses, a row names its kind
+  // and General speaks of everyone with an account; neither changes a row's size.
+  const [mails, setMails] = createSignal<ReadonlyMap<string, string>>(new Map());
+  const [signedInCount, setSignedInCount] = createSignal<number>();
+  const directory = new AbortController();
+  onCleanup(() => directory.abort());
+  const asked = new Set<string>();
+  createEffect(() => {
+    if (loading()) return;
+    const ids = rows().flatMap((row) => (row.principal.type === "user" && !asked.has(row.principal.userId) ? [row.principal.userId] : []));
+    if (ids.length === 0) return;
+    for (const id of ids) asked.add(id);
+    // One page after the other, so a long list never sends a burst of requests.
+    void (async () => {
+      for (let start = 0; start < ids.length; start += DIRECTORY_PAGE) {
+        const page = ids.slice(start, start + DIRECTORY_PAGE);
+        const result = await readDirectory({ kinds: "user", user_ids: page.join(","), per_page: String(page.length) }, directory.signal);
+        if (!result) return;
+        const found = result.items.flatMap((item) =>
+          typeof item?.user?.id === "string" && typeof item.user.mail === "string" ? [[item.user.id, item.user.mail] as const] : [],
+        );
+        if (found.length > 0) setMails((current) => new Map([...current, ...found]));
+      }
+    })();
+  });
+  // The directory counts the people the viewer may see; a guest sees only themselves, so read-only viewers get no number.
+  if (props.allowAuthenticated !== false && canEdit())
+    void readDirectory({ kinds: "user", per_page: "1" }, directory.signal).then((result) => {
+      const total = result?.pagination?.total;
+      if (typeof total === "number") setSignedInCount(total);
+    });
   const changes = createMemo(() => draftChanges(draft()));
   const lastManagers = createMemo(() => lastManagerKeys(draft(), props.effectiveEntries));
   const levels = (principal: Principal): ResolvedLevel[] =>
@@ -378,7 +431,7 @@ export function AccessDialog(
       const detail = props.entryDetail(row.entry);
       if (detail) return detail;
     }
-    if (row.principal.type === "user") return row.principal.userId === props.viewerUserId ? t().you : t().person;
+    if (row.principal.type === "user") return mails().get(row.principal.userId) ?? t().person;
     if (row.principal.type === "group") return t().group;
     if (row.principal.type === "service_account")
       return isCodeAccount(row.display.serviceAccountKind)
@@ -386,6 +439,7 @@ export function AccessDialog(
         : ((row.display.serviceAccountKind && serviceAccountKindDisplay(row.display.serviceAccountKind, access()).label) ?? t().agent);
     return "";
   };
+  const isViewer = (row: DraftRow) => row.principal.type === "user" && row.principal.userId === props.viewerUserId;
   const mark = (row: DraftRow) => {
     if (!row.previous) return <StatusBadge class="shrink-0" tone="ok" icon={null} label={t().markNew} />;
     if (!row.next) return <StatusBadge class="shrink-0" tone="error" icon={null} label={t().markRemoved} />;
@@ -474,7 +528,7 @@ export function AccessDialog(
                   <div class="flex flex-wrap items-center gap-2 px-1 pt-1">
                     <Button
                       variant="text"
-                      class="text-[var(--k2b-danger)]"
+                      data-danger="true"
                       disabled={protectedRow() || saving()}
                       onClick={() => {
                         setOpen(false);
@@ -527,11 +581,22 @@ export function AccessDialog(
               {nameOf(row())}
             </span>
             {/* Only breakpoint-scoped display classes: an app stylesheet that repeats `contents` or `inline-flex` comes later and would show both marks. */}
-            <span class="max-sm:hidden sm:contents">{mark(row())}</span>
+            <span class="max-sm:hidden sm:contents">
+              <Show when={isViewer(row())}>
+                <span class="shrink-0 text-[13px] font-normal text-dimmed">{t().you}</span>
+              </Show>
+              {mark(row())}
+            </span>
           </span>
           <span class="flex min-w-0 items-center gap-2 text-[13px] text-dimmed">
             <span class="max-sm:contents sm:hidden">{mark(row())}</span>
-            <span class="truncate">{kindLine(row())}</span>
+            {/* On a phone "You" leads the line that may be cut, so the name and a mark always stay whole. */}
+            <span class="truncate">
+              <Show when={isViewer(row())}>
+                <span class="max-sm:inline sm:hidden">{`${t().you} · `}</span>
+              </Show>
+              {kindLine(row())}
+            </span>
           </span>
         </span>
         <Show
@@ -611,7 +676,11 @@ export function AccessDialog(
     const description = () => {
       const level = row()?.next ?? null;
       if (rowProps.type === "public") return on() ? t().publicOn : t().publicOff;
-      return on() ? t().signedInOn({ level: levelLabel(principal, level) }) : t().signedInOff;
+      if (!on()) return t().signedInOff;
+      const count = signedInCount();
+      return count === undefined
+        ? t().signedInOn({ level: levelLabel(principal, level) })
+        : t().signedInCountOn({ count, level: levelLabel(principal, level) });
     };
     const generalMark = () => {
       const current = row();
@@ -635,12 +704,22 @@ export function AccessDialog(
             {/* As in a people row: beside the name on a wide screen, at the start of the line below on a phone. */}
             <span class="max-sm:hidden sm:contents">{generalMark()}</span>
           </span>
-          <span class="block truncate text-[13px] leading-5 text-dimmed">
-            <Show when={generalMark()}>
-              {(badge) => <span class="mr-1.5 h-5 items-center align-top max-sm:inline-flex sm:hidden">{badge()}</span>}
-            </Show>
-            {description()}
-          </span>
+          {/* While the list loads the state is not known, so the line waits in its own height instead of claiming "Off". */}
+          <Show
+            when={!loading()}
+            fallback={
+              <span class="flex h-5 items-center" aria-hidden="true">
+                <Skeleton class="h-3 w-48 max-w-full" />
+              </span>
+            }
+          >
+            <span class="block truncate text-[13px] leading-5 text-dimmed">
+              <Show when={generalMark()}>
+                {(badge) => <span class="mr-1.5 h-5 items-center align-top max-sm:inline-flex sm:hidden">{badge()}</span>}
+              </Show>
+              {description()}
+            </span>
+          </Show>
         </span>
         {/* On a phone the level moves under the description; the switch stays beside the name. */}
         <Show when={on() && rowProps.type === "authenticated" && canEdit() && row()}>
@@ -796,7 +875,8 @@ export function AccessDialog(
             </Show>
           </PanelDialog.Section>
 
-          <Show when={!loading() && showGeneral()}>
+          {/* As in the approved mockup, General keeps its place while the list loads; its switches wait for the list. */}
+          <Show when={loadState() !== "failed" && showGeneral()}>
             <PanelDialog.Section title={t().general}>
               <ul class="flex flex-col">
                 <Show when={props.allowAuthenticated !== false || generalRow("authenticated")}>
@@ -992,8 +1072,25 @@ export function AccessDialog(
             <Button variant="secondary" disabled={saving()} onClick={() => void dismiss()}>
               {t().cancel}
             </Button>
-            <Button disabled={changes().length === 0} loading={saving()} onClick={() => void save()}>
-              {t().save}
+            <Button disabled={changes().length === 0 || saving()} aria-busy={saving() ? "true" : undefined} onClick={() => void save()}>
+              {/*
+                As in the approved mockup, the button says that it saves. Both labels share one cell, and an invisible copy
+                of the busy label holds its width at rest, so the button keeps its size and nothing beside it moves.
+              */}
+              <span
+                class="grid after:invisible after:col-start-1 after:row-start-1 after:h-0 after:overflow-hidden after:pl-[calc(1em+0.375rem)] after:content-[attr(data-busy)]"
+                data-busy={t().saving}
+              >
+                <span class="col-start-1 row-start-1" classList={{ invisible: saving() }}>
+                  {t().save}
+                </span>
+                <Show when={saving()}>
+                  <span class="col-start-1 row-start-1 inline-flex items-center justify-center gap-1.5">
+                    <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
+                    {t().saving}
+                  </span>
+                </Show>
+              </span>
             </Button>
           </div>
         </Show>

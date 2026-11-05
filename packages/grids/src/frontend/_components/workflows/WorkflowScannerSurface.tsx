@@ -711,7 +711,7 @@ export default function WorkflowScannerSurface(props: Props) {
 
   const shellClass =
     props.mode === "page"
-      ? "flex h-[100dvh] min-h-0 flex-col bg-[var(--ui-bg)] text-primary"
+      ? "flex h-[100dvh] min-h-0 flex-col bg-[var(--ui-canvas)] text-primary"
       : "flex h-full min-h-0 flex-1 flex-col bg-transparent text-primary";
   const mainClass =
     props.mode === "page"

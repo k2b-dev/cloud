@@ -234,8 +234,9 @@ describe("AccessDialog", () => {
     try {
       ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="All signed-in people"]')!.click();
       await waitFor(() => ui.dom.root.textContent?.includes("1 change") === true, "one change");
-      ui.button("Save").click();
-      ui.button("Save").click();
+      const save = ui.button("Save");
+      save.click();
+      save.click();
       await waitFor(() => ui.close.mock.calls.length >= 1, "the dialog to close");
       await Bun.sleep(30);
       expect(ui.calls).toEqual(["grant authenticated read"]);
@@ -832,8 +833,10 @@ describe("AccessDialog", () => {
         await waitFor(() => !!ui.dom.root.querySelector('[aria-busy="true"]'), "the loading rows");
         expect(ui.dom.root.querySelector("input[role=combobox]")).toBeNull();
         expect(ui.text()).toContain("Loading access");
-        // General is not known yet either, so it does not claim "Off".
-        expect(ui.text()).not.toContain("All signed-in people");
+        // General keeps its place, as in the approved mockup, but its state is not known yet: no "Off", no switch to use.
+        expect(ui.text()).toContain("All signed-in people");
+        expect(ui.text()).not.toContain("Off. Only those listed above have access.");
+        expect(ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="All signed-in people"]')!.disabled).toBe(true);
         held.resolve();
         await waitFor(() => ui.text().includes("Lea Schmitt"), "the loaded rows");
         expect(ui.dom.root.querySelector("input[role=combobox]")).not.toBeNull();

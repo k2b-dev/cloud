@@ -2025,6 +2025,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
+/* A destructive text action, such as Remove at the foot of a menu, takes the
+   danger ink that destructive menu items use, at rest and on hover. */
+.k2b-ui .k2b-button[data-variant="text"][data-danger="true"],
+.k2b-ui .k2b-button[data-variant="text"][data-danger="true"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-danger-text);
+}
+
 .k2b-ui .k2b-button[data-variant="input"] {
   --k2b-edge-color: var(--k2b-edge);
   min-height: 2.25rem;
@@ -16577,7 +16584,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: pointer;
 }
 .k2b-ui .k2b-app-workspace__sidebar-section-toggle > i { margin-inline-start: auto; }
-.k2b-ui .k2b-app-workspace__sidebar-section-toggle:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-accent); outline-offset: var(--k2b-focus-offset); }
+.k2b-ui .k2b-app-workspace__sidebar-section-toggle:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
 .k2b-ui .k2b-app-workspace__sidebar-preview-body {
   max-height: min(calc(32rem - 2px), calc(100dvh - 1rem - 2px));
   padding: 1rem;
