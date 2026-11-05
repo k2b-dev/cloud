@@ -1,12 +1,17 @@
+import { liveConnection } from "@k2b/cloud/browser/live";
 import { type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
+import { query } from "@k2b/stdlib/solid";
 import { AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
-import { createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createEffect, createSignal, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { SpaceLiveEventSchema } from "@/live-events";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
 import { OverviewViewSchema } from "@/overview-contracts";
+import { createRetryToasts } from "../frontend/lib/feedback";
 import MyTasks, { type WorkItem } from "./MyTasks";
 import { myTasksMessages } from "./messages";
 import { listHref, taskAddress, taskHref } from "./paths";
+import { refreshOnReturn } from "./refresh-on-return";
 import TaskDetail, { type TaskDetailState } from "./TaskDetail";
 import type { PwaTask } from "./task";
 
@@ -36,6 +41,7 @@ const readTask = async (spaceShortId: string, shortId: string, signal: AbortSign
  * Back and rotating show the same task.
  */
 export default function SpacesPwa(props: Props) {
+  const retryToast = createRetryToasts();
   const locale = useLocale();
   const t = () => myTasksMessages.resolve([locale()]).t;
   const [view, setView] = createSignal(props.initialView);
@@ -43,48 +49,88 @@ export default function SpacesPwa(props: Props) {
   const [selection, setSelection] = createSignal<Selection>(
     props.initialTask ? { spaceShortId: props.initialTask.spaceShortId, shortId: props.initialTask.shortId } : null,
   );
-  const [detail, setDetail] = createSignal<TaskDetailState | undefined>(
-    props.initialTask ? { kind: "ready", task: props.initialTask } : undefined,
+  const [opening, setOpening] = createSignal<WorkItem>();
+  const address = () => {
+    const target = selection();
+    return target ? taskHref(target.spaceShortId, target.shortId) : null;
+  };
+  const task = query.create<string | null, { address: string | null; task: PwaTask | "gone" }>({
+    source: address,
+    enabled: () => selection() !== null,
+    initial: props.initialTask ? { source: address(), data: { address: address(), task: props.initialTask } } : undefined,
+    load: async (address, { abortSignal }) => {
+      const target = address && taskAddress(address);
+      if (!target) throw new Error("No task selected");
+      return { address, task: await readTask(target.spaceShortId, target.shortId, abortSignal) };
+    },
+  });
+  const detail = (): TaskDetailState | undefined => {
+    if (!selection()) return undefined;
+    const data = task.data();
+    if (data?.address === address()) {
+      return data.task === "gone" ? { kind: "gone" } : { kind: "ready", task: data.task };
+    }
+    return task.error() ? { kind: "failed", item: opening() } : { kind: "loading", item: opening() };
+  };
+  const refreshTask = () => task.invalidate();
+  // Query errors include source-driven reads, such as reopening the last task with a retained snapshot.
+  const retryRefresh = () => refreshTask().catch(() => undefined);
+  createEffect(
+    on(task.error, (error) => {
+      if (error) retryToast(t().taskLoadFailed, t().retry, () => void retryRefresh(), { untilClosed: true });
+    }),
   );
-  let request: AbortController | undefined;
-
-  const load = (target: NonNullable<Selection>, item: WorkItem | undefined) => {
-    request?.abort();
-    const controller = new AbortController();
-    request = controller;
-    setDetail({ kind: "loading", item });
-    readTask(target.spaceShortId, target.shortId, controller.signal).then(
-      (task) => {
-        if (request !== controller) return;
-        setDetail(task === "gone" ? { kind: "gone" } : { kind: "ready", task });
-      },
-      (error: unknown) => {
-        if (request !== controller || (error instanceof Error && error.name === "AbortError")) return;
-        setDetail({ kind: "failed", item });
+  refreshOnReturn(() => {
+    if (selection()) void retryRefresh();
+  });
+  createEffect(() => {
+    const space = selection()?.spaceShortId;
+    if (!space) return;
+    let initial = true;
+    const subscription = liveConnection("/api/spaces/live").subscribe(
+      "space",
+      { space },
+      {
+        cursor: null,
+        parse: (data) => SpaceLiveEventSchema.parse(data),
+        apply: async (events) => {
+          if (events.some(({ data }) => !("itemId" in data) || data.itemId === selection()?.shortId)) await refreshTask();
+        },
+        resync: refreshTask,
+        // No SSR cursor: close the gap between the initial snapshot and subscription once it is confirmed.
+        caughtUp: (ready) => {
+          if (ready && initial) {
+            initial = false;
+            void retryRefresh();
+          }
+        },
+        revoked: () => {
+          void retryRefresh();
+        },
+        unavailable: () => {
+          // Keep drafts and focus; only an explicit reload restarts a terminal subscription.
+          retryToast(t().liveUpdatesUnavailable, t().reload, () => window.location.reload(), { untilClosed: true });
+          void retryRefresh();
+        },
       },
     );
-  };
+    onCleanup(() => subscription.close());
+  });
 
   /** What the address names; Back and Forward land here without a request to the page. */
   const follow = (url: URL) => {
     const parsed = OverviewViewSchema.safeParse(url.searchParams.get("view") ?? "mine");
     if (parsed.success) setView(parsed.data);
     const target = taskAddress(url.pathname);
-    // Whatever was loading belongs to the entry history just left.
-    request?.abort();
-    request = undefined;
+    setOpening(undefined);
     setSelection(target);
-    if (!target) return setDetail(undefined);
-    const current = detail();
-    if (current?.kind === "ready" && current.task.shortId === target.shortId) return;
-    load(target, undefined);
   };
 
   const open = (item: WorkItem, event: LinkNavigateEvent) => {
     const target = { spaceShortId: item.spaceShortId, shortId: item.shortId };
     const fromList = selection() === null;
+    setOpening(item);
     setSelection(target);
-    load(target, item);
     event.push(taskHref(item.spaceShortId, item.shortId, view()), { scroll: "manual", state: { spacesFromList: fromList } });
   };
 
@@ -94,30 +140,15 @@ export default function SpacesPwa(props: Props) {
       history.back();
       return;
     }
-    request?.abort();
     setSelection(null);
-    setDetail(undefined);
     event.replaceWith(listHref(view()), { scroll: "manual", state: null });
   };
 
   onMount(() => onCleanup(listenPopState(({ url }) => follow(url))));
 
-  const retry = () => {
-    const target = selection();
-    const current = detail();
-    if (target) load(target, current?.kind === "failed" || current?.kind === "loading" ? current.item : undefined);
-  };
-
-  /** The detail completed or reopened its task: the list reads its work again. */
-  const detailCompleted = (shortId: string, done: boolean) => {
-    setRevision((value) => value + 1);
-    completedChange(shortId, done);
-  };
-
-  const completedChange = (shortId: string, done: boolean) => {
-    const current = detail();
-    if (current?.kind === "ready" && current.task.shortId === shortId)
-      setDetail({ kind: "ready", task: { ...current.task, completed: done } });
+  const detailCompleted = () => setRevision((value) => value + 1);
+  const completedChange = (shortId: string) => {
+    if (selection()?.shortId === shortId) void retryRefresh();
   };
 
   const spaceOf = () => {
@@ -174,8 +205,9 @@ export default function SpacesPwa(props: Props) {
                       userId={props.userId}
                       dateConfig={props.dateConfig}
                       listHref={listHref(view())}
-                      onRetry={retry}
+                      onRetry={() => void retryRefresh()}
                       onCompletedChange={detailCompleted}
+                      onRefresh={refreshTask}
                     />
                   </Show>
                 )}

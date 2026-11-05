@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-29
+updated: 2026-11-05
 ---
 
 # Spaces
@@ -78,6 +78,8 @@ sidebar of a wide screen shows the number of tasks for you beside Spaces.
 The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
 **Upcoming** lists with their counts, across every Space you can read.
 Tasks you claim also count as yours in **For me**.
+The list updates when you return to the app or the network comes back, so
+new assignments and changes by other people appear without reopening it.
 
 After opening a task from the list, header Back and browser Back return to
 that list entry; Forward reopens the task. A task opened directly by its link
@@ -122,6 +124,11 @@ anyone else the address does not exist.
   for an event the time and place, the people assigned or attending, the
   description, and the checklist with how many items are done.
 - The title, Space, and date show at once from the row; the rest follows.
+- An open task updates as other people change it. Your comment draft and a
+  checklist change that is still saving stay in place. If you lose read
+  access, the task becomes unavailable and offers a way back to the list.
+  If live updates stop, a notice offers **Reload**. A failed refresh keeps the
+  last loaded task visible and offers **Try again**.
 - Tap the circle to mark the task done or open it again, and tap a checklist
   item to check it off. Each change shows at once with a spinner at its place
   while it saves. When it cannot be saved, it goes back, its row offers

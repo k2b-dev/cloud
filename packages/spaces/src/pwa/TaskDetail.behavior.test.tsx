@@ -1,5 +1,5 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import type { TaskDetailState } from "./TaskDetail";
@@ -80,6 +80,7 @@ afterEach(() => {
   pending = undefined;
 });
 
+let update: (state: TaskDetailState) => void;
 const mount = (state: TaskDetailState) => {
   dom = createDomTestHarness();
   delegateEvents(["click", "input", "change"]);
@@ -88,6 +89,8 @@ const mount = (state: TaskDetailState) => {
 /** Renders into the current document, as a page of an app that starts again on the same device. */
 const show = (state: TaskDetailState) => {
   const { ui, TaskDetail } = modules!;
+  const [current, setCurrent] = createSignal(state);
+  update = setCurrent;
   dom!.root.replaceChildren();
   dispose = render(
     () =>
@@ -95,7 +98,9 @@ const show = (state: TaskDetailState) => {
         locale: "en",
         get children() {
           return createComponent(TaskDetail, {
-            state,
+            get state() {
+              return current();
+            },
             userId: "0b8f2d4e-1c3a-4f5b-9d6e-7a8b9c0d1e2f",
             dateConfig: { locale: "en", timeZone: "UTC" },
             listHref: "/pwa/spaces",
@@ -340,6 +345,28 @@ test("a token-only storage failure sends nothing, so a fresh runtime cannot dupl
   sendButton(root).click();
   await waitFor(() => dom!.document.body.textContent?.includes("Comment sent") ?? false, "safe send after restart");
   expect(calls.filter((call) => call.path === COMMENTS)).toHaveLength(1);
+});
+
+test("a snapshot preserves the pending checkbox and comment draft, then replaces settled checklist state", async () => {
+  const root = mount({ kind: "ready", task });
+  const field = commentField(root)!;
+  type(field, "A draft in progress");
+  const box = boxes(root)[1]!;
+  box.click();
+  const finish = pending!;
+  field.focus();
+  update({ kind: "ready", task: { ...task, title: "Updated elsewhere", checklist: task.checklist.map((entry) => ({ ...entry })) } });
+  expect(boxes(root)[1] === box).toBe(true);
+  expect(box.checked).toBe(true);
+  expect(box.disabled).toBe(true);
+  expect(commentField(root) === field).toBe(true);
+  expect(field.value).toBe("A draft in progress");
+  expect(document.activeElement === field).toBe(true);
+  finish(Response.json({ id: "Chk002", completed: true }));
+  await waitFor(() => !box.disabled, "the pending write");
+  update({ kind: "ready", task: { ...task, checklist: task.checklist.map((entry) => ({ ...entry })) } });
+  expect(box.checked).toBe(false);
+  expect(field.value).toBe("A draft in progress");
 });
 
 process.once("exit", () => fetchSpy.mockRestore());
