@@ -13,6 +13,9 @@ const budgets = [
   { file: "packages/cloud/src/ssr/PwaPartCount.island.tsx", kib: 96 },
   { file: "packages/pwa/src/frontend/_components/PairingNotice.island.tsx", kib: 112 },
   { file: "packages/pwa/src/frontend/_components/StartParts.island.tsx", kib: 230 },
+  // The Assistant part renders a chat on its first frame, so the shared chat timeline is part of its closure.
+  // Measured 2026-11-05: 2,153,535 B.
+  { file: "packages/assistant/src/pwa/AssistantPwa.island.tsx", kib: 2320 },
 ];
 const manifestSchema = z.object({ entries: z.record(z.string(), z.array(z.string())) });
 
@@ -25,7 +28,11 @@ export const rule: Rule = {
       const cwd = workspaceRoot;
       await buildIslands({
         cwd,
-        componentRoots: [join(workspaceRoot, "packages/pwa/src"), join(workspaceRoot, "packages/cloud/src")],
+        componentRoots: [
+          join(workspaceRoot, "packages/pwa/src"),
+          join(workspaceRoot, "packages/cloud/src"),
+          join(workspaceRoot, "packages/assistant/src/pwa"),
+        ],
         pattern: "**/*.{island,client}.tsx",
         outdir: output,
         verbose: false,
