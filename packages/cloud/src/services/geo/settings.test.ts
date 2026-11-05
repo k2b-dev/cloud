@@ -17,7 +17,7 @@ const values: Record<string, unknown> = {
   "geo.custom_rps": 5,
   "geo.custom_daily_credits": 3000,
   "geo.monthly_budget_credits": 90000,
-  "geo.person_daily_credits": 300,
+
   "app.timezone": "Europe/Berlin",
 };
 afterEach(() => mock.restore());

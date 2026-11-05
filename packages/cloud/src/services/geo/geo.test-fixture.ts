@@ -9,7 +9,6 @@ export const geoTestConfig: GeoConfig = {
   customRps: 5,
   customDailyCredits: 3000,
   monthlyCredits: 90000,
-  personDailyCredits: 300,
 };
 export const geoTestContext: Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale" | "signal" | "requestId"> = {
   actor: {

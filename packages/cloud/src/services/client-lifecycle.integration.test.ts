@@ -22,7 +22,7 @@ import { encryptValue } from "./settings/crypto";
 const userId = "11111111-1111-4111-8111-111111111111";
 const admin = buildProjectedUser({ id: userId, provider: "local", profile: "user", effective_admin: true });
 const ledger = createGeoLedger();
-const geoBudget = { timezone: "UTC", monthlyCredits: 1, personDailyCredits: 1 };
+const geoBudget = { timezone: "UTC", monthlyCredits: 1 };
 const now = new Date("2026-10-20T12:00:00.000Z");
 let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
 beforeAll(async () => {

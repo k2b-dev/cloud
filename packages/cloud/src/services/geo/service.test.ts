@@ -57,7 +57,7 @@ test("unreadable monthly budget refuses paid work and reports not configured wit
     "geo.custom_rps": geoTestConfig.customRps,
     "geo.custom_daily_credits": geoTestConfig.customDailyCredits,
     "geo.monthly_budget_credits": geoTestConfig.monthlyCredits,
-    "geo.person_daily_credits": geoTestConfig.personDailyCredits,
+
     "app.timezone": geoTestConfig.timezone,
   };
   spyOn(settingsStore, "readStates").mockImplementation(
@@ -577,7 +577,7 @@ test("app-paid requests use an app budget subject without a grant-bearing access
   await fixture.service.autocomplete({ text: "Orle" }, context);
   expect(fixture.reserve).toHaveBeenCalledWith(
     { type: "app", appId: "vendor-web" },
-    expect.objectContaining({ personDailyCredits: geoTestConfig.personDailyCredits }),
+    expect.objectContaining({ monthlyCredits: geoTestConfig.monthlyCredits }),
     expect.any(Number),
     "address",
     GEO_TEST_NOW,

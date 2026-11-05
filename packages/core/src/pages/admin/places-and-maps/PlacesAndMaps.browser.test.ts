@@ -42,7 +42,7 @@ test("every state fits a phone and a desktop in both themes and languages, with 
   for (const view of [...views, tablet])
     for (const theme of ["light", "dark"])
       for (const locale of ["de", "en"])
-        for (const state of ["eingerichtet", "aus", "budget-cloud", "budget-person", "verbrauch-fehler", "leer"]) {
+        for (const state of ["eingerichtet", "aus", "budget-cloud", "verbrauch-fehler", "leer"]) {
           const { page, errors } = await open(view, `state=${state}&locale=${locale}&theme=${theme}`);
           try {
             const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -57,10 +57,7 @@ test("every state fits a phone and a desktop in both themes and languages, with 
             }
             if (state === "budget-cloud" && locale === "de")
               expect(text).toContain("Monatsbudget erreicht. Karten und Ortssuche sind bis 1. November, 0:00 Uhr, aus.");
-            if (state === "budget-person" && locale === "de") {
-              expect(text).toContain("3 Personen haben heute ihre Tagesgrenze erreicht.");
-              expect(text).toContain("Für sie geht es ab 0:00 Uhr weiter.");
-            }
+
             if (state === "aus") {
               expect(await page.getByRole("button", { name: locale === "de" ? "Speichern" : "Save", exact: true }).isDisabled()).toBe(true);
               expect(text).toContain(
@@ -134,12 +131,12 @@ test("a lost answer stays open for a key and is settled by the stored values for
 
     // The budget save landed although its answer was lost: the stored values match, so it counts as saved.
     fixture.control.dropNextAnswer = true;
-    await page.getByLabel("Daily limit per person (credits)", { exact: true }).fill("400");
+    await page.getByLabel("Monthly budget (credits)", { exact: true }).fill("400");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await root(page)
       .getByText(/^Saved at /)
       .waitFor();
-    expect(await page.getByLabel("Daily limit per person (credits)", { exact: true }).inputValue()).toBe("400");
+    expect(await page.getByLabel("Monthly budget (credits)", { exact: true }).inputValue()).toBe("400");
   } finally {
     fixture.control.dropNextAnswer = false;
     await page.close();
@@ -172,42 +169,26 @@ test("removing the key asks first; keeping it changes nothing", async () => {
   }
 }, 60_000);
 
-test("an invalid limit is marked at its field, nothing is sent, and the value stays until corrected", async () => {
-  for (const view of views) {
-    const { page } = await open(view, "state=eingerichtet&locale=de");
-    try {
-      const daily = page.getByLabel("Tagesgrenze pro Person (Credits)", { exact: true });
-      const top = async () => (await section(page, "Verbrauch").boundingBox())?.y;
-      const before = await top();
-      await daily.fill("120.000");
-      fixture.control.requests.length = 0;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        await page.getByRole("button", { name: "Speichern", exact: true }).click();
-        await root(page).getByText("Nicht gespeichert. Bitte die markierte Grenze prüfen.", { exact: true }).waitFor();
-        expect(await daily.getAttribute("aria-invalid")).toBe("true");
-        expect(await root(page).innerText()).toContain("Höchstens so hoch wie das Monatsbudget (90.000).");
-        expect(await daily.inputValue()).toBe("120.000");
-      }
-      expect(fixture.control.requests.filter((request) => request.method === "PUT")).toHaveLength(0);
-      // The reason replaces the hint in its own slot: nothing below moves.
-      expect(await top()).toBe(before);
-
-      await daily.fill("1,5");
-      await page.getByRole("button", { name: "Speichern", exact: true }).click();
-      expect(await root(page).innerText()).toContain("Bitte eine ganze Zahl eingeben.");
-
-      await daily.fill("500");
-      await page.getByRole("button", { name: "Speichern", exact: true }).click();
-      await root(page)
-        .getByText(/^Gespeichert um \d{2}:\d{2}$/)
-        .waitFor();
-      expect(await daily.getAttribute("aria-invalid")).toBeNull();
-      const put = fixture.control.requests.find((request) => request.method === "PUT");
-      expect(JSON.parse(put!.body)).toMatchObject({ plan: "free", monthlyCredits: 90000, personDailyCredits: 500 });
-      expect(await top()).toBe(before);
-    } finally {
-      await page.close();
-    }
+test("the monthly budget is the only credit limit in the form", async () => {
+  const { page } = await open(views[0], "state=eingerichtet&locale=de");
+  try {
+    expect(await page.getByLabel("Tagesgrenze pro Person (Credits)", { exact: true }).count()).toBe(0);
+    const month = page.getByLabel("Monatsbudget (Credits)", { exact: true });
+    await month.fill("1,5");
+    await page.getByRole("button", { name: "Speichern", exact: true }).click();
+    expect(await month.getAttribute("aria-invalid")).toBe("true");
+    expect(await root(page).innerText()).toContain("Bitte eine ganze Zahl eingeben.");
+    await month.fill("500");
+    fixture.control.requests.length = 0;
+    await page.getByRole("button", { name: "Speichern", exact: true }).click();
+    await root(page)
+      .getByText(/^Gespeichert um \d{2}:\d{2}$/)
+      .waitFor();
+    const put = fixture.control.requests.find((request) => request.method === "PUT");
+    expect(JSON.parse(put!.body)).toMatchObject({ plan: "free", monthlyCredits: 500 });
+    expect(JSON.parse(put!.body)).not.toHaveProperty("personDailyCredits");
+  } finally {
+    await page.close();
   }
 }, 60_000);
 
