@@ -24,6 +24,7 @@ import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
+import { settleCodeAiBudget } from "./ai-budget";
 import { verifyCodeSubmission } from "./authoring-check";
 import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
 import { claimCodeWork } from "./dispatch";
@@ -940,17 +941,22 @@ suiteFor(
       stop.abort();
     }
   }, 20_000);
-  test("failure before the first Action retries with a new generation and unchanged budget", async () => {
+  test("failure before the first Action retries with a fresh AI budget and original deadline", async () => {
     const code = await fixture();
     await enqueueMany(code, 1);
     const first = await take(),
       old = await claims(first);
+    await sql`UPDATE code.runs SET ai_reference_cost=0.75,ai_reserved_cost=0.25,ai_budget_call=1 WHERE id=${first.runId}::uuid`;
     await completeCodeRun(old, "failed");
     expect((await state(first.runId)).state).toBe("queued");
     const next = await take();
     expect(next.runId).toBe(first.runId);
     expect(next.generation).toBe(2);
     expect(next.deadlineAt).toBe(first.deadlineAt);
+    await sql.begin((db) => settleCodeAiBudget(old, 1, "0.5", db));
+    const [budget] = await sql`SELECT ai_reference_cost::text AS cost,ai_reserved_cost::text AS reserved,ai_budget_call
+      FROM code.runs WHERE id=${first.runId}::uuid`;
+    expect(budget).toEqual({ cost: "0", reserved: "0", ai_budget_call: null });
     await expect(heartbeatCodeRun(old)).rejects.toMatchObject({ code: "runner_lease_lost", status: 409 });
     await expect(sql.begin((db) => requireCodeRunFence(old, db))).rejects.toMatchObject({ status: 409 });
     await completeCodeRun(await claims(next), "succeeded");

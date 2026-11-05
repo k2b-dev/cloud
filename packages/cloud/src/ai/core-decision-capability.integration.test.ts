@@ -1,16 +1,16 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
-import { databaseSuite, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
-import { compileCapabilities, invokeCompiledCapability } from "../../cloud/src/_internal/capabilities";
-import { setAiCredential } from "../../cloud/src/ai/credentials";
-import { migrateCloudAi } from "../../cloud/src/ai/migrate";
-import { aiModelCatalog, readAiModelProfiles } from "../../cloud/src/ai/model-catalog";
-import { aiSettingsFixture } from "../../cloud/src/ai/model-fixture";
-import { aiQuotas } from "../../cloud/src/ai/quotas";
-import * as settings from "../../cloud/src/ai/settings";
-import { decisionInputFixture } from "./ai-decision-capability.test-fixture";
-import { aiCapabilities } from "./capabilities";
+import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
+import { decisionInputFixture } from "../../../core/src/ai-decision-capability.test-fixture";
+import { aiCapabilities } from "../../../core/src/capabilities";
+import { compileCapabilities, invokeCompiledCapability } from "../_internal/capabilities";
+import { setAiCredential } from "./credentials";
+import { migrateCloudAi } from "./migrate";
+import { aiModelCatalog, readAiModelProfiles } from "./model-catalog";
+import { aiSettingsFixture } from "./model-fixture";
+import { aiQuotas } from "./quotas";
+import * as settings from "./settings";
 
 const personId = "11111111-1111-4111-8111-111111111111";
 const serviceId = "22222222-2222-4222-8222-222222222222";

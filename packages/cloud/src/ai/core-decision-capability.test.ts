@@ -3,11 +3,12 @@ import * as ai from "@k2b/cloud/ai";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { geoTestContext } from "@k2b/cloud/services/geo/geo.test-fixture";
 import { z } from "zod";
-import { compileCapabilities, invokeCompiledCapability } from "../../cloud/src/_internal/capabilities";
-import { buildAiCapabilityCatalog, createLoadedAiCapabilityTools } from "../../cloud/src/ai/capabilities";
-import { type aiDecisionData, aiDecisionInput, aiDecisionQuery } from "./ai-decision-capability";
-import { decisionInputFixture as input, decisionResultFixture as result } from "./ai-decision-capability.test-fixture";
-import { aiCapabilities } from "./capabilities";
+import { type aiDecisionData, aiDecisionInput, aiDecisionQuery } from "../../../core/src/ai-decision-capability";
+import { decisionInputFixture as input, decisionResultFixture as result } from "../../../core/src/ai-decision-capability.test-fixture";
+import { aiCapabilities } from "../../../core/src/capabilities";
+import { codeSettings } from "../../../core/src/code/settings";
+import { compileCapabilities, invokeCompiledCapability } from "../_internal/capabilities";
+import { buildAiCapabilityCatalog, createLoadedAiCapabilityTools } from "./capabilities";
 
 const context: CapabilityExecutionContext = {
   ...geoTestContext,
@@ -154,4 +155,18 @@ test("Gustav discovers and loads the query as a normal capability tool", async (
   expect(z.toJSONSchema(tools[0]!.def.inputSchema)).toMatchObject({
     properties: { task: expect.any(Object), state: expect.any(Object), questions: expect.any(Object) },
   });
+});
+
+test("Gustav and CLI decisions are unaffected by the Code per-attempt budget", async () => {
+  const budget = spyOn(codeSettings, "get").mockResolvedValue(0);
+  call = spyOn(ai, "runAiDecision").mockResolvedValue(result);
+  try {
+    // cld uses the ordinary HTTP capability endpoint.
+    for (const origin of ["assistant", "http"] as const)
+      expect(await aiDecisionQuery.run(input, { ...context, origin })).toEqual({ ok: true, data: { data: result } });
+    expect(budget).not.toHaveBeenCalled();
+    expect(call).toHaveBeenCalledTimes(2);
+  } finally {
+    budget.mockRestore();
+  }
 });

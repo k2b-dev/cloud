@@ -975,7 +975,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
     if (after === null || loading()) return;
     setLoading(true);
     setFailed(false);
-    const result = await loadCodeRunCalls(browserInvoke, props.state.code.id, run().id, after);
+    const result = await loadCodeRunCalls(browserInvoke, props.state.code.id, run().id, after, undefined, props.text.locale());
     setLoading(false);
     if (!result) return setFailed(true);
     setCalls([...(calls() ?? []), ...result.calls]);

@@ -202,6 +202,8 @@ export const codePageMessages = i18n.define({
       refusedReaderDetail: "Everyone who may edit the Code sees which target refused.",
       refusedDetailsFailed: "Which target refused could not be loaded right now.",
       policyRefusedTitle: "The policy does not allow this.",
+      aiBudgetReserved: "Another AI call has reserved this attempt’s remaining budget. Wait for that call before trying again.",
+      aiBudgetRefused: "The Code AI budget for this attempt is spent. No AI call was started.",
       policyRefusedDetail: "The Cloud admin sets the policy for Code.",
       approvalRefusedTitle: "This version needs the Cloud admin's approval.",
       approvalRefusedDetail: "The Cloud admin approves versions where the policy requires it.",
@@ -491,6 +493,9 @@ export const codePageMessages = i18n.define({
       refusedReaderDetail: "Welches Ziel abgelehnt hat, sehen alle, die den Code bearbeiten dürfen.",
       refusedDetailsFailed: "Welches Ziel abgelehnt hat, ließ sich gerade nicht laden.",
       policyRefusedTitle: "Die Richtlinie erlaubt das nicht.",
+      aiBudgetReserved:
+        "Ein anderer KI-Aufruf hat das restliche Budget dieses Versuchs reserviert. Warte vor einem neuen Aufruf auf dessen Ende.",
+      aiBudgetRefused: "Das KI-Budget dieses Code-Versuchs ist verbraucht. Es wurde kein KI-Aufruf gestartet.",
       policyRefusedDetail: "Die Richtlinie für Code legt der Cloud-Admin fest.",
       approvalRefusedTitle: "Diese Version braucht die Freigabe des Cloud-Admins.",
       approvalRefusedDetail: "Der Cloud-Admin gibt Versionen frei, wo seine Richtlinie es verlangt.",

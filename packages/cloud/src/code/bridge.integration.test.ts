@@ -26,6 +26,7 @@ import { migrate as migrateRailShortcuts } from "../../../core/src/migrate/core/
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import { compileCapabilities, invokeCompiledCapability } from "../_internal/capabilities";
 import * as registry from "../_internal/registry";
+import { aiModelFixture, aiSettingsFixture } from "../ai/model-fixture";
 import {
   type CapabilityDispatchDependencies,
   codeHttpOriginAllowed,
@@ -117,7 +118,10 @@ const confirmationCompiled = compileCapabilities("example", {
     },
   },
 });
-const decisionCompiled = compileCapabilities("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } });
+const decisionCompiled = compileCapabilities("core", {
+  protocolVersion: 2,
+  queries: { "ai.decide": aiDecisionQuery, "ai.skills.list": op },
+});
 const baseEntry: CapabilityRegistryEntry = {
   appId: "example",
   appName: "Example",
@@ -133,6 +137,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   let signer: { kid: string; key: CryptoKey; signUntil: Date };
   let key: JWTVerifyGetKey;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
+  let aiSettingsSpy: ReturnType<typeof spyOn<typeof decision, "readAiSettingsState">>;
   let registrySpy: ReturnType<typeof spyOn<typeof registry, "getApp">>;
   let capabilitySpy: ReturnType<typeof spyOn<typeof registry, "getCapability">>;
   let claims: CodeRunTokenInput;
@@ -142,6 +147,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   let targetFailure: CapabilityError | null = null;
   let providerRequestsConfirmation = false;
   let callLimit = 200;
+  let aiBudget = 1;
   let rateLimited = false;
   let realRate = false;
   let realAdmission = false;
@@ -169,7 +175,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         const operation =
           currentEntry.manifest.actions.find(
             (candidate) => !String(_url).includes("/review") && String(_url).endsWith(`/${candidate.localId}`),
-          ) ?? currentEntry.manifest.queries[0]!;
+          ) ?? currentEntry.manifest.queries.find((candidate) => String(_url).endsWith(`/${candidate.localId}`))!;
         const verified = await verifyInvocationToken(
           headers.get("authorization")!.slice(7),
           {
@@ -185,8 +191,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
           const outcome = await invokeCompiledCapability({
             compiled: decisionCompiled,
             kind: "query",
-            localId: "ai.decide",
-            expectedSchemaHash: decisionCompiled.queries.get("ai.decide")!.manifest.schemaHash,
+            localId: operation.localId,
+            expectedSchemaHash: decisionCompiled.queries.get(operation.localId)!.manifest.schemaHash,
             input: invocationBody.input,
             context: {
               authority,
@@ -319,7 +325,18 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     signer = { kid, key: pair.privateKey, signUntil: new Date(now.getTime() + 600_000) };
     key = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), alg: "RS256", use: "sig", kid }] });
     settingsSpy = spyOn(codeSettings, "get").mockImplementation(async (name) =>
-      name === "core.code.calls_per_run" ? callLimit : name === "core.code.calls_per_second" ? 1 : CODE_SETTINGS[name].default,
+      name === "core.code.calls_per_run"
+        ? callLimit
+        : name === "core.code.calls_per_second"
+          ? 1
+          : name === "core.code.ai_budget_usd"
+            ? aiBudget
+            : CODE_SETTINGS[name].default,
+    );
+    aiSettingsSpy = spyOn(decision, "readAiSettingsState").mockResolvedValue(
+      aiSettingsFixture({
+        profiles: [aiModelFixture({ id: "clef", pricing: { inputPerMillion: 1, outputPerMillion: 2 } })],
+      }),
     );
     registrySpy = spyOn(registry, "getApp").mockImplementation(async (id) => ({
       id,
@@ -342,6 +359,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   ) {
     currentEntry = structuredClone(baseEntry);
     callLimit = 200;
+    aiBudget = 1;
     rateLimited = false;
     realRate = false;
     realAdmission = false;
@@ -432,6 +450,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   });
   afterAll(async () => {
     settingsSpy?.mockRestore();
+    aiSettingsSpy?.mockRestore();
     registrySpy?.mockRestore();
     capabilitySpy?.mockRestore();
     await database?.drop();
@@ -462,6 +481,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   });
   test.each([false, true])("Code decision query reaches runAiDecision with the workload subject (personal=%s)", async (personal) => {
     await resetFixture({ personal, entry: true, policyRows: ["read", "ai"] });
+    if (personal)
+      await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
     const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
     try {
       const entry = { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest };
@@ -482,6 +503,140 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     } finally {
       run.mockRestore();
     }
+  });
+  const sendDecision = () =>
+    send({
+      entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },
+      operation: "core.ai.decide",
+      input: { call: { capability: "core.ai.decide", target: null, refs: {}, input: decisionInputFixture }, metadata: {} },
+    });
+  test("zero Code AI budget refuses before any model call and records a policy refusal", async () => {
+    await resetFixture({ entry: true, policyRows: ["ai"] });
+    aiBudget = 0;
+    const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
+    try {
+      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit" } });
+      expect(run).not.toHaveBeenCalled();
+      await expectPolicyRefusal();
+    } finally {
+      run.mockRestore();
+    }
+  });
+  test("returned reference cost exhausts the attempt budget before the next AI call", async () => {
+    await resetFixture({ entry: true, policyRows: ["ai"] });
+    aiBudget = 0.000046;
+    const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
+    try {
+      expect(await (await sendDecision()).json()).toEqual({ ok: true, data: decisionResultFixture });
+      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit" } });
+      expect(run).toHaveBeenCalledTimes(1);
+      const [cost] =
+        await sql`SELECT ai_reference_cost::text AS cost,ai_reserved_cost::text AS reserved,ai_budget_call FROM code.runs WHERE id=${claims.runId}::uuid`;
+      expect(cost).toEqual({ cost: "0.000046000000", reserved: "0", ai_budget_call: null });
+      await expectPolicyRefusal();
+    } finally {
+      run.mockRestore();
+    }
+  });
+  test("parallel AI calls cannot reserve the same attempt remainder across bridge hosts", async () => {
+    await resetFixture({ entry: true, policyRows: ["ai"] });
+    aiBudget = 0.000046;
+    const started = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
+    beforeIssue = async () => {
+      started.resolve();
+      await finish.promise;
+    };
+    const first = sendDecision();
+    try {
+      await Promise.race([
+        started.promise,
+        first.then(async (response) => {
+          throw new Error(`Reservation was not reached: ${JSON.stringify(await response.clone().json())}`);
+        }),
+      ]);
+      const responses = await Promise.all([sendDecision(), sendDecision()]);
+      for (const response of responses) expect(await response.json()).toEqual({ ok: false, error: { code: "code_ai_budget_reserved" } });
+      expect(run).not.toHaveBeenCalled();
+    } finally {
+      finish.resolve();
+      try {
+        expect(await (await first).json()).toEqual({ ok: true, data: decisionResultFixture });
+        expect(run).toHaveBeenCalledTimes(1);
+      } finally {
+        run.mockRestore();
+      }
+    }
+    expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit" } });
+  });
+  test("settlement releases unused reservation and sums later AI calls", async () => {
+    await resetFixture({ entry: true, policyRows: ["ai"] });
+    aiBudget = 0.000092;
+    const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
+    try {
+      for (let call = 0; call < 2; call++) expect(await (await sendDecision()).json()).toEqual({ ok: true, data: decisionResultFixture });
+      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_ai_budget_limit" } });
+      expect(run).toHaveBeenCalledTimes(2);
+    } finally {
+      run.mockRestore();
+    }
+  });
+  test("a successful non-model AI query releases its reservation without spending the budget", async () => {
+    await resetFixture({ entry: true, policyRows: ["ai"] });
+    aiBudget = 0.000046;
+    const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
+    try {
+      const response = await send({
+        entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },
+        operation: "core.ai.skills.list",
+        input: { call: { capability: "core.ai.skills.list", target: null, refs: {}, input: {} }, metadata: {} },
+      });
+      expect(await response.json()).toEqual({ ok: true, data: { value: "done" } });
+      expect(run).not.toHaveBeenCalled();
+      expect(await (await sendDecision()).json()).toEqual({ ok: true, data: decisionResultFixture });
+    } finally {
+      run.mockRestore();
+    }
+  });
+  test("pre-model quota and settings refusals release or avoid the reservation", async () => {
+    await resetFixture({ entry: true, policyRows: ["ai"] });
+    aiBudget = 0.000046;
+    const run = spyOn(decision, "runAiDecision").mockRejectedValueOnce({ code: "quota_exhausted" });
+    try {
+      expect(await (await sendDecision()).json()).toMatchObject({ ok: false, error: { code: "quota_exhausted" } });
+      aiSettingsSpy.mockRejectedValueOnce(new Error("fixture unavailable"));
+      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_bridge_unavailable" } });
+      run.mockResolvedValue(decisionResultFixture);
+      expect(await (await sendDecision()).json()).toEqual({ ok: true, data: decisionResultFixture });
+      expect(run).toHaveBeenCalledTimes(2);
+    } finally {
+      run.mockRestore();
+    }
+  });
+  test("policy refusal at issuance releases the AI reservation", async () => {
+    await resetFixture({ entry: true, policyRows: ["ai"] });
+    aiBudget = 0.000046;
+    const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
+    try {
+      beforeIssue = async () => {
+        await sql`UPDATE code.policy_rules SET value='never' WHERE group_id IS NULL AND row='ai'`;
+      };
+      expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_policy_never" } });
+      expect(run).not.toHaveBeenCalled();
+      beforeIssue = undefined;
+      await sql`UPDATE code.policy_rules SET value='automatic' WHERE group_id IS NULL AND row='ai'`;
+      expect(await (await sendDecision()).json()).toEqual({ ok: true, data: decisionResultFixture });
+      expect(run).toHaveBeenCalledTimes(1);
+    } finally {
+      run.mockRestore();
+    }
+  });
+  test("Code budget zero leaves non-AI capability calls unaffected", async () => {
+    aiBudget = 0;
+    const before = fetched;
+    expect(await (await send()).json()).toEqual({ ok: true, data: { value: item.id } });
+    expect(fetched).toBeGreaterThan(before);
   });
   test("C13 protocol routes require the runner app proof independently of a valid run token", async () => {
     const token = await signCodeRunToken(claims, { deadlineAt: now.getTime() + 300_000, issuer, signer, now });

@@ -223,11 +223,11 @@ export const CODE_SETTINGS = {
     min: 0,
     max: 100,
     default: 1,
-    label: "AI reference budget per run (USD)",
-    description: "Maximum AI reference cost of one Code attempt; zero disables AI.",
+    label: "AI reference budget per attempt (USD)",
+    description: "Reference allowance for AI calls in one Code attempt; zero disables AI.",
     presentation: {
       translations: {
-        de: { label: "KI-Referenzbudget je Lauf (USD)", description: "Maximale KI-Referenzkosten je Code-Versuch; 0 sperrt KI." },
+        de: { label: "KI-Referenzbudget je Versuch (USD)", description: "Referenzbudget für KI-Aufrufe je Code-Versuch; 0 sperrt KI." },
       },
     },
   },

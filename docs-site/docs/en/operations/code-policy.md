@@ -5,7 +5,7 @@ section: Operations
 order: 1253
 description: Configure Code execution budgets and inspect durable policy pause work.
 tags: [operations, code, policy, settings]
-updated: 2026-11-02
+updated: 2026-11-05
 ---
 
 # Code policy operations
@@ -35,7 +35,7 @@ environment fallback. They complement the
 | `core.code.calls_per_run` | 200 bridge calls | 1–1,000 |
 | `core.code.calls_per_second` | 60 per Code | 1–1,000 |
 | `core.code.database_bytes` | 100 MiB per Code | 1 byte–1 GiB |
-| `core.code.ai_budget_usd` | USD 1 reference cost per run | 0–100; zero disables AI |
+| `core.code.ai_budget_usd` | USD 1 reference cost per attempt | 0–100; zero disables AI |
 | `core.code.concurrency_per_code` | 1 active attempt | 1–100 |
 | `core.code.concurrency_per_owner` | 10 active attempts | 1–1,000 |
 
@@ -46,10 +46,25 @@ operational budgets; administrators can lower them for their installation.
 An owner is the exact personal, resource or application identity, so changing
 an author does not create another owner allowance.
 
-The execution and database services consume these registered settings when
-admitting work. Registering a budget does not by itself implement runner
-termination, AI cost reservation, database quotas or distributed concurrency;
-those checks belong to their owning execution services.
+Code enforces the per-run AI reference budget on `core.ai.*` capability calls,
+alongside the effective group policy for **AI**. Zero refuses before model
+invocation with `code_ai_budget_limit`. Each admitted call reserves the attempt's
+remaining budget atomically; parallel calls cannot spend that reservation again.
+While it is reserved, another AI call is refused with `code_ai_budget_reserved`; wait for the first call before retrying. After the
+call, Core accounts the returned model's reference prices and input/output usage,
+and releases the unused reservation. Measured cost can exceed the remainder of
+an already started call; further AI calls are refused once the budget is reached.
+Only one call can be in flight; decision input and output are bounded by the
+selected model's context window. This setting controls admission, rather than
+truncating an admitted model response.
+Known refusals before model execution release the reservation; unknown outcomes
+keep it spent, including an interrupted attempt whose call cannot be settled.
+Models without reference prices do not add cost, like explicitly free models.
+Successful catalog/history reads add no model cost. Zero still blocks all
+`core.ai.*` calls from Code. A new attempt starts its own budget, so automatic
+retries can use this allowance again, up to `core.code.automatic_attempts` times.
+Person/service-account AI allowance still applies.
+Gustav chat and direct `cld` capability calls do not use the Code run budget.
 
 ## Inspect policy pause work
 
