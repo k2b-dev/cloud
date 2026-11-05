@@ -673,6 +673,7 @@ test("390px sheet shrinks and navigation, popstate and persisted pageshow close 
     // Full height below the 46 px title row, so nothing in the panel is cut off.
     expect(await page.locator(slot).boundingBox()).toEqual({ x: 0, y: 46, width: 390, height: 854 });
     await page.locator("[data-cloud-panel-grow]").click();
+    await settled(page);
     expect(await page.locator(slot).getAttribute("data-sheet-detent")).toBe("half");
     expect((await page.locator(slot).boundingBox())?.height).toBeCloseTo(900 * 0.58, 0);
     for (const event of ["popstate", "pageshow"]) {
@@ -705,6 +706,7 @@ test("390px sheet leaves room to scroll the page's last row above it", async () 
     await page.waitForFunction(() => document.documentElement.dataset.panelHostMounted === "true");
     await open(page);
     await page.locator("[data-cloud-panel-grow]").click();
+    await settled(page);
     // Scroll to the very end, whether the page or the app card scrolls.
     await page.evaluate(() => {
       const main = document.querySelector<HTMLElement>(".layout-content-main");
@@ -721,6 +723,7 @@ test("390px sheet leaves room to scroll the page's last row above it", async () 
 });
 
 // 10d: The handle drags the sheet: it follows the pointer, snaps to the nearest height and closes far below half.
+// settled: callers read after `settled`, or mid-drag, where the moment under the pointer is the subject.
 const sheetHeight = (page: Page) => page.locator(slot).evaluate((element) => element.getBoundingClientRect().height);
 async function dragHandle(page: Page, distance: number, check?: () => Promise<void>) {
   const box = (await page.locator("[data-cloud-panel-grow]").boundingBox())!;
@@ -733,7 +736,7 @@ async function dragHandle(page: Page, distance: number, check?: () => Promise<vo
   // A finger that rests before it lifts carries no speed into the snap.
   await page.waitForTimeout(150);
   await page.mouse.up();
-  await settle(page);
+  await settled(page);
 }
 test("390px handle drag follows the pointer, snaps to half and full, and closes far below half", async () => {
   const { context, page } = await fixture(390);

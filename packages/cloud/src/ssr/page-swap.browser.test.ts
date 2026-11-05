@@ -294,19 +294,14 @@ test("rail, title and trail follow swaps and Back/Forward", async () => {
 /** The shell's rectangles; a swapped page must lay out exactly as a reload of it. */
 const shellGeometry = (page: Page) =>
   page.evaluate(() =>
-    [
-      ".cloud-app-canvas",
-      ".layout-rail",
-      ".layout-shell-content",
-      ".layout-page-head",
-      "main.layout-content-main",
-      "#cloud-panel",
-    ].map((selector) => {
-      const element = document.querySelector(selector);
-      if (!element) return [selector, null];
-      const { x, y, width, height } = element.getBoundingClientRect();
-      return [selector, element.checkVisibility(), x, y, width, height];
-    }),
+    [".cloud-app-canvas", ".layout-rail", ".layout-shell-content", ".layout-page-head", "main.layout-content-main", "#cloud-panel"].map(
+      (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return [selector, null];
+        const { x, y, width, height } = element.getBoundingClientRect();
+        return [selector, element.checkVisibility(), x, y, width, height];
+      },
+    ),
   );
 for (const width of [390, 1440]) {
   test(`${width}px: a regular and a full page swapped in lay out as their reload`, async () => {

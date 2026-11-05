@@ -458,4 +458,3 @@ test("a Cloud app part's summary keeps its one-line text beside its count; a mis
     stop();
   }
 });
-

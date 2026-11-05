@@ -28,7 +28,7 @@ packages/cloud/src/ssr/page-trail.browser.test.ts | 24
 packages/cloud/src/ssr/panel-slot.browser.test.ts | 8
 packages/cloud/src/ssr/print.browser.test.ts | 11
 packages/cloud/src/ssr/shell-focus.browser.test.ts | 5
-packages/cloud/src/ssr/soft-shell-frames.browser.test.ts | 5
+packages/cloud/src/ssr/soft-shell-frames.browser.test.ts | 1
 packages/cloud/src/ssr/theme-cycle.browser.test.ts | 1
 packages/cloud/src/styles/app-canvas.browser.test.ts | 4
 packages/cloud/src/styles/markdown-content.browser.test.ts | 4
