@@ -230,7 +230,13 @@ suiteFor(
           if (state === "expired")
             await sql`UPDATE auth.service_account_credentials SET expires_at = '-infinity' WHERE id = ${credentialId}::uuid`;
           if (state === "disabled") await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${account.id}::uuid`;
-          if (state === "wrong_resource") await sql`UPDATE auth.service_accounts SET resource_id = 'wrong' WHERE id = ${account.id}::uuid`;
+          if (state === "wrong_resource") {
+            // An account with app credentials cannot be rebound at all; the database refuses the state the reader would have to catch.
+            await expect(sql`UPDATE auth.service_accounts SET resource_id = 'wrong' WHERE id = ${account.id}::uuid`).rejects.toThrow(
+              "Account credentials do not match its kind or binding",
+            );
+            continue;
+          }
           expect((await routes.fetch(issued.clone())).status).toBe(403);
           await expect(read()).rejects.toThrow();
           await sql`UPDATE auth.service_account_credentials SET status = 'active', revoked_at = NULL, expires_at = NULL WHERE id = ${credentialId}::uuid`;
