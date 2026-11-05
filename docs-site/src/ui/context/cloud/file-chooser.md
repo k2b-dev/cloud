@@ -8,8 +8,11 @@ progress, permissions, and checks stay as they are.
 ## Use the file chooser
 
 Use it for the one "Attach" or "Add files" action of an upload. Call it from
-the click or key handler of that action: without providers it opens the
-device's file dialog directly and needs that user activation.
+the click or key handler of that action. Providers load only when a file action
+starts; the chooser opens on **This device** while its sources load. Discovery
+failures offer **Try again** in the same frame. After an earlier action found
+no providers, the next action opens the device's file dialog directly and
+needs that user activation.
 
 Do not add a second "From Cloud" button next to it, and do not use it to pick
 a reference to a resource; use the
