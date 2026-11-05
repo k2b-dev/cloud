@@ -1,3 +1,5 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
@@ -127,36 +129,46 @@ export const tobias: Person = { id: "33333333-3333-4333-8333-333333333333", name
 const threadId = (chat: string, index: number) => `T${chat.slice(-3)}${index.toString(36).padStart(2, "0")}`;
 
 const ui = new URL("../../../ui/", import.meta.url).pathname;
-const buildHarness = async (): Promise<string> => {
+const buildHarness = async () => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
-  const build = await Bun.build({
-    entrypoints: [new URL("./ChatWorkspace.browser-harness.tsx", import.meta.url).pathname],
-    target: "browser",
-    format: "iife",
-    conditions: ["browser"],
-    plugins: [
-      {
-        name: "solid-chat-workspace-test",
-        setup(builder) {
-          // Exercise the current shared component source without a separate UI build.
-          builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "src/index.ts") }));
-          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
-            const result = await transformAsync(await Bun.file(path).text(), {
-              filename: path,
-              babelrc: false,
-              configFile: false,
-              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+  const outputDirectory = await mkdtemp(resolve(tmpdir(), "chat-harness-"));
+  try {
+    const build = await Bun.build({
+      entrypoints: [new URL("./ChatWorkspace.browser-harness.tsx", import.meta.url).pathname],
+      target: "browser",
+      format: "esm",
+      splitting: true,
+      outdir: outputDirectory,
+      naming: { entry: "harness.js", chunk: "[name]-[hash].[ext]" },
+      conditions: ["browser"],
+      plugins: [
+        {
+          name: "solid-chat-workspace-test",
+          setup(builder) {
+            // Exercise the current shared component source without a separate UI build.
+            builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "src/index.ts") }));
+            builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+              const result = await transformAsync(await Bun.file(path).text(), {
+                filename: path,
+                babelrc: false,
+                configFile: false,
+                presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+              });
+              return { contents: result.code, loader: "js" };
             });
-            return { contents: result.code, loader: "js" };
-          });
+          },
         },
-      },
-    ],
-  });
-  if (!build.success) throw new AggregateError(build.logs, "Chat workspace harness build failed");
-  return build.outputs[0]!.text();
+      ],
+    });
+    if (!build.success) throw new AggregateError(build.logs, "Chat workspace harness build failed");
+    return new Map<string, string>(
+      await Promise.all(build.outputs.map(async (output) => [`/${output.path.split("/").pop()}`, await output.text()] as const)),
+    );
+  } finally {
+    await rm(outputDirectory, { recursive: true, force: true });
+  }
 };
 const buildCss = async (entry: string): Promise<string> => {
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", new URL("../../../cloud/", import.meta.url).pathname))).default;
@@ -839,7 +851,8 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           app: target.pathname === "/pwa/chat" || target.pathname.startsWith("/pwa/chat/"),
         });
       }
-      if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
+      if (harness.has(url.pathname))
+        return new Response(harness.get(url.pathname), { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname === "/fonts.css") return new Response(fontAssets.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname === "/tabler-icons.woff2") return new Response(Bun.file(fontAssets.icons));
@@ -1785,7 +1798,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           // Every weight and the icon font load with the page, so a font swap never moves rows during a test.
           '<div aria-hidden="true" style="position:absolute;visibility:hidden"><b>a</b><b style="font-weight:600">a</b><span style="font-weight:500">a</span><em>a</em>' +
           '<span>a</span><i class="ti ti-check"></i></div>' +
-          '<script src="/harness.js"></script>' +
+          '<script type="module" src="/harness.js"></script>' +
           (options.autoMount
             ? `<script>window.addEventListener('load',async()=>{const props=await(await fetch('/__props?path='+encodeURIComponent(location.pathname+location.search))).json();window.mountChat(props,new URLSearchParams(location.search).get('locale')||'en')})</script>`
             : "") +

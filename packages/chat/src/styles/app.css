@@ -1190,3 +1190,11 @@
   gap: 0.5rem;
 
 }
+
+/* Import, retry and dialog content occupy the same destination. */
+.chat-deferred-view { display: contents; }
+.chat-deferred-feedback { display: flex; flex: 1; align-items: flex-start; padding: 1rem; }
+.chat-deferred-dialog { display: flex; flex-direction: column; height: min(32rem, 65dvh); min-height: 0; }
+.chat-deferred-dialog > * { min-height: 0; flex: 1; }
+.chat-deferred-dialog .chat-dialog__body { flex: 1; }
+.chat-deferred-dialog > .chat-deferred-feedback { height: 100%; }
