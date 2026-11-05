@@ -13,9 +13,9 @@ const budgets = [
   { file: "packages/cloud/src/ssr/PwaPartCount.island.tsx", kib: 96 },
   { file: "packages/pwa/src/frontend/_components/PairingNotice.island.tsx", kib: 112 },
   { file: "packages/pwa/src/frontend/_components/StartParts.island.tsx", kib: 230 },
-  // The Assistant part renders a chat on its first frame, so the shared chat timeline is part of its closure.
-  // Measured 2026-11-05: 2,153,535 B.
-  { file: "packages/assistant/src/pwa/AssistantPwa.island.tsx", kib: 2320 },
+  // The Assistant part renders a chat on its first frame, so the shared chat timeline is part of its closure; KaTeX
+  // loads only for math. Measured 2026-11-05 with these roots: 2,155,527 B (with KaTeX 2,258,365 B and fewer roots).
+  { file: "packages/assistant/src/pwa/AssistantPwa.island.tsx", kib: 2160 },
   // The web Assistant renders chat Markdown; KaTeX loads only for math, so it stays out of the static closure.
   // Measured 2026-11-05: 3,267,899 B with KaTeX, 2,992,646 B without.
   { file: "packages/assistant/src/frontend/AssistantWorkspace.island.tsx", kib: 2990 },
