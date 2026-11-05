@@ -37,10 +37,12 @@ import { openNotebookSettingsDialog } from "../settings/NotebookSettingsPanel";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import { showRestoredVersionNotice } from "../versions/restore-notice";
 import NavigationVisibilityControls from "./NavigationVisibilityControls";
+import NewNoteMenu from "./NewNoteMenu";
 import NoteTree, { focusTreeRow, noteActionItems, noteIcon, placementForMove, useNoteActions } from "./NoteTree";
 import { createNavigationHidden, followStoredNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "./navigation-visibility";
 import { NoteRowLabel, NoteRowMenu, NoteRowsContextMenu } from "./note-rows";
 import { createNotebookSwitcher } from "./notebook-switcher";
+import type { NewNoteMenuChoice } from "./page-template-menu";
 import type { NotebookContext } from "./types";
 import { useFavoriteNotes } from "./useFavoriteNotes";
 import { useNotebookWorkspaceState } from "./useNotebookWorkspaceState";
@@ -85,6 +87,7 @@ export default function NotebookSidebar(props: Props) {
     selectedNoteId,
     tags,
     attachmentCount,
+    pageTemplates,
     workspaceError,
     workspaceRefreshing,
     refreshWorkspace,
@@ -123,6 +126,11 @@ export default function NotebookSidebar(props: Props) {
       dateConfig: props.ctx.dateConfig,
       host: () => document.getElementById(NOTEBOOK_NAVIGATION_ID) ?? document.documentElement,
     });
+  const chooseNewNote = (choice: NewNoteMenuChoice) => {
+    if (choice.type === "blank") actions.handleCreateNote();
+    else if (choice.type === "template") actions.handleCreateFromTemplate(choice.template.id);
+    else void openSettings("templates");
+  };
   const navigationHidden = createNavigationHidden(props.ctx.navigationHidden);
   followStoredNavigationHidden(navigationHidden);
 
@@ -351,7 +359,24 @@ export default function NotebookSidebar(props: Props) {
   const mobileNavigation = createNavigation({
     switcher,
     items: () => [
-      ...(canWrite ? [{ id: "new", label: t().newNote, icon: "ti ti-pencil-plus", action: "new", disabled: actions.loading() }] : []),
+      ...(canWrite
+        ? [
+            { id: "new", label: t().newNote, icon: "ti ti-pencil-plus", action: "new", disabled: actions.loading() },
+            {
+              id: "new-from-template",
+              label: t().newFromTemplate,
+              icon: "ti ti-template",
+              defaultExpanded: false,
+              children: pageTemplates().map((template) => ({
+                id: `template:${template.id}`,
+                label: template.name,
+                icon: template.icon,
+                action: `template:${template.id}`,
+                disabled: actions.loading(),
+              })),
+            },
+          ]
+        : []),
       { id: "search", label: t().searchNotes, icon: "ti ti-search", action: "search" },
       ...filterEntries(),
       ...(workspaceError()
@@ -428,6 +453,10 @@ export default function NotebookSidebar(props: Props) {
         actions.handleCreateNote();
         return;
       }
+      if (action.startsWith("template:")) {
+        actions.handleCreateFromTemplate(action.slice(9));
+        return;
+      }
       if (action === "retry") {
         await refreshWorkspace();
         return;
@@ -500,16 +529,7 @@ export default function NotebookSidebar(props: Props) {
           <div class="notebook-sidebar-head">
             <AppWorkspace.SidebarSwitcher {...switcher()} />
             <Show when={canWrite}>
-              <IconButton
-                label={t().newNote}
-                tooltip={t().newNoteShortcut}
-                onClick={() => actions.handleCreateNote()}
-                disabled={actions.loading()}
-                loading={actions.loading()}
-                loadingLabel={t().creatingNote}
-              >
-                <i class="ti ti-pencil-plus" />
-              </IconButton>
+              <NewNoteMenu templates={pageTemplates()} choose={chooseNewNote} pending={actions.loading()} />
             </Show>
           </div>
 

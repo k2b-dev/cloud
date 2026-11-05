@@ -28,6 +28,7 @@ const emptyDetail = (recordId: string): WorkspaceRecordDetail => ({
   snapshots: [],
   auditEntries: [],
   combinedOrigin: null,
+  referencedBy: null,
 });
 
 export const createRecordsSelectionController = (options: RecordsSelectionControllerOptions) => {

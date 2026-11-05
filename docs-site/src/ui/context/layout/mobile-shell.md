@@ -220,6 +220,18 @@ restored from the back/forward cache shows its own frame again. Give each
 tab's page the title of its tab item, so the header does not change when the
 page arrives.
 
+In a [view transition](https://developer.mozilla.org/docs/Web/API/View_Transition_API),
+within the document or between documents of a host that turns those on, the
+frame stands still and only the content area takes part. The header, the
+sidebar, and the footer carry the names `k2b-mobile-shell-header`,
+`k2b-mobile-shell-sidebar`, and `k2b-mobile-shell-footer`. Their groups show
+the next page's frame at once, without animation, and a new title replaces
+the old one immediately. One shell per page keeps the names unique. A part
+that is not shown takes no part, and while a modal dialog is open the frame
+stays in the page's own picture, under the dialog's backdrop. Between
+documents, the frame stands still only when it is in the new page's markup
+when the browser first shows that page, as with a page rendered on the server.
+
 A page that renders the shell only on the server, with islands inside
 it, calls `observeMobileShell(root)` once in the browser instead, with the
 shell's root element. It keeps the same measurements, the scroll fade, link

@@ -4,70 +4,84 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 
 const domTest = isServer ? test.skip : test;
-domTest(
-  "relation names update when detail labels arrive after the record",
-  async () => {
-    const dom = createDomTestHarness();
-    const { PublicFieldSchema, PublicGridRecordSchema } = await import("../../../api/public-dto");
-    const { default: RecordReadView } = await import("./RecordReadView");
-    const timestamp = "2026-01-01T00:00:00.000Z";
-    const field = PublicFieldSchema.parse({
-      id: "FIELD1",
-      tableId: "TABLE1",
-      name: "Customer",
-      description: "",
-      type: "relation",
-      config: { targetTableId: "TABLE2", cardinality: "single" },
-      position: 0,
-      required: false,
-      presentable: false,
-      hideInTable: false,
-      defaultValue: null,
-      indexed: false,
-      uniqueConstraint: false,
-      deletedAt: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-    const record = PublicGridRecordSchema.parse({
-      id: "REC001",
-      tableId: "TABLE1",
-      data: { FIELD1: ["REC002"] },
-      version: 1,
-      createdBy: "00000000-0000-4000-8000-000000000001",
-      updatedBy: "00000000-0000-4000-8000-000000000001",
-      deletedAt: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-    const [labels, setLabels] = createSignal<Record<string, string>>({});
-    const dispose = render(
-      () =>
-        createComponent(RecordReadView, {
-          baseId: "BASE01",
-          tableId: "TABLE1",
-          tableName: "Invoices",
-          fields: [field],
-          record,
-          get relationLabels() {
-            return labels();
-          },
-        }),
-      dom.root,
-    );
-    try {
-      expect(dom.root.textContent).toContain("Unavailable record");
-      setLabels({ REC002: "Lichtblick" });
-      await Bun.sleep(0);
-      expect(dom.root.textContent).toContain("Lichtblick");
-      expect(dom.root.textContent).not.toContain("Unavailable record");
-      setLabels({});
-      await Bun.sleep(0);
-      expect(dom.root.textContent).not.toContain("Lichtblick");
-    } finally {
-      dispose();
-      dom.cleanup();
-    }
-  },
-  30_000,
-);
+for (const via of ["its own Links section", "the caller's Links section"] as const)
+  domTest(
+    `relation names update when detail labels arrive after the record, in ${via}`,
+    async () => {
+      const dom = createDomTestHarness();
+      const { DetailLinks } = await import("@k2b/ui");
+      const { PublicFieldSchema, PublicGridRecordSchema } = await import("../../../api/public-dto");
+      const { default: RecordReadView } = await import("./RecordReadView");
+      const timestamp = "2026-01-01T00:00:00.000Z";
+      const field = PublicFieldSchema.parse({
+        id: "FIELD1",
+        tableId: "TABLE1",
+        name: "Customer",
+        description: "",
+        type: "relation",
+        config: { targetTableId: "TABLE2", cardinality: "single" },
+        position: 0,
+        required: false,
+        presentable: false,
+        hideInTable: false,
+        defaultValue: null,
+        indexed: false,
+        uniqueConstraint: false,
+        deletedAt: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      const record = PublicGridRecordSchema.parse({
+        id: "REC001",
+        tableId: "TABLE1",
+        data: { FIELD1: ["REC002"] },
+        version: 1,
+        createdBy: "00000000-0000-4000-8000-000000000001",
+        updatedBy: "00000000-0000-4000-8000-000000000001",
+        deletedAt: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      const [labels, setLabels] = createSignal<Record<string, string>>({});
+      const dispose = render(
+        () =>
+          createComponent(RecordReadView, {
+            baseId: "BASE01",
+            tableId: "TABLE1",
+            tableName: "Invoices",
+            fields: [field],
+            record,
+            get relationLabels() {
+              return labels();
+            },
+            // The record panel hands the outgoing rows to the section that also loads the reverse relations.
+            ...(via === "the caller's Links section"
+              ? {
+                  links: (outgoing: () => readonly import("@k2b/ui").DetailLinkItem[]) =>
+                    createComponent(DetailLinks, {
+                      incoming: [],
+                      get outgoing() {
+                        return outgoing();
+                      },
+                    }),
+                }
+              : {}),
+          }),
+        dom.root,
+      );
+      try {
+        expect(dom.root.textContent).toContain("Unavailable record");
+        setLabels({ REC002: "Lichtblick" });
+        await Bun.sleep(0);
+        expect(dom.root.textContent).toContain("Lichtblick");
+        expect(dom.root.textContent).not.toContain("Unavailable record");
+        setLabels({});
+        await Bun.sleep(0);
+        expect(dom.root.textContent).not.toContain("Lichtblick");
+      } finally {
+        dispose();
+        dom.cleanup();
+      }
+    },
+    30_000,
+  );

@@ -80,6 +80,7 @@ test("attachments render their current sidebar destination and unframed empty pa
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(401));
   spies.push(

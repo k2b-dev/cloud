@@ -93,6 +93,7 @@ import {
 import NoteCommentsSection from "./NoteCommentsSection";
 import { openNotePdfDialog } from "./NotePdfDialog";
 import { launchNotebookNoteAssistant } from "./notebook-assistant-launch";
+import { useSaveAsTemplate } from "./save-as-template";
 import type { TaskProgress } from "./tasks";
 import type { TocItem } from "./toc";
 import { ViewMenu } from "./ViewMenu";
@@ -200,6 +201,7 @@ export default function NotebookDetailPanel(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const duplicateNote = useDuplicateNote(props.notebookId);
+  const saveAsTemplate = useSaveAsTemplate(props.notebookId);
   const [open, setOpen] = createSignal(props.initiallyOpen);
   const [tocItems, setTocItems] = createSignal<TocItem[]>(props.tocItems);
   const [activeHeading, setActiveHeading] = createSignal<string | null>(null);
@@ -823,6 +825,11 @@ export default function NotebookDetailPanel(props: Props) {
                 label: t().duplicate,
                 icon: "ti ti-copy-plus",
                 action: () => window.dispatchEvent(new CustomEvent(DUPLICATE_NOTE_EVENT, { detail: { noteId: noteId() } })),
+              },
+              {
+                label: t().saveAsTemplate,
+                icon: "ti ti-template",
+                action: () => void saveAsTemplate.save({ id: noteId(), title: noteTitle() }),
               },
             ],
           },
