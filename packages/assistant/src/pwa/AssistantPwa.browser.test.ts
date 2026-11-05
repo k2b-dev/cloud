@@ -168,6 +168,35 @@ describe("The Assistant part on a phone", () => {
     }
   }, 30_000);
 
+  test("Send again on a refused message keeps what the field holds now", async () => {
+    const page = await open("screen=chat-x&chat=pflege&fail=/turns:422&hold=/viewed");
+    try {
+      await field(page).fill("Erste Nachricht");
+      await page.click("button.k2b-chat-composer__send:visible");
+      const failed = page.locator(".k2b-chat-message[data-status='error']", { hasText: "Erste Nachricht" });
+      await failed.waitFor();
+      await field(page).fill("Neuer Text");
+      await page.evaluate(() => (window as unknown as { harness: { fail: Set<string> } }).harness.fail.clear());
+      await failed.getByRole("button", { name: "Erneut senden" }).click();
+      await failed.waitFor({ state: "detached" });
+      expect(await field(page).inputValue()).toBe("Neuer Text");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a chat opened from the list fills the field with its saved draft once it has loaded", async () => {
+    const page = await open("screen=start&serverDraft=1");
+    try {
+      await page.click("a[href='/pwa/assistant/c/messe']");
+      await page.waitForFunction(
+        () => document.querySelector<HTMLTextAreaElement>(".assistant-pwa-chat textarea[aria-label]")?.value === "Vom Web",
+      );
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("what this device kept in the field wins over the chat's saved draft after a reload", async () => {
     const context = await browser.newContext({ viewport: PHONE, hasTouch: true, isMobile: true, locale: "de-DE" });
     await context.addInitScript(() => localStorage.setItem("cloud.pwa.draft:robin:assistant.composer%3Apflege", "Vom Gerät"));

@@ -76,7 +76,8 @@ type Shot = {
   fill?: [string, string];
   /** Invented files attached through the field's file input, by name. */
   attach?: string[];
-  click?: string;
+  /** Selectors clicked one after the other, such as a menu and then one of its entries. */
+  click?: string | string[];
   tap?: string;
   focus?: string;
 };
@@ -134,7 +135,7 @@ if (import.meta.main) {
                       ),
                 })),
               );
-          if (shot.click) await page.click(shot.click, { timeout: 5_000 });
+          for (const selector of [shot.click ?? []].flat()) await page.click(selector, { timeout: 5_000 });
           if (shot.tap) await page.tap(shot.tap, { timeout: 5_000 });
           if (shot.focus) await page.focus(shot.focus, { timeout: 5_000 });
         } catch (error) {

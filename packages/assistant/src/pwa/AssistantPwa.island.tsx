@@ -39,7 +39,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { assistantApi } from "../api/client";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
 import { createAssistantLiveHub, followAssistantLive, matchesAssistantInvalidation } from "../frontend/assistant-live";
@@ -261,15 +261,22 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     setTexts((current) => ({ ...current, [key]: value }));
     pwaDrafts.write(props.userId, `assistant.composer:${key}`, value);
   };
-  /** What this device kept for a field wins over the chat's saved draft, also when it is empty. */
+  /**
+   * What this device kept for a field wins over the chat's saved draft, also when it is empty. Without one, the
+   * chat's saved draft fills the field once the chat has loaded.
+   */
   const restoreDraft = (key: string) => {
     const kept = pwaDrafts.read(props.userId, `assistant.composer:${key}`);
     if (kept !== undefined) setTexts((current) => ({ ...current, [key]: kept }));
-    else if (texts()[key] === undefined && key !== NEW_DRAFT) setTexts((current) => ({ ...current, [key]: serverDraft(key) }));
   };
   // Restored after mounting, so the server and the first frame show the same field.
   onMount(() => restoreDraft(draftKey()));
   createEffect(on(draftKey, (key) => restoreDraft(key), { defer: true }));
+  createEffect(() => {
+    const key = draftKey();
+    if (key === NEW_DRAFT || chat.loadingConversation() || chat.conversation()?.id !== key) return;
+    if (untrack(texts)[key] === undefined) setTexts((current) => ({ ...current, [key]: serverDraft(key) }));
+  });
   const attachments = () => files()[draftKey()] ?? [];
   const clearDraft = (key: string) => {
     for (const record of files()[key] ?? []) setUpload(record.id, null);
@@ -296,20 +303,24 @@ export default function AssistantPwa(props: AssistantPwaProps) {
   const answering = () => chat.runStatus() === "streaming" && !sending();
   const [failed, setFailed] = createSignal<readonly FailedSend[]>([]);
   const dropFailed = (id: string) => setFailed((current) => current.filter((entry) => entry.id !== id));
-  /** A chat whose last message was sent without a confirmation; trying again sends the same submission. */
-  const [unconfirmed, setUnconfirmed] = createSignal<string | null>(null);
+  /** The open chat when its last message was sent without a confirmation; trying again sends the same submission. */
+  const unconfirmed = () => {
+    const id = chat.activeConversationId();
+    return id && chat.uncertainSubmissions()[id] !== undefined ? id : null;
+  };
   const retryUnconfirmed = async () => {
     const target = unconfirmed();
-    if (!target) return;
-    if ((await chat.retrySubmission(target)) === "accepted") {
-      setUnconfirmed(null);
-      chat.setError(null);
-    }
+    if (target && (await chat.retrySubmission(target)) === "accepted") chat.setError(null);
   };
   const [creating, setCreating] = createSignal(false);
 
-  /** Sends to the open chat, or starts a chat first. False keeps the text in the field. */
-  const send = async (input: ChatSubmitInput, fromKey = draftKey()): Promise<boolean> => {
+  /**
+   * Sends to the open chat, or starts a chat first. False keeps the text in the field. `fromField` is false for a
+   * message sent again from the timeline: the field holds other text then, which stays.
+   */
+  const send = async (input: ChatSubmitInput, fromField = true): Promise<boolean> => {
+    const fromKey = draftKey();
+    const clearField = (key: string) => fromField && clearDraft(key);
     if (!online() || !canUseComposer()) return false;
     // Until the server confirms or refuses the last message, a new one would not reach it; the text stays.
     const open = chat.activeConversationId();
@@ -326,7 +337,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
         return false;
       }
       target = created.id;
-      clearDraft(fromKey);
+      clearField(fromKey);
       go({ level: "chat", id: target });
     }
     setSending(true);
@@ -335,7 +346,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       setSending(false),
     );
     if (sent) {
-      clearDraft(target);
+      clearField(target);
       void reloadList(true).catch(() => undefined);
       return true;
     }
@@ -343,12 +354,11 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     // the hint line, one that never arrived waits there with "Send again".
     chat.setError(null);
     if (chat.uncertainSubmissions()[target] !== undefined) {
-      setUnconfirmed(target);
-      clearDraft(target);
+      clearField(target);
       return true;
     }
     setFailed((current) => [...current, { id: crypto.randomUUID(), conversationId: target, input }]);
-    clearDraft(target);
+    clearField(target);
     return true;
   };
 
@@ -536,7 +546,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
           </span>
         )}
       </Match>
-      <Match when={unconfirmed() === chat.activeConversationId() && unconfirmed()}>
+      <Match when={unconfirmed()}>
         <span class="assistant-pwa-hint assistant-pwa-hint--warning" role="alert">
           <i class="ti ti-alert-triangle" aria-hidden="true" /> {t().unconfirmed}
           <button type="button" class="assistant-pwa-hint__link" onClick={() => void retryUnconfirmed()}>
@@ -689,7 +699,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
             // Sending again takes this message's place: a new failure stands in the chat as its own entry.
             onSelect: async () => {
               dropFailed(pending.id);
-              if (!(await send(pending.input, pending.conversationId))) setFailed((current) => [...current, pending]);
+              if (!(await send(pending.input, false))) setFailed((current) => [...current, pending]);
             },
           },
         ],
@@ -797,7 +807,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                       if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retry);
                     },
                     onContinueTurn: async (message) => {
-                      await send({ intent: "send", text: message, attachments: [] });
+                      await send({ intent: "send", text: message, attachments: [] }, false);
                     },
                     fileUrl: chat.fileContentUrl,
                   }}
