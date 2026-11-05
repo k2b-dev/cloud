@@ -20,6 +20,7 @@ import {
   readAiComposerFiles,
 } from "@k2b/cloud/ai/ui";
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { AiModelRequest, AiPeopleModels } from "@k2b/cloud/shared";
 import { type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
 import {
@@ -36,7 +37,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { assistantApi } from "../api/client";
-import { AssistantWaitingStrip } from "../frontend/AssistantWaitingStrip";
+import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
 import { createAssistantLiveHub, followAssistantLive, matchesAssistantInvalidation } from "../frontend/assistant-live";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { pwaMessages } from "./messages";
@@ -78,7 +79,7 @@ export type AssistantPwaProps = {
 
 type List = { conversations: AiConversation[]; questions: AiOpenQuestions };
 /** A message that did not reach its chat stays in the timeline with "Send again" instead of in the field. */
-type FailedSend = { conversationId: string; input: ChatSubmitInput };
+type FailedSend = { id: string; conversationId: string; input: ChatSubmitInput };
 
 /**
  * The Assistant in the Cloud app. The start lists recent chats and what waits for the person, with a field to ask
@@ -123,9 +124,9 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       setListState("ready");
     } catch (error) {
       if (request.signal.aborted) return;
-      // A refresh that fails keeps what the list showed; only a list without data shows the failure.
+      // A refresh that fails keeps what the list showed; only a list without data shows the failure. The error still
+      // reaches the caller, so a live update is tried again instead of being acknowledged.
       if (!quiet || !list()) setListState("failed");
-      if (quiet && list()) return;
       throw error;
     }
   };
@@ -232,10 +233,11 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     setTexts((current) => ({ ...current, [key]: value }));
     pwaDrafts.write(props.userId, `assistant.composer:${key}`, value);
   };
+  /** What this device kept for a field wins over the chat's saved draft, also when it is empty. */
   const restoreDraft = (key: string) => {
-    if (texts()[key]) return;
     const kept = pwaDrafts.read(props.userId, `assistant.composer:${key}`);
-    if (kept) setTexts((current) => ({ ...current, [key]: kept }));
+    if (kept !== undefined) setTexts((current) => ({ ...current, [key]: kept }));
+    else if (texts()[key] === undefined && key !== NEW_DRAFT) setTexts((current) => ({ ...current, [key]: serverDraft(key) }));
   };
   // Restored after mounting, so the server and the first frame show the same field.
   onMount(() => restoreDraft(draftKey()));
@@ -262,7 +264,8 @@ export default function AssistantPwa(props: AssistantPwaProps) {
   // While an answer is written, Stop replaces Send; a question that waits for the person leaves the field as it is.
   const [sending, setSending] = createSignal(false);
   const answering = () => chat.runStatus() === "streaming" && !sending();
-  const [failed, setFailed] = createSignal<FailedSend | null>(null);
+  const [failed, setFailed] = createSignal<readonly FailedSend[]>([]);
+  const dropFailed = (id: string) => setFailed((current) => current.filter((entry) => entry.id !== id));
   /** A chat whose last message was sent without a confirmation; trying again sends the same submission. */
   const [unconfirmed, setUnconfirmed] = createSignal<string | null>(null);
   const retryUnconfirmed = async () => {
@@ -278,6 +281,9 @@ export default function AssistantPwa(props: AssistantPwaProps) {
   /** Sends to the open chat, or starts a chat first. False keeps the text in the field. */
   const send = async (input: ChatSubmitInput, fromKey = draftKey()): Promise<boolean> => {
     if (!online() || !canUseComposer()) return false;
+    // Until the server confirms or refuses the last message, a new one would not reach it; the text stays.
+    const open = chat.activeConversationId();
+    if (open && chat.uncertainSubmissions()[open] !== undefined) return false;
     setNotice(null);
     let target = chat.activeConversationId();
     if (!target) {
@@ -300,7 +306,6 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     );
     if (sent) {
       clearDraft(target);
-      if (failed()?.conversationId === target) setFailed(null);
       void reloadList(true).catch(() => undefined);
       return true;
     }
@@ -312,7 +317,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       clearDraft(target);
       return true;
     }
-    setFailed({ conversationId: target, input });
+    setFailed((current) => [...current, { id: crypto.randomUUID(), conversationId: target, input }]);
     clearDraft(target);
     return true;
   };
@@ -349,16 +354,34 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       local: chat.activeConversationId() && !chat.loadingConversation() ? (chat.activeTurn()?.blocks ?? []) : null,
     }),
   );
+  // The strip stays quiet only while the one open question's answers are in view, as on the web.
+  const [timelineViewport, setTimelineViewport] = createSignal<HTMLElement>();
+  const [timelineContent, setTimelineContent] = createSignal<HTMLElement>();
+  let scrollToAnchor: (anchor: string) => boolean = () => false;
+  const waitingFocus = createWaitingQuestionFocus({
+    onlyHere: () => waiting().onlyHere,
+    viewport: timelineViewport,
+    content: timelineContent,
+    scrollToAnchor: (anchor) => scrollToAnchor(anchor),
+    gone: () => void reloadList(true).catch(() => undefined),
+  });
   const jump = (question: AiOpenQuestion) => {
-    if (chat.activeConversationId() !== question.conversationId) go({ level: "chat", id: question.conversationId });
-    const reveal = (attempt: number) => {
-      const card = [...document.querySelectorAll<HTMLElement>(".k2b-chat-decision[data-chat-anchor]")].find(
-        (element) => element.dataset.chatAnchor === question.anchor,
-      );
-      if (card) card.scrollIntoView({ block: "center" });
-      else if (attempt < 20) setTimeout(() => reveal(attempt + 1), 100);
-    };
-    reveal(0);
+    const here = chat.activeConversationId() === question.conversationId;
+    if (!here) go({ level: "chat", id: question.conversationId });
+    void waitingFocus.focus(question.anchor, () => chat.activeConversationId() === question.conversationId);
+  };
+  /**
+   * Questions beyond the strip's bounded list belong to chats that wait for the person but show none of their questions
+   * in the strip; "more" opens the next of them.
+   */
+  const showMoreQuestions = () => {
+    const listed = new Set(waiting().entries.map((question) => question.conversationId));
+    const next = list()?.conversations.find((entry) => entry.runStatus === "needs_attention" && !listed.has(entry.id));
+    if (next) go({ level: "chat", id: next.id });
+    else {
+      const first = waiting().entries[0];
+      if (first) jump(first);
+    }
   };
 
   const Hint = () => (
@@ -425,12 +448,9 @@ export default function AssistantPwa(props: AssistantPwaProps) {
           <AssistantWaitingStrip
             view={waiting()}
             conversationId={chat.activeConversationId()}
-            quiet={waiting().onlyHere !== null}
+            quiet={waitingFocus.quiet()}
             onJump={jump}
-            onShowMore={() => {
-              const first = waiting().entries[0];
-              if (first) jump(first);
-            }}
+            onShowMore={showMoreQuestions}
           />
         </Show>
       }
@@ -499,32 +519,38 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     </Switch>
   );
 
-  const failedItem = (): ChatTimelineItem[] => {
-    const pending = failed();
-    if (!pending || pending.conversationId !== chat.activeConversationId()) return [];
-    return [
-      {
-        kind: "message",
-        id: "assistant-pwa-failed-send",
-        role: "user",
+  const saveDownload = (event: MouseEvent) => {
+    const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[download][href]") : null;
+    if (!link || new URL(link.href).origin !== location.origin || !new URL(link.href).pathname.startsWith("/api/ai/")) return;
+    event.preventDefault();
+    const name = link.getAttribute("download") || link.pathname.split("/").at(-1) || "file";
+    void importOnDemand(() => import("@k2b/cloud/browser/files")).then((files) => files?.saveFiles([{ name, content: link.href }]));
+  };
+
+  const failedItems = (): ChatTimelineItem[] =>
+    failed()
+      .filter((pending) => pending.conversationId === chat.activeConversationId())
+      .map((pending) => ({
+        kind: "message" as const,
+        id: `assistant-pwa-failed-send:${pending.id}`,
+        role: "user" as const,
         content: pending.input.text,
         attachments: pending.input.attachments,
-        status: "error",
-        actionDisplay: "inline",
+        status: "error" as const,
+        actionDisplay: "inline" as const,
         actions: [
           {
             id: "resend",
             label: t().resend,
             icon: "ti ti-reload",
+            // Sending again takes this message's place: a new failure stands in the chat as its own entry.
             onSelect: async () => {
-              setFailed(null);
-              if (!(await send(pending.input, pending.conversationId))) setFailed(pending);
+              dropFailed(pending.id);
+              if (!(await send(pending.input, pending.conversationId))) setFailed((current) => [...current, pending]);
             },
           },
         ],
-      },
-    ];
-  };
+      }));
 
   const Timeline = () => {
     const items = createAiChatTimeline({
@@ -544,13 +570,18 @@ export default function AssistantPwa(props: AssistantPwaProps) {
               ? { ...item, status: "pending" as const }
               : item,
           ),
-          ...failedItem(),
+          ...failedItems(),
         ]}
         loading={chat.loadingConversation()}
         hasMore={chat.hasMoreHistory()}
         loadingOlder={chat.loadingOlder()}
         onLoadOlder={chat.loadOlderMessages}
         onActionError={(error) => chat.setError(error instanceof Error ? error.message : String(error))}
+        viewportRef={setTimelineViewport}
+        contentRef={setTimelineContent}
+        scrollToAnchorRef={(scroll) => {
+          scrollToAnchor = scroll;
+        }}
       />
     );
   };
@@ -583,7 +614,9 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       </Match>
       <Match when={true}>
         <div class="assistant-pwa-chat">
-          <div class="assistant-pwa-chat__timeline">
+          {/* A download link of the chat leads outside the app, where its session does not go; the file is fetched and
+              saved instead. */}
+          <div class="assistant-pwa-chat__timeline" ref={(element) => element.addEventListener("click", saveDownload)}>
             <Switch>
               <Match when={openFailed()}>
                 <Placeholder

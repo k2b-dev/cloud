@@ -162,7 +162,11 @@ type Detail = NonNullable<AssistantPwaProps["initialDetail"]>;
 const detailOf = (id: string): Detail | null => {
   const conversation = CHATS.find((entry) => entry.id === id);
   if (!conversation) return null;
-  const base = { conversation: { ...conversation, unreadCompletion: false }, hasMoreMessages: false, timeline: [] };
+  // `serverDraft=1`: the chat keeps a draft saved elsewhere, such as on the web.
+  const draft = params.get("serverDraft")
+    ? { content: [{ type: "text" as const, text: "Vom Web" }], revision: 2, updatedAt: ago(5) }
+    : conversation.draft;
+  const base = { conversation: { ...conversation, draft, unreadCompletion: false }, hasMoreMessages: false, timeline: [] };
   if (id === "pflege")
     return {
       ...base,
