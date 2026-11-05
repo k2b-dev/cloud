@@ -256,6 +256,26 @@ describe("A recording in the Cloud app", () => {
     }
   }, 30_000);
 
+  test("an insertion whose answer got lost takes the recording's text on Try again, without saving the field over it", async () => {
+    const page = await open("screen=chat-x&chat=pflege&record=1&apply=lost");
+    try {
+      await field(page).fill("Mach daraus eine Karte für A6 und");
+      await page.getByRole("button", { name: "Diktieren" }).click();
+      await page.getByRole("button", { name: "Aufnahme stoppen" }).click();
+      const problem = page.locator(".assistant-pwa-recording [role=alert]");
+      await problem.waitFor();
+      expect(await problem.textContent()).toContain("Das Diktat konnte nicht eingefügt werden.");
+      await page.locator(".assistant-pwa-recording button").first().click();
+      await page.getByRole("menuitem", { name: "Erneut versuchen" }).click();
+      await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>("textarea[aria-label]")?.value.includes("Verschick"));
+      expect(await field(page).inputValue()).toBe("Mach daraus eine Karte für A6 und\n\nVerschick sie an alle.");
+      expect((await requests(page)).filter((request) => request === "PUT /api/ai/conversations/pflege/draft")).toHaveLength(1);
+      await page.locator(".assistant-pwa-recording").waitFor({ state: "detached" });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("while the recording becomes text Send waits; a failed one says so with Try again and Discard", async () => {
     const page = await open("screen=chat-x&chat=pflege&record=1&transcribe=hold");
     try {

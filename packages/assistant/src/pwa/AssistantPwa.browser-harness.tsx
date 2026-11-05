@@ -358,6 +358,7 @@ const json = (body: unknown, status = 200) =>
 const quietStream = () =>
   new Response(new ReadableStream({ start() {} }), { status: 200, headers: { "content-type": "text/event-stream" } });
 let created = 0;
+let lost = false;
 const dictations: Array<{
   id: string;
   sourcePath: string;
@@ -422,11 +423,21 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     return json(dictations.at(-1));
   }
   if (/\/dictations$/.test(url.pathname)) return json({ items: dictations, nextCursor: null });
+  const one = /\/dictations\/(d\d+)$/.exec(url.pathname);
+  if (one) {
+    const found = dictations.find((entry) => entry.id === one[1]);
+    return found ? json(found) : json({ message: "Not found" }, 404);
+  }
   const applied = /\/dictations\/([^/]+)\/apply$/.exec(url.pathname);
   if (applied) {
     const found = dictations.find((entry) => entry.id === applied[1]);
     const body = JSON.parse(String(init?.body)) as { content: Array<{ type: string; text?: string }> };
     if (found) found.disposition = "applied";
+    // `apply=lost`: the first insertion commits, but its answer never comes back.
+    if (params.get("apply") === "lost" && !lost) {
+      lost = true;
+      throw new TypeError("Failed to fetch");
+    }
     const text = [...body.content.flatMap((part) => (part.text ? [part.text] : [])), found?.text].filter(Boolean).join("\n\n");
     return json({ disposition: "applied", draft: { content: [{ type: "text", text }], revision: 3, updatedAt: NOW } });
   }

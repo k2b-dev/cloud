@@ -540,10 +540,29 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     },
     apply: async (key, target, id) => {
       if (chat.activeConversationId() !== target) return false;
+      // The saved draft moved on; the next message reads its revision again. A failed read changes nothing here.
+      const refresh = () => chat.refreshActiveConversation().catch(() => false);
+      const append = (addition: string) => {
+        const now = texts()[key] ?? "";
+        writeText(key, [now.trimEnd(), addition].filter(Boolean).join("\n\n"));
+      };
+      // An earlier try may have inserted the recording without its answer arriving: then the field takes the
+      // recording's own text, and the device's text never writes over the saved draft that already holds it.
+      const before = await fetch(`/api/ai/conversations/${target}/dictations/${id}`).then(
+        (response) => (response.ok ? (response.json() as Promise<{ disposition: string; text?: string | null }>) : null),
+        () => null,
+      );
+      if (!before) return false;
+      if (before.disposition === "applied") {
+        if (before.text) append(before.text);
+        await refresh();
+        return true;
+      }
+      if (before.disposition !== "pending") return true;
       const sent = (texts()[key] ?? "").trim();
       const saved = await chat.saveDraft({ conversationId: target, message: sent });
       if (!saved) {
-        await chat.refreshActiveConversation();
+        await refresh();
         return false;
       }
       const response = await fetch(`/api/ai/conversations/${target}/dictations/${id}/apply`, {
@@ -551,17 +570,21 @@ export default function AssistantPwa(props: AssistantPwaProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ expectedRevision: saved.revision, content: saved.content }),
       });
-      // The saved draft moved on either way; the next message reads its revision again.
-      await chat.refreshActiveConversation();
-      if (!response.ok) return false;
+      if (!response.ok) {
+        await refresh();
+        return false;
+      }
       const result: { disposition: string; draft: AiConversation["draft"] | null } = await response.json();
-      if (!result.draft) return result.disposition === "applied";
-      const inserted = result.draft.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n\n");
-      // Text typed while the recording was inserted stays; the recording's text follows it.
-      const now = texts()[key] ?? "";
-      const added = sent && inserted.startsWith(sent) ? inserted.slice(sent.length).replace(/^\n+/, "") : inserted;
-      writeText(key, now.trim() === sent ? inserted : [now.trimEnd(), added].filter(Boolean).join("\n\n"));
-      return true;
+      // The field takes the text first, so a failed refresh afterwards cannot lose it.
+      if (result.draft) {
+        const inserted = result.draft.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n\n");
+        // Text typed while the recording was inserted stays; the recording's text follows it.
+        const now = texts()[key] ?? "";
+        if (now.trim() === sent) writeText(key, inserted);
+        else append(sent && inserted.startsWith(sent) ? inserted.slice(sent.length).replace(/^\n+/, "") : inserted);
+      } else if (result.disposition === "applied" && before.text) append(before.text);
+      await refresh();
+      return result.disposition === "applied";
     },
   });
   /** Above the field: the recording's level with Discard and Stop, then its text on the way, a failure, or the result. */
