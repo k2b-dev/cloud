@@ -87,8 +87,16 @@ const shells: Record<string, { edge: string; focus: string; text: string }> = {
   date: { edge: ".k2b-input-shell", focus: "input", text: "input" },
   color: { edge: ".k2b-color-input__value", focus: ".k2b-color-input__value", text: "code" },
   compact: { edge: ".k2b-input-shell", focus: "input", text: "input" },
-  composer: { edge: ".k2b-chat-composer", focus: "textarea:not(.k2b-chat-composer__measure)", text: "textarea:not(.k2b-chat-composer__measure)" },
-  conversation: { edge: ".k2b-chat-composer__field", focus: "textarea:not(.k2b-chat-composer__measure)", text: "textarea:not(.k2b-chat-composer__measure)" },
+  composer: {
+    edge: ".k2b-chat-composer",
+    focus: "textarea:not(.k2b-chat-composer__measure)",
+    text: "textarea:not(.k2b-chat-composer__measure)",
+  },
+  conversation: {
+    edge: ".k2b-chat-composer__field",
+    focus: "textarea:not(.k2b-chat-composer__measure)",
+    text: "textarea:not(.k2b-chat-composer__measure)",
+  },
   "input-button": { edge: ".k2b-button", focus: ".k2b-button", text: ".k2b-button__label" },
 };
 
