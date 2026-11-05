@@ -153,6 +153,15 @@ html:has(> body > .cloud-app-canvas[data-layout-full-page="true"]) {
   scrollbar-color: rgb(161 161 170 / 0.4) transparent;
 }
 
+/* The rule above is unlayered, so it would also replace the mono face the @k2b/ui base gives code: handles, IDs, and
+   other technical values stay monospace wherever they are shown. */
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+}
+
 .dark * {
   scrollbar-color: rgb(82 82 91 / 0.5) transparent;
 }

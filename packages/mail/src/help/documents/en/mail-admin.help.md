@@ -178,7 +178,7 @@ Agents can change provider subscriptions with `cld mail folder subscribe` and `c
 
 ## Configure access {icon="shield-lock"}
 
-**Access** uses the standard Cloud access editor. Give the narrowest access that the person needs for their work:
+**Access** shows who has access to the mailbox. Select **Edit access** to open the standard Cloud access dialog. Your changes apply only when you select **Save**. Give the narrowest access that the person needs for their work:
 
 - **View** for reading, search, comments, and personal reminders.
 - **Edit** for sending, provider mail operations, and collaboration changes.

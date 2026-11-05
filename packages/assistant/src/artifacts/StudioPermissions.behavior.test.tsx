@@ -311,7 +311,7 @@ describe("Studio sharing in the shared access dialog", () => {
       // PUBLIC_APP_SHARING is off: the stored entry stays visible under General so a manager can turn it off.
       expect(text()).toContain("Public links are switched off");
       expect(ui.dom.root.querySelector('input[aria-label="Public with link"]')).not.toBeNull();
-      await waitFor(() => text().includes("No agents or service accounts have access."), "the machine rights");
+      await waitFor(() => text().includes("No agents or API keys have access."), "the machine rights");
       expect(text()).toContain("Agents added above appear here once saved.");
     } finally {
       await ui.cleanup();

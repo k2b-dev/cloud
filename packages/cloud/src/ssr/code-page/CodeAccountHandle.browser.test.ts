@@ -10,6 +10,8 @@ let browser: Browser;
 let harness: string;
 let css: string;
 let icons: string;
+/** IBM Plex, which Cloud ships, so the wrap is measured with the product's widths. */
+let plex: string;
 beforeAll(async () => {
   const ui = resolve(import.meta.dir, "../../../../ui");
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -50,6 +52,16 @@ beforeAll(async () => {
     /url\([^)]+\)/,
     `url("data:font/woff2;base64,${Buffer.from(await Bun.file(resolve(dirname(iconPath), font)).arrayBuffer()).toString("base64")}")`,
   );
+  const plexPath = fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css"));
+  const plexSource = await Bun.file(plexPath).text();
+  const plexFiles = [...new Set(plexSource.match(/\.\/fonts\/[^)"']+\.woff2/g) ?? [])];
+  if (!plexFiles.length) throw new Error("Missing IBM Plex WOFF2 files");
+  plex = plexSource;
+  for (const file of plexFiles)
+    plex = plex.replaceAll(
+      file,
+      `data:font/woff2;base64,${Buffer.from(await Bun.file(resolve(dirname(plexPath), file)).arrayBuffer()).toString("base64")}`,
+    );
   browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
@@ -62,7 +74,7 @@ for (const width of [390, 1200])
     const errors = pageErrors(page);
     try {
       await page.setContent(
-        `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${icons}</style></head><body class="k2b-ui"><main id="root" style="padding:96px 24px 24px"></main></body></html>`,
+        `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${plex}</style><style>${css}</style><style>${icons}</style></head><body class="k2b-ui"><main id="root" style="padding:96px 16px 24px"></main></body></html>`,
       );
       await page.evaluate(() => {
         Object.defineProperty(navigator, "clipboard", {
@@ -76,6 +88,7 @@ for (const width of [390, 1200])
       });
       await page.addScriptTag({ content: harness });
       await page.evaluate(async () => {
+        await Promise.all(['400 14px "IBM Plex Sans"', '400 13px "IBM Plex Mono"'].map((font) => document.fonts.load(font)));
         await document.fonts.ready;
       });
       expect(await page.evaluate(() => document.fonts.check("16px tabler-icons"))).toBe(true);
@@ -83,6 +96,58 @@ for (const width of [390, 1200])
         mkdirSync(process.env.CODE_A2_SCREENSHOTS, { recursive: true });
         await page.screenshot({ path: resolve(process.env.CODE_A2_SCREENSHOTS, `handle-${width}.png`) });
       }
+      // Mockup v31 `abgelehnt · cron`: the handle is set in monospace, a little smaller than the sentence (N2-kennung-mono).
+      const face = await page.evaluate(() => {
+        const handle = document.querySelector<HTMLElement>("[data-code-handle]")!;
+        const lead = document.querySelector<HTMLElement>(".cloud-code__lead")!;
+        return {
+          family: getComputedStyle(handle).fontFamily.split(",")[0]!.replaceAll('"', ""),
+          smaller: Number.parseFloat(getComputedStyle(handle).fontSize) < Number.parseFloat(getComputedStyle(lead).fontSize),
+          mono: document.fonts.check('400 13px "IBM Plex Mono"'),
+        };
+      });
+      expect(face).toEqual({ family: "IBM Plex Mono", smaller: true, mono: true });
+      // L127, mockup v31 `abgelehnt · cron · 390`: where the line has room for "· Kennung" but not for the handle,
+      // "· Kennung" ends the sentence's line and the handle moves below with Copy, never split. The line gets exactly
+      // that room, so the check does not depend on font metrics.
+      const wrap = await page.evaluate(() => {
+        const lead = document.querySelector<HTMLElement>(".cloud-code__lead")!;
+        const sentence = lead.firstChild!;
+        const text = document.createRange();
+        text.selectNodeContents(sentence);
+        const probe = document.createElement("span");
+        probe.style.whiteSpace = "pre";
+        probe.textContent = " · Kennung";
+        lead.append(probe);
+        lead.style.width = `${Math.ceil(text.getBoundingClientRect().width + probe.getBoundingClientRect().width) + 12}px`;
+        probe.remove();
+        const quote = document.createRange();
+        quote.setStart(sentence, sentence.textContent!.length - 1);
+        quote.setEnd(sentence, sentence.textContent!.length);
+        const label = document.createRange();
+        const labelNode = Array.from(lead.querySelectorAll("span"))
+          .flatMap((span) => Array.from(span.childNodes))
+          .find((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.includes("Kennung"))!;
+        label.selectNodeContents(labelNode);
+        const handle = document.querySelector<HTMLElement>("[data-code-handle]")!;
+        const copy = lead.querySelector("button")!;
+        const middle = (box: DOMRect) => box.top + box.height / 2;
+        const [end, mark, code, button] = [
+          quote.getBoundingClientRect(),
+          label.getBoundingClientRect(),
+          handle.getBoundingClientRect(),
+          copy.getBoundingClientRect(),
+        ];
+        const result = {
+          labelEndsSentenceLine: Math.abs(middle(end) - middle(mark)) < 6,
+          handleBelow: code.top > mark.bottom - 1,
+          handleBesideCopy: Math.abs(middle(code) - middle(button)) < 6,
+          handleOneLine: handle.getClientRects().length === 1,
+        };
+        lead.style.width = "";
+        return result;
+      });
+      expect(wrap).toEqual({ labelEndsSentenceLine: true, handleBelow: true, handleBesideCopy: true, handleOneLine: true });
       await page.getByRole("button", { name: "Kennung kopieren" }).click();
       await page.waitForFunction(() => document.body.dataset.copied === "code-7k2q9m4xwt");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

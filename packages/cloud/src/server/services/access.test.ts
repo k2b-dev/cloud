@@ -455,7 +455,7 @@ test("Code titles are resolved in the existing batch only for a managed target",
       }));
       build.onLoad({ filter: /code-account-display[.]ts$/ }, async ({ path }) => ({
         contents: (await Bun.file(path).text())
-          .replace('import { getCapability } from "../../_internal/registry";', 'const getCapability = globalThis.codeDisplayCatalog;')
+          .replace('import { getApp, getCapability } from "../../_internal/registry";', 'const getCapability = globalThis.codeDisplayCatalog, getApp = async () => null;')
           .replace('import { resolveCapabilityManifestPresentation } from "../../_internal/capabilities";', 'const resolveCapabilityManifestPresentation = (manifest) => manifest;'), loader: "ts",
       }));
     } });
@@ -499,6 +499,47 @@ test("Code titles are resolved in the existing batch only for a managed target",
     const many = await resolveDisplayNames(Array.from({ length: 50 }, () => entries[0]), { canManageTarget: true, locale: "de" });
     assert.equal(many.length, 50);
     assert.deepEqual(calls.splice(0), ["accounts"]);
+  `;
+  const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  expect({ stdout, stderr, exit }).toEqual({ stdout: "", stderr: "", exit: 0 });
+});
+
+test("Code of an app without a capability catalog shows the app's name in the viewer's language", async () => {
+  // The account keeps the name stored when the Code was created; only an app that is gone shows it.
+  const script = `
+    import { strict as assert } from "node:assert";
+    const registered = "33333333-3333-4333-8333-333333333333", gone = "44444444-4444-4444-8444-444444444444";
+    const lookups = [];
+    globalThis.codeDisplaySql = async () => [
+      { id: registered, name: "code:app:workshop", kind: "code", title: "Workshop", handle: "code-0123456789", status: "active" },
+      { id: gone, name: "code:app:retired", kind: "code", title: "Retired tool", handle: "code-9876543210", status: "active" },
+    ];
+    globalThis.codeDisplayCatalog = async () => null;
+    globalThis.codeDisplayApp = async (id) => {
+      lookups.push(id);
+      return id === "workshop"
+        ? { id, name: "Workshop", description: "Repairs", presentation: { baseLocale: "en", translations: { de: { name: "Werkstatt" } } } }
+        : null;
+    };
+    Bun.plugin({ name: "code-display-fixture", setup(build) {
+      build.onLoad({ filter: /server\\/services\\/access-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.codeDisplaySql;'), loader: "ts",
+      }));
+      build.onLoad({ filter: /code-account-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text())
+          .replace('import { getApp, getCapability } from "../../_internal/registry";', 'const getCapability = globalThis.codeDisplayCatalog, getApp = globalThis.codeDisplayApp;')
+          .replace('import { resolveCapabilityManifestPresentation } from "../../_internal/capabilities";', 'const resolveCapabilityManifestPresentation = (manifest) => manifest;'), loader: "ts",
+      }));
+    } });
+    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
+    const entries = [registered, gone, registered].map((serviceAccountId) => ({ principal: { type: "service_account", serviceAccountId } }));
+    const de = await resolveDisplayNames(entries, { locale: "de" });
+    assert.deepEqual(de.map((entry) => entry.displayName), ["Code von Werkstatt", "Code von Retired tool", "Code von Werkstatt"]);
+    assert.equal(de[0].serviceAccountDescription, "Dienstkonto einer App");
+    // One registry read per app in a list.
+    assert.deepEqual(lookups.splice(0), ["workshop", "retired"]);
+    assert.equal((await resolveDisplayNames(entries, { locale: "en" }))[0].displayName, "Code of Workshop");
   `;
   const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);

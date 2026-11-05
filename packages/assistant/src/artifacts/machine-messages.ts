@@ -4,8 +4,8 @@ export const machineMessages = i18n.define({
   messages: {
     en: {
       title: "Machine execution",
-      help: "An agent or service account needs a direct app grant and explicit execution rights. Project access grants no execution rights. Execution also requires a write credential; managing source or sharing requires admin scope.",
-      empty: "No agents or service accounts have access. Add one above and save, then choose its execution rights here.",
+      help: "An agent or API key needs a direct app grant and explicit execution rights. Project access grants no execution rights. Execution also requires a write credential; managing source or sharing requires admin scope.",
+      empty: "No agents or API keys have access. Add one above and save, then choose its execution rights here.",
       afterSave:
         "Agents added above appear here once saved. Accounts bound only to this app are added through the API. Code service accounts get no execution rights.",
       scope: "These rights cover this app's published version and shared data. Personal data and personal secrets are unavailable.",
@@ -54,9 +54,8 @@ export const machineMessages = i18n.define({
     },
     de: {
       title: "Maschinenausführung",
-      help: "Ein Agent oder Dienstkonto braucht eine direkte App-Freigabe und ausdrückliche Ausführungsrechte. Projektzugriff erlaubt keine Ausführung. Ausführung braucht zusätzlich den Scope write; Quellcode und Freigaben verwalten braucht admin.",
-      empty:
-        "Noch kein Agent oder Dienstkonto hat Zugriff. Füge oben eines hinzu, speichere und wähle danach hier seine Ausführungsrechte.",
+      help: "Ein Agent oder API Key braucht eine direkte App-Freigabe und ausdrückliche Ausführungsrechte. Projektzugriff erlaubt keine Ausführung. Ausführung braucht zusätzlich den Scope write; Quellcode und Freigaben verwalten braucht admin.",
+      empty: "Noch kein Agent oder API Key hat Zugriff. Füge oben einen hinzu, speichere und wähle danach hier seine Ausführungsrechte.",
       afterSave:
         "Oben hinzugefügte Agenten erscheinen hier nach dem Speichern. Konten, die nur an diese App gebunden sind, fügst du über die API hinzu. Dienstkonten von Code bekommen keine Ausführungsrechte.",
       scope:

@@ -1162,9 +1162,7 @@ describe("chat dialogs and info", () => {
       );
       const onChange = mock<Parameters<NonNullable<typeof modules>["MemberPicker"]>[0]["onChange"]>();
       await mount(locale, () => createComponent(modules!.MemberPicker, { guest: false, chosen: [], excluded: [], people, onChange }));
-      expect(input("input").placeholder).toBe(
-        locale === "en" ? "Add user, group, agent, or service account…" : "Benutzer, Gruppe, Agenten oder Dienstkonto hinzufügen…",
-      );
+      expect(input("input").placeholder).toBe(locale === "en" ? "Add user, group, or agent…" : "Benutzer, Gruppe oder Agenten hinzufügen…");
       type(input("input"), "account");
       await fetched.promise;
       await settle();

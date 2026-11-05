@@ -742,7 +742,8 @@ second line is the entry's `serviceAccountDescription` with its level, such as
 and the row has no controls. When the entry carries `serviceAccountHref`, the
 name links there in a new tab, so an unsaved draft stays. Read-only, the
 section appears only when accounts are listed.
-**Add service account** sits beside the section's title and opens a field with
+**Add service account** sits beside the section's title with its full label at
+every width and opens a field with
 **Cancel**; the sheet scrolls it into view. A complete handle is looked up
 as it is typed, and its hit appears below the field with the "Service account"
 badge; choosing it adds the row. A new account starts with Edit where the
@@ -753,7 +754,8 @@ and never searches by name. The search for people uses the same lookup when
 someone types an exact Code handle (`code-` and 10 characters, exported as
 `CODE_ACCOUNT_HANDLE_PATTERN` from `@k2b/cloud/contracts`) instead of the
 directory. Its hit carries the "Service account" badge, says that it goes to
-Service accounts, and becomes a new row in that section. The lookup carries
+Service accounts, and becomes a new row in that section; the sheet scrolls that
+row into view. The lookup carries
 the server's `serviceAccount.description`, such as "Service account of a mailbox",
 for its second line; the new row keeps it. A name, a prefix, or a handle Core
 refuses finds nothing there. Without a target or lookup override the
