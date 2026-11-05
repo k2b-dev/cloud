@@ -80,15 +80,12 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
     drag = undefined;
     ended.releaseSelection();
     if (handle.hasPointerCapture?.(ended.id)) handle.releasePointerCapture(ended.id);
-    if (!ended.moved) {
+    // A cancelled gesture sends no click; only a finished drag's click must not move the sheet again.
+    if (!ended.moved || !commit) {
       release();
       return;
     }
     suppressClick = true;
-    if (!commit) {
-      release();
-      return;
-    }
     const speed = time !== undefined && time - ended.time > REST_MS ? 0 : ended.speed;
     const target = ended.height - speed * PROJECTION_MS;
     const lowest = ended.heights[0] ?? 0;
@@ -105,6 +102,7 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
   };
   const down = (event: PointerEvent) => {
     if (event.button !== 0 || event.isPrimary === false || drag) return;
+    suppressClick = false;
     // A press during a snap starts from where the sheet is now.
     const startHeight = sheet.getBoundingClientRect().height;
     sheet.style.transition = "none";

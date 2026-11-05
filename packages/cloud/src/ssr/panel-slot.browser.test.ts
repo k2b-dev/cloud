@@ -7,7 +7,7 @@ import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
+import { browserName, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-panel-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -771,7 +771,8 @@ test("390px handle drag follows the pointer, snaps to half and full, and closes 
   }
 });
 
-test("390px touch drag on the handle moves the sheet without scrolling the page", async () => {
+// Chromium alone dispatches raw touch input through CDP.
+test.skipIf(browserName === "webkit")("390px touch drag on the handle moves the sheet without scrolling the page", async () => {
   const { context, page } = await fixture(390, undefined, { hasTouch: true });
   try {
     await open(page);
