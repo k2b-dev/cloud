@@ -25,7 +25,6 @@ import { bindSettingValue, resolveBoundSetting, settingOwners, unwrapSettingValu
 import { decryptValue, encryptValue } from "./crypto";
 import { SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
 import { SettingUnreadableError } from "./errors";
-import { assertGeoBudgetPair } from "./geo-budget";
 import { ENCRYPTED_SETTING_PREFIX, encodeSecretCache, readSecretCache } from "./secret-cache";
 
 export { SettingUnreadableError } from "./errors";
@@ -302,8 +301,7 @@ export const resetChangedSettings = async (
  * the caller explicitly replaces them. The row check and write share a transaction.
  * Lock with a no-op UPDATE so ROW EXCLUSIVE is acquired before the row lock,
  * preserving lock order with table-level SHARE locks (#1303 review).
- * A caller passing `db` owns geo budget pair validation before mutations and
- * cache invalidation after commit.
+ * A caller passing `db` owns cache invalidation after commit.
  */
 export const writeKey = async (key: string, value: unknown, db?: SqlClient, options?: { replaceUnreadable?: boolean }): Promise<void> => {
   const def = SETTINGS_MAP.get(key);
@@ -355,7 +353,6 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient, opti
   if (db) await write(db);
   else
     await sql.begin(async (tx) => {
-      await assertGeoBudgetPair(tx, { [key]: validated.value }, []);
       await write(tx);
     });
 
@@ -364,7 +361,7 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient, opti
   if (!db) await invalidateSettingsCache([key]);
 };
 
-/** Delete the DB row and invalidate Redis. With `db`, the caller owns geo budget pair validation and post-commit invalidation. */
+/** Delete the DB row and invalidate Redis. With `db`, the caller owns post-commit invalidation. */
 export const deleteKey = async (key: string, db?: SqlClient): Promise<void> => {
   const def = SETTINGS_MAP.get(key);
   const remove = async (tx: SqlClient) => {
@@ -375,7 +372,6 @@ export const deleteKey = async (key: string, db?: SqlClient): Promise<void> => {
   if (db) await remove(db);
   else
     await sql.begin(async (tx) => {
-      await assertGeoBudgetPair(tx, {}, [key]);
       await remove(tx);
     });
   if (!db) await invalidateSettingsCache([key]);

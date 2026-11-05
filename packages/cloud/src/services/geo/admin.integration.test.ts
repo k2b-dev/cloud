@@ -120,19 +120,18 @@ suiteFor("database", "valkey")("Core geo administration", () => {
     expect(actions.map((row) => row.action)).toEqual(["core.geo.key_set", "core.geo.key_removed"]);
   });
 
-  test("budget saves validate every field and the pair before writing, and report who changed them", async () => {
+  test("budget saves validate every field before writing, and report who changed them", async () => {
     const geo = service();
     const initial = (await geo.status(admin)).budget;
-    expect(initial).toMatchObject({ plan: "free", monthlyCredits: 90000, personDailyCredits: 300, changedAt: null, changedBy: null });
+    expect(initial).toMatchObject({ plan: "free", monthlyCredits: 90000, changedAt: null, changedBy: null });
     const invalid = (await geo
-      .saveBudget(admin, { plan: "custom", customRps: 0, customDailyCredits: 1.5, monthlyCredits: 90000, personDailyCredits: 120000 })
+      .saveBudget(admin, { plan: "custom", customRps: 0, customDailyCredits: 1.5, monthlyCredits: 90000 })
       .catch((error: unknown) => error)) as GeoAdminError;
     expect(invalid.body).toEqual({
       code: "geo_budget_invalid",
       errors: {
         customRps: { code: "too_small", min: 1 },
         customDailyCredits: { code: "not_whole_number" },
-        personDailyCredits: { code: "above_monthly", max: 90000 },
       },
     });
     expect(await sql<{ key: string }[]>`SELECT key FROM settings.entries WHERE key LIKE 'geo.%'`).toHaveLength(0);
@@ -142,12 +141,11 @@ suiteFor("database", "valkey")("Core geo administration", () => {
       customRps: "ignored",
       customDailyCredits: null,
       monthlyCredits: 300000,
-      personDailyCredits: 500,
     });
     expect(saved.budget).toMatchObject({
       plan: "api10",
       monthlyCredits: 300000,
-      personDailyCredits: 500,
+
       customRps: 5,
       unreadable: [],
       changedBy: { id: admin.id, name: "Lea Schulz" },
@@ -159,7 +157,7 @@ suiteFor("database", "valkey")("Core geo administration", () => {
     expect((await geo.status(admin)).budget.changedBy).toBeNull();
     // A write that committed later but started earlier carries an older stamp; the saved rows no longer agree, so
     // the page names nobody instead of the person whose values were partly overwritten.
-    await geo.saveBudget(admin, { plan: "api10", customRps: 5, customDailyCredits: 3000, monthlyCredits: 300000, personDailyCredits: 500 });
+    await geo.saveBudget(admin, { plan: "api10", customRps: 5, customDailyCredits: 3000, monthlyCredits: 300000 });
     expect((await geo.status(admin)).budget.changedBy?.name).toBe("Lea Schulz");
     await sql`UPDATE settings.entries SET updated_at = updated_at - interval '1 second' WHERE key = 'geo.plan'`;
     expect((await geo.status(admin)).budget.changedBy).toBeNull();
@@ -174,7 +172,6 @@ suiteFor("database", "valkey")("Core geo administration", () => {
       customRps: 5,
       customDailyCredits: 3000,
       monthlyCredits: 50000,
-      personDailyCredits: 300,
     });
     expect(saved.budget).toMatchObject({ monthlyCredits: 50000, unreadable: [] });
   });
@@ -190,7 +187,6 @@ suiteFor("database", "valkey")("Core geo administration", () => {
       customRps: null,
       customDailyCredits: null,
       monthlyCredits: 90000,
-      personDailyCredits: 300,
     });
     expect(saved.budget).toMatchObject({ unreadable: [], customRps: 5 });
     expect((await readGeoConfig()).apiKey).toBe("ok-key");
@@ -198,13 +194,12 @@ suiteFor("database", "valkey")("Core geo administration", () => {
       SELECT metadata FROM audit.events WHERE action = 'core.geo.budget_changed' ORDER BY id DESC LIMIT 1`;
     expect(event?.metadata.resets).toEqual(["custom_rps"]);
     // A readable hidden value stays as it is.
-    await geo.saveBudget(admin, { plan: "custom", customRps: 7, customDailyCredits: 4000, monthlyCredits: 90000, personDailyCredits: 300 });
+    await geo.saveBudget(admin, { plan: "custom", customRps: 7, customDailyCredits: 4000, monthlyCredits: 90000 });
     const kept = await geo.saveBudget(admin, {
       plan: "free",
       customRps: null,
       customDailyCredits: null,
       monthlyCredits: 90000,
-      personDailyCredits: 300,
     });
     expect(kept.budget).toMatchObject({ plan: "free", customRps: 7, customDailyCredits: 4000, unreadable: [] });
   });
@@ -218,16 +213,15 @@ suiteFor("database", "valkey")("Core geo administration", () => {
       customRps: 5,
       customDailyCredits: 3000,
       monthlyCredits: 90000,
-      personDailyCredits: 300,
     });
     expect(saved.budget).toMatchObject({ plan: "api25", unreadable: [] });
   });
 
-  test("usage reports this month, today against the plan allowance, shares and people at their limit", async () => {
+  test("usage reports this month, today against the plan allowance, and shares", async () => {
     const geo = service();
-    await geo.saveBudget(admin, { plan: "free", customRps: 5, customDailyCredits: 3000, monthlyCredits: 90000, personDailyCredits: 3 });
+    await geo.saveBudget(admin, { plan: "free", customRps: 5, customDailyCredits: 3000, monthlyCredits: 90000 });
     const ledger = createGeoLedger(sql);
-    const config = { ...geoTestConfig, monthlyCredits: 90000, personDailyCredits: 3 };
+    const config = { ...geoTestConfig, monthlyCredits: 90000 };
     const lea = { type: "user", userId: admin.id } as const;
     const agent = { type: "service_account", serviceAccountId: "33333333-3333-4333-8333-333333333333" } as const;
     for (let i = 0; i < 3; i++) await ledger.reserve(lea, config, 1000, "places", GEO_TEST_NOW);
@@ -246,22 +240,22 @@ suiteFor("database", "valkey")("Core geo administration", () => {
         { group: "address", credits: 1 },
       ],
       routeCostOverruns: 0,
-      peopleAtLimit: 1,
+
       timezone: "Europe/Berlin",
     });
   });
 
-  test("app spend contributes to totals without counting an app as a person at the limit", async () => {
+  test("app spend contributes to totals with its app subject", async () => {
     const geo = service();
-    await geo.saveBudget(admin, { plan: "free", customRps: 5, customDailyCredits: 3000, monthlyCredits: 90000, personDailyCredits: 3 });
+    await geo.saveBudget(admin, { plan: "free", customRps: 5, customDailyCredits: 3000, monthlyCredits: 90000 });
     await createGeoLedger(sql).reserve(
       { type: "app", appId: "vendor-web" },
-      { ...geoTestConfig, monthlyCredits: 90000, personDailyCredits: 3 },
+      { ...geoTestConfig, monthlyCredits: 90000 },
       3000,
       "address",
       GEO_TEST_NOW,
     );
-    expect(await geo.usage(admin)).toMatchObject({ month: { used: 3 }, today: { used: 3 }, peopleAtLimit: 0 });
+    expect(await geo.usage(admin)).toMatchObject({ month: { used: 3 }, today: { used: 3 } });
   });
 
   test("administration counts every current-month routing cost overrun", async () => {
@@ -292,7 +286,7 @@ suiteFor("database", "valkey")("Core geo administration", () => {
 
   test("every operation refuses a non-admin before reading or writing", async () => {
     const geo = service();
-    const input = { plan: "free", customRps: 5, customDailyCredits: 3000, monthlyCredits: 9, personDailyCredits: 1 } as const;
+    const input = { plan: "free", customRps: 5, customDailyCredits: 3000, monthlyCredits: 9 } as const;
     for (const run of [
       () => geo.status(person),
       () => geo.usage(person),

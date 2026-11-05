@@ -17,22 +17,13 @@ const ConfigSchema = z.object({
   customRps: z.number().int().positive(),
   customDailyCredits: z.number().int().positive(),
   monthlyCredits: z.number().int().nonnegative(),
-  personDailyCredits: z.number().int().nonnegative(),
 });
 export type GeoConfig = z.infer<typeof ConfigSchema>;
 export const geoPlan = (config: GeoConfig) =>
   config.plan === "custom" ? { rps: config.customRps, dailyCredits: config.customDailyCredits } : GEO_PLANS[config.plan];
 export const readGeoConfig = async (): Promise<GeoConfig> => {
   // Direct encrypted-row reads: configuration checks never touch Valkey or put this key in its settings cache.
-  const keys = [
-    "geo.api_key",
-    "geo.plan",
-    "geo.custom_rps",
-    "geo.custom_daily_credits",
-    "geo.monthly_budget_credits",
-    "geo.person_daily_credits",
-    "app.timezone",
-  ];
+  const keys = ["geo.api_key", "geo.plan", "geo.custom_rps", "geo.custom_daily_credits", "geo.monthly_budget_credits", "app.timezone"];
   const values = await readStates(keys);
   const unreadable = keys.filter((key) => key.startsWith("geo.") && values.get(key)?.stored === "unreadable");
   if (unreadable.length) console.warn("[geo] Unreadable settings; geo is not configured", { keys: unreadable });
@@ -43,7 +34,6 @@ export const readGeoConfig = async (): Promise<GeoConfig> => {
     customRps: values.get("geo.custom_rps")?.value,
     customDailyCredits: values.get("geo.custom_daily_credits")?.value,
     monthlyCredits: values.get("geo.monthly_budget_credits")?.value,
-    personDailyCredits: values.get("geo.person_daily_credits")?.value,
     timezone: values.get("app.timezone")?.value,
   });
 };

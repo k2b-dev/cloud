@@ -34,10 +34,12 @@ to be created or distributed for this path. See
 
 The existing `security.rate_limit_per_second` setting bounds aggregate calls
 per application across keys, in addition to signed ingress and per-key limits.
-For Geo, each app shares the existing `geo.person_daily_credits` allowance
-across its keys and remains under `geo.monthly_budget_credits` and its provider
-plan limits. Daily app usage is stored under `app:<appId>` in the existing
-subject ledger. No new deployment setting or provider credentials are needed.
+Geo callers share `geo.monthly_budget_credits` and the installation-wide
+provider-plan request rate. There is no per-person or per-app daily allowance.
+Address autocomplete can also run anonymously from an app server through
+`geoClient.autocomplete(input)`, with only `CLOUD_CORE_INTERNAL_ORIGIN` configured.
+That internal-only entry needs no app key; the gateway refuses its route.
+Other app-authority calls continue to require the enrolled key and declaration.
 
 Capability execution history adds nullable `actor_app_id` and `actor_key_id`
 columns on migration. These identify the application and enrolled key without

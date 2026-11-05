@@ -218,7 +218,7 @@ authority from a registration.
 | List registered devices or unregister one | Current web session and application staff authorization for that registration; app-wide unless the app narrows it, no device ownership |
 | Take over a registered device | Same as listing, plus the presence code shown on that device and confirmation of a live holder; unavailable with staff push enabled |
 | Open, read, or complete a customer's visit | Paired device and browser, current visit, and the application's visit and document rules |
-| Suggest addresses through an allowlisted Core query | Current pairing and visit, charged to the owner’s Geo budget |
+| Suggest addresses through an allowlisted Core query | Current pairing and visit, recorded under the owner; global Geo budget applies |
 | Use a declared Cloud resource operation | Explicit device permission ceiling intersected with the owner's current resource grants; for staff-pushed registered visits, the owner is the issuer and the visit must be live |
 
 The owner can issue visits from another currently authorized web browser while
@@ -287,8 +287,8 @@ cache hits, to the smaller of `security.rate_limit_per_second` and the Geo plan'
 requests per second. `429 RATE_LIMITED` means that request budget was reached.
 A Valkey failure returns `503 UNAVAILABLE` and does not call the Geo service.
 
-Paid lookups count against the owner's existing daily budget and the Cloud
-monthly budget; cache hits remain free. Geo failures retain their own `code`.
+Paid lookups count against the installation-wide monthly budget. There is no
+daily allowance per owner; cache hits remain free. Geo failures retain their own `code`.
 `429 GEO_BUDGET_EXHAUSTED` includes only `scope` and `resetsAt` in `details`;
 other Geo errors contain no details. Employee and operator balances and provider
 costs stay private. Show budget recovery separately from a request-rate refusal.

@@ -23,6 +23,7 @@ import { websocket } from "hono/bun";
 import { aiChatTaskRoutes } from "./ai-chat-task-routes";
 import { createAiNotificationService } from "./ai-notifications";
 import { createAdminAppListingRoutes } from "./api/admin-app-listing";
+import { createAnonymousGeoRoutes } from "./api/geo-anonymous";
 import identityInvocationRoutes from "./api/identity-invocation";
 import identityMandateRoutes from "./api/identity-mandates";
 import identityOAuthDeviceApprovalRoutes, { terminalLogins } from "./api/identity-oauth-device-approval";
@@ -65,6 +66,7 @@ const router = new Hono<AuthContext>()
   .route("/", identityPublicRoutes)
   .route("/", mcpProtectedResource)
   .route("/api/ai/live", aiLive.routes(aiLiveChannels))
+  .route("/api/_internal/geo/v1", createAnonymousGeoRoutes())
   .route("/api/_internal/identity/v1/migration-probe", createAppMigrationProbeRoutes())
   .route("/api/_internal/identity/v1", identityInvocationRoutes)
   .route("/api/_internal/identity/v1", identityMandateRoutes)

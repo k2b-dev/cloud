@@ -65,14 +65,11 @@ export const placesAndMapsMessages = i18n.define({
       customDailyHint: "From your Geoapify contract; shown under usage.",
       monthly: "Monthly budget (credits)",
       monthlySuggestion: ({ daily }: { daily: string }) => `Suggested by the plan: ${daily} × 30`,
-      personDaily: "Daily limit per person (credits)",
-      personDailyHint: ({ count }: Count) => `Also applies to agents and service accounts. About ${count} map questions.`,
-      personDailyOff: "Also applies to agents and service accounts. With 0, nobody can use maps.",
+
       unreadableValue: "The stored value cannot be read. Saving replaces it.",
       notWholeNumber: "Enter a whole number.",
       tooSmall: ({ min }: { min: string }) => `At least ${min}.`,
       tooLarge: ({ max }: { max: string }) => `At most ${max}.`,
-      aboveMonthly: ({ max }: { max: string }) => `At most as high as the monthly budget (${max}).`,
       save: "Save",
       saving: "Saving…",
       savedAt: ({ time }: { time: string }) => `Saved at ${time}`,
@@ -100,9 +97,7 @@ export const placesAndMapsMessages = i18n.define({
       routeCostOverruns: ({ count }: Count) => `${count} route calculations exceeded their estimate this month`,
       routeCostOverrunsDetail:
         "Later route steps stopped. Review charged and unresolved costs under core.geo.route_cost_overrun in the audit log before retrying.",
-      peopleAtLimit: ({ count }: Count) =>
-        count === "1" ? "1 person reached the daily limit today." : `${count} people reached the daily limit today.`,
-      peopleAtLimitDetail: ({ when }: Reset) => `For them it continues at ${when}. The limit is the same for everyone, agents included.`,
+
       resetWhen: ({ date, time }: { date: string; time: string }) => `${date}, ${time}`,
       resetTime: ({ time }: { time: string }) => time,
     },
@@ -164,14 +159,11 @@ export const placesAndMapsMessages = i18n.define({
       customDailyHint: "Aus deinem Vertrag mit Geoapify; steht beim Verbrauch.",
       monthly: "Monatsbudget (Credits)",
       monthlySuggestion: ({ daily }: { daily: string }) => `Vorschlag aus dem Tarif: ${daily} × 30`,
-      personDaily: "Tagesgrenze pro Person (Credits)",
-      personDailyHint: ({ count }: Count) => `Gilt auch für Agenten und Dienstkonten. Etwa ${count} Kartenfragen.`,
-      personDailyOff: "Gilt auch für Agenten und Dienstkonten. Mit 0 kann niemand Karten nutzen.",
+
       unreadableValue: "Der gespeicherte Wert ist nicht lesbar. Speichern ersetzt ihn.",
       notWholeNumber: "Bitte eine ganze Zahl eingeben.",
       tooSmall: ({ min }: { min: string }) => `Mindestens ${min}.`,
       tooLarge: ({ max }: { max: string }) => `Höchstens ${max}.`,
-      aboveMonthly: ({ max }: { max: string }) => `Höchstens so hoch wie das Monatsbudget (${max}).`,
       save: "Speichern",
       saving: "Wird gespeichert …",
       savedAt: ({ time }: { time: string }) => `Gespeichert um ${time}`,
@@ -199,9 +191,7 @@ export const placesAndMapsMessages = i18n.define({
       routeCostOverruns: ({ count }: Count) => `${count} Routenberechnungen waren diesen Monat teurer als geschätzt`,
       routeCostOverrunsDetail:
         "Weitere Routenschritte wurden gestoppt. Prüfe gebuchte und ungeklärte Kosten unter core.geo.route_cost_overrun im Audit-Protokoll vor einem neuen Versuch.",
-      peopleAtLimit: ({ count }: Count) =>
-        count === "1" ? "1 Person hat heute ihre Tagesgrenze erreicht." : `${count} Personen haben heute ihre Tagesgrenze erreicht.`,
-      peopleAtLimitDetail: ({ when }: Reset) => `Für sie geht es ab ${when} weiter. Die Grenze gilt für alle gleich, auch für Agenten.`,
+
       resetWhen: ({ date, time }: { date: string; time: string }) => `${date}, ${time} Uhr`,
       resetTime: ({ time }: { time: string }) => `${time} Uhr`,
     },
