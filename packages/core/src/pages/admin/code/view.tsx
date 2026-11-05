@@ -569,7 +569,7 @@ export function CodeAreaView(props: Props) {
       <div class="grid content-start gap-6 px-2 pt-1 pb-6">
         <Show when={account}>
           {(name) => (
-            <p class="text-sm text-(--k2b-text-secondary)">
+            <p class="cloud-code__lead">
               {t.runsAsAccount({ name: name() })}
               <Show when={code.serviceAccountHandle}>
                 {(handle) => (

@@ -779,7 +779,7 @@ export default function MailboxSettings(props: {
                   {messages().editAccess}
                 </Button>
               </SettingsGroup.Action>
-              <AccessSummary entries={admin().accessEntries} allowedLevels={summaryLevels()} />
+              <AccessSummary entries={admin().accessEntries} allowedLevels={summaryLevels()} allowAuthenticated={false} />
             </SettingsGroup>
             <SettingsModal.Footer>
               <SettingsPanelFooter
