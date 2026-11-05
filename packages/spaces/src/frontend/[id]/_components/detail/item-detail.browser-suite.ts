@@ -232,20 +232,25 @@ beforeAll(async () => {
         }
         if (url.pathname === `${itemPath}/progress` && request.method === "POST") return Response.json({ message: "ok" });
         if (url.pathname === itemPath && request.method === "PATCH") {
-          const { assigneeIds, claimId, force, ...patch } = body as Partial<SpaceItem> & {
+          const { assigneeIds, addAssigneeIds, removeAssigneeIds, claimId, force, ...patch } = body as Partial<SpaceItem> & {
             assigneeIds?: string[];
+            addAssigneeIds?: string[];
+            removeAssigneeIds?: string[];
             claimId?: string;
             force?: boolean;
           };
+          const nextAssigneeIds = new Set(assigneeIds ?? stored.assignees?.map((person) => person.id) ?? []);
+          for (const id of addAssigneeIds ?? []) nextAssigneeIds.add(id);
+          for (const id of removeAssigneeIds ?? []) nextAssigneeIds.delete(id);
           const claim = stored.claim;
-          const removesWorker = assigneeIds && claim?.actor.kind === "user" && !assigneeIds.includes(claim.actor.id);
+          const removesWorker = claim?.actor.kind === "user" && !nextAssigneeIds.has(claim.actor.id);
           if (removesWorker && (claimId !== claim.id || (claim.actor.id !== me && !force))) {
             return Response.json({ message: "Task claim is no longer active" }, { status: 409 });
           }
           stored = {
             ...stored,
             ...patch,
-            ...(assigneeIds ? { assignees: assigneeIds.map((id) => [lena, tom].find((person) => person.id === id)!) } : {}),
+            assignees: [...nextAssigneeIds].map((id) => [lena, tom, ...(stored.assignees ?? [])].find((person) => person.id === id)!),
             ...(removesWorker ? { claim: null } : {}),
           };
           return Response.json(stored);
@@ -532,7 +537,7 @@ describe("Spaces item detail in a browser", () => {
         {
           method: "PATCH",
           path: `/api/spaces/${spaceId}/items/Item01`,
-          body: { assigneeIds: [tom.id], claimId: task.claim!.id, force: true },
+          body: { addAssigneeIds: [], removeAssigneeIds: [lena.id], claimId: task.claim!.id, force: true },
         },
       ]);
       expect(await peopleRows(page).count()).toBe(1);

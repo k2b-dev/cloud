@@ -669,6 +669,13 @@ function spacesCommands(locale?: string) {
           }),
         },
         flags: {
+          requestKey: flag.string({
+            name: "request-key",
+            description: t({
+              en: "Stable key for an identical retry within 24 hours",
+              de: "Stabiler Schlüssel für denselben Versuch innerhalb von 24 Stunden",
+            }),
+          }),
           column: flag.string({
             description: t({
               en: "Column ID or exact name (default: first open column)",
@@ -731,6 +738,7 @@ function spacesCommands(locale?: string) {
                 : t({ en: `${space.name} has no column.`, de: `${space.name} hat keine Spalte.` }),
             );
           };
+          const requestKey = flags.requestKey ?? crypto.randomUUID();
           const explicit = {
             title: title || undefined,
             description,
@@ -745,6 +753,7 @@ function spacesCommands(locale?: string) {
           };
           if (!flags.template) {
             const item = await send<SpaceItem>(ctx, "POST", api(`/${space.id}/items`), {
+              requestKey,
               columnId: columnFor(!explicit.startsAt),
               ...explicit,
               assigneeIds: explicit.assigneeIds ?? [],
@@ -788,6 +797,7 @@ function spacesCommands(locale?: string) {
             // A given range never keeps the template's all-day flag.
             ...(explicit.startsAt ? { allDay: explicit.allDay ?? false } : {}),
             columnId: columnFor(template.kind === "task"),
+            requestKey,
           };
           if (!body.title)
             throw new Error(
@@ -979,6 +989,24 @@ function spacesCommands(locale?: string) {
         }),
         args: itemArg,
         flags: {
+          expectedTitle: flag.string({
+            name: "expected-title",
+            description: t({
+              en: "Previously read title; defaults to the title resolved before the write",
+              de: "Zuvor gelesener Titel; Vorgabe ist der vor dem Schreiben gelesene Titel",
+            }),
+          }),
+          addAssignee: flag.stringList({
+            name: "add-assignee",
+            description: t({
+              en: "Add a person or service account without replacing others",
+              de: "Person oder Dienstkonto hinzufügen, andere bleiben zugewiesen",
+            }),
+          }),
+          removeAssignee: flag.stringList({
+            name: "remove-assignee",
+            description: t({ en: "Remove only this person or service account", de: "Nur diese Person oder dieses Dienstkonto entfernen" }),
+          }),
           title: flag.string({ description: t({ en: "Title", de: "Titel" }) }),
           ...itemFieldFlags,
           clearEstimate: flag.boolean({ name: "clear-estimate", description: t({ en: "Remove the estimate", de: "Schätzung entfernen" }) }),
@@ -1008,6 +1036,7 @@ function spacesCommands(locale?: string) {
           const space = flags.tag.length ? await loadSpace(ctx, item.spaceId) : null;
           const body: Record<string, unknown> = {
             title: flags.title,
+            expectedTitle: flags.title !== undefined ? (flags.expectedTitle ?? item.title) : undefined,
             description,
             startsAt: dateTime(flags.startsAt, "--starts-at"),
             endsAt: dateTime(flags.endsAt, "--ends-at", "end"),
@@ -1016,6 +1045,14 @@ function spacesCommands(locale?: string) {
             estimatedDurationMinutes: flags.clearEstimate ? null : flags.estimateMinutes,
             priority: flags.priority,
           };
+          if (flags.addAssignee.length || flags.removeAssignee.length) {
+            if (flags.assignee.length || flags.clearAssignees)
+              throw new Error(
+                t({ en: "Do not mix assignee replacement and deltas.", de: "Zuweisungen entweder ersetzen oder einzeln ändern." }),
+              );
+            body.addAssigneeIds = await resolveUserIds(ctx, item.spaceId, flags.addAssignee);
+            body.removeAssigneeIds = await resolveUserIds(ctx, item.spaceId, flags.removeAssignee);
+          }
           if (flags.assignee.length || flags.clearAssignees) body.assigneeIds = await resolveUserIds(ctx, item.spaceId, flags.assignee);
           if (flags.tag.length || flags.clearTags) body.tagIds = space ? resolveTagIds(space, flags.tag) : [];
           const changes = Object.fromEntries(Object.entries(body).filter(([, value]) => value !== undefined));
