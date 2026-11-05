@@ -325,9 +325,6 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       family: "openai-compatible",
       model: "scripted",
       capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-      async complete() {
-        throw new Error("Unexpected completion");
-      },
       async *stream() {
         const block = answer();
         yield block.type === "text"
