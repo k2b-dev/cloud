@@ -433,7 +433,10 @@ interrupts work with an automatic reload. There is no extra polling.
 
 Typed API writes, capability Actions, provider uploads, the AI chat controller,
 and live dictation hold automatic update reloads by default. GET reads and idle
-live subscriptions do not. Once an action settles, the next foreground check
+live subscriptions do not. A write the platform does not see, such as an upload
+over `XMLHttpRequest` that reports its progress, holds them with
+`beginAppAction()` from `@k2b/cloud/browser/reload`; call the returned function
+on every exit path. Once an action settles, the next foreground check
 may reload; settling alone never reloads the page.
 
 Parts use the draft helper for text they intend to save or send. For other
