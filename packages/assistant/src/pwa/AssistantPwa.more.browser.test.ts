@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
-import { startAssistantPwaHarness } from "./AssistantPwa.browser-fixture";
+import { launchBrowser, settled } from "../../../ui/test/browser";
+import { pinAssistantPwaClock, startAssistantPwaHarness } from "./AssistantPwa.browser-fixture";
 
 // Attachments, every chat with its search, and a chat's "…" in the Cloud app, in a real engine with invented data.
 
@@ -18,7 +18,7 @@ afterAll(async () => {
 const open = async (query: string, width = 390, height = 844): Promise<Page> => {
   const context = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: width < 768, locale: "de-DE" });
   const page = await context.newPage();
-  await page.clock.setFixedTime(new Date("2026-11-04T09:41:00.000Z"));
+  await page.addInitScript(pinAssistantPwaClock, Date.parse("2026-11-04T09:41:00.000Z"));
   await page.goto(`${harness.url}?${query}`);
   await page.waitForSelector("body[data-ready]", { state: "attached" });
   return page;
@@ -152,7 +152,10 @@ describe("Every chat in the Cloud app", () => {
     const online = await open("screen=all");
     const offline = await open("screen=all-offline");
     try {
-      const firstRow = async (page: Page) => (await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").first().boundingBox())!.y;
+      const firstRow = async (page: Page) => {
+        await settled(page);
+        return (await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").first().boundingBox())!.y;
+      };
       expect(await firstRow(offline)).toBe(await firstRow(online));
       expect(await offline.locator("input[type=search]").isDisabled()).toBe(true);
       expect(await offline.locator("#assistant-pwa-search-note").textContent()).toContain("Offline. Suchen geht wieder mit Netz.");
