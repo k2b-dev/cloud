@@ -592,7 +592,10 @@ and adds optional `displayName`, optional `avatarHash`, and, for service-account
 principals, `serviceAccountKind`. A person's `displayName` is their display
 name, or their login name when they have none, so every permission editor names
 people the same way. Authorize the resource operation
-before resolving names. A confirmation should show both name and principal ID;
+before resolving names. Finish the grant transaction before calling the resolver:
+it can read other principal tables and registry metadata. A failed or expired
+registry read returns the generic Code type label, without stored owner details.
+A confirmation should show both name and principal ID;
 names are presentation, never identity or authorization.
 
 Missing principals have no `displayName`; audiences carry no stored name.

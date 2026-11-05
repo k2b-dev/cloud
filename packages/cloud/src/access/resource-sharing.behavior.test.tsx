@@ -16,6 +16,24 @@ const manager: AccessEntry = {
 };
 const handle = "code-7k2q9m4xwt";
 const accountId = "20000000-0000-4000-8000-000000000001";
+// happy-dom has no Popover API; directory search opens its result list through it.
+const installPopoverApi = (window: Window) => {
+  const prototype = (window as unknown as { HTMLElement: typeof HTMLElement }).HTMLElement.prototype as unknown as Record<string, unknown>;
+  const open = new WeakSet<object>();
+  const matches = prototype.matches as (this: Element, selector: string) => boolean;
+  Object.assign(prototype, {
+    matches(this: Element, selector: string) {
+      return selector === ":popover-open" ? open.has(this) : matches.call(this, selector);
+    },
+    showPopover(this: object) {
+      open.add(this);
+    },
+    hidePopover(this: object) {
+      open.delete(this);
+    },
+    scrollIntoView() {},
+  });
+};
 const waitFor = async (condition: () => boolean) => {
   for (let attempt = 0; attempt < 200; attempt++) {
     if (condition()) return;
@@ -191,6 +209,58 @@ if (!isServer)
         }
         await waitFor(() => grants.length === 1);
         expect(grants).toEqual([inline ? "read" : "write"]);
+      } finally {
+        dispose();
+        fetch.mockRestore();
+        dom.cleanup();
+      }
+    });
+  }
+
+if (!isServer)
+  for (const expanded of [false, true]) {
+    test(`PermissionEditor ${expanded ? "expanded" : "compact"} keeps its directory kind restriction for Code handles`, async () => {
+      const dom = createDomTestHarness();
+      delegateEvents(["input"], dom.document);
+      const requests: URL[] = [];
+      const fetch = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+          async (input: RequestInfo | URL) => {
+            requests.push(new URL(String(input), "https://cloud.example.test"));
+            return Response.json({ items: [] });
+          },
+          { preconnect: globalThis.fetch.preconnect },
+        ),
+      );
+      const { default: PermissionEditor } = await import("./PermissionEditor");
+      const dispose = render(
+        () => (
+          <PermissionEditor
+            target={{ type: "inventory.item", id: "Targ01" }}
+            initialEntries={[manager]}
+            expanded={expanded}
+            canEdit
+            serviceAccountKinds={["agent"]}
+            grantAccess={async () => {
+              throw new Error("A Code handle must not select an excluded kind");
+            }}
+            updateAccess={async () => {}}
+            revokeAccess={async () => {}}
+          />
+        ),
+        dom.root,
+      );
+      try {
+        installPopoverApi(dom.window as unknown as Window);
+        const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+        input.value = handle;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await waitFor(() => requests.length > 0);
+        expect(requests).toHaveLength(1);
+        expect(requests[0]!.searchParams.get("target_type")).toBeNull();
+        expect(requests[0]!.searchParams.get("service_account_kinds")).toBe("agent");
+        const results = dom.document.getElementById(input.getAttribute("aria-controls")!)!;
+        expect(results.querySelectorAll('[role="option"]')).toHaveLength(0);
       } finally {
         dispose();
         fetch.mockRestore();

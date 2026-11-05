@@ -116,10 +116,13 @@ export const checkSource = (file: string, source: string): Finding[] => {
           }
         }
         const disabled =
-          props.get("allowServiceAccounts") === "false" || props.get("canEdit") === "false" || props.get("readOnly") === "true";
+          (props.get("allowServiceAccounts") === "false" && !props.has("findServiceAccount")) ||
+          props.get("canEdit") === "false" ||
+          props.get("readOnly") === "true";
         const identityOnly =
           tag === "PrincipalPicker" &&
-          (identityPickers.some((suffix) => file.endsWith(suffix)) || excludesCode(props.get("serviceAccountKinds")));
+          (identityPickers.some((suffix) => file.endsWith(suffix)) ||
+            (!props.has("findServiceAccount") && excludesCode(props.get("serviceAccountKinds"))));
         if (!disabled && !identityOnly && !validTarget(props)) report(node);
       }
     }

@@ -159,19 +159,25 @@ export const listNotebookAccess = async (
   return result.items;
 };
 
-/**
- * List access entries with SQL-side filtering and pagination.
- */
+type NotebookAccessQuery = {
+  notebookId: string;
+  display?: CodeAccountDisplayContext;
+  query?: string;
+  principalType?: AccessEntry["principal"]["type"];
+  pagination?: { limit: number; offset: number };
+};
+
+/** List access entries with SQL-side filtering and pagination, then resolve presentation. */
 export const listNotebookAccessPage = async (
-  config: {
-    notebookId: string;
-    display?: CodeAccountDisplayContext;
-    query?: string;
-    principalType?: AccessEntry["principal"]["type"];
-    pagination?: { limit: number; offset: number };
-  },
+  config: NotebookAccessQuery,
   db: SQL = sql,
 ): Promise<{ items: AccessEntry[]; total: number }> => {
+  const page = await readNotebookAccessPage(config, db);
+  return { ...page, items: await resolveDisplayNames(page.items, config.display) };
+};
+
+// Mutation checks stay on their transaction connection and never wait for presentation.
+const readNotebookAccessPage = async (config: NotebookAccessQuery, db: SQL): Promise<{ items: AccessEntry[]; total: number }> => {
   const query = config.query?.trim().toLowerCase();
   const pattern = query && query.length > 0 ? `%${query}%` : null;
   const principalType = config.principalType;
@@ -275,7 +281,7 @@ export const listNotebookAccessPage = async (
   `;
 
   return {
-    items: await resolveDisplayNames(rows.map(mapAccessRow), config.display),
+    items: rows.map(mapAccessRow),
     total: countRow?.count ?? 0,
   };
 };
@@ -336,7 +342,7 @@ const mutateNotebookAccess = async (params: {
       return fail(err.forbidden("Access denied"));
     const [resource] = await tx`SELECT id FROM notebooks.notebooks WHERE id = ${params.notebookId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Notebook"));
-    const before = await listNotebookAccess(params.notebookId, tx);
+    const before = (await readNotebookAccessPage({ notebookId: params.notebookId }, tx)).items;
     if (!(await authorizeAccessMutation(params.notebookId, before, params.caller, tx))) return fail(err.forbidden("Access denied"));
     if (!before.some((entry) => entry.id === params.accessId)) return fail(err.notFound("Access entry for this notebook"));
     const permission = params.permission;
@@ -427,7 +433,7 @@ export const grantNotebookAccess = async (params: {
       return fail(err.forbidden("Access denied"));
     const [resource] = await tx`SELECT id FROM notebooks.notebooks WHERE id = ${notebookId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Notebook"));
-    const before = await listNotebookAccess(notebookId, tx);
+    const before = (await readNotebookAccessPage({ notebookId }, tx)).items;
     if (!(await authorizeAccessMutation(notebookId, before, params.caller, tx))) return fail(err.forbidden("Access denied"));
     const duplicate = before.some(({ principal: existing }) => {
       switch (principal.type) {

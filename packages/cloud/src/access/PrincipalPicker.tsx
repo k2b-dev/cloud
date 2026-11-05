@@ -106,11 +106,14 @@ export default function PrincipalPicker(props: {
       });
     const handle = search.trim();
     const target = props.target;
+    // Explicit lookup owns its accepted accounts; directory filters apply to the default lookup only.
+    const acceptsCode =
+      props.allowServiceAccounts !== false && (!props.serviceAccountKinds?.length || props.serviceAccountKinds.includes("code"));
     const find =
       props.findServiceAccount ??
-      (target ? (value: string, abort: AbortSignal) => findTargetServiceAccount(target, value, abort) : undefined);
-    if (props.allowServiceAccounts !== false && find && CODE_ACCOUNT_HANDLE_PATTERN.test(handle)) {
-      const found = !props.serviceAccountKinds?.length || props.serviceAccountKinds.includes("code") ? await find(handle, signal) : null;
+      (target && acceptsCode ? (value: string, abort: AbortSignal) => findTargetServiceAccount(target, value, abort) : undefined);
+    if (find && CODE_ACCOUNT_HANDLE_PATTERN.test(handle)) {
+      const found = await find(handle, signal);
       if (found) {
         const kind = found.display.serviceAccountKind ?? "code";
         const display = serviceAccountKindDisplay(kind, t());

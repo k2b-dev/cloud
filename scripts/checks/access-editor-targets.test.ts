@@ -69,3 +69,13 @@ test("identity-only service account kinds are parsed independent of spacing or o
     checkSource("app.tsx", `<PrincipalPicker serviceAccountKinds={["agent", "code"]} />; <PrincipalPicker serviceAccountKinds={[]} />;`),
   ).toHaveLength(2);
 });
+
+test("an explicit Code lookup is not disabled by its directory-only filters", () => {
+  expect(
+    checkSource("app.tsx", `<PrincipalPicker findServiceAccount={lookup} serviceAccountKinds={["agent", "standalone"]} />`),
+  ).toHaveLength(1);
+  expect(checkSource("app.tsx", `<PrincipalPicker findServiceAccount={lookup} allowServiceAccounts={false} />`)).toHaveLength(1);
+  expect(checkSource("app.tsx", `<PrincipalPicker target={ref} findServiceAccount={lookup} serviceAccountKinds={["agent"]} />`)).toEqual(
+    [],
+  );
+});

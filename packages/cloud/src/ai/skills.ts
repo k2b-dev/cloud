@@ -16,7 +16,6 @@ import {
 } from "../server/services/access";
 import { resolveDisplayNames } from "../server/services/access-display";
 import { accessRevision } from "../server/services/access-revision";
-import type { CodeAccountDisplayContext } from "../server/services/code-account-display";
 import { evaluateAppAccess, usableAppIds } from "../services/app-access";
 import { logger } from "../services/logging";
 import { toPgTextArray, toPgUuidArray } from "../services/postgres";
@@ -415,7 +414,8 @@ const requireSkill = async (
   return skill && hasPermission(skill.permission, required) ? skill : null;
 };
 
-const listSkillAccess = async (skillId: string, db: SQL = sql, display: CodeAccountDisplayContext = {}): Promise<AiSkillAccess[]> => {
+// Transaction callers need grant state only; presentation may use other connections and registry I/O.
+const listSkillAccess = async (skillId: string, db: SQL = sql): Promise<AiSkillAccess[]> => {
   const rows = await db<SkillAccessRow[]>`
     SELECT skill_access.short_id, access.user_id, access.group_id, access.service_account_id, access.authenticated_only,
            access.permission, access.created_at,
@@ -429,34 +429,30 @@ const listSkillAccess = async (skillId: string, db: SQL = sql, display: CodeAcco
     WHERE skill_access.skill_id = ${skillId}::uuid
     ORDER BY access.created_at, access.id
   `;
-  return resolveDisplayNames(
-    rows.map((row) => ({
-      id: row.short_id,
-      shortId: row.short_id,
-      principal: row.user_id
-        ? { type: "user", userId: row.user_id }
-        : row.group_id
-          ? { type: "group", groupId: row.group_id }
-          : row.service_account_id
-            ? { type: "service_account", serviceAccountId: row.service_account_id }
-            : row.authenticated_only
-              ? { type: "authenticated" }
-              : { type: "public" },
-      permission: row.permission,
-      displayName: row.display_name ?? undefined,
-      ...(row.user_id ? { avatarHash: row.avatar_hash } : {}),
-      serviceAccountKind: row.service_account_kind ?? undefined,
-      createdAt: iso(row.created_at),
-    })),
-    display,
-  );
+  return rows.map((row) => ({
+    id: row.short_id,
+    shortId: row.short_id,
+    principal: row.user_id
+      ? { type: "user", userId: row.user_id }
+      : row.group_id
+        ? { type: "group", groupId: row.group_id }
+        : row.service_account_id
+          ? { type: "service_account", serviceAccountId: row.service_account_id }
+          : row.authenticated_only
+            ? { type: "authenticated" }
+            : { type: "public" },
+    permission: row.permission,
+    displayName: row.display_name ?? undefined,
+    ...(row.user_id ? { avatarHash: row.avatar_hash } : {}),
+    serviceAccountKind: row.service_account_kind ?? undefined,
+    createdAt: iso(row.created_at),
+  }));
 };
 
 export const createSkillAccess = async (
   skillId: string,
   input: { principal: Principal; permission: AiSkillPermission },
   db: SQL,
-  display: CodeAccountDisplayContext = { canManageTarget: true },
 ): Promise<AiSkillAccess> => {
   AuthenticatedPrincipalSchema.parse(input.principal);
   const created = await createAccess(input, db);
@@ -474,7 +470,7 @@ export const createSkillAccess = async (
     await deleteAccess({ id: created.data.id }, db);
     throw error;
   }
-  const entry = (await listSkillAccess(skillId, db, display)).find((item) => item.shortId === shortId);
+  const entry = (await listSkillAccess(skillId, db)).find((item) => item.shortId === shortId);
   if (!entry) throw new Error("Failed to read the created skill access entry.");
   return entry;
 };
@@ -911,11 +907,12 @@ export const aiSkills = {
     locale?: string,
   ): Promise<AiSkillAccess[] | null> {
     const roles = await subjectRoles(subject, authority);
-    return sql.begin(async (tx) => {
+    const entries = await sql.begin(async (tx) => {
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id=${skillId}::uuid FOR UPDATE`;
       if (!row || !(await canMutate(row.id, subject, "admin", tx, roles))) return null;
-      return listSkillAccess(skillId, tx, { canManageTarget: true, locale });
+      return listSkillAccess(skillId, tx);
     });
+    return entries === null ? null : resolveDisplayNames(entries, { canManageTarget: true, locale });
   },
 
   async grantAccess(
@@ -927,13 +924,14 @@ export const aiSkills = {
     locale?: string,
   ): Promise<AiSkillAccess | null> {
     const roles = await subjectRoles(subject, authority);
-    return sql.begin(async (tx) => {
+    const entry = await sql.begin(async (tx) => {
       if (!subject || !(await lockAccessMutationAuthority({ subject: subject.accessSubject, principal: input.principal }, tx))) return null;
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
       if (!row || !(await canMutate(row.id, subject, "admin", tx, roles))) return null;
       await checkAccessRevision(skillId, expectedAccessRevision, tx);
-      return createSkillAccess(skillId, input, tx, { canManageTarget: true, locale });
+      return createSkillAccess(skillId, input, tx);
     });
+    return entry ? (await resolveDisplayNames([entry], { canManageTarget: true, locale }))[0]! : null;
   },
 
   async updateAccess(
@@ -1077,18 +1075,20 @@ export const aiSkills = {
       return rows[0] ? toAdminSkill(rows[0]) : null;
     },
 
-    listAccess: (skillId: string, locale?: string) => listSkillAccess(skillId, sql, { canManageTarget: true, cloudAdmin: true, locale }),
+    listAccess: async (skillId: string, locale?: string) =>
+      resolveDisplayNames(await listSkillAccess(skillId), { canManageTarget: true, cloudAdmin: true, locale }),
 
     async grantAccess(
       skillId: string,
       input: { principal: Principal; permission: AiSkillPermission },
       locale?: string,
     ): Promise<AiSkillAccess | null> {
-      return sql.begin(async (tx) => {
+      const entry = await sql.begin(async (tx) => {
         const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
         if (!row) return null;
-        return createSkillAccess(skillId, input, tx, { canManageTarget: true, cloudAdmin: true, locale });
+        return createSkillAccess(skillId, input, tx);
       });
+      return entry ? (await resolveDisplayNames([entry], { canManageTarget: true, cloudAdmin: true, locale }))[0]! : null;
     },
 
     async updateAccess(skillId: string, accessId: string, permission: AiSkillPermission): Promise<boolean> {
