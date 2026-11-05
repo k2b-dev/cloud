@@ -136,6 +136,66 @@ describe("AccessDialog in a browser", () => {
       }
     });
 
+  // Mockup v31 `editor · A · aenderungen` at 390 px: full level words, whole marks, names on one line.
+  for (const locale of ["de", "en"] as const)
+    test(`${locale} 390px: no mark, level or name in a row is cut off`, async () => {
+      const page = await open(390, locale);
+      const level = async (name: string, de: string, en: string) => {
+        await page.locator("dialog li", { hasText: name }).locator("button[aria-haspopup]").first().click();
+        await page
+          .locator('[role="dialog"] [role="radio"]', { hasText: locale === "de" ? de : en })
+          .last()
+          .click();
+      };
+      try {
+        await level("Lea Schmitt", "Bearbeiten", "Edit");
+        // The longest pairs: "vorher Bearbeiten" beside "Verwalten" and "vorher Verwalten" beside "Bearbeiten".
+        await level("Jonas Weber", "Verwalten", "Manage");
+        await level("Mia Hoffmann", "Bearbeiten", "Edit");
+        await page.locator(`dialog button[aria-label="${locale === "de" ? "Lagerbot entfernen" : "Remove Lagerbot"}"]`).click();
+        await page.locator("dialog input[type=checkbox]").first().check();
+        await settledAtRest(page);
+        const cut = await page.evaluate(() => {
+          /** Text is cut when it or a part of it overflows its box (an ellipsis) or reaches past an ancestor that clips. */
+          const clipped = (element: HTMLElement) => {
+            if ([element, ...element.querySelectorAll<HTMLElement>("*")].some((part) => part.scrollWidth > part.clientWidth + 1))
+              return true;
+            const box = element.getBoundingClientRect();
+            for (let parent = element.parentElement; parent && parent.tagName !== "LI"; parent = parent.parentElement) {
+              if (getComputedStyle(parent).overflowX === "visible") continue;
+              const clip = parent.getBoundingClientRect();
+              if (box.right > clip.right + 0.5 || box.left < clip.left - 0.5) return true;
+            }
+            return false;
+          };
+          const visible = (element: HTMLElement) => element.getClientRects().length > 0;
+          const rows = Array.from(document.querySelectorAll<HTMLElement>("dialog li"));
+          const marks = rows.flatMap((row) => Array.from(row.querySelectorAll<HTMLElement>(".k2b-status-badge")).filter(visible));
+          const levels = rows.flatMap((row) => Array.from(row.querySelectorAll<HTMLElement>(".k2b-choice-trigger__value")));
+          const names = rows
+            .map((row) => row.querySelector<HTMLElement>("[data-access-name]"))
+            .filter((name): name is HTMLElement => Boolean(name));
+          return {
+            marks: marks.length,
+            levels: levels.length,
+            names: names.length,
+            cut: [...marks, ...levels, ...names].filter(clipped).map((element) => element.textContent?.trim()),
+            // A name wraps when its text lies on more than one line.
+            wrapped: names
+              .filter((name) => {
+                const range = document.createRange();
+                range.selectNodeContents(name);
+                return new Set(Array.from(range.getClientRects(), (rect) => Math.round(rect.top))).size > 1;
+              })
+              .map((name) => name.textContent?.trim()),
+          };
+        });
+        expect(cut).toEqual({ marks: 5, levels: 5, names: 7, cut: [], wrapped: [] });
+      } finally {
+        await page.close();
+      }
+    });
+
   // Mockup v31 `editor · A · suche-kennung`: a handle in the search for people finds the service account.
   for (const width of [1280, 390])
     test(`de ${width}px: a handle in the search shows the marked hit in the sheet and adds it under Dienstkonten`, async () => {
