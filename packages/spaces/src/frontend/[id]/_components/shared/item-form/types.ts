@@ -8,6 +8,10 @@ export type ItemFormData = {
   references?: SpaceItemResourceReferenceInput[];
   columnId: string;
   title: string;
+  expectedTitle?: string;
+  requestKey?: string;
+  addAssigneeIds?: string[];
+  removeAssigneeIds?: string[];
   description?: string;
   location?: string | null;
   url?: string | null;

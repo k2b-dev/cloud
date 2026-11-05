@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { deleteExpiredCreateRequests } from "./item-create-retention";
 import { create, get, listAssignableUsers, setAssignees, setTags, update } from "./items";
 import { canAccess, getPermission, list as listSpaces } from "./spaces";
 
@@ -261,6 +262,108 @@ suite("Spaces assignable users", () => {
       const finalItem = await get({ id: created.data.id });
       expect(finalItem?.assignees?.map((assignee) => assignee.id).sort()).toEqual([fixture.userIds.group, fixture.userIds.nested].sort());
       expect(finalItem?.tags?.map((tag) => tag.id)).toEqual([fixture.tagIds.second]);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+  test("concurrent assignee deltas keep independent additions and removals", async () => {
+    const fixture = await createFixture();
+    try {
+      const result = await create({
+        spaceId: fixture.spaceId,
+        data: { columnId: fixture.columnId, title: "Concurrent assignments", assigneeIds: [fixture.userIds.direct] },
+        createdBy: fixture.userIds.direct,
+      });
+      expect(result.ok).toBeTrue();
+      if (!result.ok) return;
+      const id = result.data.id;
+      const additions = await Promise.all([
+        update({ id, data: { addAssigneeIds: [fixture.userIds.group] } }),
+        update({ id, data: { addAssigneeIds: [fixture.userIds.nested] } }),
+      ]);
+      expect(additions.every((result) => result.ok)).toBeTrue();
+      expect((await get({ id }))?.assignees?.map((a) => a.id).sort()).toEqual(
+        [fixture.userIds.direct, fixture.userIds.group, fixture.userIds.nested].sort(),
+      );
+      const changes = await Promise.all([
+        update({ id, data: { removeAssigneeIds: [fixture.userIds.direct] } }),
+        update({ id, data: { removeAssigneeIds: [fixture.userIds.group] } }),
+      ]);
+      expect(changes.every((result) => result.ok)).toBeTrue();
+      const mixed = await Promise.all([
+        update({ id, data: { addAssigneeIds: [fixture.userIds.direct] } }),
+        update({ id, data: { removeAssigneeIds: [fixture.userIds.nested] } }),
+      ]);
+      expect(mixed.every((result) => result.ok)).toBeTrue();
+      expect((await get({ id }))?.assignees?.map((a) => a.id)).toEqual([fixture.userIds.direct]);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  test("title preconditions reject stale writes before changing any field", async () => {
+    const fixture = await createFixture();
+    try {
+      const result = await create({
+        spaceId: fixture.spaceId,
+        data: { columnId: fixture.columnId, title: "Original" },
+        createdBy: fixture.userIds.direct,
+      });
+      if (!result.ok) throw new Error(result.error);
+      const id = result.data.id;
+      const changes = await Promise.all([
+        update({ id, data: { title: "First", expectedTitle: "Original" } }),
+        update({ id, data: { title: "Second", expectedTitle: "Original" } }),
+      ]);
+      expect(changes.filter((r) => r.ok)).toHaveLength(1);
+      expect(changes.find((r) => !r.ok)).toMatchObject({ ok: false, status: 409, code: "TITLE_CONFLICT" });
+      expect(
+        await update({ id, data: { title: "Stale", expectedTitle: "Original", addAssigneeIds: [fixture.userIds.group] } }),
+      ).toMatchObject({ ok: false, code: "TITLE_CONFLICT" });
+      expect((await get({ id }))?.assignees).toEqual([]);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  test("create receipts commit once, replay the first result, isolate actors and expire", async () => {
+    const fixture = await createFixture();
+    const actor = { kind: "user" as const, id: fixture.userIds.direct };
+    const data = { columnId: fixture.columnId, title: "Create once", requestKey: "same-request", checklist: ["Review"] };
+    try {
+      const params = { spaceId: fixture.spaceId, data, createdBy: actor.id, actor };
+      const attempts = await Promise.all(Array.from({ length: 12 }, () => create(params)));
+      const first = attempts[0]!;
+      const retry = attempts[1]!;
+      expect(attempts.every((result) => result.ok)).toBeTrue();
+      expect(first.ok).toBeTrue();
+      expect(retry).toEqual(first);
+      if (!first.ok) return;
+      await update({ id: first.data.id, data: { title: "Changed afterwards" } });
+      expect(await create(params)).toEqual(first);
+      expect(await create({ ...params, data: { ...data, title: "Different" } })).toMatchObject({
+        ok: false,
+        code: "IDEMPOTENCY_CONFLICT",
+        status: 409,
+      });
+      const other = await create({ ...params, actor: { kind: "user", id: fixture.userIds.group }, createdBy: fixture.userIds.group });
+      expect(other.ok).toBeTrue();
+      if (other.ok) expect(other.data.id).not.toBe(first.data.id);
+      const [count] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM spaces.items WHERE space_id = ${fixture.spaceId}::uuid`;
+      expect(count?.count).toBe(2);
+      await sql`UPDATE spaces.item_create_requests SET expires_at = now() - interval '1 second' WHERE item_id = ${first.data.id}::uuid`;
+      expect(await deleteExpiredCreateRequests()).toBeGreaterThanOrEqual(1);
+      const expired = await create(params);
+      expect(expired.ok).toBeTrue();
+      if (expired.ok) expect(expired.data.id).not.toBe(first.data.id);
+      if (other.ok) {
+        await sql`DELETE FROM spaces.items WHERE id = ${other.data.id}::uuid`;
+        expect(
+          await create({ ...params, actor: { kind: "user", id: fixture.userIds.group }, createdBy: fixture.userIds.group }),
+        ).toMatchObject({ ok: false, code: "CREATE_RESULT_GONE" });
+      }
     } finally {
       await cleanupFixture(fixture);
     }
