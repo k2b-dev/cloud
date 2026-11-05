@@ -1,23 +1,17 @@
-import {
-  type DecisionAnswers,
-  type DecisionImage,
-  type DecisionProvider,
-  type DecisionQuestions,
-  systemOneDecision,
-  type Usage,
-} from "@k2b/nessi/ai";
+import type { DecisionAnswers, DecisionImage, DecisionQuestions, TransportReport, Usage } from "@k2b/nessi/ai";
 import { z } from "zod";
 import type { AccessSubject } from "../server";
 import { logger, type TraceContext, trace } from "../services/logging";
 import type { AiResolvedModelRef } from "../shared/ai-models";
 import { getAiCredential } from "./credentials";
+import { type AiDecisionProvider, systemOneDecisionWithTransport } from "./decision-provider";
 import { AiBackgroundAdmissionError, AiBackgroundCostError, type AiCallContext, beginAiCall, finishAiCall } from "./inference-calls";
 import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";
 import { aiModelAccess } from "./model-access";
 import { PROVIDER_TIMEOUTS } from "./provider";
 import { classifyProviderFailure, recordAiProviderStatus } from "./provider-connections";
 import { AiProviderError } from "./provider-errors";
-import { type ProviderFetchMarks, runWithProviderFetchMarks } from "./provider-fetch";
+import { observeTransport, transportFailed, transportRefused } from "./provider-transport";
 import { AiQuotaError } from "./quotas";
 import { getAiRequestHeaders } from "./request-headers";
 import { readAiSettingsState } from "./settings";
@@ -66,7 +60,7 @@ export type RunAiDecisionResult<TQuestions extends DecisionQuestions> = {
   /** Missing provider measurements are returned as a marked estimate. */
   usage: AiDecisionUsage;
 };
-export type AiResolvedDecisionModel = { profile: AiModelProfile; provider: DecisionProvider };
+export type AiResolvedDecisionModel = { profile: AiModelProfile; provider: AiDecisionProvider };
 
 type DecisionSelection = Pick<RunAiDecisionInput<DecisionQuestions>, "model" | "usageSubject" | "allowedDataBoundaries" | "signal">;
 const unavailable = () =>
@@ -103,16 +97,16 @@ export const createAiDecisionProvider = (
   apiKey?: string,
   headers?: Record<string, string>,
   callerSignal?: AbortSignal,
-): DecisionProvider => {
+): AiDecisionProvider => {
   assertProfile(profile, { model: { id: profile.id } });
-  const provider = systemOneDecision(profile.model, { baseURL: profile.baseURL!, apiKey, headers, name: profile.provider });
+  const provider = systemOneDecisionWithTransport(profile.model, { baseURL: profile.baseURL!, apiKey, headers, name: profile.provider });
   return {
     name: provider.name,
     model: provider.model,
     async decide(request) {
-      const marks: ProviderFetchMarks = {};
+      let transport: TransportReport | undefined;
       try {
-        const result = await runWithProviderFetchMarks(marks, () => provider.decide(request));
+        const result = await provider.decide(observeTransport(request, (report) => (transport = report)));
         if (!callerSignal?.aborted)
           await recordAiProviderStatus(profile.providerId, { status: "ok", message: "The provider connection works." });
         return result;
@@ -122,7 +116,9 @@ export const createAiDecisionProvider = (
             profile.providerId,
             request.signal?.aborted
               ? { status: "unreachable", message: "The provider timed out." }
-              : classifyProviderFailure(marks.httpStatus ? { status: marks.httpStatus } : marks.networkFailure ? new TypeError() : error),
+              : classifyProviderFailure(
+                  transport?.status ? { status: transport.status } : transportFailed(transport) ? new TypeError() : error,
+                ),
           );
         throw new AiProviderError(callerSignal?.aborted);
       }
@@ -234,7 +230,7 @@ export const runAiDecision = async <const TQuestions extends DecisionQuestions>(
       const startedAt = Date.now();
       const timeout = AbortSignal.timeout(PROVIDER_TIMEOUTS.firstByteMs);
       const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
-      const marks: ProviderFetchMarks = {};
+      let transport: TransportReport | undefined;
       let resolved: AiResolvedDecisionModel | undefined;
       let callId: string | undefined;
       let requestStartedAt: number | undefined;
@@ -278,8 +274,11 @@ export const runAiDecision = async <const TQuestions extends DecisionQuestions>(
         }
         signal.throwIfAborted();
         requestStartedAt = Date.now();
-        const result = await runWithProviderFetchMarks(marks, () =>
-          resolved!.provider.decide({ state: input.state, questions: input.questions, images: input.images, signal }),
+        const result = await resolved.provider.decide(
+          observeTransport(
+            { state: input.state, questions: input.questions, images: input.images, signal },
+            (report) => (transport = report),
+          ),
         );
         const measured =
           [result.usage.input, result.usage.output].every((n) => Number.isSafeInteger(n) && n >= 0) &&
@@ -302,7 +301,7 @@ export const runAiDecision = async <const TQuestions extends DecisionQuestions>(
       } finally {
         if (callId) {
           usage ??=
-            marks.refused || requestStartedAt === undefined
+            transportRefused(transport) || requestStartedAt === undefined
               ? { input: 0, output: 0, total: 0 }
               : {
                   input: input.images?.length ? resolved!.profile.contextWindow! : inputEstimate,
@@ -315,9 +314,12 @@ export const runAiDecision = async <const TQuestions extends DecisionQuestions>(
               error: failure instanceof Error ? failure.message : undefined,
               cancelled: input.signal?.aborted ?? false,
               requestStartedAt,
-              headersMs: marks.headersAt === undefined || requestStartedAt === undefined ? undefined : marks.headersAt - requestStartedAt,
+              headersMs:
+                transport?.headersAt === undefined || requestStartedAt === undefined ? undefined : transport.headersAt - requestStartedAt,
               firstByteMs:
-                marks.firstByteAt === undefined || requestStartedAt === undefined ? undefined : marks.firstByteAt - requestStartedAt,
+                transport?.firstByteAt === undefined || requestStartedAt === undefined
+                  ? undefined
+                  : transport.firstByteAt - requestStartedAt,
             });
           } catch {
             logger("ai:decision").error("AI cost booking failed", { callId, code: "ai_cost_booking_failed" });

@@ -12,6 +12,7 @@ import { aiAssignmentFixture, aiModelFixture, aiSettingsFixture } from "./model-
 import { createAiProvider } from "./provider";
 import * as connection from "./provider-connections";
 import { AiProviderError } from "./provider-errors";
+import { observeTransport } from "./provider-transport";
 import * as headers from "./request-headers";
 import * as settings from "./settings";
 import * as runs from "./structured-runs";
@@ -279,14 +280,75 @@ test("128 questions are accepted and images require vision and respect shared co
   ).rejects.toMatchObject({ code: "decision_input_too_large" });
 });
 
-for (const status of [401, 429, 500])
+for (const status of [401, 429, 500, 502, 503, 504, 529])
   test(`HTTP ${status} is sanitized and accounting distinguishes refused and possibly processed calls`, async () => {
     reply = () => Response.json({ error: { message: "PRIVATE SOURCE AND KEY" } }, { status });
     await expect(runAiDecision({ task: "test", state: "PRIVATE SOURCE", questions })).rejects.toBeInstanceOf(AiProviderError);
-    expect(finish.mock.calls[0]?.[1]).toMatchObject(status < 500 ? { input: 0, output: 0 } : { estimated: true });
+    expect(finish.mock.calls[0]?.[1]).toMatchObject(
+      status < 500 || status === 503 || status === 529 ? { input: 0, output: 0 } : { estimated: true },
+    );
+    expect(connection.recordAiProviderStatus).toHaveBeenCalledWith(
+      profile.providerId,
+      expect.objectContaining({ status: status === 401 ? "key_rejected" : "error", httpStatus: status }),
+    );
     expect(JSON.stringify([finish.mock.calls, ledger.mock.calls])).not.toContain("PRIVATE SOURCE");
     expect(requests).toHaveLength(1);
   });
+
+test("decision transport forwards one report through nested observers without changing global fetch", async () => {
+  const originalFetch = globalThis.fetch;
+  const now = spyOn(Date, "now").mockReturnValue(1_800_000_000_000);
+  restore.push(() => now.mockRestore());
+  const reports: unknown[] = [];
+  const provider = createAiDecisionProvider(profile);
+  await provider.decide(
+    observeTransport({ state: "test", questions, onTransport: (report) => reports.push(report) }, (report) => reports.push(report)),
+  );
+  expect(reports).toEqual(
+    Array(2).fill({ startedAt: 1_800_000_000_000, headersAt: 1_800_000_000_000, firstByteAt: 1_800_000_000_000, status: 200 }),
+  );
+  await runAiDecision({ task: "test", state: "test", questions });
+  expect(finish.mock.calls[0]?.[3]).toMatchObject({ requestStartedAt: 1_800_000_000_000, headersMs: 0, firstByteMs: 0 });
+  expect(globalThis.fetch).toBe(originalFetch);
+});
+
+test("a refused connection is sanitized, marks the provider unreachable and books zero usage", async () => {
+  server.stop(true);
+  await expect(runAiDecision({ task: "test", state: "test", questions })).rejects.toMatchObject({ code: "provider_error" });
+  expect(finish.mock.calls[0]?.[1]).toEqual({ input: 0, output: 0, total: 0 });
+  expect(connection.recordAiProviderStatus).toHaveBeenCalledWith(profile.providerId, expect.objectContaining({ status: "unreachable" }));
+  expect(requests).toHaveLength(0);
+});
+
+test("a connection reset can follow delivery and keeps an estimated charge", async () => {
+  const fetch = spyOn(globalThis, "fetch").mockRejectedValue(
+    Object.assign(new TypeError("PRIVATE CONNECTION DETAILS"), { code: "ECONNRESET" }),
+  );
+  restore.push(() => fetch.mockRestore());
+  await expect(runAiDecision({ task: "test", state: "test", questions })).rejects.toMatchObject({ code: "provider_error" });
+  expect(finish.mock.calls[0]?.[1]).toMatchObject({ estimated: true });
+  expect(connection.recordAiProviderStatus).toHaveBeenCalledWith(profile.providerId, expect.objectContaining({ status: "unreachable" }));
+  expect(JSON.stringify([finish.mock.calls, ledger.mock.calls])).not.toContain("PRIVATE CONNECTION DETAILS");
+});
+
+test("decision answer decoding preserves fallback probabilities and rejects incompatible answers", async () => {
+  reply = () =>
+    Response.json({ ...wire, answers: { ...wire.answers, severity: { type: "score", probabilities: { "0": 0.2, "1": 0.8 } } } });
+  expect((await runAiDecision({ task: "test", state: "test", questions })).answers.severity).toMatchObject({
+    score: 0.8,
+    level: 1,
+    confidence: 0.8,
+  });
+  for (const answer of [
+    { ...wire.answers, urgent: { type: "noul", noul: 2 } },
+    { ...wire.answers, team: { type: "choice", choice: "missing" } },
+    { ...wire.answers, severity: { type: "score", score: 2 } },
+  ]) {
+    reply = () => Response.json({ ...wire, answers: answer });
+    await expect(runAiDecision({ task: "test", state: "test", questions })).rejects.toMatchObject({ code: "provider_error" });
+    expect(finish.mock.calls.at(-1)?.[1]).toMatchObject({ estimated: true });
+  }
+});
 
 test("missing usage is estimated, malformed answers fail visibly, and admission is never retried", async () => {
   reply = () => Response.json({ ...wire, usage: undefined });
