@@ -730,6 +730,11 @@ owns them, so they cannot rely on cleanup; tie their requests to the `signal`
 you pass. The dialog is a presentation of the same
 grants; the service still checks every change.
 
+**Service accounts** lists only the accounts that Code of an object or an app
+runs as, with the kind `code`. The account behind an object's API keys
+(`resource_bound`) is labelled "API key" and has its own **API keys** section.
+It is never called a service account.
+
 When the dialog opens from settings that can close on their own, pass their
 `signal`. Aborting it closes the dialog without asking and sends nothing that is
 still pending; changes already saved stay saved, and the dialog resolves

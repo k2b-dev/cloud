@@ -111,8 +111,13 @@ export const openAccessDialog = async (props: AccessDialogProps): Promise<boolea
     },
   )) === true;
 
-/** Accounts of objects and apps: they never reach the search by name, only by their identifier. */
-const isObjectAccount = (kind: ServiceAccountKind | undefined) => kind === "resource_bound";
+/**
+ * The service accounts that Code of an object or an app runs as. They never reach the search by name, only by their
+ * handle. Their kind `code` arrives with the code lane, so the contract type does not list it yet.
+ */
+const isCodeAccount = (kind: string | undefined) => kind === "code";
+/** The account behind an object's API keys: shown as an API key, never as a service account. */
+const isApiKeyAccount = (kind: ServiceAccountKind | undefined) => kind === "resource_bound";
 const generalPrincipal = (principal: Principal) => principal.type === "authenticated" || principal.type === "public";
 
 /**
@@ -202,8 +207,12 @@ export function AccessDialog(
   };
   const isGeneralSwitch = (row: DraftRow) =>
     (row.principal.type === "authenticated" || row.principal.type === "public") && generalRow(row.principal.type)?.key === row.key;
-  const peopleRows = () => rows().filter((row) => !isObjectAccount(row.display.serviceAccountKind) && !isGeneralSwitch(row));
-  const objectAccountRows = () => rows().filter((row) => isObjectAccount(row.display.serviceAccountKind));
+  const peopleRows = () =>
+    rows().filter(
+      (row) => !isCodeAccount(row.display.serviceAccountKind) && !isApiKeyAccount(row.display.serviceAccountKind) && !isGeneralSwitch(row),
+    );
+  const objectAccountRows = () => rows().filter((row) => isCodeAccount(row.display.serviceAccountKind));
+  const apiKeyRows = () => rows().filter((row) => isApiKeyAccount(row.display.serviceAccountKind));
   /** In read-only mode, who can change access: the people and groups that manage it, by name. */
   const readOnlyLine = () => {
     // The same managers the last-manager rule counts: unscoped, and not shadowed by a denial.
@@ -368,7 +377,7 @@ export function AccessDialog(
     if (row.principal.type === "user") return row.principal.userId === props.viewerUserId ? t().you : t().person;
     if (row.principal.type === "group") return t().group;
     if (row.principal.type === "service_account")
-      return isObjectAccount(row.display.serviceAccountKind)
+      return isCodeAccount(row.display.serviceAccountKind)
         ? t().serviceAccount
         : ((row.display.serviceAccountKind && serviceAccountKindDisplay(row.display.serviceAccountKind, access()).label) ?? t().agent);
     return "";
@@ -901,6 +910,23 @@ export function AccessDialog(
                   {objectAccountRows().length > 0 ? t().serviceAccountNote({ name: props.resourceName }) : t().serviceAccountsEmpty}
                 </p>
               </Show>
+            </PanelDialog.Section>
+          </Show>
+
+          {/* An object's API keys: each has its own account and level, as in the approved mockup. */}
+          <Show when={!loading() && apiKeyRows().length > 0}>
+            <PanelDialog.Section
+              title={
+                <>
+                  {t().apiKeys} <span class="font-normal text-dimmed">{apiKeyRows().filter((row) => row.next).length}</span>
+                </>
+              }
+            >
+              <ul class="flex flex-col">
+                <For each={apiKeyRows().map((row) => row.key)}>
+                  {(key) => <Show when={rows().find((row) => row.key === key)}>{(row) => <AccessRow row={row()} />}</Show>}
+                </For>
+              </ul>
             </PanelDialog.Section>
           </Show>
 

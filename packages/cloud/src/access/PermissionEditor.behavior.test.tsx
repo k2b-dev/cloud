@@ -36,20 +36,20 @@ const labels = {
   en: {
     agent: "Agent",
     standalone: "Agent (API key only)",
-    resource_bound: "Service account",
+    resource_bound: "API key",
     user_delegated: "Personal",
   },
   de: {
     agent: "Agent",
     standalone: "Agent (nur API Key)",
-    resource_bound: "Dienstkonto",
+    resource_bound: "API Key",
     user_delegated: "Persönlich",
   },
 } as const;
 const icons: Record<ServiceAccountKind, string> = {
   agent: "ti-robot",
   standalone: "ti-key",
-  resource_bound: "ti-box",
+  resource_bound: "ti-key",
   user_delegated: "ti-user-key",
 };
 const kinds = Object.keys(icons) as ServiceAccountKind[];

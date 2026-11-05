@@ -26,6 +26,8 @@ const user = (id: string, name: string, permission: AccessEntry["permission"]): 
   createdAt: "2026-11-03T00:00:00.000Z",
   displayName: name,
 });
+// Code's own accounts have the kind `code`, which arrives with the code lane; the contract type does not list it yet.
+const codeKind = "code" as unknown as NonNullable<AccessEntry["serviceAccountKind"]>;
 const mia = user("1", "Mia Hoffmann", "admin");
 const lea = user("2", "Lea Schmitt", "read");
 const bot: AccessEntry = {
@@ -294,7 +296,7 @@ describe("AccessDialog", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
       pending.resolve({
         principal: { type: "service_account", serviceAccountId: "40000000-0000-4000-8000-000000000001" },
-        display: { displayName: "Code of the old mailbox", serviceAccountKind: "resource_bound" },
+        display: { displayName: "Code of the old mailbox", serviceAccountKind: codeKind },
       });
       await Bun.sleep(30);
       expect(ui.dom.root.textContent).not.toContain("Code of the old mailbox");
@@ -524,7 +526,7 @@ describe("AccessDialog", () => {
       permission: "write",
       createdAt: "2026-11-03T00:00:00.000Z",
       displayName: "Code von einkauf@beispiel.de",
-      serviceAccountKind: "resource_bound",
+      serviceAccountKind: codeKind,
     };
     const field = (ui: Awaited<ReturnType<typeof setup>>) =>
       ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Identifier of the service account"]');
@@ -575,6 +577,31 @@ describe("AccessDialog", () => {
       }
     });
 
+    test("the account behind an object's API keys is an API key, never a service account", async () => {
+      const apiKey: AccessEntry = {
+        id: "00000000-0000-4000-8000-000000000011",
+        principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000011" },
+        permission: "read",
+        createdAt: "2026-11-03T00:00:00.000Z",
+        displayName: "Shop-Import",
+        serviceAccountKind: "resource_bound",
+      };
+      const ui = await setup({ entries: [mia, codeAccount, apiKey], findServiceAccount: async () => null });
+      try {
+        const section = (title: string) =>
+          Array.from(ui.dom.root.querySelectorAll("section")).find((item) => item.querySelector("h3")?.textContent?.startsWith(title));
+        expect(section("Service accounts")?.textContent).toContain("Code von einkauf@beispiel.de");
+        expect(section("Service accounts")?.textContent).not.toContain("Shop-Import");
+        expect(section("API keys")?.textContent).toContain("Shop-Import");
+        const row = ui.row("Shop-Import");
+        expect(row.textContent).toContain("API key");
+        expect(row.textContent).not.toContain("Service account");
+        expect(row.querySelector('[data-shape="square"] .ti-key')).not.toBeNull();
+      } finally {
+        ui.cleanup();
+      }
+    });
+
     test("in German the note quotes the resource's name, so any name reads", async () => {
       const { accessDialogMessages } = await import("./access-dialog-messages");
       expect(accessDialogMessages.resolve(["de"]).t.serviceAccountNote({ name: "Der Einkauf" })).toBe(
@@ -593,7 +620,7 @@ describe("AccessDialog", () => {
         entries: [mia],
         findServiceAccount: async () => ({
           principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000011" },
-          display: { displayName: "Code von info@beispiel.de", avatarHash: "abc123", serviceAccountKind: "resource_bound" },
+          display: { displayName: "Code von info@beispiel.de", avatarHash: "abc123", serviceAccountKind: codeKind },
         }),
       });
       try {
