@@ -303,6 +303,20 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   console.log("  ✓ auth.user_ipa_data table");
 
+  // Committed before remote mutation, retained if the local promotion rolls back.
+  await sql`
+    CREATE TABLE IF NOT EXISTS auth.ipa_reactivations (
+      user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+      directory_url TEXT NOT NULL,
+      uid TEXT NOT NULL,
+      mail TEXT NOT NULL,
+      remote_id TEXT NOT NULL,
+      previous_expiry TIMESTAMPTZ,
+      was_disabled BOOLEAN NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.simple();
+
   await sql`
     CREATE TABLE IF NOT EXISTS auth.groups (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
