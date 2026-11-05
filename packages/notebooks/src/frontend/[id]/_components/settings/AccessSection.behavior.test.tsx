@@ -92,18 +92,18 @@ describe("Notebook access settings", () => {
     );
     const { PermissionsSection } = await import("./AccessSection");
     const dispose = render(() => <PermissionsSection notebook={notebook} />, dom.root);
-    const rowElements = () => Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row"));
-    // Each row's name and, for a service account, its kind label.
+    // The summary's list of who has access: each row's name and, for a service account, its kind.
+    const rowElements = () => Array.from(dom.root.querySelectorAll<HTMLElement>(".k2b-avatar-stack__row"));
     const rows = () =>
       rowElements().map((row) =>
-        Array.from(row.querySelectorAll(".min-w-0 > span"))
+        Array.from(row.querySelectorAll(".k2b-avatar-stack__row-name > span"))
           .map((span) => span.textContent)
           .join(" "),
       );
-    await waitFor(() => rowElements().length > 0, "the access list");
+    await waitFor(() => rowElements().length > 0, "the access summary");
     const button = (text: string) =>
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
-    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
     const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
     return {
       dom,
@@ -122,10 +122,11 @@ describe("Notebook access settings", () => {
     };
   };
 
-  test("lists who may use the notebook, agents included, without controls and without API keys", async () => {
+  test("sums up who may use the notebook, agents included, without controls and without API keys", async () => {
     const section = await renderSection([person, agent, apiKey]);
     try {
-      expect(section.rows()).toEqual(["Ada Lovelace", "Research agent (Agent)"]);
+      expect(section.rows()).toEqual(["Ada Lovelace", "Research agent Agent"]);
+      expect(section.dom.root.textContent).toContain("2 people, groups and agents · All signed-in people: off");
       expect(section.dom.root.querySelector('button[aria-label="Remove Ada Lovelace"]')).toBeNull();
       section.button("Edit access")!.click();
       await waitFor(() => section.dialog()?.textContent?.includes("Research agent") === true, "the access dialog");

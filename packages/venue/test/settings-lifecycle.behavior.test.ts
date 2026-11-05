@@ -245,7 +245,7 @@ describe("Venue settings lifecycle behavior", () => {
     );
     const button = (text: string) =>
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
-    const accessDialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const accessDialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
     const waitFor = async (condition: () => boolean, label: string) => {
       for (let attempt = 0; attempt < 200; attempt += 1) {
         if (condition()) return;
@@ -333,7 +333,7 @@ describe("Venue settings lifecycle behavior", () => {
     );
     const button = (text: string) =>
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
-    const accessDialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const accessDialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
     const row = (name: string) => Array.from(accessDialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
     const waitFor = async (condition: () => boolean, label: string) => {
       for (let attempt = 0; attempt < 200; attempt += 1) {

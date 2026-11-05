@@ -1,4 +1,4 @@
-import { openAccessDialog, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import { AccessSummary, openAccessDialog, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import { navigateTo } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
@@ -1112,20 +1112,16 @@ export function SettingsDialog(props: {
                 <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
                   <SettingsGroup.Action>
                     <Button size="sm" variant="secondary" disabled={!settings().accessEntries} onClick={runEditAccess}>
-                      <i class="ti ti-pencil" aria-hidden="true" />
+                      <i class="ti ti-lock-access" aria-hidden="true" />
                       {t().editAccess}
                     </Button>
                   </SettingsGroup.Action>
                   <Show when={settings().accessEntries}>
                     {(entries) => (
-                      <PermissionEditor
+                      <AccessSummary
                         // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
-                        initialEntries={visibleAccessEntries(entries())}
-                        canEdit={false}
+                        entries={visibleAccessEntries(entries())}
                         allowedLevels={accessLevels()}
-                        grantAccess={grantAccess}
-                        updateAccess={updateAccess}
-                        revokeAccess={revokeAccess}
                       />
                     )}
                   </Show>

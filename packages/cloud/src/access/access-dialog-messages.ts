@@ -12,10 +12,10 @@ export const accessDialogMessages = i18n.define({
       publicLabel: "Public with link",
       serviceAccounts: "Service accounts",
       addServiceAccount: "Add service account",
-      serviceAccountHandle: "Identifier of the service account",
-      serviceAccountHandlePlaceholder: "Identifier from the code page, for example code-7k2q9m4xwt",
+      serviceAccountHandle: "Handle of the service account",
+      serviceAccountHandlePlaceholder: "Handle from the code page, for example code-7k2q9m4xwt",
       serviceAccountFind: "Find",
-      serviceAccountNotFound: "No service account with this identifier, or you cannot add it here.",
+      serviceAccountNotFound: "No service account with this handle, or you cannot add it here.",
       serviceAccountLookupFailed: "The service account could not be looked up.",
       serviceAccountNote: ({ name }: { name: string }) =>
         `Code runs as the service account of its object. Whoever manages “${name}” gives it access here, like a person. Whoever edits the code acts with this right.`,
@@ -92,6 +92,16 @@ export const accessDialogMessages = i18n.define({
       person: "Person",
       serviceAccount: "Service account",
       you: "You",
+      summaryTitle: "Who has access",
+      summaryStackLabel: ({ name, more }: { name: string; more: number }) =>
+        more === 0
+          ? `Who has access: ${name}`
+          : i18n.plural(more, "en", { one: `Who has access: ${name} and 1 more`, other: `Who has access: ${name} and ${more} more` }),
+      summaryMembers: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: "1 person, group or agent", other: `${count} people, groups and agents` }),
+      summaryOff: "off",
+      summaryServiceAccounts: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: "1 service account", other: `${count} service accounts` }),
     },
     de: {
       title: ({ name }) => `Zugriff auf ${name}`,
@@ -189,6 +199,18 @@ export const accessDialogMessages = i18n.define({
       person: "Person",
       serviceAccount: "Dienstkonto",
       you: "Du",
+      summaryTitle: "Wer Zugriff hat",
+      summaryStackLabel: ({ name, more }) =>
+        more === 0
+          ? `Wer Zugriff hat: ${name}`
+          : i18n.plural(more, "de", {
+              one: `Wer Zugriff hat: ${name} und 1 weiterer Eintrag`,
+              other: `Wer Zugriff hat: ${name} und ${more} weitere Einträge`,
+            }),
+      summaryMembers: ({ count }) =>
+        i18n.plural(count, "de", { one: "1 Person, Gruppe oder Agent", other: `${count} Personen, Gruppen und Agenten` }),
+      summaryOff: "aus",
+      summaryServiceAccounts: ({ count }) => i18n.plural(count, "de", { one: "1 Dienstkonto", other: `${count} Dienstkonten` }),
     },
   },
 });
