@@ -8,13 +8,31 @@ import { resolve } from "node:path";
 const ui = resolve(import.meta.dir, "../../../ui");
 const cloud = resolve(import.meta.dir, "../../../cloud");
 
+/** Pin fixture dates without replacing real timers or animation frames. */
+export const pinAssistantPwaClock = (timestamp: number) => {
+  const RealDate = Date;
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0) super(timestamp);
+      else super(...args);
+    }
+    static override now() {
+      return timestamp;
+    }
+  }
+  Object.defineProperty(globalThis, "Date", { value: PinnedDate, configurable: true, writable: true });
+};
+
 /** Serves the harness on a free loopback port; `close` stops it. */
 export async function startAssistantPwaHarness(options: { port?: number; accent?: string } = {}) {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", cloud))).default;
-  const { appAccentStyle } = await import("../../../cloud/src/ssr/app-appearance");
+  const { appAccentStyle } = await import("@k2b/cloud/ssr/app-appearance");
+  // The supported question fixture runs on the server; only its plain tool block enters the browser bundle.
+  const { aiQuestionFixtures } = await import("@k2b/cloud/ai/testing");
+  const question = JSON.stringify(aiQuestionFixtures("de").del!.block).replaceAll("<", "\\u003c");
   const [build, styles, assistantStyles] = await Promise.all([
     Bun.build({
       entrypoints: [resolve(import.meta.dir, "AssistantPwa.browser-harness.tsx")],
@@ -59,7 +77,7 @@ export async function startAssistantPwaHarness(options: { port?: number; accent?
       if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", url.pathname.slice(4))));
       return new Response(
         `<!doctype html><html lang="de" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">` +
-          `<style>${css}</style></head><body class="k2b-ui" style="margin:0;${accent}"><div id="root"></div><script type="module" src="/harness.js"></script></body></html>`,
+          `<style>${css}</style></head><body class="k2b-ui" style="margin:0;${accent}"><div id="root"></div><script>window.assistantPwaQuestion=${question}</script><script type="module" src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
@@ -109,7 +127,7 @@ if (import.meta.main) {
         const page = await context.newPage();
         const errors: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
-        await page.clock.setFixedTime(new Date("2026-11-04T09:41:00.000Z"));
+        await page.addInitScript(pinAssistantPwaClock, Date.parse("2026-11-04T09:41:00.000Z"));
         await page.goto(`${harness.url}?${shot.query}`);
         await page.waitForSelector("body[data-ready]", { state: "attached" });
         await page.evaluate(() => document.fonts.ready);

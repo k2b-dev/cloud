@@ -2,8 +2,6 @@ import type { AiConversation, AiOpenQuestion, AiStoredMessage, AiTurnBlock } fro
 import type { AiPeopleModels } from "@k2b/cloud/shared";
 import { ButtonLink, LocaleProvider, MobileShell, Placeholder, TabBar, type TabBarItem } from "@k2b/ui";
 import { render } from "solid-js/web";
-import { actionFixtures } from "../../../cloud/src/ai/chat/action-question.fixtures";
-import { AiReaderTimeZoneProvider } from "../../../cloud/src/ai/chat/action-sentences";
 import AssistantPwa, { type AssistantPwaProps } from "./AssistantPwa.island";
 import type { PwaAddress } from "./paths";
 
@@ -63,8 +61,14 @@ const CHATS: AiConversation[] = [
   chat("pflege", "Pflegehinweise für Samt", 60 * 74, { description: "Kurz gesagt: nur trocken bürsten, nie reiben." }),
 ];
 
-const de = actionFixtures("de");
-const retroQuestion = de.del!.block as ToolBlock;
+declare global {
+  interface Window {
+    assistantPwaQuestion: ToolBlock;
+  }
+}
+const retroQuestion = window.assistantPwaQuestion;
+const retroUser = "Die Retro am Freitag fällt aus, nimm sie raus.";
+const retroAssistant = "Die Retro steht einmal im Kalender, nicht als Serie.";
 const question: AiOpenQuestion = {
   id: "req-del",
   conversationId: "retro",
@@ -229,12 +233,12 @@ const detailOf = (id: string): Detail | null => {
                 result: "ACTION_OUTCOME_UNKNOWN: Die Antwort ging verloren; nicht automatisch erneut ausführen.",
                 check: { state: "pending", at: ago(0) },
               };
-    const blocks = [text("t1", de.del!.assistant), block];
+    const blocks = [text("t1", retroAssistant), block];
     if (state === "done")
       blocks.push(text("t2", "Erledigt. Die Retro ist aus dem Kalender von Team Ops. Soll ich den sechs Leuten kurz absagen?"));
     return {
       ...base,
-      messages: [stored(id, 1, { role: "user", content: [{ type: "text", text: de.del!.user }] }, "turn-r")],
+      messages: [stored(id, 1, { role: "user", content: [{ type: "text", text: retroUser }] }, "turn-r")],
       // The turn goes on after the answer; a finished turn would come back as stored messages instead.
       activeTurn: { turnId: "turn-r", attempt: 1, status: "running", seq: 3, modelId: "oss", createdAt: ago(12), blocks },
     };
@@ -242,7 +246,7 @@ const detailOf = (id: string): Detail | null => {
   if (id === "retro")
     return {
       ...base,
-      messages: [stored(id, 1, { role: "user", content: [{ type: "text", text: de.del!.user }] }, "turn-r")],
+      messages: [stored(id, 1, { role: "user", content: [{ type: "text", text: retroUser }] }, "turn-r")],
       activeTurn: {
         turnId: "turn-r",
         attempt: 1,
@@ -251,7 +255,7 @@ const detailOf = (id: string): Detail | null => {
         modelId: "oss",
         createdAt: ago(12),
         waitingSince: ago(12),
-        blocks: [text("t1", de.del!.assistant), retroQuestion],
+        blocks: [text("t1", retroAssistant), retroQuestion],
       },
     };
   if (id === "rechnung")
@@ -384,48 +388,46 @@ const screenOfItsOwn = address.level !== "start";
 render(
   () => (
     <LocaleProvider locale="de">
-      <AiReaderTimeZoneProvider value="Europe/Berlin">
-        <MobileShell
-          header={<MobileShell.Header title={name} />}
-          scroll={has("noaccess")}
-          screen={screenOfItsOwn}
-          footer={
-            <TabBar
-              label="Bereiche"
-              items={[
-                { id: "start", label: "Start", title: "Robin & Co.", icon: "ti ti-home", href: "/pwa/", current: current === "" },
-                ...parts().map((part) => ({ ...part, current: part.id === current })),
-              ]}
-            />
-          }
-          sidebar={
-            <MobileShell.Sidebar
-              label="Bereiche"
-              title="Robin & Co."
-              items={[{ id: "start", label: "Start", icon: "ti ti-home", href: "/pwa/", current: current === "" }]}
-              sections={[{ title: "Apps", items: parts().map((part) => ({ ...part, current: part.id === current })) }]}
-              footer={[{ id: "settings", label: "Einstellungen", icon: "ti ti-settings", href: "/pwa/settings" }]}
-            />
-          }
-        >
-          {has("noaccess") ? (
-            // The platform's 403 page of a part, as PageError renders it for a person without the part's role.
-            <Placeholder
-              state="empty"
-              icon="ti ti-lock"
-              title={`${name} ist für dich nicht freigegeben`}
-              description={`Wer ${name} nutzen darf, legt die Verwaltung fest. Frag dort nach, wenn du es brauchst.`}
-              action={
-                <ButtonLink href="/pwa/" variant="secondary">
-                  Zum Start
-                </ButtonLink>
-              }
-            />
-          ) : (
-            <AssistantPwa {...props} />
-          )}
-        </MobileShell>
-      </AiReaderTimeZoneProvider>
+      <MobileShell
+        header={<MobileShell.Header title={name} />}
+        scroll={has("noaccess")}
+        screen={screenOfItsOwn}
+        footer={
+          <TabBar
+            label="Bereiche"
+            items={[
+              { id: "start", label: "Start", title: "Robin & Co.", icon: "ti ti-home", href: "/pwa/", current: current === "" },
+              ...parts().map((part) => ({ ...part, current: part.id === current })),
+            ]}
+          />
+        }
+        sidebar={
+          <MobileShell.Sidebar
+            label="Bereiche"
+            title="Robin & Co."
+            items={[{ id: "start", label: "Start", icon: "ti ti-home", href: "/pwa/", current: current === "" }]}
+            sections={[{ title: "Apps", items: parts().map((part) => ({ ...part, current: part.id === current })) }]}
+            footer={[{ id: "settings", label: "Einstellungen", icon: "ti ti-settings", href: "/pwa/settings" }]}
+          />
+        }
+      >
+        {has("noaccess") ? (
+          // The platform's 403 page of a part, as PageError renders it for a person without the part's role.
+          <Placeholder
+            state="empty"
+            icon="ti ti-lock"
+            title={`${name} ist für dich nicht freigegeben`}
+            description={`Wer ${name} nutzen darf, legt die Verwaltung fest. Frag dort nach, wenn du es brauchst.`}
+            action={
+              <ButtonLink href="/pwa/" variant="secondary">
+                Zum Start
+              </ButtonLink>
+            }
+          />
+        ) : (
+          <AssistantPwa {...props} />
+        )}
+      </MobileShell>
     </LocaleProvider>
   ),
   document.getElementById("root")!,
