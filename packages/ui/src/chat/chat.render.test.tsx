@@ -665,7 +665,7 @@ describe("@k2b/ui portable chat family", () => {
     expect(barrel).not.toContain('"./ai"');
   });
 
-  test("focuses the composer as one AI-themed surface", () => {
+  test("focuses the composer as one surface with the shared field edge", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
     const attachmentActionRule = css.match(/\.k2b-ui \.k2b-chat-composer__attachment-action \{([^}]+)\}/)?.[1] ?? "";
     const attachmentIconRule = css.match(
@@ -673,10 +673,10 @@ describe("@k2b/ui portable chat family", () => {
     );
 
     expect(css).toContain("--k2b-ai-accent:");
-    expect(css).toContain(".k2b-ui .k2b-chat-composer:focus-within");
-    expect(css).toContain("border-color: var(--k2b-ai-border);");
+    // The browser contract in styles/control-edge.browser.test.ts measures the edge in every state.
+    expect(css).toContain('.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):focus-within,');
     expect(css).toContain("border-radius: calc(var(--k2b-radius-surface) + 0.25rem);");
-    expect(css).toContain("box-shadow: var(--k2b-shadow-surface);");
+    expect(css).not.toMatch(/\.k2b-chat-composer[^{]*\{[^}]*var\(--k2b-shadow-surface\)/);
     expect(css).toContain("max-height: 19.3125rem;");
     expect(css).toContain("overflow-x: auto;");
     expect(css).toContain("flex-wrap: nowrap;");
