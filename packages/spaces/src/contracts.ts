@@ -1,3 +1,4 @@
+import type { MutationResult as CloudMutationResult } from "@k2b/cloud/contracts";
 import { AccessEntrySchema as CloudAccessEntrySchema, CloudResourceRefSchema, ServiceAccountKindSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { CompletionInputSchema, WorkActorSchema } from "./work-contracts";
@@ -710,6 +711,17 @@ export const ItemTemplateDraftSchema = z.object({
 });
 export type ItemTemplateDraft = z.infer<typeof ItemTemplateDraftSchema>;
 
+export const ItemRequestKeySchema = z.string().trim().min(1).max(200);
+
+export const AssigneeDeltaShape = {
+  addAssigneeIds: z.array(UuidSchema).max(100).optional().describe("Add these assignees without replacing others"),
+  removeAssigneeIds: z.array(UuidSchema).max(100).optional().describe("Remove only these assignees"),
+};
+
+export const validAssigneeDelta = (data: { assigneeIds?: string[]; addAssigneeIds?: string[]; removeAssigneeIds?: string[] }) =>
+  !(data.assigneeIds !== undefined && (data.addAssigneeIds !== undefined || data.removeAssigneeIds !== undefined)) &&
+  !data.addAssigneeIds?.some((id) => data.removeAssigneeIds?.some((removed) => removed.toLowerCase() === id.toLowerCase()));
+
 export const CreateItemSchema = z
   .object({
     columnId: ResourceShortIdSchema.describe("Target column ID"),
@@ -738,6 +750,7 @@ export const CreateItemSchema = z
       .max(MAX_TASK_CHECKLIST_ENTRIES)
       .optional()
       .describe("Checklist entries of the new task, created with it (tasks only)"),
+    requestKey: ItemRequestKeySchema.optional().describe("Reuse the same key and body for a retry within 24 hours"),
     assignCreator: z.boolean().optional().describe("Also assign the person who creates the item; ignored for service accounts"),
   })
   .refine((data) => !data.startsAt || !data.endsAt || new Date(data.endsAt) > new Date(data.startsAt), {
@@ -758,6 +771,8 @@ export const UpdateItemSchema = z
   .object({
     columnId: ResourceShortIdSchema.optional().describe("Target column ID"),
     title: z.string().min(1).max(200).optional().describe("Item title"),
+    expectedTitle: z.string().max(200).optional().describe("Exact title read before editing; mismatch returns TITLE_CONFLICT (409)"),
+    ...AssigneeDeltaShape,
     description: z.string().max(5000).nullable().optional().describe("Item description (markdown)"),
     location: z.string().max(500).nullable().optional().describe("Event location"),
     url: z.string().url().max(2000).nullable().optional().describe("Event URL"),
@@ -776,6 +791,10 @@ export const UpdateItemSchema = z
     ),
     force: z.boolean().optional().describe("Take over another actor's claim given as its exact claimId; any writer may"),
     tagIds: z.array(ResourceShortIdSchema).max(100).optional().describe("Tag IDs"),
+  })
+  .refine(validAssigneeDelta, {
+    message: "Do not mix assignee replacement with deltas or add and remove the same assignee",
+    path: ["assigneeIds"],
   })
   .refine((data) => !data.startsAt || !data.endsAt || new Date(data.endsAt) > new Date(data.startsAt), {
     message: "End time must be after start time",
@@ -994,7 +1013,6 @@ export const ItemFilterResponseSchema = ItemListResultSchema.extend({
 
 export type {
   MessageResponse,
-  MutationResult,
   PermissionLevel,
   Principal,
   User,
@@ -1012,3 +1030,6 @@ export {
 /** Ordinary resource access entries, including Code service accounts. */
 export const AccessEntrySchema = CloudAccessEntrySchema;
 export type AccessEntry = z.infer<typeof AccessEntrySchema>;
+
+/** Item mutation conflicts retain their stable transport code. */
+export type MutationResult<T = void> = CloudMutationResult<T> & { code?: string };

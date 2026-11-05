@@ -1,5 +1,11 @@
 import { sql } from "@k2b/cloud";
-import { type AccessSubject, type AccessUser, listUsersWithAccess, recursiveServiceAccountGroupIdsSubquery } from "@k2b/cloud/server";
+import {
+  type AccessSubject,
+  type AccessUser,
+  listUsersWithAccess,
+  type RequestActor,
+  recursiveServiceAccountGroupIdsSubquery,
+} from "@k2b/cloud/server";
 import { logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { type DateContext, dates } from "@k2b/stdlib";
 import type {
@@ -22,18 +28,19 @@ import type {
   SplitRecurringItem,
   UpdateItem,
 } from "@/contracts";
-import { INACTIVE_ITEM_DAYS } from "@/contracts";
+import { INACTIVE_ITEM_DAYS, ItemRequestKeySchema, validAssigneeDelta } from "@/contracts";
 import { publishItemEvent } from "../app-events";
 import { newShortId, withShortId, withShortIdRetry } from "../lib/short-id";
 import { descriptionPreview } from "../presentation/description-preview";
 import { CompletionInputSchema, type TaskWork } from "../work-contracts";
-import { buildSpacePrincipalCondition, mayReadAcrossSpaces, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./access";
+import { buildSpacePrincipalCondition, getActorsSpacePermissions, mayReadAcrossSpaces, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
 import { assigneeChangeMetadata, itemChangeMetadata } from "./activity-metadata";
 import { publishDependentsChange } from "./item-dependencies";
 import { insertMany as insertItemResourceReferences } from "./item-resource-references";
 import { publishSpaceChange, spacesLive } from "./live";
+import { projectItems } from "./public-resources";
 import { rank } from "./rank";
 import { getReactionsByItemIds, type ReactionViewer } from "./reactions";
 import {
@@ -631,10 +638,14 @@ const validateRecurrenceInput = async (
   return { ok: true, data: undefined };
 };
 
-export const validateTagIdsInSpace = async (spaceId: string, tagIds: string[] | undefined): Promise<MutationResult<void>> => {
+export const validateTagIdsInSpace = async (
+  spaceId: string,
+  tagIds: string[] | undefined,
+  db: SqlExecutor = sql,
+): Promise<MutationResult<void>> => {
   if (!tagIds || tagIds.length === 0) return { ok: true, data: undefined };
   const uniqueTagIds = [...new Set(tagIds)];
-  const [row] = await sql<{ count: number }[]>`
+  const [row] = await db<{ count: number }[]>`
     SELECT COUNT(*)::int AS count
     FROM spaces.tags
     WHERE space_id = ${spaceId} AND id = ANY(${toPgUuidArray(uniqueTagIds)}::uuid[])
@@ -679,8 +690,8 @@ const mapToItem = (row: DbItem): SpaceItem => ({
 /**
  * Get assignees for an item
  */
-const getAssignees = async (itemId: string): Promise<SpaceItemAssignee[]> => {
-  const rows = await sql<Omit<DbItemAssignee, "item_id">[]>`
+const getAssignees = async (itemId: string, db: SqlExecutor = sql): Promise<SpaceItemAssignee[]> => {
+  const rows = await db<Omit<DbItemAssignee, "item_id">[]>`
     SELECT COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, u.uid, sa.name) AS display_name, u.avatar_hash, sa.kind AS service_account_kind,
       CASE WHEN ia.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind
     FROM spaces.item_assignees ia
@@ -701,8 +712,8 @@ const getAssignees = async (itemId: string): Promise<SpaceItemAssignee[]> => {
 /**
  * Get tags for an item
  */
-const getTags = async (itemId: string): Promise<SpaceTag[]> => {
-  const rows = await sql<{ id: string; space_id: string; name: string; color: string }[]>`
+const getTags = async (itemId: string, db: SqlExecutor = sql): Promise<SpaceTag[]> => {
+  const rows = await db<{ id: string; space_id: string; name: string; color: string }[]>`
     SELECT t.id, t.space_id, t.name, t.color
     FROM spaces.item_tags it
     JOIN spaces.tags t ON it.tag_id = t.id
@@ -768,9 +779,9 @@ const getTagsByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceTag
   return grouped;
 };
 
-const getActiveBlockerCountsByItemIds = async (itemIds: string[]): Promise<Map<string, number>> => {
+const getActiveBlockerCountsByItemIds = async (itemIds: string[], db: SqlExecutor = sql): Promise<Map<string, number>> => {
   if (itemIds.length === 0) return new Map();
-  const rows = await sql<{ item_id: string; count: number }[]>`
+  const rows = await db<{ item_id: string; count: number }[]>`
     SELECT dependency.item_id, COUNT(*)::int AS count
     FROM spaces.item_dependencies dependency
     JOIN spaces.items blocker ON blocker.id = dependency.blocker_item_id
@@ -795,9 +806,9 @@ const getLastActivityByItemIds = async (itemIds: string[]): Promise<Map<string, 
 /** Open tasks with an active work claim (`activity: "claimed"`). */
 const claimedMatch = () => sql`EXISTS (SELECT 1 FROM spaces.task_work tw WHERE tw.item_id = i.id AND tw.claim IS NOT NULL)`;
 
-const getClaimsByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceItemClaim>> => {
+const getClaimsByItemIds = async (itemIds: string[], db: SqlExecutor = sql): Promise<Map<string, SpaceItemClaim>> => {
   if (itemIds.length === 0) return new Map();
-  const rows = await sql<
+  const rows = await db<
     {
       item_id: string;
       claim: TaskWork["claim"];
@@ -1632,8 +1643,8 @@ export const findByTitle = async (params: { spaceId: string; title: string; limi
     LIMIT ${params.limit}
   `;
 
-export const get = async (params: { id: string; viewer?: ReactionViewer }): Promise<SpaceItem | null> => {
-  const [row] = await sql<DbItem[]>`
+export const get = async (params: { id: string; viewer?: ReactionViewer }, db: SqlExecutor = sql): Promise<SpaceItem | null> => {
+  const [row] = await db<DbItem[]>`
     SELECT
       i.id,
       i.space_id,
@@ -1667,10 +1678,10 @@ export const get = async (params: { id: string; viewer?: ReactionViewer }): Prom
 
   const item = mapToItem(row);
   const [assignees, tags, blockerCounts, claims, reactions] = await Promise.all([
-    getAssignees(item.id),
-    getTags(item.id),
-    getActiveBlockerCountsByItemIds([item.id]),
-    getClaimsByItemIds([item.id]),
+    getAssignees(item.id, db),
+    getTags(item.id, db),
+    getActiveBlockerCountsByItemIds([item.id], db),
+    getClaimsByItemIds([item.id], db),
     params.viewer ? getReactionsByItemIds([item.id], params.viewer) : null,
   ]);
   item.assignees = assignees;
@@ -1696,6 +1707,52 @@ export const getRecurringOverride = async (params: {
   return row ? get({ id: row.id, viewer: params.viewer }) : null;
 };
 
+type ItemWriteAccess = { actor: RequestActor; subject: AccessSubject };
+const mayWriteItem = async (spaceId: string, access?: ItemWriteAccess) => {
+  if (!access) return true; // Trusted internal callers retain their existing service contract.
+  const [permission] = await getActorsSpacePermissions(spaceId, [access]);
+  return permission === "write" || permission === "admin";
+};
+
+const createRequest = (spaceId: string, data: CreateItem) => ({ spaceId, ...data, requestKey: undefined });
+
+const readCreateReceipt = async (
+  db: SqlExecutor,
+  params: {
+    spaceId: string;
+    data: CreateItem;
+    actor: SpaceActivityIdentity;
+    publicResponse: boolean;
+  },
+): Promise<MutationResult<SpaceItem | null>> => {
+  const [receipt] = await db<{ item_id: string | null; same_request: boolean; response: SpaceItem; public_response: SpaceItem }[]>`
+    SELECT item_id, response, public_response, request = ${createRequest(params.spaceId, params.data)}::jsonb AS same_request
+    FROM spaces.item_create_requests
+    WHERE actor_kind = ${params.actor.kind} AND actor_id = ${params.actor.id}::uuid
+      AND request_key = ${params.data.requestKey?.trim()} AND expires_at > now()
+  `;
+  if (!receipt) return { ok: true, data: null };
+  if (!receipt.same_request)
+    return { ok: false, error: "Request key was already used with different input", status: 409, code: "IDEMPOTENCY_CONFLICT" };
+  if (!receipt.item_id) return { ok: false, error: "The created item no longer exists", status: 409, code: "CREATE_RESULT_GONE" };
+  const [current] = await db<{ space_id: string }[]>`SELECT space_id FROM spaces.items WHERE id = ${receipt.item_id}::uuid FOR SHARE`;
+  if (!current || current.space_id !== params.spaceId)
+    return { ok: false, error: "The created item is no longer in this Space", status: 409, code: "CREATE_RESULT_GONE" };
+  return { ok: true, data: params.publicResponse ? receipt.public_response : receipt.response };
+};
+
+/** Replay the REST result before resolving a column or tag that might no longer exist. */
+export const replayCreate = async (params: {
+  spaceId: string;
+  data: CreateItem;
+  actor: SpaceActivityIdentity;
+  access: ItemWriteAccess;
+}): Promise<MutationResult<SpaceItem | null>> => {
+  if (!(await mayWriteItem(params.spaceId, params.access))) return { ok: false, error: "Access denied", status: 403 };
+  if (!params.data.requestKey) return { ok: true, data: null };
+  return sql.begin((tx) => readCreateReceipt(tx, { ...params, publicResponse: true }));
+};
+
 /**
  * Create a new item
  */
@@ -1705,53 +1762,79 @@ export const create = async (params: {
   createdBy: string | null;
   dateConfig?: DateContext;
   actor?: SpaceActivityIdentity;
+  access?: ItemWriteAccess;
+  /** REST input before ID conversion; keyed results retain their original public IDs. */
+  publicRequest?: CreateItem;
 }): Promise<MutationResult<SpaceItem>> => {
   const { spaceId, data, createdBy } = params;
 
-  // Verify column belongs to space
-  const [column] = await sql<{ id: string }[]>`
+  if (!(await mayWriteItem(spaceId, params.access))) return { ok: false, error: "Access denied", status: 403 };
+  const requestKey = data.requestKey?.trim();
+  const actor = params.actor ?? (createdBy ? { kind: "user" as const, id: createdBy } : systemActor);
+  if (requestKey !== undefined && (!ItemRequestKeySchema.safeParse(requestKey).success || !actor.id || actor.kind === "system"))
+    return { ok: false, error: "A request key requires an identified actor and 1–200 characters", status: 400 };
+  const request = createRequest(spaceId, params.publicRequest ?? data);
+
+  const result = await withShortIdRetry(["item", "checklist"], () =>
+    sql.begin(async (tx): Promise<MutationResult<SpaceItem>> => {
+      if (requestKey !== undefined) {
+        await tx`SELECT pg_advisory_xact_lock(hashtext('spaces.item-create'), hashtext(${`${actor.kind}:${actor.id}:${requestKey}`}))`;
+        // Expiry is enforced even when a quiet installation has not created another item for a day.
+        await tx`DELETE FROM spaces.item_create_requests WHERE actor_kind = ${actor.kind} AND actor_id = ${actor.id}::uuid AND request_key = ${requestKey} AND expires_at <= now()`;
+        const replay = await readCreateReceipt(tx, {
+          spaceId,
+          data: params.publicRequest ?? data,
+          actor,
+          publicResponse: params.publicRequest !== undefined,
+        });
+        if (!replay.ok) return replay;
+        if (replay.data) return { ok: true, data: replay.data };
+      }
+      // Verify column belongs to space
+      const [column] = await tx<{ id: string }[]>`
     SELECT id FROM spaces.columns
     WHERE id = ${data.columnId} AND space_id = ${spaceId}
   `;
 
-  if (!column) {
-    return { ok: false, error: "Column not found in space", status: 400 };
-  }
+      if (!column) {
+        return { ok: false, error: "Column not found in space", status: 400 };
+      }
 
-  const recurrenceCheck = await validateRecurrenceInput({
-    spaceId,
-    startsAt: data.startsAt,
-    endsAt: data.endsAt,
-    recurrence: data.recurrence,
-    recurringEventId: data.recurringEventId,
-    recurrenceId: data.recurrenceId,
-    dateConfig: params.dateConfig,
-  });
-  if (!recurrenceCheck.ok) return recurrenceCheck;
-  if (data.estimatedDurationMinutes !== undefined && (data.startsAt || data.endsAt)) {
-    return { ok: false, error: "Estimated duration is only available for tasks", status: 400 };
-  }
-  if (data.checklist?.length && (data.startsAt || data.endsAt)) {
-    return { ok: false, error: "A checklist is only available for tasks", status: 400 };
-  }
-  const tagCheck = await validateTagIdsInSpace(spaceId, data.tagIds);
-  if (!tagCheck.ok) return tagCheck;
-  const assigneeCheck = await validateAssigneeIdsInSpace(spaceId, data.assigneeIds);
-  if (!assigneeCheck.ok) return assigneeCheck;
-  // The creator already passed the write check, so it joins without the directory lookup.
-  const assigneeIds = data.assignCreator && createdBy ? uniqueIds([...(data.assigneeIds ?? []), createdBy]) : data.assigneeIds;
+      const recurrenceCheck = await validateRecurrenceInput(
+        {
+          spaceId,
+          startsAt: data.startsAt,
+          endsAt: data.endsAt,
+          recurrence: data.recurrence,
+          recurringEventId: data.recurringEventId,
+          recurrenceId: data.recurrenceId,
+          dateConfig: params.dateConfig,
+        },
+        tx,
+      );
+      if (!recurrenceCheck.ok) return recurrenceCheck;
+      if (data.estimatedDurationMinutes !== undefined && (data.startsAt || data.endsAt)) {
+        return { ok: false, error: "Estimated duration is only available for tasks", status: 400 };
+      }
+      if (data.checklist?.length && (data.startsAt || data.endsAt)) {
+        return { ok: false, error: "A checklist is only available for tasks", status: 400 };
+      }
+      const tagCheck = await validateTagIdsInSpace(spaceId, data.tagIds, tx);
+      if (!tagCheck.ok) return tagCheck;
+      const assigneeCheck = await validateAssigneeIdsInSpace(spaceId, data.assigneeIds, tx);
+      if (!assigneeCheck.ok) return assigneeCheck;
+      // The creator already passed the write check, so it joins without the directory lookup.
+      const assigneeIds = data.assignCreator && createdBy ? uniqueIds([...(data.assigneeIds ?? []), createdBy]) : data.assigneeIds;
 
-  // Get next rank in column
-  const [maxRow] = await sql<{ max: string | null }[]>`
+      // Get next rank in column
+      const [maxRow] = await tx<{ max: string | null }[]>`
     SELECT MAX(rank)::text as max
     FROM spaces.items
     WHERE column_id = ${data.columnId}
   `;
-  const nextRank = rank.next(maxRow?.max);
-  const recurrence = recurrenceValues(data.recurrence);
+      const nextRank = rank.next(maxRow?.max);
+      const recurrence = recurrenceValues(data.recurrence);
 
-  const row = await withShortIdRetry(["item", "checklist"], () =>
-    sql.begin(async (tx): Promise<{ id: string } | null> => {
       const shortId = newShortId();
       const [created] = await tx<{ id: string }[]>`
       INSERT INTO spaces.items (
@@ -1790,7 +1873,7 @@ export const create = async (params: {
       RETURNING id
     `;
 
-      if (!created) return null;
+      if (!created) return { ok: false, error: "This occurrence already has a stored override", status: 409 };
 
       if (assigneeIds !== undefined) {
         await replaceItemAssignees(
@@ -1833,23 +1916,21 @@ export const create = async (params: {
       await publishItemEvent(tx, "item.created", created.id, spaceId);
       await publishSpaceChange(tx, { type: "item.created", spaceId, itemId: created.id });
 
-      return { id: created.id };
+      const item = await get({ id: created.id }, tx);
+      if (!item) throw new Error("Failed to load created item");
+      const publicItem = requestKey !== undefined || params.publicRequest ? (await projectItems([item], tx))[0]! : null;
+      if (requestKey !== undefined)
+        await tx`
+        INSERT INTO spaces.item_create_requests (actor_kind, actor_id, request_key, space_id, item_id, request, response, public_response)
+        VALUES (${actor.kind}, ${actor.id}::uuid, ${requestKey}, ${spaceId}::uuid, ${created.id}::uuid, ${request}::jsonb, ${item}::jsonb, ${publicItem}::jsonb)
+      `;
+      return { ok: true, data: params.publicRequest ? publicItem! : item };
     }),
   );
 
-  if (!row) {
-    if (data.recurringEventId && data.recurrenceId) {
-      return { ok: false, error: "This occurrence already has a stored override", status: 409 };
-    }
-    return { ok: false, error: "Failed to create item", status: 500 };
-  }
-  const item = await get({ id: row.id });
-  if (!item) {
-    return { ok: false, error: "Failed to load created item", status: 500 };
-  }
-
+  if (!result.ok) return result;
   spacesLive.wake();
-  return { ok: true, data: item };
+  return result;
 };
 
 /**
@@ -1860,6 +1941,8 @@ export const update = async (params: {
   data: UpdateItem;
   dateConfig?: DateContext;
   actor?: SpaceActivityIdentity;
+  access?: ItemWriteAccess;
+  expectedSpaceId?: string;
 }): Promise<MutationResult<SpaceItem>> => {
   const { id, data } = params;
 
@@ -1867,6 +1950,9 @@ export const update = async (params: {
   if (!existing) {
     return { ok: false, error: "Item not found", status: 404 };
   }
+  if (!(await mayWriteItem(existing.spaceId, params.access))) return { ok: false, error: "Access denied", status: 403 };
+  if (!validAssigneeDelta(data))
+    return { ok: false, error: "Do not mix assignee replacement with deltas or add and remove the same assignee", status: 400 };
   const tagCheck = await validateTagIdsInSpace(existing.spaceId, data.tagIds);
   if (!tagCheck.ok) return tagCheck;
 
@@ -1880,14 +1966,28 @@ export const update = async (params: {
       FOR UPDATE
     `;
     if (!locked) return { ok: false, error: "Item not found", status: 404 };
-    const currentAssignees = data.assigneeIds === undefined ? [] : await readAssigneePrincipals(id, tx);
-    const assigneeCheck = await validateAssigneeReplacementInSpace(locked.space_id, currentAssignees, data.assigneeIds, tx);
+    if (locked.space_id !== (params.expectedSpaceId ?? existing.spaceId))
+      return { ok: false, error: "Item moved to another Space", status: 409 };
+    if (data.expectedTitle !== undefined && locked.title !== data.expectedTitle)
+      return { ok: false, error: "Title changed; reload and review the current title", status: 409, code: "TITLE_CONFLICT" };
+    const changingAssignees = data.assigneeIds !== undefined || data.addAssigneeIds !== undefined || data.removeAssigneeIds !== undefined;
+    const currentAssignees = changingAssignees ? await readAssigneePrincipals(id, tx) : [];
+    const assigneeIds =
+      data.assigneeIds ??
+      (changingAssignees
+        ? uniqueIds([
+            ...currentAssignees.map((principal) => principal.id),
+            ...(data.addAssigneeIds ?? []).map((id) => id.toLowerCase()),
+          ]).filter((id) => !data.removeAssigneeIds?.some((removed) => removed.toLowerCase() === id))
+        : undefined);
+    if (assigneeIds && assigneeIds.length > 100) return { ok: false, error: "At most 100 assignees are allowed", status: 400 };
+    const assigneeCheck = await validateAssigneeReplacementInSpace(locked.space_id, currentAssignees, assigneeIds, tx);
     if (!assigneeCheck.ok) return assigneeCheck;
 
     // Claim writes also hold this row lock. Refuse stale assignee replacements before any write.
     const { claim } = await taskWork.read(id, tx);
     const nextAssignees =
-      data.assigneeIds === undefined ? undefined : await resolveAssigneePrincipals(locked.space_id, data.assigneeIds, tx, currentAssignees);
+      assigneeIds === undefined ? undefined : await resolveAssigneePrincipals(locked.space_id, assigneeIds, tx, currentAssignees);
     const dropsClaimHolder =
       claim !== null &&
       nextAssignees !== undefined &&

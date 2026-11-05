@@ -62,8 +62,8 @@ export type CalendarEvent = {
   meta?: string;
   description?: string;
   /**
-   * `marker` draws a point in time, such as a deadline, as a colored marker
-   * beside its title instead of a filled band.
+   * `marker` draws a point in time, such as a deadline, with a dashed edge in
+   * its color instead of a filled band.
    */
   display?: "event" | "background" | "marker";
   /**

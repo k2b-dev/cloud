@@ -90,6 +90,17 @@ describe("visiblePwaParts", () => {
     expect(visiblePwaParts(parts, user, "de").map((app) => app.name)).toEqual(["Arbeitszeit", "Spaces"]);
   });
 
+  test("places parts with an order first, in every language, and the rest by name", () => {
+    const ordered = [
+      ...parts,
+      { ...part("chat", "Chat"), pwa: { href: "/pwa/chat", order: 2 } },
+      { ...part("assistant", "Assistant"), pwa: { href: "/pwa/assistant", order: 1 } },
+      { ...part("alpha", "Alpha"), pwa: { href: "/pwa/alpha", order: 2 } },
+    ] satisfies RuntimeAppMeta[];
+    expect(visiblePwaParts(ordered, user, "en").map((app) => app.name)).toEqual(["Assistant", "Alpha", "Chat", "Spaces", "Zeiten"]);
+    expect(visiblePwaParts(ordered, user, "de").map((app) => app.name)).toEqual(["Assistant", "Alpha", "Chat", "Arbeitszeit", "Spaces"]);
+  });
+
   test("shows nothing without a user and applies the guest rule", () => {
     expect(visiblePwaParts(parts, undefined, "en")).toEqual([]);
     expect(visiblePwaParts(parts, { ...user, profile: "guest", roles: ["guest"] }, "en").map((app) => app.id)).toEqual([

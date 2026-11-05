@@ -61,6 +61,10 @@ export const setupAppPwa = async (db: SQL, schemaName: string): Promise<void> =>
     const [column] = await tx`SELECT 1 FROM information_schema.columns
       WHERE table_schema = ${schema} AND table_name = '_cloud_pwa_devices' AND column_name = 'registration_id'`;
     if (!column) await tx.unsafe(`ALTER TABLE ${schema}._cloud_pwa_devices ADD COLUMN registration_id uuid`).simple();
+    const [visitOnlyColumn] = await tx`SELECT 1 FROM information_schema.columns
+      WHERE table_schema = ${schema} AND table_name = '_cloud_pwa_devices' AND column_name = 'visit_only'`;
+    if (!visitOnlyColumn)
+      await tx.unsafe(`ALTER TABLE ${schema}._cloud_pwa_devices ADD COLUMN visit_only boolean NOT NULL DEFAULT false`).simple();
     await tx
       .unsafe(`CREATE TABLE IF NOT EXISTS ${schema}._cloud_pwa_registrations (
       app_id text NOT NULL, id uuid NOT NULL, name text NOT NULL, browser_hash text NOT NULL,

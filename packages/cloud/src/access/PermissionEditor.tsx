@@ -688,7 +688,7 @@ function AccessEntryRow(props: {
       <div
         class={
           props.expanded
-            ? "group/access-row grid min-h-[52px] grid-cols-[32px_minmax(0,1fr)_36px] items-center gap-x-3 gap-y-1.5 rounded-[var(--ui-radius-control)] py-2 sm:flex sm:px-2 sm:py-1.5 sm:hover:bg-[var(--ui-surface-subtle)]"
+            ? "group/access-row min-h-[52px] grid-cols-[32px_minmax(0,1fr)_36px] items-center gap-x-3 gap-y-1.5 rounded-[var(--ui-radius-control)] py-2 max-sm:grid sm:flex sm:px-2 sm:py-1.5 sm:hover:bg-[var(--ui-surface-subtle)]"
             : "group/access-row flex items-center gap-2 py-1.5"
         }
         aria-busy={saving() ? "true" : undefined}

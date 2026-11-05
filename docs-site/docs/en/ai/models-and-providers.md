@@ -115,6 +115,13 @@ the provider returns an empty model list, enter its model identifier manually.
 Declare only capabilities supported by the provider model. Chat models can
 support tools and vision. Audio models use `kind: "transcription"`, support
 OpenAI or OpenAI-compatible providers, and have only their standard variant.
+Decision models use `kind: "decision"`, an OpenAI-compatible provider and a
+required `contextWindow`. They support token prices, have only a standard
+variant, and never appear as chat models. Optional `vision` is the
+administrator’s declaration of image support by both the provider and model;
+Cloud does not probe it. cortecs currently ignores decision images. See
+[Configure decision models](/en/docs/operations/decision-models) before upgrading.
+
 Streaming is a provider runtime capability, not a model configuration field.
 
 Every model gets a standard variant with the model's ID. Add named variants
@@ -161,7 +168,7 @@ class. With all four classes empty, requests fail with `ai_no_model`. With AI
 disabled, they fail with `ai_disabled`.
 
 The `vision` slot requires a chat model with vision capability. The `audio`
-slot requires a transcription model. These slots do not use class fallback.
+slot requires a transcription model. The `decision` slot requires a decision model. These slots do not use class fallback.
 Use `none` in the CLI to empty a slot.
 
 ## Update request settings and prices
@@ -193,11 +200,13 @@ read the current model or variant revision before writing.
 
 ## Set the thinking level
 
-Set `reasoningEffort` on a variant. Chat uses that variant's setting. Structured
-tasks and compaction keep
-their task reasoning policy: low for OpenAI, OpenRouter, vLLM and
-OpenAI-compatible providers, none for Gemini, and provider defaults for the
-others. Provider-specific `extraBody` still applies.
+Set `reasoningEffort` on a variant. Chat uses that variant's setting. Every
+provider type is reached through its OpenAI-compatible chat endpoint, so the
+level is sent as `reasoning_effort`, or as `reasoning.effort` for OpenRouter.
+Anthropic's OpenAI compatibility ignores it and returns no thinking text.
+Structured tasks and compaction keep their task reasoning policy: low for
+OpenAI, OpenRouter, vLLM and OpenAI-compatible providers, none for Gemini, and
+provider defaults for the others. Provider-specific `extraBody` still applies.
 
 Endpoint headers belong to provider connections. Configure them in administration
 or use `PUT /api/admin/core/ai/providers/{id}/headers` with the current provider

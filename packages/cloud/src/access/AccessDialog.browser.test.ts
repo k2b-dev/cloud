@@ -58,6 +58,9 @@ afterAll(async () => {
   await browser?.close();
 });
 
+// An app's own sheet repeats common utilities and may load after the shared one, as in app browser fixtures.
+const appSheet = "@layer utilities{.contents{display:contents}.inline-flex{display:inline-flex}.flex{display:flex}.hidden{display:none}}";
+
 /** Set ACCESS_DIALOG_SHOTS to a directory to keep screenshots of each state for a visual review. */
 const shots = process.env.ACCESS_DIALOG_SHOTS;
 const shot = async (page: Page, name: string) => {
@@ -80,7 +83,7 @@ const open = async (width: number, locale: string, scene?: "normal" | "lesen") =
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   await page.route("https://harness.test/tabler.woff2*", (route) => route.fulfill({ path: icons.font, contentType: "font/woff2" }));
   await page.setContent(
-    `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${icons.css}</style><style>${css}</style></head>` +
+    `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${icons.css}</style><style>${css}</style><style>${appSheet}</style></head>` +
       `<body class="k2b-ui"><script>window.accessDialogScene = ${JSON.stringify(scene ?? null)};</script><script>${harness}</script></body></html>`,
   );
   await page.waitForSelector("dialog[open]");
@@ -116,6 +119,9 @@ describe("AccessDialog in a browser", () => {
         await settledAtRest(page);
         const after = await Promise.all(["Jonas Weber", "Logistik", "Lagerbot", "Lea Schmitt"].map((name) => rowTop(page, name)));
         expect(after).toEqual(before);
+        // Each staged row shows its mark once: beside the name on a wide screen, below it on a phone.
+        for (const name of ["Lea Schmitt", "Lagerbot"])
+          expect(await page.locator("dialog li", { hasText: name }).locator(".k2b-status-badge:visible").count()).toBe(1);
         await page.locator("dialog input[type=checkbox]").first().check();
         await settledAtRest(page);
         await shot(page, `${locale}-${width}-changes`);

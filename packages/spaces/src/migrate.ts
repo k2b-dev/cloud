@@ -243,6 +243,23 @@ export const migrate = async (): Promise<void> => {
     )
   `.simple();
 
+  // The receipt commits with the task and outbox, so a lost response cannot create a second task.
+  await sql`
+    CREATE TABLE IF NOT EXISTS spaces.item_create_requests (
+      actor_kind TEXT NOT NULL CHECK (actor_kind IN ('user', 'service_account')),
+      actor_id UUID NOT NULL,
+      request_key TEXT NOT NULL CHECK (char_length(request_key) BETWEEN 1 AND 200),
+      space_id UUID NOT NULL REFERENCES spaces.spaces(id) ON DELETE CASCADE,
+      item_id UUID REFERENCES spaces.items(id) ON DELETE SET NULL,
+      request JSONB NOT NULL,
+      response JSONB NOT NULL,
+      public_response JSONB NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '24 hours'),
+      PRIMARY KEY (actor_kind, actor_id, request_key)
+    );
+    CREATE INDEX IF NOT EXISTS item_create_requests_expiry ON spaces.item_create_requests(expires_at)
+  `.simple();
+
   await sql`
     ALTER TABLE spaces.items ADD COLUMN IF NOT EXISTS deadline_date DATE NULL;
     DO $$

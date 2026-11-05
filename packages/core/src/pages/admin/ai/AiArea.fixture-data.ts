@@ -154,6 +154,7 @@ export const aiFixtureCatalog = (): AiFixtureCatalog => ({
     vision: "mistral-small",
     audio: "whisper",
     liveAudio: null,
+    decision: null,
   },
 });
 

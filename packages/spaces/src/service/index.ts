@@ -197,6 +197,7 @@ export const spacesService = {
     findByTitle: items.findByTitle,
     getRecurringOverride: items.getRecurringOverride,
     create: items.create,
+    replayCreate: items.replayCreate,
     update: items.update,
     splitRecurring: items.splitRecurring,
     remove: items.remove,

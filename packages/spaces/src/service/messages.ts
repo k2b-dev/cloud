@@ -87,6 +87,8 @@ const catalog = i18n.define({
       eventSummaryKind: "event",
       comment: "Comment",
       assignees: "Assignees",
+      addAssignees: "Add assignees",
+      removeAssignees: "Remove assignees",
       unavailableAssignee: "Unavailable assignee",
       tags: "Tags",
       none: "None",
@@ -327,6 +329,8 @@ const catalog = i18n.define({
       eventSummaryKind: "Termin",
       comment: "Kommentar",
       assignees: "Zugewiesene Personen",
+      addAssignees: "Zuständige hinzufügen",
+      removeAssignees: "Zuständige entfernen",
       unavailableAssignee: "Nicht verfügbare Zuweisung",
       tags: "Tags",
       none: "Keine",
@@ -507,9 +511,24 @@ export const spacesApiErrorMessage = (status: number, locale?: string | null, ba
     "A checklist is only available for tasks": "Eine Checkliste gibt es nur bei Aufgaben.",
     "An event needs a date": "Ein Termin braucht ein Datum.",
     "Pass either a date or no date, not both": "Gib entweder ein Datum oder kein Datum an, nicht beides.",
+    "Title changed; reload and review the current title": "Der Titel wurde geändert. Lade die Aufgabe neu und prüfe den aktuellen Titel.",
+    "Request key was already used with different input": "Die Anfrage-Kennung gehört schon zu anderen Eingaben.",
+    "The created item no longer exists": "Der angelegte Eintrag ist nicht mehr vorhanden.",
+    "The created item is no longer in this Space": "Der angelegte Eintrag ist nicht mehr in diesem Space.",
     "Unknown time zone": "Unbekannte Zeitzone.",
   };
-  if (resolved.locale === "de" && baseMessage && workErrors[baseMessage]) return workErrors[baseMessage];
+  if (baseMessage && workErrors[baseMessage]) {
+    if (resolved.locale === "de") return workErrors[baseMessage];
+    if (
+      [
+        "Title changed; reload and review the current title",
+        "Request key was already used with different input",
+        "The created item no longer exists",
+        "The created item is no longer in this Space",
+      ].includes(baseMessage)
+    )
+      return baseMessage;
+  }
   const { t } = resolved;
   if (status === 401) return t.loginRequired;
   if (status === 403) return t.accessDenied;

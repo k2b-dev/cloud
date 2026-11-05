@@ -122,6 +122,8 @@ export type AppPwaPart = {
   badge?: string;
   /** Same-origin path of a `GET` route returning a `PwaPartSummary`, the line under the part on the app's Start. */
   summary?: string;
+  /** Position in the mobile app: parts with an order come first, ascending; the rest follow by localized name. */
+  order?: number;
 };
 
 /** One same-origin panel page contributed by an application. Routes and services still authorize. */

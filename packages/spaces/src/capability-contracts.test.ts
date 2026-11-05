@@ -95,7 +95,7 @@ const textInputs = [
   {
     name: "task update",
     schema: TaskUpdateInputSchema,
-    input: { itemId: "Itm001", title: "Task" },
+    input: { itemId: "Itm001", title: "Task", expectedTitle: "Previous" },
     field: "description",
     nullable: true,
     optional: true,

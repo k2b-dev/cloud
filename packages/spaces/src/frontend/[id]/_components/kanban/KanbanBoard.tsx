@@ -1115,7 +1115,7 @@ export default function KanbanBoard(props: Props) {
       if (item.assignees?.some((assignee) => assignee.kind === "user" && assignee.id === props.currentUserId)) return item;
       const response = await apiClient[":id"].items[":itemId"].$patch({
         param: { id: props.spaceId, itemId: item.id },
-        json: { assigneeIds: [...(item.assignees?.map((assignee) => assignee.id) ?? []), props.currentUserId] },
+        json: { addAssigneeIds: [props.currentUserId] },
       });
       if (!response.ok) throw new Error(await readResponseError(response, t.assignToMeFailed));
       return response.json();

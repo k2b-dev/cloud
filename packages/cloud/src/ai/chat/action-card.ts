@@ -94,7 +94,7 @@ export type ActionCard = {
     unknown: ActionText;
     unknownStill: ActionText;
   };
-  /** The thing the question is about, for "Your answer about … didn't arrive". */
+  /** The thing the question is about, for "Your answer about … is not confirmed". */
   subject: ActionText;
   /** One short plain sentence, for a message that asks the Assistant again. */
   short: string;

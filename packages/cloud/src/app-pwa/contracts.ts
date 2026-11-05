@@ -59,6 +59,7 @@ export type AppPwaRegistrationView = {
   state: "active" | "expired";
   registeredAt: string;
   expiresAt: string;
+  activeVisit: { id: string; issuedBy: { displayName: string | null }; issuedAt: string } | null;
   holder: { userId: string; displayName: string; deviceId: string; expiresAt: string | null; visitActive: boolean } | null;
 };
 export type AppPwaVisitView = {
@@ -78,7 +79,8 @@ export type AppPwaStaffAction =
   | "register-device"
   | "list-registrations"
   | "take-over-device"
-  | "revoke-registration";
+  | "revoke-registration"
+  | "rename-registration";
 
 export type AppPwaVisitContext = {
   actor: AppPwaVisitActor;
@@ -162,11 +164,13 @@ export type AppPwaOptions = {
   /** Positive safe integer seconds; capped at 12 hours, then bounded by browser and initiating family. */
   deviceTtlSeconds?: number;
   subject: z.ZodType;
+  /** Allow target-authorized staff to push visits to registered browsers without a use or presence code. */
+  registeredDevices?: { push: "staff" };
   /** Explicit application budgets, covering transport, stored results, and staff pagination. */
   budgets: { requestBytes: number; responseBytes: number; listPageSize: number; maxAccessIds: number };
   /** Mandatory application authorization, repeated under the current web authority locks for every staff action.
    * Registration actions act on other people's state. They are called once without `target` and again
-   * with the registration they take over, revoke, or list; return false to narrow them. */
+   * with the registration they change, push to, or list; return false to narrow them. */
   authorizeStaff(action: AppPwaStaffAction, signIn: AppPwaWebSignIn, tx: TransactionSQL, target?: AppPwaStaffTarget): Promise<boolean>;
   /** Authorize exposing this validated domain subject to a customer; lock its authority using tx.
    * Called before issuance and again before commit, including issuance retries. */

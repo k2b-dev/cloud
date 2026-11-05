@@ -2475,12 +2475,12 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "Create item",
       description:
-        "Create a new item (event, todo, or ticket). A task deadline is YYYY-MM-DD (all-day, default) or an ISO date-time (timed); deadlineAllDay identifies date-only responses.",
+        "Create a new item (event, todo, or ticket). requestKey deduplicates identical retries by the same actor for 24 hours. A task deadline is YYYY-MM-DD (all-day, default) or an ISO date-time (timed); deadlineAllDay identifies date-only responses.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemSchema, "Created item"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
-        409: jsonResponse(ErrorResponseSchema, "Occurrence override already exists"),
+        409: jsonResponse(ErrorResponseSchema, "Occurrence or request-key conflict (IDEMPOTENCY_CONFLICT / CREATE_RESULT_GONE)"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Space not found"),
       },
@@ -2492,20 +2492,27 @@ const app = new Hono<AuthContext>()
 
       const { internalId: spaceId, user, error } = await checkSpaceAccess(c, spaceShortId, "write");
       if (error) return error;
+      const replay = await spacesService.item.replayCreate({
+        spaceId: spaceId!,
+        data,
+        actor: getSpaceActivityActor(c),
+        access: { actor: c.get("actor"), subject: c.get("accessSubject") },
+      });
+      if (!replay.ok) return respond(c, replay);
+      if (replay.data) return respond(c, ok(replay.data));
       const resolvedData = await resolveItemData(spaceId!, data);
       if (!resolvedData.ok) return respond(c, resolvedData);
       return respond(
         c,
-        projectMutation(
-          spacesService.item.create({
-            spaceId: spaceId!,
-            data: resolvedData.data,
-            createdBy: user?.id ?? null,
-            dateConfig: getDateConfig(c),
-            actor: getSpaceActivityActor(c),
-          }),
-          projectItems,
-        ),
+        spacesService.item.create({
+          spaceId: spaceId!,
+          data: resolvedData.data,
+          publicRequest: data,
+          createdBy: user?.id ?? null,
+          dateConfig: getDateConfig(c),
+          actor: getSpaceActivityActor(c),
+          access: { actor: c.get("actor"), subject: c.get("accessSubject") },
+        }),
       );
     },
   )
@@ -2543,7 +2550,7 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "Update item",
       description:
-        "Update item properties. A task deadline is YYYY-MM-DD (all-day) or an ISO date-time (timed); null clears it. Responses include deadlineAllDay.",
+        "Update item properties. Use addAssigneeIds/removeAssigneeIds for concurrent assignment edits. expectedTitle mismatches return TITLE_CONFLICT (409). A task deadline is YYYY-MM-DD (all-day) or an ISO date-time (timed); null clears it. Responses include deadlineAllDay.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemSchema, "Updated item"),
@@ -2573,9 +2580,11 @@ const app = new Hono<AuthContext>()
         projectMutation(
           spacesService.item.update({
             id: itemCheck.data.id,
+            expectedSpaceId: spaceId!,
             data: resolvedData.data,
             dateConfig: getDateConfig(c),
             actor: getSpaceActivityActor(c),
+            access: { actor: c.get("actor"), subject: c.get("accessSubject") },
           }),
           projectItems,
         ),

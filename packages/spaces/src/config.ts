@@ -39,7 +39,7 @@ export const app = defineApp({
     requiresRoles: ["user"],
   },
   // "My tasks" in the mobile app at /pwa/spaces, for the same people as the web navigation.
-  pwa: { requiresRoles: ["user"], summary: "/api/spaces/overview/summary" },
+  pwa: { requiresRoles: ["user"], summary: "/api/spaces/overview/summary", order: 3 },
   widgets: [
     {
       id: "today",

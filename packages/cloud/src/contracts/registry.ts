@@ -29,6 +29,8 @@ export type AppRegistryPwaPart = {
   badge?: string;
   /** Summary route for the part's line on Start; older readers ignore it. */
   summary?: string;
+  /** Position among the parts; older readers ignore it. */
+  order?: number;
 };
 
 export type AppRegistryCapabilitySummary = {

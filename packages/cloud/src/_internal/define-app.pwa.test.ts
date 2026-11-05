@@ -59,6 +59,18 @@ describe("defineApp({ pwa })", () => {
     expect(() => defineApp({ ...inventory, pwa: { summary: "//elsewhere.test/summary" } })).toThrow("pwa.summary");
   });
 
+  test("a part may take a fixed position among the parts, as a positive integer", async () => {
+    const entry = await publishedEntry({ ...inventory, pwa: { order: 2 } });
+    expect(entry.pwa).toEqual({ href: "/pwa/inventory", requiresRoles: undefined, order: 2 });
+    expect(validateAppRegistryEntry(entry)).toBeNull();
+    expect(buildRuntimeFromRegistry([entry]).apps[0]?.pwa?.order).toBe(2);
+    for (const order of [0, -1, 1.5, Number.NaN]) {
+      expect(() => defineApp({ ...inventory, pwa: { order } })).toThrow("pwa.order");
+      expect(validateAppRegistryEntry({ ...entry, pwa: { href: "/pwa/inventory", order } })).not.toBeNull();
+    }
+    expect(validateAppRegistryEntry({ ...entry, pwa: { href: "/pwa/inventory", order: "1" } })).not.toBeNull();
+  });
+
   test("an app without pwa has no part", () => {
     const app = defineApp(inventory);
     expect(app.meta.pwa).toBeUndefined();

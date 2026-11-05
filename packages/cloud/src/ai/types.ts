@@ -73,6 +73,8 @@ export type AiDataBoundary = (typeof AI_DATA_BOUNDARIES)[number];
 export type AiDataPolicy = AiDataBoundary;
 
 export type AiModelProfile = {
+  /** Catalog model kind; absent on application-constructed legacy profiles. */
+  kind?: import("../shared/ai-models").AiModel["kind"];
   id: string;
   label: string;
   modelId: string;
@@ -1153,6 +1155,8 @@ export type AiToolDefinition<TInput extends z.ZodType = z.ZodType, TOutput exten
   approval: AiToolApprovalPolicy;
   /** Per-tool execution timeout enforced by nessi. */
   timeoutMs?: number;
+  /** The tool only reads, so nessi may run its calls together with the neighbouring read calls of one answer. */
+  readOnly?: true;
   /** One-line "when to use" hint listed in the system prompt's Tools section. Tools without a hint are not listed. */
   promptHint?: string;
   /** Optional compact representation sent to providers in later loops. The full result remains persisted and visible. */
