@@ -75,7 +75,7 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
   const visibleLabel = () => (copied() ? copiedLabel() : copyLabel());
   const icon = () => (copied() ? "ti ti-check" : "ti ti-copy");
   const iconOnly = () => local.iconOnly ?? local.label === undefined;
-  // Copied often flashes into a row next to a field; a hidden copy of the other label keeps the button's width.
+  // Copied often flashes into a row next to a field; the other label, drawn hidden by CSS, keeps the button's width.
   const hiddenLabel = () => (copied() ? copyLabel() : copiedLabel());
   const announcement = () => (
     <span class="k2b-sr-only" aria-live="polite">
@@ -98,9 +98,8 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
     >
       <i class={icon()} aria-hidden="true" />
       {!iconOnly() && (
-        <span class="k2b-copy-button__label">
+        <span class="k2b-copy-button__label" data-reserve={hiddenLabel()}>
           <span>{visibleLabel()}</span>
-          <span aria-hidden="true">{hiddenLabel()}</span>
         </span>
       )}
     </Button>

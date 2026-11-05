@@ -768,8 +768,8 @@ describe("@k2b/ui complete action migrations", () => {
 
   test("CopyButton with a visible label reserves the width of Copied and announces it", () => {
     const html = renderToString(() => createComponent(CopyButton, { text: "value", iconOnly: false }));
-    // Both words share one cell; the hidden one keeps the width and stays out of the accessible name.
-    expect(html).toContain('<span class="k2b-copy-button__label"><span>Copy</span><span aria-hidden="true">Copied</span></span>');
+    // Both words share one cell; CSS draws the other one hidden, so it stays out of the text and the accessible name.
+    expect(html).toContain('<span class="k2b-copy-button__label" data-reserve="Copied"><span>Copy</span></span>');
     expect(html).toContain('aria-live="polite"');
     expect(html).not.toContain("aria-label=");
   });

@@ -45,6 +45,10 @@ function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
     const tone = dialogTone();
     return tone ? dialogToneIcon(tone) : "ti ti-info-circle";
   };
+  const toneWord = () => {
+    const tone = local.icon === true ? dialogTone() : undefined;
+    return tone ? `${dialogToneLabel(messages(), tone)}: ` : undefined;
+  };
   return (
     <article
       {...articleProps}
@@ -52,11 +56,16 @@ function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
       data-tone={local.tone ?? "neutral"}
       {...(local.icon ? { "data-icon": "" } : {})}
     >
-      <Show when={icon()}>{(icon) => <i class={`${icon()} ${NOTICE_CARD_CLASSES.icon}`} aria-hidden="true" />}</Show>
+      <Show when={icon()}>
+        {(icon) => (
+          <>
+            <i class={`${icon()} ${NOTICE_CARD_CLASSES.icon}`} aria-hidden="true" />
+            {/* Inside the icon's branch, so a notice without one keeps its markup. */}
+            {toneWord() ? <span class="k2b-sr-only">{toneWord()}</span> : null}
+          </>
+        )}
+      </Show>
       <div class={NOTICE_CARD_CLASSES.content}>
-        <Show when={local.icon === true && dialogTone()}>
-          {(tone) => <span class="k2b-sr-only">{`${dialogToneLabel(messages(), tone())}: `}</span>}
-        </Show>
         <Show when={local.title}>
           {(title) => (
             <div class={NOTICE_CARD_CLASSES.head}>
