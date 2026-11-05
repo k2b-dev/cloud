@@ -47,7 +47,7 @@ describe("AccessSummary", () => {
       // The faces open the full list with each level, so nobody opens the editor only to read it.
       expect(ui.listed()).toEqual(["Mia HoffmannVerwalten", "LogistikBearbeiten", "LagerbotAgentAnsehen"]);
       const trigger = ui.dom.root.querySelector<HTMLButtonElement>("button.k2b-avatar-stack__trigger")!;
-      expect(trigger.getAttribute("aria-label")).toBe("Wer Zugriff hat: Mia Hoffmann und 2 weitere");
+      expect(trigger.getAttribute("aria-label")).toBe("Wer Zugriff hat: Mia Hoffmann und 2 weitere Einträge");
       // The faces are the button that opens exactly this list.
       expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
       const list = ui.dom.document.getElementById(trigger.getAttribute("aria-controls") ?? "");

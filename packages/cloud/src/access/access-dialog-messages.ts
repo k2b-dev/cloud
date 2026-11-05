@@ -177,7 +177,7 @@ export const accessDialogMessages = i18n.define({
           ? `Wer Zugriff hat: ${name}`
           : i18n.plural(more, "de", {
               one: `Wer Zugriff hat: ${name} und 1 weiterer Eintrag`,
-              other: `Wer Zugriff hat: ${name} und ${more} weitere`,
+              other: `Wer Zugriff hat: ${name} und ${more} weitere Einträge`,
             }),
       summaryMembers: ({ count }) =>
         i18n.plural(count, "de", { one: "1 Person, Gruppe oder Agent", other: `${count} Personen, Gruppen und Agenten` }),

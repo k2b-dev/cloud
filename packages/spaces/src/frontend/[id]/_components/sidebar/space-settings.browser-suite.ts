@@ -253,9 +253,14 @@ describe(`Space settings survive access changes in ${browserName}`, () => {
         grant.resolve();
         await event;
         expect(eventsSent).toBeGreaterThan(0);
-        // The saved list shows in the settings, which stay open with focus back on Edit access.
+        // The saved list shows in the settings' summary, which stay open with focus back on Edit access.
         await accessTab.waitFor();
-        await dialog.getByText("Jonas Weber").waitFor();
+        await dialog
+          .getByRole("button", {
+            name: locale === "de" ? "Wer Zugriff hat: Mara Lind und 1 weiterer Eintrag" : "Who has access: Mara Lind and 1 more",
+            exact: true,
+          })
+          .waitFor();
         expect(await dialog.count()).toBe(1);
         await settle(page);
         expect(await pageMarker(page)).toBe("first");
