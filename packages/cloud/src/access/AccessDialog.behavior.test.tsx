@@ -577,6 +577,41 @@ describe("AccessDialog", () => {
       }
     });
 
+    test("a Code account keeps its kind and is never offered Manage, also when added by its handle", async () => {
+      const found = {
+        principal: { type: "service_account" as const, serviceAccountId: "20000000-0000-4000-8000-000000000012" },
+        display: { displayName: "Code von lager@beispiel.de", serviceAccountKind: codeKind },
+      };
+      const ui = await setup({
+        entries: [mia, codeAccount],
+        allowedLevels: ["admin", "write", "read"],
+        findServiceAccount: async () => found,
+      });
+      try {
+        const offered = (name: string) => {
+          ui.row(name).querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+          const labels = Array.from(ui.row(name).querySelectorAll('[role="radio"]')).map((radio) => radio.textContent ?? "");
+          ui.row(name).querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+          return labels;
+        };
+        expect(offered("Code von einkauf@beispiel.de").some((label) => label.includes("Manage"))).toBe(false);
+        expect(offered("Mia Hoffmann").some((label) => label.includes("Manage"))).toBe(true);
+        await openAdding(ui);
+        field(ui)!.value = "code-7k2q9m4xwt";
+        field(ui)!.dispatchEvent(new Event("input", { bubbles: true }));
+        ui.button("Find").click();
+        await waitFor(() => !!ui.button("Add"), "the found account");
+        ui.button("Add").click();
+        // An app whose first level is Manage still starts the Code account below it.
+        await waitFor(() => !!ui.row("Code von lager@beispiel.de"), "the added row");
+        const added = ui.row("Code von lager@beispiel.de");
+        expect(added.querySelector('button[aria-haspopup="dialog"]')?.textContent).not.toContain("Manage");
+        expect(offered("Code von lager@beispiel.de").some((label) => label.includes("Manage"))).toBe(false);
+      } finally {
+        ui.cleanup();
+      }
+    });
+
     test("the account behind an object's API keys is an API key, never a service account", async () => {
       const apiKey: AccessEntry = {
         id: "00000000-0000-4000-8000-000000000011",

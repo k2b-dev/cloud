@@ -171,6 +171,10 @@ export function AccessDialog(
   const lastManagers = createMemo(() => lastManagerKeys(draft(), props.effectiveEntries));
   const levels = (principal: Principal): ResolvedLevel[] =>
     resolveAllowedLevels(typeof props.allowedLevels === "function" ? props.allowedLevels(principal) : props.allowedLevels, access());
+  // Code's own service account never manages: whoever edits the code would act with that right.
+  const levelsFor = (principal: Principal, kind: string | undefined): ResolvedLevel[] =>
+    isCodeAccount(kind) ? levels(principal).filter((level) => level.level !== "admin") : levels(principal);
+  const rowLevels = (row: DraftRow) => levelsFor(row.principal, row.display.serviceAccountKind);
   const manageLabel = (principal: Principal) => levels(principal).find((level) => level.level === "admin")?.label ?? access().manage;
   const levelLabel = (principal: Principal, level: DraftLevel | null) =>
     !level
@@ -179,8 +183,8 @@ export function AccessDialog(
         ? access().noAccess
         : (levels(principal).find((option) => option.key === levelKey(level.permission, level.scope))?.label ?? level.permission);
   /** The level a new row starts with: the first the resource offers, with its scope. */
-  const firstLevel = (principal: Principal): DraftLevel => {
-    const option = levels(principal)[0];
+  const firstLevel = (principal: Principal, kind?: string): DraftLevel => {
+    const option = levelsFor(principal, kind)[0];
     return option ? { permission: option.level, ...(option.scope ? { scope: option.scope } : {}) } : { permission: "read" };
   };
   const nameOf = (row: DraftRow) =>
@@ -411,7 +415,7 @@ export function AccessDialog(
     const protectedRow = () => lastManagers().has(row().key);
     const current = () => (row().next ? levelKey(row().next!.permission, row().next!.scope) : "");
     const options = () =>
-      levels(row().principal).map((option) => {
+      rowLevels(row()).map((option) => {
         const locked = protectedRow() && (option.level !== "admin" || option.scope !== undefined);
         return {
           value: option.key,
@@ -456,7 +460,7 @@ export function AccessDialog(
                 value={current}
                 options={options()}
                 onValueChange={(key) => {
-                  const option = levels(row().principal).find((candidate) => candidate.key === key);
+                  const option = rowLevels(row()).find((candidate) => candidate.key === key);
                   if (option)
                     edit((draftNow) =>
                       setLevel(draftNow, row(), { permission: option.level, ...(option.scope ? { scope: option.scope } : {}) }),
@@ -674,7 +678,9 @@ export function AccessDialog(
     }
   };
   const addFound = (account: FoundServiceAccount) => {
-    edit((current) => addPrincipal(current, account.principal, account.display, firstLevel(account.principal)));
+    edit((current) =>
+      addPrincipal(current, account.principal, account.display, firstLevel(account.principal, account.display.serviceAccountKind)),
+    );
     setFound(null);
     setHandle("");
     setHandleOpen(false);

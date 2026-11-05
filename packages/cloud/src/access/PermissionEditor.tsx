@@ -1,5 +1,5 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { announce, Button, IconButton, Placeholder, prompts, Select, SelectChip, Tooltip, useLocale } from "@k2b/ui";
+import { Avatar, announce, Button, IconButton, Placeholder, prompts, Select, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
@@ -663,20 +663,26 @@ function AccessEntryRow(props: {
               </div>
             }
           >
-            <CloudAvatar
-              username={displayName()}
-              userId={
-                props.entry.principal.type === "user"
-                  ? props.entry.principal.userId
-                  : props.entry.principal.type === "service_account"
-                    ? props.entry.principal.serviceAccountId
-                    : undefined
-              }
-              avatarHash={props.entry.avatarHash}
-              kind={props.entry.principal.type === "service_account" ? "service_account" : "user"}
-              size="xs"
-              class="h-7 w-7"
-            />
+            {/* The account behind an object's API keys shows the key, as in the expanded rows. */}
+            <Show
+              when={!(props.entry.serviceAccountKind === "resource_bound" && !props.entry.avatarHash)}
+              fallback={<Avatar name={displayName()} icon="ti ti-key" shape="square" size="xs" class="h-7 w-7" />}
+            >
+              <CloudAvatar
+                username={displayName()}
+                userId={
+                  props.entry.principal.type === "user"
+                    ? props.entry.principal.userId
+                    : props.entry.principal.type === "service_account"
+                      ? props.entry.principal.serviceAccountId
+                      : undefined
+                }
+                avatarHash={props.entry.avatarHash}
+                kind={props.entry.principal.type === "service_account" ? "service_account" : "user"}
+                size="xs"
+                class="h-7 w-7"
+              />
+            </Show>
           </Show>
         </Show>
 

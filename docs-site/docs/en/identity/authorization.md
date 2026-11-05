@@ -843,9 +843,9 @@ kind:
 | Kind | Icon | Label |
 | --- | --- | --- |
 | `agent` | `ti-robot` | Agent |
-| `standalone` | `ti-key` | Service account |
-| `resource_bound` | `ti-box` | Resource-bound service account |
-| `user_delegated` | `ti-user-key` | User-bound service account |
+| `standalone` | `ti-key` | Agent (API key only) |
+| `resource_bound` | `ti-key` | API key |
+| `user_delegated` | `ti-user-key` | Personal |
 
 Picker and entity-search results for resource-bound accounts show the app,
 resource type, and resource ID instead of the label, because several such

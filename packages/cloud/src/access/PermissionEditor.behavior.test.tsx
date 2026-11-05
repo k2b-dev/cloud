@@ -322,9 +322,10 @@ describe("PermissionEditor service accounts", () => {
         try {
           for (const kind of kinds) {
             const row = rowOf(`Granted ${kind}`)!;
-            // Every service account row shows the account's robot or photo in a square, never a bare icon.
-            const picture = row.querySelector(`img[src="/api/accounts/users/granted-${kind}/avatar"]`);
-            expect(picture?.getAttribute("data-shape")).toBe("square");
+            // Every service account row shows its picture in a square, never a bare icon; an API key without one its key.
+            if (kind === "resource_bound") expect(row.querySelector('[data-shape="square"] .ti-key')).not.toBeNull();
+            else
+              expect(row.querySelector(`img[src="/api/accounts/users/granted-${kind}/avatar"]`)?.getAttribute("data-shape")).toBe("square");
             expect(row.textContent).toContain(`(${labels[locale][kind]})`);
           }
           // An entry whose consumer did not resolve the kind makes no claim about it.
@@ -656,6 +657,8 @@ describe("PermissionEditor last manager", () => {
     const levelsOf = (name: string) => Array.from(rowOf(name).querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"));
     try {
       expect(rowOf("Alle angemeldeten Personen")).toBeDefined();
+      // The account behind the key shows the key, never the robot of a service account.
+      expect(rowOf("Import key").querySelector('[data-shape="square"] .ti-key')).not.toBeNull();
       expect(dom.root.textContent).not.toContain("All users (incl. guests)");
 
       expect(removeButton("Quentin Dorn").disabled).toBe(true);
