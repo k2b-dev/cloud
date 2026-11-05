@@ -234,7 +234,10 @@ export async function loadPwaSpace(params: {
 }
 
 /** The Space without rows: its statuses, tags and templates, such as for adding a task from "My tasks". */
-export async function loadPwaSpaceShape(params: { spaceShortId: string; reader: Reader }): Promise<Omit<PwaSpace, "groups" | "filter"> | null> {
+export async function loadPwaSpaceShape(params: {
+  spaceShortId: string;
+  reader: Reader;
+}): Promise<Omit<PwaSpace, "groups" | "filter"> | null> {
   return (await readShape(params.spaceShortId, params.reader))?.space ?? null;
 }
 

@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Dropdown, dialogCore, toast, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, type JSX, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import type { SpaceColumn, SpaceItem, SpaceItemResourceReferenceInput, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";

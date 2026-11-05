@@ -6,6 +6,8 @@
 
 Use `primary` for the main forward action, `secondary` for supporting actions, `ghost` for quiet toolbar actions, `text` for inline disclosures without a surface or horizontal inset, `subtle` for compact contextual actions, `input` for actions placed directly beside a field, `warning` for time-sensitive or cautionary actions, `danger` for destructive work, and `success` only when success is the action's meaning.
 
+A destructive action without a surface, such as Remove at the foot of a menu, is a `text` button with `data-danger="true"`; it takes the danger ink of destructive menu items. Utility color classes cannot recolor a button, because button styles sit outside the utility layer.
+
 ## Import
 
 ```tsx
@@ -26,6 +28,10 @@ import { Button, ButtonLink, IconButton, IconButtonLink, SplitButton } from "@k2
 <Button variant="warning" size="xs">Undo send · 8s</Button>
 
 <Button variant="text" size="xs">More</Button>
+
+<Button variant="text" data-danger="true">
+  <i class="ti ti-user-minus" aria-hidden="true" /> Remove
+</Button>
 
 <IconButton label="Project settings">
   <i class="ti ti-settings" aria-hidden="true" />

@@ -740,7 +740,7 @@
 
 .ui-scroll-area-demo__content summary:focus-visible {
   border-radius: var(--k2b-radius-control);
-  outline: 2px solid var(--k2b-focus);
+  outline: 2px solid var(--k2b-focus-ring);
   outline-offset: 3px;
 }
 

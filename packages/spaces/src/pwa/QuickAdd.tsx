@@ -1,16 +1,11 @@
-import { CloudAvatar } from "@k2b/cloud/account/ui";
-import type { DateContext } from "@k2b/stdlib";
-import { DateTimePicker, Dropdown, IconButton, TextInput, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
-import type { ItemTemplateDraft, SpaceItemAssignee, SpaceItemTemplate } from "@/contracts";
-import { formatDeadline } from "@/presentation/deadline";
+import { Dropdown, IconButton, useLocale } from "@k2b/ui";
+import { createMemo, type JSX, Show } from "solid-js";
+import type { SpaceItemTemplate } from "@/contracts";
 import { buildSpaceHref } from "@/routes";
-import { DEADLINE_DEFAULT_TIME, deadlinePresets } from "../frontend/[id]/_components/shared/item-form/date";
 import { CreateMenu } from "../frontend/[id]/_components/sidebar/CreateMenu";
-import { type Outgoing, readTemplateDraft } from "./create";
+import type { Outgoing } from "./create";
 import { myTasksMessages } from "./messages";
-import PeoplePicker from "./PeoplePicker";
-import type { PwaSpaceEntry, PwaStatus } from "./space";
+import type { PwaStatus } from "./space";
 
 /** Where a new task lands: a Space with its statuses and task templates. */
 export type QuickAddTarget = { shortId: string; name: string; color: string; statuses: PwaStatus[]; templates: SpaceItemTemplate[] };

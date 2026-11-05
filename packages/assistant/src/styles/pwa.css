@@ -37,8 +37,8 @@
   color: var(--k2b-text);
   text-decoration: none;
 }
-.assistant-pwa-row:active { background: var(--k2b-hover, var(--k2b-surface-sunken)); }
-@media (hover: hover) { .assistant-pwa-row:hover { background: var(--k2b-hover, var(--k2b-surface-sunken)); } }
+.assistant-pwa-row:active { background: var(--k2b-hover, var(--k2b-surface-muted)); }
+@media (hover: hover) { .assistant-pwa-row:hover { background: var(--k2b-hover, var(--k2b-surface-muted)); } }
 .assistant-pwa-row:focus-visible { outline: 2px solid var(--k2b-focus-ring, var(--k2b-action)); outline-offset: -2px; }
 .assistant-pwa-row[aria-current="page"] { background: var(--ui-app-selected-nav); }
 .assistant-pwa-row__title { min-width: 0; font-size: 0.9375rem; font-weight: 500; white-space: nowrap; overflow: hidden; }

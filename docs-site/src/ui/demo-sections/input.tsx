@@ -660,7 +660,7 @@ const NumberDemo = () => {
     <DemoCard
       id="number"
       chip={{ kind: "component", name: "NumberInput", from: "@k2b/ui" }}
-      description="Accessor-controlled numeric input with raw focused text, committed bounds, precision, steppers, units, and an explicit empty state."
+      description="Numeric input with raw text while typing, padded decimals after commit, bounds, steppers, units, and an explicit empty state."
       code={`<NumberInput
   label="Budget"
   value={budget}
