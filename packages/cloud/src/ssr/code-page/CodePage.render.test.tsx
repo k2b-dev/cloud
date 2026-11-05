@@ -112,7 +112,10 @@ describe("personal Code", () => {
 describe("Code page states", () => {
   test("overview lists automations with schedule, status and last run, and targets as operation at target", () => {
     const page = text("overview");
-    expect(page).toContain("Läuft als Dienstkonto „Code von info@moebel-beispiel.de“ · code-7k2q9m4xwt Kennung kopieren");
+    // As in the mockup: the word "Kennung" before it and a short "Kopieren" that still says what it copies.
+    expect(page).toContain("Läuft als Dienstkonto „Code von info@moebel-beispiel.de“ · Kennung code-7k2q9m4xwt Kopieren");
+    expect(html("overview")).toMatch(/<button aria-label="Kennung kopieren"[^>]*>(?:(?!<\/button>).)*>Kopieren<\/span><\/button>/);
+    expect(text("overview", "en")).toContain("Runs as service account “Code of info@moebel-beispiel.de” · Handle code-7k2q9m4xwt Copy");
     expect(page).toContain("Version 4");
     expect(page).toContain("Ursprünge im Internet");
     expect(page).toContain("https://bank.example");
@@ -247,7 +250,7 @@ describe("Code page states", () => {
       )
         .replaceAll(/<[^>]+>/g, " ")
         .replaceAll(/\s+/g, " ");
-    expect(render(first)).toContain("code-7k2q9m4xwt Kennung kopieren");
+    expect(render(first)).toContain("Kennung code-7k2q9m4xwt Kopieren");
     const unknown = codePageFixture("refused");
     if (unknown.state.kind !== "ready") throw new Error("Expected ready fixture");
     unknown.state.code.serviceAccountHandle = null;
@@ -617,7 +620,7 @@ describe("Code page loader", () => {
       { operation: "spaces.task.update", target: { type: "spaces.task", id: "it_7f3k" }, file: "code.ts", line: 4 },
     ],
   };
-  const run = {
+  const failedRun = {
     id: RUN,
     versionId: V4,
     trigger: "schedule",
@@ -640,42 +643,43 @@ describe("Code page loader", () => {
     result: { ok: false, error: { code: "code_policy_never" } },
     state: "failed",
   };
-  const core = (permission: "editor" | "reader") => (capabilityId: string, input: { content?: unknown; cursor?: number }) => {
-    if (capabilityId === "code.list")
-      return {
-        items: [{ id: "c_3mfa", title: "Code", state: "active", activeVersionId: V4, pauseReason: null, permission }],
-        nextCursor: null,
-      };
-    if (capabilityId === "code.version.list")
-      return {
-        items: [
-          { version: { id: V4, number: 4, createdBy: null, createdAt: "2026-10-28T09:00:00.000Z" }, status: "approved", decision: null },
-        ],
-        nextBefore: null,
-      };
-    if (capabilityId === "code.version.read")
-      return {
-        version: { id: V4, number: 4, createdBy: null, createdAt: "2026-10-28T09:00:00.000Z" },
-        content: input.content ? { text: JSON.stringify(manifest), nextOffset: null } : null,
-      };
-    if (capabilityId === "code.run.list") return { items: [run], nextCursor: null };
-    if (capabilityId === "code.run.read")
-      return {
-        run,
-        contents:
-          permission === "editor"
-            ? {
-                input: null,
-                inputChunked: false,
-                content: null,
-                calls: (input.cursor ?? 0) === 0 ? [policyCall] : [],
-                nextCursor: null,
-                firstRefusedCall: { ordinal: 2, kind: "action", capability: "spaces.task.create", target: space },
-              }
-            : null,
-      };
-    return { items: [] };
-  };
+  const core =
+    (permission: "editor" | "reader", run: typeof failedRun) => (capabilityId: string, input: { content?: unknown; cursor?: number }) => {
+      if (capabilityId === "code.list")
+        return {
+          items: [{ id: "c_3mfa", title: "Code", state: "active", activeVersionId: V4, pauseReason: null, permission }],
+          nextCursor: null,
+        };
+      if (capabilityId === "code.version.list")
+        return {
+          items: [
+            { version: { id: V4, number: 4, createdBy: null, createdAt: "2026-10-28T09:00:00.000Z" }, status: "approved", decision: null },
+          ],
+          nextBefore: null,
+        };
+      if (capabilityId === "code.version.read")
+        return {
+          version: { id: V4, number: 4, createdBy: null, createdAt: "2026-10-28T09:00:00.000Z" },
+          content: input.content ? { text: JSON.stringify(manifest), nextOffset: null } : null,
+        };
+      if (capabilityId === "code.run.list") return { items: [run], nextCursor: null };
+      if (capabilityId === "code.run.read")
+        return {
+          run,
+          contents:
+            permission === "editor"
+              ? {
+                  input: null,
+                  inputChunked: false,
+                  content: null,
+                  calls: (input.cursor ?? 0) === 0 ? [policyCall] : [],
+                  nextCursor: null,
+                  firstRefusedCall: { ordinal: 2, kind: "action", capability: "spaces.task.create", target: space },
+                }
+              : null,
+        };
+      return { items: [] };
+    };
   const registry = {
     spaces: {
       appId: "spaces",
@@ -698,14 +702,16 @@ describe("Code page loader", () => {
       },
     },
   };
-  const load = async (permission: "editor" | "reader", query = "") => {
+  const load = async (permission: "editor" | "reader", query = "", run = failedRun) => {
     const appCalls: string[] = [];
+    const coreCalls: string[] = [];
     const invoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
       if (invocation.appId !== "core") {
         appCalls.push(`${invocation.appId}.${invocation.capabilityId}`);
         return { ok: false, error: { code: "APP_UNAVAILABLE", message: "Another app was asked", status: 503 } };
       }
-      const data = core(permission)(invocation.capabilityId, invocation.input as { content?: unknown; cursor?: number });
+      coreCalls.push(invocation.capabilityId);
+      const data = core(permission, run)(invocation.capabilityId, invocation.input as { content?: unknown; cursor?: number });
       return { ok: true, data: capabilityResultSchema(schema).parse({ data }) };
     });
     const catalog = spyOn(capabilityServer, "getCapabilityCatalogApp").mockImplementation(async (appId) => ({
@@ -737,7 +743,7 @@ describe("Code page loader", () => {
         href: "/app/mail/Mb4kd2/code",
         canManageOwner: permission === "editor",
       });
-      return { data, appCalls, fetches: fetched.mock.calls.length };
+      return { data, appCalls, coreCalls, fetches: fetched.mock.calls.length };
     } finally {
       invoke.mockRestore();
       catalog.mockRestore();
@@ -746,9 +752,11 @@ describe("Code page loader", () => {
   };
 
   test("an editor reads the refused call once at Core; the page asks no other app and names targets by type and ID", async () => {
-    const { data, appCalls, fetches } = await load("editor");
+    const { data, appCalls, coreCalls, fetches } = await load("editor");
     expect(appCalls).toEqual([]);
     expect(fetches).toBe(0);
+    // One read of the refused run at Core, however many targets the page lists.
+    expect(coreCalls.filter((call) => call === "code.run.read")).toEqual(["code.run.read"]);
     if (data.state.kind !== "ready") throw new Error(`Expected a ready page, got ${data.state.kind}`);
     expect(data.state.refusal).toEqual({
       kind: "target_refused",
@@ -781,6 +789,14 @@ describe("Code page loader", () => {
       kind: "target_refused",
       call: { capability: "spaces.task.create", target: { ref: space } },
     });
+  });
+
+  test("a successful run whose refused call the code caught raises no notice and reads nothing more", async () => {
+    const { data, appCalls, coreCalls } = await load("editor", "", { ...failedRun, state: "succeeded", outcome: "succeeded" });
+    expect(appCalls).toEqual([]);
+    expect(coreCalls).not.toContain("code.run.read");
+    if (data.state.kind !== "ready") throw new Error(`Expected a ready page, got ${data.state.kind}`);
+    expect(data.state.refusal).toBeNull();
   });
 
   test("a reader's page data carries no target ID of the refused call", async () => {

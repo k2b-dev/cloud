@@ -7,6 +7,8 @@ import type { AccessEntry } from "../contracts/shared";
 // People use a neutral background; a service account shows its robot or photo, and the account of an object its code
 // icon unless it has a photo.
 const hues = { group: "#22c55e", authenticated: "#3b82f6" } as const;
+/** Every account that runs code shares one hue, so code reads as code rather than as a person with a tinted name. */
+const codeHue = "#0369a1";
 
 /**
  * Accounts that run code show the code icon: the account of an object, and Code's own service accounts, which keep
@@ -41,7 +43,7 @@ export default function PrincipalAvatar(props: {
         // The account of an object runs its code: it shows the code icon in the square of service accounts unless it
         // has a picture.
         props.entry.principal.type === "service_account" && runsCode(props.entry.serviceAccountKind) && !props.entry.avatarHash ? (
-          <Avatar name={props.label} icon="ti ti-code" shape="square" size="sm" class="h-8 w-8" />
+          <Avatar name={props.label} icon="ti ti-code" shape="square" size="sm" class="h-8 w-8" style={{ "--k2b-avatar-hue": codeHue }} />
         ) : props.entry.principal.type === "service_account" ? (
           <CloudAvatar
             username={props.label}

@@ -189,7 +189,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "code.list": {
           title: "Code auflisten",
           description:
-            "Listet eigenen und explizit geteilten Code; Cloud-Admins sehen allen. Für Zugriff als Besitzer-Admin den genauen Besitzer angeben. Dem Cursor auch bei leeren Seiten folgen.",
+            "Listet eigenen und explizit geteilten Code; Cloud-Admins sehen allen Code. Mit dem genauen Besitzer auch den Code eines Objekts, das du verwaltest. Dem Cursor auch bei leeren Seiten folgen.",
           input: {
             owner: "Nach einem genauen Code-Besitzer filtern.",
             "owner.kind": "Art des Besitzers: person, resource oder app.",

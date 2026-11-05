@@ -298,7 +298,12 @@ test("Code of an app has its Code page here: its service account and a refused c
     .replaceAll(/<[^>]+>/g, " ")
     .replaceAll(/\s+/g, " ")
     .replaceAll(/ \./g, ".");
-  expect(detail).toContain("Läuft als Dienstkonto „Code von Werkstattbuch“");
+  // The head as on every Code page: title, service account, the word "Kennung", the handle and a short "Kopieren".
+  expect(detail).toContain("Kundenportal-Eingang");
+  expect(detail).toContain("Läuft als Dienstkonto „Code von Werkstattbuch“ · Kennung code-7k2q9m4xwt Kopieren");
+  expect(render({ sec: "code", id: "c_portal" })).toMatch(
+    /<button aria-label="Kennung kopieren"[^>]*>(?:(?!<\/button>).)*>Kopieren<\/span><\/button>/,
+  );
   expect(detail).toContain("Letzter Lauf");
   expect(detail).toContain(
     "Kein Zugriff auf Space k7qm2x9a. Der Code wollte dort „Aufgabe erstellen“. Entweder fehlt dem Dienstkonto „Code von Werkstattbuch“ das Recht dafür, oder das Ziel existiert nicht.",

@@ -27,6 +27,22 @@ Code also accept personal OAuth credentials with the required scope. Phone
 sessions, service accounts, API keys, Code runs and forwarded invocations cannot
 activate Code. CI can submit a version but cannot activate it.
 
+## What a Code service account cannot get
+
+Target shares follow the normal grant services, with these refusals:
+
+| Case | Result |
+| --- | --- |
+| Manage (`admin`) on any target | Refused by the platform, the database and the share dialog, which offers only View and Edit. |
+| Groups, “all signed-in people” and public links | Grant nothing to a Code account. Only its own direct shares count. |
+| App access and Studio | Offer only their own Use level; Edit does not exist there. |
+| Templates | Offer only Use (stored as `read`). |
+| Creating a resource that needs an initial Manage share, such as an AI Project or Skill | Refused: the account cannot be its first manager. |
+| A target without a share, or a target that no longer exists | The target app answers 403 or 404. A setting that names a target grants no access to it. |
+
+A Code account also never receives an API key, an OAuth client or an app key.
+See [service accounts](/en/docs/identity/service-accounts).
+
 ## Start and follow activation
 
 Submit the immutable version first. The

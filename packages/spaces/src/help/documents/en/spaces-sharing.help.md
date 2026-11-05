@@ -42,6 +42,22 @@ Add its agent under **Sharing → Access**. The entry shows the account name and
 
 To hand management over, give the new account **Manage** access first. Then lower or remove your own entry. An agent can remain as the only manager. You cannot remove the last manager; add another manager before trying again. Resource API keys do not count as managers and stay confined to their own Space.
 
+## Give Code access to this Space {icon="code"}
+
+Code of a mailbox or of another object runs as its service account. The service account gets access to a Space like a person. Only people with **Manage** access to the Space add it. When a Cloud administrator approves a Code version, that approval gives no access to your Space.
+
+:::steps
+1. Ask the person who writes the Code for its handle, for example `code-7k2q9m4xwt`.
+2. Open **Space settings → Sharing → Access** and choose **Edit access**.
+3. Under **Service accounts**, choose **Add service account** and paste the handle.
+4. Choose **View** or **Edit**.
+5. Choose **Save**.
+:::
+
+The service account now appears under **Service accounts**. The next run of the Code can use the Space. You can also paste the handle into the search for people. A name never finds a service account.
+
+A service account gets **View** or **Edit**, never **Manage**. The access covers everything that the level allows, not only what the Code does today. Whoever edits the Code acts with this access. To end it, remove the service account and choose **Save**. After that, calls of the Code to this Space fail.
+
 ## Add a GitHub token {icon="brand-github"}
 
 The GitHub token is optional and belongs to one Space. Spaces stores it encrypted and uses it only to preview GitHub links on items of this Space. Spaces never shows the token again.

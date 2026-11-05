@@ -400,10 +400,27 @@ suiteFor(
     ).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("phone") });
     expect(await sql`SELECT id FROM code.activations WHERE code_id=${codeId}`).toHaveLength(0);
     const account = (await findCode(codeId))!.serviceAccountId!;
+    // The manager of the space copies the Kennung from the Code page and finds the account by it, as the access
+    // dialog's lookup does once the route admitted the exact handle for a managed target.
+    const handle = (await findCode(codeId))!.serviceAccountHandle!;
+    const byHandle = await accounts.entities.list({
+      visibility: { type: "directory" },
+      search: handle,
+      codeAccountHandle: handle,
+      kinds: ["service_account"],
+      serviceAccountStatus: "active",
+      locale: "de",
+    });
+    const found = byHandle.items.find((item) => item.kind === "service_account");
+    const foundId = found?.kind === "service_account" ? found.serviceAccount.id : null;
+    expect(foundId).toBe(account);
+    expect((await accounts.entities.list({ visibility: { type: "directory" }, search: handle, kinds: ["service_account"] })).items).toEqual(
+      [],
+    );
     expect(
       await spaces.grant({
         spaceId: internalSpaceId,
-        principal: { type: "service_account", serviceAccountId: account },
+        principal: { type: "service_account", serviceAccountId: foundId! },
         permission: "write",
         caller: manager,
       }),

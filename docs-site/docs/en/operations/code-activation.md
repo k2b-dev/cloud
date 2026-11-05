@@ -54,6 +54,13 @@ explicitly activated. Do not clear those restrictions during an upgrade.
 The Mail automation migration and Grids execution accounts are separate
 workloads and remain unchanged.
 
+The Cloud administrator's Code policy decides for each actual call which
+classifications need an approved version; an approval grants no target access.
+Actions that ask a person first (the `ask_*` rows) never run for Code in this
+release, even with an approved version or the **Open** preset: the bridge
+refuses them with `code_unattended_forbidden`, and sends with
+`code_sends_not_yet`. Tell Code authors to use silent Actions.
+
 This migration drops the legacy activation target journal. Roll back only to
 an implementation that understands normal sharing, nullable Code policies and
 the narrowed owner projection. An older activation worker requires its old

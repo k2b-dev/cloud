@@ -834,7 +834,7 @@ function AccountLine(props: { state: CodePageReady; text: PageText }) {
       <Show when={props.state.code.serviceAccountHandle}>
         {(handle) => (
           <>
-            {" · "}
+            {" "}
             <CodeAccountHandle handle={handle()} />
           </>
         )}

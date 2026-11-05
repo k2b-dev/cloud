@@ -227,7 +227,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         signatures.some((s) => s.declaration?.getSourceFile().fileName === root + "sdk.d.ts") &&
         !(ts.isCallExpression(wrapped.parent) && wrapped.parent.expression === wrapped)
       )
-        report(node, "code_detached_sdk_method", "Rufe SDK-Methoden direkt am Handle oder app auf.");
+        report(node, "code_detached_sdk_method", "Rufe SDK-Methoden direkt am Objekt oder an app auf.");
     }
     if (ts.isImportTypeNode(node)) {
       const argument = node.argument;
@@ -241,7 +241,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       if (node.expression.kind === ts.SyntaxKind.ImportKeyword)
         report(node, "code_import_forbidden", "Dynamische Importe sind nicht erlaubt.");
       if (checker.getTypeAtLocation(node.expression).flags & ts.TypeFlags.Any)
-        report(node, "code_unresolved_call", "Der aufgerufenen Funktion fehlt ein erkennbarer Typ. Verwende typisierte SDK-Handles.");
+        report(node, "code_unresolved_call", "Der aufgerufenen Funktion fehlt ein erkennbarer Typ. Verwende typisierte SDK-Objekte.");
       const { base, path } = member(node.expression);
       const target = handle(base);
       if (target) {
@@ -271,7 +271,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               if (!ref || ref.type !== expected) report(arg, "code_unresolved_ref", `Zusätzliches Ziel ${field} ist nicht erkennbar.`);
               else permission(node, op.capability, ref);
             }
-        } else if (!omitted) report(node, "code_unresolved_call", "Die Operation am Handle ist nicht erkennbar.");
+        } else if (!omitted) report(node, "code_unresolved_call", "Die Operation am Objekt ist nicht erkennbar.");
       } else if (signatureInSdk(node)) {
         const method = path.at(-1);
         const appType = checker.getTypeAtLocation(base);
@@ -369,7 +369,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         } else if (!http) {
           // Recognized factory calls need no permission; detached methods lose their target and are rejected.
           const factory = request.sdk.manifest.handles.some((spec) => path.join(".") === spec.factoryPath.join("."));
-          if (!factory) report(node, "code_unresolved_call", "Rufe SDK-Methoden direkt am Handle oder app auf.");
+          if (!factory) report(node, "code_unresolved_call", "Rufe SDK-Methoden direkt am Objekt oder an app auf.");
         }
       }
     }
