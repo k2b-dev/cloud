@@ -15,7 +15,7 @@ export function ServiceAccountHandleField(props: {
   /** Adds the hit; the caller closes the field. A rejected promise keeps the hit and says the lookup failed. */
   add: (account: FoundServiceAccount) => void | Promise<unknown>;
   cancel: () => void;
-  /** Keeps the hit and Cancel from acting while a change saves. */
+  /** Holds the field, the hit and Cancel while a change saves, so a second handle never replaces the first. */
   disabled?: boolean;
 }) {
   const locale = useLocale();
@@ -66,6 +66,7 @@ export function ServiceAccountHandleField(props: {
         class="flex items-center gap-2 [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1"
         onSubmit={(event) => {
           event.preventDefault();
+          if (props.disabled) return;
           const account = found();
           const value = handle().trim();
           if (account) add(account);
@@ -81,6 +82,7 @@ export function ServiceAccountHandleField(props: {
           placeholder={t().serviceAccountHandlePlaceholder}
           value={handle}
           onValueChange={changeHandle}
+          disabled={props.disabled}
           autofocus
         />
         <Button variant="text" size="sm" disabled={props.disabled} onClick={() => props.cancel()}>

@@ -92,6 +92,7 @@ describe("Machine storage settings", () => {
       const requests: URL[] = [];
       let granted = false;
       let attempts = 0;
+      const saving = Promise.withResolvers<void>();
       const entry = {
         id: "50000000-0000-4000-8000-000000000001",
         principal: { type: "service_account", serviceAccountId: accountId },
@@ -115,8 +116,10 @@ describe("Machine storage settings", () => {
           if (url.pathname.endsWith("/grants")) {
             if (route.request().method() === "POST") {
               expect(route.request().postDataJSON()).toEqual({ principal: entry.principal, path: "", permission: "read" });
-              if (++attempts === 1 && mode === "button")
+              if (++attempts === 1 && mode === "button") {
+                await saving.promise;
                 return json(route, { code: "unavailable", message: "Grant fixture unavailable" }, 503);
+              }
               granted = true;
               return json(route, entry);
             }
@@ -139,6 +142,10 @@ describe("Machine storage settings", () => {
           expect(await tab.getByRole("button", { name: "Suchen", exact: true }).count()).toBe(0);
           expect(await tab.getByRole("button", { name: "Hinzufügen", exact: true }).count()).toBe(0);
           await hit.click();
+          // While the grant saves, the field holds, so a second handle cannot replace the first.
+          await tab.getByRole("textbox", { name: "Kennung des Dienstkontos", exact: true, disabled: true }).waitFor();
+          expect(await hit.isDisabled()).toBe(true);
+          saving.resolve();
           await tab.getByRole("alert").filter({ hasText: "Grant fixture unavailable" }).waitFor();
           // A failed save keeps the handle and the hit, so the same click retries.
           expect(await tab.getByRole("textbox", { name: "Kennung des Dienstkontos", exact: true }).inputValue()).toBe(handle);
@@ -155,6 +162,7 @@ describe("Machine storage settings", () => {
         expect(attempts).toBe(mode === "button" ? 2 : 1);
         expect(await tab.evaluate(() => Math.max(0, document.documentElement.scrollWidth - innerWidth))).toBe(0);
       } finally {
+        saving.resolve();
         await context.close();
       }
     });
