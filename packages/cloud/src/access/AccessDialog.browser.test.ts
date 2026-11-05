@@ -81,6 +81,7 @@ const settledAtRest = async (page: Page) => {
 
 const open = async (width: number, locale: string, scene?: "normal" | "lesen") => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
+  // The icon font URL carries a version query (`?v…`); the glob keeps it routed.
   await page.route("https://harness.test/tabler.woff2*", (route) => route.fulfill({ path: icons.font, contentType: "font/woff2" }));
   await page.setContent(
     `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${icons.css}</style><style>${css}</style><style>${appSheet}</style></head>` +
