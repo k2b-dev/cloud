@@ -753,7 +753,7 @@ function notebooksCommands(locale?: string) {
       versions: t({ en: "Inspect and restore note versions", de: "Notizversionen prüfen und wiederherstellen" }),
       attachments: t({ en: "List, download, and delete notebook files", de: "Notizbuch-Dateien auflisten, laden und löschen" }),
       favorites: t({ en: "Keep your favorite notes", de: "Eigene Lieblingsnotizen pflegen" }),
-      "api-keys": t({ en: "Manage notebook-bound API keys", de: "Notizbuch-gebundene API-Schlüssel verwalten" }),
+      "api-keys": t({ en: "Manage notebook-bound API keys", de: "API Keys des Notizbuchs verwalten" }),
       "page-templates": t({
         en: "Start notes from page templates and keep a notebook's own templates",
         de: "Notizen aus Seitenvorlagen beginnen und die eigenen Vorlagen eines Notizbuchs pflegen",
@@ -2715,7 +2715,7 @@ function notebooksCommands(locale?: string) {
         },
       }),
       command("api-keys list", {
-        summary: t({ en: "List notebook-bound API keys", de: "Notizbuch-gebundene API-Schlüssel auflisten" }),
+        summary: t({ en: "List notebook-bound API keys", de: "API Keys des Notizbuchs auflisten" }),
         args: notebookArg,
         async run({ ctx, args }) {
           const notebook = await resolveNotebookRef(ctx, args.notebook);
@@ -2731,9 +2731,9 @@ function notebooksCommands(locale?: string) {
       command("api-keys create", {
         summary: t({
           en: "Create a notebook-bound API key; the token is shown once",
-          de: "Einen notizbuch-gebundenen API-Schlüssel anlegen; das Token wird einmal gezeigt",
+          de: "Einen API Key des Notizbuchs anlegen; er wird nur einmal gezeigt",
         }),
-        args: { ...notebookArg, name: arg.required({ description: t({ en: "Key name", de: "Name des Schlüssels" }) }) },
+        args: { ...notebookArg, name: arg.required({ description: t({ en: "Key name", de: "Name des API Keys" }) }) },
         flags: {
           permission: flag.enum(["read", "write", "admin"], { default: "read", description: t({ en: "Permission", de: "Recht" }) }),
           expiresAt: flag.string({
@@ -2757,13 +2757,13 @@ function notebooksCommands(locale?: string) {
         },
       }),
       command("api-keys revoke", {
-        summary: t({ en: "Revoke a notebook API key", de: "Einen Notizbuch-API-Schlüssel widerrufen" }),
-        args: { ...notebookArg, key: arg.required({ valueLabel: "key-id", description: t({ en: "API key ID", de: "API-Schlüssel-ID" }) }) },
+        summary: t({ en: "Revoke a notebook API key", de: "Einen API Key des Notizbuchs widerrufen" }),
+        args: { ...notebookArg, key: arg.required({ valueLabel: "key-id", description: t({ en: "API key ID", de: "ID des API Keys" }) }) },
         flags: { yes: confirmFlag(t({ en: "Revoke without asking", de: "Ohne Nachfrage widerrufen" })) },
         async run({ ctx, args, flags }) {
           requireConfirmable(flags.yes);
           const notebook = await resolveNotebookRef(ctx, args.notebook);
-          await confirm(flags.yes, t({ en: `Revoke API key ${args.key}?`, de: `API-Schlüssel ${args.key} widerrufen?` }));
+          await confirm(flags.yes, t({ en: `Revoke API key ${args.key}?`, de: `API Key ${args.key} widerrufen?` }));
           const payload = await ctx.readJson<MessageResponse>(
             await ctx.fetch(api(notebook.id, `/api-keys/${encodeURIComponent(args.key)}`), { method: "DELETE" }),
           );

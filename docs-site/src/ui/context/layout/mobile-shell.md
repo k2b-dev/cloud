@@ -99,6 +99,16 @@ Mark an element `data-k2b-shell-bottom` when it owns the bottom edge of the
 page, such as a chat's composer. The shell counts it as the footer, so toasts
 stand above it at every width.
 
+### A screen of its own
+
+Pass `screen` when the content is a screen of its own, such as an open chat on
+a phone with its composer at the bottom edge. The footer steps aside, and the
+content pads the bottom safe area itself. Content that opens or leaves such a
+screen without loading a page calls `MobileShell.setScreen(element, screen)`
+with any element inside the shell; the server renders the first state through
+the prop, so the first paint already matches. Beside the sidebar nothing
+changes, because there is no footer.
+
 ### Content with its own heads
 
 Pass `scroll={false}` when the content brings its own heads and scroll areas,

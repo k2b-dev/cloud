@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-28
+updated: 2026-11-04
 ---
 
 # Build and deploy
@@ -167,6 +167,10 @@ artifact. The build sets `WORKSPACE_ROOT` and `DIST_DIR` before importing it.
 The build precompresses supported static files with Brotli and gzip.
 
 The application's `app.css` and `favicon.svg` URLs carry `?v=<content hash>`.
+Core minifies the workspace-wide `global.css` during the production build. The template
+preloads the three regular text faces; Tabler icons request their font through CSS when
+used.
+
 The shared stylesheets (`fonts.css`, `tabler-icons.css`, and `global.css`)
 carry Core's registered release. URLs stay the same across restarts, and all
 applications use the same shared stylesheet URLs. Core's `/branding/favicon`

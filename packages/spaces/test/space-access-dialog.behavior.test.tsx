@@ -92,7 +92,7 @@ describe("Spaces settings: access", () => {
     );
     const button = (text: string) =>
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
-    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
     const row = (name: string) => Array.from(dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
     let disposed = false;
     const disposeSection = () => {

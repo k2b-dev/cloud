@@ -152,7 +152,10 @@ including detail, time, and action link text with spaces between them; buttons
 under the line are not announced.
 
 Use `unavailable` to disable confirm and remember while keeping decline enabled.
-Its reason replaces the original reason in the same described element. The
+Its reason replaces the original reason in the same described element. Use
+`waiting` when no answer can arrive right now, such as without a connection:
+it disables every answer, decline included, and its reason replaces both
+others in the same element until the host clears it. The
 optional quiet `remember` answer is host policy: the component neither stores
 consent nor widens permissions. On touch screens it is a full 44 px row, so a
 low tap on either answer never reaches it.
@@ -271,7 +274,7 @@ type ChatDecisionProps = {
   preview?: JSX.Element;
   confirm: ChatDecisionAnswer & { variant?: "ai" | "primary" | "danger" };
   decline: ChatDecisionAnswer; remember?: ChatDecisionAnswer;
-  unavailable?: ChatDecisionReason; outcome?: JSX.Element;
+  unavailable?: ChatDecisionReason; waiting?: ChatDecisionReason; outcome?: JSX.Element;
   onAnswerError?: (error: unknown) => void; anchorId?: string | number; class?: string;
 };
 type ChatOutcomeTone = "running" | "done" | "off" | "waiting" | "warning" | "error";

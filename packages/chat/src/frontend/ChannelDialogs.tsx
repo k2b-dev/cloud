@@ -1,7 +1,6 @@
-import { Button, Combobox, IconButton, InlineGuidance, LocaleProvider, prompts, Select, TextInput } from "@k2b/ui";
+import { Button, Combobox, IconButton, InlineGuidance, Select, TextInput } from "@k2b/ui";
 import { createEffect, createResource, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { z } from "zod";
-import { chatMessages } from "../messages";
 import { type DiscoveryEntrySchema, MEMBER_PAGE_SIZE } from "../service/contracts";
 import { type ChannelApi, createChannelApi } from "./channel-api";
 import { type ChatDialogStore, type Conversation, DialogActions, DialogError, errorMessage, useChatMessages } from "./chat-dialog";
@@ -9,7 +8,7 @@ import { ChatRequestError } from "./chat-store";
 import { createIntent } from "./create-intent";
 
 type Entry = z.infer<typeof DiscoveryEntrySchema> & { displayName: string };
-type EditProps = {
+export type EditProps = {
   store: ChatDialogStore;
   viewerId: string;
   locale: string;
@@ -18,21 +17,6 @@ type EditProps = {
   onSaved?: () => Promise<void>;
   onBusyChange?: (busy: boolean) => void;
 };
-export const openChannelDialog = (props: EditProps) =>
-  prompts.dialog<string>(
-    (close, context) => (
-      <LocaleProvider locale={props.locale}>
-        <ChannelDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
-      </LocaleProvider>
-    ),
-    {
-      title: props.conversation
-        ? chatMessages.resolve([props.locale]).t.discoverySettings
-        : chatMessages.resolve([props.locale]).t.newChannel,
-      icon: "ti ti-hash",
-      size: "medium",
-    },
-  );
 
 export function ChannelDialog(
   props: EditProps & { close: (id?: string) => void; setDismissHandler: (handler: () => void) => void; api?: ChannelApi },

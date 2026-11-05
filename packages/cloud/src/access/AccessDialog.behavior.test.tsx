@@ -287,8 +287,8 @@ describe("AccessDialog", () => {
     const ui = await setup({ findServiceAccount: () => pending.promise });
     try {
       ui.button("Add service account").click();
-      await waitFor(() => !!ui.dom.root.querySelector('input[aria-label="Identifier of the service account"]'), "the identifier field");
-      const input = ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Identifier of the service account"]')!;
+      await waitFor(() => !!ui.dom.root.querySelector('input[aria-label="Handle of the service account"]'), "the identifier field");
+      const input = ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Handle of the service account"]')!;
       input.value = "code-aaaaaaaaaa";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       ui.button("Find").click();
@@ -529,7 +529,7 @@ describe("AccessDialog", () => {
       serviceAccountKind: codeKind,
     };
     const field = (ui: Awaited<ReturnType<typeof setup>>) =>
-      ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Identifier of the service account"]');
+      ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Handle of the service account"]');
     const openAdding = async (ui: Awaited<ReturnType<typeof setup>>) => {
       ui.button("Add service account").click();
       await waitFor(() => !!field(ui), "the identifier field");
@@ -551,7 +551,7 @@ describe("AccessDialog", () => {
         expect(text()).toContain(empty);
         expect(text()).not.toContain("Code runs as the service account");
         await openAdding(ui);
-        expect(field(ui)!.placeholder).toBe("Identifier from the code page, for example code-7k2q9m4xwt");
+        expect(field(ui)!.placeholder).toBe("Handle from the code page, for example code-7k2q9m4xwt");
         expect(text()).not.toContain(empty);
         await cancelAdding(ui);
         expect(text()).toContain(empty);
