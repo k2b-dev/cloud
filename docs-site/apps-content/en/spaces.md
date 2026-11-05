@@ -95,8 +95,8 @@ returns to the list by replacing its entry, so Back does not reopen the task.
   until the page is ready.
 - Events have no circle. Complete them in Spaces on the web.
 - A task you claimed yourself with **I'm on it** is completed with your claim,
-  as on the web. A task someone else claimed stays open; the app names who is
-  working on it, and you can take it over on the web.
+  as on the web. For a task someone else claimed, the app names who is working
+  on it and asks once whether to take it over and complete it.
 - A task with unfinished blockers stays open, and the app says why. So does a
   task in a Space you can only read, and a task that was deleted in the
   meantime disappears from the list. These notices offer no **Retry**, because
@@ -209,6 +209,24 @@ anyone else the address does not exist.
   while it saves. When it cannot be saved, it goes back, its row offers
   **Retry**, and a line above the checklist says how many changes are not
   saved.
+- **Status**, **Due**, and **Assigned** each open their own picker; on a
+  tablet as a menu at the row. The new value shows at once with a spinner at
+  the end of the row while it saves. When it cannot be saved, the old value
+  comes back, the row offers **↻**, and a notice says what stays.
+- **Status** moves the task without dragging: it lands at the top of the new
+  status, and **Undo** in the notice puts it back where it was. A status that
+  completes tasks says so; while unfinished tasks block the task, it stays
+  closed and says why.
+- In **Assigned**, each person you check or uncheck is added or removed alone,
+  so a change someone else makes at the same time stays. **Assign to me** only
+  adds you. A change from elsewhere while the list is open is said in it.
+- Tap the title, or **…** → **Change title**, to change it. Enter or **Save**
+  stores it. If someone changed the title meanwhile, your text stays, the new
+  title shows under the field, and **Use the new title** takes it.
+- Completing a task that someone else claimed asks once whether to take it
+  over, as on the web.
+- Offline, the task stays readable, says why, and the pickers, the circle, and
+  the checklist are off.
 - Without write access to the Space, the task says so, and the circle and the
   checklist are off.
 - **Comment** sends a comment to the task. What you type stays on the device
