@@ -1514,36 +1514,24 @@ for (const { embedded, width } of [
     let recoveredCatalogLoads = 0;
     let searches = 0;
     let catalogFailed = true;
-    let releaseInitial!: () => void;
     let releaseComposer!: () => void;
-    const initialCatalog = new Promise<void>((resolve) => {
-      releaseInitial = resolve;
-    });
     const composerCatalog = new Promise<void>((resolve) => {
       releaseComposer = resolve;
     });
     let catalogRequests = 0;
-    // The page's file-provider discovery reads the catalog on its own once it is idle (in WebKit after 1 s), so it
-    // could otherwise land after the recovery and count as a second recovered load (#1876). Each case waits for that
-    // first read of the document it tests, while the catalog still fails, before the command menu opens.
-    // Recorded from the start, so a slow page load does not use up the wait before the document is ready.
-    let initialRead = false;
+    // File providers are discovered only when a person chooses files or opens the command menu, so the composer's
+    // own read is the document's first; nothing reads the catalog while the page idles.
+    let ownReads = 0;
     page.on("request", (request) => {
       if (
         request.url().includes("/capabilities/v1/catalog") &&
         (!embedded || new URL(request.frame().url()).pathname === "/app/assistant/panel")
       )
-        initialRead = true;
+        ownReads++;
     });
     await page.route("**/api/capabilities/v1/catalog?*", async (route) => {
-      const ordinal = ++catalogRequests;
-      if (!embedded) {
-        if (ordinal === 1) {
-          await initialCatalog;
-          return route.fulfill({ status: 503, json: { message: "Synthetic earlier catalog failure" } });
-        }
-        await composerCatalog;
-      }
+      catalogRequests++;
+      if (!embedded) await composerCatalog;
       if (catalogFailed) return route.fulfill({ status: 503, json: { message: "Synthetic catalog failure" } });
       recoveredCatalogLoads++;
       return route.fulfill({ json: catalog });
@@ -1588,8 +1576,7 @@ for (const { embedded, width } of [
       const view = embedded ? page.frameLocator("[data-cloud-panel-frame]") : page;
       await view.locator('html[data-fixture-ready="true"]').waitFor();
       const composer = view.locator('textarea:not([aria-hidden="true"])');
-      for (const deadline = performance.now() + 8_000; !initialRead; await Bun.sleep(25))
-        if (performance.now() > deadline) throw new Error("The document's own first catalog read did not come");
+      expect(ownReads).toBe(0);
       const failed = page.waitForResponse(
         (response) =>
           response.url().includes("/capabilities/v1/catalog") &&
@@ -1598,10 +1585,9 @@ for (const { embedded, width } of [
       );
       await composer.fill(embedded ? "/" : "/notes");
       await composer.click();
-      releaseInitial();
-      await failed;
       await view.getByRole("listbox").waitFor();
       releaseComposer();
+      await failed;
       if (embedded) {
         expect(await view.getByText("Commands from apps could not be loaded", { exact: true }).count()).toBe(0);
         catalogFailed = false;
