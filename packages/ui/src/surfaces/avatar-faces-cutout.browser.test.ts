@@ -34,23 +34,34 @@ afterAll(async () => {
 const paint = async (page: Page, host: string) => {
   const clip = (await page.locator(host).boundingBox())!;
   const png = await page.screenshot({ clip });
-  const pixels = await page.evaluate(async (src) => {
-    const image = new Image();
-    image.src = src;
-    await image.decode();
-    const canvas = document.createElement("canvas");
-    canvas.width = image.width;
-    canvas.height = image.height;
-    const context = canvas.getContext("2d", { willReadFrequently: true })!;
-    context.drawImage(image, 0, 0);
-    return { width: image.width, data: Array.from(context.getImageData(0, 0, image.width, image.height).data) };
-  }, `data:image/png;base64,${png.toString("base64")}`);
-  const boxes = await page.locator(`${host} .k2b-avatar`).evaluateAll((elements, origin) =>
-    elements.map((element) => {
-      const box = element.getBoundingClientRect();
-      return { left: box.left - origin.x, right: box.right - origin.x, cx: box.left - origin.x + box.width / 2, cy: box.top - origin.y + box.height / 2, r: box.width / 2 };
-    }),
-  clip);
+  const pixels = await page.evaluate(
+    async (src) => {
+      const image = new Image();
+      image.src = src;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext("2d", { willReadFrequently: true })!;
+      context.drawImage(image, 0, 0);
+      return { width: image.width, data: Array.from(context.getImageData(0, 0, image.width, image.height).data) };
+    },
+    `data:image/png;base64,${png.toString("base64")}`,
+  );
+  const boxes = await page.locator(`${host} .k2b-avatar`).evaluateAll(
+    (elements, origin) =>
+      elements.map((element) => {
+        const box = element.getBoundingClientRect();
+        return {
+          left: box.left - origin.x,
+          right: box.right - origin.x,
+          cx: box.left - origin.x + box.width / 2,
+          cy: box.top - origin.y + box.height / 2,
+          r: box.width / 2,
+        };
+      }),
+    clip,
+  );
   const at = (x: number, y: number) => {
     const index = (Math.floor(y) * pixels.width + Math.floor(x)) * 4;
     return [pixels.data[index]!, pixels.data[index + 1]!, pixels.data[index + 2]!];
