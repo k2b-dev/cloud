@@ -2361,7 +2361,8 @@ new gateway route or operator setting is needed. Deploy the complete `_ssr` and
 uncompressed files, including any build rewrites.
 
 The network-served worker pins the active catalogs and verifies SHA-256 on every
-cache read. Worker updates remove entries absent from those builds. Static cache
+cache read. An app whose catalog does not answer is left out until the next worker
+update; its files then load from the network. Worker updates remove entries absent from those builds. Static cache
 storage is limited to 16 MiB; storage denial or eviction falls back to the network.
 Pages and API responses remain network-only. See
 [Offline and updates](/en/docs/frontend/mobile-app-pages#offline-and-updates).

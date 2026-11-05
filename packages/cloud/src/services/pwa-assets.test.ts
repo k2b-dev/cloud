@@ -44,15 +44,36 @@ test("only currently registered shell, Core and parts contribute trusted output"
   }
 });
 
-test("older apps participate after rebuilding; invalid or failed catalogs do not become worker authority", async () => {
+test("older apps participate after rebuilding; invalid or failed catalogs are left out without blocking the others", async () => {
   const apps = spyOn(registry, "listApps").mockResolvedValue([entry("chat", true)]);
   const network = spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 404 }));
   try {
     expect(await pwaStaticAssets()).toEqual([]);
     network.mockResolvedValue(Response.json([{ ...asset("chat"), url: "/api/chat/messages" }]));
-    await expect(pwaStaticAssets()).rejects.toThrow("Invalid static build assets");
-    network.mockResolvedValue(new Response(null, { status: 503 }));
-    await expect(pwaStaticAssets()).rejects.toThrow("Cannot read static build assets");
+    expect(await pwaStaticAssets()).toEqual([]);
+    apps.mockResolvedValue([entry("chat", true), entry("core")]);
+    network.mockImplementation(
+      Object.assign(
+        async (input: Parameters<typeof fetch>[0]) => {
+          const host = new URL(String(input)).hostname;
+          if (host === "chat") return new Response(null, { status: 503 });
+          return Response.json([asset(host)]);
+        },
+        { preconnect: () => undefined },
+      ),
+    );
+    expect(await pwaStaticAssets()).toEqual([asset("core")]);
+    network.mockImplementation(
+      Object.assign(
+        async (input: Parameters<typeof fetch>[0]) => {
+          const host = new URL(String(input)).hostname;
+          if (host === "chat") throw new TypeError("connection refused");
+          return Response.json([asset(host)]);
+        },
+        { preconnect: () => undefined },
+      ),
+    );
+    expect(await pwaStaticAssets()).toEqual([asset("core")]);
   } finally {
     network.mockRestore();
     apps.mockRestore();
