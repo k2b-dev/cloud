@@ -821,7 +821,10 @@ For a share surface with additional grant fields, such as a relative path,
 compose `ServiceAccountLookup` from `@k2b/cloud/access/ui` with those fields.
 Pass `target`, `disabled`, `empty`, and an async `add(account)` callback that
 returns whether the grant was saved. It supplies the same **Add service account**
-button and target-aware lookup; a failed save keeps the handle and result for retry.
+button and handle field as the access dialog: a complete handle is looked up as it
+is typed or pasted, and the hit shows the Code icon, its description and the
+**Service account** mark. Selecting the hit saves the grant; a failed save keeps
+the handle and the hit for retry.
 
 `PrincipalPicker` accepts a Code account supplied in a result. It does not add a
 name-search path; the general directory excludes Code accounts. Pass

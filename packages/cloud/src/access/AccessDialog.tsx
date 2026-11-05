@@ -18,7 +18,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import type { CloudResourceRef } from "../contracts/capabilities";
-import { type AccessEntry, CODE_ACCOUNT_HANDLE_PATTERN, type Principal, type ServiceAccountKind } from "../contracts/shared";
+import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
 import { accessDialogMessages } from "./access-dialog-messages";
 import {
   type AccessDraft,
@@ -45,6 +45,7 @@ import PrincipalAvatar from "./PrincipalAvatar";
 import PrincipalPicker, { type FoundServiceAccount } from "./PrincipalPicker";
 import { principalKey } from "./principal-key";
 import { principalLabel } from "./principal-label";
+import { ServiceAccountHandleField } from "./ServiceAccountHandleField";
 import { serviceAccountKindDisplay } from "./service-account-kind";
 import { findTargetServiceAccount } from "./service-account-lookup";
 
@@ -814,50 +815,13 @@ export function AccessDialog(
 
   // ── Service accounts by handle ────────────────────────────────────
   const [handleOpen, setHandleOpen] = createSignal(false);
-  const [handle, setHandle] = createSignal("");
-  const [lookup, setLookup] = createSignal<"idle" | "searching" | "none" | "failed">("idle");
-  const [found, setFound] = createSignal<FoundServiceAccount | null>(null);
   let addingArea: HTMLLIElement | undefined;
-  let lookupAbort: AbortController | undefined;
-  onCleanup(() => lookupAbort?.abort());
-  /** A complete handle is looked up as it is typed or pasted; the hit is offered below the field. */
-  const findAccount = async (value: string) => {
-    const find = findServiceAccount();
-    if (!find) return;
-    const controller = new AbortController();
-    lookupAbort = controller;
-    setLookup("searching");
-    try {
-      const result = await find(value, controller.signal);
-      if (controller.signal.aborted || disposed) return;
-      setFound(result);
-      setLookup(result ? "idle" : "none");
-      // The hit appears below the field; the sheet keeps both in view.
-      queueMicrotask(() => addingArea?.scrollIntoView?.({ block: "nearest" }));
-    } catch {
-      if (!controller.signal.aborted && !disposed) setLookup("failed");
-    }
-  };
-  const changeHandle = (value: string) => {
-    // A changed handle ends the lookup for the old one, so its answer never appears.
-    lookupAbort?.abort();
-    setHandle(value);
-    setFound(null);
-    if (CODE_ACCOUNT_HANDLE_PATTERN.test(value.trim())) void findAccount(value.trim());
-    else setLookup("idle");
-  };
   const openAdding = () => {
     setHandleOpen(true);
     // On a phone the sheet brings the field and its hit into view itself.
     queueMicrotask(() => addingArea?.scrollIntoView?.({ block: "nearest" }));
   };
-  const closeAdding = () => {
-    lookupAbort?.abort();
-    setHandleOpen(false);
-    setHandle("");
-    setFound(null);
-    setLookup("idle");
-  };
+  const closeAdding = () => setHandleOpen(false);
   let body: HTMLDivElement | undefined;
   const revealRow = (principal: Principal) => {
     const key = rows().find((row) => row.next && principalKey(row.principal) === principalKey(principal))?.key;
@@ -1056,70 +1020,12 @@ export function AccessDialog(
                   <For each={objectAccountRows().map((row) => row.key)}>
                     {(key) => <Show when={rows().find((row) => row.key === key)}>{(row) => <AccessRow row={row()} />}</Show>}
                   </For>
-                  <Show when={handleOpen()}>
-                    <li ref={addingArea} class="flex flex-col gap-2 py-2">
-                      <form
-                        class="flex items-center gap-2 [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          const account = found();
-                          const value = handle().trim();
-                          if (account) addFound(account);
-                          else if (lookup() === "searching") return;
-                          // Enter asks again for a complete handle, so a failed lookup can be retried.
-                          else if (CODE_ACCOUNT_HANDLE_PATTERN.test(value)) void findAccount(value);
-                          else setLookup("none");
-                        }}
-                      >
-                        <TextInput
-                          icon="ti ti-code"
-                          aria-label={t().serviceAccountHandle}
-                          placeholder={t().serviceAccountHandlePlaceholder}
-                          value={handle}
-                          onValueChange={changeHandle}
-                          autofocus
-                        />
-                        <Button variant="text" size="sm" onClick={closeAdding}>
-                          {t().cancel}
-                        </Button>
-                      </form>
-                      <Show when={found()}>
-                        {(account) => (
-                          <button
-                            type="button"
-                            class="flex w-full items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2 text-left hover:bg-[var(--ui-surface-muted)]"
-                            disabled={saving()}
-                            onClick={() => addFound(account())}
-                          >
-                            <PrincipalAvatar
-                              entry={{
-                                principal: account().principal,
-                                avatarHash: account().display.avatarHash,
-                                serviceAccountKind: account().display.serviceAccountKind,
-                              }}
-                              label={account().display.displayName}
-                            />
-                            <span class="min-w-0 flex-[1_1_10rem]">
-                              {/* A long title wraps on a phone instead of pushing the mark out of the sheet. */}
-                              <span class="block min-w-0 break-words max-sm:text-sm sm:text-[15px] font-medium text-primary">
-                                {account().display.displayName}
-                              </span>
-                              <span class="block break-words text-[13px] text-dimmed">{account().description || t().serviceAccount}</span>
-                            </span>
-                            <StatusBadge class="shrink-0" tone="neutral" icon={null} label={access().codeServiceAccount} />
-                          </button>
-                        )}
-                      </Show>
-                      <Show when={lookup() !== "idle"}>
-                        <p class="text-[13px] text-dimmed" role="status">
-                          {lookup() === "searching"
-                            ? t().serviceAccountSearching
-                            : lookup() === "none"
-                              ? t().serviceAccountNotFound
-                              : t().serviceAccountLookupFailed}
-                        </p>
-                      </Show>
-                    </li>
+                  <Show when={handleOpen() && findServiceAccount()}>
+                    {(find) => (
+                      <li ref={addingArea} class="py-2">
+                        <ServiceAccountHandleField find={find()} add={addFound} cancel={closeAdding} disabled={saving()} />
+                      </li>
+                    )}
                   </Show>
                 </ul>
               </Show>
