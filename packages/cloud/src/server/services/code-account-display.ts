@@ -1,6 +1,6 @@
 import { i18n } from "@k2b/stdlib";
 import { resolveCapabilityManifestPresentation } from "../../_internal/capabilities";
-import { getCapability } from "../../_internal/registry";
+import { getApp, getCapability } from "../../_internal/registry";
 import { CloudResourceRefSchema } from "../../contracts/capabilities";
 import type { PermissionLevel } from "../../contracts/shared";
 import { resolveAppIdentityPresentation } from "../../shared/app-presentation";
@@ -59,6 +59,15 @@ export const codeAccountPresenter = (context: CodeAccountDisplayContext = {}) =>
   const canManageTarget = context.permission !== undefined ? context.permission === "admin" : context.canManageTarget === true;
   const { t } = codeMessages.resolve(context.locale ? [context.locale] : []);
   const catalogs = new Map<string, ReturnType<typeof getCapability>>();
+  const apps = new Map<string, ReturnType<typeof getApp>>();
+  const registeredApp = (appId: string) => {
+    let entry = apps.get(appId);
+    if (!entry) {
+      entry = getApp(appId).catch(() => null);
+      apps.set(appId, entry);
+    }
+    return entry;
+  };
   return async (account: {
     name: string;
     title: string | null;
@@ -78,14 +87,15 @@ export const codeAccountPresenter = (context: CodeAccountDisplayContext = {}) =>
     const localType = owner?.kind === "resource" ? owner.ref.type.slice((appId?.length ?? 0) + 1) : null;
     const ownerType = manifest?.types.find((type) => type.localId === localType);
     const type = ownerType?.title;
-    // An app's name is visible in the installation anyway; it is shown in the viewer's language, never as stored.
-    const appTitle =
-      owner?.kind === "app" && app
-        ? resolveAppIdentityPresentation(
-            { name: app.appName, description: app.appDescription, presentation: app.appPresentation },
-            context.locale ?? "en",
-          ).name
+    // An app's name is visible in the installation anyway; it is shown in the viewer's language, never as stored. An
+    // app without a capability catalog still has its registry entry; only an app that is gone keeps the stored name.
+    const appIdentity =
+      owner?.kind === "app"
+        ? app
+          ? { name: app.appName, description: app.appDescription, presentation: app.appPresentation }
+          : await registeredApp(owner.appId)
         : null;
+    const appTitle = appIdentity ? resolveAppIdentityPresentation(appIdentity, context.locale ?? "en").name : null;
     const visibleTitle = owner?.kind === "app" ? (appTitle ?? account.title) : canManageTarget ? account.title : null;
     const page = localType ? manifest?.code?.pages?.[localType] : undefined;
     const href =

@@ -108,7 +108,7 @@ describe("AccessDialog", () => {
       dom.root,
     );
     const row = (name: string) => Array.from(dom.root.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
-    /** By accessible name: a button with a short label on phones keeps its full name. */
+    /** By accessible name or visible label. */
     const button = (text: string) =>
       Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find(
         (item) => item.getAttribute("aria-label") === text || item.textContent?.trim() === text,
@@ -859,9 +859,9 @@ describe("AccessDialog", () => {
       const ui = await setup({ entries: [mia, mailboxCode, appCode], findServiceAccount: async () => null });
       try {
         expect(heading(ui)?.querySelector("h3")?.textContent).toBe("Service accounts 2");
-        const add = Array.from(heading(ui)!.querySelectorAll("button")).find(
-          (item) => item.getAttribute("aria-label") === "Add service account",
-        );
+        // Its visible label is its name, at every width.
+        const add = Array.from(heading(ui)!.querySelectorAll("button")).find((item) => item.textContent?.trim() === "Add service account");
+        expect(add?.hasAttribute("aria-label")).toBe(false);
         expect(add?.getAttribute("data-variant")).toBe("secondary");
         expect(add?.getAttribute("data-size")).toBe("sm");
         const mailbox = ui.row("Code von einkauf@beispiel.de");

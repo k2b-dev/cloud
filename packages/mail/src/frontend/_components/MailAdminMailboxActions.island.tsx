@@ -1,4 +1,4 @@
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { openAccessDialog } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
@@ -31,44 +31,41 @@ const loadAccess = async (mailboxId: string, messages: Messages): Promise<Access
 };
 
 const openPermissionDialog = async (props: MailAdminMailboxActionsProps, entries: AccessEntry[], messages: Messages, locale: string) => {
-  await prompts.dialog<void>(
-    () => (
-      <div class="flex w-full max-w-full flex-col gap-3">
-        <p class="text-xs text-dimmed">{messages.mailboxAccessRepairDescription}</p>
-        <PermissionEditor
-          target={{ type: "mail.mailbox", id: props.mailboxId }}
-          initialEntries={entries}
-          canEdit
-          allowAuthenticated={false}
-          allowServiceAccounts
-          allowedLevels={mailboxAccessLevels(locale)}
-          grantAccess={async (principal, permission, _display, scope) => {
-            const response = await apiClient.admin.mailboxes[":mailboxId"].access.$post({
-              param: { mailboxId: props.mailboxId },
-              json: { principal, permission, scope: mailboxAccessScope(scope) },
-            });
-            if (!response.ok) throw new Error(await readErrorMessage(response, messages.failedGrantMailboxAccess));
-            return response.json();
-          }}
-          updateAccess={async (accessId, permission, scope) => {
-            const response = await apiClient.admin.mailboxes[":mailboxId"].access[":accessId"].$patch({
-              param: { mailboxId: props.mailboxId, accessId },
-              json: { permission, scope: mailboxAccessScope(scope) },
-            });
-            if (!response.ok) throw new Error(await readErrorMessage(response, messages.failedUpdateMailboxAccess));
-          }}
-          revokeAccess={async (accessId) => {
-            const response = await apiClient.admin.mailboxes[":mailboxId"].access[":accessId"].$delete({
-              param: { mailboxId: props.mailboxId, accessId },
-            });
-            if (!response.ok) throw new Error(await readErrorMessage(response, messages.failedRevokeMailboxAccess));
-          }}
-        />
-      </div>
-    ),
-    { title: messages.mailboxPermissions({ name: props.mailboxName }), icon: "ti ti-shield" },
-  );
-  refreshCurrentPath();
+  // Set by every saved change, also when a later one fails and the person discards the rest.
+  let wrote = false;
+  await openAccessDialog({
+    target: { type: "mail.mailbox", id: props.mailboxId },
+    resourceName: props.mailboxName,
+    subtitle: messages.mailboxAccessRepairDescription,
+    initialEntries: entries,
+    allowAuthenticated: false,
+    allowedLevels: mailboxAccessLevels(locale),
+    grantAccess: async (principal, permission, _display, scope) => {
+      const response = await apiClient.admin.mailboxes[":mailboxId"].access.$post({
+        param: { mailboxId: props.mailboxId },
+        json: { principal, permission, scope: mailboxAccessScope(scope) },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, messages.failedGrantMailboxAccess));
+      wrote = true;
+      return response.json();
+    },
+    updateAccess: async (accessId, permission, scope) => {
+      const response = await apiClient.admin.mailboxes[":mailboxId"].access[":accessId"].$patch({
+        param: { mailboxId: props.mailboxId, accessId },
+        json: { permission, scope: mailboxAccessScope(scope) },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, messages.failedUpdateMailboxAccess));
+      wrote = true;
+    },
+    revokeAccess: async (accessId) => {
+      const response = await apiClient.admin.mailboxes[":mailboxId"].access[":accessId"].$delete({
+        param: { mailboxId: props.mailboxId, accessId },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, messages.failedRevokeMailboxAccess));
+      wrote = true;
+    },
+  });
+  if (wrote) refreshCurrentPath();
 };
 
 export default function MailAdminMailboxActions(props: MailAdminMailboxActionsProps) {

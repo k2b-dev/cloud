@@ -11,6 +11,8 @@ let browser: Browser;
 let css: string;
 let harness: string;
 let icons: { css: string; font: string };
+/** IBM Plex, which Cloud ships: widths measured with a fallback font would not be the product's. */
+let plex: { css: string; dir: string };
 
 const buildHarness = async () => {
   const ui = resolve(import.meta.dir, "../../../ui");
@@ -52,6 +54,11 @@ beforeAll(async () => {
   const font = source.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
   if (!font) throw new Error("Missing Tabler WOFF2 file");
   icons = { css: source.replace(font, "https://harness.test/tabler.woff2"), font: resolve(dirname(iconCss), font) };
+  const plexCss = fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css"));
+  plex = {
+    css: (await Bun.file(plexCss).text()).replaceAll("./fonts/", "https://harness.test/fonts/"),
+    dir: resolve(dirname(plexCss), "fonts"),
+  };
   browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
@@ -83,11 +90,19 @@ const open = async (width: number, locale: string, scene?: "normal" | "lesen") =
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   // The icon font URL carries a version query (`?v…`); the glob keeps it routed.
   await page.route("https://harness.test/tabler.woff2*", (route) => route.fulfill({ path: icons.font, contentType: "font/woff2" }));
+  await page.route("https://harness.test/fonts/*", (route) =>
+    route.fulfill({ path: resolve(plex.dir, new URL(route.request().url()).pathname.split("/").pop()!), contentType: "font/woff2" }),
+  );
   await page.setContent(
-    `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${icons.css}</style><style>${css}</style><style>${appSheet}</style></head>` +
+    `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${plex.css}</style><style>${icons.css}</style><style>${css}</style><style>${appSheet}</style></head>` +
       `<body class="k2b-ui"><script>window.accessDialogScene = ${JSON.stringify(scene ?? null)};</script><script>${harness}</script></body></html>`,
   );
   await page.waitForSelector("dialog[open]");
+  await page.evaluate(async () => {
+    await document.fonts.load('600 14px "IBM Plex Sans"');
+    await document.fonts.load('500 12px "IBM Plex Sans"');
+    await document.fonts.ready;
+  });
   await settled(page);
   return page;
 };
@@ -234,9 +249,18 @@ describe("AccessDialog in a browser", () => {
         expect(fit).toEqual({ inViewport: true, badgeInside: true, badgeOneLine: true, badge: "Dienstkonto" });
         await option.click();
         const section = page.locator("dialog section", { has: page.locator("h2, h3", { hasText: "Dienstkonten" }) });
-        await section.locator("li", { hasText: "Code von info@beispiel.de" }).waitFor();
-        await section.scrollIntoViewIfNeeded();
+        const added = section.locator("li", { hasText: "Code von info@beispiel.de" });
+        await added.waitFor();
         await settledAtRest(page);
+        // The sheet brings the new row into view itself (P1-SCROLL): above the footer, inside the scrolled body.
+        expect(
+          await added.evaluate((row) => {
+            const box = row.getBoundingClientRect();
+            const body = row.closest(".k2b-panel-dialog__body")!.getBoundingClientRect();
+            const footer = document.querySelector("dialog .k2b-panel-dialog__footer")!.getBoundingClientRect();
+            return box.top >= body.top - 0.5 && box.bottom <= Math.min(body.bottom, footer.top) + 0.5;
+          }),
+        ).toBe(true);
         await shot(page, `de-${width}-suche-kennung-added`);
         expect(await section.locator("li", { hasText: "Code von info@beispiel.de" }).textContent()).toContain("Neu");
         expect(await page.locator("dialog").textContent()).toContain("Code von info@beispiel.de bekommt");
@@ -272,6 +296,12 @@ describe("AccessDialog in a browser", () => {
         await shot(empty, `de-${width}-leer`);
         expect(await section(empty).locator("h3").textContent()).toBe("Dienstkonten 0");
         expect(await head(empty)).toEqual({ besideTitle: true, titleOneLine: true, headerInside: true, gap: 0 });
+        // The full label at every width, as the mockup shows (N1-kurzlabel), on one line beside the title.
+        const add = section(empty).locator("header button");
+        expect(await add.innerText()).toBe("Dienstkonto hinzufügen");
+        expect(await add.evaluate((button) => button.getBoundingClientRect().height < 40 && button.scrollWidth <= button.clientWidth)).toBe(
+          true,
+        );
       } finally {
         await empty.close();
       }

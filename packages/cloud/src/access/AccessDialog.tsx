@@ -550,7 +550,11 @@ export function AccessDialog(
       );
     };
     return (
-      <li class="flex items-center py-2 max-sm:gap-2 sm:gap-3" classList={{ "[&>:first-child]:opacity-50": !row().next }}>
+      <li
+        class="flex items-center py-2 max-sm:gap-2 sm:gap-3"
+        classList={{ "[&>:first-child]:opacity-50": !row().next }}
+        data-access-key={row().key}
+      >
         <PrincipalAvatar
           entry={{ principal: row().principal, avatarHash: row().display.avatarHash, serviceAccountKind: row().display.serviceAccountKind }}
           label={nameOf(row())}
@@ -777,6 +781,13 @@ export function AccessDialog(
     setFound(null);
     setLookup("idle");
   };
+  let body: HTMLDivElement | undefined;
+  const revealRow = (principal: Principal) => {
+    const key = rows().find((row) => row.next && principalKey(row.principal) === principalKey(principal))?.key;
+    Array.from(body?.querySelectorAll<HTMLElement>("li[data-access-key]") ?? [])
+      .find((item) => item.dataset.accessKey === key)
+      ?.scrollIntoView?.({ block: "nearest" });
+  };
   /** Descriptions of service accounts the search for people found, so their row keeps the server's line. */
   const foundDescriptions = new Map<string, string>();
   const withDescription = (principal: Principal, display: DraftDisplay): DraftDisplay => {
@@ -804,7 +815,7 @@ export function AccessDialog(
         closeDisabled={saving()}
       />
       <PanelDialog.Body>
-        <div class="flex flex-col gap-3">
+        <div ref={body} class="flex flex-col gap-3">
           <Show
             when={canEdit()}
             fallback={
@@ -850,7 +861,7 @@ export function AccessDialog(
                     );
                   })
                 }
-                onSelect={(principal, display) =>
+                onSelect={(principal, display) => {
                   edit((current) =>
                     addPrincipal(
                       current,
@@ -858,8 +869,12 @@ export function AccessDialog(
                       withDescription(principal, display),
                       firstLevel(principal, display.serviceAccountKind),
                     ),
-                  )
-                }
+                  );
+                  // A service account or an API key joins its own section further down; on a phone the sheet brings
+                  // the new row into view, as it does for the handle field.
+                  if (isCodeAccount(display.serviceAccountKind) || isApiKeyAccount(display.serviceAccountKind))
+                    queueMicrotask(() => revealRow(principal));
+                }}
               />
             </Show>
           </Show>
@@ -949,11 +964,10 @@ export function AccessDialog(
               actions={
                 // Beside the title at every width, as in the approved mockup; gone while the field is open.
                 <Show when={canAddObjectAccounts() && !handleOpen()}>
-                  {/* A phone has room beside the title only for the short label; the name stays complete. */}
-                  <Button variant="secondary" size="sm" disabled={saving()} aria-label={t().addServiceAccount} onClick={openAdding}>
+                  {/* The full label at every width, as in the approved mockup; it fits beside the title on a phone. */}
+                  <Button variant="secondary" size="sm" disabled={saving()} onClick={openAdding}>
                     <i class="ti ti-plus" aria-hidden="true" />
-                    <span class="max-sm:hidden">{t().addServiceAccount}</span>
-                    <span class="sm:hidden">{t().add}</span>
+                    {t().addServiceAccount}
                   </Button>
                 </Show>
               }
