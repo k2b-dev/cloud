@@ -19,8 +19,8 @@ else {
       expect(html()).toContain(
         '<div class="md-katex-block my-3 flex items-center justify-center"><span class="katex-display md-katex-pending"><span class="katex">a^2 + b^2 = c^2</span></span></div>',
       );
-      const deadline = Date.now() + 5_000;
-      while (html().includes("md-katex-pending") && Date.now() < deadline) await Bun.sleep(10);
+      const deadline = performance.now() + 5_000;
+      while (html().includes("md-katex-pending") && performance.now() < deadline) await Bun.sleep(10);
       expect(html()).not.toContain("md-katex-pending");
       // The same HTML as the server's, which renders without the browser condition.
       const server = Bun.spawnSync(
