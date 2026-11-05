@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { CAPABILITY_ASK_REASONS, CapabilityActionCallReviewSchema } from "@k2b/cloud/contracts";
+import { z } from "zod";
 import { coreCapabilityMessages } from "../capability-messages";
 import {
   CodePolicyDefinitionSchema,
   CodePolicyManifestSchema,
   type CodePolicyValue,
+  codePolicyContracts,
   codePolicyPreset,
   codePolicyRow,
+  normalizeCodePolicy,
   StoredCodePolicyDefinitionSchema,
 } from "./policy-contracts";
 import { type CodePolicyGroups, effective } from "./policy-effective";
@@ -119,16 +122,20 @@ describe("Code policy group resolution", () => {
     test(item.name, () => {
       const policy = codePolicyPreset("admin");
       policy.preset = "custom";
-      policy.rules = policy.rules.map((rule) => (rule.row === "ask_deletes" ? { ...rule, value: item.fallback ?? "admin" } : rule));
-      policy.rules.push(...item.rules.map(([groupId, value]) => ({ groupId, row: "ask_deletes" as const, value })));
+      policy.rules = policy.rules.map((rule) => (rule.row === "silent_shared" ? { ...rule, value: item.fallback ?? "admin" } : rule));
+      policy.rules.push(...item.rules.map(([groupId, value]) => ({ groupId, row: "silent_shared" as const, value })));
       const membership = { groups, ancestors: (item.edges ?? []).map(([groupId, ancestorId]) => ({ groupId, ancestorId })) };
       expect(
-        effective("ask_deletes", item.resource ? { kind: "resource", ref: { type: "example.owner", id: "x" } } : owner, policy, membership)
-          .value,
+        effective(
+          "silent_shared",
+          item.resource ? { kind: "resource", ref: { type: "example.owner", id: "x" } } : owner,
+          policy,
+          membership,
+        ).value,
       ).toBe(item.want);
-      if (item.resource) expect(effective("ask_deletes", { kind: "app", appId: "example" }, policy, membership).value).toBe(item.want);
-      expect(effective("ask_deletes", owner, policy, { groups: [...groups].reverse(), ancestors: membership.ancestors })).toEqual(
-        effective("ask_deletes", owner, policy, membership),
+      if (item.resource) expect(effective("silent_shared", { kind: "app", appId: "example" }, policy, membership).value).toBe(item.want);
+      expect(effective("silent_shared", owner, policy, { groups: [...groups].reverse(), ancestors: membership.ancestors })).toEqual(
+        effective("silent_shared", owner, policy, membership),
       );
     });
   test("presets and replacement validation", () => {
@@ -139,7 +146,7 @@ describe("Code policy group resolution", () => {
     expect(CodePolicyDefinitionSchema.safeParse({ ...policy, rules: [...policy.rules, policy.rules[0]] }).success).toBe(false);
     expect(CodePolicyDefinitionSchema.safeParse({ ...policy, preset: "open" }).success).toBe(false);
     expect(codePolicyPreset("off").rules.every((rule) => rule.value === "never")).toBe(true);
-    expect(codePolicyPreset("open").rules.every((rule) => rule.value === "automatic")).toBe(true);
+    expect(codePolicyPreset("open").rules.every((rule) => rule.value === (rule.row.startsWith("ask_") ? "never" : "automatic"))).toBe(true);
   });
   test("stored historical presets stay readable, missing defaults deny, and checked rows are unique", () => {
     const historical = codePolicyPreset("open");
@@ -190,7 +197,9 @@ test("the admin preset requires approval for internet versions of every owner", 
 test("F9 B classifies each actual call; an all-admin table also covers reads", () => {
   const defaults = codePolicyPreset("admin");
   for (const rule of defaults.rules)
-    expect(rule.value).toBe(["read", "silent_you", "silent_draft"].includes(rule.row) ? "automatic" : "admin");
+    expect(rule.value).toBe(
+      rule.row.startsWith("ask_") ? "never" : ["read", "silent_you", "silent_draft"].includes(rule.row) ? "automatic" : "admin",
+    );
   expect(codePolicyRow("action")).toBe("ask_app_asks");
   const allAdmin = { ...defaults, preset: "custom" as const, rules: defaults.rules.map((rule) => ({ ...rule, value: "admin" as const })) };
   for (const candidate of [
@@ -198,5 +207,32 @@ test("F9 B classifies each actual call; an all-admin table also covers reads", (
     { kind: "resource" as const, ref: { type: "example.owner", id: "x" } },
     { kind: "app" as const, appId: "example" },
   ])
-    for (const rule of allAdmin.rules) expect(effective(rule.row, candidate, allAdmin, { groups: [], ancestors: [] }).value).toBe("admin");
+    for (const rule of allAdmin.rules)
+      expect(effective(rule.row, candidate, allAdmin, { groups: [], ancestors: [] }).value).toBe(
+        rule.row.startsWith("ask_") ? "never" : "admin",
+      );
+});
+
+test("every asking row normalizes stored defaults and group overrides to never", () => {
+  for (const value of ["automatic", "admin", "never"] as const) {
+    const policy = codePolicyPreset("open");
+    const historical = {
+      ...policy,
+      rules: policy.rules.flatMap((rule) => [
+        { ...rule, value: rule.row.startsWith("ask_") ? value : rule.value },
+        { ...rule, groupId: "11111111-1111-4111-8111-111111111111", value },
+      ]),
+    };
+    const normalized = normalizeCodePolicy(StoredCodePolicyDefinitionSchema.parse(historical));
+    expect(normalized.rules.filter((rule) => rule.row.startsWith("ask_")).every((rule) => rule.value === "never")).toBe(true);
+    for (const rule of normalized.rules.filter((rule) => rule.row.startsWith("ask_")))
+      expect(effective(rule.row, owner, historical, { groups: [], ancestors: [] }).value).toBe("never");
+  }
+});
+
+test("policy transport contracts compile to capability JSON Schema", () => {
+  for (const contract of Object.values(codePolicyContracts)) {
+    expect(() => z.toJSONSchema(contract.input, { io: "input" })).not.toThrow();
+    expect(() => z.toJSONSchema(contract.data)).not.toThrow();
+  }
 });

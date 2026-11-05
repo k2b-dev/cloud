@@ -50,7 +50,7 @@ export const fixtureApprovals = (): CodeAdminApproval[] => [
     title: "Rückruf bestätigen",
     author: { id: FIXTURE_PEOPLE.lea, name: "Lea Muster" },
     submittedAt: "2026-11-01T11:10:00.000Z",
-    rows: ["ask_involves_people"],
+    rows: ["silent_shared"],
     stat: { first: false, added: 3, removed: 1, lines: 41, files: 1 },
   },
   {
@@ -83,7 +83,7 @@ export const fixtureApprovals = (): CodeAdminApproval[] => [
     title: "Wochenbericht Vertrieb",
     author: { id: FIXTURE_PEOPLE.lea, name: "Lea Muster" },
     submittedAt: "2026-10-31T09:05:00.000Z",
-    rows: ["ask_keeps_working"],
+    rows: ["ai"],
     stat: { first: false, added: null, removed: null, lines: 64, files: 2 },
   },
 ];
@@ -233,7 +233,7 @@ export const fixtureApprovalDetail = (
           { operation: "mail.message.list", target: { type: "mail.mailbox", id: "m_info" }, file: "code.ts", line: 5, change: "same" },
           { operation: "mail.draft.create", target: { type: "mail.mailbox", id: "m_info" }, file: "code.ts", line: 10, change: "removed" },
         ],
-    why: [{ row: "ask_involves_people", source: "default", groups: [] }],
+    why: [{ row: "silent_shared", source: "default", groups: [] }],
     ai: true,
     newer:
       variant === "newer" ? { versionId: V.rueckruf4, number: 4, author: "Lea Muster", submittedAt: "2026-11-01T11:40:00.000Z" } : null,
@@ -508,7 +508,7 @@ export const fixturePolicy = (): CodeAdminPolicy => {
   const definition = codePolicyPreset("admin");
   definition.preset = "custom";
   definition.rules.push(
-    { groupId: FIXTURE_GROUPS.buchhaltung, row: "ask_deletes", value: "automatic" },
+    { groupId: FIXTURE_GROUPS.buchhaltung, row: "ask_deletes", value: "never" },
     { groupId: FIXTURE_GROUPS.buchhaltung, row: "silent_shared", value: "automatic" },
     { groupId: FIXTURE_GROUPS.praktikum, row: "ask_sends", value: "never" },
     { groupId: FIXTURE_GROUPS.praktikum, row: "internet", value: "never" },
@@ -546,13 +546,13 @@ export const fixtureEffective = (): CodeAdminEffective => ({
     { row: "silent_draft", value: "automatic", source: "default", groups: [] },
     { row: "silent_shared", value: "automatic", source: "group", groups: ["Buchhaltung"] },
     { row: "ask_sends", value: "never", source: "veto", groups: ["Praktikum"] },
-    { row: "ask_deletes", value: "automatic", source: "group", groups: ["Buchhaltung"] },
-    { row: "ask_cannot_undo", value: "admin", source: "default", groups: [] },
-    { row: "ask_involves_people", value: "admin", source: "default", groups: [] },
-    { row: "ask_changes_access", value: "admin", source: "default", groups: [] },
-    { row: "ask_keeps_working", value: "admin", source: "default", groups: [] },
-    { row: "ask_sensitive", value: "admin", source: "default", groups: [] },
-    { row: "ask_app_asks", value: "admin", source: "default", groups: [] },
+    { row: "ask_deletes", value: "never", source: "veto", groups: [] },
+    { row: "ask_cannot_undo", value: "never", source: "veto", groups: [] },
+    { row: "ask_involves_people", value: "never", source: "veto", groups: [] },
+    { row: "ask_changes_access", value: "never", source: "veto", groups: [] },
+    { row: "ask_keeps_working", value: "never", source: "veto", groups: [] },
+    { row: "ask_sensitive", value: "never", source: "veto", groups: [] },
+    { row: "ask_app_asks", value: "never", source: "veto", groups: [] },
     { row: "ai", value: "admin", source: "default", groups: [] },
     { row: "internet", value: "never", source: "veto", groups: ["Praktikum"] },
   ],

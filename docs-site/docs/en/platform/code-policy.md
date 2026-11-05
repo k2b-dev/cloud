@@ -26,20 +26,31 @@ The values are `automatic` (**Automatisch**), `admin` (**Admin gibt frei**) and
 | Silent Actions for the person | `silent_you` | Automatic |
 | Silent draft Actions | `silent_draft` | Automatic |
 | Silent Actions visible to others | `silent_shared` | Admin approval |
-| Sends | `ask_sends` | Admin approval |
-| Deletes | `ask_deletes` | Admin approval |
-| Cannot undo | `ask_cannot_undo` | Admin approval |
-| Involves people | `ask_involves_people` | Admin approval |
-| Changes access | `ask_changes_access` | Admin approval |
-| Keeps working | `ask_keeps_working` | Admin approval |
-| Sensitive | `ask_sensitive` | Admin approval |
-| App asks | `ask_app_asks` | Admin approval |
+| Sends | `ask_sends` | Never |
+| Deletes | `ask_deletes` | Never |
+| Cannot undo | `ask_cannot_undo` | Never |
+| Involves people | `ask_involves_people` | Never |
+| Changes access | `ask_changes_access` | Never |
+| Keeps working | `ask_keeps_working` | Never |
+| Sensitive | `ask_sensitive` | Never |
+| App asks | `ask_app_asks` | Never |
 | AI use | `ai` | Admin approval |
 | External requests and public endpoints | `internet` | Admin approval |
 
 **Off** (`off`, **Aus**) sets every row to `never`. **Open** (`open`, **Offen**)
-sets every row to `automatic`. Applying a preset replaces group overrides too.
+sets every eligible row to `automatic`. Applying a preset replaces group overrides too.
 Editing individual rows produces a `custom` table.
+
+Every `ask_*` row is fixed at **Never**, including group overrides. The editor
+shows “In diesem Release läuft das nicht unbeaufsichtigt.” instead of a choice.
+Stored `automatic` or `admin` values for these rows normalize to `never` during
+migration and whenever the table is read or saved. Other rows retain their
+values. **Open** also leaves asking rows at `never`. Existing active versions
+that declare an asking row are visibly paused by migration. A normalization
+records a new policy revision and timestamp, with no human updater. Submitting or
+activating such a version returns `code_unattended_forbidden`; sending keeps
+`code_sends_not_yet`. No administrator approval can remove this release limit.
+Remove the asking calls and switch on a new version to resume.
 
 The classification follows the declared Action policy; an Action without one
 uses `ask_app_asks`. Separate execution restrictions still apply. In particular,

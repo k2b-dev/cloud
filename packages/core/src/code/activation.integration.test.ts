@@ -22,7 +22,7 @@ import { cleanupCodeActivation, codeActivationCleanupOutbox } from "./activation
 import * as authoringChecks from "./authoring-check";
 import type { Code } from "./contracts";
 import { CODE_SETTINGS, codeSettings } from "./settings";
-import { codeBundleHash, codeSourceHash, findCode, insertCodeRun } from "./store";
+import { codeBundleHash, codeSourceHash, findCode, insertCodeRun, readCode } from "./store";
 import { submitCodeVersion } from "./versions";
 
 const fixed = new Date("2026-10-31T12:00:00.000Z");
@@ -208,6 +208,37 @@ databaseSuite()("durable Code activation", () => {
     catalogSpy?.mockRestore();
     readersSpy?.mockRestore();
     setSystemTime();
+  });
+
+  test("legacy mandate keeps its policy, asks for confirmation, and pauses at the next version switch", async () => {
+    const code = await newCode();
+    const first = await version(code);
+    const activation = await start(code, first.version.id);
+    await run(activation.id);
+    const policy = { version: 1, apps: ["example"], operations: ["capability.query:item.read"], actions: "deny" };
+    await sql`UPDATE auth.mandates SET policy=${JSON.stringify(policy)}::text::jsonb
+      WHERE workload_id=${first.version.id}`;
+    expect((await readCode(code.id, administrator)).code.needsReconfirmation).toBe(true);
+    const [before] = await sql`SELECT id,policy,revision::int,state FROM auth.mandates WHERE workload_id=${first.version.id}`;
+    expect(before).toMatchObject({ policy, state: "active" });
+    // Submitting alone leaves the old entry and its exact policy in force.
+    const next = await version(code, ["A"], first.version.id);
+    expect((await sql`SELECT state,policy FROM auth.mandates WHERE id=${before!.id}::uuid`)[0]).toMatchObject({ state: "active", policy });
+    const nextActivation = await start(code, next.version.id);
+    await run(nextActivation.id);
+    expect((await status(code, nextActivation.id)).state).toBe("active");
+    expect((await sql`SELECT state,policy,revision::int FROM auth.mandates WHERE id=${before!.id}::uuid`)[0]).toMatchObject({
+      state: "paused",
+      policy,
+      revision: Number(before!.revision) + 1,
+    });
+    expect((await readCode(code.id, administrator)).code.needsReconfirmation).toBe(false);
+    const [audit] = await sql`SELECT metadata FROM audit.events WHERE action='core.code.activated' AND request_id=${nextActivation.id}`;
+    expect(audit?.metadata.pausedLegacyMandateIds).toEqual([before!.id]);
+    expect((await sql`SELECT state,policy FROM auth.mandates WHERE workload_id=${next.version.id}`)[0]).toMatchObject({
+      state: "active",
+      policy: null,
+    });
   });
 
   test("personal activation creates its owner's version mandate without resource grants", async () => {

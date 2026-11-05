@@ -83,6 +83,7 @@ export const CodeSchema = z
     serviceAccountHandle: z.string().nullable(),
     state: z.enum(["draft", "active", "paused", "deleting"]),
     activeVersionId: z.uuid().nullable(),
+    needsReconfirmation: z.boolean().optional(),
     pauseReason: z.string().nullable(),
     pauseRows: z.array(z.string()),
     pausePolicyRevision: z.number().int().positive().nullable(),

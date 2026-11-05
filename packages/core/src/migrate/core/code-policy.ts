@@ -25,6 +25,11 @@ export async function migrate(db: SQL = sql): Promise<void> {
     if (inserted.length)
       for (const rule of codePolicyPreset("admin").rules)
         await tx`INSERT INTO code.policy_rules(group_id,row,value) VALUES(NULL,${rule.row},${rule.value})`;
+    // Normalize historical defaults and overrides without widening any authority.
+    const normalized = await tx`UPDATE code.policy_rules SET value='never'
+      WHERE left(row,4)='ask_' AND value<>'never' RETURNING id`;
+    if (normalized.length)
+      await tx`UPDATE code.policy SET revision=revision+1,updated_by=NULL,updated_at=clock_timestamp() WHERE singleton`;
     // C8 writes this coverage in the same transaction as its verified, hash-bound approval decision.
     // A version ID identifies immutable source, bundle and manifest; no broad author-level grant.
     await tx`CREATE TABLE IF NOT EXISTS code.policy_coverage (
@@ -35,6 +40,13 @@ export async function migrate(db: SQL = sql): Promise<void> {
     await tx`ALTER TABLE code.codes ADD COLUMN IF NOT EXISTS pause_reason TEXT,
       ADD COLUMN IF NOT EXISTS pause_rows TEXT[] NOT NULL DEFAULT '{}',
       ADD COLUMN IF NOT EXISTS pause_policy_revision INTEGER`.simple();
+    // The release veto applies to the whole version. Make existing affected Code visibly paused,
+    // including installations whose asking rules were already never. The state predicate is idempotent.
+    await tx`UPDATE code.codes c SET state='paused',pause_reason='policy_changed',
+      pause_rows=ARRAY(SELECT value FROM jsonb_array_elements_text(v.manifest->'policyRows') WHERE left(value,4)='ask_'),
+      pause_policy_revision=(SELECT revision FROM code.policy WHERE singleton)
+      FROM code.versions v WHERE c.state='active' AND c.active_version_id=v.id
+        AND EXISTS(SELECT 1 FROM jsonb_array_elements_text(v.manifest->'policyRows') WHERE left(value,4)='ask_')`;
     await tx`CREATE INDEX IF NOT EXISTS codes_policy_active ON code.codes(id) WHERE state='active'`.simple();
     await tx`CREATE TABLE IF NOT EXISTS code.policy_pause_outbox (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(), sequence BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,

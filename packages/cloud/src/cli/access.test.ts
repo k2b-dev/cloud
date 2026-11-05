@@ -350,3 +350,28 @@ test("a Code handle is resolved only in the supplied target and becomes a UUID p
   expect(query.get("target_type")).toBe("spaces.space");
   expect(query.get("target_id")).toBe("space-1");
 });
+
+for (const reason of ["no target", "empty target-scoped result (not a manager, missing, deleted or filtered account)"]) {
+  test(`a Code identifier refuses ${reason} with the surface's non-disclosing message`, async () => {
+    let lookups = 0;
+    const ctx = {
+      options: { locale: "de" },
+      fetch: async (path: string) => {
+        lookups++;
+        const query = new URL(path, "https://fixture.test").searchParams;
+        expect(query.get("target_type")).toBe("spaces.space");
+        expect(query.get("target_id")).toBe("space-1");
+        return Response.json({ items: [], pagination: { hasNext: false } });
+      },
+      readJson: async (response: Response) => response.json(),
+    } as unknown as CloudCliContext;
+    await expect(
+      resolveAccessPrincipal(
+        ctx,
+        { serviceAccount: "code-7k2q9m4xwt" },
+        reason === "no target" ? {} : { target: { type: "spaces.space", id: "space-1" } },
+      ),
+    ).rejects.toThrow("Kein Dienstkonto mit dieser Kennung, oder du kannst es hier nicht hinzufügen.");
+    expect(lookups).toBe(reason === "no target" ? 0 : 1);
+  });
+}

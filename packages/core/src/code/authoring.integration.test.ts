@@ -235,8 +235,12 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
           openWorld: false,
           destructive: false,
           idempotency: "required",
+          policy: { silent: "shared" },
           input: z.object({ title: z.string().describe("Task title.") }).strict(),
           data: z.object({ id: z.string() }).strict(),
+          review: () => {
+            throw new Error("Real action reviews must never run in authoring tests");
+          },
           run: () => {
             throw new Error("Real actions must never run in authoring tests");
           },
@@ -352,10 +356,11 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
           expect(event.isError).toBeFalsy();
           seen.push(event.name);
           if (["code_init", "code_write", "code_pull"].includes(event.name)) project = codeAuthoringContracts.pull.data.parse(event.result);
-          if (event.name === "code_check")
-            expect(codeAuthoringContracts.check.data.parse(event.result).permissions).toEqual([
-              { ...permission, status: "new", title: null, typeTitle: "Space", own: false },
-            ]);
+          if (event.name === "code_check") {
+            const check = codeAuthoringContracts.check.data.parse(event.result);
+            expect(check.permissions).toEqual([{ ...permission, status: "new", title: null, typeTitle: "Space", own: false }]);
+            expect(check.manifest?.policyRows).toEqual(["silent_shared"]);
+          }
           if (event.name === "code_test" || event.name === "code_simulate")
             expect(codeAuthoringContracts.test.data.parse(event.result).ok).toBe(true);
           if (event.name === "code_submit") versionId = codeAuthoringContracts.submit.data.parse(event.result).submission.version.id;

@@ -206,6 +206,9 @@ export const codePageMessages = i18n.define({
       approvalRefusedTitle: "This version needs the Cloud admin's approval.",
       approvalRefusedDetail: "The Cloud admin approves versions where the policy requires it.",
       viewApproval: "View approval",
+      reconfirmTitle: "Confirm again",
+      reconfirmDescription:
+        "This version still uses its previous confirmation. Switch on a new version to confirm it again. The old entry pauses at that switch.",
       pausedTitle: "This Code is paused.",
       pausedDescription: "Its automations do not start. Events during the pause are not caught up.",
       // Sections
@@ -492,6 +495,9 @@ export const codePageMessages = i18n.define({
       approvalRefusedTitle: "Diese Version braucht die Freigabe des Cloud-Admins.",
       approvalRefusedDetail: "Der Cloud-Admin gibt Versionen frei, wo seine Richtlinie es verlangt.",
       viewApproval: "Freigabe ansehen",
+      reconfirmTitle: "Neu bestätigen",
+      reconfirmDescription:
+        "Für diese Version gilt noch die bisherige Bestätigung. Schalte eine neue Version ein, um neu zu bestätigen. Beim Wechsel pausiert der alte Eintrag.",
       pausedTitle: "Dieser Code ist pausiert.",
       pausedDescription: "Seine Automationen starten nicht. Ereignisse in der Pause werden nicht nachgeholt.",
       automations: "Automationen",

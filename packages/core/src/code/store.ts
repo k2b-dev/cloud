@@ -75,7 +75,12 @@ export const readCode = async (codeId: string, context: CodeContext) => {
   codePerson(context);
   const code = await findCode(codeId);
   if (!code) throw new CodeDataError("NOT_FOUND", "Code not found.");
-  return { code, permission: await requireCodePermission(code, context) };
+  const permission = await requireCodePermission(code, context);
+  const [legacy] = await sql`SELECT id FROM auth.mandates
+    WHERE owner_app_id IN ('core','runner') AND workload_type='code.version'
+      AND workload_id=${code.activeVersionId} AND policy IS NOT NULL AND state IN ('active','paused')
+    LIMIT 1`;
+  return { code: { ...code, needsReconfirmation: Boolean(legacy) }, permission };
 };
 /** Paginate a bounded candidate window. An empty authorized page may still have nextCursor. */
 export const listCodes = async (

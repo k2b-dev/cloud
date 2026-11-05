@@ -91,7 +91,7 @@ test("approvals render list, review, decided, empty, error and missing states", 
   expect(detail).toContain("Rückruf bestätigen · Version 3");
   expect(detail).toContain("1 von 4");
   expect(detail).toContain("Warum du freigibst");
-  expect(detail).toContain("„Bezieht Personen ein“ steht für Lea Muster auf Admin gibt frei, aus dem Standard.");
+  expect(detail).toContain("„Für andere sichtbar“ steht für Lea Muster auf Admin gibt frei, aus dem Standard.");
   expect(detail).toContain("Aufgabe anlegen");
   expect(detail).toContain("spaces.task.create · an Space sp_2lg8");
   expect(detail).toContain("entfällt");
@@ -316,4 +316,10 @@ test("Code of an app has its Code page here: its service account and a refused c
   expect(detail).not.toContain("Zielrechte");
   // Code of a place or a person keeps its Code page at its owner.
   expect(render({ sec: "code", id: "c_rechn" })).not.toContain("Läuft als Dienstkonto");
+});
+
+test("approval describes calls rather than suggesting a grant change", () => {
+  const html = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 });
+  expect(html).toContain("Was der Code aufruft");
+  expect(html).not.toContain("Was sich an den Rechten ändert");
 });

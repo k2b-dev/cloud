@@ -363,7 +363,7 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
                               <b class="font-semibold">{t().before({ value: cellLabel(before()) })}</b>
                               {" · "}
                             </Show>
-                            {t().rowExample({ row })}
+                            <span>{row.startsWith("ask_") ? t().unattendedUnavailable : t().rowExample({ row })}</span>
                             <span class="@4xl:hidden"> · {t().usage({ n: props.usage[row] ?? 0 })}</span>
                           </span>
                         </span>
@@ -374,14 +374,19 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
                           role="cell"
                           class={props.groupId ? "block w-full @lg:w-[20rem] @3xl:w-[27rem]" : "block w-full @lg:w-[18rem] @3xl:w-[21rem]"}
                         >
-                          <SegmentedControl
-                            size="sm"
-                            ariaLabel={t().valueFor({ label: t().rowLabel({ row }) })}
-                            options={options()}
-                            value={() => cellOf(draft(), props.groupId, row)}
-                            onValueChange={(value) => edit(withCell(draft(), props.groupId, row, value))}
-                            disabled={saving()}
-                          />
+                          <Show
+                            when={!row.startsWith("ask_")}
+                            fallback={<span class="text-sm font-medium">{t().value({ value: "never" })}</span>}
+                          >
+                            <SegmentedControl
+                              size="sm"
+                              ariaLabel={t().valueFor({ label: t().rowLabel({ row }) })}
+                              options={options()}
+                              value={() => cellOf(draft(), props.groupId, row)}
+                              onValueChange={(value) => edit(withCell(draft(), props.groupId, row, value))}
+                              disabled={saving()}
+                            />
+                          </Show>
                         </span>
                       </div>
                     );

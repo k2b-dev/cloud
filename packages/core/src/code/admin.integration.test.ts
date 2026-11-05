@@ -251,7 +251,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
     await updateCodePolicy(
       {
         revision: current.revision,
-        definition: { preset: "custom", rules: [...current.definition.rules, { groupId, row: "ask_deletes", value: "automatic" }] },
+        definition: { preset: "custom", rules: [...current.definition.rules, { groupId, row: "silent_shared", value: "automatic" }] },
       },
       reviewer,
     );
@@ -261,7 +261,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
         by: "Ben Schulz",
         revision: current.revision + 1,
         preset: { before: current.definition.preset, after: "custom" },
-        changes: [{ group: "Buchhaltung", row: "ask_deletes", before: null, after: "automatic" }],
+        changes: [{ group: "Buchhaltung", row: "silent_shared", before: null, after: "automatic" }],
       },
     ]);
     const policy = await readCodeAdminPolicy(reviewer);
@@ -270,11 +270,17 @@ databaseSuite()("C22 Administration › Code read model", () => {
     const effective = await readCodeAdminEffective(authorId, reviewer);
     expect(effective.person).toEqual({ id: authorId, name: "Lea Muster" });
     expect(effective.groups).toEqual([{ id: groupId, name: "Buchhaltung", parents: [] }]);
-    expect(effective.rows.find((row) => row.row === "ask_deletes")).toEqual({
-      row: "ask_deletes",
+    expect(effective.rows.find((row) => row.row === "silent_shared")).toEqual({
+      row: "silent_shared",
       value: "automatic",
       source: "group",
       groups: ["Buchhaltung"],
+    });
+    expect(effective.rows.find((row) => row.row === "ask_deletes")).toEqual({
+      row: "ask_deletes",
+      value: "never",
+      source: "veto",
+      groups: [],
     });
     expect(await codeAdminOwnerNames(["c_admin1"], reviewer)).toEqual({ c_admin1: "Lea Muster" });
     expect(await listCodeAdminCleanup(reviewer)).toEqual({ items: [], nextCursor: null });

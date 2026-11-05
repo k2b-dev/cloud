@@ -876,3 +876,19 @@ test("the real Code page loader retains the handle before the first run", async 
     network.mockRestore();
   }
 });
+
+test("a legacy version entry shows the reconfirmation hint", () => {
+  const fixture = codePageFixture("overview");
+  if (fixture.state.kind !== "ready") throw new Error("Expected ready fixture");
+  fixture.state.code.needsReconfirmation = true;
+  const rendered = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(CodePage, { data: fixture });
+      },
+    }),
+  );
+  expect(rendered).toContain("Neu bestätigen");
+  expect(rendered).toContain("Beim Wechsel pausiert der alte Eintrag.");
+});
