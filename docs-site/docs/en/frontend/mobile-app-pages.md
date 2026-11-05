@@ -183,8 +183,9 @@ It renders the app's document head, a
 [`TabBar`](/en/ui/layout/tab-bar) with Start and the first three parts, and a
 sidebar with Start, every part, and Settings for wide screens. Start
 lists every part, so it also serves as "More", and opens Settings from its
-header. The layout provides the request locale, follows the person's Light,
-Dark, or Automatic theme preference, and sets `Referrer-Policy: no-referrer`
+header. The layout provides the request locale, gives a part's pages the
+application's `appearance.accent` for selection and accents, as an application
+has on the web, follows the person's Light, Dark, or Automatic theme preference, and sets `Referrer-Policy: no-referrer`
 and `frame-ancestors 'none'`. In the browser, it registers the app's service
 worker, shows an offline notice, and keeps the app session alive. With
 Automatic, the status bar color follows the device's appearance.
