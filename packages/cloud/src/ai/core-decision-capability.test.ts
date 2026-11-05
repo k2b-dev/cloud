@@ -1,13 +1,14 @@
 import { afterEach, expect, expectTypeOf, spyOn, test } from "bun:test";
 import * as ai from "@k2b/cloud/ai";
-import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
+import { CapabilityErrorSchema, type CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { geoTestContext } from "@k2b/cloud/services/geo/geo.test-fixture";
 import { z } from "zod";
 import { type aiDecisionData, aiDecisionInput, aiDecisionQuery } from "../../../core/src/ai-decision-capability";
 import { decisionInputFixture as input, decisionResultFixture as result } from "../../../core/src/ai-decision-capability.test-fixture";
 import { aiCapabilities } from "../../../core/src/capabilities";
+import { codeAiReferenceCost } from "../../../core/src/code/ai-budget";
 import { codeSettings } from "../../../core/src/code/settings";
-import { compileCapabilities, invokeCompiledCapability } from "../_internal/capabilities";
+import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../_internal/capabilities";
 import { buildAiCapabilityCatalog, createLoadedAiCapabilityTools } from "./capabilities";
 
 const context: CapabilityExecutionContext = {
@@ -119,6 +120,25 @@ test.each([
   if (en.ok || de.ok) throw new Error("Expected failures");
   expect(en.error.message).not.toBe(de.error.message);
   expect(JSON.stringify([en, de])).not.toContain("private");
+});
+
+test("real quota errors survive the provider wire contract and release the Code AI reservation", async () => {
+  call = spyOn(ai, "runAiDecision").mockRejectedValue(new ai.AiQuotaError("quota_exhausted", "Chat usage limit reached."));
+  const compiled = compileCapabilities("core", aiCapabilities);
+  const outcome = await invokeCompiledCapability({
+    compiled,
+    kind: "query",
+    localId: "ai.decide",
+    expectedSchemaHash: compiled.queries.get("ai.decide")!.manifest.schemaHash,
+    input,
+    context,
+  });
+  const wire = serializeCapabilityProviderResult(outcome);
+  expect(wire.status).toBe(429);
+  const error = CapabilityErrorSchema.parse(JSON.parse(wire.body));
+  expect(error.code).toBe("quota_exhausted");
+  expect(error.message).not.toContain("Chat usage limit reached");
+  expect(codeAiReferenceCost("core.ai.decide", { ok: false, error: { ...error, status: wire.status } }, [], "1")).toBe("0");
 });
 
 test("unexpected infrastructure failures reach the framework error handler", async () => {

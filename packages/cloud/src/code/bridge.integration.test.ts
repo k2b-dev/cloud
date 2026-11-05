@@ -24,7 +24,7 @@ import { migrate as migrateVersions } from "../../../core/src/migrate/core/code-
 import { migrate as migrateRailPreferences } from "../../../core/src/migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "../../../core/src/migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
-import { compileCapabilities, invokeCompiledCapability } from "../_internal/capabilities";
+import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../_internal/capabilities";
 import * as registry from "../_internal/registry";
 import { aiModelFixture, aiSettingsFixture } from "../ai/model-fixture";
 import {
@@ -205,7 +205,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
               signal: new AbortController().signal,
             },
           });
-          return outcome.ok ? Response.json(outcome.data) : Response.json(outcome.error, { status: outcome.error.status });
+          const wire = serializeCapabilityProviderResult(outcome);
+          return new Response(wire.body, { status: wire.status, headers: { "content-type": "application/json" } });
         }
         const body = z.object({ target: z.object({ id: z.string() }) }).parse(invocationBody);
         const permission = authority
@@ -602,9 +603,14 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   test("pre-model quota and settings refusals release or avoid the reservation", async () => {
     await resetFixture({ entry: true, policyRows: ["ai"] });
     aiBudget = 0.000046;
-    const run = spyOn(decision, "runAiDecision").mockRejectedValueOnce({ code: "quota_exhausted" });
+    const run = spyOn(decision, "runAiDecision").mockRejectedValueOnce(
+      new decision.AiQuotaError("quota_exhausted", "Chat usage limit reached."),
+    );
     try {
-      expect(await (await sendDecision()).json()).toMatchObject({ ok: false, error: { code: "quota_exhausted" } });
+      expect(await (await sendDecision()).json()).toMatchObject({ ok: false, error: { code: "quota_exhausted", status: 429 } });
+      const [budget] = await sql`SELECT ai_reference_cost::text AS cost,ai_reserved_cost::text AS reserved,ai_budget_call
+        FROM code.runs WHERE id=${claims.runId}::uuid`;
+      expect(budget).toEqual({ cost: "0", reserved: "0", ai_budget_call: null });
       aiSettingsSpy.mockRejectedValueOnce(new Error("fixture unavailable"));
       expect(await (await sendDecision()).json()).toEqual({ ok: false, error: { code: "code_bridge_unavailable" } });
       run.mockResolvedValue(decisionResultFixture);
