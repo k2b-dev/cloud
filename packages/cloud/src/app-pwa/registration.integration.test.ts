@@ -568,6 +568,19 @@ suite("App-PWA shared device registration", () => {
     await expect(
       shared.coreQuery(boot.credential, undefined, "address.autocomplete", { text: "Example Str", countryCode: "de" }),
     ).rejects.toMatchObject({ code: "REVOKED" });
+    await push(registrationId, anna);
+    expect(await shared.attempt(boot.credential, final.id, attemptId)).toEqual({ state: "committed", completed: true });
+    expect(await shared.command(boot.credential, final.id, "sign", attemptId, { finish: true })).toMatchObject({
+      state: "committed",
+      completed: true,
+      replayed: true,
+      result: null,
+    });
+    await expect(shared.query(boot.credential, final.id, "owner", null)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(shared.command(boot.credential, final.id, "sign", id(), { finish: false })).rejects.toMatchObject({ code: "REVOKED" });
+    const other = await registered();
+    await push(other.registrationId);
+    await expect(shared.attempt(other.boot.credential, final.id, attemptId)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   test("resource operations intersect the issuer's grants and close at visit end and deadlines", async () => {

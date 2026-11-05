@@ -372,7 +372,9 @@ An attempt lookup returns `{ state: "unknown" }` or
 `endVisit()`; a committed command alone does not prove that the whole visit
 completed. Terminal command replays also include this flag with `result: null`.
 Neither response exposes stored customer content after terminal state. A new customer cannot read an earlier visit's
-result.
+result. Status-only recovery also remains available after a later staff-pushed
+visit replaces the earlier visit on the same registered browser. It never
+reopens the earlier visit or returns its stored result.
 
 Handlers must honor `signal` and finish inside Cloud's bounded request budget.
 The transaction checks current database time after waiting for locks and again

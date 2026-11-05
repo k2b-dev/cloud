@@ -510,6 +510,18 @@ export const createAppPwaService = (options: AppPwaOptions) => {
     if (visit.device_id !== device.id || visit.browser_hash !== device.browser_hash) return pwaFail("NOT_FOUND", 404);
     return visit;
   };
+  // Only status recovery crosses visit-only carriers on the same registered browser.
+  // Queries, fresh commands, and visit end keep their current-device binding.
+  const reconcilableVisit = async (tx: TransactionSQL, device: Device, visitId: string) => {
+    const visit = await lockVisit(tx, visitId);
+    if (visit.browser_hash !== device.browser_hash) return pwaFail("NOT_FOUND", 404);
+    if (visit.device_id === device.id) return visit;
+    if (!device.visit_only || !device.registration_id) return pwaFail("NOT_FOUND", 404);
+    const [previous] = await tx`SELECT 1 FROM ${tables.devices} WHERE app_id = ${appId} AND id = ${visit.device_id}::uuid
+      AND visit_only AND registration_id = ${device.registration_id}::uuid AND browser_hash = ${device.browser_hash}`;
+    if (!previous) return pwaFail("NOT_FOUND", 404);
+    return visit;
+  };
   const coreActor = async (tx: TransactionSQL, device: Device, beforeCommit: BeforeCommit, visitId?: string): Promise<AppPwaActor> => {
     const currentVisit = visitId ?? device.active_visit_id;
     if (!currentVisit) return device.visit_only ? pwaFail("REVOKED", 410) : deviceActor(device);
@@ -1094,7 +1106,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         async (tx, device, requestSignal, beforeCommit) => {
           const operation = Object.hasOwn(options.commands ?? {}, route) ? options.commands?.[route] : undefined;
           if (!operation) return pwaFail("NOT_FOUND", 404);
-          const visit = await boundVisit(tx, device, visitId);
+          const visit = await reconcilableVisit(tx, device, visitId);
           const digest = appPwaDigest(operation.parse(bounded(input, options.budgets.requestBytes)));
           const stored = await readAttempt(tx, visit.id, attemptId);
           const timeBefore = await databaseClock(tx);
@@ -1140,7 +1152,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
       guest(
         credential,
         async (tx, device) => {
-          const visit = await boundVisit(tx, device, visitId);
+          const visit = await reconcilableVisit(tx, device, visitId);
           const stored = await readAttempt(tx, visit.id, attemptId);
           // Reconciliation is status-only. Old customer attempts can never reveal
           // stored domain output, even when a new visit now occupies this device.
