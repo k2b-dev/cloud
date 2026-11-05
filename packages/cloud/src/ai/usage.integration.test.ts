@@ -3,6 +3,7 @@ import { nessi, type Provider } from "@k2b/nessi";
 import { z } from "zod";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
+import { streamAnswer } from "./answer-stream.test-fixture";
 import { type AiCallContext, beginAiCall, finishAiCall } from "./inference-calls";
 import { migrateCloudAi } from "./migrate";
 import { inferenceProvider } from "./quota-provider";
@@ -84,18 +85,14 @@ suite("AI usage inference accounting", () => {
         family: "openai-compatible",
         model: f.model.model,
         capabilities: { streaming: false, tools: false, images: false, thinking: false, usage: true, structuredOutput: true },
-        async complete() {
+        async *stream() {
           requests++;
           const text = requests === 1 ? "not JSON" : '{"answer":42}';
           const usage = { input: 100 * requests, output: 10 * requests, total: 110 * requests };
-          return { message: { role: "assistant", content: [{ type: "text", text }], usage }, usage, finishReason: "stop" };
-        },
-        async *stream() {
-          throw new Error("Structured repair must use complete()");
+          yield* streamAnswer({ message: { role: "assistant", content: [{ type: "text", text }], usage }, usage, finishReason: "stop" });
         },
       };
       const result = await nessi.structured({
-        agentId: "usage-test",
         input: "Return an answer",
         output: z.object({ answer: z.number() }),
         provider: inferenceProvider(provider, f.model, { kind: "background", task: f.prefix, userId: f.userId }),

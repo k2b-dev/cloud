@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { CompactContext, Message, Provider, ProviderRequest, StoreEntry, Usage } from "@k2b/nessi";
 import { defineTool, nessi } from "@k2b/nessi";
+import type { GenerateResult } from "@k2b/nessi/ai";
 import { z } from "zod";
+import { streamAnswer } from "./answer-stream.test-fixture";
 import { createCloudCompactFn } from "./compaction";
 import { aiConversations } from "./store";
 import * as structuredRuns from "./structured-runs";
 
-const usage: Usage = { input: 120, output: 30, total: 150, creditsUsed: 0.75 };
+const usage: Usage = { input: 120, output: 30, total: 150 };
 const entries: StoreEntry[] = Array.from({ length: 8 }, (_, index) => ({
   seq: index + 1,
   kind: "message",
@@ -17,7 +19,7 @@ const entries: StoreEntry[] = Array.from({ length: 8 }, (_, index) => ({
 }));
 
 const setup = (force = false) => {
-  const complete = mock<Provider["complete"]>(async () => ({
+  const complete = mock<(request: ProviderRequest) => Promise<GenerateResult>>(async () => ({
     message: { role: "assistant", content: [{ type: "text", text: "Keep working on the request." }] },
     finishReason: "stop",
     usage,
@@ -29,9 +31,8 @@ const setup = (force = false) => {
     family: "openai-compatible",
     model: "test-summary-model",
     capabilities: { streaming: false, tools: false, images: false, thinking: false, usage: true },
-    complete,
-    async *stream() {
-      throw new Error("Compaction must not stream");
+    async *stream(request) {
+      yield* streamAnswer(await complete(request));
     },
   };
   const context: CompactContext = {
@@ -45,6 +46,9 @@ const setup = (force = false) => {
   const compact = createCloudCompactFn({
     conversationId: "test-conversation",
     modelId: "summary-profile",
+    providerType: "openai-compatible",
+    // The summary call is accounted on its own provider, apart from the loop's.
+    provider,
     additionalInstructions: "",
     signal: new AbortController().signal,
     ...(force ? { keepRecentLoops: 1 } : {}),

@@ -200,11 +200,13 @@ read the current model or variant revision before writing.
 
 ## Set the thinking level
 
-Set `reasoningEffort` on a variant. Chat uses that variant's setting. Structured
-tasks and compaction keep
-their task reasoning policy: low for OpenAI, OpenRouter, vLLM and
-OpenAI-compatible providers, none for Gemini, and provider defaults for the
-others. Provider-specific `extraBody` still applies.
+Set `reasoningEffort` on a variant. Chat uses that variant's setting. Every
+provider type is reached through its OpenAI-compatible chat endpoint, so the
+level is sent as `reasoning_effort`, or as `reasoning.effort` for OpenRouter.
+Anthropic's OpenAI compatibility ignores it and returns no thinking text.
+Structured tasks and compaction keep their task reasoning policy: low for
+OpenAI, OpenRouter, vLLM and OpenAI-compatible providers, none for Gemini, and
+provider defaults for the others. Provider-specific `extraBody` still applies.
 
 Endpoint headers belong to provider connections. Configure them in administration
 or use `PUT /api/admin/core/ai/providers/{id}/headers` with the current provider

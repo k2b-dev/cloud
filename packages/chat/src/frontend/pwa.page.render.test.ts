@@ -119,6 +119,7 @@ describe("Chat in the Cloud app", () => {
       requiresRoles: ["user"],
       badge: "/api/chat/badge",
       summary: "/api/chat/conversations/unread-count",
+      order: 2,
     });
     expect(app.meta.routes).toContain("/pwa/chat");
   });

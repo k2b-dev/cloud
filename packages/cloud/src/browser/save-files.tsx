@@ -33,7 +33,7 @@ export const createFileSaving = (
     // The kept list shows at once and the catalog is read again behind it, once per open; a failed refresh keeps it.
     const [providers, setProviders] = createSignal<FileProviderList>(known ? { state: "ready", providers: known } : { state: "loading" });
     let open = true;
-    // Closing stops the catalog reads this dialog started; the page's own discovery keeps running.
+    // Closing stops the catalog reads this dialog started.
     const discovery = new AbortController();
     const settle = (request: Promise<readonly FileProviderSource[]>) =>
       request.then(

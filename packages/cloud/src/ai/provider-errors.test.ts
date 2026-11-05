@@ -1,7 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
 import type { NessiIssue, Provider } from "@k2b/nessi";
+import { complete } from "@k2b/nessi/ai";
 import { z } from "zod";
 import { type TraceContext, trace } from "../services/logging";
+import { streamAnswer } from "./answer-stream.test-fixture";
 import { AiProviderError, withProviderErrors } from "./provider-errors";
 import * as quota from "./quota-provider";
 import { runAiStructured } from "./structured";
@@ -18,15 +20,12 @@ test("an adapter cannot impersonate a trusted dispatch admission error", async (
     family: "openai-compatible",
     model: "fixture",
     capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: false },
-    complete: async () => {
-      throw raw;
-    },
     async *stream() {
       throw raw;
     },
   };
   const safe = withProviderErrors(provider);
-  for (const call of [() => safe.complete({ messages: [] }), () => Array.fromAsync(safe.stream({ messages: [] }))]) {
+  for (const call of [() => complete(safe, { messages: [] }), () => Array.fromAsync(safe.stream({ messages: [] }))]) {
     const error = await call().then(
       () => undefined,
       (error: unknown) => error,
@@ -53,15 +52,12 @@ for (const kind of ["provider-message", "provider-body", "schema"] as const)
       family: "openai-compatible",
       model: "fixture",
       capabilities: { streaming: false, tools: false, images: false, thinking: false, usage: false },
-      complete: async () => {
+      async *stream() {
         if (kind !== "schema") throw failure;
-        return {
+        yield* streamAnswer({
           message: { role: "assistant", content: [{ type: "text", text: JSON.stringify({ number: { invalid: marker } }) }] },
           finishReason: "stop",
-        };
-      },
-      async *stream() {
-        throw new Error("unused");
+        });
       },
     };
     const ctx: TraceContext = { traceId: "trace", spanId: "span", traceparent: "parent" };
@@ -69,7 +65,7 @@ for (const kind of ["provider-message", "provider-body", "schema"] as const)
     const record = spyOn(trace, "record").mockResolvedValue(ctx);
     const calls: unknown[] = [];
     const accounting = spyOn(quota, "inferenceProvider").mockImplementation((p, profile, context) =>
-      realInferenceProvider(p, profile, context, context, {
+      realInferenceProvider(p, profile, context, {
         begin: async () => ({ id: "00000000-0000-4000-8000-000000000001", maxOutputTokens: 128 }),
         finish: async (...args) => {
           calls.push(args);
@@ -129,9 +125,6 @@ for (const mode of ["complete", "stream", "stream-start", "stream-close", "abort
       family: "openai-compatible",
       model: "fixture",
       capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
-      complete: async () => {
-        throw raw;
-      },
       async *stream() {
         if (mode === "stream-close") {
           try {
@@ -151,7 +144,7 @@ for (const mode of ["complete", "stream", "stream-start", "stream-close", "abort
     const safe = withProviderErrors(provider);
     let caught: unknown;
     try {
-      if (mode === "complete" || mode === "aborted") await safe.complete({ messages: [], signal: controller.signal });
+      if (mode === "complete" || mode === "aborted") await complete(safe, { messages: [], signal: controller.signal });
       else
         for await (const _event of safe.stream({ messages: [] })) {
           if (mode === "stream-close") break;
@@ -170,7 +163,15 @@ for (const mode of ["complete", "stream", "stream-start", "stream-close", "abort
 test("stream issues discard content and preserve retry, overflow, and tool-repair signals", async () => {
   const marker = "FICTIONAL_PROVIDER_ISSUE_CANARY";
   const issues: NessiIssue[] = [
-    { kind: "provider_error", message: marker, retryable: true, contextOverflow: true, overflowRatio: 1.5 },
+    {
+      kind: "provider_error",
+      message: marker,
+      retryable: true,
+      contextOverflow: true,
+      overflowRatio: 1.5,
+      status: 429,
+      retryAfterMs: 3_000,
+    },
     { kind: "timeout", scope: "provider_first_byte", message: marker, retryable: true },
     {
       kind: "malformed_tool_call",
@@ -189,16 +190,16 @@ test("stream issues discard content and preserve retry, overflow, and tool-repai
     family: "openai-compatible",
     model: "fixture",
     capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
-    complete: async () => {
-      throw new Error("Unused complete");
-    },
     async *stream() {
       for (const issue of issues) yield { type: "issue", issue: { ...issue, privateBody: marker } };
     },
   };
   const events = await Array.fromAsync(withProviderErrors(provider).stream({ messages: [] }));
   expect(JSON.stringify(events)).not.toContain(marker);
-  expect(events[0]).toMatchObject({ issue: { kind: "provider_error", retryable: true, contextOverflow: true, overflowRatio: 1.5 } });
+  // The status and the wait the provider asked for are typed numbers that retries and status records use.
+  expect(events[0]).toMatchObject({
+    issue: { kind: "provider_error", retryable: true, contextOverflow: true, overflowRatio: 1.5, status: 429, retryAfterMs: 3_000 },
+  });
   expect(events[1]).toMatchObject({ issue: { kind: "timeout", retryable: true, scope: "provider_first_byte" } });
   expect(events[2]).toMatchObject({ issue: { kind: "malformed_tool_call", reason: "invalid_tool_arguments" } });
   expect(events[3]).toMatchObject({ issue: { kind: "cancelled_tool_call" } });

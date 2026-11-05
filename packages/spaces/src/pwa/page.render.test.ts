@@ -158,7 +158,7 @@ const rows = (document: Document) =>
 
 describe("Spaces in the Cloud app", () => {
   test("declares its part for people with the user role, at the route the gateway sends to Spaces", () => {
-    expect(app.meta.pwa).toEqual({ href: "/pwa/spaces", requiresRoles: ["user"], summary: "/api/spaces/overview/summary" });
+    expect(app.meta.pwa).toEqual({ href: "/pwa/spaces", requiresRoles: ["user"], summary: "/api/spaces/overview/summary", order: 3 });
     expect(app.meta.routes).toContain("/pwa/spaces");
   });
 

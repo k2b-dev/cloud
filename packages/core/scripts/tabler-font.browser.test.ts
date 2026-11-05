@@ -15,7 +15,9 @@ test("late icon fonts preserve icon boxes and adjacent labels on phone and deskt
     browser = await launchBrowser();
     await buildTablerIconAssets(output);
     const css = await readFile(join(output, "tabler-icons.css"));
-    const font = await readFile(join(output, "tabler-icons.woff2"));
+    const fontUrl = css.toString().match(/url\((\/public\/fonts\/tabler-icons-[a-f0-9]{64}\.woff2)\)/)?.[1];
+    expect(fontUrl).toBeDefined();
+    const font = await readFile(join(output, fontUrl!.slice("/public/".length)));
     for (const width of [390, 1440]) {
       const page = await browser.newPage({ viewport: { width, height: 844 } });
       let release!: () => void;
