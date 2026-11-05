@@ -14,8 +14,8 @@
 .k2b-ui .k2b-content-calendar {
   /* The weekend of the locale: an opaque fill for month cells, and the same
      tone as a translucent tint that lies over the states of week columns. */
-  --k2b-calendar-weekend: color-mix(in srgb, var(--k2b-surface-muted) 42%, var(--k2b-surface));
-  --k2b-calendar-weekend-tint: color-mix(in srgb, var(--k2b-surface-muted) 42%, transparent);
+  --k2b-calendar-weekend: color-mix(in srgb, var(--k2b-surface-muted) 32%, var(--k2b-surface));
+  --k2b-calendar-weekend-tint: color-mix(in srgb, var(--k2b-surface-muted) 32%, transparent);
   position: relative;
   box-sizing: border-box;
   display: flex;
@@ -27,6 +27,38 @@
   color: var(--k2b-text);
   background: var(--k2b-surface);
   box-shadow: none;
+}
+
+/* Entries: a light neutral surface with a thin edge in the entry's color and
+   neutral text, so the color names the category without tinting the page.
+   The edge keeps 3:1 against the surface in both themes: engines with
+   relative colors clamp the color's lightness, others mix it with the text. */
+.k2b-ui {
+  --k2b-calendar-event-surface: color-mix(in srgb, var(--k2b-surface-muted) 50%, var(--k2b-surface));
+  --k2b-calendar-event-hover: var(--k2b-surface-muted);
+  --k2b-calendar-edge-floor: 0;
+  --k2b-calendar-edge-ceiling: 0.6;
+}
+
+.k2b-ui[data-theme="dark"],
+.k2b-ui.k2b-dark,
+.dark .k2b-ui {
+  --k2b-calendar-event-surface: color-mix(in srgb, var(--k2b-surface-muted) 60%, var(--k2b-surface));
+  --k2b-calendar-event-hover: color-mix(in srgb, var(--k2b-text) 10%, var(--k2b-surface-muted));
+  --k2b-calendar-edge-floor: 0.7;
+  --k2b-calendar-edge-ceiling: 1;
+}
+
+.k2b-ui :is(.k2b-calendar-event, .k2b-calendar-band, .k2b-calendar-marker__pill, .k2b-calendar-fold__chips > li) {
+  --k2b-calendar-edge: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 68%, var(--k2b-text));
+}
+
+@supports (color: oklch(from red l c h)) {
+  .k2b-ui :is(.k2b-calendar-event, .k2b-calendar-band, .k2b-calendar-marker__pill, .k2b-calendar-fold__chips > li) {
+    --k2b-calendar-edge: oklch(
+      from var(--k2b-calendar-accent, var(--k2b-text-muted)) clamp(var(--k2b-calendar-edge-floor), l, var(--k2b-calendar-edge-ceiling)) c h
+    );
+  }
 }
 
 /* Cloud: `segmented-control` sits inline in the header, not stretched. */
@@ -553,7 +585,7 @@
 }
 
 .k2b-ui .k2b-calendar-month[data-lanes] .k2b-calendar-month__day[data-outside="true"] {
-  background: color-mix(in srgb, var(--k2b-surface-muted) 62%, var(--k2b-surface));
+  background: color-mix(in srgb, var(--k2b-surface-muted) 38%, var(--k2b-surface));
 }
 
 @media (hover: hover) {
@@ -830,7 +862,8 @@
 }
 
 /* Entries in the grid and in the day list: a one-day entry is a light chip
-   with its start time, an all-day or multi-day entry a stronger bar. */
+   with its start time, an all-day or multi-day entry a bar with a soft fill
+   of its color and a bolder title. A deadline has a dashed edge. */
 .k2b-ui :is(.k2b-calendar-month__segment, .k2b-calendar-day-list__events li) > .k2b-calendar-event {
   display: flex;
   min-width: 0;
@@ -840,8 +873,6 @@
   gap: 0.25rem;
   padding: 0 0.375rem;
   border-radius: 0.375rem;
-  color: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 32%, var(--k2b-text));
-  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 13%, var(--k2b-surface));
   font-size: 0.6875rem;
   line-height: 1;
   white-space: nowrap;
@@ -851,14 +882,8 @@
   min-width: 0;
 }
 
-.k2b-ui :is(.k2b-calendar-month__segment, .k2b-calendar-day-list__events li) > .k2b-calendar-event:not([data-selected="true"]):hover {
-  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 21%, var(--k2b-surface));
-  box-shadow: none;
-}
-
 .k2b-ui :is(.k2b-calendar-month__segment, .k2b-calendar-day-list__events li) > .k2b-calendar-event[data-bar="true"] {
-  color: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 48%, var(--k2b-text));
-  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 24%, var(--k2b-surface));
+  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 14%, var(--k2b-surface));
 }
 
 .k2b-ui :is(.k2b-calendar-month__segment, .k2b-calendar-day-list__events li) > .k2b-calendar-event[data-bar="true"] :is(.k2b-calendar-event__title, .k2b-calendar-event__title *) {
@@ -867,16 +892,11 @@
 
 .k2b-ui :is(.k2b-calendar-month__segment, .k2b-calendar-day-list__events li) > .k2b-calendar-event[data-bar="true"]:not([data-selected="true"]):hover,
 .k2b-ui .k2b-calendar-month__segment[data-linked="true"] > .k2b-calendar-event[data-bar="true"]:not([data-selected="true"]) {
-  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 32%, var(--k2b-surface));
+  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 22%, var(--k2b-surface));
 }
 
-.k2b-ui :is(.k2b-calendar-month__segment, .k2b-calendar-day-list__events li) > .k2b-calendar-event[data-display="marker"]:not([data-bar="true"]) {
-  color: var(--k2b-text-secondary);
-  background: transparent;
-}
-
-.k2b-ui :is(.k2b-calendar-month__segment, .k2b-calendar-day-list__events li) > .k2b-calendar-event[data-display="marker"]:not([data-bar="true"], [data-selected="true"]):hover {
-  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 10%, transparent);
+.k2b-ui :is(.k2b-calendar-month__segment, .k2b-calendar-day-list__events li) > .k2b-calendar-event[data-bar="true"][data-selected="true"] {
+  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 26%, var(--k2b-surface));
 }
 
 .k2b-ui .k2b-calendar-event__time,
@@ -1134,16 +1154,17 @@
   min-width: 0;
   padding: 0.375rem 0.5rem;
   overflow: hidden;
-  border: 0;
+  border: 1px solid var(--k2b-calendar-edge);
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
-  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 12%, var(--k2b-surface-elevated));
+  background: var(--k2b-calendar-event-surface);
   font: inherit;
   line-height: 1.15;
   text-align: left;
   text-decoration: none;
   transition:
     background-color 150ms ease,
+    border-color 150ms ease,
     box-shadow 150ms ease,
     opacity 150ms ease;
 }
@@ -1172,32 +1193,27 @@
   cursor: pointer;
 }
 
-.k2b-ui .k2b-calendar-event[data-display="background"] {
-  opacity: 0.6;
+.k2b-ui .k2b-calendar-event:not([data-selected="true"]):hover {
+  background: var(--k2b-calendar-event-hover);
 }
 
-/* A point in time keeps the surface and shows its color in a marker; hover and selection tint it like an event. */
+/* Context such as a holiday: a soft fill of its color without an edge. */
+.k2b-ui .k2b-calendar-event[data-display="background"] {
+  border-color: transparent;
+  color: var(--k2b-text-muted);
+  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 10%, var(--k2b-surface));
+}
+
+/* A point in time, such as a deadline, lies open on the day with a dashed edge. */
 .k2b-ui .k2b-calendar-event[data-display="marker"] {
+  border-style: dashed;
   background: transparent;
 }
 
-.k2b-ui .k2b-calendar-event__marker {
-  display: inline-block;
-  width: 0.375rem;
-  height: 0.375rem;
-  margin-inline-end: 0.3125rem;
-  border-radius: 999px;
-  background: var(--k2b-calendar-accent, var(--k2b-text-muted));
-  vertical-align: 0.0625rem;
-}
-
+/* The selection doubles the edge inside and tints the surface; the size stays. */
 .k2b-ui .k2b-calendar-event[data-selected="true"] {
-  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-action)) 17%, var(--k2b-surface-elevated));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-action)) 42%, transparent);
-}
-
-.k2b-ui .k2b-calendar-event:not([data-selected="true"]):hover {
-  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 17%, var(--k2b-surface-elevated));
+  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-action)) 12%, var(--k2b-surface));
+  box-shadow: inset 0 0 0 1px var(--k2b-calendar-edge);
 }
 
 .k2b-ui .k2b-calendar-event__title,
@@ -2010,13 +2026,20 @@
   );
   width: calc((100% - var(--k2b-calendar-inset-start, 0px) - 2 * var(--k2b-calendar-inset) + 3px) / var(--k2b-calendar-lanes) - 3px);
   border-radius: 0.5rem;
-  color: color-mix(in srgb, var(--k2b-calendar-accent) 55%, var(--k2b-text));
-  background: color-mix(in srgb, var(--k2b-calendar-accent) 15%, var(--k2b-surface));
+  color: var(--k2b-text);
+  background: var(--k2b-calendar-event-surface);
+  /* The edge lies inside, so the entry inside keeps its box. */
+  box-shadow: inset 0 0 0 1px var(--k2b-calendar-edge);
   transition: background-color 150ms ease, opacity 180ms ease, box-shadow 180ms ease;
 }
 
 .k2b-ui .k2b-calendar-band:hover {
-  background: color-mix(in srgb, var(--k2b-calendar-accent) 22%, var(--k2b-surface));
+  background: var(--k2b-calendar-event-hover);
+}
+
+.k2b-ui .k2b-calendar-band:has(> .k2b-calendar-event[data-selected="true"]) {
+  background: color-mix(in srgb, var(--k2b-calendar-accent) 12%, var(--k2b-surface));
+  box-shadow: inset 0 0 0 2px var(--k2b-calendar-edge);
 }
 
 .k2b-ui .k2b-calendar-band:focus-within {
@@ -2033,6 +2056,7 @@
   gap: 1px;
   padding: 0.3125rem 0.5rem;
   overflow: hidden;
+  border: 0;
   border-radius: inherit;
   color: inherit;
   background: transparent;
@@ -2069,10 +2093,11 @@
 
 .k2b-ui .k2b-calendar-band .k2b-calendar-event__meta {
   margin: 0;
+  color: var(--k2b-text-secondary);
   font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
-  opacity: 0.85;
+  opacity: 1;
 }
 
 .k2b-ui .k2b-calendar-event__remaining {
@@ -2120,10 +2145,6 @@
   padding-inline-start: 1.5rem;
 }
 
-.k2b-ui .k2b-calendar-band[data-checkbox="true"] {
-  background: color-mix(in srgb, var(--k2b-calendar-accent) 9%, var(--k2b-surface));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k2b-calendar-accent) 28%, transparent);
-}
 
 .k2b-ui .k2b-calendar-band > .k2b-calendar-check {
   position: absolute;
@@ -2137,10 +2158,13 @@
   margin-top: -0.75rem;
 }
 
+/* A past entry steps back with muted text; its edge still names its category. */
 .k2b-ui .k2b-calendar-band[data-past="true"] {
   color: var(--k2b-text-muted);
-  background: color-mix(in srgb, var(--k2b-calendar-accent) 7%, var(--k2b-surface-muted));
-  box-shadow: none;
+}
+
+.k2b-ui .k2b-calendar-band[data-past="true"] .k2b-calendar-event__meta {
+  color: var(--k2b-text-muted);
 }
 
 .k2b-ui .k2b-calendar-band[data-cut-bottom="true"] {
@@ -2155,8 +2179,9 @@
 
 /* The running event fills up with the time that passed. */
 .k2b-ui .k2b-calendar-band[data-running="true"] {
-  background: color-mix(in srgb, var(--k2b-calendar-accent) 13%, var(--k2b-surface));
-  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--k2b-calendar-accent) 45%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--k2b-calendar-edge),
+    0 0 0 1px var(--k2b-calendar-edge);
 }
 
 .k2b-ui .k2b-calendar-band__fill {
@@ -2368,9 +2393,9 @@
   gap: 0.3125rem;
   padding: 0 0.5rem 0 0.375rem;
   border-radius: 999px;
-  color: color-mix(in srgb, var(--k2b-calendar-accent) 55%, var(--k2b-text));
+  color: var(--k2b-text);
   background: var(--k2b-surface);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--k2b-calendar-accent) 45%, transparent);
+  box-shadow: 0 0 0 1px var(--k2b-calendar-edge);
 }
 
 .k2b-ui .k2b-calendar-marker__pill > .k2b-calendar-event {
@@ -2380,6 +2405,7 @@
   gap: 0.375rem;
   padding: 0;
   overflow: hidden;
+  border: 0;
   color: inherit;
   background: transparent;
   box-shadow: none;
@@ -2425,7 +2451,8 @@
 
 .k2b-ui .k2b-calendar-marker[data-overdue="true"] .k2b-calendar-marker__pill {
   color: var(--k2b-danger-text);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--k2b-danger-500) 55%, transparent);
+  background: var(--k2b-danger-surface);
+  box-shadow: 0 0 0 1px var(--k2b-danger-text);
 }
 
 /* Free time: a labelled button that creates there, and a zone that lights up
@@ -2674,9 +2701,6 @@
   gap: 0.375rem;
   padding: 0 0.5rem;
   border-radius: 999px;
-  color: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 55%, var(--k2b-text));
-  background: var(--k2b-surface);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 40%, transparent);
   font-size: 0.75rem;
   white-space: nowrap;
 }
@@ -2700,10 +2724,10 @@
   align-items: center;
   gap: 0.3125rem;
   padding: 0 0.5rem 0 0.375rem;
+  border: 1px solid var(--k2b-calendar-edge);
   border-radius: 999px;
-  color: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 55%, var(--k2b-text));
-  background: var(--k2b-surface);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 40%, transparent);
+  color: var(--k2b-text);
+  background: var(--k2b-calendar-event-surface);
 }
 
 .k2b-ui .k2b-calendar-fold__chips > li[data-checkbox="true"] > .k2b-calendar-event {
@@ -2711,6 +2735,7 @@
   height: auto;
   padding: 0;
   overflow: hidden;
+  border: 0;
   color: inherit;
   background: transparent;
   box-shadow: none;
@@ -3000,21 +3025,28 @@
   gap: 0.25rem;
   padding: 0 0.5rem;
   border-radius: 0.375rem;
-  color: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 32%, var(--k2b-text));
-  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 13%, var(--k2b-surface));
   font-size: 0.75rem;
   line-height: 1;
   white-space: nowrap;
 }
 
 .k2b-ui :is(.k2b-calendar-allday-chip, .k2b-calendar-week__slot) > .k2b-calendar-event[data-bar="true"] {
-  color: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 48%, var(--k2b-text));
-  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 24%, var(--k2b-surface));
+  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 14%, var(--k2b-surface));
   font-weight: 600;
 }
 
+.k2b-ui :is(.k2b-calendar-allday-chip, .k2b-calendar-week__slot) > .k2b-calendar-event[data-bar="true"]:not([data-selected="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 22%, var(--k2b-surface));
+}
+
+.k2b-ui :is(.k2b-calendar-allday-chip, .k2b-calendar-week__slot) > .k2b-calendar-event[data-bar="true"][data-selected="true"] {
+  background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 26%, var(--k2b-surface));
+}
+
+/* A to-do beside its checkbox is text on the day: the box carries its color. */
 .k2b-ui :is(.k2b-calendar-allday-chip, .k2b-calendar-week__slot)[data-checkbox="true"] > .k2b-calendar-event {
   padding-inline-start: 0.125rem;
+  border-color: transparent;
   background: transparent;
 }
 

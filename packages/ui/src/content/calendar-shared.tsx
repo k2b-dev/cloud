@@ -154,12 +154,7 @@ export const EventChip = (props: {
       <Show when={props.leadingTime}>
         <span class="k2b-calendar-event__time">{props.leadingTime}</span>
       </Show>
-      <span class="k2b-calendar-event__title">
-        <Show when={props.event.display === "marker" && !props.checkbox}>
-          <span class="k2b-calendar-event__marker" aria-hidden="true" />
-        </Show>
-        {props.event.title}
-      </span>
+      <span class="k2b-calendar-event__title">{props.event.title}</span>
       <Show when={showTime() || props.remaining}>
         <span class="k2b-calendar-event__meta">
           <Show when={showTime()}>{timeLabel()}</Show>
