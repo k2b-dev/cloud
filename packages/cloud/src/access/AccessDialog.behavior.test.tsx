@@ -810,7 +810,7 @@ describe("AccessDialog", () => {
         // The server answers a non-manager with no item; the lookup turns that into null.
         const ui = await search(async () => null, handle);
         try {
-          await waitFor(() => ui.status().includes(`Nobody found for “${handle}”`), "the empty result");
+          await waitFor(() => ui.status().includes(`Nobody is called “${handle}”.`), "the empty result");
           expect(ui.lookups).toEqual([handle]);
           expect(ui.directory).toEqual([]);
           expect(ui.options().length).toBe(0);

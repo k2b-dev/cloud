@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { assertResourceOpenLink, assertResourceView, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
@@ -200,6 +200,7 @@ const note = {
 };
 
 afterEach(() => {
+  setSystemTime();
   for (const spy of activeSpies.splice(0)) spy.mockRestore();
 });
 
@@ -1489,6 +1490,7 @@ test("notebook targets reject a note, parent or annotation from another notebook
 });
 
 test("note.create starts from a page template only for writers, with the caller filled in", async () => {
+  setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
   trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
   const permission = trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
   trackedSpy(spyOn(noteStore, "defaultDateConfig")).mockResolvedValue({ timeZone: "UTC", locale: "en", firstDayOfWeek: 1 });
@@ -1496,7 +1498,7 @@ test("note.create starts from a page template only for writers, with the caller 
   trackedSpy(spyOn(audit, "recordResultAfterSideEffect")).mockImplementation(async ({ result }) => result);
   trackedSpy(spyOn(audit, "recordResult")).mockImplementation(async ({ result }) => result);
   const operation = notebooksCapabilities.actions["note.create"];
-  const input = operation.input.parse({ notebookId: notebook.shortId, templateId: "meeting-notes" });
+  const input = operation.input.parse({ templateId: "meeting-notes" });
 
   expect((await operation.run(input, userContext)).ok).toBe(false);
   expect(create).not.toHaveBeenCalled();
@@ -1511,5 +1513,5 @@ test("note.create starts from a page template only for writers, with the caller 
   expect(content).toStartWith("# Meeting ");
   expect(content).toContain("**Notes by:** Notebook User");
   expect(content).not.toContain("{{");
-  expect(operation.input.safeParse({ notebookId: notebook.shortId, templateId: "meeting-notes", content: "# X" }).success).toBe(false);
+  expect(operation.input.safeParse({ templateId: "meeting-notes", content: "# X" }).success).toBe(false);
 });

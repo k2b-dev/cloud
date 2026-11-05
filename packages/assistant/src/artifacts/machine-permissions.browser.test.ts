@@ -134,7 +134,7 @@ const serve = async () => {
 /** Nothing in the page or the dialog is wider than the viewport; inputs scroll their own text. */
 const overflow = (page: Page) =>
   page.evaluate(() => {
-    const dialog = document.querySelector("dialog[open]");
+    const dialog = document.querySelector("dialog[open]:not(.k2b-avatar-stack__popover)");
     const wide = dialog
       ? Array.from(dialog.querySelectorAll<HTMLElement>("*"))
           .filter((element) => element.tagName !== "INPUT" && element.tagName !== "TEXTAREA")

@@ -175,7 +175,7 @@ describe("AI administration access", () => {
     Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
       .find((node) => node.textContent?.includes("Permissions"))!
       .click();
-    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
     /** By accessible name: a button with a short label on phones keeps its full name. */
     const button = (text: string) =>
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
