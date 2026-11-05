@@ -134,7 +134,7 @@ for (const width of [390, 1200])
         };
       });
       expect(natural).toEqual({ labelOnSentenceLine: true, handleOnSentenceLine: width >= 600 });
-      // The head line reads in the muted text colour, as the mockup's note does.
+      // The head line and its handle read in the muted text colour, as the mockup's note does.
       const tone = await page.evaluate(() => {
         const lead = document.querySelector<HTMLElement>(".cloud-code__lead")!;
         const probe = document.createElement("span");
@@ -142,9 +142,13 @@ for (const width of [390, 1200])
         lead.parentElement!.append(probe);
         const muted = getComputedStyle(probe).color;
         probe.remove();
-        return { lead: getComputedStyle(lead).color, muted };
+        return {
+          lead: getComputedStyle(lead).color,
+          handle: getComputedStyle(document.querySelector<HTMLElement>("[data-code-handle]")!).color,
+          muted,
+        };
       });
-      expect(tone.lead).toBe(tone.muted);
+      expect(tone).toEqual({ lead: tone.muted, handle: tone.muted, muted: tone.muted });
       // L127, mockup v31 `abgelehnt · cron · 390`: where the line has room for "· Kennung" but not for the handle,
       // "· Kennung" ends the sentence's line and the handle moves below with Copy, never split. The line gets exactly
       // that room, so the check does not depend on font metrics.
