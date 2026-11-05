@@ -1031,7 +1031,7 @@ const calendarDemoEvents = (month: Date): CalendarEvent[] => {
     new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), day, hour, minute)).toISOString();
 
   return [
-    { id: "kickoff", title: "Month kickoff", start: at(2), end: at(3), allDay: true, color: "emerald" },
+    { id: "kickoff", title: "Month kickoff", start: at(2), end: at(3), allDay: true, color: "emerald", icon: "ti ti-flag" },
     {
       id: "roadmap",
       title: "Roadmap planning",
@@ -1039,6 +1039,12 @@ const calendarDemoEvents = (month: Date): CalendarEvent[] => {
       start: at(5, 9),
       end: at(5, 12),
       color: "violet",
+      icon: "ti ti-route",
+      attendees: [{ name: "Jana Berger" }, { name: "Ole Brandt" }, { name: "Mira Lind" }, { name: "Sven Aasen" }],
+      links: [
+        { label: "Roadmap board", href: "#roadmap-board", icon: "ti ti-layout-kanban" },
+        { label: "Video room", href: "#video-room", icon: "ti ti-video" },
+      ],
     },
     { id: "partner", title: "Partner call", start: at(5, 9, 30), end: at(5, 10, 30), color: "red" },
     { id: "review", title: "Design review", start: at(5, 10), end: at(5, 11, 30), color: "cyan" },

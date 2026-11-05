@@ -1,6 +1,7 @@
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
 import { createMemo, Show } from "solid-js";
+import { AvatarFaces } from "../surfaces/AvatarStack";
 import type { CalendarEvent, CalendarProps } from "./Calendar";
 import { useCalendarMessages } from "./calendar-messages";
 
@@ -17,7 +18,31 @@ export type NormalizedEvent = CalendarEvent & {
 export type CalendarStop = { id: string; column: number; minute: number };
 
 /** What the built-in views read from the props: they only ever link to built-in views. */
-export type CalendarOwner = Omit<CalendarProps, "view" | "customViews" | "children">;
+export type CalendarOwner = Omit<CalendarProps, "view" | "customViews" | "children"> & {
+  /** The calendar's clock, which ticks every minute; an open entry in the past is overdue. */
+  calendarNow?: () => Date;
+  /** Without `onEventActivate`: opens the calendar's own detail of an entry beside the element that opened it. */
+  openEventDetail?: (event: CalendarEvent, anchor: HTMLElement) => void;
+};
+
+/** `data` keys the calendar writes as `data-*` attributes: camelCase letters and digits, none of the calendar's own. */
+const DATA_KEY = /^[a-z][a-zA-Z0-9]*$/;
+export const eventDataAttributes = (data: CalendarEvent["data"]): Record<string, string> => {
+  const attributes: Record<string, string> = {};
+  for (const [key, value] of Object.entries(data ?? {})) {
+    if (!DATA_KEY.test(key) || key.startsWith("calendar") || typeof value !== "string") continue;
+    attributes[`data-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`] = value;
+  }
+  return attributes;
+};
+
+/** An open to-do or deadline whose time has passed. */
+export const isOverdue = (event: CalendarEvent & { sourceStartDate?: Date; sourceEndDate?: Date }, now: Date | undefined): boolean => {
+  if (event.checked !== false || !now) return false;
+  const start = event.sourceStartDate?.getTime() ?? Number.NaN;
+  const end = event.sourceEndDate?.getTime() ?? start;
+  return Math.max(start, end) <= now.getTime();
+};
 
 export const ownerDateConfig = (owner: CalendarOwner): DateContext => ({
   ...owner.dateConfig,
@@ -102,13 +127,26 @@ export const EventChip = (props: {
   /** Day and week views: Space on the chip checks the box the calendar draws beside it, as on the box itself. */
   onCheck?: () => void;
   onMovePointerDown?: (event: PointerEvent, onActivate: () => void) => void;
+  /** How many faces of the attendees fit: up to three in a band, one in the day list, none by default. */
+  faces?: number;
+  /** Shows how many links the entry has, where there is room beside the title or time. */
+  linkCount?: boolean;
 }): JSX.Element => {
   const messages = useCalendarMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   const color = () => props.event.color ?? "blue";
   const selected = () => Boolean(props.owner.selectedEventId) && props.owner.selectedEventId === props.event.id;
   const style = () => (props.event.colorHex ? { "--k2b-calendar-accent": props.event.colorHex } : undefined);
-  const isInteractive = () => Boolean(props.owner.onEventActivate);
+  const activate = (anchor: HTMLElement) => {
+    if (props.owner.onEventActivate) props.owner.onEventActivate(props.event);
+    else props.owner.openEventDetail?.(props.event, anchor);
+  };
+  const isInteractive = () => Boolean(props.owner.onEventActivate ?? props.owner.openEventDetail);
+  const done = () => props.event.checked === true;
+  const overdue = () => isOverdue(props.event, props.owner.calendarNow?.());
+  const attendees = () => props.event.attendees ?? [];
+  const links = () => props.event.links ?? [];
+  const shownFaces = () => (props.faces ? attendees().slice(0, props.faces) : []);
   const durationHours = () => (props.event.endDate.getTime() - props.event.startDate.getTime()) / 3_600_000;
   const short = () => Boolean(props.fill && !props.event.allDay && durationHours() < 0.75);
   const showTime = () => (props.timeLabel ? !props.event.allDay : !props.event.allDay && !props.compact && durationHours() >= 0.75);
@@ -133,7 +171,16 @@ export const EventChip = (props: {
               start: formatTime(props.event.startDate, dateConfig()),
               end: formatTime(props.event.endDate, dateConfig()),
             });
-    return [label, props.remaining, props.event.accessibleDetail].filter(Boolean).join(", ");
+    return [
+      label,
+      props.remaining,
+      done() ? messages().calendarStateDone : overdue() ? messages().calendarStateOverdue : undefined,
+      attendees().length ? messages().calendarPeopleCount({ count: attendees().length }) : undefined,
+      links().length ? messages().calendarLinkCount({ count: links().length }) : undefined,
+      props.event.accessibleDetail,
+    ]
+      .filter(Boolean)
+      .join(", ");
   };
   const renderedEvent = () =>
     props.owner.renderEvent?.(props.event, {
@@ -149,18 +196,55 @@ export const EventChip = (props: {
       checkbox: props.checkbox ?? false,
       timeline: props.timeline ?? false,
     });
+  // Faces and the link count only take room the title and time leave; they carry no text of their own.
+  const icon = () => (props.event.icon ? <i class={`k2b-calendar-event__icon ${props.event.icon}`} aria-hidden="true" /> : undefined);
+  const metaText = () => (
+    <>
+      <Show when={showTime()}>{timeLabel()}</Show>
+      <Show when={props.remaining}>
+        <span class="k2b-calendar-event__remaining">{showTime() ? ` · ${props.remaining}` : props.remaining}</span>
+      </Show>
+    </>
+  );
+  const hasExtras = () => shownFaces().length > 0 || Boolean(props.linkCount && links().length > 0);
+  const extras = () =>
+    hasExtras() ? (
+      <span class="k2b-calendar-event__extras" aria-hidden="true">
+        <Show when={shownFaces().length > 0}>
+          <AvatarFaces people={shownFaces()} total={(props.faces ?? 0) > 1 ? attendees().length : undefined} max={props.faces} />
+        </Show>
+        <Show when={props.linkCount && links().length > 0}>
+          <span class="k2b-calendar-event__links">
+            <i class="ti ti-link" />
+            {links().length}
+          </span>
+        </Show>
+      </span>
+    ) : undefined;
   const defaultContent = (
     <>
+      {/* The icon leads the entry: before the month view's start time, else inside the title, which a band wraps. */}
       <Show when={props.leadingTime}>
+        {icon()}
         <span class="k2b-calendar-event__time">{props.leadingTime}</span>
       </Show>
-      <span class="k2b-calendar-event__title">{props.event.title}</span>
-      <Show when={showTime() || props.remaining}>
-        <span class="k2b-calendar-event__meta">
-          <Show when={showTime()}>{timeLabel()}</Show>
-          <Show when={props.remaining}>
-            <span class="k2b-calendar-event__remaining">{showTime() ? ` · ${props.remaining}` : props.remaining}</span>
+      <span class="k2b-calendar-event__title">
+        <Show when={!props.leadingTime}>{icon()}</Show>
+        {props.event.title}
+      </span>
+      <Show
+        when={hasExtras()}
+        fallback={
+          <Show when={showTime() || props.remaining}>
+            <span class="k2b-calendar-event__meta">{metaText()}</span>
           </Show>
+        }
+      >
+        <span class="k2b-calendar-event__row">
+          <Show when={showTime() || props.remaining}>
+            <span class="k2b-calendar-event__meta">{metaText()}</span>
+          </Show>
+          {extras()}
         </span>
       </Show>
       <Show when={showLocation()}>
@@ -195,16 +279,18 @@ export const EventChip = (props: {
       event.stopPropagation();
       return;
     }
-    if (!props.owner.onEventActivate || props.owner.eventActivation === "double") return;
+    if (!isInteractive() || props.owner.eventActivation === "double") return;
+    // A link with a modifier or another button still opens where the reader asked, such as in a new tab.
+    if (props.href && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return;
     event.preventDefault();
     event.stopPropagation();
-    props.owner.onEventActivate(props.event);
+    activate(event.currentTarget as HTMLElement);
   };
   const onDoubleClick = (event: MouseEvent) => {
-    if (!props.owner.onEventActivate || props.owner.eventActivation !== "double") return;
+    if (!isInteractive() || props.owner.eventActivation !== "double") return;
     event.preventDefault();
     event.stopPropagation();
-    props.owner.onEventActivate(props.event);
+    activate(event.currentTarget as HTMLElement);
   };
   /** Space on an entry with a box checks it; Enter still opens the entry. */
   const onCheckKeyDown = (event: KeyboardEvent) => {
@@ -216,7 +302,7 @@ export const EventChip = (props: {
   const onButtonKeyDown = (event: KeyboardEvent) => {
     if (onCheckKeyDown(event) || !isInteractive() || (event.key !== "Enter" && event.key !== " ")) return;
     event.preventDefault();
-    props.owner.onEventActivate?.(props.event);
+    activate(event.currentTarget as HTMLElement);
   };
   const onPointerDown = (event: PointerEvent) => {
     if (event.pointerType === "touch") return;
@@ -238,6 +324,9 @@ export const EventChip = (props: {
     "data-continues-after": props.continuesAfter ? "true" : undefined,
     "data-bar": props.bar ? "true" : undefined,
     "data-display": props.event.display,
+    "data-done": done() ? "true" : undefined,
+    "data-overdue": overdue() ? "true" : undefined,
+    ...eventDataAttributes(props.event.data),
     "data-stop": props.stop?.id,
     "data-col": props.stop?.column,
     "data-minute": props.stop?.minute,
@@ -250,7 +339,6 @@ export const EventChip = (props: {
       {...attributes()}
       href={props.href}
       data-interactive={isInteractive() ? "true" : undefined}
-      data-space-item-id={props.event.dataSpaceItemId}
       tabIndex={props.tabIndex}
       draggable={props.onMovePointerDown ? false : undefined}
       onClick={onClick}
