@@ -1,0 +1,6 @@
+### settled() failed when deferred content arrived under Playwright's resting pointer
+
+- **What happened:** Chat system-chat browser tests on the phone threads page failed intermittently in CI with "settled: the page kept animating" on the `background-color` and `color` transitions of `a.k2b-button.k2b-icon-button`, before the test had moved the pointer.
+- **Root cause:** Playwright's pointer rests at the top left of every new page, touch contexts included. The threads page loads its code on demand, so its back button appears there after `.chat-workspace`, takes `:hover`, and starts its color fade while `settled()` waits. A local instrumented run saw the fade on 30 of 30 fresh loads; whether `settled()` caught it depended on CI timing. No button state changed after mount.
+- **Error class:** A browser suite that does not test motion keeps real transitions, so content arriving under the test's resting pointer starts animating while the suite settles.
+- **Guard:** The suite runs with `reducedMotion: "reduce"`, the documented `settled()` convention for suites not about motion; `settled()` now marks each reported target with `"hovered"`, which a `@k2b/ui` browser test covers, so the next such failure names its trigger.

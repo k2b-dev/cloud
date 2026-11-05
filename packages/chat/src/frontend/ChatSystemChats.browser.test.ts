@@ -30,7 +30,9 @@ const load = async (
   address: { chat?: string; thread?: string; threadsPage?: boolean; panel?: string; embedded?: boolean } = {},
   setup?: (page: Page) => Promise<void>,
 ) => {
-  const context = await browser.newContext(options);
+  // These tests read geometry and states, not motion. Playwright's pointer rests at the top left from the start, so
+  // the phone back button that arrives with the deferred threads page would otherwise fade into hover while it settles.
+  const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const page = await context.newPage();
   page.setDefaultTimeout(5_000);
   // Pin only Date: animation frames, input delays and read reporting keep their real timers.
