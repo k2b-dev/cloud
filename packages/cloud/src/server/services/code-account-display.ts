@@ -2,6 +2,7 @@ import { i18n } from "@k2b/stdlib";
 import { resolveCapabilityManifestPresentation } from "../../_internal/capabilities";
 import { getCapability } from "../../_internal/registry";
 import { CloudResourceRefSchema } from "../../contracts/capabilities";
+import { resolveAppIdentityPresentation } from "../../shared/app-presentation";
 
 export const codeMessages = i18n.define({
   baseLocale: "en",
@@ -63,12 +64,20 @@ export const codeAccountPresenter = (context: CodeAccountDisplayContext = {}) =>
     const localType = owner?.kind === "resource" ? owner.ref.type.slice((appId?.length ?? 0) + 1) : null;
     const ownerType = manifest?.types.find((type) => type.localId === localType);
     const type = ownerType?.title;
-    const visibleTitle = owner?.kind === "app" ? (account.title ?? app?.appName) : context.canManageTarget ? account.title : null;
+    // An app's name is visible in the installation anyway; it is shown in the viewer's language, never as stored.
+    const appTitle =
+      owner?.kind === "app" && app
+        ? resolveAppIdentityPresentation(
+            { name: app.appName, description: app.appDescription, presentation: app.appPresentation },
+            context.locale ?? "en",
+          ).name
+        : null;
+    const visibleTitle = owner?.kind === "app" ? (appTitle ?? account.title) : context.canManageTarget ? account.title : null;
     const page = localType ? manifest?.code?.pages?.[localType] : undefined;
     const href =
       owner?.kind === "app"
         ? context.cloudAdmin
-          ? "/admin/code"
+          ? `/admin/code?sec=code&app=${encodeURIComponent(owner.appId)}`
           : undefined
         : owner?.kind === "resource" && context.canManageTarget && page
           ? page.replace("{id}", encodeURIComponent(owner.ref.id))

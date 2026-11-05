@@ -570,8 +570,15 @@ export function CodeAreaView(props: Props) {
         <Show when={account}>
           {(name) => (
             <p class="text-sm text-(--k2b-text-secondary)">
-              {t.runsAsAccount({ name: name() })}{" "}
-              <Show when={code.serviceAccountHandle}>{(handle) => <CodeAccountHandle handle={handle()} />}</Show>
+              {t.runsAsAccount({ name: name() })}
+              <Show when={code.serviceAccountHandle}>
+                {(handle) => (
+                  <>
+                    {" "}
+                    <CodeAccountHandle handle={handle()} />
+                  </>
+                )}
+              </Show>
             </p>
           )}
         </Show>

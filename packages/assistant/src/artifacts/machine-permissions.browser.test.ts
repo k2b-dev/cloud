@@ -274,7 +274,8 @@ for (const width of [1280, 390])
       await settled(page);
       const services = dialog.locator("section", { has: page.locator("h3", { hasText: /^Dienstkonten/ }) });
       const code = services.locator("li", { hasText: "Code von einkauf-und-rechnungseingang@beispiel.de" });
-      await code.getByText("Dienstkonto eines Postfachs", { exact: true }).waitFor();
+      // A stored row reads like a new one: the server's line with its level.
+      await code.getByText("Dienstkonto eines Postfachs · darf benutzen", { exact: true }).waitFor();
       await services.getByText("Wer den Code bearbeitet, handelt mit diesem Recht.").waitFor();
       // Long titles wrap instead of being cut, also on a phone, even when the app's own stylesheet repeats utilities.
       const clipped = (text: string) =>
@@ -308,15 +309,21 @@ for (const width of [1280, 390])
       await services.getByRole("button", { name: "Dienstkonto hinzufügen" }).click();
       const handle = services.getByLabel("Kennung des Dienstkontos", { exact: true });
       await handle.fill("code-7k2q9m4xwt");
-      await services.getByRole("button", { name: "Suchen", exact: true }).click();
       await services.getByText("Code von info@beispiel.de", { exact: true }).waitFor();
+      // The sheet brings the field and its hit into view itself.
+      expect(
+        await handle.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          return box.top >= 0 && box.bottom <= window.innerHeight;
+        }),
+      ).toBe(true);
       expect(await clipped("Code von info@beispiel.de")).toBe(false);
       expect(state.lookups.some((search) => /target_type=assistant\.app/.test(search) && /target_id=App234/.test(search))).toBe(true);
       await settled(page);
       expect(await overflow(page)).toEqual({ page: true, fits: true, wide: [] });
       await shot(page, `de-${width}-dienst-hinzu`);
 
-      await services.getByRole("button", { name: "Hinzufügen", exact: true }).click();
+      await services.locator("li button", { hasText: "Code von info@beispiel.de" }).click();
       const added = services.locator("li", { hasText: "Code von info@beispiel.de" });
       await added.getByText("Neu", { exact: true }).first().waitFor();
       await dialog.getByText("1 Änderung", { exact: true }).waitFor();

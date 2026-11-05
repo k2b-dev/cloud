@@ -72,8 +72,11 @@ describe("Studio sharing in the shared access dialog", () => {
     });
     const dispose = render(() => <AccessDialog {...props} close={close} />, dom.root);
     const row = (name: string) => Array.from(dom.root.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;
+    /** By accessible name: a button with a short label on phones keeps its full name. */
     const button = (text: string) =>
-      Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text)!;
+      Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find(
+        (item) => item.getAttribute("aria-label") === text || item.textContent?.trim() === text,
+      )!;
     const section = (title: string) =>
       Array.from(dom.root.querySelectorAll("section")).find((item) => item.querySelector("h3")?.textContent?.startsWith(title))!;
     return {
@@ -99,7 +102,8 @@ describe("Studio sharing in the shared access dialog", () => {
     try {
       const services = ui.section("Dienstkonten");
       expect(services.textContent).toContain("Code von einkauf@beispiel.de");
-      expect(ui.row("Code von einkauf@beispiel.de").textContent).toContain("Dienstkonto eines Postfachs");
+      // A stored row reads like a new one: the server's line with its level.
+      expect(ui.row("Code von einkauf@beispiel.de").textContent).toContain("Dienstkonto eines Postfachs · darf benutzen");
       expect(services.textContent?.match(/Wer den Code bearbeitet, handelt mit diesem Recht\./g)).toHaveLength(1);
       const levels = Array.from(ui.row("Code von einkauf@beispiel.de").querySelectorAll('[role="option"]')).map((node) =>
         node.textContent?.trim(),
@@ -164,10 +168,14 @@ describe("Studio sharing in the shared access dialog", () => {
       const input = ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Kennung des Dienstkontos"]')!;
       input.value = "code-7k2q9m4xwt";
       input.dispatchEvent(new Event("input", { bubbles: true }));
-      ui.button("Suchen").click();
-      await waitFor(() => Boolean(ui.button("Hinzufügen")), "the found account");
+      // A complete identifier is looked up as it is typed; the hit below the field adds the account.
+      const hit = () =>
+        Array.from(ui.dom.root.querySelectorAll<HTMLButtonElement>("li button")).find((item) =>
+          item.textContent?.includes("Code von info@beispiel.de"),
+        );
+      await waitFor(() => Boolean(hit()), "the found account");
       expect(lookups).toEqual(["code-7k2q9m4xwt"]);
-      ui.button("Hinzufügen").click();
+      hit()!.click();
       expect(ui.row("Code von info@beispiel.de").textContent).toContain("Neu");
       expect(ui.section("Dienstkonten").textContent).toContain("Wer den Code bearbeitet, handelt mit diesem Recht.");
       expect(ui.calls).toEqual([]);

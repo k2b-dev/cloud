@@ -81,7 +81,6 @@ export const studioAccessDialogProps = (options: StudioAccessOptions): AccessDia
             { level: "read", label: t.use },
             { level: "admin", label: t.manage },
           ],
-    entryDetail: (entry) => (entry.serviceAccountKind === "code" ? entry.serviceAccountDescription : undefined),
     findServiceAccount: options.findServiceAccount ?? ((handle, signal) => findStudioServiceAccount(options.artifactId, handle, signal)),
     grantAccess: async (principal, level) => {
       if (level === "write") throw new Error(t.INVALID_INPUT);

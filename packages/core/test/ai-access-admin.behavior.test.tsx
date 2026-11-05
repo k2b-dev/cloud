@@ -166,8 +166,11 @@ describe("AI administration access", () => {
       .find((node) => node.textContent?.includes("Permissions"))!
       .click();
     const dialog = () => dom.document.querySelector<HTMLElement>('[role="dialog"]');
+    /** By accessible name: a button with a short label on phones keeps its full name. */
     const button = (text: string) =>
-      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
+      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
+        (item) => item.getAttribute("aria-label") === text || item.textContent?.trim() === text,
+      );
     let disposed = false;
     const dispose = () => {
       if (disposed) return;
@@ -195,27 +198,31 @@ describe("AI administration access", () => {
       const ui = await setup(kind);
       ui.button("Add service account")!.click();
       const input = ui.dialog()!.querySelector<HTMLInputElement>('input[aria-label="Identifier of the service account"]')!;
+      // A name is never looked up; Enter says that no service account has this identifier.
       input.value = "Code von Werkstatt";
       input.dispatchEvent(new Event("input", { bubbles: true }));
-      ui.button("Find")!.click();
+      input.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await until(() => ui.dialog()?.textContent?.includes("No service account with this identifier") === true);
-      expect(ui.button("Add")).toBeUndefined();
+      // A complete identifier is looked up as it is typed; its hit below the field adds the row.
       input.value = handle;
       input.dispatchEvent(new Event("input", { bubbles: true }));
-      ui.button("Find")!.click();
-      await until(() => !!ui.button("Add"));
-      ui.button("Add")!.click();
+      const hit = () =>
+        Array.from(ui.dialog()!.querySelectorAll<HTMLButtonElement>("li button")).find((item) =>
+          item.textContent?.includes("Code von Werkstatt"),
+        );
+      await until(() => !!hit());
+      hit()!.click();
       await until(() => ui.dialog()?.textContent?.includes("1 change") === true);
       expect(ui.row("Code von Werkstatt").textContent).toContain("Service account");
       expect(ui.dialog()!.textContent).toContain("Whoever edits the code acts with this right.");
       expect(Array.from(ui.row("Code von Werkstatt").querySelectorAll('[role="option"]')).map((node) => node.textContent)).not.toContain(
         "Manage",
       );
-      expect(calls).toEqual([`lookup core.ai.${kind} ${kind}-1 Code von Werkstatt`, `lookup core.ai.${kind} ${kind}-1 ${handle}`]);
+      expect(calls).toEqual([`lookup core.ai.${kind} ${kind}-1 ${handle}`]);
       ui.button("Save")!.click();
       await until(() => !ui.dialog());
       expect(calls.at(-1)).toBe(
-        `${kind} POST ${JSON.stringify({ principal: { type: "service_account", serviceAccountId: codeAccountId }, permission: "read" })}`,
+        `${kind} POST ${JSON.stringify({ principal: { type: "service_account", serviceAccountId: codeAccountId }, permission: "write" })}`,
       );
       expect(ui.refreshed).toHaveBeenCalledTimes(1);
     });
