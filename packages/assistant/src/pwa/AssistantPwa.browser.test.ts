@@ -128,6 +128,59 @@ describe("The Assistant part on a phone", () => {
     }
   }, 30_000);
 
+  test("while a message is not confirmed, the next one keeps its text and the hint offers to try again", async () => {
+    const page = await open("screen=chat-x&chat=pflege&fail=/turns");
+    try {
+      await field(page).fill("Erste Nachricht");
+      await page.click("button.k2b-chat-composer__send:visible");
+      await page.getByText("Deine Nachricht ist nicht bestätigt.").waitFor();
+      await field(page).fill("Zweite Nachricht");
+      await page.click("button.k2b-chat-composer__send:visible");
+      await page.waitForTimeout(300);
+      expect(await field(page).inputValue()).toBe("Zweite Nachricht");
+      const turns = await page.evaluate(
+        () =>
+          (window as unknown as { harness: { requests: string[] } }).harness.requests.filter((request) => request.endsWith("/turns"))
+            .length,
+      );
+      expect(turns).toBe(1);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("each refused message keeps its own Send again, also after another one went through", async () => {
+    const page = await open("screen=chat-x&chat=pflege&fail=/turns:422");
+    try {
+      for (const text of ["Erste Nachricht", "Zweite Nachricht"]) {
+        await field(page).fill(text);
+        await page.click("button.k2b-chat-composer__send:visible");
+        await page.locator(".k2b-chat-message[data-status='error']", { hasText: text }).waitFor();
+      }
+      await page.evaluate(() => (window as unknown as { harness: { fail: Set<string>; hold: Set<string> } }).harness.fail.clear());
+      await page.evaluate(() => (window as unknown as { harness: { hold: Set<string> } }).harness.hold.add("/turns"));
+      await field(page).fill("Dritte Nachricht");
+      await page.click("button.k2b-chat-composer__send:visible");
+      await page.locator(".k2b-chat-message[data-status='pending']", { hasText: "Dritte Nachricht" }).waitFor();
+      expect(await page.locator(".k2b-chat-message[data-status='error']").count()).toBe(2);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("what this device kept in the field wins over the chat's saved draft after a reload", async () => {
+    const context = await browser.newContext({ viewport: PHONE, hasTouch: true, isMobile: true, locale: "de-DE" });
+    await context.addInitScript(() => localStorage.setItem("cloud.pwa.draft:robin:assistant.composer%3Apflege", "Vom Gerät"));
+    const page = await context.newPage();
+    try {
+      await page.goto(`${harness.url}?screen=chat-x&chat=pflege&serverDraft=1`);
+      await page.waitForSelector("body[data-ready]", { state: "attached" });
+      await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>("textarea[aria-label]")?.value === "Vom Gerät");
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
   test("a new chat starts from the start's field on its own address", async () => {
     // The server holds the turn, so the message stands in the chat as it waits.
     const page = await open("screen=start&hold=/turns");
