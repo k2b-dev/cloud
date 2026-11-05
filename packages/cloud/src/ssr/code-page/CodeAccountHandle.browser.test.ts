@@ -169,3 +169,32 @@ for (const width of [390, 1200])
       await page.close();
     }
   });
+
+// Cloud's global sans rule is unlayered; code keeps the mono face of the @k2b/ui base, and an explicit `font-sans`, as on
+// Mail's plain-text message bodies, keeps sans.
+test("code, kbd, samp and pre are monospace unless they ask for sans", async () => {
+  const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+  try {
+    await page.setContent(
+      `<!doctype html><html lang="de"><head><style>${plex}</style><style>${css}</style></head><body class="k2b-ui">` +
+        `<p>Text <code>code-7k2q9m4xwt</code> <kbd>K</kbd> <samp>S</samp></p><pre>Block</pre>` +
+        `<pre class="font-sans">Plain-text mail</pre><code class="font-sans">Sans code</code></body></html>`,
+    );
+    const faces = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("p, code, kbd, samp, pre")).map(
+        (element) => `${element.textContent}: ${getComputedStyle(element).fontFamily.split(",")[0]!.replaceAll('"', "")}`,
+      ),
+    );
+    expect(faces).toEqual([
+      "Text code-7k2q9m4xwt K S: IBM Plex Sans",
+      "code-7k2q9m4xwt: IBM Plex Mono",
+      "K: IBM Plex Mono",
+      "S: IBM Plex Mono",
+      "Block: IBM Plex Mono",
+      "Plain-text mail: IBM Plex Sans",
+      "Sans code: IBM Plex Sans",
+    ]);
+  } finally {
+    await page.close();
+  }
+});

@@ -318,4 +318,100 @@ describe("Mailbox settings dialog query lifecycle", () => {
       dom.cleanup();
     }
   });
+
+  // A save can fail halfway: the saved part stays saved, and after Discard the tab still reads the stored list again.
+  test("a scoped level is saved as assigned and a half-saved change reloads the tab after Discard", async () => {
+    const dom = createDomTestHarness();
+    const person = (id: string, displayName: string, permission: AccessEntry["permission"], scope?: string): AccessEntry => ({
+      id,
+      principal: { type: "user", userId: `user-${id}` },
+      displayName,
+      permission,
+      ...(scope ? { scope } : {}),
+      createdAt: now,
+    });
+    let entries = [
+      person("grant-mia", "Mia Admin", "admin"),
+      person("grant-jonas", "Jonas Weber", "write"),
+      person("grant-lea", "Lea Schmitt", "read"),
+    ];
+    const adminContext = (): MailboxSettingsContext => ({
+      ...context,
+      permission: "admin",
+      admin: { accessEntries: entries, code: null, messageCount: null, bindings: [], connections: [], folders: [], identities: [] },
+    });
+    const requests: { method: string; path: string; body: unknown }[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(new URL(input instanceof Request ? input.url : String(input), "http://cloud.test"), init);
+        const path = new URL(request.url).pathname;
+        const body = request.method === "PATCH" ? await request.json() : null;
+        requests.push({ method: request.method, path, body });
+        if (request.method === "PATCH" && path.endsWith("/access/grant-jonas")) {
+          entries = entries.map((entry) => (entry.id === "grant-jonas" ? { ...entry, scope: "assigned" } : entry));
+          return new Response(null, { status: 204 });
+        }
+        if (request.method === "DELETE") return Response.json({ message: "The mailbox is busy." }, { status: 503 });
+        return Response.json(adminContext());
+      },
+      { preconnect: globalThis.fetch.preconnect },
+    );
+    const { dialogCore } = await import("@k2b/ui");
+    const { openMailboxSettingsDialog } = await import("./MailboxSettingsDialog");
+    const buttons = () => Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button"));
+    const button = (text: string) =>
+      buttons()
+        .filter((node) => node.textContent?.trim() === text)
+        .at(-1);
+    // The access dialog opens above the settings, whose summary lists the same names.
+    const row = (name: string) =>
+      Array.from(dom.document.querySelectorAll("li[data-access-key]")).find((item) => item.textContent?.includes(name))!;
+    const reads = () => requests.filter((request) => request.method === "GET" && !request.path.includes("/access")).length;
+
+    const result = openMailboxSettingsDialog({
+      mailboxId,
+      contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+      currentUserEmail: "admin@example.test",
+      initialTab: "access",
+    });
+    try {
+      await settle();
+      button("Edit access")!.click();
+      await settle();
+      row("Jonas Weber").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+      Array.from(row("Jonas Weber").querySelectorAll<HTMLElement>('[role="radio"]'))
+        .find((option) => option.textContent?.includes("Edit assigned only"))!
+        .click();
+      await settle();
+      dom.document.querySelector<HTMLButtonElement>('button[aria-label="Remove Lea Schmitt"]')!.click();
+      await settle();
+      const before = reads();
+      button("Save")!.click();
+      await settle();
+      // Lea loses access, so Save asks once more.
+      button("Remove access")!.click();
+      await settle();
+      await settle();
+      expect(requests.find((request) => request.method === "PATCH")).toEqual({
+        method: "PATCH",
+        path: `/api/mail/mailboxes/${mailboxId}/access/grant-jonas`,
+        body: { permission: "write", scope: "assigned" },
+      });
+      expect(requests.some((request) => request.method === "DELETE")).toBe(true);
+      expect(dom.document.body.textContent).toContain("Not saved");
+      // Nothing reads the list while the dialog still holds the open change.
+      expect(reads()).toBe(before);
+      button("Cancel")!.click();
+      await settle();
+      button("Discard")!.click();
+      await settle();
+      await settle();
+      expect(reads()).toBe(before + 1);
+      expect(dom.document.querySelector('[role="dialog"] h2, dialog h2')?.textContent).not.toContain("Access to Support");
+    } finally {
+      dialogCore.close();
+      await result;
+      dom.cleanup();
+    }
+  });
 });
