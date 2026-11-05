@@ -362,8 +362,8 @@ describe("Cloud layouts SSR", () => {
     const header = html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1];
     expect(header).toBeDefined();
     expect(header).not.toContain("md:hidden");
-    expect(html).toContain('<div class="hidden min-w-0 items-center lg:flex">');
-    expect(html).toContain('<div class="flex items-center gap-1 lg:hidden">');
+    expect(html).toContain('<div class="min-w-0 items-center max-lg:hidden lg:flex">');
+    expect(html).toContain('<div class="items-center gap-1 max-lg:flex lg:hidden">');
     // Home and Sign in stay server markup, so focus on them survives the shell's mount.
     const chrome = withoutIslands(html).match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
     expect(chrome).toContain('href="/"');
@@ -385,9 +385,9 @@ describe("Cloud layouts SSR", () => {
     }
     // The header remains for phones only, and it never carries breadcrumbs or an avatar.
     expect(html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1]).toContain("md:hidden");
-    expect(html).not.toContain("hidden min-w-0 items-center lg:flex");
+    expect(html).not.toContain("min-w-0 items-center max-lg:hidden lg:flex");
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
-    expect(html).toContain('class="layout-rail hidden w-14 shrink-0 flex-col md:flex"');
+    expect(html).toContain('class="layout-rail w-14 shrink-0 flex-col max-md:hidden md:flex"');
     // Home stays in the rail; phones get Home and the person's apps in the bar, as server markup outside the shell's
     // islands, so focus on it survives their mount.
     const chrome = withoutIslands(html);

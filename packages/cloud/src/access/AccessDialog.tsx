@@ -111,8 +111,13 @@ export const openAccessDialog = async (props: AccessDialogProps): Promise<boolea
     },
   )) === true;
 
-/** Accounts of objects and apps: they never reach the search by name, only by their identifier. */
-const isObjectAccount = (kind: ServiceAccountKind | undefined) => kind === "resource_bound";
+/**
+ * The service accounts that Code of an object or an app runs as. They never reach the search by name, only by their
+ * handle. Their kind `code` arrives with the code lane, so the contract type does not list it yet.
+ */
+const isCodeAccount = (kind: string | undefined) => kind === "code";
+/** The account behind an object's API keys: shown as an API key, never as a service account. */
+const isApiKeyAccount = (kind: ServiceAccountKind | undefined) => kind === "resource_bound";
 const generalPrincipal = (principal: Principal) => principal.type === "authenticated" || principal.type === "public";
 
 /**
@@ -166,6 +171,10 @@ export function AccessDialog(
   const lastManagers = createMemo(() => lastManagerKeys(draft(), props.effectiveEntries));
   const levels = (principal: Principal): ResolvedLevel[] =>
     resolveAllowedLevels(typeof props.allowedLevels === "function" ? props.allowedLevels(principal) : props.allowedLevels, access());
+  // Code's own service account never manages: whoever edits the code would act with that right.
+  const levelsFor = (principal: Principal, kind: string | undefined): ResolvedLevel[] =>
+    isCodeAccount(kind) ? levels(principal).filter((level) => level.level !== "admin") : levels(principal);
+  const rowLevels = (row: DraftRow) => levelsFor(row.principal, row.display.serviceAccountKind);
   const manageLabel = (principal: Principal) => levels(principal).find((level) => level.level === "admin")?.label ?? access().manage;
   const levelLabel = (principal: Principal, level: DraftLevel | null) =>
     !level
@@ -174,8 +183,8 @@ export function AccessDialog(
         ? access().noAccess
         : (levels(principal).find((option) => option.key === levelKey(level.permission, level.scope))?.label ?? level.permission);
   /** The level a new row starts with: the first the resource offers, with its scope. */
-  const firstLevel = (principal: Principal): DraftLevel => {
-    const option = levels(principal)[0];
+  const firstLevel = (principal: Principal, kind?: string): DraftLevel => {
+    const option = levelsFor(principal, kind)[0];
     return option ? { permission: option.level, ...(option.scope ? { scope: option.scope } : {}) } : { permission: "read" };
   };
   const nameOf = (row: DraftRow) =>
@@ -202,8 +211,12 @@ export function AccessDialog(
   };
   const isGeneralSwitch = (row: DraftRow) =>
     (row.principal.type === "authenticated" || row.principal.type === "public") && generalRow(row.principal.type)?.key === row.key;
-  const peopleRows = () => rows().filter((row) => !isObjectAccount(row.display.serviceAccountKind) && !isGeneralSwitch(row));
-  const objectAccountRows = () => rows().filter((row) => isObjectAccount(row.display.serviceAccountKind));
+  const peopleRows = () =>
+    rows().filter(
+      (row) => !isCodeAccount(row.display.serviceAccountKind) && !isApiKeyAccount(row.display.serviceAccountKind) && !isGeneralSwitch(row),
+    );
+  const objectAccountRows = () => rows().filter((row) => isCodeAccount(row.display.serviceAccountKind));
+  const apiKeyRows = () => rows().filter((row) => isApiKeyAccount(row.display.serviceAccountKind));
   /** In read-only mode, who can change access: the people and groups that manage it, by name. */
   const readOnlyLine = () => {
     // The same managers the last-manager rule counts: unscoped, and not shadowed by a denial.
@@ -368,7 +381,7 @@ export function AccessDialog(
     if (row.principal.type === "user") return row.principal.userId === props.viewerUserId ? t().you : t().person;
     if (row.principal.type === "group") return t().group;
     if (row.principal.type === "service_account")
-      return isObjectAccount(row.display.serviceAccountKind)
+      return isCodeAccount(row.display.serviceAccountKind)
         ? t().serviceAccount
         : ((row.display.serviceAccountKind && serviceAccountKindDisplay(row.display.serviceAccountKind, access()).label) ?? t().agent);
     return "";
@@ -402,7 +415,7 @@ export function AccessDialog(
     const protectedRow = () => lastManagers().has(row().key);
     const current = () => (row().next ? levelKey(row().next!.permission, row().next!.scope) : "");
     const options = () =>
-      levels(row().principal).map((option) => {
+      rowLevels(row()).map((option) => {
         const locked = protectedRow() && (option.level !== "admin" || option.scope !== undefined);
         return {
           value: option.key,
@@ -447,7 +460,7 @@ export function AccessDialog(
                 value={current}
                 options={options()}
                 onValueChange={(key) => {
-                  const option = levels(row().principal).find((candidate) => candidate.key === key);
+                  const option = rowLevels(row()).find((candidate) => candidate.key === key);
                   if (option)
                     edit((draftNow) =>
                       setLevel(draftNow, row(), { permission: option.level, ...(option.scope ? { scope: option.scope } : {}) }),
@@ -510,10 +523,11 @@ export function AccessDialog(
           {/* As in the approved mockup: the mark sits beside the name, and on a phone in the line below it. */}
           <span class="flex min-w-0 items-center gap-2 text-[15px] font-medium text-primary">
             <span class="truncate">{nameOf(row())}</span>
-            <span class="contents max-sm:hidden">{mark(row())}</span>
+            {/* Only breakpoint-scoped display classes: an app stylesheet that repeats `contents` or `inline-flex` comes later and would show both marks. */}
+            <span class="max-sm:hidden sm:contents">{mark(row())}</span>
           </span>
           <span class="flex min-w-0 items-center gap-2 text-[13px] text-dimmed">
-            <span class="contents sm:hidden">{mark(row())}</span>
+            <span class="max-sm:contents sm:hidden">{mark(row())}</span>
             <span class="truncate">{kindLine(row())}</span>
           </span>
         </span>
@@ -665,7 +679,9 @@ export function AccessDialog(
     }
   };
   const addFound = (account: FoundServiceAccount) => {
-    edit((current) => addPrincipal(current, account.principal, account.display, firstLevel(account.principal)));
+    edit((current) =>
+      addPrincipal(current, account.principal, account.display, firstLevel(account.principal, account.display.serviceAccountKind)),
+    );
     setFound(null);
     setHandle("");
     setHandleOpen(false);
@@ -901,6 +917,23 @@ export function AccessDialog(
                   {objectAccountRows().length > 0 ? t().serviceAccountNote({ name: props.resourceName }) : t().serviceAccountsEmpty}
                 </p>
               </Show>
+            </PanelDialog.Section>
+          </Show>
+
+          {/* An object's API keys: each has its own account and level, as in the approved mockup. */}
+          <Show when={!loading() && apiKeyRows().length > 0}>
+            <PanelDialog.Section
+              title={
+                <>
+                  {t().apiKeys} <span class="font-normal text-dimmed">{apiKeyRows().filter((row) => row.next).length}</span>
+                </>
+              }
+            >
+              <ul class="flex flex-col">
+                <For each={apiKeyRows().map((row) => row.key)}>
+                  {(key) => <Show when={rows().find((row) => row.key === key)}>{(row) => <AccessRow row={row()} />}</Show>}
+                </For>
+              </ul>
             </PanelDialog.Section>
           </Show>
 

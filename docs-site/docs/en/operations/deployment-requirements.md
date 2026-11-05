@@ -1116,6 +1116,18 @@ a healthy container alone does not prove that the caller can read a calendar.
 The aggregate reader has a 42-day view range, 100-calendar selection,
 60-call/six-concurrent-call budget, 4 MiB page budget, and caller deadline.
 
+### Upgrade Spaces task writes
+
+Spaces creates `spaces.item_create_requests` on startup for actor-scoped,
+24-hour create receipts. Task creation, its receipt and outbox commit together.
+The Spaces lifecycle starts an hourly NATS scheduler that removes expired
+receipts in bounded batches and drains on shutdown.
+Ship the matching server, browser and CLI assets together so new callers can
+use assignment deltas, title preconditions and retry keys. No configuration or
+new service is required. Verify one title conflict and one keyed create replay
+after upgrading. See [Spaces task writes](/en/docs/reference/spaces-task-mutations)
+for request fields, error codes and the retry window.
+
 ### Upgrade Spaces task deadlines
 
 Spaces adds the nullable `spaces.items.deadline_date` DATE column and the `items_deadline_one_kind` check on startup. The check permits at most one of `deadline` and `deadline_date`. Existing timestamp deadlines remain timed; there is no backfill. API and capability consumers, such as scripts, agents and integrations, must accept `deadline` as either `YYYY-MM-DD` or an ISO instant and can use `deadlineAllDay` to distinguish them. Deploy the updated Spaces server and its matching browser and CLI assets together. Verify a date-only deadline, a timed deadline, and switching between them after the upgrade.

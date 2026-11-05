@@ -129,7 +129,8 @@ Select `pwa` to measure the installable app at `/pwa/`:
 bun --no-env-file scripts/perf-baseline.ts --pages pwa --runs 3
 ```
 
-Local mode builds and starts Core, the Cloud app, Spaces, Chat, and the gateway.
+Local mode builds and starts Core, the Cloud app, Spaces, Chat, the Assistant, and the gateway; a remote
+installation measures the Assistant part only where it shows it.
 Through the public Spaces API it creates one Space with 12 open tasks assigned
 to the administrator, titled `Perf task 01` through `Perf task 12`. It verifies
 that all 12 appear in `GET /api/spaces/overview/work?view=mine` before measuring.
@@ -177,7 +178,8 @@ context allows service workers and performs these steps:
    for the initial islands, 500 ms of script quiet, and service-worker readiness.
    A welcome, unavailable, sign-in, or non-app page fails the profile.
 2. Run `tab-start-chat`, `tab-chat-start`, `tab-start-spaces`, `tab-spaces-start`, `tab-start-settings`, and
-   `tab-settings-start`, then repeat all six. These use touch taps (mouse clicks on the monitor) on the
+   `tab-settings-start`, then repeat all six. Where the Assistant part shows in the tab bar, each round also
+   runs `tab-start-assistant` and `tab-assistant-chat` and returns to Start untimed. These use touch taps (mouse clicks on the monitor) on the
    navigation the width shows: the tab bar and Start's header settings icon on
    a phone, the sidebar from 48 rem. Round 1 is the first visit; round 2
    is the revisit in this context.

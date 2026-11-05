@@ -96,6 +96,9 @@ const withPrompt = (systemPrompt: string | undefined, suffix: string | null) =>
  * finished seed the counts without a hint of their own; a hint the earlier
  * attempt gave is not remembered.
  */
+/** nessi lets the model repair two responses in a row whose calls it could not use (malformed or cut off). */
+const AI_MODEL_REPAIR_TURNS = 2;
+
 export const applyAiTurnPolicy = (input: {
   provider: Provider;
   tools: Tool[] | ToolResolver;
@@ -206,7 +209,6 @@ export const applyAiTurnPolicy = (input: {
     model: input.provider.model,
     contextWindow: input.provider.contextWindow,
     capabilities: input.provider.capabilities,
-    complete: (request) => input.provider.complete(request),
     stream: async function* (request) {
       // Compaction may run between the tool check and this call; the reserve still holds.
       if (!finalReason && reserveReached()) endToolUse("run_time");
@@ -228,8 +230,9 @@ export const applyAiTurnPolicy = (input: {
     provider,
     tools,
     // Nessi checks this before provider calls. The extra round is the tool-free
-    // synthesis call after the last allowed tool-using round.
-    ...(limit > 0 ? { maxTurns: Math.max(1, limit - issuedAtStart + 1) } : {}),
+    // synthesis call after the last allowed tool-using round; nessi's repairs of
+    // unusable responses take their own calls.
+    ...(limit > 0 ? { maxTurns: Math.max(1, limit - issuedAtStart + 1) + AI_MODEL_REPAIR_TURNS } : {}),
     noteToolRound: () => {
       completed += 1;
     },

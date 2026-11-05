@@ -392,12 +392,9 @@ suite("AI conversation store integration", () => {
     const requests: ProviderRequest[] = [];
     const provider: Provider = {
       name: "anthropic",
-      family: "anthropic",
+      family: "openai-compatible",
       model: "fixture",
       capabilities: { streaming: true, tools: false, images: false, thinking: true, usage: true },
-      complete: async () => {
-        throw new Error("Unexpected completion");
-      },
       async *stream(request) {
         requests.push(request);
         yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };

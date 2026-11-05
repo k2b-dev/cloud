@@ -107,10 +107,13 @@ export default function ItemForm(props: ItemFormProps) {
    * An edit sends the assignees only when the person changed them, so a title edit never replaces a list that changed
    * meanwhile, such as by someone claiming the task.
    */
+  const initialTitle = props.item?.title;
+  const initialAssigneeIds = props.item?.assignees?.map((assignee) => assignee.id) ?? [];
+  let createAttempt: { input: string; key: string } | undefined;
   const assigneeChange = () => {
     const ids = assignees().map((assignee) => assignee.id);
     if (!isEditMode()) return ids.length > 0 ? ids : undefined;
-    const before = props.item?.assignees?.map((assignee) => assignee.id) ?? [];
+    const before = initialAssigneeIds;
     return ids.length === before.length && ids.every((id) => before.includes(id)) ? undefined : ids;
   };
   const [selectedTags, setSelectedTags] = createSignal<string[]>(props.item?.tags?.map((t) => t.id) ?? props.defaults?.tagIds ?? []);
@@ -447,10 +450,28 @@ export default function ItemForm(props: ItemFormProps) {
       estimatedDurationMinutes: !isEvent() ? (estimatedDurationMinutes() ?? (isEditMode() ? null : undefined)) : undefined,
       priority: (priority() || (isEditMode() ? null : undefined)) as Priority | null | undefined,
       assigneeIds: assigneeChange(),
+      ...(isEditMode()
+        ? {
+            expectedTitle: initialTitle,
+            ...(assigneeChange() !== undefined
+              ? {
+                  addAssigneeIds: assignees()
+                    .map((assignee) => assignee.id)
+                    .filter((id) => !initialAssigneeIds.includes(id)),
+                  removeAssigneeIds: initialAssigneeIds.filter((id) => !assignees().some((assignee) => assignee.id === id)),
+                }
+              : {}),
+          }
+        : {}),
       tagIds: isEditMode() || selectedTags().length > 0 ? selectedTags() : undefined,
       ...(!isEditMode() && !isEvent() && checklist().length ? { checklist: checklist() } : {}),
       ...(!isEditMode() && assignCreator() ? { assignCreator: true } : {}),
     };
+    if (!isEditMode()) {
+      const input = JSON.stringify(data);
+      if (createAttempt?.input !== input) createAttempt = { input, key: crypto.randomUUID() };
+      data.requestKey = createAttempt.key;
+    }
     // A save that runs from the dialog keeps it open until the server answers; a refusal stays here with the input.
     setSubmitting(true);
     try {

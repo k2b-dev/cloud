@@ -10,7 +10,15 @@ export type LayoutContext = {
   get(key: "user"): User | undefined;
   get(key: "panelConsent"): PanelConsentSnapshot | undefined;
   get(key: "railPreferences"): RailSnapshot | undefined;
-  get(key: "page"): { theme?: "light" | "dark"; title?: string; pwa?: { name: string }; pwaAddress?: string; pwaOwner?: string };
+  get(key: "page"): {
+    theme?: "light" | "dark";
+    title?: string;
+    pwa?: { name: string };
+    pwaAddress?: string;
+    pwaOwner?: string;
+    /** The current app's accent, which colours the page's body as that app's scope. */
+    appAccent?: string;
+  };
   get(key: "runtime"): RuntimeContext;
   get(key: "announcements"): LayoutAnnouncementsState | undefined;
   /** Every application settings snapshot includes Core's app metadata. */

@@ -13,7 +13,7 @@ const icons = {
 const serviceAccountKinds = {
   agent: { icon: "ti ti-robot", label: "agentServiceAccount" },
   user_delegated: { icon: "ti ti-user-key", label: "userBoundServiceAccount" },
-  resource_bound: { icon: "ti ti-box", label: "resourceBoundServiceAccount" },
+  resource_bound: { icon: "ti ti-key", label: "resourceBoundServiceAccount" },
   standalone: { icon: "ti ti-key", label: "standaloneServiceAccount" },
 } as const;
 // Without a known kind (usage reports, deleted accounts) the type-level icon and label apply.

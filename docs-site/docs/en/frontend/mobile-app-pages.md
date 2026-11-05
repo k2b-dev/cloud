@@ -70,15 +70,22 @@ empty summary line until the route answers, and clears it when a read fails. The
 stays the same height when live text arrives; long text is truncated visually. Parts
 without a summary route keep their `description`.
 
+`order` (optional) fixes the part's position on Start, in the sidebar, and in
+the tab bar, which shows the first three parts. Parts with an `order` come
+first, lowest first. Parts without one follow, sorted by name in the reader's
+language; equal orders also sort by name. Use a positive integer for a part
+that people open every day, so its tab stays in the same place in every
+language. People cannot change the order.
+
 Both routes are read once a minute and when the app returns to the
-foreground, and must be among the application's own paths. Chat answers both
-from one route; Spaces only summarizes:
+foreground, and must be among the application's own paths. Chat counts and
+summarizes; Spaces only summarizes:
 
 ```ts
 // Chat
-pwa: { requiresRoles: ["user"], badge: "/api/chat/conversations/unread-count", summary: "/api/chat/conversations/unread-count" },
+pwa: { requiresRoles: ["user"], badge: "/api/chat/badge", summary: "/api/chat/conversations/unread-count", order: 2 },
 // Spaces
-pwa: { requiresRoles: ["user"], summary: "/api/spaces/overview/summary" },
+pwa: { requiresRoles: ["user"], summary: "/api/spaces/overview/summary", order: 3 },
 ```
 
 Do not list `/pwa` paths in `routes`; `defineApp()` throws for them. See
@@ -89,7 +96,10 @@ action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-cloud-app). Chat
 adds `/pwa/chat` with its chats and one conversation, as an example of a list
 beside its detail with a composer at the bottom edge. Its archive and channel
 search also stay below `/pwa/chat`; reloading preserves the selected list,
-search, and open thread.
+search, and open thread. The Assistant adds `/pwa/assistant` with `order: 1`:
+recent chats, the questions that wait for the person, and a field on its
+start, and one chat at `/pwa/assistant/c/<chat>` that opens as a `screen` on a
+phone. Its `badge` counts only the questions that wait for an answer.
 
 ## Paths
 
@@ -152,7 +162,7 @@ export default ssr<AuthContext>(async (c) => {
 | --- | --- |
 | No app session | `302` to `/pwa/_auth/session/launch?to=<path and query>`; Core renews the session and returns the device to the same page |
 | No app session after that return (`pwa_launch` in the query) | `302` to `/pwa/?pwa=unavailable`, which stops a redirect loop |
-| Signed in without the required role | `403` page in the Cloud app's layout |
+| Signed in without the required role | `403` page in the Cloud app's layout, titled with the part's name, such as "Inventory is not available to you" |
 
 Each of these responses sets `Cache-Control: private, no-store`. For other errors, call
 `ssr.error(c, status, { layout: "pwa" })`; see
@@ -176,6 +186,7 @@ pages. Declare `/public/<app-id>` when the part has its own styles.
 | `back` | Optional `{ href, label, withSidebar }` for going up inside the part, for example from a detail to its list; `withSidebar: false` hides it beside the sidebar |
 | `actions` | At most two icon buttons at the end of the header |
 | `bare` | The page brings its own heads and scroll areas, such as `AppWorkspace.Main` levels; `title` still names the document |
+| `screen` | Below 48 rem, the page opens as a screen of its own without the tab bar, such as one chat with its composer at the bottom edge; a part that opens or leaves such a screen in place calls [`MobileShell.setScreen`](/en/ui/layout/mobile-shell) |
 | `children` | The page content, in the app's only scroll area |
 
 It renders the app's document head, a
@@ -183,8 +194,9 @@ It renders the app's document head, a
 [`TabBar`](/en/ui/layout/tab-bar) with Start and the first three parts, and a
 sidebar with Start, every part, and Settings for wide screens. Start
 lists every part, so it also serves as "More", and opens Settings from its
-header. The layout provides the request locale, follows the person's Light,
-Dark, or Automatic theme preference, and sets `Referrer-Policy: no-referrer`
+header. The layout provides the request locale, gives a part's pages the
+application's `appearance.accent` for selection and accents, as an application
+has on the web, follows the person's Light, Dark, or Automatic theme preference, and sets `Referrer-Policy: no-referrer`
 and `frame-ancestors 'none'`. In the browser, it registers the app's service
 worker, shows an offline notice, and keeps the app session alive. With
 Automatic, the status bar color follows the device's appearance.
@@ -422,7 +434,10 @@ interrupts work with an automatic reload. There is no extra polling.
 
 Typed API writes, capability Actions, provider uploads, the AI chat controller,
 and live dictation hold automatic update reloads by default. GET reads and idle
-live subscriptions do not. Once an action settles, the next foreground check
+live subscriptions do not. A write the platform does not see, such as an upload
+over `XMLHttpRequest` that reports its progress, holds them with
+`beginAppAction()` from `@k2b/cloud/browser/reload`; call the returned function
+on every exit path. Once an action settles, the next foreground check
 may reload; settling alone never reloads the page.
 
 Parts use the draft helper for text they intend to save or send. For other
