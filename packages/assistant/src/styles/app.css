@@ -632,6 +632,10 @@
 .assistant-all-chats-filters > :first-child { flex: 999 1 16rem; min-width: 0; }
 .assistant-all-chats-filters > :last-child { flex: 1 1 13rem; min-width: 0; }
 
+/* The Code destinations load their code when they open; the loading surface holds the pane like the content does. */
+.assistant-deferred-view { display: contents; }
+.assistant-deferred-feedback { display: flex; flex: 1; min-height: 0; align-items: flex-start; padding: var(--ui-space-section); }
+
 /* Gustav: the person's own Code ("My apps & automations"). One flat list; the status and the last run share the row,
    and on a narrow surface the status moves under the name. */
 .assistant-code {

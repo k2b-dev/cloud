@@ -230,6 +230,9 @@ export const assistantMessages = i18n.define({
       codeBlockFailed: ({ title }: { title: string }) => `The Code of ${title} could not be loaded.`,
       codeBlockFailedHint: "Its automations keep running. The chat here works anyway.",
       codeBlockRetry: "Retry",
+      codeViewLoading: "Loading…",
+      codeViewLoadFailed: "This view could not be loaded. Your apps and automations keep running.",
+      codeViewRetry: "Try again",
     },
     de: {
       panelUnsaved: "Entwurf noch nicht gespeichert",
@@ -456,6 +459,9 @@ export const assistantMessages = i18n.define({
       codeBlockFailed: ({ title }) => `Der Code von ${title} konnte nicht geladen werden.`,
       codeBlockFailedHint: "Die Automationen laufen weiter. Der Chat hier geht trotzdem.",
       codeBlockRetry: "Erneut",
+      codeViewLoading: "Wird geladen…",
+      codeViewLoadFailed: "Diese Ansicht konnte nicht geladen werden. Deine Apps und Automationen laufen weiter.",
+      codeViewRetry: "Erneut versuchen",
     },
   },
 });

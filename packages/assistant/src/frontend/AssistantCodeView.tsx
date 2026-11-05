@@ -1,55 +1,18 @@
 import { describeCodeSchedule } from "@k2b/cloud/ssr/code-schedule";
-import { Button, Placeholder, ScrollArea, Skeleton, StatusBadge, type StatusTone, useLocale } from "@k2b/ui";
+import { Button, Placeholder, ScrollArea, Skeleton, useLocale } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
 import {
   type CodeRunCount,
-  type CodeStatusKey,
-  type CodeStatusTone,
   type CodeSummary,
   type CodeSummaryPage,
-  codeStatus,
   countOwnRunsSince,
   loadCodeSummaries,
   nextCodeRun,
   startOfDayIn,
 } from "../code-summary";
-import { browserCodeInvoke, formatCodeNextRun, formatCodeTime } from "./code-client";
+import { browserCodeInvoke, formatCodeNextRun } from "./code-client";
+import { CodeStatusBadge, codeRunTime } from "./code-status";
 import { assistantMessages } from "./messages";
-
-const badgeTone: Record<CodeStatusTone, StatusTone> = { success: "ok", warning: "warning", danger: "error", neutral: "neutral" };
-
-export function CodeStatusBadge(props: { code: CodeSummary; status?: { key: CodeStatusKey; tone: CodeStatusTone } }) {
-  const locale = useLocale();
-  const status = () => props.status ?? codeStatus(props.code);
-  return <StatusBadge tone={badgeTone[status().tone]} variant="dot" label={codeStateLabel(status().key, locale())} />;
-}
-
-/** The visible word for one Code status. */
-export const codeStateLabel = (key: CodeStatusKey, locale: string) => {
-  const t = assistantMessages.resolve([locale]).t;
-  return {
-    on: t.codeStateOn,
-    paused: t.codeStatePaused,
-    draft: t.codeStateDraft,
-    deleting: t.codeStateDeleting,
-    failed: t.codeStateFailed,
-    access_missing: t.codeStateAccessMissing,
-  }[key];
-};
-
-/** When the newest run ended or started, that none ran yet, or that Core could not say. */
-export const codeRunTime = (code: CodeSummary, locale: string, timeZone: string) => {
-  const t = assistantMessages.resolve([locale]).t;
-  const run = code.lastRun;
-  if (run === undefined) return t.codeRunUnknown;
-  return run ? formatCodeTime(run.endedAt ?? run.createdAt, locale, timeZone) : t.codeNoRun;
-};
-
-/** The line under a Code's name in the panel block: its newest run. */
-export const codeRunLine = (code: CodeSummary, locale: string, timeZone: string) => {
-  const t = assistantMessages.resolve([locale]).t;
-  return code.lastRun ? t.codeLastRun({ when: codeRunTime(code, locale, timeZone) }) : codeRunTime(code, locale, timeZone);
-};
 
 /**
  * The line under a Code's name in the list: what kind it is, its schedule, and when it runs next. A Code with several

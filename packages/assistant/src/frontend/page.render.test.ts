@@ -12,9 +12,14 @@ import * as services from "@k2b/cloud/services";
 import * as rail from "@k2b/cloud/services/rail-snapshot";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { fromJSON } from "seroval";
+import { type ComponentProps, createComponent } from "solid-js";
+import { renderToString } from "solid-js/web";
+import { createDomTestHarness } from "../../../ui/test/dom";
 import * as chatContext from "../chat-context";
 import * as projectContext from "../project-context";
 import * as sidebar from "../sidebar";
+import type AssistantWorkspace from "./AssistantWorkspace.island";
 
 const root = mkdtempSync(join(tmpdir(), "assistant-page-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -24,6 +29,34 @@ const { default: handler } = await import("./page");
 // After the Solid plugin: the shared Code page and Cloud's SSR are .tsx.
 const cloudSsr = await import("@k2b/cloud/ssr");
 const { codePageFixture } = await import("@k2b/cloud/ssr/code-page/code-page.fixture");
+const { LocaleProvider } = await import("@k2b/ui");
+const { default: AssistantCodeView } = await import("./AssistantCodeView");
+const { default: AssistantCodeDetail } = await import("./AssistantCodeDetail");
+
+/** Only for parsing the HTML: the SSR render itself runs without browser globals. */
+const parser = (() => {
+  const dom = createDomTestHarness();
+  dom.cleanup();
+  return new dom.window.DOMParser();
+})();
+/** The Code seed the workspace island carries to the browser. */
+const codeSeed = (html: string) => {
+  const island = parser.parseFromString(html, "text/html").querySelector('solid-island[data-file="AssistantWorkspace.island.tsx"]');
+  const props: ComponentProps<typeof AssistantWorkspace> = fromJSON(JSON.parse(island?.getAttribute("data-props") ?? "null"));
+  return props.code;
+};
+/** The Code destinations load their code in the browser; the server renders their loading surface. */
+const codeLoading = '<div class="assistant-deferred-feedback">';
+/** What a loaded Code destination shows from its seed, rendered the way the browser does after the code arrives. */
+const renderSeeded = <P extends object>(component: (props: P) => import("solid-js").JSX.Element, props: P) =>
+  renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "en",
+      get children() {
+        return createComponent(component, props);
+      },
+    }),
+  );
 
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -284,7 +317,7 @@ const mockCodeQueries = (items: unknown[], options: { fail?: boolean } = {}) => 
   return codeInvoke;
 };
 
-test("My apps & automations shows only for a person with Code, and ?code=1 renders their list from the server", async () => {
+test("My apps & automations shows only for a person with Code, and ?code=1 seeds their list from the server", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
       projects: [],
@@ -309,8 +342,21 @@ test("My apps & automations shows only for a person with Code, and ?code=1 rende
   const withCode = await (await request("https://cloud.example.test/app/assistant")).text();
   expect(withCode).toContain('href="/app/assistant?code=1"');
   const view = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
-  expect(view).toContain("Your Code runs as you.");
-  expect(view).toContain("Weekly sales report");
+  // The server and the first client render show the loading surface; the list arrives with its code.
+  expect(view).toContain(codeLoading);
+  expect(view).toContain("Loading…");
+  expect(view).not.toContain("Your Code runs as you.");
+  const seed = codeSeed(view);
+  expect(seed).toMatchObject({ has: true, open: true, page: { items: [{ id: "c_week01", title: "Weekly sales report" }] } });
+  const list = renderSeeded(AssistantCodeView, {
+    userId: user.id,
+    timeZone: "UTC",
+    initial: seed?.page,
+    initialToday: seed?.today,
+    onCreateInChat: () => {},
+  });
+  expect(list).toContain("Your Code runs as you.");
+  expect(list).toContain("Weekly sales report");
   expect(view).toMatch(/href="\/app\/assistant\?code=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?code=1"/);
 });
 
@@ -328,8 +374,13 @@ test("an unknown Code answer keeps the entry, and the list shows its error with 
   const plain = await (await request("https://cloud.example.test/app/assistant")).text();
   expect(plain).toContain('href="/app/assistant?code=1"');
   const view = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
-  expect(view).toContain("Your apps and automations could not be loaded");
-  expect(view).toContain("Try again");
+  expect(view).toContain(codeLoading);
+  const seed = codeSeed(view);
+  // A failed list is part of the seed, so the loaded view shows the error instead of asking Core again.
+  expect(seed).toMatchObject({ has: true, open: true, page: null });
+  const list = renderSeeded(AssistantCodeView, { userId: user.id, timeZone: "UTC", initial: null, onCreateInChat: () => {} });
+  expect(list).toContain("Your apps and automations could not be loaded");
+  expect(list).toContain("Try again");
 });
 
 test("an existing chat still loads at its old address under the name Gustav", async () => {
@@ -552,8 +603,14 @@ test("a personal Code opens at its own address with the shared Code page; a malf
     canManageOwner: false,
   });
   const html = await response.text();
-  expect(html).toContain("Weekly sales report");
-  expect(html).toContain("Your Code · runs as you");
+  // A direct load shows the loading surface first; the shared Code page renders the seed once its code arrives.
+  expect(html).toContain(codeLoading);
+  expect(html).not.toContain("Your Code · runs as you");
+  const seed = codeSeed(html);
+  expect(seed).toMatchObject({ open: true, detail: { href: "/app/assistant/code/c_woche1", owner: { title: "Weekly sales report" } } });
+  const detail = renderSeeded(AssistantCodeDetail, { data: seed!.detail! });
+  expect(detail).toContain("Weekly sales report");
+  expect(detail).toContain("Your Code · runs as you");
   // The sidebar marks My apps & automations while a Code is open.
   expect(html).toMatch(/href="\/app\/assistant\?code=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?code=1"/);
   expect((await request("https://cloud.example.test/app/assistant/code/not-a-code")).status).toBe(404);
@@ -571,8 +628,17 @@ test("the Code list counts today's runs from the start of the person's day", asy
     return { ok: true, data: { data: schema.parse(data) } };
   });
   const html = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
-  expect(html).toContain("Today 9 runs · 1 failed");
-  expect(html).toContain('href="/app/assistant/code/c_week01"');
+  const seed = codeSeed(html);
+  expect(seed).toMatchObject({ today: { runs: 9, failed: 1 } });
+  const list = renderSeeded(AssistantCodeView, {
+    userId: user.id,
+    timeZone: "UTC",
+    initial: seed?.page,
+    initialToday: seed?.today,
+    onCreateInChat: () => {},
+  });
+  expect(list).toContain("Today 9 runs · 1 failed");
+  expect(list).toContain('href="/app/assistant/code/c_week01"');
   const count = codeInvoke.mock.calls.find(([invocation]) => invocation.capabilityId === "code.run.count");
   expect(count?.[0].input).toEqual({ since: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/) });
 });
