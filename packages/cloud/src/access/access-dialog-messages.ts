@@ -88,7 +88,6 @@ export const accessDialogMessages = i18n.define({
       summaryOff: "off",
       summaryServiceAccounts: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: "1 service account", other: `${count} service accounts` }),
-      summaryApiKeys: ({ count }: { count: number }) => i18n.plural(count, "en", { one: "1 API key", other: `${count} API keys` }),
     },
     de: {
       title: ({ name }) => `Zugriff auf ${name}`,
@@ -184,7 +183,6 @@ export const accessDialogMessages = i18n.define({
         i18n.plural(count, "de", { one: "1 Person, Gruppe oder Agent", other: `${count} Personen, Gruppen und Agenten` }),
       summaryOff: "aus",
       summaryServiceAccounts: ({ count }) => i18n.plural(count, "de", { one: "1 Dienstkonto", other: `${count} Dienstkonten` }),
-      summaryApiKeys: ({ count }) => i18n.plural(count, "de", { one: "1 API Key", other: `${count} API Keys` }),
     },
   },
 });

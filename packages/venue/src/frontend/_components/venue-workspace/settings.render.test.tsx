@@ -222,12 +222,13 @@ describe("Venue settings: Access", () => {
   const apiKey = manager("access-key", { type: "service_account", serviceAccountId: "key-1" }, "Corner Café API keys", {
     serviceAccountKind: "resource_bound",
   });
-  test("lists who may use the venue, agents included, and edits it in the access dialog", () => {
+  test("sums up who may use the venue, agents included, and edits it in the access dialog", () => {
     const html = render("admin", { tab: "access", accessEntries: [person, agent, apiKey] });
 
     expect(html).toContain("Ada Lovelace");
     expect(html).toContain("Shift planner");
-    expect(html).toContain("(Agent)");
+    // The summary counts the agent with the people; API keys keep their own section.
+    expect(html).toContain("2 people, groups and agents · All signed-in people: off");
     expect(html).toContain("Edit access");
     // The list only shows what is stored; changing it happens in the dialog.
     expect(html).not.toContain("Remove Ada Lovelace");

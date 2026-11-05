@@ -1,15 +1,17 @@
 import { AvatarStack, type AvatarStackPerson, useLocale } from "@k2b/ui";
-import { Show } from "solid-js";
+import { createMemo, Show } from "solid-js";
 import { cloudAvatarImage } from "../account/Avatar";
 import type { AccessEntry } from "../contracts/shared";
 import { accessDialogMessages } from "./access-dialog-messages";
 import { accessMessages } from "./messages";
 import { type AllowedLevel, levelKey, resolveAllowedLevels } from "./PermissionEditor";
+import { principalKey } from "./principal-key";
 import { principalLabel } from "./principal-label";
 import { serviceAccountKindDisplay } from "./service-account-kind";
 
 /** Faces before "+n", as in the approved mockup. */
 const FACES = 5;
+const rank = { none: 0, read: 1, write: 2, admin: 3 } as const;
 
 /**
  * Who has access to a resource, in one line under a few faces: the entry point to the access dialog in an app's
@@ -25,17 +27,31 @@ export function AccessSummary(props: {
   const locale = useLocale();
   const t = () => accessDialogMessages.resolve([locale()]).t;
   const access = () => accessMessages.resolve([locale()]).t;
-  const active = () => (props.effectiveEntries ?? ((entries) => entries))(props.entries).filter((entry) => entry.permission !== "none");
   const levelOf = (entry: AccessEntry) =>
     resolveAllowedLevels(props.allowedLevels, access()).find((level) => level.key === levelKey(entry.permission, entry.scope))?.label ??
     entry.permission;
-  const general = (type: "authenticated" | "public") => active().find((entry) => entry.principal.type === type);
-  // Code's own service accounts carry the kind `code` where the code lane adds it; an object's account is its API key.
+  // One row per principal with its strongest grant, as the service resolves it; an unscoped grant wins a tie.
+  const strongest = createMemo(() => {
+    const byPrincipal = new Map<string, AccessEntry>();
+    for (const entry of (props.effectiveEntries ?? ((entries) => entries))(props.entries)) {
+      if (entry.permission === "none") continue;
+      const key = principalKey(entry.principal);
+      const kept = byPrincipal.get(key);
+      const stronger =
+        !kept ||
+        rank[entry.permission] > rank[kept.permission] ||
+        (rank[entry.permission] === rank[kept.permission] && !entry.scope && kept.scope);
+      if (stronger) byPrincipal.set(key, entry);
+    }
+    return [...byPrincipal.values()];
+  });
+  const general = (type: "authenticated" | "public") => strongest().find((entry) => entry.principal.type === type);
+  // Code's own service accounts carry the kind `code` where the code lane adds it. An object's account belongs to its
+  // API keys, which the app shows in their own section.
   const kind = (entry: AccessEntry): string | undefined => entry.serviceAccountKind;
-  const serviceAccounts = () => active().filter((entry) => kind(entry) === "code");
-  const apiKeys = () => active().filter((entry) => kind(entry) === "resource_bound");
+  const serviceAccounts = () => strongest().filter((entry) => kind(entry) === "code");
   const members = () =>
-    active().filter(
+    strongest().filter(
       (entry) =>
         entry.principal.type !== "authenticated" &&
         entry.principal.type !== "public" &&
@@ -75,7 +91,6 @@ export function AccessSummary(props: {
       `${t().signedInLabel}: ${signedIn ? levelOf(signedIn) : t().summaryOff}`,
       ...(visitors ? [`${principalLabel(visitors, locale())}: ${levelOf(visitors)}`] : []),
       ...(serviceAccounts().length > 0 ? [t().summaryServiceAccounts({ count: serviceAccounts().length })] : []),
-      ...(apiKeys().length > 0 ? [t().summaryApiKeys({ count: apiKeys().length })] : []),
     ].join(" · ");
   };
   return (

@@ -39,15 +39,19 @@ describe("AccessSummary", () => {
     return { dom, line, listed, cleanup: () => (dispose(), dom.cleanup()) };
   };
 
-  test("counts people, groups and agents, General, service accounts and API keys as in the mockup", async () => {
+  test("counts people, groups and agents, General and service accounts as in the mockup", async () => {
     const ui = await renderSummary("de", { entries: [mia, logistik, lagerbot, code("4"), apiKey] });
     try {
-      expect(ui.line()).toBe("3 Personen, Gruppen und Agenten · Alle angemeldeten Personen: aus · 1 Dienstkonto · 1 API Key");
+      // An object's account belongs to its API keys, which have their own section.
+      expect(ui.line()).toBe("3 Personen, Gruppen und Agenten · Alle angemeldeten Personen: aus · 1 Dienstkonto");
       // The faces open the full list with each level, so nobody opens the editor only to read it.
       expect(ui.listed()).toEqual(["Mia HoffmannVerwalten", "LogistikBearbeiten", "LagerbotAgentAnsehen"]);
-      expect(ui.dom.root.querySelector(".k2b-avatar-stack__trigger")?.getAttribute("aria-label")).toBe(
-        "Wer Zugriff hat: Mia Hoffmann und 2 weitere",
-      );
+      const trigger = ui.dom.root.querySelector<HTMLButtonElement>("button.k2b-avatar-stack__trigger")!;
+      expect(trigger.getAttribute("aria-label")).toBe("Wer Zugriff hat: Mia Hoffmann und 2 weitere");
+      // The faces are the button that opens exactly this list.
+      expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+      const list = ui.dom.document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+      expect(list?.querySelectorAll(".k2b-avatar-stack__row-copy")).toHaveLength(3);
     } finally {
       ui.cleanup();
     }
@@ -79,6 +83,20 @@ describe("AccessSummary", () => {
     });
     try {
       expect(ui.line()).toBe("1 person, group or agent · All signed-in people: Use · Public: Use");
+      expect(ui.listed()).toEqual(["Mia HoffmannManage"]);
+    } finally {
+      ui.cleanup();
+    }
+  });
+
+  test("someone with several grants counts once, at the strongest, also for General", async () => {
+    const miaRead = entry("12", { type: "user", userId: "u1" }, "read", { displayName: "Mia Hoffmann" });
+    const miaAssigned = entry("13", { type: "user", userId: "u1" }, "admin", { displayName: "Mia Hoffmann", scope: "assigned" });
+    const signedInRead = entry("14", { type: "authenticated" }, "read");
+    const signedInEdit = entry("15", { type: "authenticated" }, "write");
+    const ui = await renderSummary("en", { entries: [miaRead, mia, miaAssigned, signedInRead, signedInEdit] });
+    try {
+      expect(ui.line()).toBe("1 person, group or agent · All signed-in people: Edit");
       expect(ui.listed()).toEqual(["Mia HoffmannManage"]);
     } finally {
       ui.cleanup();

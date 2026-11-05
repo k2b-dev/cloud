@@ -730,9 +730,10 @@ the rest.
 
 Settings open the dialog from a summary instead of a second list:
 `AccessSummary` from `@k2b/cloud/access/ui` shows a few faces and one line such
-as "3 people, groups and agents · All signed-in people: off · 1 service account
-· 1 API key". Parts without entries are left out. The faces open the full list
-with each level. Pass the same `allowedLevels` and `effectiveEntries` as to the
+as "3 people, groups and agents · All signed-in people: off · 1 service
+account". It counts each principal once, at its strongest grant, and leaves out
+a part without entries. API keys keep their own section. The faces open the
+full list with each level. Pass the same `allowedLevels` and `effectiveEntries` as to the
 dialog, so the levels read in the app's words and shadowed grants do not count.
 Put **Edit access** with the `ti-lock-access` icon beside it. Someone who
 cannot open the dialog still needs the full list, for example the read-only
