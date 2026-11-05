@@ -30,7 +30,7 @@ turns speech into text, and a `DictationTarget`, which places the text.
 
 | State | What shows | Way out |
 | --- | --- | --- |
-| Microphone blocked | Card with how to allow it | Try again |
+| Microphone blocked | Card with how to allow it; in an installed app (`display-mode: standalone`) one sentence without an address bar or settings path | Try again |
 | Interrupted | Bar notice, the text stays | Continue dictating |
 | Offline | Microphone greyed out, focusable, with a hint | Returns by itself |
 | Allowance used up | Card with the time it resets | OK |
