@@ -79,7 +79,11 @@ Pasted files use the same `fileSelection.onSelect` callback as the file picker
 and drag-and-drop. Use the generic `onPaste` seam only for non-file content;
 call `preventDefault()` synchronously only when the application replaces the
 native paste. Attachments may expose one compact application-owned action such
-as moving a text attachment back into the message field. Composer attachments
+as moving a text attachment back into the message field. A `danger` action,
+such as retrying a failed upload, uses the danger colour; a disabled action
+reads as the attachment's state, such as waiting for the network, rather than
+as a dimmed button. While an attachment uploads, set `progress` in percent: the
+line shows a ring and the percentage instead of the action. Composer attachments
 stay on one horizontally scrollable row, and the controlled text field grows
 up to approximately fifteen visible lines. The conversation variant grows
 differently; see [Conversations between people](#conversations-between-people).
@@ -237,7 +241,7 @@ type ChatAction = ChatActionBase &
 
 type ChatAttachment = {
   id: string; name: string; size?: number; kind?: "file" | "image" | "resource"; icon?: string;
-  previewUrl?: string; alt?: string; href?: string; data?: unknown; action?: ChatAction;
+  previewUrl?: string; alt?: string; href?: string; data?: unknown; action?: ChatAction; progress?: number;
 };
 
 type ChatModelOption = {
