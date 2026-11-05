@@ -274,7 +274,8 @@ for (const width of [1280, 390])
       await settled(page);
       const services = dialog.locator("section", { has: page.locator("h3", { hasText: /^Dienstkonten/ }) });
       const code = services.locator("li", { hasText: "Code von einkauf-und-rechnungseingang@beispiel.de" });
-      await code.getByText("Dienstkonto eines Postfachs", { exact: true }).waitFor();
+      // A stored row reads like a new one: the server's line with its level.
+      await code.getByText("Dienstkonto eines Postfachs · darf benutzen", { exact: true }).waitFor();
       await services.getByText("Wer den Code bearbeitet, handelt mit diesem Recht.").waitFor();
       // Long titles wrap instead of being cut, also on a phone, even when the app's own stylesheet repeats utilities.
       const clipped = (text: string) =>
