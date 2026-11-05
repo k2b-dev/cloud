@@ -9,12 +9,20 @@ describe("coreHelp", () => {
       "core-security",
       "core-notifications",
       "core-admin",
+      "core-ai-decisions",
     ]);
 
     expect(coreHelp.getMarkdown("core-start")).toContain("Core provides the platform pages and shared services");
     expect(coreHelp.getMarkdown("core-security")).toContain("Your sign-in methods depend");
     expect(coreHelp.getMarkdown("core-notifications")).toContain("Notifications collects account and app events");
     expect(coreHelp.getMarkdown("core-admin")).toContain("The Core administration pages configure platform services");
+  });
+
+  test("decision help explains caller allowance and category before urgency in both locales", () => {
+    expect(coreHelp.getMarkdown("core-ai-decisions")).toContain("Never ask urgency alone");
+    expect(coreHelp.getMarkdown("core-ai-decisions")).toContain("service account");
+    expect(coreHelp.getMarkdown("core-ai-decisions", "de")).toContain("nie allein");
+    expect(coreHelp.getMarkdown("core-ai-decisions", "de")).toContain("Dienstkontos");
   });
 
   test("serves every article in German with regional fallback", () => {

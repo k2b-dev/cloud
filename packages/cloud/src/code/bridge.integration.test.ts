@@ -1,9 +1,12 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import * as decision from "@k2b/cloud/ai";
 import { err } from "@k2b/stdlib";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { z } from "zod";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
+import { decisionInputFixture, decisionResultFixture } from "../../../core/src/ai-decision-capability.test-fixture";
 import { createCodeBridgeHost, readCodeOwnOrigins } from "../../../core/src/code/bridge";
 import { createCodeRunnerRoutes } from "../../../core/src/code/runner-routes";
 import { CODE_SETTINGS, codeSettings } from "../../../core/src/code/settings";
@@ -114,6 +117,7 @@ const confirmationCompiled = compileCapabilities("example", {
     },
   },
 });
+const decisionCompiled = compileCapabilities("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } });
 const baseEntry: CapabilityRegistryEntry = {
   appId: "example",
   appName: "Example",
@@ -155,13 +159,13 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       ...(realAdmission ? {} : { admit: async () => ({ limited: false, remaining: 1000, resetIn: 1000 }) }),
     },
     dispatch: {
-      getCapability: async (id: string) => (id === "example" ? currentEntry : null),
+      getCapability: async (id: string) => (id === currentEntry.appId ? currentEntry : null),
       withActiveSigner: withSigner,
       signInvocation: async (params, options) => issueInvocationToken(params, { ...options, groupsAdmin: [] }),
       fetch: async (_url, init) => {
         fetched++;
         const headers = new Headers(init?.headers);
-        const body = z.object({ target: z.object({ id: z.string() }) }).parse(JSON.parse(String(init?.body)));
+        const invocationBody = JSON.parse(String(init?.body));
         const operation =
           currentEntry.manifest.actions.find(
             (candidate) => !String(_url).includes("/review") && String(_url).endsWith(`/${candidate.localId}`),
@@ -169,13 +173,35 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         const verified = await verifyInvocationToken(
           headers.get("authorization")!.slice(7),
           {
-            targetAppId: "example",
+            targetAppId: currentEntry.appId,
             operation: `${"destructive" in operation ? "capability.action.run" : "capability.query"}:${operation.localId}`,
             schemaHash: operation.schemaHash,
           },
           { issuer, key, now },
         );
         const authority = verified ? await resolveInvocationAuthority(verified, sql, []) : null;
+        if (currentEntry.appId === "core") {
+          if (!authority) throw new Error("Expected verified Code authority");
+          const outcome = await invokeCompiledCapability({
+            compiled: decisionCompiled,
+            kind: "query",
+            localId: "ai.decide",
+            expectedSchemaHash: decisionCompiled.queries.get("ai.decide")!.manifest.schemaHash,
+            input: invocationBody.input,
+            context: {
+              authority,
+              actor: authority.actor,
+              accessSubject: authority.accessSubject,
+              user: null,
+              locale: "en",
+              requestId: "bridge-decision",
+              origin: "app",
+              signal: new AbortController().signal,
+            },
+          });
+          return outcome.ok ? Response.json(outcome.data) : Response.json(outcome.error, { status: outcome.error.status });
+        }
+        const body = z.object({ target: z.object({ id: z.string() }) }).parse(invocationBody);
         const permission = authority
           ? await getEffectivePermission({ accessIds: [targetAccess], subject: authority.accessSubject })
           : "none";
@@ -304,7 +330,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       routes: [],
       access: { kind: "signedIn" },
     }));
-    capabilitySpy = spyOn(registry, "getCapability").mockImplementation(async (id) => (id === "example" ? currentEntry : null));
+    capabilitySpy = spyOn(registry, "getCapability").mockImplementation(async (id) => (id === currentEntry.appId ? currentEntry : null));
   });
   async function resetFixture(
     options: {
@@ -422,6 +448,41 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       body: text,
     });
   }
+  test("the actual decision call applies the KI policy even without checker AI evidence", async () => {
+    await resetFixture({ entry: true, policyRows: ["read"] });
+    await sql`UPDATE code.policy_rules SET value='never' WHERE row='ai' AND group_id IS NULL`;
+    const entry = { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest };
+    const response = await send({
+      entry,
+      operation: "core.ai.decide",
+      input: { call: { capability: "core.ai.decide", target: null, refs: {}, input: decisionInputFixture }, metadata: {} },
+    });
+    expect(await response.json()).toEqual({ ok: false, error: { code: "code_policy_never" } });
+    await expectPolicyRefusal();
+  });
+  test.each([false, true])("Code decision query reaches runAiDecision with the workload subject (personal=%s)", async (personal) => {
+    await resetFixture({ personal, entry: true, policyRows: ["read", "ai"] });
+    const run = spyOn(decision, "runAiDecision").mockResolvedValue(decisionResultFixture);
+    try {
+      const entry = { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest };
+      const response = await send({
+        entry,
+        operation: "core.ai.decide",
+        input: { call: { capability: "core.ai.decide", target: null, refs: {}, input: decisionInputFixture }, metadata: {} },
+      });
+      expect(await response.json()).toEqual({ ok: true, data: decisionResultFixture });
+      const [code] = await sql<
+        { service_account_id: string | null }[]
+      >`SELECT service_account_id FROM code.codes WHERE id=${claims.codeId}`;
+      expect(run).toHaveBeenCalledWith(
+        expect.objectContaining({
+          usageSubject: personal ? { type: "user", userId } : { type: "service_account", serviceAccountId: code!.service_account_id },
+        }),
+      );
+    } finally {
+      run.mockRestore();
+    }
+  });
   test("C13 protocol routes require the runner app proof independently of a valid run token", async () => {
     const token = await signCodeRunToken(claims, { deadlineAt: now.getTime() + 300_000, issuer, signer, now });
     const proof = { token, runId: claims.runId, generation: claims.generation };

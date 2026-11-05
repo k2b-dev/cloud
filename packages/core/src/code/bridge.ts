@@ -86,7 +86,7 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
 }
 async function authorizeCall(call: CodeBridgeCall, db: SQL): Promise<"core" | "runner"> {
   const { code, version, manifest } = await lockCall(call, db);
-  const row = codePolicyRow(call.kind, call.policy);
+  const row = codePolicyRow(call.call.capability.startsWith("core.ai.") ? "ai" : call.kind, call.policy);
   if (row === "ask_sends" || manifest.policyRows.includes("ask_sends")) denied("code_sends_not_yet");
   if (
     manifest.policyRows.some((row) => row.startsWith("ask_")) ||

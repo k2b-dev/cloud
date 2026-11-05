@@ -5,7 +5,7 @@ section: AI
 order: 1060
 description: Run validated model tasks outside an interactive chat request.
 tags: [ai, structured-output, background]
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
 # Structured and background AI
@@ -542,7 +542,34 @@ durable consumer configuration changes.
 
 ## Ask typed decision questions
 
-Use `runAiDecision()` from `@k2b/cloud/ai` (also exported from `@k2b/cloud`)
+Gustav chat, `cld` and Code use the **query** `core.ai.decide` through the normal
+capability transport. It accepts `task`, JSON `state`, named `questions` and
+optional `images` and `model: { id }`. It returns the same `answers`, `model` and
+`usage` as `runAiDecision`, including all answer probabilities. It changes no
+domain records. Any later action requires its own authorization.
+
+Core supplies the authenticated caller as `usageSubject`: a person for personal
+calls, the Code service account for resource- or app-owned Code. That account's
+model permissions and AI allowance apply. Code service accounts need direct
+model grants and, when quotas are enabled, direct allowance grants; they do not
+inherit authenticated-person defaults. There is no caller-supplied accounting
+identity, background-budget fallback or separate decision tool or Code binding.
+The Code checker classifies `core.ai.*` under **AI** (German: **KI**); the
+Cloud-Admin's Code policy decides version approval.
+
+```bash
+cld --profile development capabilities query core ai.decide --input '{"task":"mail.category","state":{"subject":"Where is my order?"},"questions":{"category":{"type":"choice","instructions":"What kind of message is this?","criteria":{"support":"Help with an order","other":"Other messages"}}}}'
+```
+
+The whole capability request and result must each fit within **256 KiB**,
+including base64 images. The decision API's question, model-context and image
+limits below also apply. Image support depends on both provider and model;
+`vision` alone does not prove that a provider processes images. See the
+[Code mail-triage example](/en/docs/platform/code-sdk#mail-triage-category-first).
+Stable decision, quota and model-access error codes are preserved; capability
+messages follow the request locale (English or German).
+
+Use `runAiDecision()` from `@k2b/cloud/ai` (not the root entry)
 for yes/no, choice and score questions answered with probabilities. It calls a
 decision model through System One. Configure the installation’s
 [decision model](/en/docs/operations/decision-models) first.
@@ -587,7 +614,8 @@ if (
 ```
 
 Authorize the mail read before calling. Read the category first and use urgency
-only within relevant categories. Urgent wording in spam can produce a high
+only within relevant categories. Ask urgency together with category or after it,
+never alone. Urgent wording in spam can produce a high
 urgency probability; urgency alone must not drive triage. Choose thresholds for
 the application’s cost of mistakes. A probability is a model estimate, not a
 guarantee. For question variables, use `satisfies DecisionQuestions` or

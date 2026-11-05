@@ -3,7 +3,9 @@ import { createHash } from "node:crypto";
 import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
 import { capabilityHash } from "../_internal/capability-schemas";
+import { compileCapabilityManifest } from "../capabilities/testing";
 import { type CodeCheckHost, checkCode } from "./checker";
 import { CODE_CHECK_LIMITS, type CodeCheckRequest, CodeVersionManifestSchema } from "./checker-contract";
 import { generateCodeSdk } from "./generator";
@@ -85,6 +87,40 @@ const check = (source: string, extra: Partial<CodeCheckRequest> = {}) =>
   checkCode({ ...base, entry: "code.ts", files: { "code.ts": source }, ...extra }, host);
 const schedule = (body: string) =>
   `import { app, owner, work_shop } from "@sdk";\napp.schedule("0 8 * * 1", async () => {\n${body}\n}, { name: "weekly" });\nexport default app;`;
+
+test("core.ai.decide is AI in the generated SDK and mail triage checks category before urgency", async () => {
+  const sdk = generateCodeSdk([compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } })], {
+    mode: "personal",
+  });
+  const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
+  const skill = await Bun.file(resolve(import.meta.dir, "../../../assistant/src/skills/code-authoring/SKILL.md")).text();
+  const snippet = (text: string) => text.split("<!-- ai1-mail-triage -->")[1]!.split("```ts\n")[1]!.split("```")[0]!.trim();
+  const source = snippet(docs);
+  expect(snippet(skill)).toBe(source);
+  const checked = await check(source, {
+    sdk,
+    aiOperations: sdk.manifest.operations.filter((op) => op.capability.startsWith("core.ai.")).map((op) => op.capability),
+  });
+  expect(checked).toMatchObject({ ok: true });
+  if (!checked.ok) throw new Error(JSON.stringify(checked.diagnostics));
+  expect(checked.manifest.ai).toBe(true);
+  expect(checked.permissions).toMatchObject([{ operation: "core.ai.decide", target: null }]);
+  await writeFile(join(directory, "triage.mjs"), checked.bundle);
+  const triage = await import(join(directory, "triage.mjs"));
+  const response = (choice: string) => ({
+    answers: {
+      category: {
+        type: "choice",
+        choice,
+        confidence: 0.99,
+        probabilities: { support: choice === "support" ? 0.99 : 0.01, spam: choice === "spam" ? 0.99 : 0.01 },
+      },
+      urgent: { type: "noul", probability: 0.99, value: true },
+    },
+  });
+  expect(await triage.triage(null, { call: async () => response("spam") })).toBe(false);
+  expect(await triage.triage(null, { call: async () => response("support") })).toBe(true);
+});
 
 test("checks imported literal constants, refs and finite unions, with source lines, new/existing status, AI and hashes", async () => {
   const result = await check("", {

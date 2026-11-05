@@ -9,6 +9,7 @@ import { migrateApprovals } from "@k2b/cloud/services/approvals";
 import { memoryStore, nessi, type Provider, type TextBlock, type ToolCallBlock } from "@k2b/nessi";
 import { z } from "zod";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { aiDecisionQuery } from "../ai-decision-capability";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
@@ -20,6 +21,7 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { type CodeContext, CodeDataError } from "./access";
 import { codeAuthoringServices } from "./authoring";
+import { createCodeCheckRequest } from "./authoring-check";
 import {
   CodeAuthoringConflictSchema,
   type CodeAuthoringData,
@@ -111,6 +113,37 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
     runner?.mockRestore();
     await database?.drop();
     setSystemTime();
+  });
+  test("core.ai.decide is selected as AI by the authoritative checker and appears in policy row KI", async () => {
+    const manifest = compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } });
+    const app = { appId: "core", appName: "Core", appIcon: "ti ti-cloud", appDescription: "Platform", manifest };
+    capabilities.mockResolvedValue({ ok: true, data: { protocolVersion: 2, apps: [app], page: { hasMore: false } } });
+    const display = spyOn(catalog, "getCapabilityCatalogApp").mockResolvedValue({ ok: true, data: app });
+    runner.mockReturnValue({
+      check: async (request) => {
+        expect(request.aiOperations).toEqual(["core.ai.decide"]);
+        const result = checked(request);
+        if (!result.ok) return result;
+        const permission = { operation: "core.ai.decide", target: null, file: "code.ts", line: 1 };
+        return {
+          ...result,
+          permissions: [{ ...permission, status: "new" }],
+          manifest: { ...result.manifest, ai: true, permissions: [permission] },
+        };
+      },
+    });
+    try {
+      const initialized = await codeAuthoringServices.init({ title: "Decision triage" }, context);
+      const input = { codeId: initialized.config.codeId, entry: "code.ts", files: initialized.files };
+      const request = await createCodeCheckRequest(input.codeId, input.files, input.entry, context);
+      expect(request.aiOperations).toEqual(["core.ai.decide"]);
+      const result = await codeAuthoringServices.check(input, context);
+      expect(result.manifest?.policyRows).toEqual(["ai", "read"]);
+    } finally {
+      display.mockRestore();
+      capabilities.mockResolvedValue({ ok: true, data: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
+      runner.mockReturnValue({ check: async (request) => checked(request) });
+    }
   });
   test("concurrent pushes share C8's atomic base guard and complete conflict diff", async () => {
     const initialized = await codeAuthoringServices.init({ title: "Weekly report" }, context);
