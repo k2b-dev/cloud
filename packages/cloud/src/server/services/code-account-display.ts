@@ -95,13 +95,16 @@ export const codeAccountPresenter = (context: CodeAccountDisplayContext = {}) =>
     const resolved = await catalog;
     if (resolved?.available === false) {
       return {
-        displayName: owner?.kind === "app" ? t.unknownApp : t.unknownType,
+        // The target already admitted this viewer; registry availability does not change that authority.
+        displayName:
+          canManageTarget && account.title ? t.accountName({ title: account.title }) : owner?.kind === "app" ? t.unknownApp : t.unknownType,
         serviceAccountDescription: [
           owner?.kind === "app" ? t.appAccount : t.unknownResourceAccount,
           account.status === "disabled" ? t.disabled : null,
         ]
           .filter(Boolean)
           .join(" · "),
+        ...(canManageTarget && account.handle ? { serviceAccountHandle: account.handle } : {}),
       };
     }
     const app = resolved?.app;

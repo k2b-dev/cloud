@@ -505,8 +505,13 @@ test("Code titles are resolved in the existing batch only for a managed target",
   expect({ stdout, stderr, exit }).toEqual({ stdout: "", stderr: "", exit: 0 });
 });
 
-test("Code display degrades to type-only after a rejected or stalled registry read", async () => {
-  const script = `
+for (const canManageTarget of [false, true])
+  test(
+    canManageTarget
+      ? "Code managers keep the snapshot title and handle after a rejected or stalled registry read"
+      : "Code readers get type-only after a rejected or stalled registry read",
+    async () => {
+      const script = `
     import { strict as assert } from "node:assert";
     const id = "11111111-1111-4111-8111-111111111111";
     let mode = "reject", appOwned = false, fallback = false, started;
@@ -544,20 +549,22 @@ test("Code display degrades to type-only after a rejected or stalled registry re
       try {
         const pending = resolveDisplayNames(Array.from({ length: 20 }, () => ({
           principal: { type: "service_account", serviceAccountId: id }, displayName: "Stale private title", serviceAccountHref: "/private-owner-id", serviceAccountHandle: "code-stale00000",
-        })), { canManageTarget: true, locale: "de" });
+        })), { canManageTarget: ${canManageTarget}, locale: "de" });
         await started.promise;
         // Drive the deadline callback directly: no real-time sleep or timeout increase.
         if (mode === "stall") expire();
         const entries = await pending;
         assert.equal(entries.length, 20);
         for (const entry of entries) {
-          assert.equal(entry.displayName, appOwned ? "Code einer App" : "Code eines Objekts");
+          assert.equal(entry.displayName, ${canManageTarget} ? "Code von Private title" : appOwned ? "Code einer App" : "Code eines Objekts");
           assert.equal(entry.serviceAccountKind, "code");
           assert.equal(entry.serviceAccountHref, undefined);
-          assert.equal(entry.serviceAccountHandle, undefined);
+          assert.equal(entry.serviceAccountHandle, ${canManageTarget} ? "code-7k2q9m4xwt" : undefined);
           assert.ok(entry.serviceAccountDescription.includes("deaktiviert"));
         }
-        assert.ok(!JSON.stringify(entries).includes("Private title"));
+        assert.equal(JSON.stringify(entries).includes("Private title"), ${canManageTarget});
+        assert.ok(!JSON.stringify(entries).includes("Stale private title"));
+        assert.ok(!JSON.stringify(entries).includes("code-stale00000"));
         assert.ok(!JSON.stringify(entries).includes("private-owner-id"));
         assert.ok(!JSON.stringify(entries).includes("secret-app"));
         assert.ok(!JSON.stringify(entries).includes("code:demo.item:"));
@@ -569,10 +576,15 @@ test("Code display degrades to type-only after a rejected or stalled registry re
       }
     }
   `;
-  const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-  expect({ stdout, stderr, exit }).toEqual({ stdout: "", stderr: "", exit: 0 });
-});
+      const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { stdout: "pipe", stderr: "pipe" });
+      const [stdout, stderr, exit] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
+      expect({ stdout, stderr, exit }).toEqual({ stdout: "", stderr: "", exit: 0 });
+    },
+  );
 
 test("Code of an app without a capability catalog shows the app's name in the viewer's language", async () => {
   // The account keeps the name stored when the Code was created; only an app that is gone shows it.

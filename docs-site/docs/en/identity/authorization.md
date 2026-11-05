@@ -593,8 +593,10 @@ principals, `serviceAccountKind`. A person's `displayName` is their display
 name, or their login name when they have none, so every permission editor names
 people the same way. Authorize the resource operation
 before resolving names. Finish the grant transaction before calling the resolver:
-it can read other principal tables and registry metadata. A failed or expired
-registry read returns the generic Code type label, without stored owner details.
+it can read other principal tables and registry metadata. If a registry read
+fails or expires, managers still see the stored Code title snapshot and handle.
+Other viewers see the generic Code type label; translated type details and
+resource links require registry metadata.
 A confirmation should show both name and principal ID;
 names are presentation, never identity or authorization.
 
