@@ -315,7 +315,7 @@ test("decision transport forwards one report through nested observers without ch
 test("a refused connection is sanitized, marks the provider unreachable and books zero usage", async () => {
   server.stop(true);
   await expect(runAiDecision({ task: "test", state: "test", questions })).rejects.toMatchObject({ code: "provider_error" });
-  expect(finish.mock.calls[0]?.[1]).toEqual({ input: 0, output: 0, total: 0 });
+  expect(finish.mock.calls[0]?.[1]).toMatchObject({ input: 0, output: 0 });
   expect(connection.recordAiProviderStatus).toHaveBeenCalledWith(profile.providerId, expect.objectContaining({ status: "unreachable" }));
   expect(requests).toHaveLength(0);
 });

@@ -84,7 +84,9 @@ const parseAnswers = <TQuestions extends DecisionQuestions>(
 
 /** Nessi 1.1.1's decision adapter has no transport hook. Keep this single-request adapter local, without patching global fetch. */
 export const systemOneDecisionWithTransport = (model: string, options: SystemOneDecisionOptions): AiDecisionProvider => {
-  const url = `${options.baseURL.replace(/\/+$/, "")}/systemone`;
+  let base = options.baseURL;
+  while (base.endsWith("/")) base = base.slice(0, -1);
+  const url = `${base}/systemone`;
   return {
     name: options.name ?? "systemone",
     model,
