@@ -231,6 +231,7 @@ describe("A recording in the Cloud app", () => {
     const page = await open("screen=chat-x&chat=pflege&record=1");
     try {
       await field(page).fill("Mach daraus eine Karte für A6 und");
+      await settled(page);
       const before = (await field(page).boundingBox())!;
       await page.getByRole("button", { name: "Diktieren" }).click();
       await page.locator(".assistant-pwa-recording .assistant-recording-footer").waitFor();
