@@ -23,6 +23,11 @@ export function AccessSummary(props: {
   allowedLevels?: AllowedLevel[];
   /** The grants that take effect, such as without those a denial hides; defaults to all of them. */
   effectiveEntries?: (entries: readonly AccessEntry[]) => readonly AccessEntry[];
+  /**
+   * Whether the resource offers "All signed-in people", as given to the access dialog. Defaults to true. Without it the
+   * line names General only for a stored grant, just as the dialog then shows that row only to turn it off.
+   */
+  allowAuthenticated?: boolean;
 }) {
   const locale = useLocale();
   const t = () => accessDialogMessages.resolve([locale()]).t;
@@ -88,7 +93,7 @@ export function AccessSummary(props: {
     const visitors = general("public");
     return [
       t().summaryMembers({ count: members().length }),
-      `${t().signedInLabel}: ${signedIn ? levelOf(signedIn) : t().summaryOff}`,
+      ...(props.allowAuthenticated !== false || signedIn ? [`${t().signedInLabel}: ${signedIn ? levelOf(signedIn) : t().summaryOff}`] : []),
       ...(visitors ? [`${principalLabel(visitors, locale())}: ${levelOf(visitors)}`] : []),
       ...(serviceAccounts().length > 0 ? [t().summaryServiceAccounts({ count: serviceAccounts().length })] : []),
     ].join(" · ");

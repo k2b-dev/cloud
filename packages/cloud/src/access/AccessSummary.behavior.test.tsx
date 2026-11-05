@@ -57,6 +57,32 @@ describe("AccessSummary", () => {
     }
   });
 
+  // N4-summary-allgemein: like the dialog, the line names General only where the resource offers it, as Mail does not.
+  test("an app without All signed-in people leaves General out of the line", async () => {
+    const ui = await renderSummary("de", { entries: [mia, logistik, code("4")], allowAuthenticated: false });
+    try {
+      expect(ui.line()).toBe("2 Personen, Gruppen und Agenten · 1 Dienstkonto");
+    } finally {
+      ui.cleanup();
+    }
+  });
+
+  test("an app with All signed-in people names it, also when it is off", async () => {
+    const off = await renderSummary("de", { entries: [mia], allowAuthenticated: true });
+    try {
+      expect(off.line()).toBe("1 Person, Gruppe oder Agent · Alle angemeldeten Personen: aus");
+    } finally {
+      off.cleanup();
+    }
+    // A grant stored before the app stopped offering it still shows, as the dialog keeps its row to turn it off.
+    const stored = await renderSummary("de", { entries: [mia, entry("7", { type: "authenticated" }, "read")], allowAuthenticated: false });
+    try {
+      expect(stored.line()).toBe("1 Person, Gruppe oder Agent · Alle angemeldeten Personen: Ansehen");
+    } finally {
+      stored.cleanup();
+    }
+  });
+
   test("a part without entries is left out, and two service accounts read in the plural", async () => {
     const ui = await renderSummary("de", { entries: [mia, code("4"), code("5")] });
     try {

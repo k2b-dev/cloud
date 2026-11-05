@@ -787,8 +787,10 @@ Settings open the dialog from a summary instead of a second list:
 as "3 people, groups and agents · All signed-in people: off · 1 service
 account". It counts each principal once, at its strongest grant, and leaves out
 a part without entries. API keys keep their own section. The faces open the
-full list with each level. Pass the same `allowedLevels` and `effectiveEntries` as to the
-dialog, so the levels read in the app's words and shadowed grants do not count.
+full list with each level. Pass the same `allowedLevels`, `effectiveEntries`, and
+`allowAuthenticated` as to the dialog, so the levels read in the app's words,
+shadowed grants do not count, and a resource without "All signed-in people"
+leaves General out of the line unless a stored grant still applies.
 Put **Edit access** with the `ti-lock-access` icon beside it. Someone who
 cannot open the dialog still needs the full list, for example the read-only
 `PermissionEditor`.

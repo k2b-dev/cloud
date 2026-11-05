@@ -114,6 +114,17 @@ describe("Mailbox settings composition", () => {
     );
   });
 
+  // N4-summary-allgemein: a mailbox does not offer "All signed-in people", so its access summary does not name it.
+  test("the access summary leaves out General, which a mailbox does not offer", () => {
+    const html = renderSettings("admin", "access", undefined, {
+      accessEntries: [
+        { id: "1", principal: { type: "user", userId: "u1" }, permission: "admin", displayName: "Mia Hoffmann", createdAt: now },
+      ],
+    });
+    expect(html).toContain("1 person, group or agent");
+    expect(html).not.toContain("All signed-in people");
+  });
+
   test("keeps stable deep links and separates Calendar from the General footer", () => {
     expect(renderSettings("admin", "general")).toContain("Set the name and context collaborators see.");
     expect(renderSettings("admin", "connections")).toContain("Connected account");

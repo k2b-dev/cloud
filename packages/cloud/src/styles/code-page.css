@@ -36,9 +36,12 @@
 .cloud-code__page-title .ti {
   color: var(--ui-app-accent-text);
 }
+/* The head line under the title, also in Administration › Code: one step smaller than the page, as in the mockup, so
+   on a phone "· Handle" still ends the account sentence's first line. */
 .cloud-code__lead {
   margin: 0;
   color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
 }
 .cloud-code__vline {
   display: flex;

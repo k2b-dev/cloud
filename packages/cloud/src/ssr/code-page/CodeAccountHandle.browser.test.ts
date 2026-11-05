@@ -108,6 +108,32 @@ for (const width of [390, 1200])
         };
       });
       expect(face).toEqual({ family: "IBM Plex Mono", smaller: true, mono: true });
+      // N4-l127-schrift, mockup v31 `abgelehnt · cron · 390`: the head line is set in the page's small step, so on a
+      // phone the sentence and "· Kennung" share line 1 and the handle with Copy moves below; on desktop it is one line.
+      await settled(page);
+      const natural = await page.evaluate(() => {
+        const lead = document.querySelector<HTMLElement>(".cloud-code__lead")!;
+        const sentence = lead.firstChild!;
+        const quote = document.createRange();
+        quote.setStart(sentence, sentence.textContent!.length - 1);
+        quote.setEnd(sentence, sentence.textContent!.length);
+        const labelNode = Array.from(lead.querySelectorAll("span"))
+          .flatMap((span) => Array.from(span.childNodes))
+          .find((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.includes("Kennung"))!;
+        const label = document.createRange();
+        label.selectNodeContents(labelNode);
+        const middle = (box: DOMRect) => box.top + box.height / 2;
+        const [end, mark, code] = [
+          quote.getBoundingClientRect(),
+          label.getBoundingClientRect(),
+          document.querySelector<HTMLElement>("[data-code-handle]")!.getBoundingClientRect(),
+        ];
+        return {
+          labelOnSentenceLine: Math.abs(middle(end) - middle(mark)) < 6,
+          handleOnSentenceLine: Math.abs(middle(end) - middle(code)) < 6,
+        };
+      });
+      expect(natural).toEqual({ labelOnSentenceLine: true, handleOnSentenceLine: width >= 600 });
       // L127, mockup v31 `abgelehnt · cron · 390`: where the line has room for "· Kennung" but not for the handle,
       // "· Kennung" ends the sentence's line and the handle moves below with Copy, never split. The line gets exactly
       // that room, so the check does not depend on font metrics.

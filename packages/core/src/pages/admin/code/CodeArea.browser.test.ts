@@ -273,6 +273,13 @@ test("Code of an app shows its service account and refused call like any Code pa
     await settled(page);
     await page.getByText("Läuft als Dienstkonto „Code von", { exact: false }).waitFor();
     await page.getByText("Kein Zugriff auf Space", { exact: false }).waitFor();
+    // N4-l127-schrift: the head line shares the Code page's lead, one step smaller than the page's text.
+    expect(
+      await page.evaluate(() => {
+        const lead = document.querySelector<HTMLElement>(".cloud-code__lead");
+        return lead?.textContent?.startsWith("Läuft als Dienstkonto") ? getComputedStyle(lead).fontSize : null;
+      }),
+    ).toBe("13px");
     expect(await page.locator('a[href="/app/spaces/k7qm2x9a"]').count()).toBe(1);
     expect(await page.getByText("Der nächste Lauf versucht es erneut.", { exact: false }).isVisible()).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
