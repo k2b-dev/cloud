@@ -155,6 +155,33 @@ or copies its link.
   says that it cannot open the Space and leads back to **My tasks**. It names
   the Space only when the app already knew it.
 
+### Add a task
+
+**New task** sits at the bottom, under your thumb. In a Space it opens the
+same menu as every **+** in Spaces: **Blank task**, the Space's task
+templates, and **Create template …**, which opens the Space on the web. In
+**My tasks** it opens the field at once.
+
+- The field stands above the keyboard. **×** closes it; what you typed stays
+  on the device as a draft.
+- Below the field you see what the task gets: its status, which starts at the
+  first status that does not complete tasks, **Due**, and **Assigned**. From
+  **My tasks**, a Space chip names where the task goes, the last Space you
+  used on this device, and **Me** assigns it to you. When you change the Space,
+  the status starts at that Space's first open status.
+- A template shows its name above the field and fills what it proposes, such as
+  the due date and the checklist.
+- Enter adds the task and keeps the field open for the next one.
+- The new task appears at once at the end of its status, with a spinner. If no
+  answer comes, the row says **Not confirmed**, and **↻** sends the same
+  request again; the server never adds the task twice. If the server refuses,
+  the row says why.
+- If a filter hides the new task, its row stays until you leave the list, and
+  a notice offers **Open**.
+- Offline, adding is off and says why; your text stays. In a Space without an
+  open status, **New task** is off and says why. In a Space you can only read,
+  and without any Space you can change, there is no **New task**.
+
 ### Open a task
 
 Tap a row to open its task. The task has its own address,

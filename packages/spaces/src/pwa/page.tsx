@@ -8,7 +8,15 @@ import { ssr } from "../config";
 import { listOf, type PwaList, parseSpaceListFilter, spaceAddress } from "./paths";
 import SpacesPwa from "./SpacesPwa.island";
 import { searchPwaWork } from "./search";
-import { loadPwaGroupPage, loadPwaSpace, loadPwaSpaceEntries, type PwaSpace, parsePwaGroupPage, parsePwaSpaceLoad } from "./space";
+import {
+  loadPwaGroupPage,
+  loadPwaSpace,
+  loadPwaSpaceEntries,
+  loadPwaSpaceShape,
+  type PwaSpace,
+  parsePwaGroupPage,
+  parsePwaSpaceLoad,
+} from "./space";
 import { loadPwaTask, type PwaTask } from "./task";
 
 const viewOf = (value: string | null): OverviewView => {
@@ -52,6 +60,7 @@ const render = async <E extends AuthContext>(c: Context<E>, options: { task?: Pw
         initialSpace={list.kind === "space" ? (space ?? null) : undefined}
         dateConfig={dateConfig}
         initialTask={options.task}
+        me={{ id: user.id, kind: "user", displayName: user.displayName, avatarHash: user.avatarHash }}
       />
     </PwaLayout>
   );
@@ -75,7 +84,7 @@ export const myTasksPage = ssr<AuthContext>(async (c) => {
 /**
  * `/pwa/spaces/<space>?mine=&tag=&q=`: one Space as a list of its statuses, read with the Space permission of the
  * API. The same address answers `Accept: application/json` with the Space (`load=<status>:<pages>` reads more pages
- * of a status), or with one page of one status for `status=&page=`. A Space that does not exist or that the reader
+ * of a status), with one page of one status for `status=&page=`, or with the Space without rows for `shape=1`. A Space that does not exist or that the reader
  * may not read is not found either way, and the page then says that it cannot be opened without naming it.
  */
 export const spacePage = ssr<AuthContext>(async (c) => {
@@ -85,6 +94,10 @@ export const spacePage = ssr<AuthContext>(async (c) => {
   const spaceShortId = spaceAddress(url.pathname) ?? "";
   const filter = parseSpaceListFilter(url.searchParams);
   if (wantsJson(c)) {
+    if (url.searchParams.get("shape") === "1") {
+      const shape = await loadPwaSpaceShape({ spaceShortId, reader: readerOf(c) });
+      return shape ? c.json(shape) : c.json({ message: "Not found" }, 404);
+    }
     if (url.searchParams.has("status")) {
       const group = await loadPwaGroupPage({ spaceShortId, filter, ...parsePwaGroupPage(url), reader: readerOf(c) });
       return group ? c.json(group) : c.json({ message: "Not found" }, 404);

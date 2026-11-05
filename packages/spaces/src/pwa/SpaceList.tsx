@@ -17,13 +17,15 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { SpaceLiveEventSchema } from "@/live-events";
 import { createRetryToasts } from "../frontend/lib/feedback";
 import { saveCompletion } from "./completion";
+import type { Outgoing } from "./create";
 import { PWA_MAX_STATUS_PAGES, PWA_STATUS_PAGE_SIZE } from "./limits";
 import { myTasksMessages } from "./messages";
 import { listHref, type SpaceListFilter, spaceHref } from "./paths";
+import { OutgoingRow } from "./QuickAdd";
 import { refreshOnReturn } from "./refresh-on-return";
 import { workSchedule } from "./schedule";
 import type { PwaGroup, PwaRow, PwaSpace, PwaSpaceEntry, PwaStatus } from "./space";
@@ -53,6 +55,11 @@ type Props = {
   onOpen: (row: PwaRow, event: LinkNavigateEvent) => void;
   /** A task was completed or reopened here. */
   onCompletedChange?: (shortId: string, done: boolean) => void;
+  /** Tasks added here on their way to the server; each stands at the end of its status until the list shows it. */
+  outgoing?: Outgoing[];
+  onResend?: (key: string) => void;
+  /** A read of the list after a task was added: `hidden` when the filter keeps it out. */
+  onSettle?: (key: string, hidden: boolean) => void;
 };
 
 type Read = { key: string; space: PwaSpace | null };
@@ -148,6 +155,37 @@ export default function SpaceList(props: Props) {
     );
   // A fresh read covers the extra pages it was asked for.
   createEffect(on(current, () => setExtra(new Map()), { defer: true }));
+
+  // The first read after a create says whether the new task is in the list; a hidden one keeps its row until the
+  // list goes. Adding asks for that read itself, and a newer read replaces an older one still under way.
+  const settled = new Set<string>();
+  createEffect(
+    on(current, (read) => {
+      if (!read?.space) return;
+      for (const entry of untrack(() => props.outgoing) ?? []) {
+        if (entry.state !== "created" || !entry.created || settled.has(entry.key)) continue;
+        settled.add(entry.key);
+        const present = read.space.groups.some((group) => group.rows.some((row) => row.shortId === entry.created!.id));
+        props.onSettle?.(entry.key, !present);
+      }
+    }),
+  );
+  const outgoingIn = (statusId: string) => (props.outgoing ?? []).filter((entry) => entry.statusId === statusId);
+  const createdRow = (entry: Outgoing): PwaRow => ({
+    shortId: entry.created!.id,
+    title: entry.created!.title,
+    statusId: entry.statusId,
+    completed: false,
+    startsAt: null,
+    endsAt: null,
+    deadline: entry.created!.deadline,
+    deadlineAllDay: entry.created!.deadlineAllDay,
+    overdue: false,
+    blocked: false,
+    checklist: null,
+    tags: [],
+    people: entry.created!.assignees ?? [],
+  });
 
   const refresh = async () => {
     try {
@@ -465,11 +503,21 @@ export default function SpaceList(props: Props) {
         </h3>
         <Show when={!folded(status())}>
           <Show
-            when={group().rows.length || group().total === 0 || pageState().get(group().statusId) === "failed"}
+            when={
+              group().rows.length ||
+              group().total === 0 ||
+              outgoingIn(group().statusId).length ||
+              pageState().get(group().statusId) === "failed"
+            }
             fallback={<SkeletonRows count={Math.min(3, group().total)} />}
           >
             <ul class="spaces-pwa__list" aria-labelledby={headId()}>
               <For each={ids()}>{(id) => row(() => rowsById().get(id)!)}</For>
+              <For each={outgoingIn(group().statusId).filter((entry) => !(entry.created && rowsById().has(entry.created.id)))}>
+                {(entry) =>
+                  entry.state === "created" ? row(() => createdRow(entry)) : <OutgoingRow entry={entry} onResend={props.onResend} />
+                }
+              </For>
             </ul>
           </Show>
           <Show when={left() && group().pages >= PWA_MAX_STATUS_PAGES}>
@@ -628,12 +676,18 @@ export default function SpaceList(props: Props) {
           }
         >
           <Show
-            when={total() > 0 && groupIds().length}
+            when={(total() > 0 || (props.outgoing?.length ?? 0) > 0) && groupIds().length}
             fallback={
               <div class="spaces-pwa-space__state">
                 <Show
                   when={active(props.filter) || props.filter.search}
-                  fallback={<Placeholder icon="ti ti-layout-kanban" title={t().spaceEmpty({ space: name() })} />}
+                  fallback={
+                    <Placeholder
+                      icon="ti ti-layout-kanban"
+                      title={t().spaceEmpty({ space: name() })}
+                      description={shown()?.canWrite ? t().spaceEmptyHint : undefined}
+                    />
+                  }
                 >
                   <Placeholder
                     state="no-results"

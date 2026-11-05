@@ -128,6 +128,7 @@ const fair: pwaSpace.PwaSpace = {
     { id: "Col003", name: "Done", color: "#16a34a", done: true },
   ],
   tags: [{ id: "Tag001", name: "Supplier", color: "#0e7490" }],
+  templates: [],
   filter: { mine: false, tagIds: [], search: "" },
   groups: [
     {

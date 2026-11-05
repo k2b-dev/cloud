@@ -117,6 +117,7 @@ const mount = (path: string, initialTask?: PwaTask) => {
           return createComponent(SpacesPwa, {
             userId: "0b8f2d4e-1c3a-4f5b-9d6e-7a8b9c0d1e2f",
             initialList: { kind: "mine", view: "mine" },
+            me: { id: "0b8f2d4e-1c3a-4f5b-9d6e-7a8b9c0d1e2f", kind: "user", displayName: "Mia Muster", avatarHash: null },
             initialWork: work,
             spaces: [{ shortId: "Space1", name: "Summer fair", color: "#16a34a", openCount: 2, canWrite: true, pinned: false }],
             dateConfig: { locale: "en", timeZone: "UTC" },

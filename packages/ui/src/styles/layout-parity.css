@@ -4398,6 +4398,18 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   display: none;
 }
 
+/* While the on-screen keyboard is up, the footer under it steps aside, and
+   content that owns the bottom edge and asks for it ("keyboard") stands above
+   the keyboard. Content that follows the visual viewport itself, such as a
+   chat's frame, keeps its own place. */
+.k2b-ui .k2b-mobile-shell[data-k2b-keyboard] > .k2b-mobile-shell__main ~ * {
+  display: none;
+}
+
+.k2b-ui .k2b-mobile-shell[data-k2b-keyboard] [data-k2b-shell-bottom="keyboard"] {
+  margin-bottom: var(--k2b-mobile-shell-keyboard, 0px);
+}
+
 /* The content keeps its place, so the footer under the finger never moves
    between the press and the click that ends the tap. */
 .k2b-ui .k2b-mobile-shell[data-k2b-content-heads][data-k2b-switching] > .k2b-mobile-shell__main,
