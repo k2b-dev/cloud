@@ -3540,7 +3540,11 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       notebookId = notebook!.id;
 
-      const entries = await notebooksService.notebook.access.list({ notebookId });
+      const viewer = getNotebookAccessSubject(c).user;
+      const entries = await notebooksService.notebook.access.list({
+        notebookId,
+        display: { canManageTarget: true, cloudAdmin: Boolean(viewer && hasRole(viewer, "admin")), locale: getLocale(c) },
+      });
       return respond(c, ok(entries.items));
     },
   )
@@ -3572,7 +3576,10 @@ const app = new Hono<AuthContext>()
         }
         if (!hasPermission(minPermission(member, permission), "read")) return respond(c, fail(err.forbidden(messages(c).accessDenied)));
       }
-      const entries = await notebooksService.notebook.access.list({ notebookId: notebook!.id });
+      const entries = await notebooksService.notebook.access.list({
+        notebookId: notebook!.id,
+        display: { permission, locale: getLocale(c) },
+      });
       return respond(c, ok(entries.items.map(toAccessMember)));
     },
   )

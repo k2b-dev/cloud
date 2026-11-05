@@ -48,7 +48,8 @@ an author does not create another owner allowance.
 
 Code enforces the per-attempt AI reference budget on `core.ai.*` capability calls,
 alongside the effective group policy for **AI**. Zero refuses before model
-invocation with `code_ai_budget_limit`. Each admitted call reserves the attempt's
+invocation with `code_ai_budget_limit`. The run detail names the exhausted AI
+budget in its notice instead of the general policy message. Each admitted call reserves the attempt's
 remaining budget atomically; parallel calls cannot spend that reservation again.
 While it is reserved, another AI call is refused with `code_ai_budget_reserved`; wait for the first call before retrying. After the
 call, Core accounts the returned model's reference prices and input/output usage,

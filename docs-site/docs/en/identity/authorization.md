@@ -810,7 +810,8 @@ Neither editor requires a Code declaration in the application.
 
 `PrincipalPicker` accepts a Code account supplied in a result. It does not add a
 name-search path; the general directory excludes Code accounts. Pass
-`findServiceAccount(handle, signal)` with the resource as the target to let an
+`target: { type, id }` to use the shared exact-handle lookup by default, or
+override `findServiceAccount(handle, signal)` with the resource as the target to let an
 exact handle find the account: such a query asks only that lookup, and the
 hit carries a "Service account" badge. Exact handle
 lookup requires a target that the caller manages, as described in

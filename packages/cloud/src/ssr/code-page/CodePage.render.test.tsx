@@ -633,7 +633,7 @@ describe("Code page loader", () => {
     entrypoint: "lieferungenEintragen",
     state: "failed",
     outcome: "failed",
-    firstRefusedCallOrdinal: 2,
+    firstRefusedCallOrdinal: 2 as number | null,
     createdAt: "2026-11-01T08:30:00.000Z",
     startedAt: null,
     endedAt: null,
@@ -650,7 +650,8 @@ describe("Code page loader", () => {
     state: "failed",
   };
   const core =
-    (permission: "editor" | "reader", run: typeof failedRun) => (capabilityId: string, input: { content?: unknown; cursor?: number }) => {
+    (permission: "editor" | "reader", run: typeof failedRun, firstCall = policyCall) =>
+    (capabilityId: string, input: { content?: unknown; cursor?: number }) => {
       if (capabilityId === "code.list")
         return {
           items: [{ id: "c_3mfa", title: "Code", state: "active", activeVersionId: V4, pauseReason: null, permission }],
@@ -678,9 +679,11 @@ describe("Code page loader", () => {
                   input: null,
                   inputChunked: false,
                   content: null,
-                  calls: (input.cursor ?? 0) === 0 ? [policyCall] : [],
+                  calls: (input.cursor ?? 0) === 0 ? [firstCall] : [],
                   nextCursor: null,
-                  firstRefusedCall: { ordinal: 2, kind: "action", capability: "spaces.task.create", target: space },
+                  firstRefusedCall: run.firstRefusedCallOrdinal
+                    ? { ordinal: 2, kind: "action", capability: "spaces.task.create", target: space }
+                    : null,
                 }
               : null,
         };
@@ -708,7 +711,7 @@ describe("Code page loader", () => {
       },
     },
   };
-  const load = async (permission: "editor" | "reader", query = "", run = failedRun) => {
+  const load = async (permission: "editor" | "reader", query = "", run = failedRun, firstCall = policyCall) => {
     const appCalls: string[] = [];
     const coreCalls: string[] = [];
     const invoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
@@ -717,7 +720,7 @@ describe("Code page loader", () => {
         return { ok: false, error: { code: "APP_UNAVAILABLE", message: "Another app was asked", status: 503 } };
       }
       coreCalls.push(invocation.capabilityId);
-      const data = core(permission, run)(invocation.capabilityId, invocation.input as { content?: unknown; cursor?: number });
+      const data = core(permission, run, firstCall)(invocation.capabilityId, invocation.input as { content?: unknown; cursor?: number });
       return { ok: true, data: capabilityResultSchema(schema).parse({ data }) };
     });
     const catalog = spyOn(capabilityServer, "getCapabilityCatalogApp").mockImplementation(async (appId) => ({
@@ -756,6 +759,32 @@ describe("Code page loader", () => {
       fetched.mockRestore();
     }
   };
+
+  for (const locale of ["de", "en"]) {
+    test(`${locale}: an exhausted attempt budget has its own run notice`, async () => {
+      const { data } = await load(
+        "editor",
+        `?tab=runs&run=${RUN}`,
+        { ...failedRun, firstRefusedCallOrdinal: null },
+        { ...policyCall, capability: "core.ai.decide", result: { ok: false, error: { code: "code_ai_budget_limit" } } },
+      );
+      if (data.state.kind !== "ready") throw new Error("Expected ready page");
+      expect(data.state.run?.refusal).toMatchObject({ code: "code_ai_budget_limit" });
+      const markup = renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      );
+      expect(markup).toContain(
+        locale === "de" ? "KI-Budget dieses Code-Versuchs ist verbraucht" : "Code AI budget for this attempt is spent",
+      );
+      expect(markup).not.toContain(locale === "de" ? "Die Richtlinie erlaubt das nicht" : "The policy does not allow this");
+      expect(markup).not.toContain(locale === "de" ? "Die Richtlinie für Code legt" : "The Cloud admin sets the policy");
+    });
+  }
 
   test("an editor reads the refused call once at Core; the page asks no other app and names targets by type and ID", async () => {
     const { data, appCalls, coreCalls, fetches } = await load("editor");

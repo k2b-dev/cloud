@@ -63,6 +63,7 @@ export default function MachineStorage() {
         <div class="flex flex-col gap-2">
           <span class="text-sm font-medium">{t().choose}</span>
           <PrincipalPicker
+            serviceAccountKinds={["standalone", "agent"]}
             allowPublic={false}
             allowAuthenticated={false}
             allowServiceAccounts={true}
@@ -287,7 +288,14 @@ function StorageGrants(props: { storage: Storage }) {
         disabled={busy()}
       />
       <span class="text-sm font-medium">{t().grant}</span>
-      <PrincipalPicker allowPublic={false} allowAuthenticated={false} allowServiceAccounts={true} disabled={busy()} onSelect={grant} />
+      <PrincipalPicker
+        target={{ type: "filesv2.storage", id: props.storage.id }}
+        allowPublic={false}
+        allowAuthenticated={false}
+        allowServiceAccounts={true}
+        disabled={busy()}
+        onSelect={grant}
+      />
       <Show when={busy()}>
         <InlineGuidance role="status">{t().loading}</InlineGuidance>
       </Show>

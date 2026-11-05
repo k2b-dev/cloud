@@ -124,6 +124,7 @@ still requires target management. Omitting the permission reveals no private
 resource title or handle. Installation administration alone does not replace a
 resource's Manage decision.
 
-The `filesv2.template` Type uses `template.read` to check the same administration
-authority as the template share dialog. Its open link leads to the template
-administration page. The reader returns metadata only, never template contents.
+The `filesv2.template` and `filesv2.storage` Types use `template.read` and
+`storage.read` to check the same administration authority as their share editors.
+Their open links lead to the corresponding administration pages. These readers
+return metadata only, never template or storage contents.

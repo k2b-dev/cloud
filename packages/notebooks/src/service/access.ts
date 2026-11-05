@@ -5,6 +5,7 @@ import {
   type AccessEntry,
   type AccessSubject,
   buildAccessPrincipalCondition,
+  type CodeAccountDisplayContext,
   createAccess,
   deleteAccess,
   ensureManagerRemains,
@@ -15,6 +16,7 @@ import {
   type PermissionLevel,
   type Principal,
   type RequestActor,
+  resolveDisplayNames,
   updateAccess,
 } from "@k2b/cloud/server";
 import {
@@ -47,7 +49,6 @@ type DbNotebookAccess = {
   user_uid: string | null;
   user_avatar_hash: string | null;
   group_name: string | null;
-  service_account_name: string | null;
   service_account_kind: ServiceAccountKind | null;
 };
 
@@ -136,21 +137,11 @@ const mapAccessRow = (row: DbNotebookAccess): AccessEntry => {
           ? { type: "authenticated" }
           : { type: "public" };
 
-  const displayName =
-    principal.type === "user"
-      ? row.user_display_name || row.user_uid || undefined
-      : principal.type === "group"
-        ? row.group_name || undefined
-        : principal.type === "service_account"
-          ? row.service_account_name || undefined
-          : undefined;
-
   return {
     id: row.access_id,
     principal,
     permission: row.permission,
     createdAt: row.created_at.toISOString(),
-    displayName,
     ...(principal.type === "user" ? { avatarHash: row.user_avatar_hash } : {}),
     serviceAccountKind: row.service_account_kind ?? undefined,
   };
@@ -159,8 +150,12 @@ const mapAccessRow = (row: DbNotebookAccess): AccessEntry => {
 /**
  * List all access entries for a notebook with resolved display names.
  */
-export const listNotebookAccess = async (notebookId: string, db: SQL = sql): Promise<AccessEntry[]> => {
-  const result = await listNotebookAccessPage({ notebookId }, db);
+export const listNotebookAccess = async (
+  notebookId: string,
+  db: SQL = sql,
+  display: CodeAccountDisplayContext = {},
+): Promise<AccessEntry[]> => {
+  const result = await listNotebookAccessPage({ notebookId, display }, db);
   return result.items;
 };
 
@@ -170,6 +165,7 @@ export const listNotebookAccess = async (notebookId: string, db: SQL = sql): Pro
 export const listNotebookAccessPage = async (
   config: {
     notebookId: string;
+    display?: CodeAccountDisplayContext;
     query?: string;
     principalType?: AccessEntry["principal"]["type"];
     pagination?: { limit: number; offset: number };
@@ -233,7 +229,6 @@ export const listNotebookAccessPage = async (
             u.uid AS user_uid,
             u.avatar_hash AS user_avatar_hash,
             g.name AS group_name,
-            sa.name AS service_account_name,
             sa.kind AS service_account_kind
           ${baseQuery}
           ORDER BY
@@ -259,7 +254,6 @@ export const listNotebookAccessPage = async (
             u.uid AS user_uid,
             u.avatar_hash AS user_avatar_hash,
             g.name AS group_name,
-            sa.name AS service_account_name,
             sa.kind AS service_account_kind
           ${baseQuery}
           ORDER BY
@@ -281,7 +275,7 @@ export const listNotebookAccessPage = async (
   `;
 
   return {
-    items: rows.map(mapAccessRow),
+    items: await resolveDisplayNames(rows.map(mapAccessRow), config.display),
     total: countRow?.count ?? 0,
   };
 };
@@ -460,7 +454,14 @@ export const grantNotebookAccess = async (params: {
     return ok(created.data.id);
   });
   if (!result.ok) return result;
-  const created = (await listNotebookAccess(notebookId)).find((entry) => entry.id === result.data);
+  const viewer = params.caller?.actor.kind === "user" ? params.caller.actor.user : params.caller?.actor.delegatedUser;
+  const created = (
+    await listNotebookAccess(notebookId, sql, {
+      canManageTarget: true,
+      cloudAdmin: Boolean(viewer && hasRole(viewer, "admin")),
+      locale: params.caller?.locale,
+    })
+  ).find((entry) => entry.id === result.data);
   return created ? ok(created) : fail(err.internal("Failed to retrieve created access entry"));
 };
 

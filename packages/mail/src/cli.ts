@@ -665,7 +665,10 @@ const adminMailboxAccessCommands = createAccessCommands({
   scopes: ["mailbox", "assigned"],
   resourceArgLabel: "mailbox",
   resourceArgDescription: "Mailbox id or exact name.",
-  resolveResource: async (ctx, args) => resolveAdminMailbox(ctx, args[0]),
+  resolveResource: async (ctx, args) => {
+    const mailbox = await resolveAdminMailbox(ctx, args[0]);
+    return { ...mailbox, target: { type: "mail.mailbox", id: mailbox.id } };
+  },
   list: (ctx, mailbox) => readApi<AccessEntry[]>(ctx, `/admin/mailboxes/${mailbox.id}/access`),
   grant: (ctx, mailbox, principal: Principal, permission: PermissionLevel, scope) =>
     readApi<AccessEntry>(

@@ -121,12 +121,12 @@ const buildAiProjectsRoutes = (dependencies: AiProjectsRouteDependencies = {}) =
     })
     .get("/:projectId/access", async (c) => {
       const project = await aiProjects.getByShortId(c.req.param("projectId")!, resourceSubject(c), "admin");
-      const access = project ? await aiProjects.listAccess(project.id, resourceSubject(c)) : null;
+      const access = project ? await aiProjects.listAccess(project.id, resourceSubject(c), getLocale(c)) : null;
       return access ? respond(c, ok({ access })) : notFound(c);
     })
     .post("/:projectId/access", v("json", ProjectAccessSchema), async (c) => {
       const project = await aiProjects.getByShortId(c.req.param("projectId")!, resourceSubject(c), "admin");
-      const access = project ? await aiProjects.grantAccess(project.id, resourceSubject(c), c.req.valid("json")) : null;
+      const access = project ? await aiProjects.grantAccess(project.id, resourceSubject(c), c.req.valid("json"), getLocale(c)) : null;
       return access ? respond(c, ok({ access }), 201) : notFound(c);
     })
     .patch("/:projectId/access/:accessId", v("json", ProjectAccessUpdateSchema), async (c) => {

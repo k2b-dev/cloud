@@ -236,3 +236,11 @@ test("policy transport contracts compile to capability JSON Schema", () => {
     expect(() => z.toJSONSchema(contract.data)).not.toThrow();
   }
 });
+
+test("operators can recognize and recover the asking-action migration pause", async () => {
+  const docs = await Bun.file(new URL("../../../../docs-site/docs/en/operations/code-activation.md", import.meta.url)).text();
+  expect(docs).toContain("visibly pauses active versions");
+  expect(docs).toContain("group overrides to **Never**");
+  expect(docs).toContain("Replace asking Actions with silent Actions");
+  expect(docs).toContain("activate the replacement version");
+});

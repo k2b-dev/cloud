@@ -5,7 +5,7 @@ section: Operations
 order: 1255
 description: Upgrade and recover Code activation while preserving normal shares and version entries.
 tags: [code, operations, recovery]
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
 # Code activation recovery
@@ -56,6 +56,16 @@ workloads and remain unchanged.
 
 The Cloud administrator's Code policy decides for each actual call which
 classifications need an approved version; an approval grants no target access.
+The migration visibly pauses active versions whose checked manifest contains
+`ask_*` rows. Their Code page shows the policy pause and the affected rows.
+It also sets historical asking-action defaults and group overrides to **Never**;
+existing approvals cannot override this restriction.
+
+Replace asking Actions with silent Actions that allow routines, then submit and activate the replacement version
+through the normal Code flow. Obtain Cloud-admin approval if the replacement
+requires it. Changing the policy or approving the old version cannot resume its
+asking Actions. Versions without asking rows keep running.
+
 Actions that ask a person first (the `ask_*` rows) never run for Code in this
 release, even with an approved version or the **Open** preset: the bridge
 refuses them with `code_unattended_forbidden`, and sends with

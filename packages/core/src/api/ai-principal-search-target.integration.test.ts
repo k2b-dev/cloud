@@ -106,7 +106,13 @@ suiteFor(
                 principal: { type: "service_account", serviceAccountId: accountId },
                 permission: "read",
                 serviceAccountKind: "code",
+                displayName: "Code of Lookup fixture",
               }),
+            );
+            const localized = await api.request(accessPath, { headers: { ...adminHeaders, "x-cloud-locale": "de" } });
+            expect(localized.status).toBe(200);
+            expect((await localized.json()).access).toContainEqual(
+              expect.objectContaining({ displayName: "Code von Lookup fixture", serviceAccountKind: "code" }),
             );
           },
           { admin: false },
