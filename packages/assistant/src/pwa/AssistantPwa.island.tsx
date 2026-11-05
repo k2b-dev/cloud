@@ -42,7 +42,9 @@ import {
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { assistantApi } from "../api/client";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
+import { createAssistantDictation } from "../frontend/assistant-dictation";
 import { createAssistantLiveHub, followAssistantLive, matchesAssistantInvalidation } from "../frontend/assistant-live";
+import { audioMessages } from "../frontend/audio-messages";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
 import { pwaMessages } from "./messages";
@@ -69,7 +71,12 @@ export type AssistantPwaProps = {
   /** The part's name and icon from the app's presentation. */
   name: string;
   icon: string;
-  status: AiPeopleModels & { enabled: boolean; visionModelConfigured: boolean; liveDictationAvailable?: boolean };
+  status: AiPeopleModels & {
+    enabled: boolean;
+    visionModelConfigured: boolean;
+    liveDictationAvailable?: boolean;
+    audioModelConfigured?: boolean;
+  };
   /** Whether the person may set up AI; the link leads to the web's administration. */
   canConfigure: boolean;
   timeZone: string;
@@ -278,11 +285,11 @@ export default function AssistantPwa(props: AssistantPwaProps) {
   const [files, setFiles] = createSignal<Record<string, AiComposerAttachment[]>>({});
   const [notice, setNotice] = createSignal<string | null>(null);
   const text = () => texts()[draftKey()] ?? "";
-  const setText = (value: string) => {
-    const key = draftKey();
+  const writeText = (key: string, value: string) => {
     setTexts((current) => ({ ...current, [key]: value }));
     pwaDrafts.write(props.userId, `assistant.composer:${key}`, value);
   };
+  const setText = (value: string) => writeText(draftKey(), value);
   /**
    * What this device kept for a field wins over the chat's saved draft, also when it is empty. Without one, the
    * chat's saved draft fills the field once the chat has loaded.
@@ -343,7 +350,9 @@ export default function AssistantPwa(props: AssistantPwaProps) {
   const send = async (input: ChatSubmitInput, fromField = true): Promise<boolean> => {
     const fromKey = draftKey();
     const clearField = (key: string) => fromField && clearDraft(key);
-    if (!online() || !canUseComposer()) return false;
+    if (!online() || !canUseComposer() || recorder.busy()) return false;
+    // A recording that finishes later no longer lands in a field that was sent meanwhile.
+    recorder.invalidateAutomatic();
     // Until the server confirms or refuses the last message, a new one would not reach it; the text stays.
     const open = chat.activeConversationId();
     if (open && chat.uncertainSubmissions()[open] !== undefined) return false;
@@ -492,6 +501,96 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     setNotice(reasons.length ? reasons.join(" ") : null);
   };
 
+  // ---- a recording instead of live dictation: its text appears after Stop. The server keeps the recording with the
+  // chat and inserts its text into the chat's saved draft; the field here lives on the device, so inserting saves the
+  // field's text as that draft first and then takes the draft's text with the recording back into the field.
+  const audio = () => audioMessages.resolve([locale()]).t;
+  const recordingTarget = () => {
+    const key = draftKey();
+    return props.status.audioModelConfigured && online() && key !== NEW_DRAFT && chat.conversation()?.id === key ? key : null;
+  };
+  const recorder = createAssistantDictation({
+    configured: () => Boolean(props.status.audioModelConfigured) && canUseComposer() && online(),
+    key: draftKey,
+    target: recordingTarget,
+    // The field's text is taken along when the recording is inserted, so later edits never block inserting.
+    generation: () => 0,
+    live: liveHub,
+    quiet: true,
+    ensureTarget: async () => {
+      const key = draftKey();
+      if (key !== NEW_DRAFT) return recordingTarget() ? { key, target: key } : null;
+      // A recording needs its chat first, as sending does; the field's text and files move along into it.
+      setCreating(true);
+      const created = await chat
+        .createConversation({ requestId: crypto.randomUUID(), title: t().newChat })
+        .finally(() => setCreating(false));
+      if (!created) {
+        setNotice(t().createFailed);
+        return null;
+      }
+      const moved = files()[NEW_DRAFT] ?? [];
+      writeText(created.id, texts()[NEW_DRAFT] ?? "");
+      setFiles((current) => ({ ...current, [created.id]: moved, [NEW_DRAFT]: [] }));
+      setTexts((current) => ({ ...current, [NEW_DRAFT]: "" }));
+      pwaDrafts.remove(props.userId, `assistant.composer:${NEW_DRAFT}`);
+      for (const record of moved) startUpload(created.id, record);
+      go({ level: "chat", id: created.id });
+      return { key: created.id, target: created.id };
+    },
+    apply: async (key, target, id) => {
+      if (chat.activeConversationId() !== target) return false;
+      const sent = (texts()[key] ?? "").trim();
+      const saved = await chat.saveDraft({ conversationId: target, message: sent });
+      if (!saved) {
+        await chat.refreshActiveConversation();
+        return false;
+      }
+      const response = await fetch(`/api/ai/conversations/${target}/dictations/${id}/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevision: saved.revision, content: saved.content }),
+      });
+      // The saved draft moved on either way; the next message reads its revision again.
+      await chat.refreshActiveConversation();
+      if (!response.ok) return false;
+      const result: { disposition: string; draft: AiConversation["draft"] | null } = await response.json();
+      if (!result.draft) return result.disposition === "applied";
+      const inserted = result.draft.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n\n");
+      // Text typed while the recording was inserted stays; the recording's text follows it.
+      const now = texts()[key] ?? "";
+      const added = sent && inserted.startsWith(sent) ? inserted.slice(sent.length).replace(/^\n+/, "") : inserted;
+      writeText(key, now.trim() === sent ? inserted : [now.trimEnd(), added].filter(Boolean).join("\n\n"));
+      return true;
+    },
+  });
+  /** Above the field: the recording's level with Discard and Stop, then its text on the way, a failure, or the result. */
+  const Recording = () => (
+    <Show when={recorder.recording() || recorder.processing() || recorder.problem() || recorder.pendingResult()}>
+      <div class="assistant-pwa-recording">
+        <Switch fallback={<recorder.Status />}>
+          <Match when={recorder.recording()}>
+            <recorder.RecordingFooter />
+          </Match>
+          <Match when={recorder.problem()}>
+            {(problem) => (
+              <>
+                <recorder.Control />
+                <span class="assistant-pwa-recording__text" role="alert">
+                  {problem()}
+                </span>
+              </>
+            )}
+          </Match>
+          <Match when={recorder.processing()}>
+            <recorder.Control />
+            <span class="assistant-pwa-recording__text">{audio().processing}</span>
+          </Match>
+        </Switch>
+      </div>
+    </Show>
+  );
+
   // ---- the open chat
   const open = (conversation: AiConversation, event: LinkNavigateEvent) => go({ level: "chat", id: conversation.id }, event);
   const chatTitle = () => {
@@ -558,6 +657,16 @@ export default function AssistantPwa(props: AssistantPwaProps) {
           <i class="ti ti-wifi-off" aria-hidden="true" /> {t().offline}
         </span>
       </Match>
+      <Match when={recorder.recording()}>
+        <span class="assistant-pwa-hint">
+          <i class="ti ti-microphone" aria-hidden="true" /> {t().recording}
+        </span>
+      </Match>
+      <Match when={recorder.processing()}>
+        <span class="assistant-pwa-hint">
+          <i class="ti ti-microphone" aria-hidden="true" /> {t().transcribing}
+        </span>
+      </Match>
       <Match when={menuNotice()}>
         {(notice) => (
           <span class={`assistant-pwa-hint assistant-pwa-hint--${notice().tone}`} role="alert">
@@ -611,23 +720,45 @@ export default function AssistantPwa(props: AssistantPwaProps) {
         label: t().attachFiles,
       }}
       accessory={
-        <Show when={waiting().total > 0 && address().level !== "new"}>
-          <AssistantWaitingStrip
-            view={waiting()}
-            conversationId={chat.activeConversationId()}
-            quiet={waitingFocus.quiet()}
-            onJump={jump}
-            onShowMore={showMoreQuestions}
-          />
-        </Show>
+        <>
+          <Show when={waiting().total > 0 && address().level !== "new"}>
+            <AssistantWaitingStrip
+              view={waiting()}
+              conversationId={chat.activeConversationId()}
+              quiet={waitingFocus.quiet()}
+              onJump={jump}
+              onShowMore={showMoreQuestions}
+            />
+          </Show>
+          <Recording />
+        </>
       }
       // Live dictation writes into the field as on the web; offline and with a blocked microphone the button and its
-      // card say why it waits.
-      dictation={props.status.liveDictationAvailable && canUseComposer() ? { source: liveDictation } : undefined}
+      // card say why it waits. While a recording runs or its text waits, the microphone steps aside, as on the web.
+      dictation={
+        props.status.liveDictationAvailable && canUseComposer() && !recorder.busy() && !recorder.pendingResult()
+          ? {
+              source: liveDictation,
+              alternative: props.status.audioModelConfigured
+                ? { label: audio().recordInstead, note: audio().recordInsteadNote, run: () => void recorder.startRecording() }
+                : undefined,
+            }
+          : undefined
+      }
+      // Without live dictation the microphone records instead, as the web's does; its text appears after Stop.
+      microphone={
+        !props.status.liveDictationAvailable &&
+        props.status.audioModelConfigured &&
+        canUseComposer() &&
+        !recorder.busy() &&
+        !recorder.pendingResult()
+          ? { onDictate: () => void recorder.startRecording(), disabled: !online() }
+          : undefined
+      }
       placeholder={answering() ? t().queue : t().ask({ name: props.name })}
       hint={<Hint />}
       disabled={!canUseComposer() || composer.disabled}
-      submitDisabled={!online() || aiModelBlocksSending(modelState(), selectedModel())}
+      submitDisabled={!online() || recorder.busy() || aiModelBlocksSending(modelState(), selectedModel())}
     />
   );
 

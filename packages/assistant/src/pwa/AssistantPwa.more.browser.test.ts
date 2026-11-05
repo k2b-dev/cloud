@@ -29,6 +29,7 @@ const attach = (page: Page) =>
     .locator("input[type=file]")
     .first()
     .setInputFiles([{ name: "Etikett.png", mimeType: "image/png", buffer: PNG }]);
+const field = (page: Page) => page.locator("textarea[aria-label]:visible");
 type Harness = { requests: string[]; fail: Set<string> };
 const requests = (page: Page) => page.evaluate(() => (window as unknown as { harness: Harness }).harness.requests);
 
@@ -215,6 +216,76 @@ describe("The … of a chat in the Cloud app", () => {
       } finally {
         await page.context().close();
       }
+    }
+  }, 30_000);
+});
+
+describe("A recording in the Cloud app", () => {
+  const send = (page: Page) => page.locator("button.k2b-chat-composer__send:visible");
+  const hint = (page: Page) => page.locator(".k2b-chat-composer__hint:visible");
+
+  test("records above the field without moving it, waits with Send, and takes the text after the field's text", async () => {
+    const page = await open("screen=chat-x&chat=pflege&record=1");
+    try {
+      await field(page).fill("Mach daraus eine Karte für A6 und");
+      const before = (await field(page).boundingBox())!;
+      await page.getByRole("button", { name: "Diktieren" }).click();
+      await page.locator(".assistant-pwa-recording .assistant-recording-footer").waitFor();
+      expect(await hint(page).textContent()).toContain("Aufnahme läuft. Erst stoppen, dann senden.");
+      expect(await send(page).isDisabled()).toBe(true);
+      // The live microphone steps aside, and the bar takes its row above the field: the field stays where it was.
+      expect(await page.getByRole("button", { name: "Diktieren" }).count()).toBe(0);
+      expect((await field(page).boundingBox())!.y).toBe(before.y);
+
+      await page.getByRole("button", { name: "Aufnahme stoppen" }).click();
+      await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>("textarea[aria-label]")?.value.includes("Verschick"));
+      expect(await field(page).inputValue()).toBe("Mach daraus eine Karte für A6 und\n\nVerschick sie an alle.");
+      // The field's text became the saved draft first; the recording's text was inserted after it.
+      const order = (await requests(page)).filter((request) => /\/(draft|dictations|apply)$/.test(request) && request.startsWith("P"));
+      expect(order).toEqual([
+        "POST /api/ai/conversations/pflege/dictations",
+        "PUT /api/ai/conversations/pflege/draft",
+        "POST /api/ai/conversations/pflege/dictations/d1/apply",
+      ]);
+      expect(await page.locator(".assistant-pwa-recording").count()).toBe(0);
+      expect(await send(page).isDisabled()).toBe(false);
+      // The device keeps the field with the recording's text.
+      expect(await page.evaluate(() => JSON.stringify(localStorage))).toContain("Verschick sie an alle.");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("while the recording becomes text Send waits; a failed one says so with Try again and Discard", async () => {
+    const page = await open("screen=chat-x&chat=pflege&record=1&transcribe=hold");
+    try {
+      await page.getByRole("button", { name: "Diktieren" }).click();
+      await page.getByRole("button", { name: "Aufnahme stoppen" }).click();
+      await page.locator(".assistant-pwa-recording", { hasText: "Wird transkribiert…" }).waitFor();
+      expect(await hint(page).textContent()).toContain("Die Aufnahme wird zu Text. Senden wartet darauf.");
+      await field(page).fill("Noch etwas");
+      expect(await send(page).isDisabled()).toBe(true);
+    } finally {
+      await page.context().close();
+    }
+    const failed = await open("screen=chat-x&chat=pflege&record=1&transcribe=fail");
+    try {
+      await failed.getByRole("button", { name: "Diktieren" }).click();
+      await failed.getByRole("button", { name: "Aufnahme stoppen" }).click();
+      const problem = failed.locator(".assistant-pwa-recording [role=alert]");
+      await problem.waitFor();
+      expect(await problem.textContent()).toBe(
+        "Die Transkription ist fehlgeschlagen. Du kannst sie erneut versuchen oder die Aufnahme verwerfen.",
+      );
+      await failed.locator(".assistant-pwa-recording button").first().click();
+      expect(await failed.getByRole("menuitem").allTextContents()).toEqual(["Erneut versuchen", "Diktat verwerfen"]);
+      await failed.getByRole("menuitem", { name: "Diktat verwerfen" }).click();
+      await failed.locator(".assistant-pwa-recording").waitFor({ state: "detached" });
+      // Without a recording on the way, sending works again.
+      await field(failed).fill("Ohne Aufnahme");
+      expect(await send(failed).isDisabled()).toBe(false);
+    } finally {
+      await failed.context().close();
     }
   }, 30_000);
 });
