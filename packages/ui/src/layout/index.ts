@@ -13,6 +13,7 @@ export type {
   AppWorkspaceDetailProps,
   AppWorkspaceDetailWidth,
   AppWorkspaceHeadProps,
+  AppWorkspaceLevelSwitcher,
   AppWorkspaceMainPaneProps,
   AppWorkspaceMainProps,
   AppWorkspaceNavTreeItemProps,

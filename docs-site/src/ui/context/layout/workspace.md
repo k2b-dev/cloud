@@ -397,7 +397,12 @@ in it, and its content starts at the title's edge, so a form or a frame inside
 it adds no inset of its own. Columns that lead there and details beside it keep
 the 14 px column step. An optional
 `lead` puts a small mark before the title, such as the colour dot of the
-object's container. Every level
+object's container. `switcher` turns the title into the button that opens a
+menu of places to switch to, such as the person's work and each Space; on a
+phone the menu opens as a sheet. The title keeps its size and place and gains
+a chevron, the server HTML already marks it with `aria-haspopup`, and the
+menu's entries never become part of the heading. Use it where a part has no
+sidebar of its own, such as in the Cloud app. Every level
 starts below the same 8 px top inset, so the titles of side by side heads share
 one line when the heads have the same form, all with or all without a
 description. Selecting a row keeps every visible level where it is.

@@ -101,23 +101,71 @@ returns to the list by replacing its entry, so Back does not reopen the task.
   task in a Space you can only read, and a task that was deleted in the
   meantime disappears from the list. These notices offer no **Retry**, because
   trying again would not change the answer.
-- If a change cannot be saved, for example while the phone is offline, the
-  task goes back to how it is saved, and a notice offers **Retry**.
+- If a change cannot be saved, the task goes back to how it is saved, and a
+  notice offers **Retry**.
+- While the phone is offline, the circles are off and a line at the bottom
+  says that adding and changing work again with a connection. Everything you
+  already see stays readable.
+- Without write access to a Space, its tasks have no active circle.
+- The magnifier in the head searches the open tasks of every Space you can
+  read. A line under the field says how many tasks match.
 - The selected list is part of the address, so a reload keeps it.
 - Each list shows a bounded number of items, the same as the start page on the
   web: up to 100 for **For me**, 5 for **Today**, and 30 for **Upcoming**. When
   the count is higher, a line under the list says how many more are in Spaces
   on the web.
 
+### Switch to a Space
+
+The title **My tasks** opens a list of your Spaces. On a phone it opens as a
+sheet from the bottom, on a tablet as a menu below the title. Pinned Spaces
+come first, in the order you pinned them on the web. Each Space says how many
+tasks are open, or **Read only** when you cannot change its tasks. From eight
+entries the list has a search field. Without any Space, the page says how to
+get one and links to Spaces on the web.
+
+A Space opens at `/pwa/spaces/<space>` as one list per status, such as
+**Inbox** or **In progress**, in the order of the board on the web. Board,
+table, and calendar stay on the web; **…** in the head opens the Space there
+or copies its link.
+
+- Each status shows its dot, its name, and how many tasks it has. A done
+  status starts folded; tap its name to show its tasks. Tap any status name to
+  fold or unfold it.
+- A status shows its first 30 tasks, as a board column on the web does.
+  **Load more** adds the next ones in place.
+- Each row shows the title and what applies: **Blocked** for a task with
+  unfinished blockers, the deadline (red when overdue), the checklist
+  progress, the tags, and the people assigned.
+- **Assigned to me** and **Tag** narrow the list. A status without a match
+  steps aside, and **Reset** clears both. When nothing matches, the page says
+  so and offers **Reset filters**.
+- The magnifier searches the open tasks of the Space and says how many match.
+- The filters and the search are part of the address, so a reload and Back
+  keep them.
+- Tap the circle to mark a task done, with **Undo** as in **My tasks**. In a
+  done status, the circle opens the task again.
+- The list updates as other people change the Space, and when you return to
+  the app. Rows keep their place while it updates.
+- In a Space you can only read, a line under the title says so, and the
+  circles are off.
+- If the Space cannot be loaded, the page offers **Try again** and keeps your
+  filters. Offline, it says that the Space loads again with a connection.
+- When you lose access, or an old link names a Space you cannot read, the page
+  says that it cannot open the Space and leads back to **My tasks**. It names
+  the Space only when the app already knew it.
+
 ### Open a task
 
 Tap a row to open its task. The task has its own address,
 `/pwa/spaces/<space>/<task>`, so a reload, Back, and rotating the device show
-the same task. Only people who can read the task's Space can open it; for
+the same task. Opened from a Space, the address adds `list=space` and the
+Space's filters, so the Space's list stays beside the task. A shared link
+without them returns to **My tasks**. Only people who can read the task's Space can open it; for
 anyone else the address does not exist.
 
 - On a phone and on an iPad upright, the task replaces the list, with
-  **Back to Spaces** in its head. From 64 rem (1024 px), for example on an
+  **Back to My tasks** or **Back to** the Space in its head. From 64 rem (1024 px), for example on an
   iPad across or a monitor, the list stays beside the task, the open task's
   row is marked, and **No task selected** holds the place until you choose one.
 - The task shows its Space in the head, whether it is done, the deadline or
