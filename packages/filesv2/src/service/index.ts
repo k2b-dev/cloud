@@ -1627,6 +1627,12 @@ export function createFilesService(
         return activityReader.activity({ ...call, requestAbort: budget.signal }, { ...input, ...filter });
       });
     },
+    async machineStorageById(call: UserFilesCall, baseId: string) {
+      await requireAdmin(call.actor);
+      const owner = await machineOwner(baseId);
+      if (!owner) throw new FilesError("not_found", 404);
+      return { id: baseId, owner };
+    },
     async machineStorage(call: UserFilesCall, after?: string) {
       await requireAdmin(call.actor);
       return listMachineStorage(after);

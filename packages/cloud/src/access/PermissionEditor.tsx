@@ -13,7 +13,6 @@ import PrincipalPicker, { principalKey } from "./PrincipalPicker";
 import { principalLabel } from "./principal-label";
 import { ServiceAccountLookup } from "./ServiceAccountLookup";
 import { serviceAccountKindDisplay } from "./service-account-kind";
-import { findTargetServiceAccount } from "./service-account-lookup";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Public API
@@ -462,11 +461,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
               when={draft()}
               fallback={
                 <PrincipalPicker
-                  findServiceAccount={
-                    props.target && props.allowServiceAccounts !== false
-                      ? (handle, signal) => findTargetServiceAccount(props.target!, handle, signal)
-                      : undefined
-                  }
+                  target={props.target}
                   existing={entries.map((entry) => entry.principal)}
                   allowPublic={allowPublic()}
                   allowAuthenticated={allowAuthenticated()}
@@ -601,11 +596,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           a higher level. KISS: one decision per step. */}
       <Show when={canEdit() && !props.expanded}>
         <PrincipalPicker
-          findServiceAccount={
-            props.target && props.allowServiceAccounts !== false
-              ? (handle, signal) => findTargetServiceAccount(props.target!, handle, signal)
-              : undefined
-          }
+          target={props.target}
           existing={entries.map((e) => e.principal)}
           allowPublic={allowPublic()}
           allowAuthenticated={allowAuthenticated()}

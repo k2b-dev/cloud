@@ -592,7 +592,12 @@ and adds optional `displayName`, optional `avatarHash`, and, for service-account
 principals, `serviceAccountKind`. A person's `displayName` is their display
 name, or their login name when they have none, so every permission editor names
 people the same way. Authorize the resource operation
-before resolving names. A confirmation should show both name and principal ID;
+before resolving names. Finish the grant transaction before calling the resolver:
+it can read other principal tables and registry metadata. If a registry read
+fails or expires, managers still see the stored Code title snapshot and handle.
+Other viewers see the generic Code type label; translated type details and
+resource links require registry metadata.
+A confirmation should show both name and principal ID;
 names are presentation, never identity or authorization.
 
 Missing principals have no `displayName`; audiences carry no stored name.
@@ -810,9 +815,16 @@ sharing then includes **Add service account**, with exact handle lookup and the
 ordinary grant, failure, and retry behavior. Read-only editors offer no lookup.
 Neither editor requires a Code declaration in the application.
 
+For a share surface with additional grant fields, such as a relative path,
+compose `ServiceAccountLookup` from `@k2b/cloud/access/ui` with those fields.
+Pass `target`, `disabled`, `empty`, and an async `add(account)` callback that
+returns whether the grant was saved. It supplies the same **Add service account**
+button and target-aware lookup; a failed save keeps the handle and result for retry.
+
 `PrincipalPicker` accepts a Code account supplied in a result. It does not add a
 name-search path; the general directory excludes Code accounts. Pass
-`findServiceAccount(handle, signal)` with the resource as the target to let an
+`target: { type, id }` to use the shared exact-handle lookup by default, or
+override `findServiceAccount(handle, signal)` with the resource as the target to let an
 exact handle find the account: such a query asks only that lookup, and the
 hit carries a "Service account" badge. Exact handle
 lookup requires a target that the caller manages, as described in

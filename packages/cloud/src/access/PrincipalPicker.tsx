@@ -1,10 +1,12 @@
 import { Combobox, type ComboboxOption, useLocale } from "@k2b/ui";
 import { createSignal, type JSX } from "solid-js";
+import type { CloudResourceRef } from "../contracts/capabilities";
 import { CODE_ACCOUNT_HANDLE_PATTERN, type Principal, type ServiceAccountKind, type ServiceAccountStatus } from "../contracts/shared";
 import { accessMessages } from "./messages";
 import { principalKey } from "./principal-key";
 import { principalLabel } from "./principal-label";
 import { serviceAccountKindDisplay } from "./service-account-kind";
+import { findTargetServiceAccount } from "./service-account-lookup";
 
 export { principalKey };
 
@@ -35,6 +37,8 @@ export type PrincipalPickerServiceAccount = Extract<Entity, { kind: "service_acc
 /** Shared identity selector; the consumer owns the meaning of the assignment. */
 export default function PrincipalPicker(props: {
   existing?: Principal[];
+  /** Resource being shared; Core verifies Manage before resolving a Code handle. */
+  target?: CloudResourceRef;
   allowPublic?: boolean;
   allowAuthenticated?: boolean;
   /** Defaults to true; disable only for a documented user-backed workflow. */
@@ -101,8 +105,15 @@ export default function PrincipalPicker(props: {
         icon: "ti ti-world",
       });
     const handle = search.trim();
-    if (props.findServiceAccount && CODE_ACCOUNT_HANDLE_PATTERN.test(handle)) {
-      const found = await props.findServiceAccount(handle, signal);
+    const target = props.target;
+    // Explicit lookup owns its accepted accounts; directory filters apply to the default lookup only.
+    const acceptsCode =
+      props.allowServiceAccounts !== false && (!props.serviceAccountKinds?.length || props.serviceAccountKinds.includes("code"));
+    const find =
+      props.findServiceAccount ??
+      (target && acceptsCode ? (value: string, abort: AbortSignal) => findTargetServiceAccount(target, value, abort) : undefined);
+    if (find && CODE_ACCOUNT_HANDLE_PATTERN.test(handle)) {
+      const found = await find(handle, signal);
       if (found) {
         const kind = found.display.serviceAccountKind ?? "code";
         const display = serviceAccountKindDisplay(kind, t());

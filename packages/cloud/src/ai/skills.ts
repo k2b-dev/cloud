@@ -14,6 +14,7 @@ import {
   type Principal,
   updateAccess,
 } from "../server/services/access";
+import { resolveDisplayNames } from "../server/services/access-display";
 import { accessRevision } from "../server/services/access-revision";
 import { evaluateAppAccess, usableAppIds } from "../services/app-access";
 import { logger } from "../services/logging";
@@ -413,11 +414,12 @@ const requireSkill = async (
   return skill && hasPermission(skill.permission, required) ? skill : null;
 };
 
+// Transaction callers need grant state only; presentation may use other connections and registry I/O.
 const listSkillAccess = async (skillId: string, db: SQL = sql): Promise<AiSkillAccess[]> => {
   const rows = await db<SkillAccessRow[]>`
     SELECT skill_access.short_id, access.user_id, access.group_id, access.service_account_id, access.authenticated_only,
            access.permission, access.created_at,
-           COALESCE(NULLIF(users.display_name, ''), users.uid, groups.name, service_accounts.name) AS display_name,
+           COALESCE(NULLIF(users.display_name, ''), users.uid, groups.name) AS display_name,
            users.avatar_hash, service_accounts.kind AS service_account_kind
     FROM ai.skill_access skill_access
     JOIN auth.access access ON access.id = skill_access.access_id
@@ -902,13 +904,15 @@ export const aiSkills = {
     skillId: string,
     subject: AiResourceContext | null,
     authority: RequestAuthority | null = null,
+    locale?: string,
   ): Promise<AiSkillAccess[] | null> {
     const roles = await subjectRoles(subject, authority);
-    return sql.begin(async (tx) => {
+    const entries = await sql.begin(async (tx) => {
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id=${skillId}::uuid FOR UPDATE`;
       if (!row || !(await canMutate(row.id, subject, "admin", tx, roles))) return null;
       return listSkillAccess(skillId, tx);
     });
+    return entries === null ? null : resolveDisplayNames(entries, { canManageTarget: true, locale });
   },
 
   async grantAccess(
@@ -917,15 +921,17 @@ export const aiSkills = {
     input: { principal: Principal; permission: AiSkillPermission },
     expectedAccessRevision?: string,
     authority: RequestAuthority | null = null,
+    locale?: string,
   ): Promise<AiSkillAccess | null> {
     const roles = await subjectRoles(subject, authority);
-    return sql.begin(async (tx) => {
+    const entry = await sql.begin(async (tx) => {
       if (!subject || !(await lockAccessMutationAuthority({ subject: subject.accessSubject, principal: input.principal }, tx))) return null;
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
       if (!row || !(await canMutate(row.id, subject, "admin", tx, roles))) return null;
       await checkAccessRevision(skillId, expectedAccessRevision, tx);
       return createSkillAccess(skillId, input, tx);
     });
+    return entry ? (await resolveDisplayNames([entry], { canManageTarget: true, locale }))[0]! : null;
   },
 
   async updateAccess(
@@ -1069,14 +1075,20 @@ export const aiSkills = {
       return rows[0] ? toAdminSkill(rows[0]) : null;
     },
 
-    listAccess: listSkillAccess,
+    listAccess: async (skillId: string, locale?: string) =>
+      resolveDisplayNames(await listSkillAccess(skillId), { canManageTarget: true, cloudAdmin: true, locale }),
 
-    async grantAccess(skillId: string, input: { principal: Principal; permission: AiSkillPermission }): Promise<AiSkillAccess | null> {
-      return sql.begin(async (tx) => {
+    async grantAccess(
+      skillId: string,
+      input: { principal: Principal; permission: AiSkillPermission },
+      locale?: string,
+    ): Promise<AiSkillAccess | null> {
+      const entry = await sql.begin(async (tx) => {
         const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
         if (!row) return null;
         return createSkillAccess(skillId, input, tx);
       });
+      return entry ? (await resolveDisplayNames([entry], { canManageTarget: true, cloudAdmin: true, locale }))[0]! : null;
     },
 
     async updateAccess(skillId: string, accessId: string, permission: AiSkillPermission): Promise<boolean> {

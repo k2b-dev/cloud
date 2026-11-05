@@ -70,6 +70,11 @@ export const loadCodeRunCalls = async (
       refs: callRefs(call.call),
       // Only the bridge's classification counts; the page never guesses from a result.
       refusal: call.state === "failed" ? (call.refusalKind ?? null) : null,
+      ...(call.state === "failed" &&
+      call.refusalKind === "policy" &&
+      z.object({ error: z.object({ code: z.literal("code_ai_budget_limit") }) }).safeParse(call.result).success
+        ? { refusalCode: "code_ai_budget_limit" as const }
+        : {}),
       state: call.state,
       summary: summarizeCallResult(call.result, locale),
     });

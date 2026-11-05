@@ -505,6 +505,87 @@ test("Code titles are resolved in the existing batch only for a managed target",
   expect({ stdout, stderr, exit }).toEqual({ stdout: "", stderr: "", exit: 0 });
 });
 
+for (const canManageTarget of [false, true])
+  test(
+    canManageTarget
+      ? "Code managers keep the snapshot title and handle after a rejected or stalled registry read"
+      : "Code readers get type-only after a rejected or stalled registry read",
+    async () => {
+      const script = `
+    import { strict as assert } from "node:assert";
+    const id = "11111111-1111-4111-8111-111111111111";
+    let mode = "reject", appOwned = false, fallback = false, started;
+    globalThis.degradedDisplaySql = async () => [{
+      id, name: appOwned ? "code:app:secret-app" : "code:demo.item:private-owner-id", kind: "code", title: "Private title", handle: "code-7k2q9m4xwt", status: "disabled",
+    }];
+    globalThis.degradedDisplayCatalog = async (catalog = false) => {
+      if (fallback && catalog) return null;
+      started.resolve();
+      if (mode === "reject") throw new Error("Registry unavailable");
+      return new Promise(() => {});
+    };
+    Bun.plugin({ name: "degraded-code-display", setup(build) {
+      build.onLoad({ filter: /server\\/services\\/access-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.degradedDisplaySql;'), loader: "ts",
+      }));
+      build.onLoad({ filter: /code-account-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text()).replace('import { getApp, getCapability } from "../../_internal/registry";', 'const getCapability = () => globalThis.degradedDisplayCatalog(true), getApp = () => globalThis.degradedDisplayCatalog(false);'), loader: "ts",
+      }));
+    } });
+    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
+    const { REQUEST_IDLE_TIMEOUT_SECONDS } = await import(${JSON.stringify(new URL("../request-timeout.ts", import.meta.url).pathname)});
+    const originalSet = globalThis.setTimeout, originalClear = globalThis.clearTimeout;
+    for (const variant of [["reject", false, false], ["stall", false, false], ["reject", true, false], ["stall", true, false], ["reject", true, true], ["stall", true, true]]) {
+      [mode, appOwned, fallback] = variant;
+      started = Promise.withResolvers();
+      let expire, scheduled = 0, cleared = 0;
+      globalThis.setTimeout = (callback, ms, ...args) => {
+        assert.equal(ms, REQUEST_IDLE_TIMEOUT_SECONDS * 1_000 / 2);
+        scheduled++;
+        expire = () => callback(...args);
+        return originalSet(callback, ms, ...args);
+      };
+      globalThis.clearTimeout = (timer) => { cleared++; originalClear(timer); };
+      try {
+        const pending = resolveDisplayNames(Array.from({ length: 20 }, () => ({
+          principal: { type: "service_account", serviceAccountId: id }, displayName: "Stale private title", serviceAccountHref: "/private-owner-id", serviceAccountHandle: "code-stale00000",
+        })), { canManageTarget: ${canManageTarget}, locale: "de" });
+        await started.promise;
+        // Drive the deadline callback directly: no real-time sleep or timeout increase.
+        if (mode === "stall") expire();
+        const entries = await pending;
+        assert.equal(entries.length, 20);
+        for (const entry of entries) {
+          assert.equal(entry.displayName, ${canManageTarget} ? "Code von Private title" : appOwned ? "Code einer App" : "Code eines Objekts");
+          assert.equal(entry.serviceAccountKind, "code");
+          assert.equal(entry.serviceAccountHref, undefined);
+          assert.equal(entry.serviceAccountHandle, ${canManageTarget} ? "code-7k2q9m4xwt" : undefined);
+          assert.ok(entry.serviceAccountDescription.includes("deaktiviert"));
+        }
+        assert.equal(JSON.stringify(entries).includes("Private title"), ${canManageTarget});
+        assert.ok(!JSON.stringify(entries).includes("Stale private title"));
+        assert.ok(!JSON.stringify(entries).includes("code-stale00000"));
+        assert.ok(!JSON.stringify(entries).includes("private-owner-id"));
+        assert.ok(!JSON.stringify(entries).includes("secret-app"));
+        assert.ok(!JSON.stringify(entries).includes("code:demo.item:"));
+        assert.equal(scheduled, 1);
+        assert.equal(cleared, 1);
+      } finally {
+        globalThis.setTimeout = originalSet;
+        globalThis.clearTimeout = originalClear;
+      }
+    }
+  `;
+      const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { stdout: "pipe", stderr: "pipe" });
+      const [stdout, stderr, exit] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
+      expect({ stdout, stderr, exit }).toEqual({ stdout: "", stderr: "", exit: 0 });
+    },
+  );
+
 test("Code of an app without a capability catalog shows the app's name in the viewer's language", async () => {
   // The account keeps the name stored when the Code was created; only an app that is gone shows it.
   const script = `

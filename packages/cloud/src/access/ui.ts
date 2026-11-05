@@ -24,3 +24,4 @@ export type {
   ResourceApiKeysProps,
 } from "./ResourceApiKeys";
 export { default as ResourceApiKeys } from "./ResourceApiKeys";
+export { ServiceAccountLookup } from "./ServiceAccountLookup";

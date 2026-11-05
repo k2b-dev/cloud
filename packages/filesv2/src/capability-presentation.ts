@@ -32,10 +32,15 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
   translations: {
     de: {
       types: {
+        storage: { title: "Maschinenspeicher", description: "Eine verwaltete Maschinenablage." },
         template: { title: "Dateivorlage", description: "Eine verwaltete Dateivorlage." },
         entry: { title: "Datei oder Ordner", description: "Eine Datei oder ein Ordner in einer zugänglichen Cloud- oder FreeIPA-Ablage." },
       },
       queries: {
+        "storage.read": {
+          title: "Maschinenspeicher lesen",
+          description: "Eine Maschinenablage nach derselben Administratorprüfung wie im Teilen-Editor lesen.",
+        },
         "template.read": {
           title: "Dateivorlage lesen",
           description: "Vorlagenmetadaten nach derselben Verwalten-Prüfung wie im Teilen-Dialog lesen.",

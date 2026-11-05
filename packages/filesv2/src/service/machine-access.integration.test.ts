@@ -245,6 +245,42 @@ suite("Files machine storage through actual API tokens", () => {
     await gateway?.stop();
     await runtime?.stop();
   });
+  test("Code account names use the title snapshot in both managed Files share lists", async () => {
+    const owner = await serviceAccounts.createStandalone({ name: "Name fixture", kind: "agent", createdBy: admin.user.id });
+    if (!owner.ok) throw new Error(owner.error.code);
+    const storage = await service.createMachineStorage(call(), { ownerId: owner.data.id, area: "cloud" });
+    const ownerId = crypto.randomUUID();
+    const [code] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,title)
+      VALUES (${`code:demo.item:${ownerId}`},'code','Snapshot title') RETURNING id`;
+    const template = await templateService.upload(call(), {
+      name: "Code names",
+      description: "",
+      filename: "names.md",
+      content: Buffer.from("Names").toString("base64"),
+    });
+    try {
+      const principal = { type: "service_account" as const, serviceAccountId: code!.id };
+      await service.grantStorage(call(), storage.id, { path: "", principal, permission: "read" });
+      await templateService.grant(call(), template.id, principal);
+      for (const rows of [(await service.storageGrants(call(), storage.id)).items, await templateService.grants(call(), template.id)]) {
+        const entry = rows.find((row) => row.principal.type === "service_account" && row.principal.serviceAccountId === code!.id);
+        expect(entry?.displayName).toBe("Code of Snapshot title");
+        expect(JSON.stringify(entry)).not.toContain(ownerId);
+        expect(JSON.stringify(entry)).not.toContain("code:demo.item:");
+      }
+      expect(await service.machineStorageById(call(), storage.id)).toMatchObject({ id: storage.id });
+      await expect(service.machineStorageById(call(), crypto.randomUUID())).rejects.toMatchObject({ status: 404 });
+      const unprivileged = await token(owner.data.id, ["admin"]);
+      const context = await capabilityContext(unprivileged.token);
+      await expect(service.machineStorageById(testCall(context.actor), storage.id)).rejects.toMatchObject({
+        code: "user_required",
+        status: 401,
+      });
+    } finally {
+      await sql`DELETE FROM filesv2.templates WHERE id=${template.id}::uuid`;
+      await sql`DELETE FROM auth.service_accounts WHERE id IN (${code!.id}::uuid,${owner.data.id}::uuid)`;
+    }
+  });
   for (const kind of ["agent", "standalone"] as const) {
     test(`${kind}: no grant, exact grants, path/resource/scope caps, transfers, sharing, revoke and disable`, async () => {
       const created = await serviceAccounts.createStandalone({ name: `Files ${kind}`, kind, createdBy: admin.user.id });

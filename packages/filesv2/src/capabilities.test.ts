@@ -94,6 +94,7 @@ const changed = async () => {
   return { base, entry: changedEntry };
 };
 let templateReadAllowed = true;
+let storageReadAllowed = true;
 mock.module("./service/templates", () => ({
   templateService: {
     read: async () => {
@@ -105,6 +106,11 @@ mock.module("./service/templates", () => ({
 mock.module("./service", () => ({
   FilesError: MockFilesError,
   filesService: {
+    machineStorageById: async (call: unknown, id: string) => {
+      expect(call).toEqual(capabilityCall(context));
+      if (!storageReadAllowed) throw new MockFilesError("forbidden", 403);
+      return { id, owner: { name: "Machine" } };
+    },
     bases: async () => {
       basesCalls++;
       return {
@@ -1093,6 +1099,10 @@ test("storage failures keep their code and carry the Files message in the caller
 test("every declared Type has a reader open-link case or an explicit reason", async () => {
   const id = await persistedEntryRefId("base", "report.csv");
   const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
+    storage: {
+      reader: "storage.read",
+      read: async () => filesCapabilities.queries["storage.read"].run({ id: "10000000-0000-4000-8000-000000000001" }, context),
+    },
     template: {
       reader: "template.read",
       read: async () => filesCapabilities.queries["template.read"].run({ id: "10000000-0000-4000-8000-000000000001" }, context),
@@ -1220,5 +1230,18 @@ test("the template reader supplies Manage only after the template share service 
     expect(await reader.run({ id }, context)).toMatchObject({ ok: false, error: { status: 403 } });
   } finally {
     templateReadAllowed = true;
+  }
+});
+
+test("the storage reader supplies Manage only after the machine storage service admits the caller", async () => {
+  const reader = filesCapabilities.queries["storage.read"];
+  const id = "10000000-0000-4000-8000-000000000001";
+  try {
+    const result = await reader.run({ id }, context);
+    expect(result).toMatchObject({ ok: true, data: { data: { view: { title: "Machine", permission: "admin" } } } });
+    storageReadAllowed = false;
+    expect(await reader.run({ id }, context)).toMatchObject({ ok: false, error: { status: 403 } });
+  } finally {
+    storageReadAllowed = true;
   }
 });

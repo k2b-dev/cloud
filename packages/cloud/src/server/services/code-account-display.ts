@@ -1,9 +1,11 @@
 import { i18n } from "@k2b/stdlib";
 import { resolveCapabilityManifestPresentation } from "../../_internal/capabilities";
+import { createCapabilityDeadline } from "../../_internal/capability-timeout";
 import { getApp, getCapability } from "../../_internal/registry";
 import { CloudResourceRefSchema } from "../../contracts/capabilities";
 import type { PermissionLevel } from "../../contracts/shared";
 import { resolveAppIdentityPresentation } from "../../shared/app-presentation";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../request-timeout";
 
 export const codeMessages = i18n.define({
   baseLocale: "en",
@@ -12,6 +14,7 @@ export const codeMessages = i18n.define({
       accountName: ({ title }: { title: string }) => `Code of ${title}`,
       accountType: ({ type }: { type: string }) => `Code of a resource (${type})`,
       unknownType: "Code of a resource",
+      unknownApp: "Code of an app",
       resourceAccount: ({ type }: { type: string }) => `Service account of a resource (${type})`,
       appAccount: "Service account of an app",
       unknownResourceAccount: "Service account of a resource",
@@ -21,6 +24,7 @@ export const codeMessages = i18n.define({
       accountName: ({ title }) => `Code von ${title}`,
       accountType: ({ type }) => `Code eines Objekts (${type})`,
       unknownType: "Code eines Objekts",
+      unknownApp: "Code einer App",
       resourceAccount: ({ type }) => `Dienstkonto eines Objekts (${type})`,
       appAccount: "Dienstkonto einer App",
       unknownResourceAccount: "Dienstkonto eines Objekts",
@@ -54,20 +58,27 @@ export type CodeAccountPresentation = {
   serviceAccountHandle?: string;
 };
 
+// Leave half the ordinary request idle budget for grant reads and sending the response.
+const displayCatalog = async (appId: string) => {
+  const deadline = createCapabilityDeadline((REQUEST_IDLE_TIMEOUT_SECONDS * 1_000) / 2, new AbortController().signal);
+  try {
+    const app = await deadline.wait(() => getCapability(appId));
+    const identity = app
+      ? { name: app.appName, description: app.appDescription, presentation: app.appPresentation }
+      : await deadline.wait(() => getApp(appId));
+    return { app, identity, available: true };
+  } catch {
+    return { app: null, identity: null, available: false };
+  } finally {
+    deadline.clear();
+  }
+};
+
 /** Registry metadata only: no owner reader, SQL, or app call. Reuse one presenter for an entire rights list. */
 export const codeAccountPresenter = (context: CodeAccountDisplayContext = {}) => {
   const canManageTarget = context.permission !== undefined ? context.permission === "admin" : context.canManageTarget === true;
   const { t } = codeMessages.resolve(context.locale ? [context.locale] : []);
-  const catalogs = new Map<string, ReturnType<typeof getCapability>>();
-  const apps = new Map<string, ReturnType<typeof getApp>>();
-  const registeredApp = (appId: string) => {
-    let entry = apps.get(appId);
-    if (!entry) {
-      entry = getApp(appId).catch(() => null);
-      apps.set(appId, entry);
-    }
-    return entry;
-  };
+  const catalogs = new Map<string, ReturnType<typeof displayCatalog>>();
   return async (account: {
     name: string;
     title: string | null;
@@ -78,10 +89,25 @@ export const codeAccountPresenter = (context: CodeAccountDisplayContext = {}) =>
     const appId = owner?.kind === "app" ? owner.appId : owner?.ref.type.split(".")[0];
     let catalog = appId ? catalogs.get(appId) : undefined;
     if (appId && !catalog) {
-      catalog = getCapability(appId).catch(() => null);
+      catalog = displayCatalog(appId);
       catalogs.set(appId, catalog);
     }
-    const app = await catalog;
+    const resolved = await catalog;
+    if (resolved?.available === false) {
+      return {
+        // The target already admitted this viewer; registry availability does not change that authority.
+        displayName:
+          canManageTarget && account.title ? t.accountName({ title: account.title }) : owner?.kind === "app" ? t.unknownApp : t.unknownType,
+        serviceAccountDescription: [
+          owner?.kind === "app" ? t.appAccount : t.unknownResourceAccount,
+          account.status === "disabled" ? t.disabled : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        ...(canManageTarget && account.handle ? { serviceAccountHandle: account.handle } : {}),
+      };
+    }
+    const app = resolved?.app;
     const manifest =
       app && context.locale ? resolveCapabilityManifestPresentation(app.manifest, app.presentation, context.locale) : app?.manifest;
     const localType = owner?.kind === "resource" ? owner.ref.type.slice((appId?.length ?? 0) + 1) : null;
@@ -89,12 +115,7 @@ export const codeAccountPresenter = (context: CodeAccountDisplayContext = {}) =>
     const type = ownerType?.title;
     // An app's name is visible in the installation anyway; it is shown in the viewer's language, never as stored. An
     // app without a capability catalog still has its registry entry; only an app that is gone keeps the stored name.
-    const appIdentity =
-      owner?.kind === "app"
-        ? app
-          ? { name: app.appName, description: app.appDescription, presentation: app.appPresentation }
-          : await registeredApp(owner.appId)
-        : null;
+    const appIdentity = owner?.kind === "app" ? resolved?.identity : null;
     const appTitle = appIdentity ? resolveAppIdentityPresentation(appIdentity, context.locale ?? "en").name : null;
     const visibleTitle = owner?.kind === "app" ? (appTitle ?? account.title) : canManageTarget ? account.title : null;
     const page = localType ? manifest?.code?.pages?.[localType] : undefined;

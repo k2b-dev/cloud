@@ -329,7 +329,15 @@ const loadReady = async (
   const refusalOf = (
     run: CodePageRun,
     recorded: { ordinal: number; capability: string; target: { type: string; id: string } | null } | null | undefined,
-    loaded: { ordinal: number; capability: string; target: { type: string; id: string } | null; refusal: string | null }[] | null,
+    loaded:
+      | {
+          ordinal: number;
+          capability: string;
+          target: { type: string; id: string } | null;
+          refusal: string | null;
+          refusalCode?: "code_ai_budget_limit";
+        }[]
+      | null,
   ) => {
     if (run.state !== "failed") return null;
     // The target refusal Core recorded wins, so the overview and the run's detail always name the same call.
@@ -372,6 +380,7 @@ const loadReady = async (
   const presentRefusal = async (refusal: ReturnType<typeof refusalOf>): Promise<CodePageRefusal | null> =>
     refusal && {
       kind: refusal.kind,
+      ...(refusal.call && "refusalCode" in refusal.call && refusal.call.refusalCode ? { code: refusal.call.refusalCode } : {}),
       runId: refusal.run.id,
       versionId: refusal.run.versionId,
       call: refusal.call && {

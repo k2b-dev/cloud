@@ -1,4 +1,5 @@
 import type { AccessEntry } from "@k2b/cloud/contracts";
+import type { CodeAccountDisplayContext } from "@k2b/cloud/server";
 import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import * as access from "./access";
 import * as activity from "./activity";
@@ -105,6 +106,7 @@ export const notebooksService = {
     access: {
       list: async (config: {
         notebookId: string;
+        display?: CodeAccountDisplayContext;
         pagination?: PageParams;
         filter?: {
           query?: string;
@@ -114,6 +116,7 @@ export const notebooksService = {
         const pageInfo = pageFromPagination(config.pagination);
         const result = await access.listNotebookAccessPage({
           notebookId: config.notebookId,
+          display: config.display,
           query: config.filter?.query,
           principalType: config.filter?.principalType,
           pagination: pageInfo ? { limit: pageInfo.perPage, offset: pageInfo.offset } : undefined,

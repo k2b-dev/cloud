@@ -99,6 +99,13 @@ suiteFor(
               body: JSON.stringify({ principal: { type: "service_account", serviceAccountId: accountId }, permission: "read" }),
             });
             expect(grant.status).toBe(201);
+            expect(await grant.json()).toMatchObject({
+              access: {
+                principal: { type: "service_account", serviceAccountId: accountId },
+                displayName: "Code of Lookup fixture",
+                serviceAccountHandle: handle,
+              },
+            });
             const stored = await api.request(accessPath, { headers: adminHeaders });
             expect(stored.status).toBe(200);
             expect((await stored.json()).access).toContainEqual(
@@ -106,7 +113,14 @@ suiteFor(
                 principal: { type: "service_account", serviceAccountId: accountId },
                 permission: "read",
                 serviceAccountKind: "code",
+                displayName: "Code of Lookup fixture",
+                serviceAccountHandle: handle,
               }),
+            );
+            const localized = await api.request(accessPath, { headers: { ...adminHeaders, "x-cloud-locale": "de" } });
+            expect(localized.status).toBe(200);
+            expect((await localized.json()).access).toContainEqual(
+              expect.objectContaining({ displayName: "Code von Lookup fixture", serviceAccountKind: "code" }),
             );
           },
           { admin: false },

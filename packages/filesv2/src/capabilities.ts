@@ -59,6 +59,7 @@ export const filesCapabilities = defineCapabilities({
   },
   presentation: filesCapabilityPresentation,
   types: {
+    storage: { title: "Machine storage", description: "A managed machine storage base.", reader: "storage.read" },
     template: {
       title: "File template",
       description: "A managed file template.",
@@ -75,6 +76,25 @@ export const filesCapabilities = defineCapabilities({
   },
   actions: fileActions,
   queries: {
+    "storage.read": {
+      title: "Read machine storage",
+      description: "Read one machine storage base after the same administrator check as its share editor.",
+      input: z.object({ id: z.uuid().describe("Machine storage ID from the administration list.") }).strict(),
+      data: z.object({ view: CloudResourceReaderViewSchema }),
+      openWorld: false,
+      async run(input, context) {
+        try {
+          const storage = await filesService.machineStorageById(capabilityCall(context), input.id);
+          return ok({
+            data: { view: { title: storage.owner.name, permission: "admin" as const } },
+            links: [{ rel: "open" as const, href: "/admin/filesv2?view=settings" }],
+          });
+        } catch (error) {
+          if (!(error instanceof FilesError)) throw error;
+          return fail(err.forbidden("Access denied"));
+        }
+      },
+    },
     "template.read": {
       title: "Read file template",
       description: "Read template metadata after the same management check as its share dialog.",
