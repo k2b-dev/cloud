@@ -476,7 +476,7 @@ export function AccessDialog(
         >
           <span class="k2b-choice-trigger__value">{levelLabel(row().principal, row().next)}</span>
           {/* On a phone the chevron moves closer, so the whole level fits beside a mark like "vorher Bearbeiten". */}
-          <i class="ti ti-chevron-down max-sm:-ml-1" aria-hidden="true" />
+          <i class="ti ti-chevron-down max-sm:-ml-1.5" aria-hidden="true" />
         </button>
         {/* Mounted only while open, so a long list carries no menu per row. */}
         <Show when={open()}>
@@ -608,7 +608,7 @@ export function AccessDialog(
             >
               {/* Undo takes the place of level and remove, so the row keeps its size and nothing below moves. */}
               <span class="ml-auto flex shrink-0 items-center justify-end sm:gap-1">
-                <span class="flex justify-end sm:w-40">
+                <span class="flex justify-end max-sm:w-[6.875rem] sm:w-40">
                   <Button
                     variant="text"
                     data-access-undo=""
@@ -623,13 +623,13 @@ export function AccessDialog(
                     {t().undo}
                   </Button>
                 </span>
-                <span class="h-9 w-7 max-sm:hidden" aria-hidden="true" />
+                <span class="h-9 w-6" aria-hidden="true" />
               </span>
             </Show>
           }
         >
           <span class="ml-auto flex shrink-0 items-center sm:gap-1">
-            <span class="sm:w-40">
+            <span class="max-sm:w-[6.875rem] sm:w-40">
               {/* A stored denial is shown, never offered: it can only be removed. */}
               <Show
                 when={row().next?.permission !== "none"}
@@ -641,7 +641,7 @@ export function AccessDialog(
             <IconButton
               label={protectedRow() ? t().lastManagerRemove({ level: manageLabel(row().principal) }) : t().remove({ name: nameOf(row()) })}
               variant="ghost"
-              size="sm"
+              size="xs"
               disabled={saving() || protectedRow()}
               data-access-remove=""
               onClick={(event) => removeFrom(event.currentTarget)}
@@ -710,7 +710,7 @@ export function AccessDialog(
         {/* On a phone the level moves under the description; the switch stays beside the name. */}
         <Show when={on() && rowProps.type === "authenticated" && canEdit() && row()}>
           {(current) => (
-            <span class="order-3 w-full pl-11 sm:order-none sm:w-40 sm:shrink-0 sm:pl-0">
+            <span class="max-sm:order-3 max-sm:w-full max-sm:pl-10 sm:w-40 sm:shrink-0">
               <LevelMenu row={current()} />
             </span>
           )}

@@ -175,7 +175,13 @@ describe("AccessDialog in a browser", () => {
           const names = rows
             .map((row) => row.querySelector<HTMLElement>("[data-access-name]"))
             .filter((name): name is HTMLElement => Boolean(name));
+          // Level and remove, or Undo in their place, take one width in every people row, so staging leaves a name its room.
+          const people = Array.from(
+            document.querySelector("dialog ul")!.children,
+            (row) => row.lastElementChild!.getBoundingClientRect().width,
+          );
           return {
+            controls: new Set(people).size,
             marks: marks.length,
             levels: levels.length,
             names: names.length,
@@ -190,7 +196,7 @@ describe("AccessDialog in a browser", () => {
               .map((name) => name.textContent?.trim()),
           };
         });
-        expect(cut).toEqual({ marks: 5, levels: 5, names: 7, cut: [], wrapped: [] });
+        expect(cut).toEqual({ controls: 1, marks: 5, levels: 5, names: 7, cut: [], wrapped: [] });
       } finally {
         await page.close();
       }
