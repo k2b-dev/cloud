@@ -129,7 +129,8 @@ Select `pwa` to measure the installable app at `/pwa/`:
 bun --no-env-file scripts/perf-baseline.ts --pages pwa --runs 3
 ```
 
-Local mode builds and starts Core, the Cloud app, Spaces, Chat, the Assistant, and the gateway.
+Local mode builds and starts Core, the Cloud app, Spaces, Chat, the Assistant, and the gateway; a remote
+installation measures the Assistant part only where it shows it.
 Through the public Spaces API it creates one Space with 12 open tasks assigned
 to the administrator, titled `Perf task 01` through `Perf task 12`. It verifies
 that all 12 appear in `GET /api/spaces/overview/work?view=mine` before measuring.

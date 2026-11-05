@@ -21,8 +21,10 @@ export const pageApps: Record<PageId, string[]> = {
   files: ["filesv2"],
   accounts: ["accounts"],
   spaces: ["spaces"],
-  pwa: ["pwa", "spaces", "chat", "assistant"],
+  pwa: ["pwa", "spaces", "chat"],
 };
+/** Started only in local mode for `pwa`: a remote installation measures the Assistant part only where it shows it. */
+export const localPwaApps = ["assistant"];
 
 export function parseArgs(args: string[]) {
   const options: {

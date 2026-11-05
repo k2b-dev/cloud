@@ -14,6 +14,7 @@ import {
   failedRequestError,
   inspectHtml,
   interactive,
+  localPwaApps,
   longTaskMetrics,
   metricNames,
   metricsSchema,
@@ -437,7 +438,8 @@ const asset = (input: Partial<PwaAsset> = {}): PwaAsset => ({
 test("pwa is opt-in; existing origins are HTTPS and restricted to the mobile flows", () => {
   expect(parseArgs([]).pages).toEqual([...defaultPageIds]);
   expect(parseArgs(["--pages", "pwa,faq"]).pages).toEqual(["pwa", "faq"]);
-  expect(pageApps.pwa).toEqual(["pwa", "spaces", "chat", "assistant"]);
+  expect(pageApps.pwa).toEqual(["pwa", "spaces", "chat"]);
+  expect(localPwaApps).toEqual(["assistant"]);
   expect(parseArgs(["--pages", "pwa", "--origin", "https://example.test:443/"])).toMatchObject({ origin: "https://example.test" });
   for (const origin of [
     "http://example.test",
