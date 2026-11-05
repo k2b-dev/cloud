@@ -27,7 +27,22 @@ test("Core publishes one read-only query with typed probabilities and DE/EN pres
   const entry = manifest.queries.find((q) => q.localId === "ai.decide")!;
   expect(entry).toBeDefined();
   expect(entry.inputSchema.required).toEqual(expect.arrayContaining(["task", "state", "questions"]));
-  expectTypeOf<ai.RunAiDecisionResult<ai.DecisionQuestions>>().toEqualTypeOf<z.output<typeof aiDecisionData>>();
+  type PublicResult = ai.RunAiDecisionResult<ai.DecisionQuestions>;
+  type WireResult = z.output<typeof aiDecisionData>;
+  expectTypeOf<PublicResult>().toMatchTypeOf<WireResult>();
+  expectTypeOf<WireResult>().toMatchTypeOf<PublicResult>();
+  expectTypeOf<keyof PublicResult>().toEqualTypeOf<keyof WireResult>();
+  expectTypeOf<keyof PublicResult["usage"]>().toEqualTypeOf<keyof WireResult["usage"]>();
+  expectTypeOf<keyof PublicResult["model"]>().toEqualTypeOf<keyof WireResult["model"]>();
+  expectTypeOf<Extract<PublicResult["answers"][string], { type: "noul" }>>().toEqualTypeOf<
+    Extract<WireResult["answers"][string], { type: "noul" }>
+  >();
+  expectTypeOf<Extract<PublicResult["answers"][string], { type: "choice" }>>().toEqualTypeOf<
+    Extract<WireResult["answers"][string], { type: "choice" }>
+  >();
+  expectTypeOf<Extract<PublicResult["answers"][string], { type: "score" }>>().toEqualTypeOf<
+    Extract<WireResult["answers"][string], { type: "score" }>
+  >();
   expect(manifest.actions.some((a) => a.localId === "ai.decide")).toBe(false);
   expect(entry.target).toBeUndefined();
   expect(entry.title).toBe("Ask a decision model");
