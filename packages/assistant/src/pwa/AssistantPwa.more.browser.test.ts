@@ -110,6 +110,44 @@ describe("Every chat in the Cloud app", () => {
     }
   }, 30_000);
 
+  test("Back from a search result returns to the same search", async () => {
+    const page = await open("screen=start");
+    try {
+      await page.click("a[href='/pwa/assistant/chats']");
+      await page.fill("input[type=search]", "samt");
+      await page.waitForURL(/\/pwa\/assistant\/chats\?q=samt$/);
+      await page.locator(".assistant-pwa-all-chats h2", { hasText: "Treffer" }).waitFor();
+      await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").first().click();
+      await page.waitForURL(/\/pwa\/assistant\/c\//);
+      await page.goBack();
+      await page.waitForURL(/\/pwa\/assistant\/chats\?q=samt$/);
+      await page.waitForFunction(() => document.querySelector<HTMLInputElement>("input[type=search]")?.value === "samt");
+      await page.locator(".assistant-pwa-all-chats h2", { hasText: "Treffer" }).waitFor();
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("opened in place, the list loads its next page when its end comes into view", async () => {
+    const page = await open("screen=start");
+    try {
+      await page.click("a[href='/pwa/assistant/chats']");
+      const end = page.locator(".assistant-pwa-more");
+      await end.waitFor();
+      const reads = async () => (await requests(page)).filter((request) => request === "GET /api/ai/conversations/page").length;
+      const before = await reads();
+      await end.scrollIntoViewIfNeeded();
+      await page.waitForFunction(
+        (count) =>
+          (window as unknown as { harness: Harness }).harness.requests.filter((request) => request === "GET /api/ai/conversations/page")
+            .length > count,
+        before,
+      );
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("offline the list stays readable and the reserved line says why searching waits, without moving the list", async () => {
     const online = await open("screen=all");
     const offline = await open("screen=all-offline");
@@ -134,7 +172,7 @@ describe("The … of a chat in the Cloud app", () => {
       expect(await page.getByRole("menuitem").allTextContents()).toEqual(["Umbenennen", "Anheften", "Archivieren"]);
       await page.getByRole("menuitem", { name: "Archivieren" }).click();
       await page.waitForURL(/\/pwa\/assistant$/);
-      await page.getByText("„Messe Köln: Standplan“ archiviert.").waitFor();
+      await page.getByText("„Messe Köln: Standplan“ archiviert.").first().waitFor();
       await page.getByRole("button", { name: "Rückgängig" }).click();
       await page.waitForURL(/\/pwa\/assistant\/c\/messe$/);
       expect((await requests(page)).filter((request) => /\/(archive|restore)$/.test(request))).toEqual([

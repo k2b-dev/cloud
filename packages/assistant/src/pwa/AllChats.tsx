@@ -42,21 +42,35 @@ export function AllChats(props: {
 }) {
   const locale = useLocale();
   const t = () => pwaMessages.resolve([locale()]).t;
-  const [query, setQuery] = createSignal(props.initial.query);
-  const [searched, setSearched] = createSignal(props.initial.query);
-  const [chats, setChats] = createSignal<AiConversation[]>(props.initial.page?.items ?? []);
-  const [hasNext, setHasNext] = createSignal(props.initial.page?.hasNext ?? false);
-  const [total, setTotal] = createSignal(props.initial.page?.total ?? 0);
+  // Read once: the list starts from it and then reads for itself.
+  const initial = props.initial;
+  const [query, setQuery] = createSignal(initial.query);
+  const [searched, setSearched] = createSignal(initial.query);
+  const [chats, setChats] = createSignal<AiConversation[]>(initial.page?.items ?? []);
+  const [hasNext, setHasNext] = createSignal(initial.page?.hasNext ?? false);
+  const [total, setTotal] = createSignal(initial.page?.total ?? 0);
   const [state, setState] = createSignal<"ready" | "loading" | "failed">(
-    props.initial.page ? "ready" : props.initial.page === undefined ? "loading" : "failed",
+    initial.page ? "ready" : initial.page === undefined ? "loading" : "failed",
   );
-  const [archivedCount, setArchivedCount] = createSignal(props.initial.archived ?? null);
+  const [archivedCount, setArchivedCount] = createSignal(initial.archived ?? null);
   const [loadingMore, setLoadingMore] = createSignal(false);
   let pageNumber = 1;
   let request: AbortController | undefined;
+  // A new search starts a new generation: a page of the one before that arrives late is dropped.
+  let generation = 0;
+  let more: AbortController | undefined;
+  const refreshArchived = () => {
+    if (props.archived) return;
+    void assistantApi
+      .listConversationsPage({ page: 1, perPage: 1, archived: true })
+      .then((page) => setArchivedCount(page.total))
+      .catch(() => undefined);
+  };
 
   const load = async (search: string, quiet = false) => {
     request?.abort();
+    more?.abort();
+    generation += 1;
     const current = new AbortController();
     request = current;
     if (!quiet) setState("loading");
@@ -81,6 +95,9 @@ export function AllChats(props: {
   };
   const loadMore = async () => {
     if (!hasNext() || loadingMore() || state() !== "ready" || !navigator.onLine) return;
+    const current = generation;
+    const request = new AbortController();
+    more = request;
     setLoadingMore(true);
     try {
       const page = await assistantApi.listConversationsPage({
@@ -88,7 +105,9 @@ export function AllChats(props: {
         page: pageNumber + 1,
         perPage: ALL_CHATS_PAGE,
         archived: props.archived,
+        signal: request.signal,
       });
+      if (current !== generation) return;
       pageNumber += 1;
       const known = new Set(chats().map((chat) => chat.id));
       setChats((current) => [...current, ...page.items.filter((chat) => !known.has(chat.id))]);
@@ -112,32 +131,33 @@ export function AllChats(props: {
   onCleanup(() => {
     clearTimeout(timer);
     request?.abort();
+    more?.abort();
   });
   createEffect(
     on(
       () => props.revision,
-      () => void load(searched(), true),
+      () => {
+        void load(searched(), true);
+        refreshArchived();
+      },
       { defer: true },
     ),
   );
   onMount(() => {
-    if (props.initial.page !== undefined) return;
+    if (initial.page !== undefined) return;
     void load(searched());
-    if (!props.archived)
-      void assistantApi
-        .listConversationsPage({ page: 1, perPage: 1, archived: true })
-        .then((page) => setArchivedCount(page.total))
-        .catch(() => undefined);
+    refreshArchived();
   });
 
-  // The end of the list loads the next page when it comes into view.
-  let end: HTMLParagraphElement | undefined;
+  // The end of the list loads the next page when it comes into view; it appears once the first page is there.
+  const [end, setEnd] = createSignal<HTMLElement>();
   createEffect(() => {
-    if (!end || !hasNext() || typeof IntersectionObserver === "undefined") return;
+    const element = end();
+    if (!element || !hasNext() || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(([entry]) => {
       if (entry?.isIntersecting) void loadMore();
     });
-    observer.observe(end);
+    observer.observe(element);
     onCleanup(() => observer.disconnect());
   });
 
@@ -241,7 +261,7 @@ export function AllChats(props: {
             )}
           </For>
           <Show when={hasNext()}>
-            <p ref={end} class="assistant-pwa-more">
+            <p ref={setEnd} class="assistant-pwa-more">
               {props.online ? t().loadingOlder : t().olderOffline}
             </p>
           </Show>

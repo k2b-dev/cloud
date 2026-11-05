@@ -192,9 +192,10 @@ export default function AssistantPwa(props: AssistantPwaProps) {
   createEffect(on(level, (current) => root && MobileShell.setScreen(root, current === "chat"), { defer: true }));
 
   const show = (next: PwaAddress) => {
+    // The address first: a list that opens reads its search from it.
+    setAddress(next);
     if (next.level === "start") setListView(null);
     if (next.level === "all") setListView({ archived: next.archived });
-    setAddress(next);
     setOpenFailed(false);
     setMissing(false);
     if (next.level === "chat") void openChat(next.id);
@@ -228,6 +229,27 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     }
     show(target);
     event.replaceWith(addressHref(target), { scroll: "manual", state: null });
+  };
+  /**
+   * What every chat starts from: the server's read on the first visit to the address it rendered, otherwise the
+   * current address's search, which the list then reads itself, also after Back.
+   */
+  let snapshotUsed = false;
+  const allChatsSnapshot = (archived: boolean): AllChatsSnapshot => {
+    const current = address();
+    const query = current.level === "all" ? current.query : "";
+    const initial = props.initialAll;
+    if (
+      !snapshotUsed &&
+      initial &&
+      props.initialAddress.level === "all" &&
+      props.initialAddress.archived === archived &&
+      initial.query === query
+    ) {
+      snapshotUsed = true;
+      return initial;
+    }
+    return { query };
   };
   /** A search keeps its query in the address, without a step of its own in history. */
   const changeQuery = (query: string) => {
@@ -990,11 +1012,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                 {(view) => (
                   <AllChats
                     archived={view.archived}
-                    initial={
-                      props.initialAll && props.initialAddress.level === "all" && props.initialAddress.archived === view.archived
-                        ? props.initialAll
-                        : { query: "" }
-                    }
+                    initial={allChatsSnapshot(view.archived)}
                     questions={questions().items}
                     selected={address().level === "chat" ? (address() as { id: string }).id : null}
                     now={props.renderedAt}
