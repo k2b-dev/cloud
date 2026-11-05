@@ -4474,6 +4474,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Who works at a row, such as an outline heading: a slot of one width
    whether it holds nobody, one, or several. */
 .k2b-ui .k2b-detail-presence-slot {
+  --k2b-faces-size: 1.125rem;
+  --k2b-faces-overlap: 0.3125rem;
   display: inline-flex;
   width: 2.5rem;
   flex: 0 0 2.5rem;
@@ -4482,14 +4484,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-detail-presence-slot > .k2b-avatar[data-size] {
-  width: 1.125rem;
-  height: 1.125rem;
-  box-shadow: 0 0 0 2px var(--k2b-surface);
   font-size: 0.4375rem;
-}
-
-.k2b-ui .k2b-detail-presence-slot > .k2b-avatar + .k2b-avatar {
-  margin-inline-start: -0.3125rem;
 }
 
 .k2b-ui .k2b-detail-presence-slot__more {
@@ -13126,16 +13121,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-chat-preview__faces {
+  --k2b-faces-size: 1.5rem;
+  --k2b-faces-overlap: 0.1875rem;
   display: inline-flex;
   flex: none;
-}
-
-.k2b-ui .k2b-chat-preview__faces > .k2b-avatar {
-  box-shadow: 0 0 0 2px var(--k2b-surface);
-}
-
-.k2b-ui .k2b-chat-preview__faces > .k2b-avatar + .k2b-avatar {
-  margin-inline-start: -0.1875rem;
 }
 
 /* New and removed words. The fill follows the host's `--k2b-mark-accent`. */
