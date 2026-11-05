@@ -356,13 +356,34 @@ own gesture, such as a drag handle, sets its own `touch-action`.
 
 ## Offline and updates
 
-The Cloud app's service worker handles only navigations below `/pwa/` and
-caches nothing. Every page and every API response comes from the network.
+The Cloud app keeps public, versioned JavaScript and stylesheets on the device,
+so revisiting a part can reuse them even after the browser clears its HTTP cache.
+Content-hashed fonts can also be kept; fonts with stable filenames still use the
+network. Files enter this separate cache when used, up to 16 MiB across the app.
+The oldest files leave first when space is needed, and a worker update removes
+files outside the currently registered builds. The browser may evict this cache.
+
+Each file is checked against the final build's SHA-256 digest before reuse.
+The worker obtains those digests through its own network-served source;
+application pages cannot supply them. Application authors get this behavior
+through `defineApp()` without an application-owned worker. Applications built
+before this contract continue to use the network until rebuilt.
+
+Every page and every API response still comes from the network. HTML, private
+responses, account data, and unversioned scripts never enter the worker cache.
+Public static files need no cleanup on sign-out or unpairing; account drafts
+still follow [Keep drafts](#keep-drafts).
 When the installation cannot be reached or the gateway cannot reach the
 application, the app shows its offline page with **Try again**. While a part's
 application is not registered, its pages show the app's not-found page. An
 open page shows a "You're offline" notice above the tab bar until the
 connection returns.
+
+A cached part does not become an offline application: starting or reloading it
+without the network shows the offline page, because its document and data are
+never stored. An already open part retains its current display and can load a
+previously cached static chunk, but fetching new data or saving still needs a
+connection.
 
 Parts have no offline mode of their own. Write actions need the network: keep
 the action available, report a failure in a toast with **Retry**, and never
@@ -447,9 +468,10 @@ result at once and saves in the background, as described in
 ### Judge loading speed
 
 Judge loading speed on a production build. In production, the device's
-browser keeps stylesheets, scripts, and fonts in its cache, so a tab switch
-usually loads only its page. After an application restarts or updates, its
-first page loads its stylesheets again. A development stack serves the same
+browser keeps stylesheets, scripts, and fonts in its HTTP cache. The Cloud app
+also keeps verified versioned files in its worker cache, so a tab switch
+usually loads only its page and current data. After an application updates, its
+first page loads files for the new build. A development stack serves the same
 files uncompressed and asks the server again for each of them on every
 page. Over a slow or remote connection, such as a VPN, a tab switch then takes
 a second or more, while the same switch in production takes a few hundred
