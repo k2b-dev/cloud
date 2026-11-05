@@ -3,6 +3,14 @@ import type { AiProject } from "@k2b/cloud/ai";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
+/** Opens a row's level menu and picks a level, as a person would. */
+const chooseLevel = (row: Element, level: string) => {
+  row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+  Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]'))
+    .find((option) => option.textContent?.includes(level))!
+    .click();
+};
+
 const tick = () => new Promise((resolve) => setTimeout(resolve, 25));
 
 test("Project settings count unsaved changes in the page's language and discard them in place", async () => {
@@ -132,9 +140,7 @@ test("Project access is edited in the access dialog: changes save on Save and th
     button("Edit access")!.click();
     await until(() => accessPanel()?.textContent?.includes("Lea Schmitt") === true);
     const row = Array.from(accessPanel()!.querySelectorAll("li")).find((item) => item.textContent?.includes("Lea Schmitt"))!;
-    Array.from(row.querySelectorAll<HTMLElement>('[role="option"]'))
-      .find((option) => option.textContent?.includes("Edit"))!
-      .click();
+    chooseLevel(row, "Edit");
     await until(() => accessPanel()?.textContent?.includes("1 change") === true);
     expect(writes).toEqual([]);
     const readsBefore = reads;
@@ -163,7 +169,7 @@ test("Project access is edited in the access dialog: changes save on Save and th
     held.resolve();
     await until(() => accessPanel()?.textContent?.includes("Lea Schmitt") === true);
     const reopened = Array.from(accessPanel()!.querySelectorAll("li")).find((item) => item.textContent?.includes("Lea Schmitt"))!;
-    expect(reopened.querySelector('[aria-selected="true"]')?.textContent).toContain("Edit");
+    expect(reopened.querySelector('button[aria-haspopup="dialog"]')?.textContent).toContain("Edit");
     Array.from(accessPanel()!.querySelectorAll<HTMLButtonElement>("button"))
       .find((element) => element.textContent?.trim() === "Cancel")!
       .click();

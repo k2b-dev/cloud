@@ -11,6 +11,14 @@ import {
   settingsInteractionBlocked,
 } from "../src/frontend/settings-contract";
 
+/** Opens a row's level menu and picks a level, as a person would. */
+const chooseLevel = (row: Element, level: string) => {
+  row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+  Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]'))
+    .find((option) => option.textContent?.includes(level))!
+    .click();
+};
+
 const flush = async () => {
   for (let index = 0; index < 10; index += 1) await Promise.resolve();
 };
@@ -254,9 +262,7 @@ describe("Venue settings lifecycle behavior", () => {
       dom.root.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click();
       expect(closed).toBeUndefined();
       const row = Array.from(accessDialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes("Ada Lovelace"))!;
-      Array.from(row.querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes("Staff"))!
-        .click();
+      chooseLevel(row, "Staff");
       await waitFor(() => accessDialog()?.textContent?.includes("1 change") === true, "one change");
       expect(writes).toEqual([]);
       button("Save")!.click();
@@ -341,9 +347,7 @@ describe("Venue settings lifecycle behavior", () => {
       await flush();
       button("Edit access")!.click();
       await waitFor(() => accessDialog()?.textContent?.includes("Bob Marley") === true, "the access dialog");
-      Array.from(row("Ada Lovelace").querySelectorAll<HTMLElement>('[role="option"]'))
-        .find((option) => option.textContent?.includes("Staff"))!
-        .click();
+      chooseLevel(row("Ada Lovelace"), "Staff");
       row("Bob Marley").querySelector<HTMLButtonElement>('button[aria-label="Remove Bob Marley"]')!.click();
       await waitFor(() => accessDialog()?.textContent?.includes("2 changes") === true, "two changes");
       button("Save")!.click();
