@@ -141,12 +141,15 @@ suiteFor(
     let invoked = 0;
     const compiled = compileCapabilities("reader-provider", {
       protocolVersion: 2,
+      // A type with access names its reader query.
+      queries: { "item.read": reader, "folder.read": reader },
       types: Object.fromEntries(
         ["item", "folder"].map((type) => [
           type,
           {
             title: type,
             description: "Reader fixture.",
+            reader: `${type}.read`,
             access: {
               readable: async (input, context) => {
                 expect(context).toMatchObject({ actor: { kind: "app", appId }, accessSubject: { type: "none" }, user: null });
