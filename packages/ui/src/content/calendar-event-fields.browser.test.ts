@@ -156,12 +156,24 @@ describe(`calendar event fields in ${browserName}`, () => {
     const page = await open({ view: "week" });
     try {
       const round = entryOf(page, "Team round");
-      // A link with a modifier still opens where the reader asked.
-      expect(
-        await round.evaluate(
-          (element) => !element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true })),
-        ),
-      ).toBe(false);
+      // A link with a modifier still opens where the reader asked: the calendar leaves that click alone. The page stops
+      // the navigation itself, after the calendar's own handler, so the test stays on its page.
+      const leftAlone = await round.evaluate(
+        (element) =>
+          new Promise<boolean>((done) => {
+            window.addEventListener(
+              "click",
+              (click) => {
+                done(!click.defaultPrevented);
+                click.preventDefault();
+              },
+              { once: true },
+            );
+            element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+          }),
+      );
+      expect(leftAlone).toBe(true);
+      expect(await page.locator('.k2b-calendar-popover[data-kind="event"]:popover-open').count()).toBe(0);
       await round.click();
       const detail = page.locator('.k2b-calendar-popover[data-kind="event"]');
       await detail.waitFor();

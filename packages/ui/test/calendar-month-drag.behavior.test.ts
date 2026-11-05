@@ -1155,7 +1155,7 @@ describe("@k2b/ui Calendar month selection and bars", () => {
     dom.cleanup();
   });
 
-  test("without application entries the day menu still opens the day; a press on a long bar acts on the day under it, and Escape returns there", async () => {
+  test("without application entries the day menu opens the day under the pointer beside a long bar, and Escape returns there", async () => {
     const dom = createDomTestHarness();
     const { default: Calendar } = await import("../src/content/Calendar");
     delegateEvents(["click", "keydown", "pointerdown", "contextmenu"], dom.document);
@@ -1184,10 +1184,12 @@ describe("@k2b/ui Calendar month selection and bars", () => {
     const selected = () =>
       Array.from(dom.root.querySelectorAll<HTMLElement>("[aria-selected='true']"), (element) => element.dataset.calendarDayKey);
 
-    // The bar of August 3 to 7 sits in Monday's cell; the right-click lands on Thursday, August 6.
+    // The bar of August 3 to 7 sits in Monday's cell. It opens the calendar's own detail, so it is an entry like an
+    // application's and keeps its own press; the right-click lands beside it, on Thursday, August 6.
     const bar = dom.root.querySelector<HTMLElement>("[data-calendar-event]")!;
     expect(bar.closest<HTMLElement>("[data-calendar-day-key]")?.dataset.calendarDayKey).toBe("2026-08-03");
-    bar.dispatchEvent(
+    expect(bar.tagName).toBe("BUTTON");
+    cell("2026-08-06").dispatchEvent(
       new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 350, clientY: 120 }) as unknown as Event,
     );
     await new Promise((done) => setTimeout(done, 0));
