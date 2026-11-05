@@ -69,13 +69,13 @@ const shot = async (page: Page, name: string) => {
   await page.screenshot({ path: resolve(shots, `${name}.png`) });
 };
 
-const open = async (width: number, locale: string) => {
+const open = async (width: number, locale: string, state?: "loading" | "saving") => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   // The icon font URL carries a version query (`?v…`); the glob keeps it routed.
   await page.route("https://harness.test/tabler.woff2*", (route) => route.fulfill({ path: icons.font, contentType: "font/woff2" }));
   await page.setContent(
     `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${icons.css}</style><style>${css}</style><style>${appSheet}</style></head>` +
-      `<body class="k2b-ui"><script>${harness}</script></body></html>`,
+      `<body class="k2b-ui"><script>window.accessDialogState = ${JSON.stringify(state ?? "")}</script><script>${harness}</script></body></html>`,
   );
   await page.waitForSelector("dialog[open]");
   await settled(page);
@@ -198,4 +198,90 @@ describe("AccessDialog in a browser", () => {
         await page.close();
       }
     });
+  // Mockup v31 `editor · A · laedt`, `speichert`, `oeffentlich` and `stufe`: every state of the approved dialog.
+  for (const width of [1440, 390] as const) {
+    test(`de ${width}px: loading keeps General in place, and the list shows e-mails and the number of people`, async () => {
+      const page = await open(width, "de", "loading");
+      try {
+        const dialog = page.locator("dialog");
+        const before = await dialog.boundingBox();
+        await shot(page, `de-${width}-laedt`);
+        expect(await dialog.locator("h3", { hasText: "Allgemein" }).count()).toBe(1);
+        expect(await dialog.locator("input[type=checkbox]:disabled").count()).toBe(2);
+        await page.evaluate(() => (window as unknown as { finishLoading: () => void }).finishLoading());
+        await page.waitForSelector("dialog li:has-text('mia.hoffmann@beispiel.de')");
+        await settled(page);
+        expect((await dialog.boundingBox())?.width).toBe(before?.width);
+        const mia = dialog.locator("li", { hasText: "Mia Hoffmann" });
+        // "Du" stands once: beside the name on a wide screen, before the e-mail on a phone.
+        expect(
+          await mia.evaluate(
+            (row) =>
+              Array.from(row.querySelectorAll("span")).filter(
+                (span) => /^Du( · )?$/.test(span.textContent ?? "") && span.getClientRects().length > 0,
+              ).length,
+          ),
+        ).toBe(1);
+        expect(await dialog.locator("li", { hasText: "Jonas Weber" }).textContent()).toContain("jonas.weber@beispiel.de");
+        // An agent keeps its kind; the directory knows e-mail addresses only for people.
+        expect(await dialog.locator("li", { hasText: "Lagerbot" }).textContent()).toContain("Agent");
+        const checkboxes = dialog.locator("input[type=checkbox]");
+        await checkboxes.nth(0).check();
+        await checkboxes.nth(1).check();
+        await settled(page);
+        expect(await dialog.textContent()).toContain("214 Personen dürfen ansehen, auch Gäste.");
+        await shot(page, `de-${width}-oeffentlich`);
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`de ${width}px: saving says so in the button, which keeps its size`, async () => {
+      const page = await open(width, "de", "saving");
+      try {
+        const lea = page.locator("dialog li", { hasText: "Lea Schmitt" });
+        await lea.locator("button[aria-haspopup]").first().click();
+        await page.locator('[role="dialog"] [role="radio"]', { hasText: "Bearbeiten" }).last().click();
+        await settled(page);
+        // At rest the button is named only by its label; the reserved width adds nothing to the name.
+        const save = page.getByRole("button", { name: "Speichern", exact: true });
+        const before = await save.boundingBox();
+        await save.click();
+        await page.waitForSelector("dialog button[aria-busy=true]");
+        await settled(page);
+        const busy = page.locator("dialog button[aria-busy=true]");
+        expect(await busy.evaluate((button) => (button as HTMLButtonElement).innerText.trim())).toBe("Speichert …");
+        expect(await busy.isDisabled()).toBe(true);
+        expect(await busy.boundingBox()).toEqual(before);
+        await shot(page, `de-${width}-speichert`);
+        await page.evaluate(() => (window as unknown as { finishSaving: () => void }).finishSaving());
+        await page.waitForSelector("dialog[open]", { state: "detached" });
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`de ${width}px: Remove in the level menu is red`, async () => {
+      const page = await open(width, "de");
+      try {
+        await page.locator("dialog li", { hasText: "Lea Schmitt" }).locator("button[aria-haspopup]").first().click();
+        const remove = page.locator('[role="dialog"] button', { hasText: "Entfernen" });
+        await remove.waitFor();
+        await settled(page);
+        await shot(page, `de-${width}-stufe`);
+        const [color, danger] = await remove.evaluate((button) => {
+          const probe = document.createElement("span");
+          probe.style.color = "var(--k2b-danger-text)";
+          button.parentElement!.append(probe);
+          const expected = getComputedStyle(probe).color;
+          probe.remove();
+          return [getComputedStyle(button).color, expected];
+        });
+        expect(danger).toBe("rgb(185, 28, 28)");
+        expect(color).toBe(danger);
+      } finally {
+        await page.close();
+      }
+    });
+  }
 });

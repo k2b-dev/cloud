@@ -217,6 +217,8 @@ describe("Venue settings lifecycle behavior", () => {
     const payload = () => ({ venue, openingRules: [], overrides: [], templates: [], accessEntries: [owner, saved], apiKeys: [] });
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
+        // The dialog reads e-mail addresses and the number of people from the directory; this test is not about them.
+        if (String(input).includes("/api/accounts/entities")) return Response.json({ items: [] });
         if (init?.method === "PATCH") {
           writes.push(String(input));
           saved = { ...saved, permission: "write" };
@@ -303,6 +305,8 @@ describe("Venue settings lifecycle behavior", () => {
     const payload = () => ({ venue, openingRules: [], overrides: [], templates: [], accessEntries: entries, apiKeys: [] });
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
+        // The dialog reads e-mail addresses and the number of people from the directory; this test is not about them.
+        if (String(input).includes("/api/accounts/entities")) return Response.json({ items: [] });
         if (init?.method === "PATCH" || init?.method === "DELETE") {
           writes.push(`${init.method} ${String(input).split("/access/")[1]}`);
           return init.method === "PATCH" ? new Response(null, { status: 204 }) : Response.json({ message: "offline" }, { status: 503 });

@@ -348,7 +348,7 @@ export default function SpacesOverview(props: Props) {
             <a class="spaces-overview-work-row" href={`/app/spaces/${item.spaceShortId}?item=${item.shortId}`}>
               <span
                 class="spaces-overview-space-mark"
-                style={{ "background-color": item.spaceColor ?? "var(--ui-accent)" }}
+                style={{ "background-color": item.spaceColor ?? "var(--ui-app-accent-border)" }}
                 aria-hidden="true"
               />
               <span class="spaces-overview-work-copy">
