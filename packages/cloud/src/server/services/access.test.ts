@@ -455,7 +455,7 @@ test("Code titles are resolved in the existing batch only for a managed target",
       }));
       build.onLoad({ filter: /code-account-display[.]ts$/ }, async ({ path }) => ({
         contents: (await Bun.file(path).text())
-          .replace('import { getCapability } from "../../_internal/registry";', 'const getCapability = globalThis.codeDisplayCatalog;')
+          .replace('import { getApp, getCapability } from "../../_internal/registry";', 'const getCapability = globalThis.codeDisplayCatalog, getApp = async () => null;')
           .replace('import { resolveCapabilityManifestPresentation } from "../../_internal/capabilities";', 'const resolveCapabilityManifestPresentation = (manifest) => manifest;'), loader: "ts",
       }));
     } });
@@ -509,11 +509,12 @@ test("Code display degrades to type-only after a rejected or stalled registry re
   const script = `
     import { strict as assert } from "node:assert";
     const id = "11111111-1111-4111-8111-111111111111";
-    let mode = "reject", appOwned = false, started;
+    let mode = "reject", appOwned = false, fallback = false, started;
     globalThis.degradedDisplaySql = async () => [{
       id, name: appOwned ? "code:app:secret-app" : "code:demo.item:private-owner-id", kind: "code", title: "Private title", handle: "code-7k2q9m4xwt", status: "disabled",
     }];
-    globalThis.degradedDisplayCatalog = async () => {
+    globalThis.degradedDisplayCatalog = async (catalog = false) => {
+      if (fallback && catalog) return null;
       started.resolve();
       if (mode === "reject") throw new Error("Registry unavailable");
       return new Promise(() => {});
@@ -523,14 +524,14 @@ test("Code display degrades to type-only after a rejected or stalled registry re
         contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.degradedDisplaySql;'), loader: "ts",
       }));
       build.onLoad({ filter: /code-account-display[.]ts$/ }, async ({ path }) => ({
-        contents: (await Bun.file(path).text()).replace('import { getCapability } from "../../_internal/registry";', 'const getCapability = globalThis.degradedDisplayCatalog;'), loader: "ts",
+        contents: (await Bun.file(path).text()).replace('import { getApp, getCapability } from "../../_internal/registry";', 'const getCapability = () => globalThis.degradedDisplayCatalog(true), getApp = () => globalThis.degradedDisplayCatalog(false);'), loader: "ts",
       }));
     } });
     const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
     const { REQUEST_IDLE_TIMEOUT_SECONDS } = await import(${JSON.stringify(new URL("../request-timeout.ts", import.meta.url).pathname)});
     const originalSet = globalThis.setTimeout, originalClear = globalThis.clearTimeout;
-    for (const variant of [["reject", false], ["stall", false], ["reject", true], ["stall", true]]) {
-      [mode, appOwned] = variant;
+    for (const variant of [["reject", false, false], ["stall", false, false], ["reject", true, false], ["stall", true, false], ["reject", true, true], ["stall", true, true]]) {
+      [mode, appOwned, fallback] = variant;
       started = Promise.withResolvers();
       let expire, scheduled = 0, cleared = 0;
       globalThis.setTimeout = (callback, ms, ...args) => {
@@ -567,6 +568,47 @@ test("Code display degrades to type-only after a rejected or stalled registry re
         globalThis.clearTimeout = originalClear;
       }
     }
+  `;
+  const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  expect({ stdout, stderr, exit }).toEqual({ stdout: "", stderr: "", exit: 0 });
+});
+
+test("Code of an app without a capability catalog shows the app's name in the viewer's language", async () => {
+  // The account keeps the name stored when the Code was created; only an app that is gone shows it.
+  const script = `
+    import { strict as assert } from "node:assert";
+    const registered = "33333333-3333-4333-8333-333333333333", gone = "44444444-4444-4444-8444-444444444444";
+    const lookups = [];
+    globalThis.codeDisplaySql = async () => [
+      { id: registered, name: "code:app:workshop", kind: "code", title: "Workshop", handle: "code-0123456789", status: "active" },
+      { id: gone, name: "code:app:retired", kind: "code", title: "Retired tool", handle: "code-9876543210", status: "active" },
+    ];
+    globalThis.codeDisplayCatalog = async () => null;
+    globalThis.codeDisplayApp = async (id) => {
+      lookups.push(id);
+      return id === "workshop"
+        ? { id, name: "Workshop", description: "Repairs", presentation: { baseLocale: "en", translations: { de: { name: "Werkstatt" } } } }
+        : null;
+    };
+    Bun.plugin({ name: "code-display-fixture", setup(build) {
+      build.onLoad({ filter: /server\\/services\\/access-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.codeDisplaySql;'), loader: "ts",
+      }));
+      build.onLoad({ filter: /code-account-display[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text())
+          .replace('import { getApp, getCapability } from "../../_internal/registry";', 'const getCapability = globalThis.codeDisplayCatalog, getApp = globalThis.codeDisplayApp;')
+          .replace('import { resolveCapabilityManifestPresentation } from "../../_internal/capabilities";', 'const resolveCapabilityManifestPresentation = (manifest) => manifest;'), loader: "ts",
+      }));
+    } });
+    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
+    const entries = [registered, gone, registered].map((serviceAccountId) => ({ principal: { type: "service_account", serviceAccountId } }));
+    const de = await resolveDisplayNames(entries, { locale: "de" });
+    assert.deepEqual(de.map((entry) => entry.displayName), ["Code von Werkstatt", "Code von Retired tool", "Code von Werkstatt"]);
+    assert.equal(de[0].serviceAccountDescription, "Dienstkonto einer App");
+    // One registry read per app in a list.
+    assert.deepEqual(lookups.splice(0), ["workshop", "retired"]);
+    assert.equal((await resolveDisplayNames(entries, { locale: "en" }))[0].displayName, "Code of Workshop");
   `;
   const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);

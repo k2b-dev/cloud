@@ -1,4 +1,4 @@
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { AccessSummary, openAccessDialog } from "@k2b/cloud/access/ui";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -370,7 +370,61 @@ export default function MailboxSettings(props: {
     dismissed = true;
     if (deleted) props.onDeleted();
   };
+  // Mailbox sharing is the shared access dialog: changes are collected there and saved together.
+  const accessDialog = new AbortController();
+  let editingAccess = false;
+  // Every level a person can hold, scoped ones included, so the summary names each entry's level.
+  const summaryLevels = () => mailboxAccessLevels(locale())({ type: "user", userId: "" });
+  const editAccess = () => {
+    if (editingAccess) return;
+    editingAccess = true;
+    const mailboxId = props.context.mailbox.id;
+    // Set by every saved change, also when a later one fails and the person discards the rest.
+    let wrote = false;
+    openAccessDialog({
+      target: { type: "mail.mailbox", id: props.context.mailbox.id },
+      resourceName: props.context.mailbox.name,
+      subtitle: messages().accessDialogSubtitle,
+      initialEntries: admin().accessEntries,
+      allowAuthenticated: false,
+      allowedLevels: mailboxAccessLevels(locale()),
+      signal: accessDialog.signal,
+      grantAccess: async (principal, permission, _display, scope) => {
+        const response = await apiClient.mailboxes[":mailboxId"].access.$post({
+          param: { mailboxId },
+          json: { principal, permission, scope: mailboxAccessScope(scope) },
+        });
+        if (!response.ok) throw new Error(await readApiError(response, messages().failedGrantAccess));
+        wrote = true;
+        return response.json();
+      },
+      updateAccess: async (accessId, permission, scope) => {
+        const response = await apiClient.mailboxes[":mailboxId"].access[":accessId"].$patch({
+          param: { mailboxId, accessId },
+          json: { permission, scope: mailboxAccessScope(scope) },
+        });
+        if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateAccess));
+        wrote = true;
+      },
+      revokeAccess: async (accessId) => {
+        const response = await apiClient.mailboxes[":mailboxId"].access[":accessId"].$delete({ param: { mailboxId, accessId } });
+        if (!response.ok) throw new Error(await readApiError(response, messages().failedRevokeAccess));
+        wrote = true;
+      },
+    })
+      // The summary shows what is stored, so a saved change reads the list again.
+      .then(async () => {
+        if (wrote && !accessDialog.signal.aborted) await props.onReload();
+      })
+      .catch((error: Error) => {
+        if (!accessDialog.signal.aborted) void prompts.error(error.message);
+      })
+      .finally(() => {
+        editingAccess = false;
+      });
+  };
   onCleanup(() => {
+    accessDialog.abort();
     saveReadingPreferences.abort();
     saveWritingPreferences.abort();
     saveMailboxSettings.abort();
@@ -718,36 +772,14 @@ export default function MailboxSettings(props: {
                 )}
               </SettingsField>
             </SettingsGroup>
-            <SettingsGroup title={messages().peopleAndIntegrations} description={messages().permissionChangesImmediate}>
-              <PermissionEditor
-                target={{ type: "mail.mailbox", id: props.context.mailbox.id }}
-                initialEntries={admin().accessEntries}
-                allowAuthenticated={false}
-                allowServiceAccounts
-                allowedLevels={mailboxAccessLevels(locale())}
-                canEdit
-                grantAccess={async (principal, permission, _display, scope) => {
-                  const response = await apiClient.mailboxes[":mailboxId"].access.$post({
-                    param: { mailboxId: props.context.mailbox.id },
-                    json: { principal, permission, scope: mailboxAccessScope(scope) },
-                  });
-                  if (!response.ok) throw new Error(await readApiError(response, messages().failedGrantAccess));
-                  return response.json();
-                }}
-                updateAccess={async (accessId, permission, scope) => {
-                  const response = await apiClient.mailboxes[":mailboxId"].access[":accessId"].$patch({
-                    param: { mailboxId: props.context.mailbox.id, accessId },
-                    json: { permission, scope: mailboxAccessScope(scope) },
-                  });
-                  if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateAccess));
-                }}
-                revokeAccess={async (accessId) => {
-                  const response = await apiClient.mailboxes[":mailboxId"].access[":accessId"].$delete({
-                    param: { mailboxId: props.context.mailbox.id, accessId },
-                  });
-                  if (!response.ok) throw new Error(await readApiError(response, messages().failedRevokeAccess));
-                }}
-              />
+            <SettingsGroup title={messages().peopleAndIntegrations} description={messages().peopleAndIntegrationsDescription}>
+              <SettingsGroup.Action>
+                <Button size="sm" variant="secondary" type="button" onClick={editAccess}>
+                  <i class="ti ti-lock-access" aria-hidden="true" />
+                  {messages().editAccess}
+                </Button>
+              </SettingsGroup.Action>
+              <AccessSummary entries={admin().accessEntries} allowedLevels={summaryLevels()} />
             </SettingsGroup>
             <SettingsModal.Footer>
               <SettingsPanelFooter

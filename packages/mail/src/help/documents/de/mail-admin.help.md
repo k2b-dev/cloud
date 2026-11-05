@@ -177,7 +177,7 @@ Agenten ändern Abonnements beim Anbieter mit `cld mail folder subscribe` und `c
 
 ## Zugriff festlegen {icon="shield-lock"}
 
-**Zugriff** nutzt den normalen Zugriffseditor von Cloud. Gib den kleinsten Zugriff, den die Person für ihre Arbeit braucht:
+**Zugriff** zeigt, wer Zugriff auf das Postfach hat. Wähle **Zugriff bearbeiten**, um den normalen Zugriffsdialog von Cloud zu öffnen. Deine Änderungen gelten erst, wenn du **Speichern** wählst. Gib den kleinsten Zugriff, den die Person für ihre Arbeit braucht:
 
 - **Ansehen** zum Lesen, Suchen, Kommentieren und für persönliche Erinnerungen.
 - **Bearbeiten** für den Versand, Vorgänge an E-Mails beim Anbieter und Änderungen an der Zusammenarbeit.

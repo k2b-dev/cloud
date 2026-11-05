@@ -244,7 +244,7 @@ test("Studio machine rights recover from load/save failure inside the shared acc
     state.secretEntries.length = 0;
     loading.resolve();
     await page
-      .getByText("No agents or service accounts have access. Add one above and save, then choose its execution rights here.", {
+      .getByText("No agents or API keys have access. Add one above and save, then choose its execution rights here.", {
         exact: true,
       })
       .waitFor();

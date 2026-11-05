@@ -71,6 +71,29 @@ const entries = [
   ["Assistant skill", "assistant/src/frontend/AssistantSkillsSettings.tsx", "core.ai.skill", {}],
   ["Assistant project", "assistant/src/frontend/AssistantProjectSettingsDialog.tsx", "core.ai.project", { project: { id: "Targ01" } }],
 ] as const;
+/** How the real share entry edits access: the shared dialog, or an editable editor of its own inline. */
+const shareEntry = (file: string) => {
+  const source = readFileSync(resolve(import.meta.dir, "../../..", file), "utf8");
+  const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let sharedDialog = false;
+  let inlineEditor = false;
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && node.expression.getText(tree) === "openAccessDialog") sharedDialog = true;
+    const element = ts.isJsxElement(node) ? node.openingElement : ts.isJsxSelfClosingElement(node) ? node : undefined;
+    const tag = element?.tagName.getText(tree);
+    if (tag === "AccessDialog") sharedDialog = true;
+    if (element && tag === "PermissionEditor") {
+      // A read-only list (canEdit={false}) is no share path.
+      const canEdit = element.attributes.properties.find(
+        (attribute) => ts.isJsxAttribute(attribute) && attribute.name.getText(tree) === "canEdit",
+      ) as ts.JsxAttribute | undefined;
+      if (!canEdit || canEdit.initializer?.getText(tree) !== "{false}") inlineEditor = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(tree);
+  return { sharedDialog, inlineEditor };
+};
 const appTarget = (file: string, props: object): CloudResourceRef => {
   const source = readFileSync(resolve(import.meta.dir, "../../..", file), "utf8");
   const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -100,6 +123,8 @@ const appTarget = (file: string, props: object): CloudResourceRef => {
 if (!isServer)
   for (const [label, file, type, props] of entries) {
     test(`${label}: the share entry offers Dienstkonto hinzufügen and adds an exact Kennung through its target by default`, async () => {
+      // Every app shares through the shared dialog, so none keeps a parallel search, step or row layout (N1-mail-inline).
+      if (file) expect(shareEntry(file)).toEqual({ sharedDialog: true, inlineEditor: false });
       const target = file ? appTarget(file, props) : { type, id: "Targ01" };
       expect(target).toEqual({ type, id: type === "filesv2.template" ? "10000000-0000-4000-8000-000000000001" : "Targ01" });
       const dom = createDomTestHarness();
@@ -131,7 +156,6 @@ if (!isServer)
         ),
       );
       const { AccessDialog } = await import("./AccessDialog");
-      const { default: PermissionEditor } = await import("./PermissionEditor");
       const grantAccess = async (principal: AccessEntry["principal"], permission: "read" | "write" | "admin"): Promise<AccessEntry> => {
         expect(principal).toEqual({ type: "service_account", serviceAccountId: accountId });
         grants.push(permission);
@@ -145,53 +169,38 @@ if (!isServer)
         };
       };
       const dispose = render(
-        () =>
-          type === "mail.mailbox" ? (
-            <PermissionEditor
-              target={target}
-              initialEntries={[manager]}
-              canEdit
-              grantAccess={grantAccess}
-              updateAccess={async () => {}}
-              revokeAccess={async () => {}}
-            />
-          ) : (
-            <AccessDialog
-              target={target}
-              resourceName={label}
-              initialEntries={[manager]}
-              grantAccess={grantAccess}
-              updateAccess={async () => {}}
-              revokeAccess={async () => {}}
-              close={() => {}}
-            />
-          ),
+        () => (
+          <AccessDialog
+            target={target}
+            resourceName={label}
+            initialEntries={[manager]}
+            grantAccess={grantAccess}
+            updateAccess={async () => {}}
+            revokeAccess={async () => {}}
+            close={() => {}}
+          />
+        ),
         dom.root,
       );
       const button = (text: string) =>
         Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find(
           (node) => node.getAttribute("aria-label") === text || node.textContent?.trim() === text,
         );
-      const inline = type === "mail.mailbox";
       const hit = () =>
-        inline
-          ? button("Hinzufügen")
-          : Array.from(dom.root.querySelectorAll<HTMLButtonElement>("li button")).find((node) =>
-              node.textContent?.includes("Code von info@beispiel.de"),
-            );
+        Array.from(dom.root.querySelectorAll<HTMLButtonElement>("li button")).find((node) =>
+          node.textContent?.includes("Code von info@beispiel.de"),
+        );
       try {
         expect(dom.root.textContent).toContain("Dienstkonten");
         button("Dienstkonto hinzufügen")!.click();
         const field = dom.root.querySelector<HTMLInputElement>('input[aria-label="Kennung des Dienstkontos"]')!;
         field.value = "Code von info@beispiel.de";
         field.dispatchEvent(new Event("input", { bubbles: true }));
-        if (inline) button("Suchen")!.click();
-        else field.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        field.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
         await waitFor(() => dom.root.textContent?.includes("Kein Dienstkonto mit dieser Kennung") === true);
         expect(requests).toHaveLength(0);
         field.value = handle;
         field.dispatchEvent(new Event("input", { bubbles: true }));
-        if (inline) button("Suchen")!.click();
         await waitFor(() => Boolean(hit()));
         expect(requests).toHaveLength(1);
         expect(requests[0]!.pathname).toBe("/api/accounts/entities");
@@ -203,12 +212,10 @@ if (!isServer)
           service_account_kinds: "code",
         });
         hit()!.click();
-        if (!inline) {
-          expect(grants).toEqual([]);
-          button("Speichern")!.click();
-        }
+        expect(grants).toEqual([]);
+        button("Speichern")!.click();
         await waitFor(() => grants.length === 1);
-        expect(grants).toEqual([inline ? "read" : "write"]);
+        expect(grants).toEqual(["write"]);
       } finally {
         dispose();
         fetch.mockRestore();
