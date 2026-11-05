@@ -30,7 +30,9 @@ const load = async (
   address: { chat?: string; thread?: string; threadsPage?: boolean; panel?: string; embedded?: boolean } = {},
   setup?: (page: Page) => Promise<void>,
 ) => {
-  const context = await browser.newContext(options);
+  // These flows test behavior, not motion. On phones the back link's touch area covers the initial pointer;
+  // its first hover transition can start after settled() samples the running animations.
+  const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const page = await context.newPage();
   page.setDefaultTimeout(5_000);
   // Pin only Date: animation frames, input delays and read reporting keep their real timers.
