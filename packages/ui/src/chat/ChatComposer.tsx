@@ -47,6 +47,7 @@ import { SelectChip } from "../inputs/SelectChip";
 import { useSelectMessages } from "../inputs/select-messages";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { ProgressRing } from "../surfaces/ProgressRing";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
 import {
   chatCommandKey,
@@ -2647,7 +2648,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                 <div class="k2b-chat-composer__attachment" role="listitem">
                   <div
                     class="k2b-chat-composer__attachment-content"
-                    classList={{ "k2b-chat-composer__attachment-content--action": Boolean(attachment.action) }}
+                    classList={{
+                      "k2b-chat-composer__attachment-content--action": Boolean(attachment.action) || attachment.progress !== undefined,
+                    }}
                   >
                     <Show
                       when={attachment.href}
@@ -2681,11 +2684,19 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                         </a>
                       )}
                     </Show>
-                    <Show when={attachment.action}>
+                    <Show when={attachment.progress !== undefined}>
+                      <span class="k2b-chat-composer__attachment-action k2b-chat-composer__attachment-progress">
+                        <ProgressRing value={attachment.progress ?? 0} label={chatMessages().uploading({ name: attachment.name })} />
+                        {new Intl.NumberFormat(locale(), { style: "percent" }).format(Math.round(attachment.progress ?? 0) / 100)}
+                      </span>
+                    </Show>
+                    <Show when={attachment.progress === undefined && attachment.action}>
                       {(action) => (
                         <button
                           type="button"
                           class="k2b-chat-composer__attachment-action"
+                          data-tone={action().variant === "danger" ? "danger" : undefined}
+                          data-waiting={action().disabled ? "" : undefined}
                           disabled={blocked() || action().disabled}
                           onClick={() => reportChatFailure(() => executeChatAction(action()), props.onError)}
                         >

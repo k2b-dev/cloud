@@ -90,6 +90,11 @@ export type ChatAttachment = {
   data?: unknown;
   /** Optional application-owned action presented below the attachment label. */
   action?: ChatAction;
+  /**
+   * Upload progress in percent while the attachment uploads, such as a draft that saves its files before sending. The
+   * line below the label shows a ring and the percentage instead of `action`.
+   */
+  progress?: number;
 };
 
 export type ChatUsage = {
