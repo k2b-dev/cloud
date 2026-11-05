@@ -67,7 +67,9 @@ export default app;`,
 const creation = source(
   `await spaces.space("${spaceId}").task.create({ columnId: "${columnId}", title: "Rechnung 2026-025 prüfen", idempotencyKey: "invoice:2026-025" });`,
 );
-const update = source(`await spaces.space("${spaceId}").task.update({ itemId: "${itemId}", title: "Rechnung geprüft" });`);
+const update = source(
+  `await spaces.space("${spaceId}").task.update({ itemId: "${itemId}", title: "Rechnung geprüft", expectedTitle: "Vorhandene Rechnung" });`,
+);
 
 suiteFor(
   "database",
