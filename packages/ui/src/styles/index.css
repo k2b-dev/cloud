@@ -2152,6 +2152,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   pointer-events: none;
 }
 
+/* Copy and Copied share one cell, so the button keeps the wider word's width. */
+.k2b-ui .k2b-copy-button__label {
+  display: inline-grid;
+}
+
+.k2b-ui .k2b-copy-button__label > * {
+  grid-area: 1 / 1;
+}
+
+.k2b-ui .k2b-copy-button__label > [aria-hidden] {
+  visibility: hidden;
+}
+
 .k2b-ui .k2b-icon-button {
   width: 2rem;
   padding: 0;

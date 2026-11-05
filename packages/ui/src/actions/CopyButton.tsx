@@ -70,9 +70,18 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
     resetTimer = setTimeout(() => setCopied(false), local.resetAfter ?? 2000);
   };
 
-  const visibleLabel = () => (copied() ? (local.copiedLabel ?? messages().copied) : (local.label ?? messages().copy));
+  const copyLabel = () => local.label ?? messages().copy;
+  const copiedLabel = () => local.copiedLabel ?? messages().copied;
+  const visibleLabel = () => (copied() ? copiedLabel() : copyLabel());
   const icon = () => (copied() ? "ti ti-check" : "ti ti-copy");
   const iconOnly = () => local.iconOnly ?? local.label === undefined;
+  // Copied often flashes into a row next to a field; a hidden copy of the other label keeps the button's width.
+  const hiddenLabel = () => (copied() ? copyLabel() : copiedLabel());
+  const announcement = () => (
+    <span class="k2b-sr-only" aria-live="polite">
+      {copied() ? visibleLabel() : ""}
+    </span>
+  );
   const button = (tooltip?: string) => (
     <Button
       {...rest}
@@ -88,19 +97,20 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
       onClick={copy}
     >
       <i class={icon()} aria-hidden="true" />
-      {!iconOnly() && <span>{visibleLabel()}</span>}
+      {!iconOnly() && (
+        <span class="k2b-copy-button__label">
+          <span>{visibleLabel()}</span>
+          <span aria-hidden="true">{hiddenLabel()}</span>
+        </span>
+      )}
     </Button>
   );
 
-  return iconOnly() ? (
+  return (
     <>
-      {button(visibleLabel())}
-      <span class="k2b-sr-only" aria-live="polite">
-        {copied() ? visibleLabel() : ""}
-      </span>
+      {button(iconOnly() ? visibleLabel() : undefined)}
+      {announcement()}
     </>
-  ) : (
-    button(undefined)
   );
 }
 
