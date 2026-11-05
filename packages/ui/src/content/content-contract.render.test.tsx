@@ -174,7 +174,9 @@ describe("@k2b/ui Cloud content contract", () => {
       }),
     );
     // A deadline draws no dot: its dashed edge in its color sets it apart from the event beside it.
-    expect(markerHtml).toMatch(/data-display="marker"[^>]*>(?:<!--[^>]*-->)*<span class="k2b-calendar-event__title">(?:<!--[^>]*-->)*Submit report/);
+    expect(markerHtml).toMatch(
+      /data-display="marker"[^>]*>(?:<!--[^>]*-->)*<span class="k2b-calendar-event__title">(?:<!--[^>]*-->)*Submit report/,
+    );
     expect(markerHtml.match(/data-display="marker"/g)).toHaveLength(1);
     expect(markerHtml).not.toContain("k2b-calendar-event__marker");
     expect(contentCss).toMatch(/\.k2b-calendar-event\[data-display="marker"\] \{\s*border-style: dashed;\s*background: transparent;/);
@@ -220,7 +222,9 @@ describe("@k2b/ui Cloud content contract", () => {
     );
     expect(contentCss).toMatch(/\.k2b-calendar-event\[data-selected="true"\] \.k2b-calendar-event__title \{[^}]*font-weight: 600;/s);
     // Selection doubles the edge inside, so the entry keeps its size.
-    expect(contentCss).toMatch(/\.k2b-calendar-event\[data-selected="true"\] \{[^}]*box-shadow: inset 0 0 0 1px var\(--k2b-calendar-edge\);/s);
+    expect(contentCss).toMatch(
+      /\.k2b-calendar-event\[data-selected="true"\] \{[^}]*box-shadow: inset 0 0 0 1px var\(--k2b-calendar-edge\);/s,
+    );
     expect(contentCss).not.toContain("0 0 0 2px color-mix(in srgb, var(--k2b-calendar-accent");
     // Hover tints an event; it never lifts it with an outer shadow.
     const liftedOnHover = [...contentCss.matchAll(/([^{}]*\.k2b-calendar-event[^{}]*:hover[^{}]*)\{([^}]*)\}/g)]
