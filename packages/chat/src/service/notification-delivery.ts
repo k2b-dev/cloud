@@ -164,10 +164,13 @@ export const deliverMessage = async (messageId: string, signal?: AbortSignal): P
   const queued = await sql
     .begin(async (db) => {
       if (system) await db`SET LOCAL lock_timeout = '1s'`;
+      // Match chat writes: conversation before message. NO KEY UPDATE still permits recipient FK KEY SHARE checks.
+      const [conversation] = await db<
+        ConversationRow[]
+      >`SELECT * FROM chat.conversations WHERE id = ${preparedConversation.id}::uuid FOR NO KEY UPDATE`;
+      if (!conversation) return false;
       const [message] = await db<DeliveryMessage[]>`SELECT * FROM chat.messages WHERE id = ${messageId}::uuid FOR UPDATE`;
       if (!message || message.notification_done) return false;
-      const [conversation] = await db<ConversationRow[]>`SELECT * FROM chat.conversations WHERE id = ${message.conversation_id}::uuid`;
-      if (!conversation) return false;
       const candidates =
         message.kind === "text" ? await messageCandidates(db, message, conversation) : await addedCandidates(db, message, conversation);
       // A concurrent delivery or resource change invalidates preparation; retry from the durable cursor.

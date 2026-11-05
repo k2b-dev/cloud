@@ -1,9 +1,8 @@
 import { principalKey } from "@k2b/cloud/access/ui";
 import type { DateContext } from "@k2b/stdlib";
-import { Button, LocaleProvider, prompts, SegmentedControl, StatusBadge, TextInput, useLocale } from "@k2b/ui";
+import { Button, SegmentedControl, StatusBadge, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, type JSX, Show } from "solid-js";
 import type { z } from "zod";
-import { chatMessages } from "../messages";
 import type { ExistingMatchSchema } from "../service/contracts";
 import { ChannelDialog } from "./ChannelDialogs";
 import { type ChatDialogStore, DialogActions, DialogError, errorMessage, useChatMessages } from "./chat-dialog";
@@ -12,7 +11,7 @@ import { createIntent } from "./create-intent";
 import MemberPicker, { type ChosenMember } from "./MemberPicker";
 
 type Match = z.infer<typeof ExistingMatchSchema>;
-type NewChatProps = {
+export type NewChatProps = {
   store: ChatDialogStore;
   guest: boolean;
   viewerId: string;
@@ -23,22 +22,8 @@ type NewChatProps = {
 };
 
 /** Asks for the people and an optional name; resolves with the chat to open, a new one or one that already existed. */
-export const openNewChatDialog = (props: NewChatProps): Promise<string | undefined> =>
-  prompts.dialog<string>(
-    (close, context) => (
-      // A prompt renders outside the workspace, so its content gets the workspace's locale again.
-      <LocaleProvider locale={props.locale}>
-        <NewConversationDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
-      </LocaleProvider>
-    ),
-    {
-      title: chatMessages.resolve([props.locale]).t.newChat,
-      icon: "ti ti-message-plus",
-      size: "medium",
-    },
-  );
 
-function NewConversationDialog(
+export function NewConversationDialog(
   props: NewChatProps & { setDismissHandler: (handler: () => void) => void; close: (id?: string) => void },
 ): JSX.Element {
   const t = useChatMessages();

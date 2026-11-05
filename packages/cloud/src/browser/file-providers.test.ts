@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { z } from "zod";
+import { createDomTestHarness } from "../../../ui/test/dom";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import type { CapabilityCatalogApp } from "../capabilities/types";
 import {
@@ -17,6 +18,7 @@ import {
   FileProviderSaveDataSchema,
   FileProviderSaveInputSchema,
 } from "../contracts/file-provider";
+import { hasAppActions } from "./app-actions";
 import {
   eachLimited,
   entryProblem,
@@ -330,6 +332,35 @@ describe("saving into a provider", () => {
   };
   const done = (name: string, size: number) =>
     json({ data: { file: { id: `id:${name}`, name, size } }, links: [{ rel: "open", href: "/app/drive?path=Docs" }] });
+
+  test("a provider upload holds app updates through the byte transfer and releases on failure", async () => {
+    setSystemTime(new Date("2026-11-04T12:00:00.000Z"));
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", "/pwa/spaces");
+    const pending = Promise.withResolvers<Response>();
+    const started = Promise.withResolvers<void>();
+    const { fetch } = transport(() => {
+      started.resolve();
+      return pending.promise;
+    });
+    const saving = saveProviderFile(
+      drive,
+      { parent: "docs", name: "a.txt", body: new Blob(["hello"]), idempotencyKey: "upload-key" },
+      { locale: "en", fetch },
+    );
+    try {
+      await started.promise;
+      expect(hasAppActions()).toBe(true);
+      pending.resolve(json({ code: "FORBIDDEN", message: "Refused" }, 403));
+      await expect(saving).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(hasAppActions()).toBe(false);
+    } finally {
+      pending.resolve(done("a.txt", 5));
+      await saving.catch(() => {});
+      dom.cleanup();
+      setSystemTime();
+    }
+  });
 
   test("opens the save Action with an idempotency key, writes the bytes, and returns the file with its link", async () => {
     const { calls, fetch } = transport((body) => done("a.txt", body.length));

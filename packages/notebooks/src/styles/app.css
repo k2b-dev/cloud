@@ -2859,3 +2859,46 @@
   margin-bottom: 0.25rem;
   font-size: 0.8125rem;
 }
+
+/* Templates below the title of an empty note. They lie over the empty page, out of the text flow, so the note never
+   moves when they appear or leave; the editor places them under the title line. */
+.notebook-empty-templates {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  max-width: min(100%, 22rem);
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-top: 1rem;
+  padding-inline: 0.25rem;
+  /* Only the buttons take presses; elsewhere a press reaches the page and places the caret as before. */
+  pointer-events: none;
+}
+.notebook-empty-templates button {
+  pointer-events: auto;
+}
+.notebook-empty-templates__label,
+.notebook-empty-templates__status {
+  display: flex;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-empty-templates__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.notebook-empty-templates__row {
+  width: 100%;
+  color: var(--k2b-text-muted);
+}
+.notebook-empty-templates__row:hover,
+.notebook-empty-templates__row:focus-visible {
+  color: inherit;
+}

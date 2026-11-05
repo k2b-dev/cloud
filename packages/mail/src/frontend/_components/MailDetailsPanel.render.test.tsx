@@ -222,14 +222,15 @@ const renderPanel = (overrides: Partial<Parameters<typeof MailDetailsPanel>[0]> 
 const between = (html: string, from: string, to: string) => html.slice(html.indexOf(from), html.indexOf(to));
 
 describe("Mail conversation detail panel", () => {
-  test("follows the shared outline: header, properties, linked, attachments, notes, then More about", () => {
+  test("follows the shared outline: header, here now, properties, notes, linked, attachments, then More about", () => {
     const html = renderPanel();
     const order = [
       'class="k2b-detail-panel__kind"',
+      ">Here now<",
       ">Properties<",
+      ">Team notes<",
       ">Linked<",
       ">Attachments<",
-      ">Team notes<",
       ">More about this conversation<",
       ">People<",
       ">Activity<",
@@ -237,8 +238,9 @@ describe("Mail conversation detail panel", () => {
     ].map((marker) => html.indexOf(marker));
     for (const index of order) expect(index).toBeGreaterThan(-1);
     expect([...order].sort((left, right) => left - right)).toEqual(order);
-    // No section icons and no boxes: the titles start on the text edge.
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    // Every section carries its icon (UI-27), and there are no boxes.
+    for (const icon of ["ti-users", "ti-list-details", "ti-message-circle", "ti-arrows-exchange", "ti-paperclip", "ti-activity"])
+      expect(html).toContain(`ti ${icon}`);
     expect(html).not.toContain("bg-[var(--ui-surface)] p-3");
     expect(html).not.toContain("k2b-checkbox-card");
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
@@ -256,7 +258,9 @@ describe("Mail conversation detail panel", () => {
     expect(header).toContain('aria-label="More actions"');
     expect(header).toContain('aria-label="Close conversation details"');
     expect(header).toContain("@min-[64rem]/k2b-app-area:hidden");
-    expect(header).toContain('class="k2b-avatar-stack__trigger" aria-label="Active collaborators: Mara Klein"');
+    // Who is here moved from the header's avatar stack to "Here now" at the top of the body.
+    expect(header).not.toContain("k2b-avatar-stack");
+    expect(between(html, ">Here now<", ">Properties<")).toContain("Mara");
     expect(header).not.toContain("Read only");
   });
 
@@ -299,7 +303,7 @@ describe("Mail conversation detail panel", () => {
 
   test("attachments show their kind and size, a preview button, and download and save in their slot", () => {
     const html = renderPanel();
-    const attachments = between(html, ">Attachments<", ">Team notes<");
+    const attachments = between(html, ">Attachments<", ">More about this conversation<");
     expect(attachments).toContain("PDF · 2 KB");
     expect(attachments).not.toContain("application/pdf");
     expect(attachments).toContain('class="k2b-file-grid__open"');
@@ -345,7 +349,7 @@ describe("Mail conversation detail panel", () => {
         },
       ],
     });
-    const attachments = between(html, ">Attachments<", ">Team notes<");
+    const attachments = between(html, ">Attachments<", ">More about this conversation<");
     expect(attachments.match(/class="k2b-file-grid__open"/g)).toHaveLength(3);
     expect(attachments).toContain("PDF · 2 KB · in 2 messages");
     expect(attachments).toContain("Spreadsheet · 2 KB · from Mara Klein");
@@ -393,12 +397,72 @@ describe("Mail conversation detail panel", () => {
       detailErrors: { ...noDetailErrors, tags: "Tags unavailable", activity: "Activity unavailable", keep: "Keep unavailable" },
     });
     expect(between(html, ">Properties<", ">Linked<")).toContain("Some properties can");
-    expect(between(html, ">Attachments<", ">Team notes<")).toContain("No attachments");
+    expect(between(html, ">Attachments<", ">More about this conversation<")).toContain("No attachments");
     expect(html).toContain('class="k2b-detail-panel__none">None yet</span>');
     expect(between(html, ">Activity<", ">Technical details<")).toContain("Activity can");
     // A failure outside the outline's sections stays one line above them.
     expect(html.indexOf("keep")).toBeLessThan(html.indexOf(">Properties<"));
     expect(html).toContain('data-state="error"');
     expect(html).toContain("Try again");
+  });
+});
+
+describe("Mail detail panel: who is here and who has access", () => {
+  const members = [
+    { principal: { type: "user" as const, userId: "user-1" }, permission: "admin" as const, displayName: "Ada Lovelace" },
+    {
+      principal: { type: "user" as const, userId: "user-2" },
+      permission: "write" as const,
+      displayName: "Mara Klein",
+      scope: "assigned" as const,
+    },
+  ];
+  const more = (html: string) => html.slice(html.indexOf(">More about this conversation<"));
+  const access = (overrides: Partial<NonNullable<Parameters<typeof MailDetailsPanel>[0]["access"]>> = {}) => ({
+    members,
+    state: "ready" as const,
+    load: () => {},
+    retry: () => {},
+    ...overrides,
+  });
+
+  test("mailbox-wide readers see who has access first under More about; assigned-only access is part of the role", () => {
+    const html = more(renderPanel({ access: access(), currentUserId: "user-1" }));
+    expect(html.indexOf(">Access<")).toBeLessThan(html.indexOf(">People<"));
+    expect(html).toMatch(/>Access<\/span>[\s\S]*>You, Mara Klein</);
+    expect(html).toContain("Edit · Assigned only");
+    expect(html).toContain("Applies to the whole mailbox.");
+    expect(html).not.toContain("Manage access");
+    expect(more(renderPanel({ access: access({ manage: () => {} }) }))).toContain("Manage access");
+  });
+
+  test("people who see only assigned conversations get no access section; loading and failure keep its place", () => {
+    expect(renderPanel({ access: null })).not.toContain(">Access<");
+    expect(more(renderPanel({ access: access({ members: [], state: "loading" }) }))).toContain("Loading who has access");
+    expect(more(renderPanel({ access: access({ members: [], state: "error" }) }))).toMatch(
+      /Could not load who has access[\s\S]*>Try again</,
+    );
+  });
+
+  test("Here now stands first in every state, also for a viewer who is alone", () => {
+    const shared = [
+      { ...collaboration.assignees[0]!, permission: "admin" as const, scope: "mailbox" as const, description: "Admin" },
+      {
+        ...collaboration.assignees[0]!,
+        id: "user-3",
+        displayName: "Lin Park",
+        permission: "write" as const,
+        scope: "mailbox" as const,
+        description: "",
+      },
+    ];
+    expect(renderPanel({ presence: [], assignableUsers: shared, presenceState: "loading" })).toContain("Loading who is here");
+    expect(renderPanel({ presence: [], assignableUsers: shared, presenceState: "unavailable", onRetryPresence: () => {} })).toMatch(
+      />Here now<[\s\S]*Try again/,
+    );
+    // Alone it says so, in the same two lines, so nothing moves when someone else opens the conversation.
+    expect(renderPanel({ presence: [], assignableUsers: shared.slice(0, 1), currentUserId: shared[0]!.id })).toMatch(
+      />Here now<[\s\S]*Only you[\s\S]*Whoever opens this conversation appears here\./,
+    );
   });
 });

@@ -547,7 +547,7 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
           </header>
         </div>
         <div ref={body} id={bodyId} hidden={!open()} class="k2b-detail-panel__section-body">
-          {props.children}
+          {resolved()}
         </div>
       </section>
     </Show>

@@ -234,10 +234,20 @@ nothing moves when people come, go, or a list loads.
   server ([Show who has access](/en/docs/identity/authorization#show-who-has-access)).
 - **`DetailLinks`** puts `incoming` ("Linked from n") and `outgoing` ("Links
   to n") in one section, five rows per direction before "Show n more".
-  Without links it is one row: the title and "None yet".
+  Without links it is one row: the title and "None yet". A row can carry a
+  `description`, its own `leading` (such as a site's favicon), `target` and
+  `rel` for another site, `menuItems` with `menuLabel` (such as "Unlink"),
+  and `disabled` for an item that cannot be opened right now. Pass
+  `state="loading"` while links still load after the first paint: a
+  placeholder row takes the place of the next links. `"error"` keeps the
+  loaded rows, says that the rest failed, and offers `onRetry`. `footer`
+  holds rows after the links, such as "Add link" or "Load more", only for
+  people who may use them; it also follows "None yet".
 - **`DetailProperties`** shows facts as label and value rows, closed under
   "More about …" with a `summary`. An item with `href` is a link, such as the
-  way to the version history.
+  way to the version history. Pass `title` when the panel already has a
+  section of editable fields, such as "Technical details", and `children` for
+  rows after the facts, such as "Copy Cloud ID".
 - **`DetailTags`** shows tags as chips; a chip with `href` leads to
   everything with that tag. Without tags it reads "None yet" and an optional
   `emptyHint`.
@@ -471,14 +481,22 @@ type DetailLinkItem = {
   href?: string;
   onClick?: (event: MouseEvent) => void;
   icon?: string; // default "ti ti-file-text"
+  leading?: JSX.Element; // replaces the icon
+  description?: JSX.Element;
   trailing?: JSX.Element;
-};
+  target?: string;
+  rel?: string;
+  disabled?: boolean;
+} & ({ menuItems?: never; menuLabel?: never } | { menuItems: readonly DropdownItem[]; menuLabel: string });
 type DetailLinksProps = {
   incoming: readonly DetailLinkItem[];
   outgoing: readonly DetailLinkItem[];
   limit?: number; // per direction, default 5
   title?: string; // default "Links"
   defaultOpen?: boolean; // default true
+  state?: "ready" | "loading" | "error"; // default "ready"
+  onRetry?: () => void;
+  footer?: JSX.Element; // rows after the links, such as "Add link"
   class?: string;
 };
 
@@ -489,6 +507,7 @@ type DetailPropertiesProps = {
   icon?: string; // default "ti ti-info-square"
   summary?: JSX.Element;
   defaultOpen?: boolean;
+  children?: JSX.Element; // rows after the facts, such as "Copy Cloud ID"
   class?: string;
 };
 

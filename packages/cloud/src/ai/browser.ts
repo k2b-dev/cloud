@@ -1,3 +1,5 @@
+import { fetchAppAction } from "../browser/app-actions";
+
 export {
   CODE_RUNTIME_TOOL_NAMES,
   CodeActionInput,
@@ -153,7 +155,7 @@ export const launchAssistant = async (input: LaunchAssistantInput): Promise<Assi
   if ((input.draft?.content.length ?? 0) + files.length > 20) {
     throw new Error("Assistant drafts can contain at most 20 parts");
   }
-  const response = await fetch("/api/ai/conversations", {
+  const response = await fetchAppAction("/api/ai/conversations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(createInput),
@@ -169,12 +171,15 @@ export const launchAssistant = async (input: LaunchAssistantInput): Promise<Assi
         files.map(async (file) => {
           const form = new FormData();
           form.set("file", file);
-          const upload = await fetch(`/api/ai/conversations/${encodeURIComponent(conversation.id)}/files`, { method: "POST", body: form });
+          const upload = await fetchAppAction(`/api/ai/conversations/${encodeURIComponent(conversation.id)}/files`, {
+            method: "POST",
+            body: form,
+          });
           if (!upload.ok) throw new Error(`Could not attach ${file.name}`);
           return (await upload.json()) as { file: Omit<Extract<AiDraftContentPart, { type: "file" }>, "type"> };
         }),
       );
-      const draftResponse = await fetch(`/api/ai/conversations/${encodeURIComponent(conversation.id)}/draft`, {
+      const draftResponse = await fetchAppAction(`/api/ai/conversations/${encodeURIComponent(conversation.id)}/draft`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -186,7 +191,7 @@ export const launchAssistant = async (input: LaunchAssistantInput): Promise<Assi
       conversation = { ...conversation, draft: (await draftResponse.json()) as AiConversation["draft"] };
     }
   } catch (error) {
-    await fetch(`/api/ai/conversations/${encodeURIComponent(conversation.id)}/archive`, { method: "POST" }).catch(() => undefined);
+    await fetchAppAction(`/api/ai/conversations/${encodeURIComponent(conversation.id)}/archive`, { method: "POST" }).catch(() => undefined);
     throw error;
   }
   return {

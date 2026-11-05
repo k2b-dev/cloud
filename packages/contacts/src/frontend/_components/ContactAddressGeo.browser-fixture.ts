@@ -144,6 +144,7 @@ const detailProps = (scenario: Scenario) => ({
   bookNames: { team: "Kunden" },
   writableBooks: [{ id: "team", name: "Kunden" }],
   adminBookIds: [],
+  memberBookIds: [],
   currentUserId: "user-1",
   showEmpty: false,
   initialFavoriteKeys: [],

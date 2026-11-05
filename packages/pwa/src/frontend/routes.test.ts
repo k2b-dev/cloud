@@ -6,6 +6,7 @@ import { PWA_CANVAS_COLORS, type RuntimeAppMeta, type User } from "@k2b/cloud/co
 import { coreSettings, pwaDevices } from "@k2b/cloud/services";
 import { announcements } from "@k2b/cloud/services/announcements";
 import * as iconSource from "@k2b/cloud/services/branding/app-icon-source";
+import * as staticAssets from "@k2b/cloud/services/pwa-assets";
 import { session } from "@k2b/cloud/services/session";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
@@ -56,7 +57,9 @@ const inventory: RuntimeAppMeta = {
 let apps: RuntimeAppMeta[] = [shell];
 let settings: Record<string, string> = { "app.name": "Example Cloud", "app.locale": "de", "app.logo": "" };
 
+const assetSpy = spyOn(staticAssets, "pwaStaticAssets").mockResolvedValue([]);
 const spies = [
+  assetSpy,
   stubRailSnapshot(),
   spyOn(session, "getToken").mockReturnValue(null),
   spyOn(session, "authenticateRequest").mockResolvedValue(null),
@@ -77,8 +80,9 @@ const spies = [
     current: true,
   }),
 ];
-const [, tokenSpy, sessionSpy] = spies as unknown as [unknown, ReturnType<typeof spyOn>, ReturnType<typeof spyOn>];
+const [, , tokenSpy, sessionSpy] = spies as unknown as [unknown, unknown, ReturnType<typeof spyOn>, ReturnType<typeof spyOn>];
 afterEach(() => {
+  assetSpy.mockResolvedValue([]);
   apps = [shell];
   settings = { "app.name": "Example Cloud", "app.locale": "de", "app.logo": "" };
   tokenSpy.mockReturnValue(null);
@@ -311,12 +315,12 @@ const loadWorker = async (network: (request: Request) => Promise<Response>) => {
   const source = await response.text();
   const listeners = new Map<string, Listener>();
   const calls = { skipWaiting: 0, claim: 0 };
-  // Every cache a page script could have written to; the worker must never read one.
+  // With no registered production assets the navigation-only tests never read cached responses.
   const caches = new Proxy(
     {},
     {
       get: () => {
-        throw new Error("The worker read CacheStorage");
+        return async () => ({ keys: async () => [] });
       },
     },
   );
@@ -339,7 +343,7 @@ const loadWorker = async (network: (request: Request) => Promise<Response>) => {
   };
   const navigate = async (url: string, mode = "navigate") => {
     let answer: Promise<Response> | undefined;
-    listeners.get("fetch")!({ request: { url, mode }, respondWith: (promise: Promise<Response>) => (answer = promise) });
+    listeners.get("fetch")!({ request: { url, mode, method: "GET" }, respondWith: (promise: Promise<Response>) => (answer = promise) });
     return answer ? await answer : undefined;
   };
   const offlineHtml = JSON.parse(/^const OFFLINE_HTML = (".*");$/m.exec(source)![1]!) as string;
@@ -361,7 +365,18 @@ describe("service worker", () => {
     expect(await changed.text()).not.toBe(worker.source);
   });
 
-  test("caches nothing and takes over at once", async () => {
+  test("pins the live asset catalog in network-only worker source and changes its entity tag with the build", async () => {
+    const initial = await loadWorker(async () => new Response("page"));
+    const asset = { url: "/chat/_ssr/0123456789abcdef/chunk.js", sha256: "a".repeat(64), bytes: 12, type: "text/javascript" };
+    assetSpy.mockResolvedValue([asset]);
+    const changed = await request("/pwa/sw.js", { headers: { "If-None-Match": initial.response.headers.get("etag")! } });
+    expect(changed.status).toBe(200);
+    const source = await changed.text();
+    expect(source).toContain(`const STATIC_ASSETS = ${JSON.stringify([asset])};`);
+    expect(source).toContain("const CACHE_BYTES = 16777216;");
+  });
+
+  test("takes over at once without caching documents", async () => {
     const worker = await loadWorker(async () => new Response("page"));
     await worker.run("install", {});
     expect(worker.calls.skipWaiting).toBe(1);

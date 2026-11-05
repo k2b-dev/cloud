@@ -37,6 +37,8 @@ import QueryWorkspace from "../query/QueryWorkspace";
 import type { QueryWorkspaceCurrentSource } from "../query/query-workspace-model";
 import { openCombinedAuditDialog } from "../records/CombinedAuditDialog";
 import { openExportRecordsDialog } from "../records/ExportRecordsDialog";
+import { recordMessages } from "../records/messages";
+import { createRecordAccess } from "../records/record-access";
 import type { GroupBucket } from "../table/GroupedTable";
 import { GridCreateActions, offersGridCreateActions } from "../toolbar/GridCreateActions";
 import GridToolbar from "../toolbar/GridToolbar";
@@ -78,6 +80,8 @@ type RuntimeView = View & {
 };
 
 type Props = {
+  /** The viewer, marked as "You" among the people with access. */
+  currentUserId?: string;
   /** UUID of the base — for API calls. */
   baseId: string;
   baseName?: string;
@@ -142,6 +146,10 @@ type Props = {
 export default function RecordsView(props: Props) {
   const locale = useLocale();
   const t = () => recordsViewMessages.resolve([locale()]).t;
+  const recordAccess = createRecordAccess(
+    () => props.baseId,
+    () => recordMessages.resolve([locale()]).t.accessLoadFailed,
+  );
   // ── Canonical state ────────────────────────────────────────────────
   const [tableName, setTableName] = createSignal(props.tableName);
   const [tableDescription, setTableDescription] = createSignal(props.tableDescription);
@@ -991,6 +999,8 @@ export default function RecordsView(props: Props) {
             onOpenRecord={(recordId) => openRecordById(recordId, false)}
             onCloseGroup={onCloseGroupDetail}
             onOpenGroupedRecord={onOpenGroupedRecord}
+            access={recordAccess}
+            currentUserId={props.currentUserId}
           />
         </Show>
       </AppWorkspace.Detail>

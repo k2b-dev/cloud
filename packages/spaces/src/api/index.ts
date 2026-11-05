@@ -1,5 +1,5 @@
 import { type CloudCliText, cliAmbiguityText, localizeCloudCliText } from "@k2b/cloud/cli";
-import { PaginationQuerySchema, parsePagination } from "@k2b/cloud/contracts";
+import { AccessMemberSchema, PaginationQuerySchema, parsePagination, toAccessMember } from "@k2b/cloud/contracts";
 import {
   type AccessSubject,
   type AuthContext,
@@ -114,7 +114,14 @@ import { CreateEventInvitationDraftInputSchema, EventInvitationContextSchema, Ev
 import { OverviewViewSchema, OverviewWorkSchema } from "../overview-contracts";
 import { myTasksMessages } from "../pwa/messages";
 import { spacesService } from "../service";
-import { getActorsSpacePermissions, isSpaceResourceId, permissionFromScopes, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
+import {
+  getActorSpaceMemberPermission,
+  getActorsSpacePermissions,
+  isSpaceResourceId,
+  permissionFromScopes,
+  SPACE_RESOURCE_TYPE,
+  SPACES_APP_ID,
+} from "../service/access";
 import { InvalidActivityCursorError } from "../service/activity";
 import { resolveByteRange } from "../service/byte-range";
 import { loadCalendarEvents, loadCalendarSources } from "../service/calendar-view";
@@ -3086,6 +3093,31 @@ const app = new Hono<AuthContext>()
 
       const entries = await spacesService.access.list({ spaceId: spaceId! });
       return respond(c, ok(entries.items));
+    },
+  )
+
+  // List who has access, read-only
+  .get(
+    "/:id/access/members",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "List who has access",
+      description:
+        "Names and roles of everyone with access to a space, read-only. Requires read permission of one's own: public access alone does not show who else has access.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.array(AccessMemberSchema), "Who has access"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Space not found"),
+      },
+    }),
+    async (c) => {
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "read");
+      if (error) return error;
+      const member = await getActorSpaceMemberPermission(spaceId!, { actor: c.get("actor"), subject: getSpaceAccessSubject(c).subject });
+      if (!hasPermission(member, "read")) return respond(c, fail(err.forbidden("Access denied")));
+      const entries = await spacesService.access.list({ spaceId: spaceId! });
+      return respond(c, ok(entries.items.map(toAccessMember)));
     },
   )
 

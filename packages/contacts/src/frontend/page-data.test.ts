@@ -62,15 +62,21 @@ test("SSR forwards actor and accessSubject and preserves book order and permissi
     if (bookId === "write") return "write";
     return "read";
   });
+  // Public access alone reads the first book: it shows no access list there.
+  const member = spyOn(contactsService.book.permission, "memberForActor").mockImplementation(async ({ bookId }) =>
+    bookId === books[0]!.id ? "none" : "read",
+  );
   const result = await loadContactBookPermissions({ books, actor, accessSubject });
   expect(permission.mock.calls).toEqual(books.map((book) => [{ bookId: book.id, actor, accessSubject }]));
+  expect(member.mock.calls).toEqual(books.map((book) => [{ bookId: book.id, actor, accessSubject }]));
   expect(result).toEqual({
     entries: [
-      { book: books[0]!, permission: "read" },
-      { book: books[1]!, permission: "write" },
-      { book: books[2]!, permission: "admin" },
+      { book: books[0]!, permission: "read", member: "none" },
+      { book: books[1]!, permission: "write", member: "read" },
+      { book: books[2]!, permission: "admin", member: "read" },
     ],
     adminBookIds: ["admin"],
+    memberBookIds: [books[1]!.id, books[2]!.id],
     writableBooks: [
       { id: "write", name: "write" },
       { id: "admin", name: "admin" },

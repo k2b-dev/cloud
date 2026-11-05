@@ -1,4 +1,4 @@
-import { type GrantableLevel, openAccessDialog, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import { AccessSummary, type GrantableLevel, openAccessDialog, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { Button, Placeholder, prompts, Select, SettingsField, SettingsGroup, useLocale } from "@k2b/ui";
@@ -176,7 +176,7 @@ export function PermissionsSection(props: { notebook: Notebook }) {
     <SettingsGroup title={t().peopleGroups} description={t().peopleGroupsDescription}>
       <SettingsGroup.Action>
         <Button size="sm" variant="secondary" disabled={!accessEntries.data()} onClick={run}>
-          <i class="ti ti-pencil" aria-hidden="true" />
+          <i class="ti ti-lock-access" aria-hidden="true" />
           {t().editAccess}
         </Button>
       </SettingsGroup.Action>
@@ -193,15 +193,7 @@ export function PermissionsSection(props: { notebook: Notebook }) {
             />
           }
         >
-          {(entries) => (
-            <PermissionEditor
-              initialEntries={visibleEntries(entries())}
-              canEdit={false}
-              grantAccess={grantAccess}
-              updateAccess={updateAccess}
-              revokeAccess={revokeAccess}
-            />
-          )}
+          {(entries) => <AccessSummary entries={visibleEntries(entries())} />}
         </Show>
       </Show>
       <Show when={reconcileError()}>

@@ -95,6 +95,7 @@ describe("Grids workspace record detail", () => {
     snapshots: [],
     auditEntries: [],
     combinedOrigin: null,
+    referencedBy: null,
   };
 
   test("does not load record data when table access is denied", async () => {
@@ -126,6 +127,7 @@ describe("Grids workspace record detail", () => {
       snapshots: [],
       auditEntries: [],
       combinedOrigin: null,
+      referencedBy: null,
     };
     let loadedParams: { record: unknown; viewer: { userId: string | null } } | undefined;
     const app = createWorkspaceApi({

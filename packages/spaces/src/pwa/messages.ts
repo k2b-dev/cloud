@@ -50,6 +50,8 @@ export const myTasksMessages = i18n.define({
       markDone: "Mark as done",
       reopen: "Reopen",
       taskLoadFailed: "The task could not be loaded.",
+      liveUpdatesUnavailable: "Live updates are unavailable right now",
+      reload: "Reload",
       taskGone: "This task is no longer available.",
       toList: "Back to the list",
       summary: ({ mine, today }: { mine: number; today: number }) =>
@@ -100,6 +102,8 @@ export const myTasksMessages = i18n.define({
       markDone: "Als erledigt markieren",
       reopen: "Wieder öffnen",
       taskLoadFailed: "Die Aufgabe konnte nicht geladen werden.",
+      liveUpdatesUnavailable: "Live-Updates sind gerade nicht verfügbar",
+      reload: "Neu laden",
       taskGone: "Diese Aufgabe ist nicht mehr verfügbar.",
       toList: "Zur Liste",
       summary: ({ mine, today }) =>

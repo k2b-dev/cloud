@@ -24,6 +24,7 @@ const css = await Bun.build({
   entrypoints: [resolve(root, "styles.css")],
   outdir: publicDir,
   naming: "global.css",
+  minify: true,
   plugins: [tailwind],
 });
 if (!css.success) {

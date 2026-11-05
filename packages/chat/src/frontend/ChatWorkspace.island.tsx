@@ -1,8 +1,9 @@
-import { createLiveDictationSource } from "@k2b/cloud/ai/browser";
+import type { DictationSource } from "@k2b/cloud/ai/browser";
 import { refreshAppBadges } from "@k2b/cloud/browser/app-badges";
 import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
-import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
+import type { CloudResourcePickerOptions } from "@k2b/cloud/browser/resource-picker";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { Link, type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
@@ -52,35 +53,38 @@ import {
   type ThreadListSchema,
 } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
-import { openAddPeopleDialog } from "./AddPeopleDialog";
-import { openChannelDialog } from "./ChannelDialogs";
+
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
-import { openChatDetailsDialog } from "./ChatDetailsDialog";
+
 import ChatDeviceNotice from "./ChatDeviceNotice";
-import ChatInfoPanel from "./ChatInfoPanel";
+
 import ChatList from "./ChatList";
-import ChatNotificationSettings, { FollowToggle } from "./ChatNotificationSettings";
-import ChatSearch, { createChatSearch } from "./ChatSearch";
-import ChatSharedSection from "./ChatSharedSection";
 import ChatSystemChats, { createSystemChatList } from "./ChatSystemChats";
-import ChatThreadColumn from "./ChatThreadColumn";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
-import ChatThreadsPage from "./ChatThreadsPage";
-import { createChannelApi } from "./channel-api";
 import { createChatCommands } from "./chat-commands";
+import { ChatInfoPanel, ChatSearch, ChatThreadColumn, ChatThreadsPage, DiscoverChannels, ForYou } from "./chat-deferred-views";
+import {
+  openAddPeopleDialog,
+  openChannelDialog,
+  openChatDetailsDialog,
+  openLeaveChatDialog,
+  openMessageMutationDialog,
+  openNewChatDialog,
+  openThreadDialog,
+} from "./chat-dialog-openers";
 import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { messageTime, sameDay } from "./chat-format";
+import { createChatSearch } from "./chat-search-state";
 import { createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
-import DiscoverChannels from "./DiscoverChannels";
 import type { DeviceNotice } from "./device-notice";
-import ForYou from "./ForYou";
+import { FollowToggle } from "./FollowToggle";
+
 import { createForYouApi } from "./for-you-api";
 import { createItemEventsApi } from "./item-events-api";
-import { openLeaveChatDialog } from "./LeaveChatDialog";
+
 import type { ChosenMember } from "./MemberPicker";
-import { openMessageMutationDialog } from "./MessageMutationDialog";
-import { openNewChatDialog } from "./NewChatDialog";
+
 import { createNotificationCleanup } from "./notification-cleanup";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
@@ -94,7 +98,6 @@ import {
 } from "./route";
 import { containerIcon, openResourceThread, openSystemChat } from "./system-chats";
 
-import { openThreadDialog } from "./ThreadDialog";
 import {
   chatHasThreads,
   isUnread,
@@ -155,7 +158,37 @@ export type ChatWorkspaceProps = {
   deviceNotice?: DeviceNotice;
 };
 
-const liveDictationSource = createLiveDictationSource({ app: "chat" });
+const liveDictationSource: DictationSource = {
+  async devices() {
+    const module = await importOnDemand(() => import("@k2b/cloud/ai/browser"));
+    if (!module) throw new Error("Dictation code could not load");
+    return module.createLiveDictationSource({ app: "chat" }).devices();
+  },
+  start(options) {
+    let session: ReturnType<DictationSource["start"]> | undefined;
+    const pending = importOnDemand(() => import("@k2b/cloud/ai/browser")).then((module) => {
+      if (!module || options.signal.aborted) return undefined;
+      session = module.createLiveDictationSource({ app: "chat" }).start(options);
+      return session;
+    });
+    return {
+      events: {
+        async *[Symbol.asyncIterator]() {
+          const source = await pending;
+          if (!source) {
+            if (!options.signal.aborted) yield { type: "error" as const, code: "connection_lost" as const, retryable: true };
+            return;
+          }
+          yield* source.events;
+        },
+      },
+      async stop() {
+        session ??= await pending;
+        await session?.stop();
+      },
+    };
+  },
+};
 
 const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>, view: ThreadView): OpenChat => ({
   id: open.conversation.id,
@@ -189,6 +222,17 @@ const chatRoute = (chatId: string | null, view: ThreadView = "all", extra: Parti
  * Below 64 rem the list and a chat are separate pages.
  */
 export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
+  const openCloudResourcePicker = async (options: CloudResourcePickerOptions) => {
+    const source = route();
+    const module = await importOnDemand(() => import("@k2b/cloud/browser/resource-picker"));
+    if (disposed || route() !== source) return undefined;
+    return module?.openCloudResourcePicker(options);
+  };
+
   const basePath = props.app ? "/pwa/chat" : props.embedded ? "/app/chat/panel" : "/app/chat";
   const panelHref = (id: string, info: "info" | null, message?: string | null, view: ThreadView = "all") =>
     conversationHref(id, info, message, view, basePath);
@@ -206,6 +250,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     messageId: props.open?.focus ?? null,
     panel: props.panel,
   });
+  // History is not reactive; keep its list marker for the header rendered before each address commit.
+  const [listPredecessor, setListPredecessor] = createSignal(false);
   const [archived, setArchived] = createSignal(props.archived ?? false);
   const [filter, setFilter] = createSignal(props.filter ?? "all");
   const [collapsed, setCollapsed] = createSignal(props.collapsed ?? []);
@@ -519,6 +565,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const current = chat();
     return current && current.status !== "no-access" && current.conversation ? current : null;
   };
+  // Open Info only when requested, then keep its search, pages and filters for
+  // this chat just as the eager panel did. Changing chats disposes that state.
+  const [infoMounted, setInfoMounted] = createSignal(props.panel === "info");
+  createEffect(
+    on([() => openChat()?.id, panel], ([id, visible], previous) => {
+      if (visible === "info") setInfoMounted(true);
+      else if (id !== previous?.[0]) setInfoMounted(false);
+    }),
+  );
+
   const conversation = () => openChat()?.conversation ?? null;
   const system = () => conversation()?.kind === "system";
   const systemList = createSystemChatList();
@@ -1272,7 +1328,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         : null;
       const target = next !== "archive" && currentPath ? viewHref(currentPath) : url.pathname + url.search;
       if (next === "archive" && (await open(chatRoute(null))) !== "applied") return;
-      if (token === listIntent) navigate(target, { scroll: "preserve" });
+      if (token === listIntent) {
+        setListPredecessor(false);
+        navigate(target, { scroll: "preserve" });
+      }
     } catch {
       setListError(t().listFailed);
       setListRetry(() => () => void changeList(next));
@@ -1470,16 +1529,21 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     // A phone shows a chat with threads as its page of threads first; a wider window opens "All threads" and its rows.
     const row = rows().find((candidate) => candidate.id === id);
     if (phone?.matches && row?.kind !== "system" && chatHasThreads(row)) {
-      if ((await open(chatRoute(id, "all", { threads: true }))) === "applied")
+      if ((await open(chatRoute(id, "all", { threads: true }))) === "applied") {
+        setListPredecessor(fromList);
         navigation.push(viewHref(threadsPageHref(id)), {
           scroll: "preserve",
           state: { chatFromList: fromList },
         });
+      }
       return;
     }
     if ((await open(chatRoute(id))) !== "applied") return;
     const target = viewHref(panelHref(id, null));
-    if (location.pathname + location.search !== target) navigation.push(target, { scroll: "preserve", state: { chatFromList: fromList } });
+    if (location.pathname + location.search !== target) {
+      setListPredecessor(fromList);
+      navigation.push(target, { scroll: "preserve", state: { chatFromList: fromList } });
+    }
     if (pendingListIntent !== null) await refreshList(target);
   };
   const openSystemFromList = async (id: string, navigation: LinkNavigateEvent) => {
@@ -1499,7 +1563,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       const current = await openSystemChat({ resourceType: ref.type, resourceId: ref.id });
       if (token !== systemOpen) return;
       store?.includeSystemChats([current]);
-      if ((await open(chatRoute(current.id))) === "applied") go(viewHref(threadHref(current.id, "all")));
+      if ((await open(chatRoute(current.id))) === "applied") {
+        setListPredecessor(false);
+        go(viewHref(threadHref(current.id, "all")));
+      }
     } catch {
       if (token === systemOpen) toast.error(t().openFailed);
     } finally {
@@ -1509,17 +1576,18 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const openOverview = async (navigation?: LinkNavigateEvent) => {
     const id = conversation()?.id;
     if (!id || (await open(chatRoute(id, "all", { threads: true }))) !== "applied") return;
+    setListPredecessor(false);
     if (navigation) navigation.push(viewHref(threadsPageHref(id)), { scroll: "preserve" });
     else navigate(viewHref(threadsPageHref(id)), { scroll: "preserve" });
   };
   /** Opens another part of the open chat, from the list, the picker, a thread chip, or a new thread. */
   const openView = async (id: string, view: ThreadView, navigation?: LinkNavigateEvent, message?: string) => {
-    // From the phone's page of threads, "Back" in the thread returns to that page in the history; from Info opened
-    // on top of it, the previous entry is Info, so "Back" opens the page instead.
+    // A thread opened from the directory traverses back to that entry, also with Info above the thread.
     const options = { scroll: "preserve" as const, state: { threadFromPage: route().threads && route().panel === null } };
     const next = chatRoute(id, view, { messageId: message ?? null });
     if ((await open(next)) !== "applied") return;
     const href = viewHref(threadHref(id, view, message));
+    setListPredecessor(false);
     if (navigation) navigation.push(href, options);
     else navigate(href, options);
   };
@@ -1531,25 +1599,32 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     await openView(id, openChat()?.view ?? "all", undefined, message);
   };
 
-  // Info adds one entry above a chat opened from the list.
-  const listDepth = () => {
+  // Info adds one entry above the chat; both header destinations skip it when traversing to their predecessor.
+  const predecessorDepth = (key: "chatFromList" | "threadFromPage") => {
     const state: unknown = history.state;
-    if (!state || typeof state !== "object" || !("chatFromList" in state) || state.chatFromList !== true) return 0;
+    if (!state || typeof state !== "object" || !(key in state) || Reflect.get(state, key) !== true) return 0;
     return "chatInfoFromChat" in state && state.chatInfoFromChat === true ? 2 : 1;
   };
+  const listDepth = () => predecessorDepth("chatFromList");
+  const backToThreadDirectory = () => threaded() && !listPredecessor();
   const backToList = async (navigation: LinkNavigateEvent) => {
     const depth = listDepth();
     // Refused before history moves: a refused Back would show the list's address until it returned (#2503).
     if (depth > 0) {
       if (!keepsChat(null)) history.go(-depth);
-    } else if ((await open(chatRoute(null))) === "applied") navigation.push(listHref(), { scroll: "preserve" });
+    } else if ((await open(chatRoute(null))) === "applied") {
+      if (props.app) navigation.replaceWith(listHref(), { scroll: "preserve", state: null });
+      else navigation.push(listHref(), { scroll: "preserve" });
+    }
   };
   const backToThreads = async (navigation: LinkNavigateEvent) => {
-    const state: unknown = history.state;
+    const depth = predecessorDepth("threadFromPage");
     const id = route().chatId;
-    if (state && typeof state === "object" && "threadFromPage" in state && state.threadFromPage === true) history.back();
-    else if (id && (await open(chatRoute(id, route().view, { threads: true }))) === "applied")
-      navigation.push(viewHref(threadsPageHref(id)), { scroll: "preserve" });
+    if (depth > 0) history.go(-depth);
+    else if (id && (await open(chatRoute(id, route().view, { threads: true }))) === "applied") {
+      if (props.app) navigation.replaceWith(viewHref(threadsPageHref(id)), { scroll: "preserve" });
+      else navigation.push(viewHref(threadsPageHref(id)), { scroll: "preserve" });
+    }
   };
 
   const openInfo = (navigation?: LinkNavigateEvent) => {
@@ -1562,7 +1637,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const messageId = route().messageId;
     setPanel("info");
     setRoute({ ...route(), chatId: id, messageId, panel: "info" });
-    const options = { scroll: "preserve" as const, state: { chatFromList: listDepth() === 1, chatInfoFromChat: true } };
+    const options = {
+      scroll: "preserve" as const,
+      state: {
+        chatFromList: listDepth() === 1,
+        ...(predecessorDepth("threadFromPage") === 1 ? { threadFromPage: true } : {}),
+        chatInfoFromChat: true,
+      },
+    };
     if (navigation) navigation.push(viewHref(routeAddress(route(), basePath)), options);
     else navigate(viewHref(routeAddress(route(), basePath)), options);
   };
@@ -1596,8 +1678,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const messageId = route().messageId;
     setPanel(null);
     setRoute({ ...route(), chatId: id, messageId, panel: null });
-    if (navigation) navigation.push(viewHref(routeAddress(route(), basePath)), { scroll: "preserve" });
-    else navigate(viewHref(routeAddress(route(), basePath)), { scroll: "preserve" });
+    const options = { scroll: "preserve" as const, replace: props.app, ...(props.app ? { state: null } : {}) };
+    if (navigation && props.app) navigation.replaceWith(viewHref(routeAddress(route(), basePath)), options);
+    else if (navigation) navigation.push(viewHref(routeAddress(route(), basePath)), options);
+    else navigate(viewHref(routeAddress(route(), basePath)), options);
   };
 
   /** A chat the person just started, or chose among existing ones, opens in place like a chat from the list. */
@@ -1610,10 +1694,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const target = new URL(panelHref(id, null), location.href);
     if (chosen?.archived) target.searchParams.set("list", "archive");
     // The chat has opened successfully. A failed list refresh must not leave the address naming the previous chat.
+    setListPredecessor(fromList);
     navigate(target.pathname + target.search, { scroll: "preserve", state: { chatFromList: fromList } });
     await refreshList(listPath);
   };
-  const channelsApi = createChannelApi();
+  const channelApi = async () => (await importOnDemand(() => import("./channel-api")))?.createChannelApi();
   const [channelRevision, setChannelRevision] = createSignal(0);
   // The SSR catalog seeds only the first mount. Returning later reads current membership and discovery.
   let initialChannelPage = props.channelsPage ? props.channelPage : undefined;
@@ -1636,7 +1721,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if ((await open(chatRoute(null, "all", { channels: true }))) === "applied") navigation.push(listHref(`${basePath}/channels`));
   };
   const subscribe = async (id: string) => {
-    await channelsApi.join(id);
+    const api = await channelApi();
+    if (!api) return;
+    await api.join(id);
     setChannelRevision((revision) => revision + 1);
     await store?.refreshSidebar();
     if (route().chatId === id) await open(route());
@@ -1932,6 +2019,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     };
     window.addEventListener("storage", storageChanged);
     onCleanup(() => window.removeEventListener("storage", storageChanged));
+    setListPredecessor(listDepth() > 0);
     phone = window.matchMedia("(max-width: 47.999rem)");
     const live = createChatStore({
       viewerId: props.viewerId,
@@ -2014,6 +2102,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       listenPopState(({ url }) => {
         const next = parseRoute(url);
         if (!next) return;
+        setListPredecessor(listDepth() > 0);
         // The browser already shows the new address; when its chat cannot load in place, the server renders it.
         void applyListUrl(url)
           .then((token) => (token === null ? "superseded" : open(next)))
@@ -2365,7 +2454,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     }
                   : undefined
               }
-              backHref={threaded() ? listHref(threadsPageHref(current().id)) : undefined}
+              backHref={backToThreadDirectory() ? listHref(threadsPageHref(current().id)) : undefined}
               draftKey={`${current().id}:${openChat()?.view ?? "all"}`}
               notice={
                 <>
@@ -2469,7 +2558,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               }}
               cards={cards()}
               onPickResource={pickResource}
-              onBack={threaded() ? backToThreads : backToList}
+              onBack={backToThreadDirectory() ? backToThreads : backToList}
               backCount={props.app ? othersUnread(current().id) : undefined}
               busy={busy()}
               dateConfig={props.dateConfig}
@@ -2919,7 +3008,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             onClose={() => closeInfo()}
           >
             {/* One panel per chat, like its history: search and loaded members never carry over to the next chat. */}
-            <Show when={openChat()?.id} keyed>
+            <Show when={infoMounted() && openChat()?.id} keyed>
               <Show when={conversation()}>
                 {(current) => (
                   <ChatInfoPanel
@@ -2935,33 +3024,28 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     onCreateThread={
                       !system() && !current().channel && current().permission === "admin" ? () => void createThread() : undefined
                     }
-                    shared={
-                      <ChatSharedSection
-                        chatId={current().id}
-                        revision={openChat() ? `${openChat()!.watermark}:${openChat()!.historyRev}` : undefined}
-                        threads={openChat()?.threads ?? null}
-                        viewerId={props.viewerId}
-                        dateConfig={props.dateConfig}
-                        now={now}
-                        cards={cards()}
-                        load={(query) => (store ? store.shared(current().id, query) : Promise.reject(new Error("Chat is not live yet")))}
-                        onJump={jumpToShared}
-                      />
-                    }
-                    notifications={
-                      <Show when={current().notifications}>
-                        {(notifications) => (
-                          <ChatNotificationSettings
-                            conversation={current()}
-                            notifications={notifications()}
-                            dateConfig={props.dateConfig}
-                            now={now}
-                            save={(input) =>
-                              store ? store.setNotifications(current().id, input) : Promise.reject(new Error("Chat is not live yet"))
-                            }
-                          />
-                        )}
-                      </Show>
+                    sharedProps={{
+                      chatId: current().id,
+                      revision: openChat() ? `${openChat()!.watermark}:${openChat()!.historyRev}` : undefined,
+                      threads: openChat()?.threads ?? null,
+                      viewerId: props.viewerId,
+                      dateConfig: props.dateConfig,
+                      now,
+                      cards: cards(),
+                      load: (query) => (store ? store.shared(current().id, query) : Promise.reject(new Error("Chat is not live yet"))),
+                      onJump: jumpToShared,
+                    }}
+                    notificationProps={
+                      current().notifications
+                        ? {
+                            conversation: current(),
+                            notifications: current().notifications!,
+                            dateConfig: props.dateConfig,
+                            now,
+                            save: (input) =>
+                              store ? store.setNotifications(current().id, input) : Promise.reject(new Error("Chat is not live yet")),
+                          }
+                        : undefined
                     }
                     onLeave={() => void (current().channel ? unsubscribe() : leaveChat())}
                   />

@@ -15,6 +15,7 @@ import * as noteQuery from "./note-query";
 import * as noteRefs from "./note-refs";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
+import * as pageTemplates from "./page-templates";
 import * as presence from "./presence";
 import { reindexRuntime } from "./reindex-scheduler";
 import * as search from "./search";
@@ -141,6 +142,13 @@ export const notebooksService = {
         revoke: apiKeys.revoke,
       },
     },
+  },
+  pageTemplate: {
+    list: pageTemplates.list,
+    draft: pageTemplates.draft,
+    create: pageTemplates.create,
+    update: pageTemplates.update,
+    remove: pageTemplates.remove,
   },
   template: {
     list: templates.list,
