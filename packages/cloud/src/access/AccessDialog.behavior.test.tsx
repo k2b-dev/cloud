@@ -662,9 +662,15 @@ describe("AccessDialog", () => {
       input.value = query;
       input.dispatchEvent(new Event("input", { bubbles: true }));
     };
-    const withDirectory = (items: unknown[]) => {
+    const withDirectory = (items: unknown[], urls: string[] = []) => {
       const original = globalThis.fetch;
-      globalThis.fetch = Object.assign(async () => Response.json({ items }), { preconnect: original.preconnect });
+      globalThis.fetch = Object.assign(
+        async (input: RequestInfo | URL) => {
+          urls.push(String(input));
+          return Response.json({ items });
+        },
+        { preconnect: original.preconnect },
+      );
       return () => {
         globalThis.fetch = original;
       };
@@ -684,13 +690,17 @@ describe("AccessDialog", () => {
     });
 
     test("someone already on the list stays in the results, greyed with their level", async () => {
-      const restore = withDirectory([
+      const urls: string[] = [];
+      const restore = withDirectory(
+        [
         { kind: "user", user: { id: "10000000-0000-4000-8000-000000000002", uid: "lea", displayName: "Lea Schmitt", mail: null } },
         {
           kind: "user",
           user: { id: "10000000-0000-4000-8000-000000000008", uid: "tom", displayName: "Tom Berg", mail: "tom@beispiel.de" },
-        },
-      ]);
+          },
+        ],
+        urls,
+      );
       const ui = await renderDialog();
       try {
         await search(ui.dom, "le");
@@ -701,6 +711,8 @@ describe("AccessDialog", () => {
         await waitFor(() => !!option(), "Lea in the results");
         expect(option()!.getAttribute("aria-disabled")).toBe("true");
         expect(option()!.textContent).toContain("already has View");
+        // The directory has to return listed people too, or they could never show greyed.
+        expect(urls.some((url) => url.includes("exclude_"))).toBe(false);
         option()!.click();
         await Bun.sleep(20);
         expect(ui.text()).not.toContain("1 change");
@@ -725,6 +737,22 @@ describe("AccessDialog", () => {
       }
     });
 
+    test("read-only names only those who really manage: no denied or scoped managers", async () => {
+      const ben = user("5", "Ben Albers", "admin");
+      const benDenied: AccessEntry = { ...ben, id: "00000000-0000-4000-8000-000000000006", permission: "none" };
+      const ida: AccessEntry = { ...user("7", "Ida Kranz", "admin"), scope: "assigned" };
+      const denied = (entries: readonly AccessEntry[]) => {
+        const keys = new Set(entries.filter((stored) => stored.permission === "none").map((stored) => JSON.stringify(stored.principal)));
+        return entries.filter((stored) => !keys.has(JSON.stringify(stored.principal)));
+      };
+      const ui = await renderDialog({ canEdit: false, initialEntries: [mia, ben, benDenied, ida, lea], effectiveEntries: denied });
+      try {
+        expect(ui.text()).toContain("Only those who manage it can change access: Mia Hoffmann.");
+      } finally {
+        ui.cleanup();
+      }
+    });
+
     test("loading shows rows that are still coming, without the search; a failure offers Try again", async () => {
       let attempt = 0;
       const held = Promise.withResolvers<void>();
@@ -742,9 +770,16 @@ describe("AccessDialog", () => {
         await waitFor(() => !!ui.dom.root.querySelector('[aria-busy="true"]'), "the loading rows");
         expect(ui.dom.root.querySelector("input[role=combobox]")).toBeNull();
         expect(ui.text()).toContain("Loading access");
+        // General is not known yet either, so it does not claim "Off".
+        expect(ui.text()).not.toContain("All signed-in people");
         held.resolve();
         await waitFor(() => ui.text().includes("Lea Schmitt"), "the loaded rows");
         expect(ui.dom.root.querySelector("input[role=combobox]")).not.toBeNull();
+        expect(ui.text()).toContain("All signed-in people");
+        // Nothing was saved: closing after the load does not tell the caller to reload.
+        ui.button("Cancel")!.click();
+        await waitFor(() => ui.close.mock.calls.length > 0, "the dialog to close");
+        expect(ui.close).toHaveBeenCalledWith(false);
       } finally {
         ui.cleanup();
       }
@@ -752,9 +787,18 @@ describe("AccessDialog", () => {
 
     test("the level menu says what each level means and can remove the row", async () => {
       const ui = await renderDialog();
+      // A checked choice elsewhere on the page must not take the menu's focus.
+      const page = ui.dom.document.createElement("div");
+      page.setAttribute("role", "radio");
+      page.setAttribute("aria-checked", "true");
+      page.tabIndex = 0;
+      ui.dom.document.body.prepend(page);
       try {
         ui.row("Lea Schmitt").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
         const menu = () => ui.row("Lea Schmitt").querySelector<HTMLElement>('[role="dialog"]');
+        await waitFor(() => menu()?.contains(ui.dom.document.activeElement) === true, "the focus in the menu");
+        expect(ui.dom.document.activeElement?.getAttribute("aria-checked")).toBe("true");
+        expect(ui.dom.document.activeElement?.textContent).toContain("View");
         expect(menu()?.textContent).toContain("Sees the content.");
         expect(menu()?.textContent).toContain("Adds and changes content.");
         expect(menu()?.textContent).toContain("Also changes settings and access.");

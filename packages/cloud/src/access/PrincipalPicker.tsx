@@ -95,9 +95,11 @@ export default function PrincipalPicker(props: {
         url.searchParams.set("service_account_status", props.serviceAccountStatus);
       }
       url.searchParams.set("per_page", "10");
-      const users = props.existing?.flatMap((p) => (p.type === "user" ? [p.userId] : [])) ?? [];
-      const groups = props.existing?.flatMap((p) => (p.type === "group" ? [p.groupId] : [])) ?? [];
-      const services = props.existing?.flatMap((p) => (p.type === "service_account" ? [p.serviceAccountId] : [])) ?? [];
+      // With a reason for listed principals, the server must return them too, so they can show greyed.
+      const excluded = props.takenReason ? [] : (props.existing ?? []);
+      const users = excluded.flatMap((p) => (p.type === "user" ? [p.userId] : []));
+      const groups = excluded.flatMap((p) => (p.type === "group" ? [p.groupId] : []));
+      const services = excluded.flatMap((p) => (p.type === "service_account" ? [p.serviceAccountId] : []));
       if (users.length) url.searchParams.set("exclude_user_ids", users.join(","));
       if (groups.length) url.searchParams.set("exclude_group_ids", groups.join(","));
       if (services.length) url.searchParams.set("exclude_service_account_ids", services.join(","));

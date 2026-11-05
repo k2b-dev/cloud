@@ -93,7 +93,10 @@ export function Combobox(props: ComboboxProps): JSX.Element {
   createEffect(
     on(options, (list) => {
       const index = props.autoHighlight;
-      if (index !== undefined && focusedIndex() < 0 && popover.open() && list.length > 0) setFocusedIndex(Math.min(index, list.length - 1));
+      if (index === undefined || focusedIndex() >= 0 || !popover.open() || list.length === 0) return;
+      // A result that cannot be picked is never the one Enter takes: the next one that can, or none.
+      const start = Math.min(index, list.length - 1);
+      setFocusedIndex(list[start]?.disabled ? nextEnabledChoiceIndex(list, start, 1) : start);
     }),
   );
   createEffect(() => {

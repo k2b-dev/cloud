@@ -32,6 +32,7 @@ import {
   emptyDraft,
   lastManagerKeys,
   managerCount,
+  managerKeys,
   removeRow,
   restoreRow,
   saveOrder,
@@ -125,7 +126,9 @@ export function AccessDialog(
   const t = () => accessDialogMessages.resolve([locale()]).t;
   const access = () => accessMessages.resolve([locale()]).t;
   const canEdit = () => props.canEdit !== false;
-  const [draft, setDraft] = createSignal<AccessDraft>(emptyDraft(props.initialEntries ?? []));
+  // What was stored when the dialog started; a save makes the draft's base a new list.
+  let baseline: readonly AccessEntry[] = props.initialEntries ?? [];
+  const [draft, setDraft] = createSignal<AccessDraft>(emptyDraft(baseline));
   const [loadState, setLoadState] = createSignal<"ready" | "loading" | "failed">(
     props.initialEntries === undefined && props.loadEntries ? "loading" : "ready",
   );
@@ -141,6 +144,7 @@ export function AccessDialog(
     try {
       const entries = await read(controller.signal);
       if (controller.signal.aborted) return;
+      baseline = entries;
       setDraft(emptyDraft(entries));
       setLoadState("ready");
     } catch {
@@ -202,8 +206,10 @@ export function AccessDialog(
   const objectAccountRows = () => rows().filter((row) => isObjectAccount(row.display.serviceAccountKind));
   /** In read-only mode, who can change access: the people and groups that manage it, by name. */
   const readOnlyLine = () => {
+    // The same managers the last-manager rule counts: unscoped, and not shadowed by a denial.
+    const managing = managerKeys(draft(), props.effectiveEntries);
     const names = rows()
-      .filter((row) => row.next?.permission === "admin" && (row.principal.type === "user" || row.principal.type === "group"))
+      .filter((row) => managing.has(row.key) && (row.principal.type === "user" || row.principal.type === "group"))
       .map((row) => nameOf(row));
     return names.length > 0
       ? t().readOnlyManagers({ names: new Intl.ListFormat(locale(), { type: "conjunction" }).format(names) })
@@ -349,7 +355,7 @@ export function AccessDialog(
       });
       if (!discard || disposed) return;
     }
-    props.close(changes().length === 0 && draft().base !== props.initialEntries);
+    props.close(changes().length === 0 && draft().base !== baseline);
   };
   props.setDismissHandler?.(() => void dismiss());
 
@@ -391,6 +397,7 @@ export function AccessDialog(
   const LevelMenu = (menuProps: { row: DraftRow; onRemove?: (trigger: HTMLElement) => void }) => {
     const [open, setOpen] = createSignal(false);
     let trigger: HTMLButtonElement | undefined;
+    let menu: HTMLDivElement | undefined;
     const row = () => menuProps.row;
     const protectedRow = () => lastManagers().has(row().key);
     const current = () => (row().next ? levelKey(row().next!.permission, row().next!.scope) : "");
@@ -429,9 +436,12 @@ export function AccessDialog(
             onClose={() => setOpen(false)}
             label={t().levelFor({ name: nameOf(row()) })}
             width="21rem"
-            initialFocus={() => trigger?.ownerDocument.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')}
+            initialFocus={() =>
+              menu?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]:not(:disabled)') ??
+              menu?.querySelector<HTMLElement>('[role="radio"]:not(:disabled)')
+            }
           >
-            <div class="flex flex-col gap-2 p-2">
+            <div ref={menu} class="flex flex-col gap-2 p-2">
               <ChoiceList
                 aria-label={t().levelFor({ name: nameOf(row()) })}
                 value={current}
@@ -758,7 +768,7 @@ export function AccessDialog(
             </Show>
           </PanelDialog.Section>
 
-          <Show when={showGeneral()}>
+          <Show when={!loading() && showGeneral()}>
             <PanelDialog.Section title={t().general}>
               <ul class="flex flex-col">
                 <Show when={props.allowAuthenticated !== false || generalRow("authenticated")}>
