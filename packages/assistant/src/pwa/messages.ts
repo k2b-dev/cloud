@@ -39,6 +39,8 @@ export const pwaMessages = i18n.define({
       unconfirmed: "Your message is not confirmed.",
       createFailed: "The chat could not be started. Your text stays in the field.",
       attachFiles: "Attach files",
+      uploadAgain: "Upload again",
+      waitingForNetwork: "Waiting for network",
       discarded: ({ count }: { count: number }) => (count === 1 ? "1 file was not attached." : `${count} files were not attached.`),
     },
     de: {
@@ -76,6 +78,8 @@ export const pwaMessages = i18n.define({
       unconfirmed: "Deine Nachricht ist nicht bestätigt.",
       createFailed: "Der Chat ließ sich nicht starten. Dein Text bleibt im Feld.",
       attachFiles: "Dateien anhängen",
+      uploadAgain: "Erneut hochladen",
+      waitingForNetwork: "Wartet auf Netz",
       discarded: ({ count }: { count: number }) =>
         count === 1 ? "1 Datei wurde nicht angehängt." : `${count} Dateien wurden nicht angehängt.`,
     },

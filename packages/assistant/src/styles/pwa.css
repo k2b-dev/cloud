@@ -97,7 +97,7 @@
 
 /* The reason line above the field: offline, no AI, or what failed. */
 .assistant-pwa-hint { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--k2b-text-secondary); }
-.assistant-pwa-hint--error > .ti { color: var(--k2b-danger); }
+.assistant-pwa-hint--error > .ti { color: var(--k2b-danger-text); }
 .assistant-pwa-hint__link { margin-inline-start: 0.25rem; color: var(--k2b-action); font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
 
 /* One chat: the timeline scrolls, the field stays at the bottom edge and pads the safe area itself, because a chat
@@ -127,5 +127,5 @@
   .k2b-ui .assistant-pwa-narrow-only { display: none; }
 }
 .assistant-pwa-row__pin { flex: none; font-size: 0.875rem; }
-.assistant-pwa-hint--warning > .ti { color: var(--k2b-warning); }
+.assistant-pwa-hint--warning > .ti { color: var(--k2b-warning-text); }
 button.assistant-pwa-hint__link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }

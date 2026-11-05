@@ -40,6 +40,7 @@ import { AssistantWaitingStrip } from "../frontend/AssistantWaitingStrip";
 import { createAssistantLiveHub, followAssistantLive, matchesAssistantInvalidation } from "../frontend/assistant-live";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { pwaMessages } from "./messages";
+import { type StoredChatFile, uploadChatFile } from "./upload";
 import { createOnline } from "./online";
 import { addressHref, newChatHref, type PwaAddress, pwaAddress, startHref } from "./paths";
 import { ChatRows, SkeletonRows } from "./rows";
@@ -242,6 +243,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
   createEffect(on(draftKey, (key) => restoreDraft(key), { defer: true }));
   const attachments = () => files()[draftKey()] ?? [];
   const clearDraft = (key: string) => {
+    for (const record of files()[key] ?? []) setUpload(record.id, null);
     setTexts((current) => ({ ...current, [key]: "" }));
     setFiles((current) => ({ ...current, [key]: [] }));
     pwaDrafts.remove(props.userId, `assistant.composer:${key}`);
@@ -293,8 +295,8 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       clearDraft(fromKey);
       go({ level: "chat", id: target });
     }
-    const message = { ...aiComposerSendInput(input), conversationId: target, model: selectedModel() };
     setSending(true);
+    const message = { ...(await withUploadedFiles(input)), conversationId: target, model: selectedModel() };
     const sent = await (input.intent === "queue" || chat.running() ? chat.queueMessage(message) : chat.send(message)).finally(() =>
       setSending(false),
     );
@@ -317,6 +319,97 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     return true;
   };
 
+  // ---- attachments of an open chat upload while the person writes, so sending does not wait for them. Each shows its
+  // progress, a failure with "Upload again", or offline that it waits for the network; with the network back the
+  // waiting ones go on by themselves. A new chat has no place for files yet: its files upload when it is sent.
+  type Upload =
+    | { state: "uploading"; progress: number; done: Promise<StoredChatFile | null> }
+    | { state: "failed" | "waiting" }
+    | { state: "done"; file: StoredChatFile };
+  const [uploads, setUploads] = createSignal<Record<string, Upload>>({});
+  const setUpload = (id: string, upload: Upload | null) =>
+    setUploads((current) => {
+      const next = { ...current };
+      if (upload) next[id] = upload;
+      else delete next[id];
+      return next;
+    });
+  const uploadable = (record: AiComposerAttachment): record is Extract<AiComposerAttachment, { kind: "image" | "file" }> =>
+    record.kind === "image" || record.kind === "file";
+  const startUpload = (conversationId: string, record: AiComposerAttachment) => {
+    if (!uploadable(record)) return;
+    if (!navigator.onLine) {
+      setUpload(record.id, { state: "waiting" });
+      return;
+    }
+    const done = uploadChatFile(conversationId, record.file, (progress) => {
+      const current = uploads()[record.id];
+      if (current?.state === "uploading") setUpload(record.id, { ...current, progress });
+    }).then(
+      (file) => {
+        if (uploads()[record.id]) setUpload(record.id, { state: "done", file });
+        return file;
+      },
+      () => {
+        if (uploads()[record.id]) setUpload(record.id, { state: navigator.onLine ? "failed" : "waiting" });
+        return null;
+      },
+    );
+    setUpload(record.id, { state: "uploading", progress: 0, done });
+  };
+  onMount(() => {
+    const resume = () => {
+      const key = draftKey();
+      if (key === NEW_DRAFT) return;
+      for (const record of files()[key] ?? []) if (uploads()[record.id]?.state === "waiting") startUpload(key, record);
+    };
+    window.addEventListener("online", resume);
+    onCleanup(() => window.removeEventListener("online", resume));
+  });
+  /** What the field shows of each attachment: its upload's progress or state, otherwise the attachment itself. */
+  const shownAttachments = () =>
+    aiChatAttachments(attachments()).map((attachment) => {
+      const upload = uploads()[attachment.id];
+      const key = draftKey();
+      const record = attachments().find((entry) => entry.id === attachment.id);
+      if (upload?.state === "uploading") return { ...attachment, progress: upload.progress };
+      if (upload?.state === "failed" && record)
+        return {
+          ...attachment,
+          action: {
+            id: "upload-again",
+            label: t().uploadAgain,
+            icon: "ti ti-alert-circle",
+            variant: "danger" as const,
+            onSelect: () => startUpload(key, record),
+          },
+        };
+      if (upload?.state === "waiting")
+        return { ...attachment, action: { id: "waiting", label: t().waitingForNetwork, icon: "ti ti-wifi-off", disabled: true, onSelect: () => {} } };
+      return attachment;
+    });
+  /** The send input with every file already in the chat sent by reference; the rest uploads with the message. */
+  const withUploadedFiles = async (input: ChatSubmitInput) => {
+    const records = aiComposerAttachmentRecords(input.attachments);
+    const stored: StoredChatFile[] = [];
+    const pending = new Set<File>();
+    for (const record of records) {
+      const upload = uploads()[record.id];
+      const file = upload?.state === "uploading" ? await upload.done : upload?.state === "done" ? upload.file : null;
+      if (file && uploadable(record)) {
+        stored.push(file);
+        pending.add(record.file);
+      }
+    }
+    const message = aiComposerSendInput(input);
+    const files = message.files?.filter((file) => !pending.has(file));
+    return {
+      ...message,
+      files: files?.length ? files : undefined,
+      storedFiles: [...(message.storedFiles ?? []), ...stored].length ? [...(message.storedFiles ?? []), ...stored] : undefined,
+    };
+  };
+
   const addFiles = async (selected: readonly File[]) => {
     const key = draftKey();
     const current = files()[key] ?? [];
@@ -326,6 +419,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       currentImageBytes: current.reduce((sum, file) => sum + (file.kind === "image" ? file.size : 0), 0),
     });
     setFiles((all) => ({ ...all, [key]: [...(all[key] ?? []), ...result.attachments] }));
+    if (key !== NEW_DRAFT) for (const record of result.attachments) startUpload(key, record);
     const reasons = [...result.errors, ...(result.discarded ? [t().discarded({ count: result.discarded })] : [])];
     setNotice(reasons.length ? reasons.join(" ") : null);
   };
@@ -412,7 +506,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       state={chat.runStatus() === "stopping" ? "stopping" : answering() ? "running" : creating() || sending() ? "submitting" : "idle"}
       runningSubmitIntent="queue"
       onStop={answering() ? () => void chat.abort() : undefined}
-      attachments={aiChatAttachments(attachments())}
+      attachments={shownAttachments()}
       onAttachmentsChange={(next) => setFiles((all) => ({ ...all, [draftKey()]: aiComposerAttachmentRecords(next) }))}
       fileSelection={{
         onSelect: addFiles,
