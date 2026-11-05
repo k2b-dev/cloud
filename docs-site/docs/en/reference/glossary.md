@@ -63,8 +63,8 @@ use the terms above.
 
 | English | German | Meaning | Not in English | Not in German |
 | --- | --- | --- | --- | --- |
-| share, sharing | teilen, Freigabe | Give other people access to a resource. „Freigabe“ is the sharing area or one share. In new text it never means an approval. | — | `Zugriffsfreigabe*`, `Lesefreigabe*` |
-| approve, approval | genehmigen, Genehmigung | A person confirms a change before it takes effect. | `sign off`, `sign-off` | — |
+| share, sharing | teilen, Freigabe | Give other people access to a resource. „Freigabe“ is the sharing area or one share. | — | `Zugriffsfreigabe*`, `Lesefreigabe*` |
+| approve, approval | freigeben, Freigabe | A person confirms a change or a version before it takes effect, such as „Diese Version braucht die Freigabe des Cloud-Admins“. Name who approves, so the approval does not read as a share. | `sign off`, `sign-off` | — |
 | claim | übernehmen | Take a task or a shift so that others see who works on it. Use „übernehmen“ only in this sense; for settings write „anwenden“ or „speichern“. | `pick up`, `grab` | `beanspruchen` |
 | assign, assignee | zuweisen, zugewiesene Person | Make a person responsible for an item. In Spaces, a person's claim is the working state of one assignee. | — | — |
 | notification | Benachrichtigung | A message from Cloud about a change or an event. | — | `Mitteilung*`, `Notification*` |
