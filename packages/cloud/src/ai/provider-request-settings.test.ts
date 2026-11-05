@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { memoryStore, nessi, type StoreEntry } from "@k2b/nessi";
+import { complete } from "@k2b/nessi/ai";
 import { z } from "zod";
 import { createCloudCompactFn } from "./compaction";
 import { createAiProvider, taskReasoningEffort } from "./provider";
@@ -21,33 +22,14 @@ afterEach(() => {
   server = undefined;
 });
 const providers: AiProviderId[] = ["openai", "openrouter", "vllm", "openai-compatible", "anthropic", "gemini", "ollama", "mistral"];
-const completion = (provider: AiProviderId, text = '{"answer":"ok"}') => {
-  if (provider === "anthropic")
-    return { content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } };
-  if (provider === "gemini")
-    return {
-      candidates: [{ content: { parts: [{ text }] }, finishReason: "STOP" }],
-      usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
-    };
-  if (provider === "ollama") return { message: { content: text }, done: true, done_reason: "stop", prompt_eval_count: 1, eval_count: 1 };
-  return { choices: [{ message: { content: text }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1 } };
-};
-const streaming = (provider: AiProviderId) => {
-  const text = JSON.stringify('{"answer":"ok"}');
-  if (provider === "anthropic")
-    return `event: content_block_start\ndata: {"index":0,"content_block":{"type":"text","text":""}}\n\nevent: content_block_delta\ndata: {"index":0,"delta":{"type":"text_delta","text":${text}}}\n\nevent: content_block_stop\ndata: {"index":0}\n\nevent: message_delta\ndata: {"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}\n\nevent: message_stop\ndata: {}\n\n`;
-  if (provider === "gemini") return `data: ${JSON.stringify(completion(provider))}\n\n`;
-  if (provider === "ollama") return `${JSON.stringify(completion(provider))}\n`;
-  return `data: {"choices":[{"delta":{"content":${text}}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n`;
-};
-const expectedThinking = (provider: AiProviderId, disabled = false) => {
-  if (provider === "anthropic") return disabled ? {} : { thinking: { type: "adaptive" }, output_config: { effort: "medium" } };
-  if (provider === "gemini")
-    return { generationConfig: { thinkingConfig: disabled ? { thinkingBudget: 0 } : { thinkingLevel: "medium" } } };
-  if (provider === "ollama") return disabled ? {} : { think: "medium" };
-  if (provider === "mistral") return disabled ? {} : { reasoning_effort: "medium" };
-  if (provider === "openrouter") return { reasoning: { effort: disabled ? "low" : "medium" } };
-  return { reasoning_effort: disabled ? "low" : "medium" };
+// Every provider type is an OpenAI-compatible chat endpoint.
+const streaming = () =>
+  `data: {"choices":[{"delta":{"content":${JSON.stringify('{"answer":"ok"}')}}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n`;
+/** The thinking fields of a request: the profile's level for a loop, the task level for structured calls and compaction. */
+const expectedThinking = (provider: AiProviderId, task = false) => {
+  const effort = task ? taskReasoningEffort(provider) : "medium";
+  if (effort === undefined) return {};
+  return provider === "openrouter" ? { reasoning: { effort } } : { reasoning_effort: effort };
 };
 
 for (const providerId of providers)
@@ -58,12 +40,8 @@ for (const providerId of providers)
       fetch: async (request) => {
         const body = z.record(z.string(), z.unknown()).parse(await request.json());
         requests.push({ body, headers: request.headers, url: request.url });
-        const isStream = body.stream === true || request.url.includes("streamGenerateContent");
-        return isStream
-          ? new Response(streaming(providerId), {
-              headers: { "Content-Type": providerId === "ollama" ? "application/x-ndjson" : "text/event-stream" },
-            })
-          : Response.json(completion(providerId));
+        expect(body.stream).toBe(true);
+        return new Response(streaming(), { headers: { "Content-Type": "text/event-stream" } });
       },
     });
     const profile: AiModelProfile = {
@@ -84,16 +62,17 @@ for (const providerId of providers)
       reasoningEffort: "medium",
       extraBody: { custom: { feature: true } },
     };
-    const booked: (number | undefined)[] = [];
     const rawProvider = createAiProvider(profile, "api-key", { "X-Secret": "header-secret", Authorization: "custom-authorization" });
-    const counted = inferenceProvider(rawProvider, profile, { kind: "chat", task: "chat" }, undefined, {
-      begin: async (_profile, _context, _tokens, _max, defaultOutputTokens) => {
-        booked.push(defaultOutputTokens);
-        return { id: crypto.randomUUID(), maxOutputTokens: undefined };
+    const counted = inferenceProvider(
+      rawProvider,
+      profile,
+      { kind: "chat", task: "chat" },
+      {
+        begin: async () => ({ id: crypto.randomUUID(), maxOutputTokens: undefined }),
+        finish: async () => {},
+        heartbeat: async () => {},
       },
-      finish: async () => {},
-      heartbeat: async () => {},
-    });
+    );
     const policy = applyAiTurnPolicy({
       provider: counted,
       tools: [],
@@ -119,14 +98,12 @@ for (const providerId of providers)
       expect(requests[0]!.headers.get("X-Secret")).toBe("header-secret");
       expect(requests[0]!.headers.get("Authorization")).toBe("Bearer api-key");
     } else expect(requests[0]!.headers.get("X-Secret")).toBeNull();
-    if (providerId === "anthropic") expect(booked[0]).toBe(8192);
 
     await nessi.structured({
-      agentId: "test",
       provider: counted,
       input: "title",
       output: z.object({ answer: z.string() }),
-      reasoningEffort: taskReasoningEffort(counted),
+      reasoningEffort: taskReasoningEffort(providerId),
     });
     expect(requests[1]!.body).toMatchObject({ ...expectedThinking(providerId, true), custom: { feature: true } });
     if (rawProvider.capabilities.structuredOutput === true) {
@@ -134,20 +111,14 @@ for (const providerId of providers)
         case "openai":
         case "openrouter":
         case "mistral":
+        case "anthropic":
+        case "gemini":
+        case "ollama":
           expect(requests[1]!.body).toHaveProperty("response_format.type", "json_schema");
           expect(requests[1]!.body).toHaveProperty("response_format.json_schema.schema.properties.answer.type", "string");
           break;
         case "vllm":
           expect(requests[1]!.body).toHaveProperty("structured_outputs.json.properties.answer.type", "string");
-          break;
-        case "anthropic":
-          expect(requests[1]!.body).toHaveProperty("output_config.format.schema.properties.answer.type", "string");
-          break;
-        case "gemini":
-          expect(requests[1]!.body).toHaveProperty("generationConfig.responseJsonSchema.properties.answer.type", "string");
-          break;
-        case "ollama":
-          expect(requests[1]!.body).toHaveProperty("format.properties.answer.type", "string");
           break;
         case "openai-compatible":
           throw new Error("The generic adapter should not advertise native structured output");
@@ -171,6 +142,7 @@ for (const providerId of providers)
       await createCloudCompactFn({
         conversationId: "test",
         modelId: "test",
+        providerType: providerId,
         additionalInstructions: "",
         signal: new AbortController().signal,
       })({
@@ -188,8 +160,6 @@ for (const providerId of providers)
     expect(requests).toHaveLength(3);
     expect(requests[2]!.body).toMatchObject({ ...expectedThinking(providerId, true), custom: { feature: true } });
     for (const request of [requests[1]!, requests[2]!]) {
-      if (providerId === "gemini") expect(request.url).toContain("streamGenerateContent");
-      else expect(request.body.stream).toBe(true);
       if (providerId === "anthropic" || providerId === "mistral" || providerId === "ollama")
         for (const key of ["thinking", "reasoning_effort", "think", "reasoning"]) expect(request.body[key]).toBeUndefined();
       if (providerId === "openai" || providerId === "vllm" || providerId === "openai-compatible")
@@ -198,7 +168,7 @@ for (const providerId of providers)
     if (providerId === "vllm" || providerId === "openai-compatible") {
       for (const request of requests) expect(request.headers.get("X-Secret")).toBe("header-secret");
     }
-    await createAiProvider({ ...profile, reasoningEffort: undefined, extraBody: undefined }, "api-key").complete({ messages: [] });
+    await complete(createAiProvider({ ...profile, reasoningEffort: undefined, extraBody: undefined }, "api-key"), { messages: [] });
     const defaultBody = requests[3]!.body;
     for (const key of ["reasoning_effort", "reasoning", "thinking", "think", "custom"]) expect(defaultBody[key]).toBeUndefined();
     expect(defaultBody.generationConfig).toBeUndefined();

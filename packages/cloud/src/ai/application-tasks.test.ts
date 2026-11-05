@@ -36,9 +36,6 @@ const resolved: AiResolvedModel = {
     family: "openai-compatible",
     model: "test",
     capabilities: { streaming: false, tools: false, images: false, thinking: false, usage: false },
-    complete: async () => {
-      throw new Error("Unused provider");
-    },
     async *stream() {
       throw new Error("Unused provider");
     },
