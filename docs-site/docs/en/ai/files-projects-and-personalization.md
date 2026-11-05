@@ -219,8 +219,8 @@ Universal Search and can be filtered by application. The HTTP API and
 
 In **Administration > AI > Skills** and **Projects**, open **Permissions** and
 choose **Add service account**. Paste the Code account's exact handle
-(`code-` followed by ten characters), choose **Find**, add the result, and
-save the changes. A name, UUID, partial handle, or unknown handle finds
+(`code-` followed by ten characters); the dialog looks it up as you paste.
+Select the result and save the changes. Press Enter to retry a failed lookup. A name, UUID, partial handle, or unknown handle finds
 no Code account. The lookup requires Manage on this Skill or Project; Cloud
 administrators can use their existing access-recovery authority. Excessive
 lookups return a rate-limit error; the dialog keeps the handle for retry.

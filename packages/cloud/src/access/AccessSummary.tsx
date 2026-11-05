@@ -1,7 +1,7 @@
 import { AvatarStack, type AvatarStackPerson, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import { cloudAvatarImage } from "../account/Avatar";
-import type { AccessEntry } from "../contracts/shared";
+import type { AccessEntry, ServiceAccountKind } from "../contracts/shared";
 import { accessDialogMessages } from "./access-dialog-messages";
 import { accessMessages } from "./messages";
 import { type AllowedLevel, levelKey, resolveAllowedLevels } from "./PermissionEditor";
@@ -46,9 +46,9 @@ export function AccessSummary(props: {
     return [...byPrincipal.values()];
   });
   const general = (type: "authenticated" | "public") => strongest().find((entry) => entry.principal.type === type);
-  // Code's own service accounts carry the kind `code` where the code lane adds it. An object's account belongs to its
-  // API keys, which the app shows in their own section.
-  const kind = (entry: AccessEntry): string | undefined => entry.serviceAccountKind;
+  // Code's own service accounts carry the kind `code`. An object's account belongs to its API keys, which the app
+  // shows in their own section.
+  const kind = (entry: AccessEntry): ServiceAccountKind | undefined => entry.serviceAccountKind;
   const serviceAccounts = () => strongest().filter((entry) => kind(entry) === "code");
   const members = () =>
     strongest().filter(

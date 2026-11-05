@@ -1491,7 +1491,7 @@ test("notebook targets reject a note, parent or annotation from another notebook
 
 test("note.create starts from a page template only for writers, with the caller filled in", async () => {
   setSystemTime(new Date("2026-11-05T10:00:00.000Z"));
-  trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+  const byShortId = trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
   const permission = trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
   trackedSpy(spyOn(noteStore, "defaultDateConfig")).mockResolvedValue({ timeZone: "UTC", locale: "en", firstDayOfWeek: 1 });
   const create = trackedSpy(spyOn(noteStore, "create")).mockResolvedValue({ ok: true, data: note });
@@ -1514,4 +1514,6 @@ test("note.create starts from a page template only for writers, with the caller 
   expect(content).toContain("**Notes by:** Notebook User");
   expect(content).not.toContain("{{");
   expect(operation.input.safeParse({ templateId: "meeting-notes", content: "# X" }).success).toBe(false);
+  // The notebook comes from the Action's target, never from the input.
+  expect(byShortId).toHaveBeenCalledWith(expect.objectContaining({ shortId: "abc123" }));
 });
