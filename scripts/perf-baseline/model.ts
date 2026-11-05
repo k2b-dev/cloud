@@ -21,7 +21,7 @@ export const pageApps: Record<PageId, string[]> = {
   files: ["filesv2"],
   accounts: ["accounts"],
   spaces: ["spaces"],
-  pwa: ["pwa", "spaces", "chat"],
+  pwa: ["pwa", "spaces", "chat", "assistant"],
 };
 
 export function parseArgs(args: string[]) {
@@ -141,6 +141,8 @@ export const pwaStepIds = [
   "launch-timezone",
   "tab-start-chat",
   "tab-chat-start",
+  "tab-start-assistant",
+  "tab-assistant-chat",
   "tab-start-spaces",
   "tab-spaces-start",
   "tab-start-settings",
