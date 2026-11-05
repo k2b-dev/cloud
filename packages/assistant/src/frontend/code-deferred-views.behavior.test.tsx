@@ -52,26 +52,32 @@ else {
     const pending = new Promise<void>((resolve) => {
       release = resolve;
     });
-    spyOn(reload!, "importOnDemand").mockImplementation(async (loader) => {
-      await pending;
-      return loader();
+    let imported!: Promise<unknown>;
+    spyOn(reload!, "importOnDemand").mockImplementation((loader) => {
+      imported = pending.then(() => loader());
+      return imported as ReturnType<typeof loader>;
     });
     const host = mount();
     const status = host.querySelector('[role="status"]');
     expect(status?.textContent).toContain("Loading…");
     expect(host.querySelector(".cloud-code")).toBeNull();
     release();
-    // The shared Code page is a separate chunk; give its import a moment.
-    for (let i = 0; i < 50 && !host.querySelector(".cloud-code"); i++) await Bun.sleep(10);
+    // The shared Code page is a separate chunk; its import settles, then Solid renders it.
+    await imported;
+    await settle();
     expect(heading(host)).toBe("Weekly sales report");
     expect(host.textContent).toContain("Your Code · runs as you");
     expect(host.querySelector(".assistant-deferred-feedback")).toBeNull();
   });
 
   test("a failed download shows the error with Retry, and Retry loads the same Code page", async () => {
+    let retried!: Promise<unknown>;
     const load = spyOn(reload!, "importOnDemand")
       .mockResolvedValueOnce(undefined)
-      .mockImplementationOnce(async (loader) => loader());
+      .mockImplementationOnce((loader) => {
+        retried = loader();
+        return retried as ReturnType<typeof loader>;
+      });
     const host = mount();
     await settle();
     const alert = host.querySelector('[role="alert"]');
@@ -79,7 +85,8 @@ else {
     const retry = [...host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Try again");
     expect(retry).toBeDefined();
     retry!.click();
-    for (let i = 0; i < 50 && !host.querySelector(".cloud-code"); i++) await Bun.sleep(10);
+    await retried;
+    await settle();
     expect(heading(host)).toBe("Weekly sales report");
     expect(host.querySelector('[role="alert"]')).toBeNull();
     expect(load).toHaveBeenCalledTimes(2);
@@ -91,16 +98,20 @@ else {
       release = resolve;
     });
     const loaded = mock(() => {});
-    spyOn(reload!, "importOnDemand").mockImplementation(async (loader) => {
-      await pending;
-      const component = await loader();
-      loaded();
-      return component;
+    let imported!: Promise<unknown>;
+    spyOn(reload!, "importOnDemand").mockImplementation((loader) => {
+      imported = pending.then(async () => {
+        const component = await loader();
+        loaded();
+        return component;
+      });
+      return imported as ReturnType<typeof loader>;
     });
     const host = mount();
     dispose();
     release();
-    for (let i = 0; i < 50 && loaded.mock.calls.length === 0; i++) await Bun.sleep(10);
+    await imported;
+    await settle();
     expect(loaded).toHaveBeenCalled();
     expect(host.querySelector(".cloud-code")).toBeNull();
   });
