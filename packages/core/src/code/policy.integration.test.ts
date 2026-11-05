@@ -113,6 +113,45 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     await database?.drop();
     setSystemTime();
   });
+  test("migration narrows historical asking defaults and overrides and is idempotent", async () => {
+    await sql`UPDATE code.policy_rules SET value='automatic' WHERE left(row,4)='ask_'`;
+    await sql`INSERT INTO code.policy_rules(group_id,row,value) VALUES(${parent}::uuid,'ask_deletes','admin')`;
+    const before = (await readCodePolicySnapshot()).revision;
+    await active(91, ["read", "ask_app_asks"]);
+    await active(92, ["read"]);
+    await migratePolicy();
+    const normalized = await readCodePolicySnapshot();
+    expect(normalized.revision).toBe(before + 1);
+    expect((await sql`SELECT state,pause_reason,pause_rows,pause_policy_revision FROM code.codes WHERE id=${codeId(91)}`)[0]).toEqual({
+      state: "paused",
+      pause_reason: "policy_changed",
+      pause_rows: ["ask_app_asks"],
+      pause_policy_revision: normalized.revision,
+    });
+    expect((await sql`SELECT state FROM code.codes WHERE id=${codeId(92)}`)[0]?.state).toBe("active");
+    expect(normalized.updatedBy).toBeNull();
+    expect(
+      (await sql<{ value: string }[]>`SELECT value FROM code.policy_rules WHERE left(row,4)='ask_'`).every((row) => row.value === "never"),
+    ).toBe(true);
+    await migratePolicy();
+    expect((await readCodePolicySnapshot()).revision).toBe(normalized.revision);
+  });
+
+  test("policy reads and saves normalize historical asking values outside the transport schema", async () => {
+    await sql`UPDATE code.policy_rules SET value='admin' WHERE left(row,4)='ask_'`;
+    const current = await readCodePolicySnapshot();
+    expect(current.definition.rules.filter((rule) => rule.row.startsWith("ask_")).every((rule) => rule.value === "never")).toBe(true);
+    const definition = codePolicyPreset("open");
+    definition.preset = "custom";
+    definition.rules.push({ groupId: parent, row: "ask_deletes", value: "automatic" });
+    await updateCodePolicy({ revision: current.revision, definition }, admin);
+    expect(
+      (await sql<{ value: string }[]>`SELECT value FROM code.policy_rules WHERE left(row,4)='ask_'`).every(
+        (rule) => rule.value === "never",
+      ),
+    ).toBe(true);
+  });
+
   test("forward migration preserves a populated policy", async () => {
     const before = await readCodePolicySnapshot();
     await migratePolicy();

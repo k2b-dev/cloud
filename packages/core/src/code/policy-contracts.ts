@@ -35,6 +35,11 @@ export const CodePolicyPresetSchema = z.enum(["off", "admin", "open", "custom"])
 export type CodePolicyPreset = z.infer<typeof CodePolicyPresetSchema>;
 /** Complete default/group rule table. Resource/app Code ignores group relaxation. */
 export type CodePolicyDefinition = { preset: CodePolicyPreset; rules: CodePolicyRule[] };
+/** Normalize release-fixed rows outside transport schemas, which must remain JSON-Schema representable. */
+export const normalizeCodePolicy = (definition: CodePolicyDefinition): CodePolicyDefinition => ({
+  ...definition,
+  rules: definition.rules.map((rule) => ({ ...rule, value: rule.row.startsWith("ask_") ? "never" : rule.value })),
+});
 /** Stored table shape. Historical presets remain readable; absent defaults resolve to never. */
 export const StoredCodePolicyDefinitionSchema = z
   .object({
@@ -76,7 +81,12 @@ export function codePolicyPreset(preset: Exclude<CodePolicyPreset, "custom">): C
     rules: CODE_POLICY_ROWS.map((row) => ({
       groupId: null,
       row,
-      value: preset === "off" ? "never" : preset === "open" || ["read", "silent_you", "silent_draft"].includes(row) ? "automatic" : "admin",
+      value:
+        row.startsWith("ask_") || preset === "off"
+          ? "never"
+          : preset === "open" || ["read", "silent_you", "silent_draft"].includes(row)
+            ? "automatic"
+            : "admin",
     })),
   };
 }

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:te
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../../ui/test/browser";
 import { codeAreaBrowserFixture } from "./CodeArea.browser-fixture";
-import { FIXTURE_VERSIONS, fixtureApprovalDetail } from "./CodeArea.fixture-data";
+import { FIXTURE_GROUPS, FIXTURE_VERSIONS, fixtureApprovalDetail } from "./CodeArea.fixture-data";
 
 let browser: Browser;
 let fixture: Awaited<ReturnType<typeof codeAreaBrowserFixture>>;
@@ -96,7 +96,7 @@ test("approving sends the unchanged hash binding, shows the result and lowers th
   await page.getByText("Lieferungen eintragen", { exact: true }).waitFor();
   expect(await page.getByText("lieferungenEintragen", { exact: true }).count()).toBe(1);
   expect(await sidebarCode().innerText()).toContain("4");
-  await page.getByText("„Bezieht Personen ein“ steht für Lea Muster auf Admin gibt frei, aus dem Standard.").waitFor();
+  await page.getByText("„Für andere sichtbar“ steht für Lea Muster auf Admin gibt frei, aus dem Standard.").waitFor();
   await page.getByText("https://api.buchhaltung-beispiel.de", { exact: true }).waitFor();
   // The person read down to the diff and decides in the footer.
   await page.getByRole("heading", { name: "Code-Unterschied" }).scrollIntoViewIfNeeded();
@@ -174,11 +174,11 @@ test("a policy change previews what pauses, confirms the list and saves at the r
   const bar = page.locator('[aria-live="polite"]').last();
   await settled(page);
   const before = await page.locator('[data-row="read"]').boundingBox();
-  await page.getByRole("radiogroup", { name: "Wert für Löscht" }).getByRole("radio", { name: "Automatisch" }).click();
+  await page.getByRole("radiogroup", { name: "Wert für Für andere sichtbar" }).getByRole("radio", { name: "Automatisch" }).click();
   await bar.getByText("3 Code pausieren").waitFor();
   await settled(page);
   expect(await page.locator('[data-row="read"]').boundingBox()).toEqual(before);
-  expect(await page.locator('[data-row="ask_deletes"]').getAttribute("data-changed")).toBe("true");
+  expect(await page.locator('[data-row="silent_shared"]').getAttribute("data-changed")).toBe("true");
   await bar.getByRole("button", { name: "Speichern …" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByText("Lieferschein bei Abschluss").waitFor();
@@ -186,14 +186,14 @@ test("a policy change previews what pauses, confirms the list and saves at the r
   await page.getByText("3 Code pausiert, weil die neue Richtlinie seine Einstufungen nicht mehr automatisch erlaubt.").waitFor();
   const update = fixture.requests.find((request) => request.path === "policy/update");
   expect(update?.body).toMatchObject({ revision: 7, definition: { preset: "custom" } });
-  expect(JSON.stringify(update?.body)).toContain('{"groupId":null,"row":"ask_deletes","value":"automatic"}');
+  expect(JSON.stringify(update?.body)).toContain('{"groupId":null,"row":"silent_shared","value":"automatic"}');
 }, 20_000);
 
 test("a concurrent policy change keeps my change, rechecks it on the newer revision and saves both", async () => {
   await goto("sec=policy&state=conflict");
-  await page.getByRole("radiogroup", { name: "Wert für Löscht" }).getByRole("radio", { name: "Automatisch" }).click();
+  await page.getByRole("radiogroup", { name: "Wert für Für andere sichtbar" }).getByRole("radio", { name: "Automatisch" }).click();
   await page.getByText("Ein anderer Admin hat die Richtlinie inzwischen geändert.").waitFor();
-  expect(await page.locator('[data-row="ask_deletes"]').getAttribute("data-changed")).toBe("true");
+  expect(await page.locator('[data-row="silent_shared"]').getAttribute("data-changed")).toBe("true");
   await page.getByRole("button", { name: "Meine Änderung neu prüfen" }).click();
   const bar = page.locator('[aria-live="polite"]').last();
   await bar.getByText("3 Code pausieren").waitFor();
@@ -204,32 +204,32 @@ test("a concurrent policy change keeps my change, rechecks it on the newer revis
   const update = fixture.requests.find((request) => request.path === "policy/update");
   expect(update?.body).toMatchObject({ revision: 9 });
   const saved = JSON.stringify(update?.body);
-  expect(saved).toContain('{"groupId":null,"row":"ask_deletes","value":"automatic"}');
-  expect(saved).toContain('{"groupId":null,"row":"ask_cannot_undo","value":"automatic"}');
+  expect(saved).toContain('{"groupId":null,"row":"silent_shared","value":"automatic"}');
+  expect(saved).toContain('{"groupId":null,"row":"internet","value":"automatic"}');
 }, 20_000);
 
 test("a refused save keeps the change; saving again previews and confirms the current draft", async () => {
   await goto("sec=policy&state=savefail");
-  await page.getByRole("radiogroup", { name: "Wert für Löscht" }).getByRole("radio", { name: "Automatisch" }).click();
+  await page.getByRole("radiogroup", { name: "Wert für Für andere sichtbar" }).getByRole("radio", { name: "Automatisch" }).click();
   const bar = page.locator('[aria-live="polite"]').last();
   await bar.getByRole("button", { name: "Speichern …" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Speichern und 3 pausieren" }).click();
   await page.getByText("Nicht gespeichert.").waitFor();
-  expect(await page.locator('[data-row="ask_deletes"]').getAttribute("data-changed")).toBe("true");
-  await page.getByRole("radiogroup", { name: "Wert für Sensibel" }).getByRole("radio", { name: "Automatisch" }).click();
+  expect(await page.locator('[data-row="silent_shared"]').getAttribute("data-changed")).toBe("true");
+  await page.getByRole("radiogroup", { name: "Wert für KI" }).getByRole("radio", { name: "Automatisch" }).click();
   await bar.getByText("2 Änderungen").waitFor();
   await bar.getByText("3 Code pausieren").waitFor();
   await page.getByRole("button", { name: "Erneut speichern" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Speichern und 3 pausieren" }).click();
   await page.getByText("Gespeichert.").waitFor();
   const saved = JSON.stringify(fixture.requests.filter((request) => request.path === "policy/update").at(-1)?.body);
-  expect(saved).toContain('{"groupId":null,"row":"ask_deletes","value":"automatic"}');
-  expect(saved).toContain('{"groupId":null,"row":"ask_sensitive","value":"automatic"}');
+  expect(saved).toContain('{"groupId":null,"row":"silent_shared","value":"automatic"}');
+  expect(saved).toContain('{"groupId":null,"row":"ai","value":"automatic"}');
 }, 20_000);
 
 test("a lost answer never claims that nothing changed", async () => {
   await goto("sec=policy&state=lost");
-  await page.getByRole("radiogroup", { name: "Wert für Löscht" }).getByRole("radio", { name: "Automatisch" }).click();
+  await page.getByRole("radiogroup", { name: "Wert für Für andere sichtbar" }).getByRole("radio", { name: "Automatisch" }).click();
   await page.locator('[aria-live="polite"]').last().getByRole("button", { name: "Speichern …" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Speichern und 3 pausieren" }).click();
   await page.getByText("Die Antwort ist nicht angekommen.").waitFor();
@@ -278,5 +278,30 @@ test("Code of an app shows its service account and refused call like any Code pa
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
     if (process.env.CODE_PAGE_SHOTS)
       await page.screenshot({ path: `${process.env.CODE_PAGE_SHOTS}/admin-app-${viewport.width}.png`, fullPage: false });
+  }
+}, 30_000);
+
+test("asking rows stay at Never without a choice at desktop and phone widths", async () => {
+  for (const width of [1280, 390]) {
+    for (const query of ["sec=policy", `sec=groups&id=${FIXTURE_GROUPS.buchhaltung}`]) {
+      await goto(query, { width, height: 900 });
+      const rows = page.locator('[data-row^="ask_"]');
+      expect(await rows.count()).toBe(8);
+      for (const row of await rows.all()) {
+        expect(await row.getByRole("radiogroup").count()).toBe(0);
+        expect(await row.getByText("Nie", { exact: true }).count()).toBe(1);
+        expect(await row.getByText("In diesem Release läuft das nicht unbeaufsichtigt.", { exact: true }).count()).toBe(1);
+      }
+    }
+    await goto("sec=policy", { width, height: 900 });
+    if (process.env.CODE_PAGE_SHOTS) {
+      await page.locator('[data-row="ask_sends"]').evaluate((row) => row.scrollIntoView({ block: "start" }));
+      await settled(page);
+      await page.screenshot({ path: `${process.env.CODE_PAGE_SHOTS}/policy-fixed-light-${width}.png`, fullPage: false });
+      await goto(review, { width, height: 900 });
+      await page.getByRole("heading", { name: "Was der Code aufruft" }).scrollIntoViewIfNeeded();
+      await settled(page);
+      await page.screenshot({ path: `${process.env.CODE_PAGE_SHOTS}/approval-calls-light-${width}.png`, fullPage: false });
+    }
   }
 }, 30_000);

@@ -1,6 +1,8 @@
+import { accessDialogMessages } from "../access/access-dialog-messages";
 import { principalLabel } from "../access/principal-label";
 import type { AccessEntry, EntityListItem, PermissionLevel, Principal } from "../contracts";
 import type { CloudResourceRef } from "../contracts/capabilities";
+import { CODE_ACCOUNT_HANDLE_PATTERN } from "../contracts/shared";
 import { arg, command, confirmFlag, flag, paginationFlags } from "./commands";
 import type { CloudCliContext, CloudCliTableColumn } from "./index";
 
@@ -181,6 +183,10 @@ const resolveEntityPrincipal = async (
     return { type: "service_account", serviceAccountId: ref };
   }
 
+  const codeHandle = kind === "service_account" && CODE_ACCOUNT_HANDLE_PATTERN.test(ref);
+  const unavailable = () =>
+    new Error(accessDialogMessages.resolve(ctx.options?.locale ? [ctx.options.locale] : []).t.serviceAccountNotFound);
+  if (codeHandle && !target) throw unavailable();
   const exact: EntityListItem[] = [];
   const seen: EntityListItem[] = [];
   let page = 1;
@@ -206,6 +212,8 @@ const resolveEntityPrincipal = async (
     if (item.kind === "group") return { type: "group", groupId: item.group.id };
     return { type: "service_account", serviceAccountId: item.serviceAccount.id };
   }
+
+  if (codeHandle) throw unavailable();
 
   if (exact.length > 1)
     throw new Error(`${kind.replace("_", " ")} "${ref}" is ambiguous. Use one of: ${exact.map(formatEntityCandidate).join(", ")}`);

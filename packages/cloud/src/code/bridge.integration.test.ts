@@ -96,6 +96,7 @@ const manifest = compileCapabilityManifest("example", {
       policy: { silent: "shared" },
       unattended: false,
     },
+    no_routines: { ...actionOp, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared", routines: false } },
     asks: { ...actionOp, target: "folder", destructive: false, idempotency: "none", policy: { ask: "app_asks" } },
   },
 });
@@ -305,7 +306,14 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     }));
     capabilitySpy = spyOn(registry, "getCapability").mockImplementation(async (id) => (id === "example" ? currentEntry : null));
   });
-  async function resetFixture(options: { personal?: boolean; invalidEntrypoint?: boolean; entry?: boolean } = {}) {
+  async function resetFixture(
+    options: {
+      personal?: boolean;
+      invalidEntrypoint?: boolean;
+      entry?: boolean;
+      policyRows?: CodeCheckedVersionManifest["policyRows"];
+    } = {},
+  ) {
     currentEntry = structuredClone(baseEntry);
     callLimit = 200;
     rateLimited = false;
@@ -331,8 +339,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       ],
       hashes: { source: codeSourceHash(files, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
       permissions: [{ operation: "example.write", target: item, file: "code.ts", line: 1 }],
-      ai: false,
-      policyRows: ["silent_shared"],
+      ai: options.policyRows?.includes("ai") ?? false,
+      policyRows: options.policyRows ?? ["silent_shared"],
     };
     const [version] = await sql<
       { id: string }[]
@@ -704,6 +712,77 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: false, error: { code: "code_policy_never" } });
   });
+  for (const row of ["ai", "internet"] as const)
+    test(`${row}: the bridge requires version approval before admitting the call`, async () => {
+      await resetFixture({ entry: true, policyRows: [row] });
+      await sql`UPDATE code.policy_rules SET value='admin' WHERE row=${row} AND group_id IS NULL`;
+      // AI is a checked-manifest flag in this release; there is no runtime AI bridge kind.
+      // Internet additionally classifies the actual HTTP call and requires that row's coverage.
+      const token = await signCodeRunToken(claims, { issuer, signer, now, deadlineAt: now.getTime() + 300_000 });
+      const verified = await verifyCodeRunToken(token, { issuer, key, now });
+      if (!verified) throw new Error("Fixture token invalid");
+      let executed = 0;
+      const call = () =>
+        createCodeBridgeHost({ checkRate: async () => ({ limited: false }) }).withCall(
+          {
+            claims: verified,
+            kind: row === "ai" ? "query" : "internet",
+            call: { capability: row === "ai" ? "example.read" : "http.fetch", target: null, refs: {}, input: {} },
+          },
+          async (authority) => {
+            await sql.begin((db) =>
+              authority.withMandateIssueAuthority(
+                {
+                  mandateId: authority.mandateId,
+                  expectedRevision: authority.mandateRevision,
+                  ownerAppId: "runner",
+                  targetAppId: row === "ai" ? "example" : "core",
+                  operation: row === "ai" ? "capability.query:read" : "runtime.http",
+                  actionApproval: "none",
+                  input: {},
+                },
+                async () => {
+                  executed++;
+                  return null;
+                },
+                { db },
+              ),
+            );
+            return Response.json({ ok: true, data: null });
+          },
+        );
+      expect(await (await call()).json()).toEqual({ ok: false, error: { code: "code_approval_required" } });
+      expect(executed).toBe(0);
+      await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
+        SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+      if (row === "internet") {
+        expect(await (await call()).json()).toEqual({ ok: false, error: { code: "code_approval_required" } });
+        expect(executed).toBe(0);
+      }
+      await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,${row})`;
+      expect(await (await call()).json()).toEqual({ ok: true, data: null });
+      expect(executed).toBe(1);
+    });
+
+  for (const scenario of [
+    { operation: "example.no_routines", rows: ["silent_shared"], code: "code_unattended_forbidden" },
+    { operation: "example.asks", rows: ["silent_shared", "ask_app_asks"], code: "code_unattended_forbidden" },
+    { operation: "example.sends", rows: ["silent_shared", "ask_sends"], code: "code_sends_not_yet" },
+  ] as const)
+    test(`an approved version declaring ${scenario.rows.join(",")} still refuses ${scenario.operation} at the bridge`, async () => {
+      await resetFixture({ entry: true, policyRows: [...scenario.rows] });
+      await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
+        SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+      const call = { capability: scenario.operation, target: item, refs: {}, input: {} };
+      await error(
+        {
+          operation: scenario.operation,
+          input: { call, metadata: scenario.operation === "example.sends" ? { idempotencyKey: "release-refusal" } : {} },
+        },
+        scenario.code,
+      );
+    });
+
   test("a changed mandate revision is refused", async () => {
     await sql`UPDATE auth.mandates SET revision=revision+1 WHERE id=${claims.mandateId}::uuid`;
     await error({}, "code_mandate_mismatch", 200);
@@ -811,7 +890,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       const call = { capability, target: item, refs: {}, input: {} };
       await error(
         { operation: capability, input: { call, metadata: { idempotencyKey: `forbidden-${operation}` } } },
-        "code_unattended_forbidden",
+        operation === "sends" ? "code_sends_not_yet" : "code_unattended_forbidden",
       );
     });
   }

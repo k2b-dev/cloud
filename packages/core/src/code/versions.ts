@@ -60,6 +60,7 @@ export type CodeVersionErrorCode =
   | "code_version_conflict"
   | "code_hash_mismatch"
   | "code_comparison_stale"
+  | "code_unattended_forbidden"
   | "code_sends_not_yet"
   | "code_approval_required"
   | "code_approval_revoked"
@@ -193,6 +194,8 @@ function checkedSubmission(raw: z.input<typeof codeVersionContracts.submit.input
     throw new CodeVersionError("code_hash_mismatch", "Checker hashes do not match the submitted source and bundle.");
   if (input.manifest.policyRows.includes("ask_sends"))
     throw new CodeVersionError("code_sends_not_yet", "Unattended sending is available in Phase 3.");
+  if (input.manifest.policyRows.some((row) => row.startsWith("ask_")))
+    throw new CodeVersionError("code_unattended_forbidden", "In diesem Release läuft das nicht unbeaufsichtigt.");
   if (!Object.hasOwn(input.sourceFiles, input.manifest.entry))
     throw new CodeVersionError("code_manifest_invalid", "Checker entry does not exist.");
   for (const permission of [...input.manifest.permissions, ...input.manifest.entrypoints]) {
@@ -578,6 +581,8 @@ export async function requireCodeVersionApproval(code: Code, versionId: string, 
   const manifest = manifestFor(version);
   if (manifest.policyRows.includes("ask_sends"))
     throw new CodeVersionError("code_sends_not_yet", "Unattended sending is available in Phase 3.");
+  if (manifest.policyRows.some((row) => row.startsWith("ask_")))
+    throw new CodeVersionError("code_unattended_forbidden", "In diesem Release läuft das nicht unbeaufsichtigt.");
   const [submission] = await db`SELECT version_id FROM code.version_submissions WHERE version_id=${versionId}::uuid`;
   if (!submission) throw new CodeVersionError("code_approval_required", "The version must be submitted first.");
   const policy = await readCodePolicySnapshot(db);

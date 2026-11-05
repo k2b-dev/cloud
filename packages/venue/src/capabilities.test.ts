@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
@@ -666,5 +666,89 @@ test("Venue review and execution reject a template or assignment outside the tar
   } finally {
     resolve.mockRestore();
     owned.mockRestore();
+  }
+});
+
+test("a Code account may read a public Venue but no non-public Venue without its own grant", async () => {
+  setSystemTime(new Date("2026-11-04T12:00:00Z"));
+  const id = "Venue1";
+  const venue = {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    slug: "public-fixture",
+    name: "Public fixture",
+    icon: "ti ti-building",
+    description: null,
+    timezone: "Europe/Berlin",
+    openMode: "regular" as const,
+    signupMode: "both" as const,
+    publicEnabled: true,
+    feedbackEnabled: false,
+    accentColor: "#123456",
+    logoBase64: null,
+    bannerBase64: null,
+    permission: "none" as const,
+    createdAt: "2026-10-01T10:00:00Z",
+    updatedAt: "2026-10-01T10:00:00Z",
+  };
+  const serviceAccountId = "11111111-1111-4111-8111-111111111111";
+  const context: CapabilityExecutionContext = {
+    actor: {
+      kind: "service_account",
+      serviceAccount: {
+        id: serviceAccountId,
+        name: "Code fixture",
+        kind: "code",
+        status: "active",
+        delegatedUserId: null,
+        appId: null,
+        resourceType: null,
+        resourceId: null,
+        createdBy: null,
+        createdAt: "2026-10-01T10:00:00Z",
+      },
+      delegatedUser: null,
+      scopes: ["read", "write"],
+    },
+    accessSubject: { type: "service_account", serviceAccountId },
+    user: null,
+    locale: "en",
+    requestId: "code-public-venue",
+    origin: "app",
+    signal: new AbortController().signal,
+  };
+  const resolve = spyOn(venueService.venues, "resolve").mockResolvedValue({ ok: true, data: venue });
+  const status = spyOn(venueService, "status").mockResolvedValue({
+    venue,
+    open: false,
+    spontaneousOpen: false,
+    statusLabel: "Closed",
+    todayLabel: "Closed today",
+    nextOpeningLabel: null,
+    activeWindowLabel: null,
+    upcomingOpenings: [],
+    upcomingExceptions: [],
+    openingRules: [],
+    sections: [],
+  });
+  try {
+    for (const localId of ["venue.read", "venue.status"] as const) {
+      const input = localId === "venue.read" ? { id } : { venueId: id };
+      expect((await invokeQuery(localId, input, context)).ok).toBe(true);
+      resolve.mockResolvedValueOnce({ ok: true, data: { ...venue, publicEnabled: false } });
+      const denied = await invokeQuery(localId, input, context);
+      expect(denied).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+      expect(denied).not.toHaveProperty("data");
+    }
+    expect(status).toHaveBeenCalledTimes(1);
+    expect(
+      resolve.mock.calls.every(
+        ([, scope]) =>
+          "subject" in scope && scope.subject?.type === "service_account" && scope.subject.serviceAccountId === serviceAccountId,
+      ),
+    ).toBe(true);
+  } finally {
+    resolve.mockRestore();
+    status.mockRestore();
+    setSystemTime();
   }
 });

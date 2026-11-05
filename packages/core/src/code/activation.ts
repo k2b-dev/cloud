@@ -389,6 +389,14 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
           if (!confirmed.ok) throw new CodeDataError("CONFLICT", confirmed.error.message);
           mandate = confirmed.data;
         }
+        // An unconfirmed legacy entry lasts for its current version only. Preserve its
+        // policy and pause it in the switch transaction; new entries retain normal drain.
+        const pausedLegacy =
+          locked.activeVersionId && locked.activeVersionId !== row.version_id
+            ? await tx<{ id: string }[]>`UPDATE auth.mandates SET state='paused',revision=revision+1,updated_at=now()
+            WHERE owner_app_id IN ('core','runner') AND workload_type='code.version'
+              AND workload_id=${locked.activeVersionId} AND policy IS NOT NULL AND state='active' RETURNING id`
+            : [];
         await recordCodeVersionBaseline(code.id, row.version_id, tx);
         await tx`UPDATE code.codes SET active_version_id=${row.version_id}::uuid,state='active',pause_reason=NULL,pause_rows='{}',pause_policy_revision=NULL WHERE id=${code.id}`;
         await tx`UPDATE code.activations SET state='active',failure=NULL,mandate_id=${mandate.id}::uuid,authority=NULL,updated_at=now() WHERE id=${row.id}::uuid`;
@@ -400,7 +408,13 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
             actor: { userId: row.activating_person! },
             target: { type: "code", id: code.id },
             requestId: row.id,
-            metadata: { activationId: row.id, versionId: row.version_id, mandateId: mandate.id, cloudAdmin: saved.cloud_admin },
+            metadata: {
+              activationId: row.id,
+              versionId: row.version_id,
+              mandateId: mandate.id,
+              cloudAdmin: saved.cloud_admin,
+              pausedLegacyMandateIds: pausedLegacy.map((entry) => entry.id),
+            },
           },
           tx,
         );

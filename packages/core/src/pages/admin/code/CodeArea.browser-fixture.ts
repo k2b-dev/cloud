@@ -198,9 +198,9 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
           revision: state === "conflict" ? 9 : 7,
           total: 3,
           items: [
-            { codeId: "c_woche", title: "Wochenbericht Vertrieb", rows: ["ask_deletes"], reason: "policy_changed" },
-            { codeId: "c_liefer", title: "Lieferschein bei Abschluss", rows: ["ask_deletes"], reason: "policy_changed" },
-            { codeId: "c_rechn", title: "Rechnungen an die Buchhaltung", rows: ["ask_deletes"], reason: "policy_changed" },
+            { codeId: "c_woche", title: "Wochenbericht Vertrieb", rows: ["silent_shared"], reason: "policy_changed" },
+            { codeId: "c_liefer", title: "Lieferschein bei Abschluss", rows: ["silent_shared"], reason: "policy_changed" },
+            { codeId: "c_rechn", title: "Rechnungen an die Buchhaltung", rows: ["silent_shared"], reason: "policy_changed" },
           ],
           nextCursor: null,
           owners: { c_woche: "Lea Muster", c_liefer: "Tom Beispiel", c_rechn: null },
@@ -225,7 +225,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
       const policy = data.policy !== null && data.policy !== "failed" && data.policy !== "missing" ? data.policy.policy : null;
       if (!policy) return Response.json({ code: "UNAVAILABLE" }, { status: 503 });
       const rules = policy.definition.rules.map((rule) =>
-        rule.groupId === null && rule.row === "ask_cannot_undo" ? { ...rule, value: "automatic" as const } : rule,
+        rule.groupId === null && rule.row === "internet" ? { ...rule, value: "automatic" as const } : rule,
       );
       return Response.json({ data: { policy: { ...policy, revision: 9, definition: { preset: "custom", rules } } } });
     }

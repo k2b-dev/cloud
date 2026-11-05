@@ -490,7 +490,7 @@ export const list = async (
       ? sql`TRUE`
       : sql`(kind <> 'service_account' OR service_account_kind = ANY(${toPgTextArray(params.serviceAccountKinds ?? [])}::text[]))`;
   const serviceAccountStatusCondition = params.serviceAccountStatus
-    ? sql`(kind <> 'service_account' OR service_account_kind = 'code' OR status = ${params.serviceAccountStatus})`
+    ? sql`(kind <> 'service_account' OR status = ${params.serviceAccountStatus})`
     : sql`TRUE`;
   const userMemberOfGroupCondition =
     (params.userMemberOfGroupIds?.length ?? 0) === 0

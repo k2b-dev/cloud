@@ -16,6 +16,7 @@ import {
   CodePolicySchema,
   type CodePolicyValue,
   type codePolicyContracts,
+  normalizeCodePolicy,
 } from "./policy-contracts";
 import { type CodePolicyGroups, effective } from "./policy-effective";
 
@@ -33,12 +34,13 @@ export async function readCodePolicySnapshot(db: SQL = sql): Promise<CodePolicy>
       ORDER BY group_id NULLS FIRST,row) FROM code.policy_rules),'[]'::jsonb) AS rules
     FROM code.policy p WHERE singleton`;
   if (!row) throw new Error("Code policy unavailable");
-  return CodePolicySchema.parse({
+  const policy = CodePolicySchema.parse({
     revision: row.revision,
     definition: { preset: row.preset, rules: row.rules },
     updatedBy: row.updated_by,
     updatedAt: row.updated_at.toISOString(),
   });
+  return { ...policy, definition: normalizeCodePolicy(policy.definition) };
 }
 /** Current same-provider ancestry, using UNION to terminate cycles. IPA effective memberships are peers. */
 export async function readCodePolicyGroups(userId: string | null, db: SQL = sql): Promise<CodePolicyGroups> {
@@ -215,7 +217,7 @@ async function scanCodePolicyImpacts(
 /** Preview uses a consistent snapshot, with an exact total and a bounded page of affected Codes. */
 export async function previewCodePolicy(input: z.infer<typeof codePolicyContracts.preview.input>, context: CodeContext) {
   requireCodePolicyAdmin(context);
-  const definition = CodePolicyDefinitionSchema.parse(input.definition);
+  const definition = normalizeCodePolicy(CodePolicyDefinitionSchema.parse(input.definition));
   return snapshot(async (db) => {
     const policy = await readCodePolicySnapshot(db);
     if (policy.revision !== input.revision) throw new CodeDataError("CONFLICT", "Code policy changed; read and preview it again.");
@@ -239,7 +241,7 @@ function policyChanges(before: CodePolicyDefinition, after: CodePolicyDefinition
 /** Atomically replace the table using optimistic concurrency, and enqueue a durable batch pause scan. */
 export async function updateCodePolicy(input: z.infer<typeof codePolicyContracts.update.input>, context: CodeContext) {
   const user = requireCodePolicyAdmin(context, true);
-  const definition = CodePolicyDefinitionSchema.parse(input.definition);
+  const definition = normalizeCodePolicy(CodePolicyDefinitionSchema.parse(input.definition));
   return sql.begin(async (tx) => {
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR UPDATE`;
     const previous = await readCodePolicySnapshot(tx);

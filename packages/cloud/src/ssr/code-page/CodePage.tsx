@@ -563,6 +563,9 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
           </Show>
         )}
       </Show>
+      <Show when={props.state.code.needsReconfirmation}>
+        <NoticeCard tone="warning" title={t().reconfirmTitle} detail={t().reconfirmDescription} />
+      </Show>
       <Show when={props.state.code.state === "paused"}>
         <NoticeCard
           tone="warning"

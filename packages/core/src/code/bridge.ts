@@ -86,13 +86,18 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
 }
 async function authorizeCall(call: CodeBridgeCall, db: SQL): Promise<"core" | "runner"> {
   const { code, version, manifest } = await lockCall(call, db);
+  const row = codePolicyRow(call.kind, call.policy);
+  if (row === "ask_sends" || manifest.policyRows.includes("ask_sends")) denied("code_sends_not_yet");
+  if (
+    manifest.policyRows.some((row) => row.startsWith("ask_")) ||
+    (call.kind === "action" && (!call.policy || !("silent" in call.policy) || call.policy.routines === false))
+  )
+    denied("code_unattended_forbidden");
   // S2: the ACTUAL call determines this row. A checker permission/row is never authority.
   const policy = await readCodePolicySnapshot(db);
   const membership = await readCodePolicyGroups(code.owner.kind === "person" ? code.owner.userId : version.created_by, db);
-  const row = codePolicyRow(call.kind, call.policy);
   const value = effective(row, code.owner, policy.definition, membership).value;
   if (value === "never") denied("code_policy_never");
-  if (manifest.policyRows.includes("ask_sends")) denied("code_sends_not_yet");
   const manifestValues = manifest.policyRows.map((row) => effective(row, code.owner, policy.definition, membership).value);
   if (manifestValues.includes("never")) denied("code_policy_never");
   const [evidence] = await db<
@@ -119,9 +124,6 @@ async function authorizeCall(call: CodeBridgeCall, db: SQL): Promise<"core" | "r
     const [coverage] = await db`SELECT row FROM code.policy_coverage WHERE version_id=${call.claims.versionId}::uuid AND row=${row}`;
     if (!coverage) denied("code_approval_required");
   }
-  // C2 deliberately refuses asking Actions unattended, independently of an admin's version approval.
-  if (call.kind === "action" && (!call.policy || !("silent" in call.policy) || call.policy.routines === false))
-    denied("code_unattended_forbidden");
   const [mandate] = await db<
     {
       owner_app_id: "core" | "runner";

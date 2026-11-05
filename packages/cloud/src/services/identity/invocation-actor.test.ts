@@ -83,3 +83,57 @@ describe("Code version entry admission", () => {
     });
   }
 });
+
+const accountRow = {
+  service_account_id: "11111111-1111-4111-8111-111111111111",
+  service_account_name: "Code fixture",
+  service_account_kind: "code",
+  service_account_status: "active",
+  delegated_user_id: null,
+  app_id: null,
+  resource_type: null,
+  resource_id: null,
+  service_account_created_by: null,
+  service_account_created_at: "2026-11-01T00:00:00Z",
+};
+
+test("Code accounts reject API keys and ordinary invocation claims after loading the actual account", async () => {
+  for (const credential_kind of ["api_key", "oauth", "session", "mandate"] as const) {
+    let loaded = 0;
+    const query = (() => {
+      loaded++;
+      return Promise.resolve([accountRow]);
+    }) as unknown as typeof sql;
+    expect(await resolveInvocationAuthority({ ...claims("service_account"), credential_kind }, query, [])).toBeNull();
+    expect(loaded).toBe(1);
+  }
+});
+
+test("the exact access subject is retained for users and Code accounts", async () => {
+  const other = "44444444-4444-4444-8444-444444444444";
+  const userQuery = (() => {
+    throw new Error("A different user subject must fail before loading");
+  }) as unknown as typeof sql;
+  expect(await resolveInvocationAuthority({ ...claims("user"), access_subject_id: other }, userQuery, [])).toBeNull();
+  const base = {
+    ...claims("service_account"),
+    credential_kind: "mandate" as const,
+    mandate_id: "33333333-3333-4333-8333-333333333333",
+    mandate_revision: 1,
+    workload_type: "code.version",
+    workload_id: "approved-version",
+    workload_run: "run-1",
+  };
+  for (const access_subject_id of [base.sub, other]) {
+    let queries = 0;
+    const query = (() => Promise.resolve(++queries === 1 ? [{ id: base.mandate_id }] : [accountRow])) as unknown as typeof sql;
+    const result = await resolveInvocationAuthority({ ...base, access_subject_id }, query, []);
+    if (access_subject_id === other) expect(result).toBeNull();
+    else {
+      expect(result?.accessSubject).toEqual({ type: "service_account", serviceAccountId: base.sub });
+      expect(result?.scopes).toEqual([]);
+      expect(result?.actor.kind === "service_account" && result.actor.scopes).toEqual(["read", "write"]);
+    }
+    expect(queries).toBe(2);
+  }
+});

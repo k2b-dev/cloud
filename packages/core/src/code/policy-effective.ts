@@ -26,6 +26,7 @@ export function effective(
   policy: CodePolicyDefinition,
   membership: CodePolicyGroups,
 ): EffectiveCodePolicyRow {
+  if (row.startsWith("ask_")) return { row, value: "never", source: "veto", groupIds: [] };
   const fallback = policy.rules.find((rule) => rule.row === row && rule.groupId === null)?.value ?? "never";
   const base = { row, value: fallback, source: "default" as const, groupIds: [] };
   if (fallback === "never") return { ...base, source: "veto" };

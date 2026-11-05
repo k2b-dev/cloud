@@ -119,3 +119,20 @@ Core starts activation and drain outbox workers with its normal lifecycle.
 Their failures retain attempts and an error for retry. Separate ordered streams
 let new activations proceed while old runs drain. For owner checks and deletion,
 see [Code lifecycle](/en/docs/platform/code-lifecycle).
+
+## Asking actions and legacy entries
+
+In Administration → Code → Policy, every `ask_*` row is fixed at **Never**.
+The editor says “In diesem Release läuft das nicht unbeaufsichtigt.” Historical
+defaults and group overrides normalize to `never`; approval cannot enable an
+asking action. Migration visibly pauses active versions that declare an asking
+row. Silent actions with `routines: false` and sending remain refused.
+The review's **What the Code calls** section describes the checked calls; it
+does not grant access to their targets.
+
+An active version with a legacy mandate policy shows **Neu bestätigen**.
+Its policy continues to restrict every call. Submitting another version changes
+nothing. Switching on another version confirms a new entry and atomically
+pauses the old policy-bearing entry. New policy-free entries keep their normal
+run-draining lifecycle. To confirm again, switch on a new version through the
+existing activation flow.

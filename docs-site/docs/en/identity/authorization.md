@@ -89,6 +89,12 @@ a direct or group grant: authenticating a machine does not make it a person.
 Public grants retain their existing behavior. Before upgrading, run the
 [people-only access inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people).
 
+Public application reads can explicitly bypass the resource-grant resolver.
+Venue's `venue.read` and `venue.status` allow Code accounts to read a public
+Venue without a direct account grant. This is an exception to “only its own
+grant row”, not a grant inherited from the public tier. Non-public Venues
+still require the Code account's own row.
+
 ### Discover principals safely
 
 Cloud's entity search is caller-scoped before it applies text, kind, provider,

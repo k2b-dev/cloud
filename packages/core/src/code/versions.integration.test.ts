@@ -681,6 +681,13 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await expect(submitCodeVersion(input(code, "send", null, ["ask_sends"]), author)).rejects.toMatchObject({ code: "code_sends_not_yet" });
     expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
   });
+  test("asking rows refuse the version with the release's unattended error", async () => {
+    const code = await newCode();
+    await expect(submitCodeVersion(input(code, "asks", null, ["ask_app_asks"]), author)).rejects.toMatchObject({
+      code: "code_unattended_forbidden",
+    });
+    expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
+  });
   test("policy veto and bad checker locations leave neither a saved version nor an approval", async () => {
     const code = await newCode(),
       bad = input(code, "bad");
