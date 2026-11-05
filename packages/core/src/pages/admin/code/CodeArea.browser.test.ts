@@ -285,6 +285,13 @@ test("Code of an app shows its service account and refused call like any Code pa
       return { size: getComputedStyle(element).fontSize, muted: getComputedStyle(element).color === muted };
     });
     expect(lead).toEqual({ size: "13px", muted: true });
+    // N5-admin-hinweis-schrift: the hint under the notice has the size of the notice's text and of the Code page.
+    const hint = await page.evaluate(() => {
+      const note = document.querySelector<HTMLElement>(".cloud-code__refusal .cloud-code__quiet");
+      const detail = note?.parentElement?.querySelector<HTMLElement>(".k2b-notice-card__description");
+      return note && detail ? { note: getComputedStyle(note).fontSize, detail: getComputedStyle(detail).fontSize } : null;
+    });
+    expect(hint).toEqual({ note: "14px", detail: "14px" });
     expect(await page.locator('a[href="/app/spaces/k7qm2x9a"]').count()).toBe(1);
     expect(await page.getByText("Der nächste Lauf versucht es erneut.", { exact: false }).isVisible()).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);

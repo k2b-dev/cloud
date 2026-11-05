@@ -132,13 +132,17 @@ describe("Machine storage settings", () => {
           await add.waitFor();
           expect(await add.count()).toBe(1);
           await add.click();
+          // As in the shared dialog: the complete handle is looked up as it is pasted, without a search step.
           await tab.getByRole("textbox", { name: "Kennung des Dienstkontos", exact: true }).fill(handle);
-          await tab.getByRole("button", { name: "Suchen", exact: true }).click();
-          await tab.getByText(entry.displayName, { exact: true }).waitFor();
-          await tab.getByRole("button", { name: "Hinzufügen", exact: true }).click();
+          const hit = tab.locator("button", { hasText: entry.displayName });
+          await hit.waitFor();
+          expect(await tab.getByRole("button", { name: "Suchen", exact: true }).count()).toBe(0);
+          expect(await tab.getByRole("button", { name: "Hinzufügen", exact: true }).count()).toBe(0);
+          await hit.click();
           await tab.getByRole("alert").filter({ hasText: "Grant fixture unavailable" }).waitFor();
+          // A failed save keeps the handle and the hit, so the same click retries.
           expect(await tab.getByRole("textbox", { name: "Kennung des Dienstkontos", exact: true }).inputValue()).toBe(handle);
-          await tab.getByRole("button", { name: "Hinzufügen", exact: true }).click();
+          await hit.click();
         } else {
           await tab.getByRole("combobox").last().fill(handle);
           await tab.getByRole("option").filter({ hasText: entry.displayName }).click();
@@ -150,6 +154,57 @@ describe("Machine storage settings", () => {
         expect(granted).toBe(true);
         expect(attempts).toBe(mode === "button" ? 2 : 1);
         expect(await tab.evaluate(() => Math.max(0, document.documentElement.scrollWidth - innerWidth))).toBe(0);
+      } finally {
+        await context.close();
+      }
+    });
+  }
+  for (const [width, options] of [
+    [1280, { viewport: { width: 1280, height: 800 } }],
+    [390, phone],
+  ] as const) {
+    test(`de ${width}px: the handle hit shows the Code icon, its description and the Dienstkonto mark, as in the shared dialog`, async () => {
+      const handle = "code-7k2q9m4xwt";
+      const { context, tab } = await open(options, "light", "de", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname === "/api/accounts/entities")
+          return json(route, {
+            items: [
+              {
+                kind: "service_account",
+                serviceAccount: {
+                  id: "40000000-0000-4000-8000-000000000001",
+                  name: "Code von info@beispiel.de",
+                  kind: "code",
+                  handle,
+                  description: "Dienstkonto eines Postfachs",
+                },
+              },
+            ],
+          });
+        if (url.pathname.endsWith("/grants")) return json(route, { items: [], next: null });
+        return json(route, { items: [storage], next: null });
+      });
+      try {
+        await tab.locator("summary").filter({ hasText: owner.name }).click();
+        await tab.getByRole("button", { name: "Dienstkonto hinzufügen", exact: true }).click();
+        const field = tab.getByRole("textbox", { name: "Kennung des Dienstkontos", exact: true });
+        expect(await field.getAttribute("placeholder")).toBe("Kennung von der Code-Seite, etwa code-7k2q9m4xwt");
+        // The field carries the Code icon, like the dialog's.
+        expect(await field.evaluate((input) => Boolean(input.closest(".k2b-input-shell")?.querySelector(".ti-code")))).toBe(true);
+        await field.fill(handle);
+        const hit = tab.locator("button", { hasText: "Code von info@beispiel.de" });
+        await hit.waitFor();
+        expect(await hit.locator(".ti-code").count()).toBe(1);
+        await hit.getByText("Dienstkonto eines Postfachs", { exact: true }).waitFor();
+        await hit.getByText("Dienstkonto", { exact: true }).waitFor();
+        const box = await hit.boundingBox();
+        expect(box && box.x >= 0 && box.x + box.width <= width).toBe(true);
+        expect(await tab.evaluate(() => Math.max(0, document.documentElement.scrollWidth - innerWidth))).toBe(0);
+        if (process.env.SHOTS) {
+          await hit.evaluate((element) => element.scrollIntoView({ block: "center" }));
+          await tab.screenshot({ path: `${process.env.SHOTS}/files-machine-dienst-hinzu-${width}.png` });
+        }
       } finally {
         await context.close();
       }

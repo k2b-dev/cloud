@@ -87,11 +87,13 @@
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
+/* The page's text size of its own, so Administration › Code, which has no `.cloud-code` around it, shows it the same. */
 .cloud-code__section-sub,
 .cloud-code__quiet {
   max-width: 46rem;
   margin: 0;
   color: var(--k2b-text-muted);
+  font-size: 0.875rem;
 }
 .cloud-code__label {
   display: flex;
