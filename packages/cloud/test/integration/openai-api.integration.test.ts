@@ -46,13 +46,10 @@ const profile: AiModelProfile = {
 };
 const provider: Provider = {
   name: "fixture",
-  family: "ollama",
+  family: "openai-compatible",
   model: "fixture",
   contextWindow: 1000,
   capabilities: { streaming: true, tools: false, thinking: false, images: false, usage: true },
-  async complete() {
-    throw new Error("The OpenAI-compatible API serves every request through stream()");
-  },
   async *stream() {
     yield { type: "block_start", blockId: "text", index: 0, kind: "text" };
     yield { type: "block_delta", blockId: "text", delta: "Completed" };

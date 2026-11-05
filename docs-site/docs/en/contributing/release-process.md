@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-10-26
+updated: 2026-11-02
 ---
 
 # Release process
@@ -110,8 +110,17 @@ release-please runs on every push to `main`:
 
 The release PR runs the `packed` check with `--release`, including in the
 merge queue, to test already published sibling pins from npm and versions
-this release publishes from their tarballs. See
+this release publishes from their tarballs. A published sibling pin equal to its
+workspace version must also have the same shipped TypeScript surface. A new Cloud
+release fails clearly if that source changed without a version bump. A checkout
+whose Cloud version is already published tests changed snapshot sources from
+current tarballs instead. See
 [What CI runs](/en/docs/contributing/testing#what-ci-runs).
+
+The comparison checks TypeScript file bytes, including shipped comments and
+compiler output. To resolve a mismatch, refresh a stale release PR or land a
+scoped `fix`/`feat` commit for the affected package so release-please bumps it.
+Do not edit versions manually.
 
 The `release-body` job checks the release PR and its merge queue run. It parses
 the live PR body with the release-please version and dependency tree pinned by

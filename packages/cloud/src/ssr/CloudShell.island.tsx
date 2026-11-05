@@ -158,11 +158,11 @@ function HeaderControls(props: {
     <>
       <div class="ml-2 flex min-w-0 flex-1 items-center">
         {!props.authenticated && (
-          <div class="hidden min-w-0 items-center lg:flex">
+          <div class="min-w-0 items-center max-lg:hidden lg:flex">
             <LayoutBreadcrumbs breadcrumbs={props.breadcrumbs ?? []} />
           </div>
         )}
-        <div class="flex min-w-0 items-center lg:hidden">
+        <div class="min-w-0 items-center max-lg:flex lg:hidden">
           <span class="layout-header-title truncate font-semibold">{props.title}</span>
           {props.launchpad && (
             <AppLaunchpadButton
@@ -185,7 +185,7 @@ function HeaderControls(props: {
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">
-        <div class="flex items-center gap-1 lg:hidden">
+        <div class="items-center gap-1 max-lg:flex lg:hidden">
           {(data.panel?.providers.length ?? 0) > 1 && <PanelTrigger variant="header" open={props.panelOpen} />}
           {props.authenticated && <GlobalSearchTrigger variant="header" />}
           <LayoutHelpTrigger

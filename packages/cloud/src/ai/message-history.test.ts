@@ -1,7 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { type Message, nessi, type Provider, type ProviderRequest } from "@k2b/nessi";
 import { buildEnrichmentTranscript } from "./enrich";
-import { answerOpenToolCalls } from "./open-tool-calls";
 import { projectPublicAiStoredMessages } from "./public-projection";
 import { aiConversations } from "./store";
 import { buildAiMessageTimeline } from "./timeline";
@@ -52,9 +51,6 @@ for (const providerName of ["anthropic", "gemini", "openrouter"]) {
       family: "openai-compatible",
       model: "fixture",
       capabilities: { streaming: true, tools: true, images: false, thinking: true, usage: true },
-      complete: async () => {
-        throw new Error("Unexpected completion");
-      },
       async *stream(request) {
         requests.push(request);
         yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
@@ -64,12 +60,13 @@ for (const providerName of ["anthropic", "gemini", "openrouter"]) {
       for await (const _event of nessi({
         systemPrompt: "Test",
         store: session,
-        provider: answerOpenToolCalls(provider),
+        provider,
         input: "Continue",
       })) {
       }
       expect(requests[0]?.messages[0]).toEqual(assistant);
-      expect(requests[0]?.messages[1]).toMatchObject({ role: "tool_result", callId: "call", isError: true });
+      // nessi answers the open call in the request only; the store keeps it as it was.
+      expect(requests[0]?.messages[1]).toMatchObject({ role: "tool_result", callId: "call", isError: true, reason: "not_returned" });
       expect(stored.message).toEqual(assistant);
     } finally {
       append.mockRestore();

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { createComponent, createSignal, mergeProps } from "solid-js";
+import { createComponent, createSignal, getOwner, mergeProps } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
 import type { ChatComposerProps } from "../src/chat/ChatComposer";
 import type { ChatDictationState, ChatMention, ChatSubmitInput } from "../src/chat/types";
@@ -531,5 +531,38 @@ test("a rejected submission keeps the mentions typed meanwhile on their text, al
   await composer.settle();
   expect(draft()).toBe("Hello\nReference");
   expect(mentions().map(({ start, end }) => [start, end])).toEqual([[6, 15]]);
+  composer.done();
+});
+
+test("sending reads the host's props only inside the composer's owner, so a conditional prop creates no stray computation", async () => {
+  // Solid compiles a host's `state={a ? b : c}` into a getter that creates a computation on each read; read from an
+  // event handler, outside any owner, that computation is never disposed and Solid warns after every send.
+  const strays: string[] = [];
+  const [stopping] = createSignal(false);
+  const read = <T>(name: string, value: T) => {
+    if (!getOwner()) strays.push(name);
+    return value;
+  };
+  const composer = await mount("Hello", {
+    get state() {
+      return read("state", stopping() ? ("stopping" as const) : ("idle" as const));
+    },
+    get disabled() {
+      return read("disabled", false);
+    },
+    get submitDisabled() {
+      return read("submitDisabled", false);
+    },
+    get dictation() {
+      return read("dictation", undefined);
+    },
+  });
+  expect(composer.press({})).toBe(true);
+  await composer.settle();
+  composer.setValue("Again");
+  composer.dom.root.querySelector<HTMLButtonElement>("button.k2b-chat-composer__send")!.click();
+  await composer.settle();
+  expect(composer.submitted.map((input) => input.text)).toEqual(["Hello", "Again"]);
+  expect(strays).toEqual([]);
   composer.done();
 });

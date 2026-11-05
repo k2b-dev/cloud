@@ -637,6 +637,7 @@ export function departingResourceCancellation(
 const startTab = 'a[data-tab="start"]:visible';
 const spacesTab = 'a[data-tab="spaces"]:visible';
 const chatTab = 'a[data-tab="chat"]:visible';
+const assistantTab = 'a[data-tab="assistant"]:visible';
 const settingsLink = ':is(.k2b-mobile-shell__actions a[href="/pwa/settings"], a[data-tab="settings"]):visible';
 
 export class Browsers {
@@ -1260,6 +1261,14 @@ export class Browsers {
         if (await page.locator(chatTab).count()) {
           await tab("tab-start-chat", round, chatTab);
           await tab("tab-chat-start", round, startTab);
+        }
+        // The Assistant part, where the installation shows it: into it from Start, and from it into Chat. The way back
+        // to Start is not timed, so tab-chat-start keeps one sample per round.
+        if ((await page.locator(assistantTab).count()) && (await page.locator(chatTab).count())) {
+          await tab("tab-start-assistant", round, assistantTab);
+          await tab("tab-assistant-chat", round, chatTab);
+          await Promise.all([page.waitForURL(`${origin}/pwa/`), tap(page.locator(startTab))]);
+          await quiet();
         }
         await tab("tab-start-spaces", round, spacesTab);
         await tab("tab-spaces-start", round, startTab);
