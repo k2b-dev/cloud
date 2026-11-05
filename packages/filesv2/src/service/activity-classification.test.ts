@@ -32,6 +32,7 @@ const files: Record<string, Classification> = {
   movementChain: read,
   shareAccess: read,
   machineStorage: read,
+  machineStorageById: read,
   createMachineStorage: mutation(),
   storageGrants: read,
   grantStorage: read,

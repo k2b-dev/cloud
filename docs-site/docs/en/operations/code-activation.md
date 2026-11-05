@@ -25,6 +25,8 @@ Third-party apps accept service accounts through ordinary sharing without any
 Code declaration. Follow the
 [normal grant transaction and lock order](/en/docs/identity/authorization#retain-manager-authority-while-changing-a-grant).
 No new service, setting or credential is needed.
+Files machine storage offers **Add service account** through the shared lookup;
+application-entry access keeps its existing account choices.
 
 The migration preserves ordinary shares and built-in adapter-created shares used by
 the active version or by queued/running work, including their exact permission

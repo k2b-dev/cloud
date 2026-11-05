@@ -6,6 +6,7 @@ for (const source of [
   "openAccessDialog({ resourceName: name });",
   "<PermissionEditor canEdit={canManage()} />",
   "<PrincipalPicker onSelect={grant} />",
+  "<ServiceAccountLookup add={grant} />",
   "<AccessDialog close={close} />",
   "openAccessDialog(options)",
   "openAccessDialog({...options})",
@@ -27,6 +28,9 @@ test("allows targeted editors, read-only views, and documented user-only audienc
 });
 test("app management and test fixtures are not resource editors", () => {
   expect(checkSource("packages/cloud/src/access/AppAccessEditor.tsx", "<PermissionEditor />")).toEqual([]);
+  expect(checkSource(resolve(import.meta.dir, "../../packages/cloud/src/access/AppAccessEditor.tsx"), "<PermissionEditor />")).toEqual([]);
+  expect(checkSource("packages/another/cloud/src/access/AppAccessEditor.tsx", "<PermissionEditor />")).toHaveLength(1);
+  expect(checkSource("packages/cloud/src/access/AnotherAppAccessEditor.tsx", "<PermissionEditor />")).toHaveLength(1);
   expect(checkSource("app.behavior.test.tsx", "<PermissionEditor />")).toEqual([]);
   expect(checkSource("PermissionEditor.browser-harness.tsx", "<PermissionEditor />")).toEqual([]);
 });

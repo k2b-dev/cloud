@@ -85,50 +85,76 @@ const json = (route: Route, body: unknown, status = 200) =>
   route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 const entities = { items: [{ kind: "service_account", serviceAccount: { ...owner, appId: null, resourceType: null, resourceId: null } }] };
 describe("Machine storage settings", () => {
-  test("a Code handle in the storage share picker uses the exact managed storage target", async () => {
-    const handle = "code-7k2q9m4xwt",
-      accountId = "40000000-0000-4000-8000-000000000001";
-    const requests: URL[] = [];
-    let granted = false;
-    const entry = {
-      id: "50000000-0000-4000-8000-000000000001",
-      principal: { type: "service_account", serviceAccountId: accountId },
-      permission: "read",
-      path: "",
-      displayName: "Code of Snapshot",
-      serviceAccountKind: "code",
-    };
-    const { context, tab } = await open(desktop, "light", "en", async (route) => {
-      const url = new URL(route.request().url());
-      if (url.pathname === "/api/accounts/entities") {
-        requests.push(url);
-        return json(route, {
-          items: [{ kind: "service_account", serviceAccount: { id: accountId, name: entry.displayName, kind: "code", handle } }],
-        });
-      }
-      if (url.pathname.endsWith("/grants")) {
-        if (route.request().method() === "POST") {
-          expect(route.request().postDataJSON()).toEqual({ principal: entry.principal, path: "", permission: "read" });
-          granted = true;
-          return json(route, entry);
+  for (const mode of ["picker", "button"] as const) {
+    test(`a Code handle through the storage share ${mode} uses the exact managed storage target`, async () => {
+      const handle = "code-7k2q9m4xwt",
+        accountId = "40000000-0000-4000-8000-000000000001";
+      const requests: URL[] = [];
+      let granted = false;
+      let attempts = 0;
+      const entry = {
+        id: "50000000-0000-4000-8000-000000000001",
+        principal: { type: "service_account", serviceAccountId: accountId },
+        permission: "read",
+        path: "",
+        displayName: "Code of Snapshot",
+        serviceAccountKind: "code",
+      };
+      const { context, tab } = await open(
+        mode === "button" ? phone : desktop,
+        mode === "button" ? "dark" : "light",
+        mode === "button" ? "de" : "en",
+        async (route) => {
+          const url = new URL(route.request().url());
+          if (url.pathname === "/api/accounts/entities") {
+            requests.push(url);
+            return json(route, {
+              items: [{ kind: "service_account", serviceAccount: { id: accountId, name: entry.displayName, kind: "code", handle } }],
+            });
+          }
+          if (url.pathname.endsWith("/grants")) {
+            if (route.request().method() === "POST") {
+              expect(route.request().postDataJSON()).toEqual({ principal: entry.principal, path: "", permission: "read" });
+              if (++attempts === 1 && mode === "button")
+                return json(route, { code: "unavailable", message: "Grant fixture unavailable" }, 503);
+              granted = true;
+              return json(route, entry);
+            }
+            return json(route, { items: granted ? [entry] : [], next: null });
+          }
+          return json(route, { items: [storage], next: null });
+        },
+      );
+      try {
+        await tab.locator("summary").filter({ hasText: owner.name }).click();
+        if (mode === "button") {
+          const add = tab.getByRole("button", { name: "Dienstkonto hinzufügen", exact: true });
+          await add.waitFor();
+          expect(await add.count()).toBe(1);
+          await add.click();
+          await tab.getByRole("textbox", { name: "Kennung des Dienstkontos", exact: true }).fill(handle);
+          await tab.getByRole("button", { name: "Suchen", exact: true }).click();
+          await tab.getByText(entry.displayName, { exact: true }).waitFor();
+          await tab.getByRole("button", { name: "Hinzufügen", exact: true }).click();
+          await tab.getByRole("alert").filter({ hasText: "Grant fixture unavailable" }).waitFor();
+          expect(await tab.getByRole("textbox", { name: "Kennung des Dienstkontos", exact: true }).inputValue()).toBe(handle);
+          await tab.getByRole("button", { name: "Hinzufügen", exact: true }).click();
+        } else {
+          await tab.getByRole("combobox").last().fill(handle);
+          await tab.getByRole("option").filter({ hasText: entry.displayName }).click();
         }
-        return json(route, { items: granted ? [entry] : [], next: null });
+        await tab.getByRole("button", { name: mode === "button" ? "Entziehen" : "Revoke", exact: true }).waitFor();
+        expect(requests).toHaveLength(1);
+        expect(requests[0]!.searchParams.get("target_type")).toBe("filesv2.storage");
+        expect(requests[0]!.searchParams.get("target_id")).toBe(storage.id);
+        expect(granted).toBe(true);
+        expect(attempts).toBe(mode === "button" ? 2 : 1);
+        expect(await tab.evaluate(() => Math.max(0, document.documentElement.scrollWidth - innerWidth))).toBe(0);
+      } finally {
+        await context.close();
       }
-      return json(route, { items: [storage], next: null });
     });
-    try {
-      await tab.locator("summary").filter({ hasText: owner.name }).click();
-      await tab.getByRole("combobox").last().fill(handle);
-      await tab.getByRole("option").filter({ hasText: entry.displayName }).click();
-      await tab.getByRole("button", { name: "Revoke", exact: true }).waitFor();
-      expect(requests).toHaveLength(1);
-      expect(requests[0]!.searchParams.get("target_type")).toBe("filesv2.storage");
-      expect(requests[0]!.searchParams.get("target_id")).toBe(storage.id);
-      expect(granted).toBe(true);
-    } finally {
-      await context.close();
-    }
-  });
+  }
   test("loading, failure and retry preserve a working recovery path", async () => {
     const waiting = Promise.withResolvers<void>();
     let failed = true;

@@ -808,6 +808,12 @@ sharing then includes **Add service account**, with exact handle lookup and the
 ordinary grant, failure, and retry behavior. Read-only editors offer no lookup.
 Neither editor requires a Code declaration in the application.
 
+For a share surface with additional grant fields, such as a relative path,
+compose `ServiceAccountLookup` from `@k2b/cloud/access/ui` with those fields.
+Pass `target`, `disabled`, `empty`, and an async `add(account)` callback that
+returns whether the grant was saved. It supplies the same **Add service account**
+button and target-aware lookup; a failed save keeps the handle and result for retry.
+
 `PrincipalPicker` accepts a Code account supplied in a result. It does not add a
 name-search path; the general directory excludes Code accounts. Pass
 `target: { type, id }` to use the shared exact-handle lookup by default, or

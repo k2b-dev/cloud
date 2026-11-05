@@ -109,7 +109,8 @@ Files records the acting machine, storage binding and request ID for changes.
 Authorization audit entries use a path hash and depth. File contents and transfer
 bearer URLs do not belong in audit metadata.
 
-The storage share picker accepts an exact Code handle. The shared lookup uses
+The storage share surface offers **Add service account**, and its picker also
+accepts an exact Code handle. Both use the shared platform lookup with
 the `filesv2.storage` resource and its `storage.read` reader, which requires the
 same live Cloud-administrator authority as the storage share editor. The reader
 returns an administration link and grants no storage access. Managed storage

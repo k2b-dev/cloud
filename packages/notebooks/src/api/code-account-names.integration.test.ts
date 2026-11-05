@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import type { CloudCliContext } from "@k2b/cloud/cli";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
+import cli from "../cli";
 import api from ".";
 
 suiteFor(
@@ -54,6 +56,46 @@ suiteFor(
             expect(code?.displayName).toBe("Code eines Objekts");
             expect(JSON.stringify(code)).not.toContain("Private title snapshot");
           }
+        }
+        if (manage) {
+          let rows: Record<string, unknown>[] = [];
+          const ctx: CloudCliContext = {
+            args: ["access", "list", notebook.shortId],
+            flags: { "include-service-accounts": true },
+            options: { profile: "test", server: "https://cloud.example", token: "test", output: "text", locale: "de" },
+            getDefault: async () => undefined,
+            setDefault: async () => {},
+            createApiClient: () => {
+              throw new Error("Unused by this command");
+            },
+            fetch: async (path, init) =>
+              api.request(path.replace(/^\/api\/notebooks/, "") || "/", {
+                ...init,
+                headers: {
+                  ...Object.fromEntries(new Headers(init?.headers)),
+                  cookie,
+                  "x-forwarded-for": uniqueCallerAddress(),
+                  "x-cloud-locale": "de",
+                },
+              }),
+            readJson: async (response) => {
+              if (!response.ok) throw new Error(`CLI request failed: ${response.status}`);
+              return response.json();
+            },
+            print: () => {},
+            write: async () => {},
+            error: () => {},
+            json: () => {},
+            jsonLine: () => {},
+            table: (value) => {
+              rows = value;
+            },
+          };
+          await cli.run(ctx);
+          expect(rows).toContainEqual(expect.objectContaining({ principal: "Code von Private title snapshot" }));
+          const output = JSON.stringify(rows);
+          expect(output).not.toContain(ownerId);
+          expect(output).not.toContain("code:demo.item:");
         }
       }
     } finally {

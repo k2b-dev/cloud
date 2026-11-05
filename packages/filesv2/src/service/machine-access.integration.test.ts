@@ -272,7 +272,10 @@ suite("Files machine storage through actual API tokens", () => {
       await expect(service.machineStorageById(call(), crypto.randomUUID())).rejects.toMatchObject({ status: 404 });
       const unprivileged = await token(owner.data.id, ["admin"]);
       const context = await capabilityContext(unprivileged.token);
-      await expect(service.machineStorageById(testCall(context.actor), storage.id)).rejects.toMatchObject({ status: 403 });
+      await expect(service.machineStorageById(testCall(context.actor), storage.id)).rejects.toMatchObject({
+        code: "user_required",
+        status: 401,
+      });
     } finally {
       await sql`DELETE FROM filesv2.templates WHERE id=${template.id}::uuid`;
       await sql`DELETE FROM auth.service_accounts WHERE id IN (${code!.id}::uuid,${owner.data.id}::uuid)`;

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import ts from "@typescript/typescript6";
 import { isTestFile, listFiles } from "./files";
 import type { Finding, Rule } from "./rule";
@@ -7,8 +7,10 @@ import type { Finding, Rule } from "./rule";
 /** Resource editors supply identity, never their own account-search transport. */
 export const checkSource = (file: string, source: string): Finding[] => {
   if (isTestFile(file) || file.endsWith(".browser-harness.tsx")) return [];
-  // App access is not a resource reference: it uses the app-access management service, without a resource reader.
-  if (file.endsWith("/cloud/src/access/AppAccessEditor.tsx")) return [];
+  if (!/\b(?:openAccessDialog|PermissionEditor|AccessDialog|PrincipalPicker|ServiceAccountLookup)\b/.test(source)) return [];
+  // #2630: only this app-entry editor intentionally has no Code-handle lookup or resource reader.
+  const appEntryEditor = "packages/cloud/src/access/AppAccessEditor.tsx";
+  if (file === appEntryEditor || file === resolve(import.meta.dir, "../..", appEntryEditor)) return [];
   const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const findings: Finding[] = [];
   const report = (node: ts.Node) =>
@@ -95,7 +97,7 @@ export const checkSource = (file: string, source: string): Finding[] => {
     if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
       const tag = node.tagName.getText(tree);
       if (
-        ["PermissionEditor", "AccessDialog", "PrincipalPicker"].includes(tag) &&
+        ["PermissionEditor", "AccessDialog", "PrincipalPicker", "ServiceAccountLookup"].includes(tag) &&
         !sharedEditor &&
         !tree.statements.some((statement) => ts.isFunctionDeclaration(statement) && statement.name?.text === tag)
       ) {
