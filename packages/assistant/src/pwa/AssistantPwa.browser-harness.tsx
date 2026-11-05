@@ -315,7 +315,7 @@ if (params.get("mic") === "blocked")
 if (params.get("standalone")) {
   const original = window.matchMedia.bind(window);
   window.matchMedia = (query: string) =>
-    query === "(display-mode: standalone)" ? Object.assign(original(query), { matches: true }) : original(query);
+    query === "(display-mode: standalone)" ? Object.create(original(query), { matches: { value: true } }) : original(query);
 }
 const offline = has("offline", "chat-offline", "chat-approval-offline", "all-offline", "menu-offline", "chat-attach-offline");
 if (offline) Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
