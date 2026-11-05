@@ -89,13 +89,15 @@ this decision on the server, both for the list endpoint and for the page that
 decides whether to show the section; see
 [Show who has access](/en/docs/identity/authorization#show-who-has-access).
 Turn the list into the section's rows with `accessMemberEntries(members, {
-currentUserId, locale })` from `@k2b/cloud/access/ui`: it names every
+currentUserId, locale })` from `@k2b/cloud/access/members` (also exported by
+`@k2b/cloud/access/ui`; the narrow path keeps an island free of the access
+editors and their schemas): it names every
 principal and role in the words of the access dialog, marks the viewer as
 "You", and leaves out grants without a permission. Load the list once per
 page after the first paint and pass `state="loading"` until it arrives.
 
 ```tsx
-import { accessMemberEntries } from "@k2b/cloud/access/ui";
+import { accessMemberEntries } from "@k2b/cloud/access/members";
 
 <DetailAccess
   entries={accessMemberEntries(members(), { currentUserId, locale: locale() })}

@@ -313,6 +313,18 @@ describe("PwaLayout", () => {
     expect(tab("inventory")?.querySelector(".k2b-tab-bar__badge")).toBeNull();
   });
 
+  test("a part's pages take its app colour for selection and accents; parts without one keep Cloud's", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory", { appearance: { accent: "#8e1b6f" } })];
+    const coloured = (await render("/pwa/inventory")).document.body;
+    expect(coloured.classList.contains("app-accent-scope")).toBe(true);
+    expect(coloured.getAttribute("style")).toContain("--app-accent:#8e1b6f");
+    apps = [shell, part("inventory", "Inventory")];
+    const plain = (await render("/pwa/inventory")).document.body;
+    expect(plain.classList.contains("app-accent-scope")).toBe(false);
+    expect(plain.getAttribute("style")).toBeNull();
+  });
+
   test("marks Start, which lists every part, for a part without its own tab", async () => {
     signIn("app");
     apps = [shell, part("alpha", "Alpha"), part("beta", "Beta"), part("gamma", "Gamma"), part("inventory", "Inventory")];

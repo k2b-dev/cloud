@@ -90,6 +90,8 @@ export default function PwaLayout(props: PwaLayoutProps) {
   // The sidebar names the installation itself, so Start is titled Start there; Settings is a destination of its own.
   const settingsHref = `${PWA_SCOPE}settings`;
   const currentPart = parts.find((part) => path === part.pwa.href || path.startsWith(`${part.pwa.href}/`));
+  // A part takes its app colour for selection and accents, as an app does on the web; Start and Settings keep Cloud's.
+  page.appAccent = currentPart?.appearance?.accent;
   const sidebar = (
     <MobileShell.Sidebar
       label={t.tabs}

@@ -730,6 +730,11 @@ owns them, so they cannot rely on cleanup; tie their requests to the `signal`
 you pass. The dialog is a presentation of the same
 grants; the service still checks every change.
 
+**Service accounts** lists only the accounts that Code of an object or an app
+runs as, with the kind `code`. The account behind an object's API keys
+(`resource_bound`) is labelled "API key" and has its own **API keys** section.
+It is never called a service account.
+
 When the dialog opens from settings that can close on their own, pass their
 `signal`. Aborting it closes the dialog without asking and sends nothing that is
 still pending; changes already saved stay saved, and the dialog resolves
@@ -849,9 +854,9 @@ kind:
 | Kind | Icon | Label |
 | --- | --- | --- |
 | `agent` | `ti-robot` | Agent |
-| `standalone` | `ti-key` | Service account |
-| `resource_bound` | `ti-box` | Resource-bound service account |
-| `user_delegated` | `ti-user-key` | User-bound service account |
+| `standalone` | `ti-key` | Agent (API key only) |
+| `resource_bound` | `ti-key` | API key |
+| `user_delegated` | `ti-user-key` | Personal |
 
 Picker and entity-search results for resource-bound accounts show the app,
 resource type, and resource ID instead of the label, because several such

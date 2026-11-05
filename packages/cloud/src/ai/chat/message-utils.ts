@@ -135,7 +135,6 @@ export const describeResponseEnd = (entry: Pick<AiStoredMessage, "loopDoneReason
     aborted: t.infoEndStopped,
     error: t.infoEndFailed,
     max_turns: t.infoEndStepLimit,
-    no_credits: t.infoEndUsageLimit,
     context_overflow: t.infoEndContextFull,
   };
   const message: Record<string, string | null> = {
