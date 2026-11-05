@@ -3,6 +3,7 @@ import { announce, Button, IconButton, Placeholder, prompts, Select, SelectChip,
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
+import type { CloudResourceRef } from "../contracts/capabilities";
 import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import { createGroupCoverage, type GroupCoverage, GroupCoveragePanel, GroupCoverageToggle } from "./GroupCoverage";
 import { isManagerEntry } from "./managers";
@@ -10,7 +11,9 @@ import { accessMessages } from "./messages";
 import PrincipalAvatar from "./PrincipalAvatar";
 import PrincipalPicker, { principalKey } from "./PrincipalPicker";
 import { principalLabel } from "./principal-label";
+import { ServiceAccountLookup } from "./ServiceAccountLookup";
 import { serviceAccountKindDisplay } from "./service-account-kind";
+import { findTargetServiceAccount } from "./service-account-lookup";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Public API
@@ -28,6 +31,8 @@ export type GrantableLevel = Exclude<PermissionLevel, "none">;
 export type AllowedLevel = GrantableLevel | { level: GrantableLevel; scope?: string; label?: string; icon?: string; description?: string };
 
 type PermissionEditorProps = {
+  /** The resource being shared; targeted Kennung lookup is built in and always checked by Core. */
+  target?: CloudResourceRef;
   /** Expanded form: choose a principal and level before adding; show durable inline feedback. */
   expanded?: boolean;
   /** Mark these entries as the viewer's own grants in the expanded form. */
@@ -457,6 +462,11 @@ export default function PermissionEditor(props: PermissionEditorProps) {
               when={draft()}
               fallback={
                 <PrincipalPicker
+                  findServiceAccount={
+                    props.target && props.allowServiceAccounts !== false
+                      ? (handle, signal) => findTargetServiceAccount(props.target!, handle, signal)
+                      : undefined
+                  }
                   existing={entries.map((entry) => entry.principal)}
                   allowPublic={allowPublic()}
                   allowAuthenticated={allowAuthenticated()}
@@ -573,11 +583,29 @@ export default function PermissionEditor(props: PermissionEditorProps) {
         </Show>
       </div>
 
+      <Show when={canEdit() && props.target && props.allowServiceAccounts !== false}>
+        <ServiceAccountLookup
+          empty={!entries.some((entry) => entry.serviceAccountKind === "code")}
+          target={props.target!}
+          disabled={busy()}
+          add={async (account) => {
+            await grant(account.principal, account.display);
+            return entries.some(
+              (entry) => principalKey(entry.principal) === principalKey(account.principal) && !entry.id.startsWith("pending:"),
+            );
+          }}
+        />
+      </Show>
       {/* Add access — single Combobox, granted at the lowest allowed
           level on pick. The user upgrades via the row pill if they want
           a higher level. KISS: one decision per step. */}
       <Show when={canEdit() && !props.expanded}>
         <PrincipalPicker
+          findServiceAccount={
+            props.target && props.allowServiceAccounts !== false
+              ? (handle, signal) => findTargetServiceAccount(props.target!, handle, signal)
+              : undefined
+          }
           existing={entries.map((e) => e.principal)}
           allowPublic={allowPublic()}
           allowAuthenticated={allowAuthenticated()}

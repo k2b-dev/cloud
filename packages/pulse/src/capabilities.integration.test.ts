@@ -123,7 +123,16 @@ postgresTest("lets agent service accounts read only the bases they were granted,
     const listed = await invoke("base.list", { limit: 25 }, context);
     expect(listed.ok && listed.data.data).toEqual([expect.objectContaining({ id: grantedBaseShortId })]);
     const read = await invoke("base.read", { id: grantedBaseShortId }, context);
-    expect(read.ok && read.data.data).toMatchObject({ id: grantedBaseShortId });
+    expect(read.ok && read.data.data).toMatchObject({ id: grantedBaseShortId, view: { permission: "read" } });
+    await sql`UPDATE auth.access SET permission='admin' WHERE id=${accessId}::uuid`;
+    expect(await invoke("base.read", { id: grantedBaseShortId }, agentContext(["admin"]))).toMatchObject({
+      ok: true,
+      data: { data: { view: { permission: "admin" } } },
+    });
+    expect(await invoke("base.read", { id: grantedBaseShortId }, context)).toMatchObject({
+      ok: true,
+      data: { data: { view: { permission: "read" } } },
+    });
     const ungranted = await invoke("base.read", { id: otherBaseShortId }, context);
     expect(ungranted).toMatchObject({ ok: false, error: { status: 403 } });
 

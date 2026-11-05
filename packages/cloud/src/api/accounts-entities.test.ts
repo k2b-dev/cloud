@@ -225,6 +225,46 @@ describe("Code principal lookup with a target", () => {
       expect(calls).toEqual(["limit", "target", "entities"]);
     });
   }
+  for (const manages of [false, true]) {
+    test(`the HTTP response exposes a Code title only with Manage on the supplied target (${manages})`, async () => {
+      const route = createAccountsEntitiesRoutes({
+        authenticate: authenticateAs("user"),
+        limitHandleLookup: async () => false,
+        managesTarget: async () => manages,
+        listEntities: async (params) => ({
+          items: params.codeAccountHandle
+            ? [
+                {
+                  kind: "service_account",
+                  serviceAccount: {
+                    id: USER_ID,
+                    name: "Code von Vertraulich",
+                    kind: "code",
+                    handle,
+                    status: "active",
+                    delegatedUserId: null,
+                    appId: null,
+                    resourceType: null,
+                    resourceId: null,
+                    createdBy: null,
+                    createdAt: "2026-11-04T00:00:00Z",
+                  },
+                },
+              ]
+            : [],
+          page: 1,
+          perPage: 20,
+          total: params.codeAccountHandle ? 1 : 0,
+          hasNext: false,
+        }),
+      });
+      const response = await route.request(`/entities?search=${handle}${target}`);
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body.includes("Code von Vertraulich")).toBe(manages);
+      expect(body.includes(handle)).toBe(manages);
+    });
+  }
   test("consumes the user-wide Valkey budget before target or account lookup", async () => {
     let queried = false;
     const route = createAccountsEntitiesRoutes({

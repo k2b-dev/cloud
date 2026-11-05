@@ -130,3 +130,10 @@ stored rows. The editor offers View and Edit for that row and draft, filters
 out Manage, and explains that anyone editing the Code acts with this right.
 The general directory does not discover these accounts by name. Target-scoped
 identifier search belongs to the authorized identity lookup, not this control.
+
+For a resource share, pass `target: { type, id }` to `openAccessDialog` or
+`PermissionEditor`. The platform adds the service-account handle flow by
+default. Core checks current Manage on the target and limits lookups; names never
+find Code accounts. Read-only editors have no lookup controls. The target's
+server supplies display names using its checked permission; see
+[Code account handles](/en/docs/identity/code-service-account-handles).

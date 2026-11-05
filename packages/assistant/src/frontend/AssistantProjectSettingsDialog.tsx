@@ -106,6 +106,7 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
     if (access.error() || !entries || accessOwner.signal.aborted) return;
     wroteAccess = false;
     await openAccessDialog({
+      target: { type: "core.ai.project", id: props.project.id },
       resourceName: props.project.name,
       subtitle: text("Project · Assistant"),
       initialEntries: entries,

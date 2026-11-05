@@ -1,5 +1,6 @@
 import {
   CAPABILITY_MAX_RESULT_BYTES,
+  CloudResourceReaderViewSchema,
   defineCapabilities,
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
@@ -20,6 +21,7 @@ import { capabilityCall } from "./files-call";
 import { filesUrl } from "./frontend/urls";
 import { ENTRY_TYPE } from "./resource-ref";
 import { FilesError, filesService } from "./service";
+import { templateService } from "./service/templates";
 
 const EntryReadInputSchema = z
   .object({ id: z.string().min(1).max(512).describe("Entry ID from a filesv2.entry ref or search result.") })
@@ -57,6 +59,11 @@ export const filesCapabilities = defineCapabilities({
   },
   presentation: filesCapabilityPresentation,
   types: {
+    template: {
+      title: "File template",
+      description: "A managed file template.",
+      reader: "template.read",
+    },
     entry: {
       title: "File or folder",
       description: "One file or folder in an accessible Cloud or FreeIPA storage base.",
@@ -68,6 +75,25 @@ export const filesCapabilities = defineCapabilities({
   },
   actions: fileActions,
   queries: {
+    "template.read": {
+      title: "Read file template",
+      description: "Read template metadata after the same management check as its share dialog.",
+      input: z.object({ id: z.uuid().describe("Template ID from the template administration list or a filesv2.template ref.") }).strict(),
+      data: z.object({ view: CloudResourceReaderViewSchema }),
+      openWorld: false,
+      async run(input, context) {
+        try {
+          const template = await templateService.read(capabilityCall(context), input.id);
+          return ok({
+            data: { view: { title: template.name, permission: "admin" as const } },
+            links: [{ rel: "open" as const, href: "/admin/filesv2?view=templates" }],
+          });
+        } catch (error) {
+          if (!(error instanceof FilesError)) throw error;
+          return fail(err.forbidden("Access denied"));
+        }
+      },
+    },
     ...fileQueries,
     ...activityQueries,
     "entry.read": {

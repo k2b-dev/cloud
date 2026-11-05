@@ -216,8 +216,8 @@ export const listSpaceAccess = async (spaceId: string, db: SQL = sql, display: C
               name: row.service_account_name ?? "",
               title: row.service_account_title,
               status: row.service_account_status ?? "active",
+              handle: row.service_account_handle,
             })),
-            ...(row.service_account_handle ? { serviceAccountHandle: row.service_account_handle } : {}),
           }
         : entry;
     }),

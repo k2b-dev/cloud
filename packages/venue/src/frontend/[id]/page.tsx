@@ -111,7 +111,7 @@ export default ssr<AuthContext>(async (c) => {
   const [internalDashboard, calendarUrl, accessEntries, apiKeyOverview, publicPreview] = await Promise.all([
     venueService.dashboard(venue, user, dashboardScope.options),
     venueService.ical.getOrCreateToken(user.id).then(venueService.ical.url),
-    venue.permission === "admin" ? venueService.access.list(venue.id) : Promise.resolve([]),
+    venue.permission === "admin" ? venueService.access.list(venue.id, venue.permission) : Promise.resolve([]),
     venue.permission === "admin"
       ? serviceAccountCredentials.listOverview({
           pagination: { page: 1, perPage: 500 },

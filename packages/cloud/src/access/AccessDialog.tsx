@@ -15,6 +15,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import type { CloudResourceRef } from "../contracts/capabilities";
 import { type AccessEntry, CODE_ACCOUNT_HANDLE_PATTERN, type Principal, type ServiceAccountKind } from "../contracts/shared";
 import { accessDialogMessages } from "./access-dialog-messages";
 import {
@@ -41,12 +42,15 @@ import PrincipalAvatar from "./PrincipalAvatar";
 import PrincipalPicker, { type FoundServiceAccount } from "./PrincipalPicker";
 import { principalLabel } from "./principal-label";
 import { serviceAccountKindDisplay } from "./service-account-kind";
+import { findTargetServiceAccount } from "./service-account-lookup";
 
 export type { FoundServiceAccount };
 
 export type AccessDialogProps = {
   /** The resource's name, shown in the title and in the confirmation. */
   resourceName: string;
+  /** The resource whose access is being edited. Enables targeted Kennung lookup by default; Core rechecks Manage. */
+  target?: CloudResourceRef;
   /** One line under the title, such as "Space · Spaces". */
   subtitle?: string;
   initialEntries: AccessEntry[];
@@ -76,11 +80,7 @@ export type AccessDialogProps = {
   viewerUserId?: string;
   /** A row's second line instead of its kind, such as a group's member count. */
   entryDetail?: (entry: AccessEntry) => string | undefined;
-  /**
-   * Service accounts of objects, added by their identifier: the app looks the identifier up with the resource as the
-   * target, and its server answers only someone who manages that resource. The search for people asks the same lookup
-   * when it gets an exact identifier, and the hit joins this section. Without it the section lists existing rows.
-   */
+  /** Override the platform's targeted lookup, for example in an embedded test harness. */
   findServiceAccount?: (handle: string, signal: AbortSignal) => Promise<FoundServiceAccount | null>;
   /** A further section, such as the resource's object API keys. */
   extraSections?: JSX.Element;
@@ -119,6 +119,13 @@ export function AccessDialog(
   const t = () => accessDialogMessages.resolve([locale()]).t;
   const access = () => accessMessages.resolve([locale()]).t;
   const canEdit = () => props.canEdit !== false;
+  const findServiceAccount = createMemo(() => {
+    const target = props.target;
+    return (
+      props.findServiceAccount ??
+      (target ? (handle: string, signal: AbortSignal) => findTargetServiceAccount(target, handle, signal) : undefined)
+    );
+  });
   const [draft, setDraft] = createSignal<AccessDraft>(emptyDraft(props.initialEntries));
   const [saving, setSaving] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
@@ -192,7 +199,7 @@ export function AccessDialog(
   const showGeneral = () =>
     props.allowAuthenticated !== false || props.allowPublic === true || rows().some((row) => generalPrincipal(row.principal));
   /** Read-only, the section shows only who is listed: no controls and no empty section. */
-  const canAddObjectAccounts = () => props.findServiceAccount !== undefined && canEdit();
+  const canAddObjectAccounts = () => findServiceAccount() !== undefined && canEdit();
   const showObjectAccounts = () => canAddObjectAccounts() || objectAccountRows().length > 0;
 
   const edit = (next: (current: AccessDraft) => AccessDraft) => {
@@ -582,12 +589,13 @@ export function AccessDialog(
   onCleanup(() => lookupAbort?.abort());
   /** A complete identifier is looked up as it is typed or pasted; the hit is offered below the field. */
   const findAccount = async (value: string) => {
-    if (!props.findServiceAccount) return;
+    const find = findServiceAccount();
+    if (!find) return;
     const controller = new AbortController();
     lookupAbort = controller;
     setLookup("searching");
     try {
-      const result = await props.findServiceAccount(value, controller.signal);
+      const result = await find(value, controller.signal);
       if (controller.signal.aborted || disposed) return;
       setFound(result);
       setLookup(result ? "idle" : "none");
@@ -658,9 +666,9 @@ export function AccessDialog(
               placeholder={t().search}
               disabled={saving()}
               findServiceAccount={
-                props.findServiceAccount &&
+                findServiceAccount() &&
                 (async (value, signal) => {
-                  const account = await props.findServiceAccount!(value, signal);
+                  const account = await findServiceAccount()!(value, signal);
                   if (account?.description && account.principal.type === "service_account")
                     foundDescriptions.set(account.principal.serviceAccountId, account.description);
                   // The hit says where it goes, since it joins Service accounts rather than the list below the search.

@@ -1,5 +1,6 @@
 import {
   type CapabilityExecutionContext,
+  CloudResourceReaderViewSchema,
   type CloudResourceView,
   capabilityPage,
   defineCapabilities,
@@ -169,7 +170,7 @@ const runVenueRead = async (input: z.infer<typeof VenueReadInputSchema>, context
   const venue = await requireVenue(input.id, scope.data, "read", true);
   if (!venue.ok) return venue;
   return ok({
-    data: mapVenue(venue.data),
+    data: { ...mapVenue(venue.data), view: { title: venue.data.name, permission: visiblePermission(venue.data) ?? "read" } },
     summary: t.capabilityReadVenue({ name: venue.data.name }),
     refs: [{ type: "venue.venue", id: venue.data.publicId }],
     links: [{ rel: "open" as const, href: openVenueHref(venue.data) }],
@@ -511,7 +512,7 @@ export const venueCapabilities = defineCapabilities({
       title: "Read Venue",
       description: "Read one venue.venue ref returned by venue.list or venue.search, without media.",
       input: VenueReadInputSchema,
-      data: VenueDataSchema,
+      data: VenueDataSchema.extend({ view: CloudResourceReaderViewSchema }),
       openWorld: false,
       run: runVenueRead,
     },

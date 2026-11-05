@@ -9,7 +9,7 @@ import { projectPublicIds, resolvePublicId } from "../service/public-resources";
 import { getRecordEventDeliveryFailure } from "../service/record-event-delivery-failures";
 import { validateAccessLevelForResource } from "./access";
 import { apiMessages } from "./messages";
-import { currentActorUserId } from "./permissions";
+import { currentActorUserId, gateAt } from "./permissions";
 import { v } from "./validator";
 
 const ScopedAccessEntrySchema = AccessEntrySchema.extend({
@@ -153,7 +153,8 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
         if (!baseId) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         const base = await gridsService.base.get(baseId);
         if (!base) return c.json({ message: apiMessages(c).baseNotFound }, 404);
-        return c.json(await toPublicScopedEntries(await gridsService.access.listForBaseTree(baseId)));
+        const access = await gateAt(c, { baseId }, "read");
+        return c.json(await toPublicScopedEntries(await gridsService.access.listForBaseTree(baseId, access.ok ? access.data : "none")));
       },
     )
 
@@ -181,7 +182,10 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
           ...c.req.valid("json"),
         });
         if (!result.ok) return respond(c, () => Promise.resolve(result));
-        const created = (await gridsService.access.listForBase(baseId)).find((entry) => entry.id === result.data.accessId);
+        const access = await gateAt(c, { baseId }, "read");
+        const created = (await gridsService.access.listForBase(baseId, access.ok ? access.data : "none")).find(
+          (entry) => entry.id === result.data.accessId,
+        );
         if (!created) return c.json({ message: apiMessages(c).createdAccessEntryNotFound }, 500);
         return c.json(created, 201);
       },
