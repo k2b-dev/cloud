@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -283,6 +283,34 @@ describe("ChatWorkspace interactions", () => {
     );
     await settle();
   };
+  test("mounting a conversation converts each message once for its time, day and accessible label", async () => {
+    const items = [1, 2, 3].map((seq) => ({ ...message(seq), createdAt: `2026-10-12T10:1${seq}:00.000Z` }));
+    const conversions = new Map(items.map((item) => [Date.parse(item.createdAt), 0]));
+    const record = (at: number | undefined) => {
+      if (at !== undefined && conversions.has(at)) conversions.set(at, conversions.get(at)! + 1);
+    };
+    const originalLocale = Date.prototype.toLocaleString;
+    const locale = spyOn(Date.prototype, "toLocaleString");
+    locale.mockImplementation(function (this: Date, ...args: Parameters<Date["toLocaleString"]>) {
+      record(this.getTime());
+      return originalLocale.apply(this, args);
+    });
+    const original = Intl.DateTimeFormat.prototype.formatToParts;
+    const format = spyOn(Intl.DateTimeFormat.prototype, "formatToParts");
+    format.mockImplementation(function (this: Intl.DateTimeFormat, value?: number | Date) {
+      record(value instanceof Date ? value.getTime() : value);
+      return original.call(this, value);
+    });
+    try {
+      await mount(true, [conversation], null, "en", "write", { page: { items, seqHead: 3, rev: 3, from: 1, to: 3 } });
+      expect(dom.root.querySelectorAll(".k2b-message-row")).toHaveLength(items.length);
+      expect([...conversions.values()]).toEqual([1, 1, 1]);
+    } finally {
+      format.mockRestore();
+      locale.mockRestore();
+    }
+  });
+
   const button = (label: string, root: ParentNode = dom.root) => {
     const found = [...root.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === label || button.getAttribute("aria-label") === label,

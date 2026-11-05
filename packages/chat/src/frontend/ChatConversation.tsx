@@ -43,7 +43,7 @@ import {
 } from "../service/contracts";
 import { isShownImage, rowAttachments } from "./attachment-views";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
-import { dayLabel, messageTime, sameDay } from "./chat-format";
+import { createMessageDates } from "./chat-message-dates";
 import { followVisualViewport } from "./follow-viewport";
 import ThreadMetadata from "./ThreadMetadata";
 import type { Thread } from "./threads";
@@ -197,7 +197,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   const resourceLabel = () => t().openInType({ title: props.resource?.typeTitle ?? "" });
   const resourceKind = () => props.resource?.typeTitle ?? "";
   const resourceStatus = () => props.resource?.status ?? (props.resource?.done ? t().threadsDone : null);
-  const config = () => ({ ...props.dateConfig, locale: locale() });
+  const messageDates = createMemo(() => createMessageDates({ ...props.dateConfig, locale: locale() }));
   const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();
   // Elements picked for the next message; they belong to the draft they were picked for.
   const [shared, setShared] = createSignal<readonly ChatAttachment[]>([]);
@@ -401,7 +401,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   const startsGroup = (item: ChatFeedItem, previous: ChatFeedItem | undefined) =>
     !previous ||
     (item.via ?? null) !== (previous.via ?? null) ||
-    !sameDay(item.at, previous.at, config()) ||
+    messageDates().read(item).dayKey !== messageDates().read(previous).dayKey ||
     startsMessageGroup(
       { author: item.authorId, at: item.at, system: item.kind !== "text" },
       { author: previous.authorId, at: previous.at, system: previous.kind !== "text" },
@@ -552,10 +552,12 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         estimateSize={(item) => (item.kind === "system" ? SYSTEM_ESTIMATE : item.kind === "text" ? ROW_ESTIMATE : EVENT_ESTIMATE)}
         label={t().history({ title: props.title })}
         itemLabel={(item) =>
-          item.kind === "text" ? `${item.own ? t().you : item.authorName}, ${messageTime(item.at, config())}` : undefined
+          item.kind === "text" ? `${item.own ? t().you : item.authorName}, ${messageDates().read(item).time}` : undefined
         }
         separator={(item, previous) =>
-          previous && sameDay(item.at, previous.at, config()) ? undefined : dayLabel(item.at, props.now(), config())
+          previous && messageDates().read(item).dayKey === messageDates().read(previous).dayKey
+            ? undefined
+            : messageDates().label(item, props.now())
         }
         hasOlder={props.hasOlder}
         hasNewer={props.hasNewer}
@@ -592,13 +594,13 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               icon={item.icon}
               origin={item.origin}
               href={item.href}
-              time={messageTime(item.at, config())}
+              time={messageDates().read(item).time}
               dateTime={item.at}
             >
               {item.body}
             </MessageEventRow>
           ) : item.kind === "system" ? (
-            <MessageSystemRow time={messageTime(item.at, config())} dateTime={item.at}>
+            <MessageSystemRow time={messageDates().read(item).time} dateTime={item.at}>
               {item.body}
             </MessageSystemRow>
           ) : (
@@ -608,7 +610,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               text={item.body}
               edited={item.edited}
               deleted={item.deleted}
-              time={messageTime(item.at, config())}
+              time={messageDates().read(item).time}
               dateTime={item.at}
               own={item.own}
               groupStart={startsGroup(item, props.items[index() - 1])}
