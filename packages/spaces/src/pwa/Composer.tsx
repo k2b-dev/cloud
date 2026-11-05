@@ -1,7 +1,7 @@
 import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import type { DateContext } from "@k2b/stdlib";
-import { DateTimePicker, Dropdown, IconButton, TextInput, useLocale } from "@k2b/ui";
+import { Button, DateTimePicker, Dropdown, IconButton, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, on, onMount, Show } from "solid-js";
 import type { ItemTemplateDraft, SpaceItemAssignee, SpaceItemTemplate } from "@/contracts";
 import { formatDeadline } from "@/presentation/deadline";
@@ -20,6 +20,10 @@ type ComposerProps = {
   /** In "My tasks": the Spaces a task may go to, with a chip to switch; the task is assigned to the person. */
   spaces?: PwaSpaceEntry[];
   onSpaceChange?: (shortId: string) => void;
+  /** In "My tasks": the Space chosen, and that reading its statuses failed, with a way to try again. */
+  targetShortId?: string;
+  targetFailed?: boolean;
+  onRetryTarget?: () => void;
   template?: SpaceItemTemplate;
   online: boolean;
   dateConfig: DateContext;
@@ -50,14 +54,20 @@ export default function Composer(props: ComposerProps) {
   const [deadline, setDeadline] = createSignal<string | null>(null);
   const [people, setPeople] = createSignal<SpaceItemAssignee[]>(props.spaces ? [props.me] : []);
   const [draft, setDraft] = createSignal<ItemTemplateDraft | null>(null);
+  /** A template fills the task before it may go: `loading` until its draft is here, `failed` with a way to try again. */
+  const [templateState, setTemplateState] = createSignal<"none" | "loading" | "failed" | "ready">("none");
   let field: HTMLTextAreaElement | undefined;
 
-  // A new Space starts at its first open status; the person's own choice holds while the Space stays.
+  // A new Space starts at its first open status; the person's own choice holds while the Space stays, also when the
+  // list reads it again.
   createEffect(
     on(
       () => props.target,
-      (target) => {
-        setStatusId(target ? firstOpenStatus(target.statuses)?.id : undefined);
+      (target, previous) => {
+        if (!target) return setStatusId(undefined);
+        const chosen = statusId();
+        const kept = previous?.shortId === target.shortId && target.statuses.some((entry) => entry.id === chosen && !entry.done);
+        if (!kept) setStatusId(firstOpenStatus(target.statuses)?.id);
       },
     ),
   );
@@ -65,20 +75,24 @@ export default function Composer(props: ComposerProps) {
   createEffect(
     on(
       () => [props.template?.id, props.target?.shortId] as const,
-      async ([templateId, spaceShortId]) => {
-        setDraft(null);
-        if (!templateId || !spaceShortId) return;
-        const read = await readTemplateDraft(spaceShortId, templateId, props.dateConfig.timeZone ?? "UTC");
-        if (props.template?.id !== templateId) return;
-        setDraft(read);
-        if (read?.item.deadline) setDeadline(read.item.deadline);
-      },
+      ([templateId, spaceShortId]) => void fill(templateId, spaceShortId),
     ),
   );
   createEffect(on(title, keep, { defer: true }));
 
+  async function fill(templateId: string | undefined, spaceShortId: string | undefined) {
+    setDraft(null);
+    if (!templateId || !spaceShortId) return setTemplateState("none");
+    setTemplateState("loading");
+    const read = await readTemplateDraft(spaceShortId, templateId, props.dateConfig.timeZone ?? "UTC");
+    if (props.template?.id !== templateId) return;
+    setDraft(read);
+    setTemplateState(read ? "ready" : "failed");
+    if (read?.item.deadline) setDeadline(read.item.deadline);
+  }
   const status = () => props.target?.statuses.find((entry) => entry.id === statusId());
-  const ready = () => Boolean(title().trim() && props.target && statusId() && props.online);
+  const templateReady = () => templateState() === "none" || templateState() === "ready";
+  const ready = () => Boolean(title().trim() && props.target && statusId() && props.online && templateReady());
 
   const grow = () => {
     if (!field) return;
@@ -98,7 +112,7 @@ export default function Composer(props: ComposerProps) {
     const target = props.target;
     const column = statusId();
     const text = title().trim();
-    if (!target || !column || !text || !props.online) return;
+    if (!target || !column || !text || !props.online || !templateReady()) return;
     const filled = draft()?.item;
     props.onSubmit({
       spaceShortId: target.shortId,
@@ -141,7 +155,7 @@ export default function Composer(props: ComposerProps) {
   const template = () => props.template;
 
   return (
-    <div class="spaces-pwa-composer" data-k2b-shell-bottom role="group" aria-label={t().newTask}>
+    <div class="spaces-pwa-composer" data-k2b-shell-bottom="keyboard" role="group" aria-label={t().newTask}>
       <Show when={props.outbox?.length}>
         <ul class="spaces-pwa__list spaces-pwa-composer__outbox">
           <For each={props.outbox}>{(entry) => <OutgoingRow entry={entry} onResend={props.onResend} />}</For>
@@ -155,11 +169,25 @@ export default function Composer(props: ComposerProps) {
       </Show>
       <Show when={template()}>
         {(chosen) => (
-          <p class="spaces-pwa-composer__from">
-            <i class={chosen().icon ?? "ti ti-template"} aria-hidden="true" />
-            {t().fromTemplate({ name: chosen().name })}
+          <p class="spaces-pwa-composer__from" role="status">
+            <i class={templateState() === "loading" ? "ti ti-loader-2 k2b-spin" : (chosen().icon ?? "ti ti-template")} aria-hidden="true" />
+            {templateState() === "failed" ? t().templateFailed({ name: chosen().name }) : t().fromTemplate({ name: chosen().name })}
+            <Show when={templateState() === "failed"}>
+              <Button variant="ghost" size="sm" onClick={() => void fill(chosen().id, props.target?.shortId)}>
+                {t().retry}
+              </Button>
+            </Show>
           </p>
         )}
+      </Show>
+      <Show when={props.targetFailed}>
+        <p class="spaces-pwa-composer__from spaces-pwa-composer__failed" role="alert">
+          <i class="ti ti-alert-circle" aria-hidden="true" />
+          {t().spaceLoadFailed({ space: props.spaces?.find((entry) => entry.shortId === props.targetShortId)?.name ?? "" })}
+          <Button variant="ghost" size="sm" onClick={() => props.onRetryTarget?.()}>
+            {t().retry}
+          </Button>
+        </p>
       </Show>
       <div class="spaces-pwa-composer__row">
         <IconButton class="spaces-pwa-composer__close" label={t().closeKeepsDraft} tooltip={false} onClick={close}>
@@ -269,6 +297,7 @@ export default function Composer(props: ComposerProps) {
             <PeoplePicker
               spaceShortId={target().shortId}
               userId={props.userId}
+              me={props.me}
               selected={people()}
               onToggle={toggle}
               label={t().assignee}

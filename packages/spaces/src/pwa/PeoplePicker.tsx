@@ -1,11 +1,14 @@
 import { Dropdown, type DropdownItem, useLocale } from "@k2b/ui";
 import { createSignal, type JSX, onCleanup } from "solid-js";
 import type { SpaceAssignableUser, SpaceItemAssignee } from "@/contracts";
+import { readAssignable } from "./create";
 import { myTasksMessages } from "./messages";
 
 type Props = {
   spaceShortId: string;
   userId: string;
+  /** The person, so "Assign to me" works whatever the directory's page holds. */
+  me?: SpaceItemAssignee;
   /** Who is chosen now; the picker checks them. */
   selected: readonly SpaceItemAssignee[];
   /** Each choice applies at once; the sheet stays open. */
@@ -33,26 +36,21 @@ export default function PeoplePicker(props: Props) {
   const t = () => myTasksMessages.resolve([locale()]).t;
   const [directory, setDirectory] = createSignal<Directory>({ state: "idle", people: [] });
   const [query, setQuery] = createSignal("");
-  let request: AbortController | undefined;
+  let request = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => {
-    request?.abort();
+    request += 1;
     clearTimeout(timer);
   });
 
   const load = async (search: string) => {
-    request?.abort();
-    const controller = new AbortController();
-    request = controller;
+    const asked = ++request;
     setDirectory((current) => ({ state: "loading", people: current.people }));
-    const params = new URLSearchParams(search ? { search } : {});
-    const response = await fetch(`/api/spaces/${encodeURIComponent(props.spaceShortId)}/assignable-users?${params}`, {
-      headers: { accept: "application/json" },
-      signal: controller.signal,
-    }).catch(() => null);
-    if (controller.signal.aborted) return;
-    if (!response?.ok) return void setDirectory((current) => ({ state: "failed", people: current.people }));
-    setDirectory({ state: "ready", people: (await response.json()) as SpaceAssignableUser[] });
+    const people = await readAssignable(props.spaceShortId, search);
+    // Only the newest search answers.
+    if (asked !== request) return;
+    if (!people) return void setDirectory((current) => ({ state: "failed", people: current.people }));
+    setDirectory({ state: "ready", people });
   };
   const searchFor = (value: string) => {
     if (value === query()) return;
@@ -84,7 +82,7 @@ export default function PeoplePicker(props: Props) {
         },
         { label: t().retry, icon: "ti ti-reload", closeOnSelect: false, action: () => void load(query().trim()) },
       ];
-    const me = current.people.find((person) => person.id === props.userId);
+    const me = props.me ?? current.people.find((person) => person.id === props.userId);
     const people: SpaceItemAssignee[] = [
       // The chosen people stay listed, also when the search does not match them.
       ...props.selected.filter((person) => !current.people.some((entry) => entry.id === person.id)),

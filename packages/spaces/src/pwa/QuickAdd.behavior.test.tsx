@@ -157,11 +157,33 @@ else {
     });
     route = () => Response.json({ message: "This request key was used for another task." }, { status: 409 });
     expect(await sendCreate("Space1", body, "refused")).toEqual({ kind: "refused", reason: "This request key was used for another task." });
+    // Headers arrived, then the connection broke off: the task may exist.
+    route = () => new Response('{"id":', { status: 200, headers: { "content-type": "application/json" } });
+    expect(await sendCreate("Space1", body, "refused")).toEqual({ kind: "unconfirmed" });
     route = () => Response.json({ id: "Item01", title: "Fix the armrest" });
     expect(await sendCreate("Space1", body, "refused")).toMatchObject({ kind: "created", item: { id: "Item01" } });
     // Every try sends the same body with the same key, so the server keeps one task.
     expect(new Set(calls.map((call) => JSON.stringify(call.body))).size).toBe(1);
     expect(calls.every((call) => call.method === "POST" && call.path === "/api/spaces/Space1/items")).toBe(true);
+  });
+
+  test("tasks not yet confirmed stay on the device with their request key; confirmed and refused ones leave", () => {
+    const { outbox } = modules!.create;
+    const entry = (key: string, state: Outgoing["state"]): Outgoing => ({
+      key,
+      spaceShortId: "Space1",
+      statusId: "Col001",
+      title: `Task ${key}`,
+      body: { title: `Task ${key}`, columnId: "Col001", requestKey: key },
+      state,
+    });
+    outbox.write(me.id, [entry("a", "saving"), entry("b", "unconfirmed"), entry("c", "created"), entry("d", "refused")]);
+    expect(outbox.read(me.id).map((item) => [item.key, item.state, item.body.requestKey])).toEqual([
+      ["a", "unconfirmed", "a"],
+      ["b", "unconfirmed", "b"],
+    ]);
+    outbox.write(me.id, []);
+    expect(outbox.read(me.id)).toEqual([]);
   });
 
   test("an outgoing row shows saving, not confirmed with ↻, or the reason", () => {

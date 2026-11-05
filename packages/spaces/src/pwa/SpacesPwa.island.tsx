@@ -22,7 +22,7 @@ import type { OverviewView, OverviewWork } from "@/overview-contracts";
 import { OverviewViewSchema } from "@/overview-contracts";
 import { buildSpaceHref } from "@/routes";
 import { createRetryToasts } from "../frontend/lib/feedback";
-import { type Outgoing, sendCreate } from "./create";
+import { type Outgoing, outbox, sendCreate } from "./create";
 import MyTasks, { type WorkItem } from "./MyTasks";
 import { myTasksMessages } from "./messages";
 import { createOnline } from "./online";
@@ -330,6 +330,9 @@ export default function SpacesPwa(props: Props) {
   // The field loads when it first opens, with its pickers; the list does not carry it.
   const [composer, setComposer] = createSignal<typeof import("./Composer").default>();
   const [outgoing, setOutgoing] = createSignal<Outgoing[]>([]);
+  // Tasks not yet confirmed come back after a reload or a restart, with their request key, to be sent again.
+  onMount(() => setOutgoing(outbox.read(props.userId)));
+  createEffect(on(outgoing, (entries) => outbox.write(props.userId, entries), { defer: true }));
   /** In "My tasks": the Space a new task goes to, the last one used on this device. */
   const [mineSpace, setMineSpace] = createSignal<string>();
   const [mineShape, setMineShape] = createSignal<Shape | null>();
@@ -366,7 +369,8 @@ export default function SpacesPwa(props: Props) {
     if (!spaceList()) {
       const last = readLastSpace();
       const start = writable().find((entry) => entry.shortId === last) ?? writable()[0];
-      if (start && start.shortId !== mineSpace()) void chooseMineSpace(start.shortId);
+      // A Space whose statuses could not be read is read again on every opening.
+      if (start && (start.shortId !== mineSpace() || mineShape() === null)) void chooseMineSpace(start.shortId);
     }
     setComposing({ template });
   };
@@ -615,6 +619,12 @@ export default function SpacesPwa(props: Props) {
                     target={target()}
                     spaces={spaceList() ? undefined : writable()}
                     onSpaceChange={(shortId: string) => void chooseMineSpace(shortId)}
+                    targetShortId={mineSpace()}
+                    targetFailed={!spaceList() && mineShape() === null}
+                    onRetryTarget={() => {
+                      const shortId = mineSpace();
+                      if (shortId) void chooseMineSpace(shortId);
+                    }}
                     template={open().template}
                     online={online()}
                     dateConfig={props.dateConfig}
