@@ -26,10 +26,12 @@ test("reports a removed token in a class, a style object and a stylesheet", asyn
     await findings({
       "packages/cloud/src/Row.tsx": `export const a = <b class="text-[var(--k2b-danger)]" />;\nexport const b = { color: "var(--ui-accent)" };\n`,
       "packages/spaces/src/styles/app.css": ".row {\n  background: var(--ui-bg);\n}\n",
+      "packages/mail/src/Read.ts": `export const read = (el: HTMLElement) => [getComputedStyle(el).getPropertyValue("--k2b-gone"), "var(--k2b-gone)"];\n`,
     }),
   ).toEqual([
     "packages/cloud/src/Row.tsx:1 --k2b-danger",
     "packages/cloud/src/Row.tsx:2 --ui-accent",
+    "packages/mail/src/Read.ts:1 --k2b-gone",
     "packages/spaces/src/styles/app.css:2 --ui-bg",
   ]);
 });
@@ -43,7 +45,8 @@ test("accepts defined tokens, fallbacks, runtime-set properties, template names,
         `export const c = <i style={{ "--k2b-lane": "2", width: "var(--k2b-lane)" }} />;`,
         "export const d = (unit: string) => `var(--k2b-timeline-${unit})`;",
       ].join("\n"),
-      "packages/app/src/styles/app.css": ".row { --k2b-row-gap: 4px; gap: var(--k2b-row-gap); }\n",
+      "packages/app/src/styles/app.css": ".row { --k2b-row-gap: 4px; gap: var(--k2b-row-gap); }\n/* was var(--k2b-danger) */\n",
+      "packages/app/src/Lane.ts": `export const lane = (el: HTMLElement) => el.style.setProperty("--k2b-lane-gap", "1px") || "var(--k2b-lane-gap)";\n`,
       "packages/ui/src/styles/hygiene.test.ts": `expect(css).not.toContain("var(--k2b-danger)");\n`,
     }),
   ).toEqual([]);

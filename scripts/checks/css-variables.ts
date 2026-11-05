@@ -12,7 +12,8 @@ import type { Finding, Rule } from "./rule";
 const ROOTS = ["packages", "docs-site", "fixtures", "styles.css"];
 const NAME = String.raw`--(?:k2b|ui)-[\w-]*\w`;
 const declaration = new RegExp(`(${NAME})\\s*:`, "g");
-const quoted = new RegExp(`["'\`](${NAME})["'\`]`, "g");
+// A style object key (`"--k2b-lane": value`) or `setProperty("--k2b-lane", …)`; a read such as `getPropertyValue` defines nothing.
+const runtime = new RegExp(String.raw`["'\`](${NAME})["'\`]\s*:|setProperty\(\s*["'\`](${NAME})["'\`]`, "g");
 const use = new RegExp(`var\\(\\s*(${NAME})\\s*(,?)`, "g");
 
 const lineAt = (source: string, index: number) => source.slice(0, index).split("\n").length;
@@ -28,12 +29,19 @@ export const rule: Rule = {
     })
       .filter((file) => !isTestFile(file))
       .sort();
-    const sources = files.map((file) => ({ file, source: readFileSync(file, "utf8") }));
+    // Stylesheet comments name tokens without using them; blanking them keeps every line number.
+    const sources = files.map((file) => ({
+      file,
+      source: ((source) =>
+        file.endsWith(".css") ? source.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " ")) : source)(
+        readFileSync(file, "utf8"),
+      ),
+    }));
 
     const defined = new Set<string>();
     for (const { file, source } of sources) {
       for (const match of source.matchAll(declaration)) defined.add(match[1]!);
-      if (!file.endsWith(".css")) for (const match of source.matchAll(quoted)) defined.add(match[1]!);
+      if (!file.endsWith(".css")) for (const match of source.matchAll(runtime)) defined.add((match[1] ?? match[2])!);
     }
 
     const findings: Finding[] = [];

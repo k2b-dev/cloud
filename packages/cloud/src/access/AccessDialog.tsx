@@ -193,16 +193,21 @@ export function AccessDialog(
   createEffect(() => {
     if (loading()) return;
     const ids = rows().flatMap((row) => (row.principal.type === "user" && !asked.has(row.principal.userId) ? [row.principal.userId] : []));
-    for (let start = 0; start < ids.length; start += DIRECTORY_PAGE) {
-      const page = ids.slice(start, start + DIRECTORY_PAGE);
-      for (const id of page) asked.add(id);
-      readDirectory({ kinds: "user", user_ids: page.join(","), per_page: String(page.length) }, directory.signal)
-        .then((result) => {
-          const found = result.items.flatMap((item) => (item.user?.mail ? [[item.user.id, item.user.mail] as const] : []));
-          if (found.length > 0) setMails((current) => new Map([...current, ...found]));
-        })
-        .catch(() => {});
-    }
+    if (ids.length === 0) return;
+    for (const id of ids) asked.add(id);
+    // One page after the other, so a long list never sends a burst of requests.
+    void (async () => {
+      for (let start = 0; start < ids.length; start += DIRECTORY_PAGE) {
+        const page = ids.slice(start, start + DIRECTORY_PAGE);
+        const result = await readDirectory(
+          { kinds: "user", user_ids: page.join(","), per_page: String(page.length) },
+          directory.signal,
+        ).catch(() => null);
+        if (!result) return;
+        const found = result.items.flatMap((item) => (item.user?.mail ? [[item.user.id, item.user.mail] as const] : []));
+        if (found.length > 0) setMails((current) => new Map([...current, ...found]));
+      }
+    })();
   });
   // The directory counts the people the viewer may see; a guest sees only themselves, so read-only viewers get no number.
   if (props.allowAuthenticated !== false && canEdit())
