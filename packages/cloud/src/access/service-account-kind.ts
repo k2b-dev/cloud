@@ -19,7 +19,7 @@ export const serviceAccountKindDisplay = (
     case "user_delegated":
       return { icon: "ti-user-key", label: t.userBoundServiceAccount };
     case "resource_bound":
-      return { icon: "ti-box", label: t.resourceBoundServiceAccount };
+      return { icon: "ti-key", label: t.resourceBoundServiceAccount };
     case "standalone":
       return { icon: "ti-key", label: t.standaloneServiceAccount };
     default:
