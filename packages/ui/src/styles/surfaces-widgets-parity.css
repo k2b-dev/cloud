@@ -1189,9 +1189,8 @@
 }
 
 /* ----------------------------------------------------------- AvatarStack --
- * A few 20 px faces that overlap, each with a 2 px ring in the surface
- * color, then "+n". The ring is a shadow, so it takes no space. The list it
- * opens is a quiet floating surface; on phones the same list is a sheet.
+ * A few 20 px faces that overlap, then "+n". The list it opens is a quiet
+ * floating surface; on phones the same list is a sheet.
  */
 .k2b-ui .k2b-avatar-stack {
   display: inline-flex;
@@ -1232,30 +1231,55 @@
 }
 
 .k2b-ui .k2b-avatar-stack__faces {
+  --k2b-faces-size: 1.25rem;
+  --k2b-faces-overlap: 0.3125rem;
   display: inline-flex;
   align-items: center;
 }
 
+/* Overlapping faces, here, in the detail panel's presence slot, and in the
+   chat preview. The next face cuts a 2 px gap out of the face it covers with
+   a mask, not a ring in a surface colour: the gap shows whatever lies behind
+   (a hovered, selected, or dark row), and nothing paints past a face for a
+   row or cell to clip. A group sets `--k2b-faces-size` and
+   `--k2b-faces-overlap`; the cut is in lengths because Chromium rejects a
+   gradient radius that mixes percent and pixels. */
+.k2b-ui :is(.k2b-avatar-stack__faces, .k2b-detail-presence-slot, .k2b-chat-preview__faces) > .k2b-avatar[data-size] {
+  width: var(--k2b-faces-size);
+  height: var(--k2b-faces-size);
+}
+
+.k2b-ui :is(.k2b-avatar-stack__faces, .k2b-detail-presence-slot, .k2b-chat-preview__faces) > .k2b-avatar + .k2b-avatar {
+  margin-inline-start: calc(-1 * var(--k2b-faces-overlap));
+}
+
+.k2b-ui :is(.k2b-avatar-stack__faces, .k2b-detail-presence-slot, .k2b-chat-preview__faces) > .k2b-avatar:has(+ .k2b-avatar) {
+  --k2b-faces-next: calc(1.5 * var(--k2b-faces-size) - var(--k2b-faces-overlap));
+  --k2b-faces-cut: radial-gradient(
+    circle calc(var(--k2b-faces-size) / 2 + 2px) at var(--k2b-faces-next) 50%,
+    #0000 calc(100% - 0.5px),
+    #000 calc(100% + 0.5px)
+  );
+  -webkit-mask: var(--k2b-faces-cut);
+  mask: var(--k2b-faces-cut);
+}
+
+.k2b-ui :is(.k2b-avatar-stack__faces, .k2b-detail-presence-slot, .k2b-chat-preview__faces) > .k2b-avatar:has(+ .k2b-avatar):is(:dir(rtl), [dir="rtl"] *):not([dir="rtl"] [dir="ltr"] *) {
+  --k2b-faces-next: calc(var(--k2b-faces-overlap) - 0.5 * var(--k2b-faces-size));
+}
+
 .k2b-ui .k2b-avatar-stack__faces > .k2b-avatar[data-size] {
-  width: 1.25rem;
-  height: 1.25rem;
-  box-shadow: 0 0 0 2px var(--k2b-avatar-stack-ring, var(--k2b-surface-elevated));
   font-size: 0.5rem;
 }
 
-.k2b-ui .k2b-avatar-stack__faces > .k2b-avatar + .k2b-avatar {
-  margin-inline-start: -0.3125rem;
-}
-
 /* `AvatarFaces size="md"`: larger faces that overlap less, so initials stay readable beside row text. */
-.k2b-ui .k2b-avatar-stack__faces[data-faces-size="md"] > .k2b-avatar[data-size] {
-  width: 1.5rem;
-  height: 1.5rem;
-  font-size: 0.5625rem;
+.k2b-ui .k2b-avatar-stack__faces[data-faces-size="md"] {
+  --k2b-faces-size: 1.5rem;
+  --k2b-faces-overlap: 0.1875rem;
 }
 
-.k2b-ui .k2b-avatar-stack__faces[data-faces-size="md"] > .k2b-avatar + .k2b-avatar {
-  margin-inline-start: -0.1875rem;
+.k2b-ui .k2b-avatar-stack__faces[data-faces-size="md"] > .k2b-avatar[data-size] {
+  font-size: 0.5625rem;
 }
 
 .k2b-ui .k2b-avatar-stack__faces[data-faces-size="md"] > .k2b-avatar > i {

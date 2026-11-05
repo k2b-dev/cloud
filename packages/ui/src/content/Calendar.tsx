@@ -14,6 +14,7 @@ import { CalendarDayView } from "./CalendarDayView";
 import { CalendarWeekView } from "./CalendarWeekView";
 import { addDayKeys } from "./calendar-days";
 import { openCalendarGoTo, openCalendarShortcuts } from "./calendar-dialogs";
+import { type CalendarDetailState, CalendarEventDetail } from "./calendar-event-detail";
 import { layoutCalendarIntervals } from "./calendar-event-layout";
 import { useCalendarMessages } from "./calendar-messages";
 import { fitMonthWeek, layoutMonthWeek, monthLaneCapacity } from "./calendar-month-layout";
@@ -58,7 +59,18 @@ export type CalendarEvent = {
   color?: CalendarEventColor;
   colorHex?: string;
   href?: string;
-  dataSpaceItemId?: string;
+  /**
+   * Host data for the entry's element: each key becomes a `data-*` attribute, `spaceItemId` as `data-space-item-id`.
+   * Keys must be camelCase letters and digits; keys that start with `calendar` belong to the calendar and are left out.
+   */
+  data?: Record<string, string>;
+  /** A Tabler icon class such as `"ti ti-truck"`, drawn before the title in the color of the entry's edge. */
+  icon?: string;
+  /**
+   * Links that belong to the entry, such as an order or a video room. They show in the entry's detail, and week, day,
+   * and the day list show how many there are; an entry never nests them, since it is a link or button itself.
+   */
+  links?: CalendarEventLink[];
   meta?: string;
   description?: string;
   /**
@@ -72,12 +84,17 @@ export type CalendarEvent = {
    */
   accessibleDetail?: string;
   /**
-   * Day and week views with `dayHours`: the state of the entry's checkbox, such as a to-do's. Leave it out for entries
-   * without one. With `onEventCheck` the reader can change it.
+   * The state of a to-do or deadline, such as a task's. Leave it out for entries without one. `true` strikes the title
+   * through in every view; `false` turns the entry red once it lies in the past. The day and week views with
+   * `dayHours` draw a checkbox, and with `onEventCheck` the reader can change it.
    */
   checked?: boolean;
   location?: string;
   calendarName?: string;
+  /**
+   * The people of the entry. Week and day show up to three faces and then "+n", the day list one, and the compact
+   * month none; the detail lists them all. Without `src` a face shows initials.
+   */
   attendees?: CalendarAttendee[];
   resources?: CalendarResource[];
   recurrence?: CalendarRecurrence;
@@ -85,7 +102,16 @@ export type CalendarEvent = {
 
 export type CalendarAttendee = {
   name: string;
+  /** A picture of the person; without it the face shows initials. */
+  src?: string;
   status?: "accepted" | "declined" | "tentative" | "needs-action";
+};
+
+export type CalendarEventLink = {
+  label: string;
+  href: string;
+  /** A Tabler icon class before the label; a link icon by default. */
+  icon?: string;
 };
 
 export type CalendarResource = {
@@ -2782,6 +2808,8 @@ const MonthView = (props: {
                     compact
                     bar={item.bar}
                     leadingTime={leadingTime(item)}
+                    faces={1}
+                    linkCount
                   />
                 </li>
               )}
@@ -3336,6 +3364,8 @@ const TimeGridView = (props: {
                               owner={props.owner}
                               href={eventHref(props.owner, event)}
                               fill
+                              faces={3}
+                              linkCount
                               moving={movingEventId() === event.id}
                               onMovePointerDown={
                                 props.owner.onEventDrop
@@ -3515,7 +3545,7 @@ const MobileMonthView = (props: {
         <Show when={selectedEvents().length > 0} fallback={<div class="k2b-calendar-mobile-month__empty">{props.labels.noEvents}</div>}>
           <div class="k2b-calendar-mobile-month__events">
             <For each={selectedEvents()}>
-              {(event) => <EventChip event={event} owner={props.owner} href={eventHref(props.owner, event)} />}
+              {(event) => <EventChip event={event} owner={props.owner} href={eventHref(props.owner, event)} faces={1} linkCount />}
             </For>
           </div>
         </Show>
@@ -3532,9 +3562,19 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
   // Subviews derive their date config from the owner props, so the inherited
   // render locale is merged here once; an explicit dateConfig.locale wins.
   const localizedConfig = useDateConfigLocale(() => props.dateConfig);
+  const [now, setNow] = createSignal(new Date());
+  const [detail, setDetail] = createSignal<CalendarDetailState | null>(null);
   const owner = mergeProps(props, {
     get dateConfig(): DateContext {
       return localizedConfig();
+    },
+    calendarNow: now,
+    get selectedEventId(): string | undefined {
+      return props.selectedEventId ?? detail()?.event.id;
+    },
+    // The calendar's own detail stands in only for a host that opens nothing itself.
+    get openEventDetail(): CalendarOwner["openEventDetail"] {
+      return props.onEventActivate ? undefined : (event, anchor) => setDetail({ event, anchor });
     },
   });
   const view = () => props.view ?? "month";
@@ -3546,7 +3586,6 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
   };
   const date = createMemo(() => safeDate(props.date));
   const selectedDate = createMemo(() => safeDate(props.selectedDate ?? props.date));
-  const [now, setNow] = createSignal(new Date());
   /** The first day selected in the month view, so the view switcher opens the other views at it. */
   const [focusDay, setFocusDay] = createSignal<Date | null>(null);
   const normalizedEvents = createMemo(() => normalizeEvents(props.events, dateConfig()));
@@ -3820,6 +3859,9 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
             </Show>
           </Show>
         </Show>
+      </Show>
+      <Show when={!props.onEventActivate}>
+        <CalendarEventDetail owner={owner} state={detail()} onClose={() => setDetail(null)} />
       </Show>
     </section>
   );

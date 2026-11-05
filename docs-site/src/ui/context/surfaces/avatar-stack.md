@@ -29,6 +29,10 @@ faces that overlap less beside row text. The faces are decorative, so name the
 people in the surrounding label or a tooltip. `tone="neutral"` keeps a face
 gray, for example for someone outside the team.
 
+Overlapping faces are separated by a small gap that shows the background
+behind them, so they fit any row, hover, selected, or dark state without a
+ring color to keep in sync, and nothing paints outside a face.
+
 ## Import
 
 ```tsx
