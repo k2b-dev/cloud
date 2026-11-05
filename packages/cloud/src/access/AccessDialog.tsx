@@ -567,15 +567,21 @@ export function AccessDialog(
             </Show>
             <span class="contents max-sm:hidden">{mark(row())}</span>
           </span>
-          {/* A service account's line carries its level, so it wraps on a phone instead of cutting it off. */}
+          {/*
+            A service account's line carries its level, so it wraps on a phone instead of cutting it off. On a phone the
+            mark sits here too: one line height fits it, and it takes a slot of that height at the top of the line, so
+            staging a change never makes the row taller and no row below moves.
+          */}
           <span
-            class="block text-[13px] text-dimmed"
+            class="block text-[13px] leading-5 text-dimmed"
             classList={{
               truncate: !isCodeAccount(row().display.serviceAccountKind),
               "break-words": isCodeAccount(row().display.serviceAccountKind),
             }}
           >
-            <span class="contents sm:hidden">{mark(row())}</span>
+            <Show when={mark(row())}>
+              {(badge) => <span class="mr-1.5 inline-flex h-5 items-center align-top sm:hidden">{badge()}</span>}
+            </Show>
             {kindLine(row())}
           </span>
         </span>
