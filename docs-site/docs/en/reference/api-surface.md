@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-01
+updated: 2026-11-05
 ---
 
 # API surface
@@ -31,7 +31,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
-| `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, and their closed router |
+| `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, opt-in staff push to registered devices (`registeredDevices`), registration visit summaries and renaming, and their closed router |
 | `@k2b/cloud/app-pwa/browser` | Supported, browser | Strict App-PWA QR parsing and fragment clearing |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
 | `@k2b/ui/text-editor` | Supported, SolidJS | [Markdown editor with editable table cells](/en/ui/input/text-editor); application-injected collaboration |
@@ -364,6 +364,16 @@ application uses this rendering mode for previews, signatures, provider draft
 copies, and outgoing messages. Its mailbox CSS may override column alignment. Omitting
 `output` keeps the existing Cloud rendering, including computed table
 formulas; `links: "plain"` alone does not disable formula evaluation.
+
+### Render math in the browser
+
+On the server, `markdown.render()` and `markdown.renderSync()` render `$…$`,
+`$$…$$`, and `math` fences with KaTeX right away. In the browser, KaTeX loads
+only when content has math. Until it arrives, each formula's LaTeX source
+stands at its place. A render inside a Solid memo or JSX expression runs again
+by itself once KaTeX has loaded and then returns the same HTML as the server.
+While a server-rendered page hydrates, it keeps the server's formulas. Render
+Markdown that can contain math in a reactive scope.
 
 ### Evaluate Markdown table cells
 

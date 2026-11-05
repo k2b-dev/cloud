@@ -30,6 +30,7 @@ export function createExamplePwa(publicOrigin: string) {
         // else's use: only administrators register and unregister them here.
         case "register-device":
         case "revoke-registration":
+        case "rename-registration":
           return user.roles.includes("admin");
         // Every app user may see the shared devices and take one over at the desk with
         // the code it shows. A real app can narrow this per registration through `target`.

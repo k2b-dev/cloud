@@ -43,14 +43,22 @@ Every `CalendarEvent` has an `id`, `title`, and `start`. `end` and `allDay`
 control placement. `color` accepts the shared semantic palette; `colorHex`
 supports an application-defined calendar color.
 
+An event is a light neutral surface with neutral text and a 1px edge in its
+color; the edge carries the category, never the text or a dot. The calendar
+darkens the edge on the light theme and lightens it on the dark theme as
+needed, so any `colorHex` keeps at least 3:1 against the surface. All-day and
+multi-day bars add a soft fill of their color and a bolder title, so they
+read stronger than a one-day entry. Selection doubles the edge inside and
+tints the surface; nothing changes size.
+
 Optional event detail includes `meta`, `description`, `location`,
 `calendarName`, attendees, resources, and recurrence metadata. `display:
-"background"` renders a non-interactive time range. `display: "marker"` draws
-a point in time, such as a deadline, as a small colored marker beside its title
-on the plain surface instead of a filled band; hover and selection tint it like
-an event, and a custom `renderEvent` output replaces the default marker.
-`href` or `getEventHref` makes an event a canonical link. Hover tints an
-event that opens or links; it never moves the event or adds a shadow.
+"background"` renders a non-interactive time range as a soft fill without an
+edge. `display: "marker"` draws a point in time, such as a deadline, on the
+plain surface with a dashed edge instead of a solid one; hover and selection
+tint it like an event. `href` or `getEventHref` makes an event a canonical
+link. Hover darkens the surface of an event that opens or links; it never
+moves the event or adds a shadow.
 `accessibleDetail` adds short text to the event's accessible name for state
 that its content shows only visually, such as a priority flag in a custom
 `renderEvent` output.
@@ -307,8 +315,10 @@ and the visible hours.
   at that day within its week.
 - **Entries.** Timed events are bands as long as they last, side by side when
   they overlap, with their time; the running one fills up with the time that
-  passed and says what is left, such as "27 min left". `display: "marker"`
-  draws a deadline with a time as a dashed line with a pill; pills that
+  passed, draws its edge twice as strong, and says what is left, such as
+  "27 min left". A past entry keeps its edge and mutes its text. `display:
+  "marker"` draws a deadline with a time as a dashed line with a pill, red with
+  a soft red fill once an unchecked one is overdue; pills that
   would cover each other, such as two to-dos due at 17:00, sit side by side,
   the earlier one on the left, and each line stays at its own time. An all-day
   event, a timed event that runs past the start hour of a later date, and a

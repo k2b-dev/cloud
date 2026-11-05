@@ -51,12 +51,21 @@ permission checks, and scans keep working on them unchanged. Mail drafts,
 Spaces task media, Grids file fields, Notebooks attachments, and Assistant
 chats and Projects attach files this way.
 
-- **No providers:** it opens the device's file dialog directly, as an
-  `<input type="file">` would. That dialog needs the user activation of the
+Importing the file controls or rendering a save label does not discover
+providers. Discovery starts with the first choose or save action. The file chooser
+opens on **This device** while its sources load, with reserved space for the
+application list. A failed discovery shows **Try again** in that dialog;
+people can still choose a file from this device or cancel. The successful
+list is shared by choosing and saving for this document.
+
+- **No providers already known:** it opens the device's file dialog
+  directly, as an `<input type="file">` would. That dialog needs the user activation of the
   click, so do not `await` anything before calling it. A visitor whom the
   capability catalog refuses, such as someone on a public page, has no
-  providers either. That answer is not kept: the next call asks the catalog
-  again, so a session renewed in the meantime finds its providers.
+  providers either. On the first action, the chooser stays on **This device**
+  after an empty or refused answer; its device control opens the native dialog
+  from that new click. A refused answer is not kept: the next call asks the
+  catalog again, so a session renewed in the meantime finds its providers.
 - **With providers:** it opens one compact file dialog on **This device**,
   with every provider beside it. Inside a provider, people browse folders
   page by page, filter by name, and choose files. See the
@@ -145,8 +154,9 @@ import { ChatComposer, FileDropzone } from "@k2b/ui";
 ```
 
 Both call `choose` inside the click or menu activation, so the device's dialog
-still opens when there are no providers. When a dialog holds the dropzone, the
-chooser opens over it and returns to it when it closes.
+still opens directly when an earlier file action found no providers.
+On the first action, the chooser opens while providers load. When a dialog
+holds the dropzone, the chooser opens over it and returns to it when it closes.
 
 ### Take dropped files too
 

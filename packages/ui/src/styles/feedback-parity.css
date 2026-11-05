@@ -83,9 +83,12 @@
 /* Default size sits in `:where()` so a consumer frame class of equal class
  * count (`.k2b-panel-dialog-frame`) keeps its own width no matter which
  * stylesheet is imported last. Explicit size modifiers stay at normal
- * specificity because only prompt dialogs use them. */
+ * specificity because only prompt dialogs use them. The width cap replaces the
+ * UA `dialog:modal` one (100% - 6px - 2em), which would leave a phone a wider
+ * margin than the dialog budget allows. */
 .k2b-ui :where(.k2b-dialog) {
   width: min(var(--k2b-dialog-available-width), 28rem);
+  max-width: var(--k2b-dialog-available-width);
   max-height: min(90vh, var(--k2b-dialog-available-height));
 }
 
