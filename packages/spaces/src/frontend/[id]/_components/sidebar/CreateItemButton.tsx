@@ -5,12 +5,13 @@ import type { SpaceColumn, SpaceItem, SpaceItemResourceReferenceInput, SpaceItem
 import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
 import { openTemplateDialog } from "../edit/TemplateDialog";
-import { type CreateMenuChoice, type CreateMenuKind, createMenuModel } from "../shared/create-menu";
+import type { CreateMenuChoice } from "../shared/create-menu";
 import { createSpaceItem } from "../shared/editItem";
 import ItemForm from "../shared/ItemForm";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import type { ItemType } from "../shared/item-form/types";
 import { invalidateSpacesData } from "../workspace/workspace-events";
+import { CreateMenu } from "./CreateMenu";
 
 type Props = {
   spaceId: string;
@@ -104,54 +105,8 @@ export function createItemController(props: Props) {
   return { createItem, createTemplate, choose, pending, label, defaultType };
 }
 
-/**
- * The "+" menu: blank first, then the Space's templates, then "Create template…". A phone opens it as a sheet with its
- * title on top. Without `children` it adopts the element `attach` returns, such as the head's server-rendered link.
- */
-export function CreateMenu(props: {
-  kind: CreateMenuKind;
-  templates: readonly SpaceItemTemplate[];
-  choose: (choice: CreateMenuChoice) => void;
-  /** The phone sheet's title, such as "New task in “Review”"; defaults to the menu's name. */
-  title?: string;
-  /** Shows N and Shift+N beside the blank entries, where those keys create directly. */
-  shortcuts?: boolean;
-  attach?: () => HTMLElement | null | undefined;
-  disabled?: boolean;
-  align?: "start" | "end";
-  class?: string;
-  children?: JSX.Element;
-}) {
-  const t = useSpaceMessages();
-  const locale = useLocale();
-  const model = createMemo(() =>
-    createMenuModel({
-      kind: props.kind,
-      templates: props.templates,
-      shortcuts: props.shortcuts,
-      t,
-      locale: locale(),
-      choose: props.choose,
-    }),
-  );
-  return (
-    <Dropdown.Root
-      items={model().items}
-      search={model().search}
-      label={model().label}
-      icons="tile"
-      phone="sheet"
-      width="18.75rem"
-      align={props.align}
-      class={props.class}
-      disabled={props.disabled}
-      attach={props.attach}
-      sheetTop={() => <p class="px-3 pb-1 text-[0.9375rem] font-semibold">{props.title ?? model().label}</p>}
-    >
-      {props.children}
-    </Dropdown.Root>
-  );
-}
+/** The "+" menu lives in its own module, so a page can offer it without the create dialog. */
+export { CreateMenu } from "./CreateMenu";
 
 export default function CreateItemButton(props: Props) {
   const t = useSpaceMessages();

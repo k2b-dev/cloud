@@ -2,7 +2,7 @@ import type { AccessSubject } from "@k2b/cloud/contracts";
 import { hasPermission, type RequestActor } from "@k2b/cloud/server";
 import type { DateContext } from "@k2b/stdlib";
 import { z } from "zod";
-import type { ItemFilter, SpaceItem, SpaceItemAssignee } from "@/contracts";
+import type { ItemFilter, SpaceItem, SpaceItemAssignee, SpaceItemTemplate } from "@/contracts";
 import { getActorsSpacePermissions } from "@/service/access";
 import { spacesService } from "@/service/index";
 import { loadSpacesSidebar } from "@/service/overview";
@@ -34,7 +34,7 @@ export type PwaRow = {
 };
 /** The rows of one status the list has read so far; a done status reads none until it is unfolded. */
 export type PwaGroup = { statusId: string; total: number; rows: PwaRow[]; pages: number; totalPages: number };
-/** A Space in the mobile app: its statuses and tags, what the reader may do, and the first rows of each status. */
+/** A Space in the mobile app: its statuses, tags and task templates, what the reader may do, and the first rows of each status. */
 export type PwaSpace = {
   shortId: string;
   name: string;
@@ -42,6 +42,8 @@ export type PwaSpace = {
   canWrite: boolean;
   statuses: PwaStatus[];
   tags: PwaTag[];
+  /** The task templates a writer may start from; none for a reader. */
+  templates: SpaceItemTemplate[];
   filter: SpaceListFilter;
   groups: PwaGroup[];
 };
@@ -192,6 +194,7 @@ const readShape = async (spaceShortId: string, reader: Reader): Promise<SpaceSha
       canWrite: resolved.canWrite,
       statuses: statuses.map(({ internalId: _, ...status }) => status),
       tags: projected.tags.map(({ id, name, color }) => ({ id, name, color })),
+      templates: resolved.canWrite ? projected.templates.filter((template) => template.kind === "task") : [],
     },
   };
 };
@@ -228,6 +231,11 @@ export async function loadPwaSpace(params: {
       ),
   );
   return { ...shape.space, filter, groups };
+}
+
+/** The Space without rows: its statuses, tags and templates, such as for adding a task from "My tasks". */
+export async function loadPwaSpaceShape(params: { spaceShortId: string; reader: Reader }): Promise<Omit<PwaSpace, "groups" | "filter"> | null> {
+  return (await readShape(params.spaceShortId, params.reader))?.space ?? null;
 }
 
 /** One further page of one status, read with the list's filter; null as for `loadPwaSpace`, or for an unknown status. */

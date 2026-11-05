@@ -19,8 +19,9 @@ const budgets = [
   // The web Assistant renders chat Markdown; KaTeX loads only for math, so it stays out of the static closure.
   // Measured 2026-11-05: 3,267,899 B with KaTeX, 2,992,646 B without.
   { file: "packages/assistant/src/frontend/AssistantWorkspace.island.tsx", kib: 2990 },
-  // The Spaces part: "My tasks", a Space as a list per status, and one task. Measured 2026-11-05: 853,677 B.
-  { file: "packages/spaces/src/pwa/SpacesPwa.island.tsx", kib: 920 },
+  // The Spaces part: "My tasks", a Space as a list per status, one task, and the shared "+" menu of Spaces with its
+  // catalog; the quick add field and its pickers load when it opens. Measured 2026-11-05: 952,687 B.
+  { file: "packages/spaces/src/pwa/SpacesPwa.island.tsx", kib: 1024 },
 ];
 const manifestSchema = z.object({ entries: z.record(z.string(), z.array(z.string())) });
 

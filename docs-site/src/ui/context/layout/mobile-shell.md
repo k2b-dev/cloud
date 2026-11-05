@@ -97,7 +97,10 @@ device: an iPad in Split View narrower than 48 rem shows the tab bar.
 
 Mark an element `data-k2b-shell-bottom` when it owns the bottom edge of the
 page, such as a chat's composer. The shell counts it as the footer, so toasts
-stand above it at every width.
+stand above it at every width. While the on-screen keyboard is up, the shell
+reads its height from `visualViewport`, the footer steps aside, and the marked
+element stands above the keyboard; the shell carries `data-k2b-keyboard` and
+the height as `--k2b-mobile-shell-keyboard` meanwhile.
 
 ### A screen of its own
 

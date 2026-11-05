@@ -1,4 +1,5 @@
 import { liveConnection } from "@k2b/cloud/browser/live";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
@@ -14,15 +15,19 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { Dynamic } from "solid-js/web";
+import type { SpaceItemAssignee, SpaceItemTemplate } from "@/contracts";
 import { SpaceLiveEventSchema } from "@/live-events";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
 import { OverviewViewSchema } from "@/overview-contracts";
 import { buildSpaceHref } from "@/routes";
 import { createRetryToasts } from "../frontend/lib/feedback";
+import { type Outgoing, sendCreate } from "./create";
 import MyTasks, { type WorkItem } from "./MyTasks";
 import { myTasksMessages } from "./messages";
 import { createOnline } from "./online";
 import { listOf, listTaskHref, NO_FILTER, type PwaList, pwaListHref, type SpaceListFilter, taskAddress, taskHref } from "./paths";
+import { AddBar, firstOpenStatus, type QuickAddTarget } from "./QuickAdd";
 import { refreshOnReturn } from "./refresh-on-return";
 import SpaceList from "./SpaceList";
 import type { PwaRow, PwaSpace, PwaSpaceEntry } from "./space";
@@ -42,6 +47,31 @@ type Props = {
   dateConfig: DateContext;
   /** The task the address names, read by the server. */
   initialTask?: PwaTask;
+  /** The person, as a new task from "My tasks" assigns them. */
+  me: SpaceItemAssignee;
+};
+
+const LAST_SPACE = "spaces-pwa:last-space";
+const readLastSpace = () => {
+  try {
+    return localStorage.getItem(LAST_SPACE) ?? undefined;
+  } catch {
+    return undefined;
+  }
+};
+const rememberSpace = (shortId: string) => {
+  try {
+    localStorage.setItem(LAST_SPACE, shortId);
+  } catch {
+    // Without device storage the chip starts at the first Space the person may add to.
+  }
+};
+type Shape = Omit<PwaSpace, "groups" | "filter">;
+const readShape = async (spaceShortId: string): Promise<Shape | null> => {
+  const response = await fetch(`/pwa/spaces/${encodeURIComponent(spaceShortId)}?shape=1`, {
+    headers: { Accept: "application/json" },
+  }).catch(() => null);
+  return response?.ok ? ((await response.json()) as Shape) : null;
 };
 
 /** The address of the selection: the list alone, or one task. */
@@ -294,6 +324,114 @@ export default function SpacesPwa(props: Props) {
     },
   ];
 
+  // ------------------------------------------------------------- adding tasks
+  const writable = () => props.spaces.filter((entry) => entry.canWrite);
+  const [composing, setComposing] = createSignal<{ template?: SpaceItemTemplate } | null>(null);
+  // The field loads when it first opens, with its pickers; the list does not carry it.
+  const [composer, setComposer] = createSignal<typeof import("./Composer").default>();
+  const [outgoing, setOutgoing] = createSignal<Outgoing[]>([]);
+  /** In "My tasks": the Space a new task goes to, the last one used on this device. */
+  const [mineSpace, setMineSpace] = createSignal<string>();
+  const [mineShape, setMineShape] = createSignal<Shape | null>();
+  const chooseMineSpace = async (shortId: string) => {
+    setMineSpace(shortId);
+    setMineShape(undefined);
+    const shape = await readShape(shortId);
+    if (mineSpace() === shortId) setMineShape(shape);
+  };
+  const target = (): QuickAddTarget | undefined => {
+    if (spaceList()) {
+      const known = space();
+      return known && known.canWrite
+        ? { shortId: known.shortId, name: known.name, color: known.color, statuses: known.statuses, templates: known.templates }
+        : undefined;
+    }
+    const shape = mineShape();
+    return shape ? { shortId: shape.shortId, name: shape.name, color: shape.color, statuses: shape.statuses, templates: [] } : undefined;
+  };
+  /** Whether this list offers "New task": a Space the person may change, or "My tasks" with such a Space. */
+  const canAdd = () => (spaceList() ? Boolean(space()?.canWrite) : writable().length > 0);
+  const blocked = () => {
+    if (!online()) return t().offlineChanges;
+    const known = space();
+    if (spaceList() && known && !firstOpenStatus(known.statuses)) return t().noOpenStatus;
+    return undefined;
+  };
+  const openComposer = async (template?: SpaceItemTemplate) => {
+    if (!composer()) {
+      const module = await importOnDemand(() => import("./Composer"));
+      if (!module) return;
+      setComposer(() => module.default);
+    }
+    if (!spaceList()) {
+      const last = readLastSpace();
+      const start = writable().find((entry) => entry.shortId === last) ?? writable()[0];
+      if (start && start.shortId !== mineSpace()) void chooseMineSpace(start.shortId);
+    }
+    setComposing({ template });
+  };
+  createEffect(on(list, () => setComposing(null), { defer: true }));
+  // Tasks the server kept leave the list of outgoing ones when another list shows.
+  createEffect(on(list, () => setOutgoing((current) => current.filter((entry) => entry.state !== "created")), { defer: true }));
+
+  const patchOutgoing = (key: string, next: Partial<Outgoing>) =>
+    setOutgoing((current) => current.map((entry) => (entry.key === key ? { ...entry, ...next } : entry)));
+  const send = async (entry: Outgoing) => {
+    patchOutgoing(entry.key, { state: "saving", reason: undefined });
+    const name = entryOf(entry.spaceShortId)?.name ?? space()?.name ?? "";
+    const outcome = await sendCreate(entry.spaceShortId, entry.body, t().createRefused({ space: name }));
+    if (outcome.kind === "unconfirmed") return patchOutgoing(entry.key, { state: "unconfirmed" });
+    if (outcome.kind === "refused") return patchOutgoing(entry.key, { state: "refused", reason: outcome.reason });
+    patchOutgoing(entry.key, { state: "created", created: outcome.item });
+    setRevision((value) => value + 1);
+    if (!spaceList()) {
+      // "My tasks" shows the task under "For me" once it is read again; the notice leads to it at once.
+      setOutgoing((current) => current.filter((candidate) => candidate.key !== entry.key));
+      const notice = toast.success(t().createdIn({ space: name }), {
+        action: {
+          label: t().open,
+          onClick: () => {
+            notice.dismiss();
+            navigate(taskHref(entry.spaceShortId, outcome.item.id));
+          },
+        },
+      });
+    }
+  };
+  const submit = (task: { spaceShortId: string; body: Outgoing["body"] }) => {
+    rememberSpace(task.spaceShortId);
+    const entry: Outgoing = {
+      key: task.body.requestKey,
+      spaceShortId: task.spaceShortId,
+      statusId: task.body.columnId,
+      title: task.body.title,
+      body: task.body,
+      state: "saving",
+    };
+    setOutgoing((current) => [...current, entry]);
+    void send(entry);
+  };
+  const resend = (key: string) => {
+    const entry = outgoing().find((candidate) => candidate.key === key);
+    if (entry && entry.state === "unconfirmed") void send(entry);
+  };
+  /** A Space list read again after a create: the new row is there, or the filter hides it and a notice says so. */
+  const settleOutgoing = (key: string, hidden: boolean) => {
+    const entry = outgoing().find((candidate) => candidate.key === key);
+    if (!entry?.created) return;
+    if (!hidden) return setOutgoing((current) => current.filter((candidate) => candidate.key !== key));
+    const created = entry.created;
+    const notice = toast.success(t().createdHidden, {
+      action: {
+        label: t().open,
+        onClick: () => {
+          notice.dismiss();
+          navigate(listTaskHref(entry.spaceShortId, created.id, list()));
+        },
+      },
+    });
+  };
+
   const copyLink = async () => {
     const current = spaceList();
     if (!current) return;
@@ -392,6 +530,9 @@ export default function SpacesPwa(props: Props) {
                             onFilterChange={setFilter}
                             onSearchClose={closeSearch}
                             onSpace={setSpace}
+                            outgoing={outgoing().filter((entry) => entry.spaceShortId === spaceShortId)}
+                            onResend={resend}
+                            onSettle={settleOutgoing}
                             taskHref={(row) => listTaskHref(spaceShortId, row.shortId, current())}
                             onOpen={openRow}
                             onCompletedChange={completedChange}
@@ -441,14 +582,48 @@ export default function SpacesPwa(props: Props) {
                   </Match>
                 </Switch>
               </div>
-              {/* The bottom edge, under the thumb: what changing needs, such as a connection. */}
-              <Show when={!online()}>
-                <div class="spaces-pwa-pane__bottom" data-k2b-shell-bottom>
-                  <p class="spaces-pwa__offline" role="status">
-                    <i class="ti ti-wifi-off" aria-hidden="true" />
-                    {t().offlineChanges}
-                  </p>
-                </div>
+              {/* The bottom edge, under the thumb: "New task", or the quick add above the keyboard. */}
+              <Show
+                when={composer() && composing()}
+                fallback={
+                  <Show
+                    when={canAdd() && !searching()}
+                    fallback={
+                      <Show when={!online()}>
+                        <div class="spaces-pwa-pane__bottom" data-k2b-shell-bottom>
+                          <p class="spaces-pwa__offline" role="status">
+                            <i class="ti ti-wifi-off" aria-hidden="true" />
+                            {t().offlineChanges}
+                          </p>
+                        </div>
+                      </Show>
+                    }
+                  >
+                    <AddBar
+                      target={spaceList() ? target() : undefined}
+                      blocked={blocked()}
+                      onOpen={(template) => void openComposer(template)}
+                    />
+                  </Show>
+                }
+              >
+                {(open) => (
+                  <Dynamic
+                    component={composer()}
+                    userId={props.userId}
+                    me={props.me}
+                    target={target()}
+                    spaces={spaceList() ? undefined : writable()}
+                    onSpaceChange={(shortId: string) => void chooseMineSpace(shortId)}
+                    template={open().template}
+                    online={online()}
+                    dateConfig={props.dateConfig}
+                    outbox={spaceList() ? undefined : outgoing()}
+                    onResend={resend}
+                    onSubmit={submit}
+                    onClose={() => setComposing(null)}
+                  />
+                )}
               </Show>
             </div>
           </AppWorkspace.MainPane>
