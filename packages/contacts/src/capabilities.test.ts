@@ -1010,3 +1010,13 @@ test("contact creation's domain replay hash includes the selected book", async (
   expect(create.mock.calls[0]?.[0].idempotencyKeyHash).toBe(create.mock.calls[1]?.[0].idempotencyKeyHash);
   expect(create.mock.calls[0]?.[0].requestHash).not.toBe(create.mock.calls[1]?.[0].requestHash);
 });
+
+for (const permission of ["admin", "write", "read", "none"] as const) {
+  test(`book reader exposes checked ${permission} authority for target lookup`, async () => {
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(access, "getActorBookPermission").mockResolvedValue(permission);
+    const result = await contactsCapabilities.queries["book.read"].run({ id: publicBookId }, context);
+    if (permission === "none") expect(result.ok).toBeFalse();
+    else expect(result).toMatchObject({ ok: true, data: { data: { view: { title: book.name, permission } } } });
+  });
+}

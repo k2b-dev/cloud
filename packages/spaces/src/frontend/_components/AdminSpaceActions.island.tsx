@@ -31,6 +31,7 @@ const openPermissionDialog = async (props: AdminSpaceActionsProps, m: ReturnType
   // The page may have changed while the list loaded; never open the dialog over another page.
   if (signal.aborted) return;
   await openAccessDialog({
+    target: { type: "spaces.space", id: props.spaceId },
     resourceName: props.spaceName,
     subtitle: m.accessDialogSubtitle,
     initialEntries,

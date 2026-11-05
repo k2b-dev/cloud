@@ -104,7 +104,7 @@ export const addBookAccess = async (bookId: string, accessId: string, locale?: s
 /**
  * Lists all access entries for a contact book with resolved display names.
  */
-const listBookAccess = async (bookId: string): Promise<AccessEntry[]> => {
+const listBookAccess = async (bookId: string, permission: PermissionLevel = "none"): Promise<AccessEntry[]> => {
   if (!isUuid(bookId)) return [];
 
   const rows = await sql<DbBookAccess[]>`
@@ -145,7 +145,7 @@ const listBookAccess = async (bookId: string): Promise<AccessEntry[]> => {
     createdAt: row.created_at.toISOString(),
   }));
 
-  return resolveDisplayNames(entries);
+  return resolveDisplayNames(entries, { permission });
 };
 
 /**
@@ -153,13 +153,14 @@ const listBookAccess = async (bookId: string): Promise<AccessEntry[]> => {
  */
 export const listBookAccessPaginated = async (config: {
   bookId: string;
+  permission?: PermissionLevel;
   pagination?: PageParams;
   filter?: {
     query?: string;
     principalType?: AccessEntry["principal"]["type"];
   };
 }): Promise<Paginated<AccessEntry>> => {
-  const items = await listBookAccess(config.bookId);
+  const items = await listBookAccess(config.bookId, config.permission);
   const query = config.filter?.query?.trim().toLowerCase();
   const principalType = config.filter?.principalType;
 
@@ -265,7 +266,8 @@ export const grantBookAccess = async (config: {
     });
   if (!created.ok) return created;
 
-  const entries = await listBookAccess(config.bookId);
+  const permission = config.caller ? await getActorBookPermission({ bookId: config.bookId, ...config.caller }) : "none";
+  const entries = await listBookAccess(config.bookId, permission);
   const createdEntry = entries.find((entry) => entry.id === created.data.id);
   if (!createdEntry) {
     return fail(err.internal("Failed to retrieve created access entry"));

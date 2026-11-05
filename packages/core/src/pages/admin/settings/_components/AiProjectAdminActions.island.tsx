@@ -6,7 +6,6 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Dropdown, prompts, toast, useLocale } from "@k2b/ui";
 import { onCleanup } from "solid-js";
-import { findAiServiceAccount } from "./ai-service-account-lookup";
 import { settingsMessages } from "./messages";
 
 type Props = {
@@ -36,7 +35,7 @@ const openPermissionDialog = async (props: Props, locale: string, signal: AbortS
     subtitle: t.projectAccessSubtitle,
     initialEntries,
     allowPublic: false,
-    findServiceAccount: (handle, signal) => findAiServiceAccount({ type: "core.ai.project", id: props.projectId }, handle, signal),
+    target: { type: "core.ai.project", id: props.projectId },
     signal,
     grantAccess: async (principal, permission) => {
       const response = await coreClient.admin.core["ai-projects"][":projectId"].access.$post({

@@ -120,7 +120,6 @@ export const resolveDisplayNames = async <
               ...rest,
               ...(await presentCode(serviceAccount)),
               serviceAccountKind: serviceAccount.kind,
-              ...(serviceAccount.handle ? { serviceAccountHandle: serviceAccount.handle } : {}),
             };
           }
           displayName = serviceAccount?.name;

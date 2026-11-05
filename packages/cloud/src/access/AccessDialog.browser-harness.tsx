@@ -29,7 +29,41 @@ const entries: AccessEntry[] = [
   person(5, "Lea Schmitt", "read"),
 ];
 
+const originalFetch = globalThis.fetch;
+globalThis.fetch = Object.assign(
+  (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input), "https://harness.test");
+    if (
+      url.pathname === "/api/accounts/entities" &&
+      url.searchParams.get("target_type") === "spaces.space" &&
+      url.searchParams.get("target_id") === "Targ01"
+    ) {
+      return Promise.resolve(
+        Response.json({
+          items:
+            url.searchParams.get("search") === "code-7k2q9m4xwt"
+              ? [
+                  {
+                    kind: "service_account",
+                    serviceAccount: {
+                      id: "40000000-0000-4000-8000-000000000001",
+                      kind: "code",
+                      handle: "code-7k2q9m4xwt",
+                      name: "Code von info@beispiel.de",
+                      description: "Dienstkonto eines Postfachs",
+                    },
+                  },
+                ]
+              : [],
+        }),
+      );
+    }
+    return originalFetch(input, init);
+  },
+  { preconnect: originalFetch.preconnect },
+);
 void openAccessDialog({
+  target: { type: "spaces.space", id: "Targ01" },
   resourceName: "Einkauf 2027",
   subtitle: "Space · Spaces",
   initialEntries: entries,
@@ -37,14 +71,6 @@ void openAccessDialog({
   allowPublic: true,
   publicLink: "https://cloud.example.test/s/einkauf-2027",
   entryDetail: (entry) => (entry.principal.type === "group" ? "Group · 14 people" : undefined),
-  findServiceAccount: async (handle) =>
-    handle === "code-7k2q9m4xwt"
-      ? {
-          principal: { type: "service_account", serviceAccountId: "40000000-0000-4000-8000-000000000001" },
-          display: { displayName: "Code von info@beispiel.de", serviceAccountKind: "code" },
-          description: "Dienstkonto eines Postfachs",
-        }
-      : null,
   grantAccess: async (principal, permission) => ({ id: crypto.randomUUID(), principal, permission, createdAt: "now" }),
   updateAccess: async () => {},
   revokeAccess: async () => {},

@@ -3,6 +3,7 @@ import {
   type CapabilityError,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
+  CloudResourceReaderViewSchema,
   type CloudResourceView,
   capabilityPage,
   defineCapabilities,
@@ -172,9 +173,12 @@ const runBaseRead = async (input: z.infer<typeof BaseReadInputSchema>, context: 
   if (!id.ok) return id;
   const result = await pulseService.base.get(id.data, scope.data);
   if (!result.ok) return result;
+  const permission = await pulseService.base.access.require(id.data, scope.data, "read");
+  if (!permission.ok) return permission;
+  if (permission.data === "none") return fail(err.forbidden("Access denied"));
   const [base] = await projectBases([result.data]);
   return ok({
-    data: mapBase(base!),
+    data: { ...mapBase(base!), view: { title: base!.name, permission: permission.data } },
     summary: resolvePulseMessages(context.locale).t.readBase({ name: base!.name }),
     refs: [{ type: "pulse.base", id: base!.id }],
     links: [{ rel: "open" as const, href: pulseBaseHref(base!.id) }],
@@ -856,7 +860,7 @@ export const pulseCapabilities = defineCapabilities({
       title: "Read Pulse Base",
       description: "Read one pulse.base ref returned by base.list or base.search.",
       input: BaseReadInputSchema,
-      data: BaseDataSchema,
+      data: BaseDataSchema.extend({ view: CloudResourceReaderViewSchema }),
       openWorld: false,
       run: runBaseRead,
     },

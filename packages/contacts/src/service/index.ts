@@ -146,7 +146,7 @@ export const contactsService = {
       const access = await authorizeBook(config.id, config, "admin");
       if (!access.ok) return access;
       const [accessEntries, keys, bookTags] = await Promise.all([
-        books.access.list({ bookId: config.id }),
+        books.access.list({ bookId: config.id, permission: access.data.permission }),
         apiKeys.list({ bookId: config.id }),
         tags.list({ bookId: config.id }),
       ]);
@@ -195,7 +195,15 @@ export const contactsService = {
       access: {
         list: async (config: Parameters<typeof books.access.list>[0] & { actor: RequestActor }) => {
           if (!isContactsAdministrator(config.actor)) return fail(err.forbidden("Access denied"));
-          return ok(await books.access.list(config));
+          const viewer = userFromActor(config.actor);
+          const permission = viewer
+            ? await getActorBookPermission({
+                bookId: config.bookId,
+                actor: config.actor,
+                accessSubject: { type: "user", userId: viewer.id },
+              })
+            : "none";
+          return ok(await books.access.list({ ...config, permission }));
         },
         grant: async (config: Parameters<typeof books.access.grant>[0] & { actor: RequestActor }) => {
           if (!isContactsAdministrator(config.actor)) return fail(err.forbidden("Access denied"));
@@ -239,7 +247,7 @@ export const contactsService = {
       ) => {
         const access = await authorizeBook(config.bookId, config, "admin");
         if (!access.ok) return access;
-        return ok(await books.access.list(config));
+        return ok(await books.access.list({ ...config, permission: access.data.permission }));
       },
       grant: async (config: BookCaller & { bookId: string; principal: AccessEntry["principal"]; permission: PermissionLevel }) => {
         const access = await authorizeBook(config.bookId, config, "admin");

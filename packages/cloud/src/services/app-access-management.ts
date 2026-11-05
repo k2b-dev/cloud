@@ -234,11 +234,12 @@ export const readAppAccess = async (params: {
     WHERE j.app_id = ${params.app.id} AND ${matches}`;
   const groupsAdmin = params.canManage && !params.repair ? (await getIdentityRuntimeConfig()).groupsAdmin : [];
   const presentation = await entryPresentation(params.app.id);
+  const canManageTarget = !params.repair || (await canManageAppAccess(params.authority, params.app, params.canManage));
   return {
     ownEntryIds: [...own.map((entry) => entry.id), ...(inheritedSignedIn ? ["inherited-authenticated"] : [])],
     appId: params.app.id,
     name: params.app.name,
-    entries: (await resolveDisplayNames(entries)).map((entry) => ({ ...entry, ...presentation.get(entry.id) })),
+    entries: (await resolveDisplayNames(entries, { canManageTarget })).map((entry) => ({ ...entry, ...presentation.get(entry.id) })),
     configured: !!state?.configured_at,
     hasEffectiveManager: await hasEffectiveManager(
       params.app,
@@ -510,7 +511,11 @@ export const changeAppAccess = async (params: {
     return after;
   });
   wakeAppAccessChanged();
-  return { entry: result ? (await resolveDisplayNames([result]))[0] : undefined, canUse: await canUseApp(authority, app) };
+  const canManageTarget = !params.repair || (await canManageAppAccess(authority, app, params.canManage));
+  return {
+    entry: result ? (await resolveDisplayNames([result], { canManageTarget }))[0] : undefined,
+    canUse: await canUseApp(authority, app),
+  };
 };
 
 /** Only manager names, for the intentionally limited direct-link denial page. */

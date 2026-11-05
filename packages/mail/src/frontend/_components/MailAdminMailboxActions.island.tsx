@@ -36,6 +36,7 @@ const openPermissionDialog = async (props: MailAdminMailboxActionsProps, entries
       <div class="flex w-full max-w-full flex-col gap-3">
         <p class="text-xs text-dimmed">{messages.mailboxAccessRepairDescription}</p>
         <PermissionEditor
+          target={{ type: "mail.mailbox", id: props.mailboxId }}
           initialEntries={entries}
           canEdit
           allowAuthenticated={false}

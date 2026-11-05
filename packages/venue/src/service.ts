@@ -431,7 +431,8 @@ const readAccessEntries = async (venueId: string, db: SqlClient = sql): Promise<
   }));
 };
 
-const listAccess = async (venueId: string): Promise<AccessEntry[]> => resolveDisplayNames(await readAccessEntries(venueId));
+const listAccess = async (venueId: string, permission: PermissionLevel = "none"): Promise<AccessEntry[]> =>
+  resolveDisplayNames(await readAccessEntries(venueId), { permission });
 
 const createOwnerAccessInTx = async (tx: SqlClient, userId: string): Promise<Result<{ id: string }>> => {
   const [user] = await tx<{ id: string }[]>`SELECT id FROM auth.users WHERE id = ${userId}::uuid`;
@@ -892,7 +893,7 @@ const grantAccess = async (
     return result;
   });
   if (!created.ok) return created;
-  const entries = await listAccess(venueId);
+  const entries = await listAccess(venueId, "admin");
   const entry = entries.find((candidate) => candidate.id === created.data.id);
   return entry ? ok(entry) : fail(err.internal("Failed to retrieve access entry"));
 };
@@ -938,7 +939,7 @@ const changeAccess = async (
 ): Promise<Result<AccessEntry>> => {
   const updated = await writeAccess(venueId, accessId, permission, actor, locale);
   if (!updated.ok) return updated;
-  const next = await listAccess(venueId);
+  const next = await listAccess(venueId, "admin");
   const entry = next.find((candidate) => candidate.id === accessId);
   return entry ? ok(entry) : fail(err.internal("Failed to retrieve access entry"));
 };

@@ -329,7 +329,11 @@ export const grantAccess = async (params: {
   return result;
 };
 
-const listAccess = async (resourceType: AccessResourceType, resourceId: string): Promise<AccessEntry[]> => {
+const listAccess = async (
+  resourceType: AccessResourceType,
+  resourceId: string,
+  permission: PermissionLevel = "none",
+): Promise<AccessEntry[]> => {
   const definition = ACCESS_RESOURCES[resourceType];
   const rows = await sql<DbAccessRow[]>`
     SELECT a.id AS access_id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at
@@ -338,13 +342,14 @@ const listAccess = async (resourceType: AccessResourceType, resourceId: string):
     WHERE ${sql.unsafe(`binding.${definition.junctionResourceColumn}`)} = ${resourceId}::uuid
     ORDER BY a.created_at
   `;
-  return resolveDisplayNames(rows.map(mapAccessRow));
+  return resolveDisplayNames(rows.map(mapAccessRow), { permission });
 };
 
-export const listBaseAccess = (baseId: string) => listAccess("base", baseId);
-export const listCustomAppAccess = (customAppId: string) => listAccess("customApp", customAppId);
+export const listBaseAccess = (baseId: string, permission: PermissionLevel = "none") => listAccess("base", baseId, permission);
+export const listCustomAppAccess = (customAppId: string, permission: PermissionLevel = "none") =>
+  listAccess("customApp", customAppId, permission);
 
-export const listAccessForBaseTree = async (baseId: string): Promise<ScopedAccessEntry[]> => {
+export const listAccessForBaseTree = async (baseId: string, permission: PermissionLevel = "none"): Promise<ScopedAccessEntry[]> => {
   const rows = await sql<(DbAccessRow & { resource_type: AccessResourceType; resource_id: string; resource_name: string })[]>`
     SELECT 'base'::text AS resource_type, b.id::text AS resource_id, b.name AS resource_name,
            a.id AS access_id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at
@@ -373,6 +378,7 @@ export const listAccessForBaseTree = async (baseId: string): Promise<ScopedAcces
       tableId: null,
       tableName: null,
     })),
+    { permission },
   );
 };
 

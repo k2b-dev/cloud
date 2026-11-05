@@ -3,6 +3,7 @@ import {
   type CapabilityActionReview,
   type CapabilityExecutionContext,
   CapabilityTablePresentationSchema,
+  CloudResourceReaderViewSchema,
   type CloudResourceReference,
   type CloudResourceView,
   capabilityPage,
@@ -588,13 +589,16 @@ const requireTable = async (tableShortId: string, access: GridsAccessContext, re
 
 const runBaseRead = async (input: z.infer<typeof BaseReadInputSchema>, context: CapabilityExecutionContext) => {
   const t = capabilityMessagesFor(context.locale);
-  const result = await requireBase(input.id, accessContext(context), context.locale);
-  if (!result.ok) return result;
+  const base = await gridsService.base.getByShortId(input.id);
+  if (!base) return fail(notFoundError(t.baseNotFound));
+  const permission = await gateBaseAtAccess(accessContext(context), base.id, "read");
+  if (!permission.ok) return permission;
+  if (permission.data === "none") return fail(err.forbidden(t.noResourceAccess));
   return ok({
-    data: mapBase(result.data),
-    summary: t.readBase({ name: result.data.name }),
-    refs: [{ type: "grids.base", id: result.data.shortId }],
-    links: [{ rel: "open" as const, href: baseHref(result.data) }],
+    data: { ...mapBase(base), view: { title: base.name, permission: permission.data } },
+    summary: t.readBase({ name: base.name }),
+    refs: [{ type: "grids.base", id: base.shortId }],
+    links: [{ rel: "open" as const, href: baseHref(base) }],
   });
 };
 
@@ -1550,7 +1554,7 @@ export const gridsCapabilities = defineCapabilities({
       title: "Read Grids base",
       description: "Read one grids.base ref returned by base.list or base.search.",
       input: BaseReadInputSchema,
-      data: BaseCapabilityDataSchema,
+      data: BaseCapabilityDataSchema.extend({ view: CloudResourceReaderViewSchema }),
       openWorld: false,
       run: runBaseRead,
     },

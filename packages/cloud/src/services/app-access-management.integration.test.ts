@@ -91,6 +91,39 @@ const principal = (authority: RequestAuthority) => {
   if (authority.accessSubject.type !== "user") throw new Error("Expected person fixture");
   return { type: "user" as const, userId: authority.accessSubject.userId };
 };
+databaseSuite()("Code presentation in app access lists", () => {
+  test("local managers see metadata, while repair authority alone does not", async () => {
+    const f = await fixture();
+    const owner = await f.person(true);
+    const operator = await f.person(true);
+    const [account] = await sql<{ id: string; handle: string }[]>`INSERT INTO auth.service_accounts(name,kind,title,handle)
+      VALUES (${"code:demo.item:" + f.app.id}, 'code', 'Private owner title', 'code-b100000001') RETURNING id,handle`;
+    try {
+      await changeAppAccess({
+        app: f.app,
+        authority: owner,
+        repair: true,
+        change: { action: "grant", principal: principal(owner), permission: "admin" },
+      });
+      const granted = await changeAppAccess({
+        app: f.app,
+        authority: owner,
+        change: { action: "grant", principal: { type: "service_account", serviceAccountId: account!.id }, permission: "read" },
+      });
+      expect(granted.entry?.serviceAccountHandle).toBe(account!.handle);
+      for (const authority of [owner, operator]) {
+        const snapshot = await readAppAccess({ app: f.app, authority, repair: true });
+        const entry = snapshot.entries.find((entry) => entry.principal.type === "service_account");
+        expect(entry?.serviceAccountHandle).toBe(authority === owner ? account!.handle : undefined);
+        expect(entry?.displayName?.includes("Private owner title")).toBe(authority === owner);
+      }
+    } finally {
+      await f.cleanup();
+      await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
+    }
+  });
+});
+
 const onlyAdministrators = (authority: RequestAuthority) => authority.actor.kind === "user" && authority.actor.user.roles.includes("admin");
 const persistedCounts = async (appId: string) => {
   const [row] = await sql<{ grants: number; audits: number; outbox: number }[]>`

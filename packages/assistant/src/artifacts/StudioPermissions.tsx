@@ -1,5 +1,4 @@
-import { type AccessDialogProps, type FoundServiceAccount, openAccessDialog } from "@k2b/cloud/access/ui";
-import { coreClient } from "@k2b/cloud/clients/core";
+import { type AccessDialogProps, openAccessDialog } from "@k2b/cloud/access/ui";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { Button, InlineGuidance, NoticeCard } from "@k2b/ui";
 import { createResource, For, Show } from "solid-js";
@@ -10,36 +9,6 @@ import { artifactMessages } from "./messages";
 import { runnerHref } from "./runner-contracts";
 
 type StudioProjects = Awaited<ReturnType<typeof artifactClient.projects>>;
-
-/** A Code account by its exact identifier. Core answers only someone who manages this app; names and UUIDs find nothing. */
-export const findStudioServiceAccount = async (
-  artifactId: string,
-  handle: string,
-  signal: AbortSignal,
-): Promise<FoundServiceAccount | null> => {
-  const response = await coreClient.accounts.entities.$get(
-    {
-      query: {
-        search: handle.trim(),
-        target_type: "assistant.app",
-        target_id: artifactId,
-        kinds: "service_account",
-        service_account_kinds: "code",
-      },
-    },
-    { init: { signal } },
-  );
-  if (!response.ok) throw new Error(response.statusText);
-  const found = (await response.json()).items.find(
-    (item) => item.kind === "service_account" && item.serviceAccount.kind === "code" && item.serviceAccount.handle === handle.trim(),
-  );
-  if (!found || found.kind !== "service_account") return null;
-  return {
-    principal: { type: "service_account", serviceAccountId: found.serviceAccount.id },
-    display: { displayName: found.serviceAccount.name, serviceAccountKind: "code" },
-    description: found.serviceAccount.description,
-  };
-};
 
 export type StudioAccessOptions = {
   artifactId: string;
@@ -54,7 +23,6 @@ export type StudioAccessOptions = {
   loadProjects: () => Promise<StudioProjects>;
   grant: (principal: Principal, level: "read" | "admin") => Promise<AccessEntry | null>;
   change: (id: string, level: "read" | "admin" | null) => Promise<unknown>;
-  findServiceAccount?: (handle: string, signal: AbortSignal) => Promise<FoundServiceAccount | null>;
   /** The opener's lifetime: aborting it closes the dialog without sending anything still pending. */
   signal?: AbortSignal;
 };
@@ -67,6 +35,7 @@ export const studioAccessDialogProps = (options: StudioAccessOptions): AccessDia
   const t = artifactMessages.resolve([options.locale]).t;
   return {
     resourceName: options.title,
+    target: { type: "assistant.app", id: options.artifactId },
     subtitle: t.studioApp,
     initialEntries: options.entries,
     viewerUserId: options.viewerUserId,
@@ -82,7 +51,6 @@ export const studioAccessDialogProps = (options: StudioAccessOptions): AccessDia
             { level: "admin", label: t.manage },
           ],
     entryDetail: (entry) => (entry.serviceAccountKind === "code" ? entry.serviceAccountDescription : undefined),
-    findServiceAccount: options.findServiceAccount ?? ((handle, signal) => findStudioServiceAccount(options.artifactId, handle, signal)),
     grantAccess: async (principal, level) => {
       if (level === "write") throw new Error(t.INVALID_INPUT);
       const entry = await options.grant(principal, level);

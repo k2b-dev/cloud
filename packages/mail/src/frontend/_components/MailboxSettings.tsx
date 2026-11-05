@@ -720,6 +720,7 @@ export default function MailboxSettings(props: {
             </SettingsGroup>
             <SettingsGroup title={messages().peopleAndIntegrations} description={messages().permissionChangesImmediate}>
               <PermissionEditor
+                target={{ type: "mail.mailbox", id: props.context.mailbox.id }}
                 initialEntries={admin().accessEntries}
                 allowAuthenticated={false}
                 allowServiceAccounts

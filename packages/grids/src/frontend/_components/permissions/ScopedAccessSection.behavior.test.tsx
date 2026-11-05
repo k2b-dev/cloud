@@ -185,7 +185,7 @@ for (const scopeType of ["base", "customApp"] as const) {
     const dispose = render(
       () => (
         <ScopedAccessSection
-          scope={{ type: scopeType, id: "SCOPE01" }}
+          scope={scopeType === "base" ? { type: "base", id: "SCOPE01" } : { type: "customApp", id: "SCOPE01", baseId: "BASE01" }}
           resourceName="Projects"
           title="Access"
           initialEntries={[]}

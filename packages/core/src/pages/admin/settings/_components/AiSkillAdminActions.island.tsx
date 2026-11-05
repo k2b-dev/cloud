@@ -18,7 +18,6 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
-import { findAiServiceAccount } from "./ai-service-account-lookup";
 import { settingsMessages } from "./messages";
 import { diffSkillVersions } from "./skill-diff";
 
@@ -102,7 +101,7 @@ const openPermissionDialog = async (props: Props, locale: string, signal: AbortS
     subtitle: t.skillAccessSubtitle,
     initialEntries,
     allowPublic: false,
-    findServiceAccount: (handle, signal) => findAiServiceAccount({ type: "core.ai.skill", id: props.skillId }, handle, signal),
+    target: { type: "core.ai.skill", id: props.skillId },
     signal,
     extraSections: <SkillProjects context={projects} retry={loadProjects} t={t} />,
     grantAccess: async (principal, permission) => {
