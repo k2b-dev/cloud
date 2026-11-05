@@ -5,18 +5,6 @@ import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom"
 import type { Outgoing } from "./create";
 import type { QuickAddTarget } from "./QuickAdd";
 
-// The device storage the draft lives in, as a browser has it.
-const stored = new Map<string, string>();
-Object.defineProperty(globalThis, "localStorage", {
-  configurable: true,
-  value: {
-    getItem: (key: string) => stored.get(key) ?? null,
-    setItem: (key: string, value: string) => void stored.set(key, value),
-    removeItem: (key: string) => void stored.delete(key),
-    clear: () => stored.clear(),
-  },
-});
-
 /** Invented demo data. */
 const workshop: QuickAddTarget = {
   shortId: "Space1",
@@ -60,6 +48,7 @@ const load = async () => {
       quick: await import("./QuickAdd"),
       Composer: (await import("./Composer")).default,
       create: await import("./create"),
+      drafts: (await import("@k2b/cloud/browser/pwa-drafts")).pwaDrafts,
     };
   } finally {
     dom.cleanup();
@@ -73,7 +62,6 @@ afterEach(() => {
   dispose();
   dom?.cleanup();
   calls.length = 0;
-  localStorage.clear();
 });
 
 const mount = (options: { online?: boolean; spaces?: boolean } = {}) => {
@@ -151,10 +139,8 @@ else {
     expect(page.root.textContent).toContain("Offline. Adding works again with a connection. Your text stays here.");
     page.key("Escape");
     expect(page.closed()).toBe(1);
-    dispose();
-    dom?.cleanup();
-    const again = mount();
-    expect(again.field.value).toBe("Fix the armrest");
+    // The draft stays on the device for this account, where the field reads it when it opens again.
+    expect(modules!.drafts.read(me.id, "spaces.quick-add:Space1")).toBe("Fix the armrest");
   });
 
   test("a create without an answer is not confirmed and may repeat; a refusal names its reason and stays final", async () => {

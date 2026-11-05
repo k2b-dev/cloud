@@ -1,7 +1,8 @@
 import { CloudAvatar } from "@k2b/cloud/account/ui";
+import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import type { DateContext } from "@k2b/stdlib";
 import { DateTimePicker, Dropdown, IconButton, TextInput, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onMount, Show } from "solid-js";
 import type { ItemTemplateDraft, SpaceItemAssignee, SpaceItemTemplate } from "@/contracts";
 import { formatDeadline } from "@/presentation/deadline";
 import { DEADLINE_DEFAULT_TIME, deadlinePresets } from "../frontend/[id]/_components/shared/item-form/date";
@@ -10,23 +11,6 @@ import { myTasksMessages } from "./messages";
 import PeoplePicker from "./PeoplePicker";
 import { firstOpenStatus, OutgoingRow, type QuickAddTarget } from "./QuickAdd";
 import type { PwaSpaceEntry } from "./space";
-
-const draftKey = (space: string) => `spaces-pwa:draft:${space}`;
-const readDraft = (space: string) => {
-  try {
-    return localStorage.getItem(draftKey(space)) ?? "";
-  } catch {
-    return "";
-  }
-};
-const writeDraft = (space: string, text: string) => {
-  try {
-    if (text) localStorage.setItem(draftKey(space), text);
-    else localStorage.removeItem(draftKey(space));
-  } catch {
-    // A draft that cannot be kept on the device stays in the field while it is open.
-  }
-};
 
 type ComposerProps = {
   userId: string;
@@ -55,8 +39,13 @@ export default function Composer(props: ComposerProps) {
   const locale = useLocale();
   const t = () => myTasksMessages.resolve([locale()]).t;
   const space = () => props.target?.shortId ?? "mine";
-  const draftSpace = () => (props.spaces ? "mine" : space());
-  const [title, setTitle] = createSignal(readDraft(draftSpace()));
+  // The draft stays on the device for this account, as a comment's does, one per Space and one for "My tasks".
+  const draftField = () => `spaces.quick-add:${props.spaces ? "mine" : space()}`;
+  const keep = (text: string) => {
+    if (text) pwaDrafts.write(props.userId, draftField(), text);
+    else pwaDrafts.remove(props.userId, draftField());
+  };
+  const [title, setTitle] = createSignal(pwaDrafts.read(props.userId, draftField()) ?? "");
   const [statusId, setStatusId] = createSignal<string>();
   const [deadline, setDeadline] = createSignal<string | null>(null);
   const [people, setPeople] = createSignal<SpaceItemAssignee[]>(props.spaces ? [props.me] : []);
@@ -86,7 +75,7 @@ export default function Composer(props: ComposerProps) {
       },
     ),
   );
-  createEffect(on(title, (text) => writeDraft(draftSpace(), text), { defer: true }));
+  createEffect(on(title, keep, { defer: true }));
 
   const status = () => props.target?.statuses.find((entry) => entry.id === statusId());
   const ready = () => Boolean(title().trim() && props.target && statusId() && props.online);
@@ -135,10 +124,9 @@ export default function Composer(props: ComposerProps) {
   };
 
   const close = () => {
-    writeDraft(draftSpace(), title());
+    keep(title());
     props.onClose();
   };
-  onCleanup(() => writeDraft(draftSpace(), title()));
 
   const toggle = (person: SpaceItemAssignee, chosen: boolean) =>
     setPeople((current) =>
