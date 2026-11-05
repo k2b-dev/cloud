@@ -57,6 +57,8 @@ if (!isServer) {
           $get: async ({ query }: { query: Record<string, string> }, options: { init: { signal: AbortSignal } }) => {
             expect(options.init.signal).toBeInstanceOf(AbortSignal);
             expect(query).toMatchObject({ kinds: "service_account", service_account_kinds: "code" });
+            // The platform rejects names before transport; the dialog supplies the lookup target.
+            expect(query.search).toBe(handle);
             calls.push(`lookup ${query.target_type} ${query.target_id} ${query.search}`);
             return Response.json({
               items:
@@ -211,7 +213,7 @@ describe("AI administration access", () => {
       expect(Array.from(ui.row("Code von Werkstatt").querySelectorAll('[role="option"]')).map((node) => node.textContent)).not.toContain(
         "Manage",
       );
-      expect(calls).toEqual([`lookup core.ai.${kind} ${kind}-1 Code von Werkstatt`, `lookup core.ai.${kind} ${kind}-1 ${handle}`]);
+      expect(calls).toEqual([`lookup core.ai.${kind} ${kind}-1 ${handle}`]);
       ui.button("Save")!.click();
       await until(() => !ui.dialog());
       expect(calls.at(-1)).toBe(
