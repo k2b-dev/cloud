@@ -236,9 +236,8 @@ type View = { width: number; height: number; touch: boolean };
 const desktop: View = { width: 1440, height: 900, touch: false };
 const phone: View = { width: 390, height: 844, touch: true };
 
-/** Opens the harness once the idle provider discovery has answered, like a click some time after the page loaded. */
-const open = async (view: View, query = "") => {
-  const before = catalogRequests;
+/** A fresh document does no discovery. Warm only when a test explicitly needs a previously known list. */
+const open = async (view: View, query = "", warm = false) => {
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     isMobile: view.touch,
@@ -250,8 +249,15 @@ const open = async (view: View, query = "") => {
   // listener added only right before the key press can miss a chooser that opens at once, so subscribe up front.
   page.on("filechooser", () => undefined);
   await page.goto(`http://127.0.0.1:${server.port}/${query}`);
-  for (let attempt = 0; catalogRequests === before && attempt < 100; attempt++) await Bun.sleep(20);
-  await page.waitForTimeout(50);
+  if (warm) {
+    await page.locator("#attach").click();
+    await page.locator("dialog[open] .cloud-file-chooser").waitFor();
+    await page.waitForFunction(() => !document.querySelector(".cloud-file-dialog__source-skeleton"));
+    await page.keyboard.press("Escape");
+    await page.locator("dialog[open]").waitFor({ state: "hidden" });
+    // This setup choice is not part of the result being tested.
+    await page.evaluate(() => (window as unknown as { chosen: unknown[] }).chosen.splice(0));
+  }
   return { page, context, close: () => context.close() };
 };
 const chosen = (page: Page) => page.evaluate(() => (window as unknown as { chosen: unknown[] }).chosen);
@@ -272,9 +278,10 @@ const focusedRow = (page: Page) =>
   page.evaluate(() => (document.activeElement?.matches('[role="gridcell"]') ? document.activeElement.textContent : null));
 const focusedSource = (page: Page) =>
   page.evaluate(() => (document.activeElement?.matches(".cloud-file-dialog__source") ? document.activeElement.textContent : null));
-const attach = async (page: Page) => {
+const attach = async (page: Page, loading = false) => {
   await page.locator("#attach").click();
   await page.locator("dialog[open]").waitFor();
+  if (!loading) await page.waitForFunction(() => !document.querySelector(".cloud-file-dialog__source-skeleton"));
   // The chooser moves focus to This device once it opened; a key pressed before that would reach the page.
   await page.waitForFunction(() => document.activeElement?.matches('dialog .cloud-file-dialog__source[aria-current="true"]'));
 };
@@ -303,9 +310,47 @@ const boxIn = (page: Page, selector: string) =>
   }, selector);
 
 describe("choosing files in a browser", () => {
+  test("page load and idle do not request providers; the first action loads them with retry in the same frame", async () => {
+    catalogApps = [drive];
+    catalogStatus = 503;
+    const before = catalogRequests;
+    const { page, close } = await open(phone);
+    try {
+      // Allow both the native idle callback and its one-second fallback to run.
+      await page.waitForTimeout(1200);
+      expect(catalogRequests).toBe(before);
+      await attach(page);
+      expect(catalogRequests).toBe(before + 1);
+      await page.getByText("Apps not loaded", { exact: false }).waitFor();
+      const frame = await dialogBox(page);
+      const actions = await footer(page);
+      let release!: () => void;
+      catalogGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      catalogStatus = 200;
+      try {
+        await page.getByRole("button", { name: "Try again", exact: true }).click();
+        await page.locator(".cloud-file-dialog__source-skeleton").first().waitFor();
+        expect(await dialogBox(page)).toEqual(frame);
+        release();
+        await source(page, "Drive").waitFor();
+        expect(await dialogBox(page)).toEqual(frame);
+        expect(await footer(page)).toEqual(actions);
+        expect(catalogRequests).toBe(before + 2);
+      } finally {
+        release();
+      }
+    } finally {
+      catalogGate = undefined;
+      catalogStatus = 200;
+      await close();
+    }
+  }, 30_000);
+
   test("without providers, Attach opens the device's file dialog directly", async () => {
     catalogApps = [notes];
-    const { page, close } = await open(desktop, "?single");
+    const { page, close } = await open(desktop, "?single", true);
     try {
       const picker = page.waitForEvent("filechooser");
       await page.locator("#attach").click();
@@ -320,9 +365,9 @@ describe("choosing files in a browser", () => {
     }
   }, 30_000);
 
-  test("without providers, an abort while the device's dialog is open resolves nothing and drops a later pick", async () => {
+  test("with no providers already known, an abort while the device's dialog is open resolves nothing and drops a later pick", async () => {
     catalogApps = [notes];
-    const { page, close } = await open(desktop);
+    const { page, close } = await open(desktop, "", true);
     try {
       const picker = page.waitForEvent("filechooser");
       await page.locator("#attach").click();
@@ -411,7 +456,7 @@ describe("choosing files in a browser", () => {
       catalogGate = new Promise((resolve) => {
         release = resolve;
       });
-      // A fresh page: the idle discovery is held, so the chooser opens while apps are still looked for.
+      // A fresh page: the first file action starts discovery and opens its reserved loading frame.
       const context = await browser.newContext({
         viewport: { width: view.width, height: view.height },
         isMobile: view.touch,
@@ -421,7 +466,7 @@ describe("choosing files in a browser", () => {
       const page = await context.newPage();
       try {
         await page.goto(`http://127.0.0.1:${server.port}/`);
-        await attach(page);
+        await attach(page, true);
         await page.getByText("Looking for apps with files…").waitFor({ state: "attached" });
         expect(await sourceNames(page)).toEqual(["This device"]);
         expect(await page.locator("dialog .cloud-file-dialog__source-skeleton").count()).toBe(2);
@@ -790,7 +835,7 @@ describe("choosing files in a browser", () => {
   test("a visitor the catalog refuses gets the device's file dialog directly, with no error", async () => {
     catalogApps = [drive];
     catalogStatus = 401;
-    const { page, close } = await open(desktop, "?single");
+    const { page, close } = await open(desktop, "?single", true);
     try {
       const picker = page.waitForEvent("filechooser");
       await page.locator("#attach").click();
@@ -839,7 +884,7 @@ describe("choosing through a dropzone inside a dialog, as Notebooks does", () =>
     }
   }, 60_000);
 
-  test("the keyboard reaches the chooser through the dropzone, Escape closes only the chooser, and without providers the dropzone opens the device's dialog directly", async () => {
+  test("the keyboard reaches the chooser through the dropzone, Escape returns focus, and an empty catalog still offers this device", async () => {
     catalogApps = [drive];
     const withProviders = await open(desktop, "?dropzone");
     try {
@@ -867,10 +912,11 @@ describe("choosing through a dropzone inside a dialog, as Notebooks does", () =>
     try {
       const { page } = withoutProviders;
       await openDropzone(page);
-      const picker = page.waitForEvent("filechooser");
       await dropzone(page).click();
+      await source(page, "This device").waitFor();
+      const picker = page.waitForEvent("filechooser");
+      await source(page, "This device").click();
       const chooser = await picker;
-      expect(await chooserOpen(page)).toBe(false);
       await chooser.setFiles({ name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("local") });
       await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
       expect(await chosen(page)).toEqual([[{ name: "local.txt", type: "text/plain", size: 5, text: "local" }]]);

@@ -14,7 +14,8 @@ const saving = createFileSaving(providers);
 /**
  * Lets the user choose files from this device or from any Cloud application that offers files.
  *
- * Call it from the click or key handler of your attach action. Without providers it opens the device's file
+ * Call it from the click or key handler of your attach action. The first action discovers providers in the chooser,
+ * with loading and retry in its sources. Once an empty list is known, it opens the device's file
  * dialog directly; otherwise it opens a compact file dialog on "This device", with every provider beside it. Files
  * from a provider are read through its stream, at most three at a time, never above `maxBytes` or the provider's
  * limit; `maxFiles` and `maxTotalBytes` bound one choice. Their names are cleaned, and their type follows
@@ -41,9 +42,3 @@ export const saveFilesLabel = saving.label;
 
 /** An icon button that calls `saveFiles(files())`, labelled with `saveFilesLabel`. Takes the props of `IconButton`. */
 export const SaveFilesButton = saving.SaveFilesButton;
-
-// Discovery starts while the page is idle, so the first click already knows whether providers exist.
-if (typeof window !== "undefined") {
-  const idle = window.requestIdleCallback ?? ((callback: () => void) => window.setTimeout(callback, 1_000));
-  idle(() => providers.prefetch());
-}
