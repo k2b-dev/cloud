@@ -1,8 +1,6 @@
-import { accessDialogMessages } from "../access/access-dialog-messages";
 import { principalLabel } from "../access/principal-label";
 import type { AccessEntry, EntityListItem, PermissionLevel, Principal } from "../contracts";
 import type { CloudResourceRef } from "../contracts/capabilities";
-import { CODE_ACCOUNT_HANDLE_PATTERN } from "../contracts/shared";
 import { arg, command, confirmFlag, flag, paginationFlags } from "./commands";
 import type { CloudCliContext, CloudCliTableColumn } from "./index";
 
@@ -183,10 +181,12 @@ const resolveEntityPrincipal = async (
     return { type: "service_account", serviceAccountId: ref };
   }
 
-  const codeHandle = kind === "service_account" && CODE_ACCOUNT_HANDLE_PATTERN.test(ref);
-  const unavailable = () =>
-    new Error(accessDialogMessages.resolve(ctx.options?.locale ? [ctx.options.locale] : []).t.serviceAccountNotFound);
-  if (codeHandle && !target) throw unavailable();
+  const codeHandle = kind === "service_account" && (await import("../contracts/shared")).CODE_ACCOUNT_HANDLE_PATTERN.test(ref);
+  const unavailable = async () => {
+    const { accessDialogMessages } = await import("../access/access-dialog-messages");
+    return new Error(accessDialogMessages.resolve(ctx.options?.locale ? [ctx.options.locale] : []).t.serviceAccountNotFound);
+  };
+  if (codeHandle && !target) throw await unavailable();
   const exact: EntityListItem[] = [];
   const seen: EntityListItem[] = [];
   let page = 1;
@@ -213,7 +213,7 @@ const resolveEntityPrincipal = async (
     return { type: "service_account", serviceAccountId: item.serviceAccount.id };
   }
 
-  if (codeHandle) throw unavailable();
+  if (codeHandle) throw await unavailable();
 
   if (exact.length > 1)
     throw new Error(`${kind.replace("_", " ")} "${ref}" is ambiguous. Use one of: ${exact.map(formatEntityCandidate).join(", ")}`);
