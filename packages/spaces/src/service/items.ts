@@ -1711,7 +1711,7 @@ const mayWriteItem = async (spaceId: string, access?: ItemWriteAccess) => {
   return permission === "write" || permission === "admin";
 };
 
-const createRequest = (spaceId: string, data: CreateItem) => JSON.stringify({ spaceId, ...data, requestKey: undefined });
+const createRequest = (spaceId: string, data: CreateItem) => ({ spaceId, ...data, requestKey: undefined });
 
 const readCreateReceipt = async (
   db: SqlExecutor,
@@ -1918,7 +1918,7 @@ export const create = async (params: {
       if (requestKey !== undefined)
         await tx`
         INSERT INTO spaces.item_create_requests (actor_kind, actor_id, request_key, space_id, item_id, request, response, public_response)
-        VALUES (${actor.kind}, ${actor.id}::uuid, ${requestKey}, ${spaceId}::uuid, ${created.id}::uuid, ${request}::jsonb, ${JSON.stringify(item)}::jsonb, ${JSON.stringify(publicItem)}::jsonb)
+        VALUES (${actor.kind}, ${actor.id}::uuid, ${requestKey}, ${spaceId}::uuid, ${created.id}::uuid, ${request}::jsonb, ${item}::jsonb, ${publicItem}::jsonb)
       `;
       return { ok: true, data: params.publicRequest ? publicItem! : item };
     }),

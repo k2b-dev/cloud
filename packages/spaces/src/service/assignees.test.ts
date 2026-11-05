@@ -338,7 +338,20 @@ suite("Spaces assignable users", () => {
       expect(attempts.every((result) => result.ok)).toBeTrue();
       expect(first.ok).toBeTrue();
       expect(retry).toEqual(first);
+      expect(attempts).toEqual(Array.from({ length: 12 }, () => first));
       if (!first.ok) return;
+      const [receipt] = await sql`
+        SELECT jsonb_typeof(request) AS request_type, jsonb_typeof(response) AS response_type,
+          jsonb_typeof(public_response) AS public_response_type
+        FROM spaces.item_create_requests WHERE item_id = ${first.data.id}::uuid
+      `;
+      expect(receipt).toEqual({ request_type: "object", response_type: "object", public_response_type: "object" });
+      expect(
+        await create({
+          ...params,
+          data: { checklist: ["Review"], requestKey: "same-request", title: "Create once", columnId: fixture.columnId },
+        }),
+      ).toEqual(first);
       await update({ id: first.data.id, data: { title: "Changed afterwards" } });
       expect(await create(params)).toEqual(first);
       expect(await create({ ...params, data: { ...data, title: "Different" } })).toMatchObject({
