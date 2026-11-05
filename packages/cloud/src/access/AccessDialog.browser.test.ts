@@ -66,6 +66,16 @@ const shot = async (page: Page, name: string) => {
   await page.screenshot({ path: resolve(shots, `${name}.png`) });
 };
 
+/**
+ * Settles after pointer input. The dialog moves content on its own, for example when it scrolls the identifier field
+ * into view, and a control that slides under the resting pointer starts its hover transition while the page settles.
+ * The pointer rests on the backdrop instead, where nothing reacts to it.
+ */
+const settledAtRest = async (page: Page) => {
+  await page.mouse.move(1, 1);
+  await settled(page);
+};
+
 const open = async (width: number, locale: string, scene?: "normal" | "lesen") => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   await page.route("https://harness.test/tabler.woff2*", (route) => route.fulfill({ path: icons.font, contentType: "font/woff2" }));
@@ -102,11 +112,11 @@ describe("AccessDialog in a browser", () => {
           .last()
           .click();
         await page.locator(`dialog button[aria-label="${locale === "de" ? "Lagerbot entfernen" : "Remove Lagerbot"}"]`).click();
-        await settled(page);
+        await settledAtRest(page);
         const after = await Promise.all(["Jonas Weber", "Logistik", "Lagerbot", "Lea Schmitt"].map((name) => rowTop(page, name)));
         expect(after).toEqual(before);
         await page.locator("dialog input[type=checkbox]").first().check();
-        await settled(page);
+        await settledAtRest(page);
         await shot(page, `${locale}-${width}-changes`);
         const overflow = await page.evaluate(() => {
           const dialog = document.querySelector("dialog")!;
@@ -133,7 +143,7 @@ describe("AccessDialog in a browser", () => {
         await page.locator("dialog input[role=combobox]").fill("code-7k2q9m4xwt");
         const option = page.locator('[role="option"]', { hasText: "Code von info@beispiel.de" });
         await option.waitFor();
-        await settled(page);
+        await settledAtRest(page);
         await shot(page, `de-${width}-suche-kennung`);
         expect(await option.locator("small").textContent()).toBe("Dienstkonto eines Postfachs · kommt in den Abschnitt Dienstkonten");
         const fit = await option.evaluate((element) => {
@@ -152,7 +162,7 @@ describe("AccessDialog in a browser", () => {
         const section = page.locator("dialog section", { has: page.locator("h2, h3", { hasText: "Dienstkonten" }) });
         await section.locator("li", { hasText: "Code von info@beispiel.de" }).waitFor();
         await section.scrollIntoViewIfNeeded();
-        await settled(page);
+        await settledAtRest(page);
         await shot(page, `de-${width}-suche-kennung-added`);
         expect(await section.locator("li", { hasText: "Code von info@beispiel.de" }).textContent()).toContain("Neu");
         expect(await page.locator("dialog").textContent()).toContain("Code von info@beispiel.de bekommt");
@@ -197,7 +207,7 @@ describe("AccessDialog in a browser", () => {
       const page = await open(width, "de", "normal");
       try {
         await section(page).scrollIntoViewIfNeeded();
-        await settled(page);
+        await settledAtRest(page);
         await shot(page, `de-${width}-normal`);
         expect(await section(page).locator("h3").textContent()).toBe("Dienstkonten 2");
         expect(await head(page)).toMatchObject({ besideTitle: true, titleOneLine: true, headerInside: true });
@@ -238,7 +248,7 @@ describe("AccessDialog in a browser", () => {
         await field.fill("code-7k2q9m4xwt");
         const hit = section(page).locator("li button", { hasText: "Code von info@beispiel.de" });
         await hit.waitFor();
-        await settled(page);
+        await settledAtRest(page);
         await shot(page, `de-${width}-dienst-hinzu`);
         expect(await section(page).getByRole("button", { name: "Dienstkonto hinzufügen" }).count()).toBe(0);
         const fit = await hit.evaluate((element) => {
@@ -259,7 +269,7 @@ describe("AccessDialog in a browser", () => {
         await hit.click();
         const added = section(page).locator("li", { hasText: "Code von info@beispiel.de" });
         await added.waitFor();
-        await settled(page);
+        await settledAtRest(page);
         expect(await section(page).locator("h3").textContent()).toBe("Dienstkonten 3");
         expect(await added.textContent()).toContain("Dienstkonto eines Postfachs · darf bearbeiten");
         const dialogText = await page.locator("dialog").textContent();
