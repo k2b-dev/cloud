@@ -1665,7 +1665,6 @@ for (const { embedded, width } of [
       console.error(`Catalog recovery failed ${JSON.stringify(report, null, 1)}`);
       throw error;
     } finally {
-      releaseInitial();
       releaseComposer();
       await context.close();
     }
