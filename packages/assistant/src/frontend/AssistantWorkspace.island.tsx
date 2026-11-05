@@ -48,7 +48,7 @@ import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/s
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
 import { type AiModelRequest, type AiPeopleModels, aiModelClassFallbackChain } from "@k2b/cloud/shared";
-import CodePage, { type CodePageData } from "@k2b/cloud/ssr/code-page";
+import type { CodePageData } from "@k2b/cloud/ssr/code-page";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
@@ -65,7 +65,6 @@ import {
   Placeholder,
   prompts,
   reconcileChatMentions,
-  ScrollArea,
   useLocale,
 } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
@@ -96,7 +95,6 @@ import { AssistantChatSidebarPanel, type ChatSidebarJump, openAssistantChatSideb
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantCodeBlock, { type AssistantCodeBlockInitial } from "./AssistantCodeBlock";
 import AssistantCodeVersionCard from "./AssistantCodeVersionCard";
-import AssistantCodeView from "./AssistantCodeView";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
@@ -135,6 +133,7 @@ import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
+import { AssistantCodeDetail, AssistantCodeView } from "./code-deferred-views";
 import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
   assistantBuiltInCommands,
@@ -2806,11 +2805,7 @@ export default function AssistantWorkspace(props: Props) {
                           />
                         }
                       >
-                        {(detail) => (
-                          <ScrollArea class="min-h-0 flex-1 p-[var(--ui-space-section)]">
-                            <CodePage data={detail()} />
-                          </ScrollArea>
-                        )}
+                        {(detail) => <AssistantCodeDetail data={detail()} />}
                       </Show>
                     </Show>
                     <Show when={props.embedded}>

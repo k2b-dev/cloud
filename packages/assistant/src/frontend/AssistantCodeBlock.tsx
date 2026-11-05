@@ -12,9 +12,9 @@ import {
   codeStatus,
   loadCodeSummaries,
 } from "../code-summary";
-import { CodeStatusBadge, codeRunLine, codeStateLabel } from "./AssistantCodeView";
 import { resolveAssistantCloudResource } from "./AssistantContextContent";
 import { browserCodeInvoke, formatCodeNextRun, formatCodeTime } from "./code-client";
+import { CodeStatusBadge, codeRunLine, codeStateLabel } from "./code-status";
 import { assistantMessages } from "./messages";
 
 /** What the server knew about the panel's place: its Code page (null when Core could not list it) and the place. */
