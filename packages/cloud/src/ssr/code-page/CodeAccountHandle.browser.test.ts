@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
-import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 
 let browser: Browser;
 let harness: string;
@@ -92,6 +92,7 @@ for (const width of [390, 1200])
         await document.fonts.ready;
       });
       expect(await page.evaluate(() => document.fonts.check("16px tabler-icons"))).toBe(true);
+      await settled(page);
       if (process.env.CODE_A2_SCREENSHOTS) {
         mkdirSync(process.env.CODE_A2_SCREENSHOTS, { recursive: true });
         await page.screenshot({ path: resolve(process.env.CODE_A2_SCREENSHOTS, `handle-${width}.png`) });
@@ -180,6 +181,7 @@ test("code, kbd, samp and pre are monospace unless they ask for sans", async () 
         `<p>Text <code>code-7k2q9m4xwt</code> <kbd>K</kbd> <samp>S</samp></p><pre>Block</pre>` +
         `<pre class="font-sans">Plain-text mail</pre><code class="font-sans">Sans code</code></body></html>`,
     );
+    await settled(page);
     const faces = await page.evaluate(() =>
       Array.from(document.querySelectorAll("p, code, kbd, samp, pre")).map(
         (element) => `${element.textContent}: ${getComputedStyle(element).fontFamily.split(",")[0]!.replaceAll('"', "")}`,
