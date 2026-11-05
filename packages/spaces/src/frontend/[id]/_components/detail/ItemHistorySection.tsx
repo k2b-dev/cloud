@@ -71,7 +71,7 @@ export default function ItemHistorySection(props: Props) {
   };
 
   return (
-    <DetailPanel.Section title={t.history}>
+    <DetailPanel.Section title={t.history} icon="ti ti-history">
       <Show
         when={history.pages().length || !history.loading()}
         fallback={
