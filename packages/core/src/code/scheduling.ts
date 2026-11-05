@@ -227,6 +227,7 @@ export async function claimCodeRuns(
         AND (deadline_at IS NULL OR deadline_at>clock_timestamp()) ORDER BY created_at,id LIMIT 1 FOR NO KEY UPDATE
       ), leased AS (
         UPDATE code.runs r SET state='running',generation=generation+1,runner_instance_id=${instanceId ?? null}::uuid,
+          ai_reference_cost=0,ai_reserved_cost=0,ai_budget_call=NULL,
           started_at=COALESCE(started_at,clock_timestamp()),
           deadline_at=COALESCE(deadline_at,clock_timestamp()+${limits.wallMs}*interval '1 millisecond'),
           lease_expires_at=LEAST(COALESCE(deadline_at,clock_timestamp()+${limits.wallMs}*interval '1 millisecond'),

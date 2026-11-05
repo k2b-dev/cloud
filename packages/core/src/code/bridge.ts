@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { type AiModelProfile, readAiSettingsState } from "@k2b/cloud/ai";
 import {
   type CapabilityDispatchDependencies,
   type CodeBridgeCall,
@@ -17,6 +18,7 @@ import { mandates } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { CodeDataError } from "./access";
+import { codeAiReferenceCost, reserveCodeAiBudget, settleCodeAiBudget } from "./ai-budget";
 import { readCodeOwnOrigins } from "./origins";
 import { readCodePolicyGroups, readCodePolicySnapshot } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
@@ -86,7 +88,7 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
 }
 async function authorizeCall(call: CodeBridgeCall, db: SQL): Promise<"core" | "runner"> {
   const { code, version, manifest } = await lockCall(call, db);
-  const row = codePolicyRow(call.kind, call.policy);
+  const row = codePolicyRow(call.call.capability.startsWith("core.ai.") ? "ai" : call.kind, call.policy);
   if (row === "ask_sends" || manifest.policyRows.includes("ask_sends")) denied("code_sends_not_yet");
   if (
     manifest.policyRows.some((row) => row.startsWith("ask_")) ||
@@ -180,12 +182,24 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
       let response: Response;
       let refusalKind: CodeBridgeRefusalKind = "bridge";
       let issuanceRefusal: CodeBridgeRefusal | undefined;
+      let aiReservation: string | null = null;
+      let aiProfiles: AiModelProfile[] = [];
       try {
         const rate = await (
           options.checkRate ??
           (async (id) => ratelimit({ id: "code-bridge", limit: await codeSettings.get("core.code.calls_per_second") }).check(id))
         )(call.claims.codeId);
         if (rate.limited) denied("code_rate_limited");
+        if (call.call.capability.startsWith("core.ai.")) {
+          aiProfiles = (await readAiSettingsState()).profiles;
+          aiReservation = await sql.begin(async (tx) => {
+            // Resolve current group policy before reserving; issuance rechecks it before the model is called.
+            await authorizeCall(call, tx);
+            const reservation = await reserveCodeAiBudget(call.claims, ordinal, await codeSettings.get("core.code.ai_budget_usd"), tx);
+            if (!reservation.ok) denied(reservation.code);
+            return reservation.reserved;
+          });
+        }
         const fencedIssue: NonNullable<CapabilityDispatchDependencies["withMandateIssueAuthority"]> = async (input, use, options) => {
           if (!options?.db) denied("code_bridge_unavailable", 503);
           try {
@@ -219,8 +233,15 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
       const result = RunnerCallResponseSchema.parse(await response.clone().json());
       if (!result.ok && call.kind === "internet") refusalKind = codeBridgeLocalRefusalKind(result.error.code);
       const success = result.ok;
-      await sql.begin((tx) =>
-        finishCodeCall(
+      await sql.begin(async (tx) => {
+        if (aiReservation !== null)
+          await settleCodeAiBudget(
+            call.claims,
+            ordinal,
+            issuanceRefusal ? "0" : codeAiReferenceCost(call.call.capability, result, aiProfiles, aiReservation),
+            tx,
+          );
+        await finishCodeCall(
           {
             runId: call.claims.runId,
             ordinal,
@@ -230,8 +251,8 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
             endedAt: new Date(),
           },
           tx,
-        ),
-      );
+        );
+      });
       return response;
     },
   };

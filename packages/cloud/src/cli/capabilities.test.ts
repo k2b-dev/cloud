@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { decisionInputFixture, decisionResultFixture } from "../../../core/src/ai-decision-capability.test-fixture";
 import { futureLibrary } from "../../test/future-capability-manifest";
 import { compileCapabilities } from "../_internal/capabilities";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
@@ -36,6 +37,21 @@ const createContext = (args: string[], flags: CloudCliFlags, fetch: CloudCliCont
 };
 
 describe("capabilities CLI", () => {
+  test("cld reaches core.ai.decide through the normal query path and preserves probabilities", async () => {
+    const requests: unknown[] = [];
+    const { ctx, lines } = createContext(
+      ["query", "core", "ai.decide"],
+      { input: JSON.stringify(decisionInputFixture) },
+      async (path, init) => {
+        requests.push({ path, body: JSON.parse(String(init?.body)) });
+        return Response.json({ data: decisionResultFixture });
+      },
+    );
+    await capabilitiesCliModule.run(ctx);
+    expect(requests).toEqual([{ path: "/api/capabilities/v1/queries/core/ai.decide", body: { input: decisionInputFixture } }]);
+    expect(JSON.parse(lines[0]!)).toEqual({ data: decisionResultFixture });
+  });
+
   test.each(["json", "jsonl", "text"] as const)(
     "discovers and invokes a canonical resource reader across catalog pages in %s",
     async (output) => {

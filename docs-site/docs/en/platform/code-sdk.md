@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Generate a typed Code SDK from application capability contracts and call operations through resource handles.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-10-31
+updated: 2026-11-05
 ---
 
 # Code SDK
@@ -225,3 +225,49 @@ normalized `target`, `refs` and `idempotencyKey` in its optional third argument.
 A key is allowed only for an Action declaring required idempotency; retain it
 for retries of the same effect. Omitting it preserves the existing per-call
 key. Scripts and Studio apps keep the same permissions and approvals.
+
+
+## Mail triage: category first
+
+Discover `core.ai.decide` in the live SDK before using it. It is a read-only query
+and returns typed answers with probabilities, plus model and usage. The checker
+marks this call as **AI** (**KI**); the Cloud-Admin policy controls release.
+The caller's person or service account pays from its own AI allowance.
+
+Ask category first. Ask urgency together with category or after it, never alone.
+This one-off `code_run` example returns a review flag only for confidently
+classified support messages. Urgent spam stays outside that category. Thresholds depend on the cost
+of mistakes; probabilities are estimates. The example changes no records.
+
+<!-- ai1-mail-triage -->
+```ts
+import { core } from "@sdk";
+
+export default async function triage() {
+  // Fictional mail; in real Code, read the mail through its authorized SDK first.
+  const result = await core.app().ai.decide({
+    task: "mail.triage",
+    state: { subject: "Urgent: claim your prize", text: "Act now to receive a prize." },
+    questions: {
+      category: {
+        type: "choice",
+        instructions: "What kind of message is this?",
+        criteria: { support: "Help with an existing order", spam: "Unsolicited advertising or deceptive messages" },
+      },
+      urgent: { type: "noul", instructions: "Does this message need urgent attention within its category?" },
+    },
+  });
+  const category = result.answers.category;
+  if (category?.type !== "choice" || category.choice !== "support" || category.confidence < 0.9) return false;
+  const urgent = result.answers.urgent;
+  return urgent?.type === "noul" && urgent.probability >= 0.9;
+}
+```
+
+For lasting Code, save this function in a helper module and call it from a
+schedule. Schedule callbacks return `void`; use the flag inside the callback
+when deciding whether a separate authorized action is appropriate.
+
+Optional images and `model: { id }`, provider-dependent image support, quota
+failures and byte limits follow
+[Typed decision questions](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions).

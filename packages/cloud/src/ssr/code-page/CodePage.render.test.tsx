@@ -556,6 +556,12 @@ describe("Code page helpers", () => {
   });
 
   test("call results become one short line, preferring an error message", () => {
+    const reserved = { ok: false, error: { code: "code_ai_budget_reserved" } };
+    expect(summarizeCallResult(reserved, "en")).toContain("Wait for that call");
+    expect(summarizeCallResult(reserved, "de-CH")).toContain("Warte vor einem neuen Aufruf");
+    const budget = { ok: false, error: { code: "code_ai_budget_limit" } };
+    expect(summarizeCallResult(budget, "en")).toContain("No AI call was started");
+    expect(summarizeCallResult(budget, "de-CH")).toContain("Es wurde kein KI-Aufruf gestartet");
     expect(summarizeCallResult({ error: { code: "FORBIDDEN", message: "Zugriff entfernt" } })).toBe("Zugriff entfernt");
     expect(summarizeCallResult({ id: "t_1" })).toBe('{"id":"t_1"}');
     expect(summarizeCallResult("x".repeat(400))?.length).toBe(160);

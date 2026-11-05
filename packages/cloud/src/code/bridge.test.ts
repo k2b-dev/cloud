@@ -46,6 +46,7 @@ test("A3a classifies target status without guessing from provider codes or broke
 test("A3a policy refusals never become target refusals", () => {
   for (const code of [
     "code_policy_never",
+    "code_ai_budget_limit",
     "code_sends_not_yet",
     "code_unattended_forbidden",
     "code_http_origin_forbidden",
@@ -66,4 +67,8 @@ test("A3a distinguishes approval refusals from policy and target refusals", () =
     expect(codeBridgeLocalRefusalKind(code)).toBe("approval");
     for (const status of [undefined, 403, 404]) expect(codeBridgeDispatchRefusalKind(code, status)).toBe("approval");
   }
+});
+
+test("an in-flight AI budget reservation is distinguishable from an exhausted policy budget", () => {
+  expect(codeBridgeLocalRefusalKind("code_ai_budget_reserved")).toBe("bridge");
 });

@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-11-03
+updated: 2026-11-05
 ---
 
 # App capabilities
@@ -2587,3 +2587,13 @@ Stream read/write attempts have separate execution rows linked by the original
 request ID. They record direction, outcome and byte count without recording the
 content or stream reference. A read completes only when its body has been
 consumed; canceling it records an interrupted transfer.
+
+
+## Ask a decision model
+
+Core publishes `core.ai.decide` as an app-wide query. Gustav loads it from the
+capability catalog, `cld` invokes `capabilities query core ai.decide`, and Code
+uses its generated SDK through the existing bridge. No dedicated tool or
+binding is needed. Inputs, typed probabilities, caller accounting, limits and
+provider-dependent images are described in
+[Typed decision questions](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions).

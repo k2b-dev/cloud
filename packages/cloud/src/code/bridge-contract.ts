@@ -31,6 +31,7 @@ export const codeBridgeLocalRefusalKind = (code: string): CodeBridgeRefusalKind 
     "code_stream_forbidden",
     "code_disabled",
     "code_policy_never",
+    "code_ai_budget_limit",
     "code_sends_not_yet",
     "code_unattended_forbidden",
     "code_http_origin_forbidden",

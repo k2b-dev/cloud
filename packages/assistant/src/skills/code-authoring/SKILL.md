@@ -44,3 +44,46 @@ job is a visible failure; do not claim the source passed.
 
 Studio HTML apps retain `code_create` and the existing `code_read/write/check`
 inputs with `id`, revision and screenshots. Load `assistant-code-mode` for them.
+
+
+## Mail triage: category first
+
+Discover `core.ai.decide` with `code_sdk` and use its generated handle. It is a
+query, with no dedicated tool or binding. It charges the calling person or Code
+service account's AI allowance. The checker marks it as KI/AI; the Cloud-Admin
+policy decides version approval. Images depend on both provider and model and
+must fit the capability byte limit.
+
+Ask category first. Ask urgency together with category or after it, never alone.
+Check category before interpreting urgency: urgent wording in spam does not make
+it urgent support. Use fictional fixtures for tests, including urgent spam and
+urgent support. Choose thresholds for the cost of mistakes. This example reads
+only and returns a review flag; any later effect is a separate authorized call.
+The module below can run once through `code_run` (load `assistant-code-mode`).
+For lasting Code, save it as a helper and call it from a schedule. Schedule
+callbacks return `void`; use the flag inside the callback to decide any later action.
+
+<!-- ai1-mail-triage -->
+```ts
+import { core } from "@sdk";
+
+export default async function triage() {
+  // Fictional mail; in real Code, read the mail through its authorized SDK first.
+  const result = await core.app().ai.decide({
+    task: "mail.triage",
+    state: { subject: "Urgent: claim your prize", text: "Act now to receive a prize." },
+    questions: {
+      category: {
+        type: "choice",
+        instructions: "What kind of message is this?",
+        criteria: { support: "Help with an existing order", spam: "Unsolicited advertising or deceptive messages" },
+      },
+      urgent: { type: "noul", instructions: "Does this message need urgent attention within its category?" },
+    },
+  });
+  const category = result.answers.category;
+  if (category?.type !== "choice" || category.choice !== "support" || category.confidence < 0.9) return false;
+  const urgent = result.answers.urgent;
+  return urgent?.type === "noul" && urgent.probability >= 0.9;
+}
+```

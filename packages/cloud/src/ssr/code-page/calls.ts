@@ -1,15 +1,18 @@
 import { z } from "zod";
 import { type CodePageCall, type CodePageInvoke, coreQuery, RunReadSchema } from "./data";
+import { codePageMessages } from "./messages";
 
 /** Calls load in batches; "Show more calls" continues. Core returns one call per request. */
 export const CODE_PAGE_CALL_BATCH = 20;
 
 /** A short readable line for a call result: an error message, or a compact preview of the returned data. */
-export const summarizeCallResult = (result: unknown): string | null => {
+export const summarizeCallResult = (result: unknown, locale = "en"): string | null => {
   if (result === null || result === undefined) return null;
   if (typeof result === "object" && !Array.isArray(result)) {
     const record = result as Record<string, unknown>;
     const error = record.error && typeof record.error === "object" ? (record.error as Record<string, unknown>) : null;
+    if (error?.code === "code_ai_budget_reserved") return codePageMessages.resolve([locale]).t.aiBudgetReserved;
+    if (error?.code === "code_ai_budget_limit") return codePageMessages.resolve([locale]).t.aiBudgetRefused;
     const message = typeof error?.message === "string" ? error.message : typeof record.message === "string" ? record.message : null;
     if (message) return message.slice(0, 240);
   }
@@ -34,6 +37,7 @@ export const loadCodeRunCalls = async (
   runId: string,
   after: number,
   size = CODE_PAGE_CALL_BATCH,
+  locale = "en",
 ): Promise<{
   run: z.infer<typeof RunReadSchema>["run"];
   calls: CodePageCall[];
@@ -67,7 +71,7 @@ export const loadCodeRunCalls = async (
       // Only the bridge's classification counts; the page never guesses from a result.
       refusal: call.state === "failed" ? (call.refusalKind ?? null) : null,
       state: call.state,
-      summary: summarizeCallResult(call.result),
+      summary: summarizeCallResult(call.result, locale),
     });
     next = page.data.data.contents.nextCursor;
   }
@@ -89,12 +93,12 @@ const CLASSIFY_BATCHES = 5;
  * The first calls of a run for its detail. For a failed run, further batches follow until an action appears or the
  * calls end, so "Run again" and "failed before the first call" never depend on what the person expanded.
  */
-export const loadCodeRunCallsForDetail = async (invoke: CodePageInvoke, codeId: string, runId: string) => {
-  const first = await loadCodeRunCalls(invoke, codeId, runId, 0);
+export const loadCodeRunCallsForDetail = async (invoke: CodePageInvoke, codeId: string, runId: string, locale = "en") => {
+  const first = await loadCodeRunCalls(invoke, codeId, runId, 0, undefined, locale);
   if (!first || !first.readable || first.run.state !== "failed") return first;
   let result = first;
   for (let batch = 1; batch < CLASSIFY_BATCHES && result.next !== null && !result.calls.some((call) => call.kind === "action"); batch++) {
-    const more = await loadCodeRunCalls(invoke, codeId, runId, result.next);
+    const more = await loadCodeRunCalls(invoke, codeId, runId, result.next, undefined, locale);
     if (!more) break;
     result = { ...result, calls: [...result.calls, ...more.calls], next: more.next };
   }

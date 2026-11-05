@@ -91,6 +91,21 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "ai.decide": {
+          title: "Ein Entscheidungsmodell fragen",
+          description:
+            "Berechtigt gelesene Daten mit Ja/Nein-, Auswahl- oder Bewertungsfragen und Wahrscheinlichkeiten einordnen. Nur lesend, ohne fachliche Änderungen; belastet das KI-Kontingent des Aufrufers. Bei Mail-Triage zuerst die Kategorie fragen, Dringlichkeit nie allein. Bildunterstützung hängt von Anbieter und Modell ab.",
+          input: {
+            task: "Kurzer Abrechnungsname der Entscheidung, höchstens 120 Zeichen.",
+            state: "Berechtigt gelesener JSON-Zustand; zählt zum Kontextfenster und zur Bytegrenze des Capability-Aufrufs.",
+            questions: "1–128 benannte noul-, choice- oder score-Fragen. Auswahl und Bewertung brauchen mindestens zwei Alternativen.",
+            images: "Optionale Bilder; Unterstützung hängt von Anbieter und Modell ab. Zählen zur Bytegrenze des Capability-Aufrufs.",
+            "images[].data": "Base64-Bilddaten ohne Daten-URL-Präfix.",
+            "images[].mediaType": "Unterstützter Bild-Medientyp.",
+            model: "Ohne Angabe gilt der Entscheidungs-Slot; Chat-Klassen gelten hier nicht.",
+            "model.id": "ID der Standardvariante eines Entscheidungsmodells aus dem Katalog.",
+          },
+        },
         "code.secret.list": {
           title: "Code-Secret-Bindungen auflisten",
           description:

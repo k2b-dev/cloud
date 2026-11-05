@@ -297,7 +297,7 @@ const loadReady = async (
   // Only a failed run with a recorded target refusal raises the notice; editors read that one call once at Core.
   const lastRefused = tab === "overview" && lastRun?.state === "failed" && lastRun.firstRefusedCallOrdinal ? lastRun : null;
   const [runCalls, diffResult, olderActive, olderSelected, lastRead] = await Promise.all([
-    selectedRunId ? loadCodeRunCallsForDetail(invoke, code.id, selectedRunId) : Promise.resolve(null),
+    selectedRunId ? loadCodeRunCallsForDetail(invoke, code.id, selectedRunId, getLocale(c)) : Promise.resolve(null),
     selectedVersionId
       ? invoke(coreQuery("code.version.diff", { codeId: code.id, versionId: selectedVersionId }), VersionDiffSchema)
       : Promise.resolve(null),
