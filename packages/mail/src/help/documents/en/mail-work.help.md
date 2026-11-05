@@ -146,6 +146,8 @@ An optional conversation summary appears in a highlighted card above the message
 
 If the conversation has unfinished drafts, the Reply action shows an indicator. Open **Conversation details** to see who created the newest draft and when it changed. You can continue it there.
 
+In a mailbox that several people use, **Here now** at the top of Conversation details shows who has the conversation open and who is writing a reply. With access to the whole mailbox, **More about this conversation** › **Access** lists who has access and with which role. People who see only their assigned conversations do not see that list.
+
 Conversation details also shows a small **Related mail** section for the conversation as a whole. Mail ranks other conversations from the same mailbox that share an external participant or the same normalized subject. Each result shows why it matches. The **Related Mail** action on a Contact card is different: it opens an exact search for that one participant. Neither feature finds similar mail from message bodies, attachments, or calendar events.
 
 When you open an unread conversation, Mail marks it as read. Use **More conversation actions** to mark it unread again, add or remove a flag, or print the conversation. A conversation that you mark unread stays unread in already open tabs until you open its row again. A live update alone does not mark it read.

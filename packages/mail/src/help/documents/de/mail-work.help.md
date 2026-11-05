@@ -146,6 +146,8 @@ Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat 
 
 Enthält die Unterhaltung nicht abgeschlossene Entwürfe, zeigt die Antwortaktion einen Hinweis. Öffne die **Unterhaltungsdetails**, um zu sehen, wer den neuesten Entwurf erstellt hat und wann er sich geändert hat. Dort setzt du ihn fort.
 
+In einem Postfach, das mehrere Personen nutzen, zeigt **Gerade hier** oben in den Unterhaltungsdetails, wer die Unterhaltung offen hat und wer gerade eine Antwort schreibt. Mit Zugriff auf das ganze Postfach steht unter **Mehr zu dieser Unterhaltung** › **Zugriff**, wer Zugriff hat und mit welcher Rolle. Wer nur zugewiesene Unterhaltungen sieht, sieht diese Liste nicht.
+
 Die Unterhaltungsdetails zeigen außerdem einen kleinen Abschnitt **Verwandte E-Mails** für die gesamte Unterhaltung. Mail ordnet andere Unterhaltungen aus demselben Postfach, die eine externe beteiligte Person oder denselben normalisierten Betreff teilen. Jedes Ergebnis zeigt, warum es passt. Die Aktion **Zugehörige E-Mails** auf einer Kontaktkarte ist etwas anderes: Sie öffnet eine exakte Suche nach dieser einen beteiligten Person. Keine der beiden Funktionen findet ähnliche E-Mails über Nachrichtentexte, Anhänge oder Kalendertermine.
 
 Öffnest du eine ungelesene Unterhaltung, markiert Mail sie als gelesen. Über **Weitere Unterhaltungsaktionen** markierst du sie wieder als ungelesen, fügst eine Fahne hinzu oder entfernst sie oder druckst die Unterhaltung. Eine Unterhaltung, die du als ungelesen markierst, bleibt in bereits geöffneten Tabs ungelesen, bis du ihre Zeile erneut öffnest. Eine Live-Aktualisierung allein markiert sie nicht als gelesen.
