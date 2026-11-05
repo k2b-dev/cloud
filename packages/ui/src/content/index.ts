@@ -6,6 +6,7 @@ export type {
   CalendarDayBadge,
   CalendarEvent,
   CalendarEventColor,
+  CalendarEventLink,
   CalendarEventRenderContext,
   CalendarEventTimeChange,
   CalendarExternalDrag,

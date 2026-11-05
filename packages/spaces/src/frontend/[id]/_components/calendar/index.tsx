@@ -138,7 +138,7 @@ const toCalendarEvent = (
         .filter(Boolean)
         .join(", ") || undefined,
     href: buildCalendarHref(baseUrl, view, date, filter, detailItemId, occurrenceId, dateConfig),
-    dataSpaceItemId: detailItemId,
+    data: { spaceItemId: detailItemId },
     calendarName: item.spaceName,
     location: item.location ?? undefined,
     meta: isDeadline ? t.deadline : item.spaceName,
@@ -583,7 +583,7 @@ export default function Calendar(props: CalendarProps) {
     },
     mutation: async ({ event, sourceItem, parent, next, recurringScope }) => {
       if (sourceItem?.deadline && !sourceItem.startsAt) {
-        const itemId = event.dataSpaceItemId ?? event.id;
+        const itemId = event.data?.spaceItemId ?? event.id;
         const res = await apiClient[":id"].items[":itemId"].$patch({
           param: { id: props.spaceId, itemId },
           json: { deadline: movedDeadline(sourceItem.deadline, next), startsAt: null, endsAt: null, allDay: false },
@@ -596,7 +596,7 @@ export default function Calendar(props: CalendarProps) {
         return applyRecurringTimeChange(event, parent, next, recurringScope);
       }
       // A task planned into a time slot keeps its deadline when its slot moves.
-      const itemId = event.dataSpaceItemId ?? event.id;
+      const itemId = event.data?.spaceItemId ?? event.id;
       const res = await apiClient[":id"].items[":itemId"].$patch({
         param: { id: props.spaceId, itemId },
         json: {
@@ -635,7 +635,7 @@ export default function Calendar(props: CalendarProps) {
         const scope = await chooseRecurringEditScope(t);
         if (!scope) return;
         recurringScope = scope;
-        const seriesItemId = sourceItem?.recurringEventId ?? event.dataSpaceItemId ?? event.id;
+        const seriesItemId = sourceItem?.recurringEventId ?? event.data?.spaceItemId ?? event.id;
         parent = await loadSeriesItem(seriesItemId);
       }
       await updateEventTime.mutate({ event, sourceItem, parent, next, recurringScope });
@@ -774,7 +774,7 @@ export default function Calendar(props: CalendarProps) {
    * after a confirmation, as in the task row. A refused or declined change rejects, so the calendar puts the box back.
    */
   const checkItem = async (event: CalendarEvent, completed: boolean) => {
-    const itemId = event.dataSpaceItemId ?? event.id;
+    const itemId = event.data?.spaceItemId ?? event.id;
     const failed = (error: unknown) => {
       toast.error(error instanceof Error ? error.message : t.updateFailed);
       reconcileAfterWrite();
