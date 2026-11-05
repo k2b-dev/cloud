@@ -250,6 +250,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     messageId: props.open?.focus ?? null,
     panel: props.panel,
   });
+  // History is not reactive; keep its list marker for the header rendered before each address commit.
+  const [listPredecessor, setListPredecessor] = createSignal(false);
   const [archived, setArchived] = createSignal(props.archived ?? false);
   const [filter, setFilter] = createSignal(props.filter ?? "all");
   const [collapsed, setCollapsed] = createSignal(props.collapsed ?? []);
@@ -1326,7 +1328,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         : null;
       const target = next !== "archive" && currentPath ? viewHref(currentPath) : url.pathname + url.search;
       if (next === "archive" && (await open(chatRoute(null))) !== "applied") return;
-      if (token === listIntent) navigate(target, { scroll: "preserve" });
+      if (token === listIntent) {
+        setListPredecessor(false);
+        navigate(target, { scroll: "preserve" });
+      }
     } catch {
       setListError(t().listFailed);
       setListRetry(() => () => void changeList(next));
@@ -1524,16 +1529,21 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     // A phone shows a chat with threads as its page of threads first; a wider window opens "All threads" and its rows.
     const row = rows().find((candidate) => candidate.id === id);
     if (phone?.matches && row?.kind !== "system" && chatHasThreads(row)) {
-      if ((await open(chatRoute(id, "all", { threads: true }))) === "applied")
+      if ((await open(chatRoute(id, "all", { threads: true }))) === "applied") {
+        setListPredecessor(fromList);
         navigation.push(viewHref(threadsPageHref(id)), {
           scroll: "preserve",
           state: { chatFromList: fromList },
         });
+      }
       return;
     }
     if ((await open(chatRoute(id))) !== "applied") return;
     const target = viewHref(panelHref(id, null));
-    if (location.pathname + location.search !== target) navigation.push(target, { scroll: "preserve", state: { chatFromList: fromList } });
+    if (location.pathname + location.search !== target) {
+      setListPredecessor(fromList);
+      navigation.push(target, { scroll: "preserve", state: { chatFromList: fromList } });
+    }
     if (pendingListIntent !== null) await refreshList(target);
   };
   const openSystemFromList = async (id: string, navigation: LinkNavigateEvent) => {
@@ -1553,7 +1563,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       const current = await openSystemChat({ resourceType: ref.type, resourceId: ref.id });
       if (token !== systemOpen) return;
       store?.includeSystemChats([current]);
-      if ((await open(chatRoute(current.id))) === "applied") go(viewHref(threadHref(current.id, "all")));
+      if ((await open(chatRoute(current.id))) === "applied") {
+        setListPredecessor(false);
+        go(viewHref(threadHref(current.id, "all")));
+      }
     } catch {
       if (token === systemOpen) toast.error(t().openFailed);
     } finally {
@@ -1563,17 +1576,18 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const openOverview = async (navigation?: LinkNavigateEvent) => {
     const id = conversation()?.id;
     if (!id || (await open(chatRoute(id, "all", { threads: true }))) !== "applied") return;
+    setListPredecessor(false);
     if (navigation) navigation.push(viewHref(threadsPageHref(id)), { scroll: "preserve" });
     else navigate(viewHref(threadsPageHref(id)), { scroll: "preserve" });
   };
   /** Opens another part of the open chat, from the list, the picker, a thread chip, or a new thread. */
   const openView = async (id: string, view: ThreadView, navigation?: LinkNavigateEvent, message?: string) => {
-    // From the phone's page of threads, "Back" in the thread returns to that page in the history; from Info opened
-    // on top of it, the previous entry is Info, so "Back" opens the page instead.
+    // A thread opened from the directory traverses back to that entry, also with Info above the thread.
     const options = { scroll: "preserve" as const, state: { threadFromPage: route().threads && route().panel === null } };
     const next = chatRoute(id, view, { messageId: message ?? null });
     if ((await open(next)) !== "applied") return;
     const href = viewHref(threadHref(id, view, message));
+    setListPredecessor(false);
     if (navigation) navigation.push(href, options);
     else navigate(href, options);
   };
@@ -1585,12 +1599,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     await openView(id, openChat()?.view ?? "all", undefined, message);
   };
 
-  // Info adds one entry above a chat opened from the list.
-  const listDepth = () => {
+  // Info adds one entry above the chat; both header destinations skip it when traversing to their predecessor.
+  const predecessorDepth = (key: "chatFromList" | "threadFromPage") => {
     const state: unknown = history.state;
-    if (!state || typeof state !== "object" || !("chatFromList" in state) || state.chatFromList !== true) return 0;
+    if (!state || typeof state !== "object" || !(key in state) || Reflect.get(state, key) !== true) return 0;
     return "chatInfoFromChat" in state && state.chatInfoFromChat === true ? 2 : 1;
   };
+  const listDepth = () => predecessorDepth("chatFromList");
+  const backToThreadDirectory = () => threaded() && !listPredecessor();
   const backToList = async (navigation: LinkNavigateEvent) => {
     const depth = listDepth();
     // Refused before history moves: a refused Back would show the list's address until it returned (#2503).
@@ -1602,9 +1618,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
   };
   const backToThreads = async (navigation: LinkNavigateEvent) => {
-    const state: unknown = history.state;
+    const depth = predecessorDepth("threadFromPage");
     const id = route().chatId;
-    if (state && typeof state === "object" && "threadFromPage" in state && state.threadFromPage === true) history.back();
+    if (depth > 0) history.go(-depth);
     else if (id && (await open(chatRoute(id, route().view, { threads: true }))) === "applied") {
       if (props.app) navigation.replaceWith(viewHref(threadsPageHref(id)), { scroll: "preserve" });
       else navigation.push(viewHref(threadsPageHref(id)), { scroll: "preserve" });
@@ -1621,7 +1637,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const messageId = route().messageId;
     setPanel("info");
     setRoute({ ...route(), chatId: id, messageId, panel: "info" });
-    const options = { scroll: "preserve" as const, state: { chatFromList: listDepth() === 1, chatInfoFromChat: true } };
+    const options = {
+      scroll: "preserve" as const,
+      state: {
+        chatFromList: listDepth() === 1,
+        ...(predecessorDepth("threadFromPage") === 1 ? { threadFromPage: true } : {}),
+        chatInfoFromChat: true,
+      },
+    };
     if (navigation) navigation.push(viewHref(routeAddress(route(), basePath)), options);
     else navigate(viewHref(routeAddress(route(), basePath)), options);
   };
@@ -1671,6 +1694,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const target = new URL(panelHref(id, null), location.href);
     if (chosen?.archived) target.searchParams.set("list", "archive");
     // The chat has opened successfully. A failed list refresh must not leave the address naming the previous chat.
+    setListPredecessor(fromList);
     navigate(target.pathname + target.search, { scroll: "preserve", state: { chatFromList: fromList } });
     await refreshList(listPath);
   };
@@ -1995,6 +2019,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     };
     window.addEventListener("storage", storageChanged);
     onCleanup(() => window.removeEventListener("storage", storageChanged));
+    setListPredecessor(listDepth() > 0);
     phone = window.matchMedia("(max-width: 47.999rem)");
     const live = createChatStore({
       viewerId: props.viewerId,
@@ -2077,6 +2102,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       listenPopState(({ url }) => {
         const next = parseRoute(url);
         if (!next) return;
+        setListPredecessor(listDepth() > 0);
         // The browser already shows the new address; when its chat cannot load in place, the server renders it.
         void applyListUrl(url)
           .then((token) => (token === null ? "superseded" : open(next)))
@@ -2428,7 +2454,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     }
                   : undefined
               }
-              backHref={threaded() ? listHref(threadsPageHref(current().id)) : undefined}
+              backHref={backToThreadDirectory() ? listHref(threadsPageHref(current().id)) : undefined}
               draftKey={`${current().id}:${openChat()?.view ?? "all"}`}
               notice={
                 <>
@@ -2532,7 +2558,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               }}
               cards={cards()}
               onPickResource={pickResource}
-              onBack={threaded() ? backToThreads : backToList}
+              onBack={backToThreadDirectory() ? backToThreads : backToList}
               backCount={props.app ? othersUnread(current().id) : undefined}
               busy={busy()}
               dateConfig={props.dateConfig}

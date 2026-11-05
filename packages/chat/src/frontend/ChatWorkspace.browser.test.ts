@@ -164,6 +164,61 @@ describe("ChatWorkspace browser full view", () => {
       }
     }, 30_000);
   }
+  for (const { name, options } of [{ name: "wide", options: { viewport: { width: 900, height: 900 } } }, viewports[1]!]) {
+    test(`${name}: threaded PWA header Back traverses its predecessor and retains Forward`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], name: "Launch planning", count: 3, end: harness.now() });
+      harness.addThread(chat, { name: "Schedule", count: 2, end: harness.now() });
+      const { page, errors } = await load(options, { app: true }, false, undefined, { theme: "light" });
+      try {
+        const length = await page.evaluate(() => history.length);
+        const directory = `/pwa/chat/c/${chat}/threads`;
+        await page.locator(`.chat-app__rows a[href="/pwa/chat/c/${chat}"]`).click();
+        if (name === "phone") {
+          await page.waitForURL(`**${directory}`);
+          await viewTransitionEnded(page);
+          await page.locator(`.chat-threads-page__list a[href="/pwa/chat/c/${chat}"]`).click();
+        }
+        await page.waitForURL(`**/pwa/chat/c/${chat}`);
+        await viewTransitionEnded(page);
+        const back = page.locator(".chat-conversation__back a");
+        expect(await back.getAttribute("href")).toBe(name === "phone" ? directory : "/pwa/chat");
+        expect(await back.getAttribute("aria-label")).toBe(name === "phone" ? "Back to the threads" : "Back to chats");
+        await page.getByRole("link", { name: "Chat info", exact: true }).click();
+        await page.waitForURL("**?panel=info");
+        await viewTransitionEnded(page);
+        const expectedLength = length + (name === "phone" ? 3 : 2);
+        expect(await page.evaluate(() => history.length)).toBe(expectedLength);
+        await page.getByRole("button", { name: "Close chat info", exact: true }).click();
+        await page.waitForURL(`**/pwa/chat/c/${chat}`);
+        await viewTransitionEnded(page);
+        const shots = process.env.PWA_CHAT_BACK_SHOTS;
+        if (shots) await page.screenshot({ path: `${shots}/01-chat-light-${options.viewport!.width}.png`, animations: "disabled" });
+        await back.click();
+        await page.waitForURL((url) => url.pathname === (name === "phone" ? directory : "/pwa/chat"));
+        await viewTransitionEnded(page);
+        expect(await page.evaluate(() => history.length)).toBe(expectedLength);
+        if (shots) await page.screenshot({ path: `${shots}/02-back-light-${options.viewport!.width}.png`, animations: "disabled" });
+        if (name === "phone") {
+          await page.locator(".chat-threads-page .chat-conversation__back a").click();
+          await page.waitForURL((url) => url.pathname === "/pwa/chat");
+          await viewTransitionEnded(page);
+          expect(await page.evaluate(() => history.length)).toBe(expectedLength);
+          await page.goForward();
+          await page.waitForURL(`**${directory}`);
+        }
+        await page.goForward();
+        await page.waitForURL(`**/pwa/chat/c/${chat}`);
+        await viewTransitionEnded(page);
+        expect(await page.locator(".chat-conversation__header").textContent()).toContain("Launch planning");
+        await page.goForward();
+        await page.waitForURL("**?panel=info");
+        await page.getByRole("button", { name: "Close chat info", exact: true }).waitFor({ state: "visible" });
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
   for (const { name, options } of viewports) {
     test(`live arrivals keep layout stable and follow the newest message on ${name}`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 40, end: harness.now() });
