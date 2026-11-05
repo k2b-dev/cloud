@@ -129,6 +129,7 @@ const files: Record<string, Classification> = {
 const templates: Record<string, Classification> = {
   list: read,
   get: read,
+  read,
   upload: read,
   import: base(),
   update: read,
