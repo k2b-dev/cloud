@@ -13,7 +13,8 @@ When your device is paired with the Cloud app, Assistant is the first tab. It us
 
 :::reference
 - **Recent:** Your six most recent chats with their time. A chat in bold with a dot has a new answer. A second line shows what the chat does now, what it waits for, why it failed, or what it is about. A pin marks a pinned chat.
-- **All chats:** Shows how many chats you have.
+- **All chats:** Opens every chat: pinned chats first, then this week and earlier months. Older chats load as you scroll. **Archive** at the end lists archived chats.
+- **Search:** The magnifier at the top opens every chat with its search field. Offline the field waits, and the line below it says why.
 - **Waiting for you:** Questions that wait for your answer stand above the field. Tap one to open its chat at the question. The number on the tab counts these questions only.
 - **Field:** Type a question and tap **Send**. Assistant starts a new chat and opens it.
 - **New chat:** The pencil at the top opens an empty chat.
@@ -26,7 +27,9 @@ When your device is paired with the Cloud app, Assistant is the first tab. It us
 - **On a tablet across:** Your chats stand beside the open chat.
 - **Answer in progress:** **Stop** replaces **Send**. A message you send now waits until the answer is complete.
 - **Message not sent:** The message stays in the chat with **Send again**. If Cloud cannot confirm that it arrived, the line above the field says so and offers **Try again**.
-- **Attachments:** Tap the plus to attach files from your device.
+- **Attachments:** Tap the plus to attach files from your device. In an open chat they upload while you write and show their progress. A failed upload offers **Upload again**; offline it waits for the network and goes on by itself.
+- **Dictation:** Tap the microphone to dictate into the field. If the app may not use the microphone, a card says so; allow the microphone for the app and try again.
+- **More:** **…** at the top of a chat renames, pins, or archives it. After archiving, **Undo** brings the chat back. If Cloud refuses or does not confirm the change, the line above the field says so and offers **Try again**.
 :::
 
 ## Questions before an action {icon="hand-stop"}

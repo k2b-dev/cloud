@@ -74,6 +74,8 @@ type Shot = {
   height: number;
   /** Text typed into a field before the taps, as `[selector, text]`. */
   fill?: [string, string];
+  /** Invented files attached through the field's file input, by name. */
+  attach?: string[];
   click?: string;
   tap?: string;
   focus?: string;
@@ -115,6 +117,23 @@ if (import.meta.main) {
         await page.evaluate(() => document.fonts.ready);
         try {
           if (shot.fill) await page.fill(shot.fill[0], shot.fill[1], { timeout: 5_000 });
+          if (shot.attach)
+            await page
+              .locator("input[type=file]")
+              .first()
+              .setInputFiles(
+                shot.attach.map((name) => ({
+                  name,
+                  mimeType: name.endsWith(".pdf") ? "application/pdf" : "image/png",
+                  // A one-pixel PNG, or a few bytes of an invented PDF.
+                  buffer: name.endsWith(".pdf")
+                    ? Buffer.from("%PDF-1.4 invented")
+                    : Buffer.from(
+                        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+                        "base64",
+                      ),
+                })),
+              );
           if (shot.click) await page.click(shot.click, { timeout: 5_000 });
           if (shot.tap) await page.tap(shot.tap, { timeout: 5_000 });
           if (shot.focus) await page.focus(shot.focus, { timeout: 5_000 });

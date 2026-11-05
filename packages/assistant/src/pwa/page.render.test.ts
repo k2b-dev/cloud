@@ -213,6 +213,33 @@ describe("The Assistant in the Cloud app", () => {
     expect(islandProps(document).initialDetail).toBeNull();
   });
 
+  test("every chat and the archive are read with the person's search, as the web's list", async () => {
+    signIn("app");
+    const pageSpy = spies[4]!;
+    pageSpy.mockClear();
+    const all = await render("/pwa/assistant/chats?q=velvet");
+    expect(all.response.status).toBe(200);
+    expect(all.document.title).toContain("All chats");
+    expect(all.document.querySelector(".k2b-mobile-shell")?.hasAttribute("data-k2b-screen")).toBe(false);
+    expect(pageSpy.mock.calls.map(([input]) => input)).toContainEqual({
+      ownerUserId: person.id,
+      search: "velvet",
+      archived: false,
+      page: 1,
+      perPage: 20,
+    });
+    pageSpy.mockClear();
+    const archive = await render("/pwa/assistant/archive");
+    expect(archive.document.title).toContain("Archive");
+    expect(pageSpy.mock.calls.map(([input]) => input)).toContainEqual({
+      ownerUserId: person.id,
+      search: undefined,
+      archived: true,
+      page: 1,
+      perPage: 20,
+    });
+  });
+
   test("a person without the user role gets the part's own refusal", async () => {
     signIn("app", guest);
     const { response, document } = await render("/pwa/assistant");
