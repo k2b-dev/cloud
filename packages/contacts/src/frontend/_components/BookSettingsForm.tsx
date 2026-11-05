@@ -331,6 +331,7 @@ export default function BookSettingsForm(props: Props) {
     if (!entries) return;
     wroteAccess = false;
     await openAccessDialog({
+      target: { type: "contacts.book", id: bookId() },
       resourceName: savedName(),
       subtitle: t().accessDialogSubtitle,
       initialEntries: entries.filter((entry) => entry.serviceAccountKind !== "resource_bound"),

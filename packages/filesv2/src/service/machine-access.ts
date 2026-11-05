@@ -195,7 +195,7 @@ export async function listMachineStorage(after?: string): Promise<{ items: Machi
     next: rows.length > 50 ? rows[49]!.id : null,
   };
 }
-export async function storageGrants(baseId: string, after?: string, accessId?: string) {
+export async function storageGrants(baseId: string, after?: string, accessId?: string, permission: PermissionLevel = "none") {
   const rows = await sql<
     {
       id: string;
@@ -220,6 +220,7 @@ export async function storageGrants(baseId: string, after?: string, accessId?: s
       path: row.path,
       createdAt: row.created_at.toISOString(),
     })),
+    { permission },
   );
   return { items, next: rows.length > 50 ? rows[49]!.id : null };
 }
@@ -265,7 +266,7 @@ export async function grantStorage(
     await tx`INSERT INTO filesv2.storage_access(base_id,path,access_id) VALUES(${baseId}::uuid,${path},${result.data.id}::uuid)`;
     return result.data.id;
   });
-  const grant = (await storageGrants(baseId, undefined, id)).items[0];
+  const grant = (await storageGrants(baseId, undefined, id, "admin")).items[0];
   if (!grant) throw new FilesError("not_found", 404);
   return grant;
 }

@@ -659,11 +659,19 @@ describe("Grids capabilities", () => {
       ]);
 
       const loadedBase = await invoke("query", "base.read", { id: basePublicId }, context);
-      expect(loadedBase.ok && loadedBase.data.data).toMatchObject({ id: basePublicId });
+      expect(loadedBase.ok && loadedBase.data.data).toMatchObject({
+        id: basePublicId,
+        view: { title: "Capability Base", permission: "write" },
+      });
       if (loadedBase.ok) {
         expect(loadedBase.data.data).not.toHaveProperty("shortId");
         expect(loadedBase.data.summary).toBe("Read Grids base “Capability Base”.");
       }
+
+      await sql`UPDATE auth.access SET permission='admin' WHERE id=${access.id}::uuid`;
+      const managedBase = await invoke("query", "base.read", { id: basePublicId }, context);
+      expect(managedBase).toMatchObject({ ok: true, data: { data: { view: { permission: "admin" } } } });
+      await sql`UPDATE auth.access SET permission='write' WHERE id=${access.id}::uuid`;
 
       const tables = await invoke(
         "query",

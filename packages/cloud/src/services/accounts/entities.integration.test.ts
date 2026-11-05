@@ -438,3 +438,34 @@ suite("Code handle directory filtering", () => {
     }
   });
 });
+
+suite("resource Code titles in exact handle lookup", () => {
+  test("only admitted target-manager context returns the resource title and Kennung", async () => {
+    const handle = "code-1a2b3c4d5e";
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,handle,title,status)
+      VALUES('code:demo.item:private-owner','code',${handle},'Private resource title','active') RETURNING id`;
+    const { list } = await import("./entities");
+    try {
+      for (const search of [handle, "Private resource title", "code-1a2b", account!.id]) {
+        const result = await list({ visibility: { type: "directory" }, search, kinds: ["service_account"], locale: "de" });
+        expect(JSON.stringify(result)).not.toContain("Private resource title");
+        expect(result.items.some((item) => item.kind === "service_account" && item.serviceAccount.id === account!.id)).toBe(false);
+      }
+      const managed = await list({
+        visibility: { type: "directory" },
+        search: handle,
+        codeAccountHandle: handle,
+        kinds: ["service_account"],
+        locale: "de",
+      });
+      expect(managed.items).toContainEqual(
+        expect.objectContaining({
+          kind: "service_account",
+          serviceAccount: expect.objectContaining({ id: account!.id, name: "Code von Private resource title", handle }),
+        }),
+      );
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
+    }
+  });
+});

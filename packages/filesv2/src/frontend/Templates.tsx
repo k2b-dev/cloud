@@ -87,6 +87,7 @@ export function TemplateList(props: { admin?: boolean; onSelect?: (template: Fil
       );
       if (owner.signal.aborted) return;
       await openAccessDialog({
+        target: { type: "filesv2.template", id: item.id },
         resourceName: item.name,
         subtitle: t().accessDialogSubtitle,
         initialEntries: entries,

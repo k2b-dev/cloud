@@ -111,6 +111,7 @@ export const openPermissionDialog = async (
   const t = gridsAdminMessages.resolve([locale]).t;
   const appEntries = entries.filter((entry) => entry.resourceType === "customApp");
   await openAccessDialog({
+    target: { type: "grids.base", id: props.baseId },
     resourceName: props.baseName,
     subtitle: t.baseAccessSubtitle,
     initialEntries: entries.filter((entry) => entry.resourceType === "base"),

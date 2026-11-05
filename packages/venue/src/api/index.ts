@@ -427,7 +427,7 @@ const venueRoutes = new Hono<AuthContext>()
         venueService.openingRules.list(venue.data.id),
         venueService.overrides.list(venue.data.id),
         venueService.templates.list(venue.data.id),
-        isAdmin ? venueService.access.list(venue.data.id) : Promise.resolve([]),
+        isAdmin ? venueService.access.list(venue.data.id, venue.data.permission) : Promise.resolve([]),
         isAdmin ? listVenueApiKeys(venue.data.id) : Promise.resolve([]),
       ]);
       return respond(
@@ -503,7 +503,7 @@ const venueRoutes = new Hono<AuthContext>()
   .get("/:id/access", v("param", VenueIdParamSchema), async (c) => {
     const venue = await adminVenue(c, c.req.valid("param").id);
     if (!venue.ok) return respond(c, venue);
-    return respond(c, ok({ entries: await venueService.access.list(venue.data.id) }));
+    return respond(c, ok({ entries: await venueService.access.list(venue.data.id, venue.data.permission) }));
   })
   .post("/:id/access", v("param", VenueIdParamSchema), v("json", GrantAccessSchema), async (c) => {
     const venue = await adminVenue(c, c.req.valid("param").id);

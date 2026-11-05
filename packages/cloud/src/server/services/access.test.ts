@@ -461,12 +461,14 @@ test("Code titles are resolved in the existing batch only for a managed target",
     } });
     const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access-display.ts", import.meta.url).pathname)});
     const entries = [
-      { principal: { type: "service_account", serviceAccountId: present }, displayName: "Stale secret", serviceAccountHref: "/old-secret" },
+      { principal: { type: "service_account", serviceAccountId: present }, displayName: "Stale secret", serviceAccountHref: "/old-secret", serviceAccountHandle: "code-stale00000" },
       { principal: { type: "service_account", serviceAccountId: app } },
     ];
     const reader = await resolveDisplayNames(entries, { locale: "de" });
     assert.equal(reader[0].displayName, "Code eines Postfachs");
     assert.equal(reader[0].serviceAccountHref, undefined);
+    assert.equal(reader[0].serviceAccountHandle, undefined);
+    assert.equal(reader[1].serviceAccountHandle, undefined);
     assert.ok(!JSON.stringify(reader).includes("Private mailbox"));
     assert.ok(!JSON.stringify(reader).includes("secret-id"));
     // The app's name in the viewer's language, never the name stored with the account.
@@ -475,7 +477,7 @@ test("Code titles are resolved in the existing batch only for a managed target",
     assert.deepEqual(calls.splice(0), ["accounts"]);
     assert.equal((await resolveDisplayNames(entries, { locale: "en" }))[1].displayName, "Code of Workshop");
     calls.splice(0);
-    const manager = await resolveDisplayNames(entries, { canManageTarget: true, locale: "de" });
+    const manager = await resolveDisplayNames(entries, { permission: "admin", locale: "de" });
     assert.equal(manager[0].displayName, "Code von Private mailbox");
     assert.equal(manager[0].serviceAccountHref, "/app/demo/secret-id/code");
     assert.equal(manager[0].serviceAccountHandle, "code-7k2q9m4xwt");
@@ -485,10 +487,18 @@ test("Code titles are resolved in the existing batch only for a managed target",
     const admin = await resolveDisplayNames(entries, { cloudAdmin: true, locale: "de" });
     assert.equal(admin[1].serviceAccountHref, "/admin/code?sec=code&app=workshop");
     assert.equal(admin[0].displayName, "Code eines Postfachs");
+    assert.equal(admin[0].serviceAccountHandle, undefined);
+    assert.equal(admin[1].serviceAccountHandle, undefined);
     // The list length changes neither statement count nor app calls.
+    const legacyManager = await resolveDisplayNames(entries, { canManageTarget: true, locale: "de" });
+    assert.equal(legacyManager[0].serviceAccountHandle, "code-7k2q9m4xwt");
+    const capped = await resolveDisplayNames(entries, { permission: "read", canManageTarget: true, locale: "de" });
+    assert.equal(capped[0].serviceAccountHandle, undefined);
+    assert.equal(capped[0].displayName, "Code eines Postfachs");
+    calls.splice(0);
     const many = await resolveDisplayNames(Array.from({ length: 50 }, () => entries[0]), { canManageTarget: true, locale: "de" });
     assert.equal(many.length, 50);
-    assert.deepEqual(calls.splice(0), ["accounts", "accounts"]);
+    assert.deepEqual(calls.splice(0), ["accounts"]);
   `;
   const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);

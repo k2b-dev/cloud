@@ -11,7 +11,6 @@ import {
   type PermissionLevel,
   type Principal,
   type RequestActor,
-  type ResourceAccessAdapter,
   resolveDisplayNames,
   userFromActor,
 } from "@k2b/cloud/server";
@@ -47,8 +46,8 @@ async function admin(actor: RequestActor) {
   await accountIdentities.inventory(actor, { kind: "groups", provider: "local" });
   return user(actor);
 }
-const access: Pick<ResourceAccessAdapter, "list"> = {
-  async list(id) {
+const access = {
+  async list(id: string, permission: PermissionLevel = "none") {
     const rows = await sql<
       {
         id: string;
@@ -72,6 +71,7 @@ const access: Pick<ResourceAccessAdapter, "list"> = {
         permission: "read" as const,
         createdAt: row.created_at.toISOString(),
       })),
+      { permission },
     );
   },
 };
@@ -230,11 +230,15 @@ export function createTemplateService(files = filesService) {
       });
       return { deleted: true };
     },
+    async read(call: UserFilesCall, id: string) {
+      await admin(call.actor);
+      return get(id);
+    },
     async grants(call: UserFilesCall, id: string) {
       const actor = call.actor;
       await admin(actor);
       await get(id);
-      return access.list(id);
+      return access.list(id, "admin");
     },
     async grant(call: UserFilesCall, id: string, principal: Principal) {
       const actor = call.actor;
@@ -275,7 +279,7 @@ export function createTemplateService(files = filesService) {
         await recordAudit(tx, call, "grant", id, grantMetadata(result.data.id, principal, "read"));
         return result.data.id;
       });
-      return (await access.list(id)).find((entry) => entry.id === accessId)!;
+      return (await access.list(id, "admin")).find((entry) => entry.id === accessId)!;
     },
     async revoke(call: UserFilesCall, id: string, accessId: string) {
       const actor = call.actor;

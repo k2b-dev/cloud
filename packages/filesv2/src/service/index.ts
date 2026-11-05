@@ -1666,7 +1666,7 @@ export function createFilesService(
     },
     async storageGrants(call: UserFilesCall, baseId: string, after?: string) {
       await requireAdmin(call.actor);
-      return storageGrants(baseId, after);
+      return storageGrants(baseId, after, undefined, "admin");
     },
     async grantStorage(
       call: UserFilesCall,

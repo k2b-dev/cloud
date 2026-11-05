@@ -46,7 +46,33 @@ describe("Studio sharing in the shared access dialog", () => {
     dom.document.documentElement.lang = overrides.lang ?? "de";
     delegateEvents(["click", "input"], dom.document);
     // Machine rights and machine secrets load on their own; this app has none.
-    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async () => Response.json([])) as unknown as typeof fetch);
+    const lookups: string[] = [];
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: RequestInfo | URL) => {
+          const url = new URL(String(input), "https://cloud.example.test");
+          if (url.pathname !== "/api/accounts/entities") return Response.json([]);
+          expect(url.searchParams.get("target_type")).toBe("assistant.app");
+          expect(url.searchParams.get("target_id")).toBe("App234");
+          const handle = url.searchParams.get("search")!;
+          lookups.push(handle);
+          return Response.json({
+            items: [
+              {
+                kind: "service_account",
+                serviceAccount: {
+                  id: "20000000-0000-4000-8000-000000000004",
+                  kind: "code",
+                  handle,
+                  name: "Code von info@beispiel.de",
+                },
+              },
+            ],
+          });
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
     const { AccessDialog } = await import("@k2b/cloud/access/ui");
     const { studioAccessDialogProps } = await import("./StudioPermissions");
     const { prompts } = await import("@k2b/ui");
@@ -81,6 +107,7 @@ describe("Studio sharing in the shared access dialog", () => {
       Array.from(dom.root.querySelectorAll("section")).find((item) => item.querySelector("h3")?.textContent?.startsWith(title))!;
     return {
       dom,
+      lookups,
       calls,
       close,
       row,
@@ -152,17 +179,7 @@ describe("Studio sharing in the shared access dialog", () => {
   });
 
   test("a Code account added by its identifier gets Use on Save, through the normal grant", async () => {
-    const lookups: string[] = [];
-    const ui = await setup({
-      entries: [owner],
-      findServiceAccount: async (handle) => {
-        lookups.push(handle);
-        return {
-          principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000004" },
-          display: { displayName: "Code von info@beispiel.de", serviceAccountKind: "code" },
-        };
-      },
-    });
+    const ui = await setup({ entries: [owner] });
     try {
       ui.button("Dienstkonto hinzufügen").click();
       const input = ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Kennung des Dienstkontos"]')!;
@@ -174,7 +191,7 @@ describe("Studio sharing in the shared access dialog", () => {
           item.textContent?.includes("Code von info@beispiel.de"),
         );
       await waitFor(() => Boolean(hit()), "the found account");
-      expect(lookups).toEqual(["code-7k2q9m4xwt"]);
+      expect(ui.lookups).toEqual(["code-7k2q9m4xwt"]);
       hit()!.click();
       expect(ui.row("Code von info@beispiel.de").textContent).toContain("Neu");
       expect(ui.section("Dienstkonten").textContent).toContain("Wer den Code bearbeitet, handelt mit diesem Recht.");

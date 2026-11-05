@@ -28,3 +28,9 @@ checking Manage locally, and no longer request arbitrary account names from
 Core. See [Code account handles](/en/docs/identity/code-service-account-handles)
 for the search and rename contracts. No new environment setting or worker is
 required.
+
+Resource share dialogs use the platform lookup from `target: { type, id }`.
+Deploy the target's canonical reader with its checked `data.view.permission`
+alongside this UI change. Target managers then add exact handles through the
+normal grant operation. Applications do not need a Code declaration or their
+own lookup transport. The same checked permission controls access-list names.

@@ -57,6 +57,8 @@ if (!isServer) {
           $get: async ({ query }: { query: Record<string, string> }, options: { init: { signal: AbortSignal } }) => {
             expect(options.init.signal).toBeInstanceOf(AbortSignal);
             expect(query).toMatchObject({ kinds: "service_account", service_account_kinds: "code" });
+            // The platform rejects names before transport; the dialog supplies the lookup target.
+            expect(query.search).toBe(handle);
             calls.push(`lookup ${query.target_type} ${query.target_id} ${query.search}`);
             return Response.json({
               items:
