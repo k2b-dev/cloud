@@ -43,6 +43,7 @@ import { parseMailLiveEvent } from "../live-event";
 import { isMailEventsRoute, readMailEventsFilter } from "../mail-events-route";
 import type { MailViewPreference } from "../mail-view-preference";
 import { guaranteedMailSearchFolderIds } from "../search-folder-scope";
+import type { MailboxAccessMember } from "../service/access";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
 import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
@@ -253,6 +254,24 @@ function createMailboxController(props: MailboxControllerProps) {
   const [theme, setTheme] = createSignal<CloudTheme | null>(props.initialTheme);
   const [presence, setPresence] = createSignal<ConversationPresenceSnapshot>({
     participants: [],
+  });
+  /** Whether the people here are known: loading until the first heartbeat answers, unavailable after one failed. */
+  const [presenceState, setPresenceState] = createSignal<"loading" | "live" | "unavailable">("loading");
+  let retryPresence = () => {};
+  // Who has access belongs to the mailbox, so it loads once, when details first show a conversation. Only people
+  // with mailbox-wide access read it; the server decides the same way.
+  const [accessWanted, setAccessWanted] = createSignal(false);
+  const accessMembers = query.create<string, MailboxAccessMember[]>({
+    source: () => data.mailbox.id,
+    enabled: () => accessWanted() && data.access.scope === "mailbox",
+    load: async (id, { abortSignal }) => {
+      const response = await apiClient.mailboxes[":mailboxId"].access.members.$get(
+        { param: { mailboxId: id } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(String(response.status));
+      return response.json();
+    },
   });
   const [settingsOpening, setSettingsOpening] = createSignal(false);
   const [detailsOpening, setDetailsOpening] = createSignal(false);
@@ -915,8 +934,10 @@ function createMailboxController(props: MailboxControllerProps) {
     const conversationId = selectedConversationId();
     if (!conversationId) {
       setPresence({ participants: [] });
+      setPresenceState("loading");
       return;
     }
+    setPresenceState("loading");
     const peerId = crypto.randomUUID();
     const session = createMailPresenceSession({
       heartbeat: async (signal) => {
@@ -941,8 +962,13 @@ function createMailboxController(props: MailboxControllerProps) {
           { init: { keepalive: true } },
         );
       },
-      onSnapshot: setPresence,
+      onSnapshot: (snapshot) => {
+        setPresence(snapshot);
+        setPresenceState("live");
+      },
+      onFailure: () => setPresenceState("unavailable"),
     });
+    retryPresence = () => void session.heartbeat();
     const heartbeat = () => {
       if (document.visibilityState === "visible") void session.heartbeat();
     };
@@ -954,6 +980,7 @@ function createMailboxController(props: MailboxControllerProps) {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
       session.dispose();
+      retryPresence = () => {};
       setPresence({ participants: [] });
     });
   });
@@ -3051,6 +3078,10 @@ function createMailboxController(props: MailboxControllerProps) {
     openWorkspaceHref,
     persistPreferences,
     presence,
+    presenceState,
+    retryPresence: () => retryPresence(),
+    accessMembers,
+    wantAccessMembers: () => setAccessWanted(true),
     reassignMessage,
     reconcileWorkspace,
     requestPath,
@@ -3694,6 +3725,23 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                   initialCommentsCursor={mailbox.data.commentsCursor}
                   assignableUsers={mailbox.data.assignableUsers}
                   presence={mailbox.presence().participants}
+                  presenceState={mailbox.presenceState()}
+                  onRetryPresence={mailbox.retryPresence}
+                  access={
+                    mailbox.assignedOnly()
+                      ? null
+                      : {
+                          members: mailbox.accessMembers.data() ?? [],
+                          // A failed refresh says so instead of keeping a list that may be out of date.
+                          state: mailbox.accessMembers.error() ? "error" : mailbox.accessMembers.data() ? "ready" : "loading",
+                          load: mailbox.wantAccessMembers,
+                          retry: () => void mailbox.accessMembers.refresh(),
+                          // Settings change grants in place, so the list reloads once they close.
+                          manage: mailbox.canAdmin()
+                            ? () => void mailbox.openSettings("access").finally(() => void mailbox.accessMembers.refresh())
+                            : undefined,
+                        }
+                  }
                   currentUserId={props.currentUserId}
                   activity={mailbox.conversationActivity()}
                   initialReminder={mailbox.data.reminder}
