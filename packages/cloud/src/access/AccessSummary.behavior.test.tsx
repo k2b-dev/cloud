@@ -81,6 +81,13 @@ describe("AccessSummary", () => {
     } finally {
       stored.cleanup();
     }
+    // A stored denial is a row in the dialog too, so the line still names General, as off.
+    const denied = await renderSummary("de", { entries: [mia, entry("8", { type: "authenticated" }, "none")], allowAuthenticated: false });
+    try {
+      expect(denied.line()).toBe("1 Person, Gruppe oder Agent · Alle angemeldeten Personen: aus");
+    } finally {
+      denied.cleanup();
+    }
   });
 
   test("a part without entries is left out, and two service accounts read in the plural", async () => {

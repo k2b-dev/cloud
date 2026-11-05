@@ -790,7 +790,7 @@ a part without entries. API keys keep their own section. The faces open the
 full list with each level. Pass the same `allowedLevels`, `effectiveEntries`, and
 `allowAuthenticated` as to the dialog, so the levels read in the app's words,
 shadowed grants do not count, and a resource without "All signed-in people"
-leaves General out of the line unless a stored grant still applies.
+leaves General out of the line unless a stored entry for it remains.
 Put **Edit access** with the `ti-lock-access` icon beside it. Someone who
 cannot open the dialog still needs the full list, for example the read-only
 `PermissionEditor`.

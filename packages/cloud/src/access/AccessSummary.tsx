@@ -25,7 +25,7 @@ export function AccessSummary(props: {
   effectiveEntries?: (entries: readonly AccessEntry[]) => readonly AccessEntry[];
   /**
    * Whether the resource offers "All signed-in people", as given to the access dialog. Defaults to true. Without it the
-   * line names General only for a stored grant, just as the dialog then shows that row only to turn it off.
+   * line names General only while a stored entry for it remains, denials included, as the dialog keeps that row.
    */
   allowAuthenticated?: boolean;
 }) {
@@ -93,7 +93,9 @@ export function AccessSummary(props: {
     const visitors = general("public");
     return [
       t().summaryMembers({ count: members().length }),
-      ...(props.allowAuthenticated !== false || signedIn ? [`${t().signedInLabel}: ${signedIn ? levelOf(signedIn) : t().summaryOff}`] : []),
+      ...(props.allowAuthenticated !== false || props.entries.some((entry) => entry.principal.type === "authenticated")
+        ? [`${t().signedInLabel}: ${signedIn ? levelOf(signedIn) : t().summaryOff}`]
+        : []),
       ...(visitors ? [`${principalLabel(visitors, locale())}: ${levelOf(visitors)}`] : []),
       ...(serviceAccounts().length > 0 ? [t().summaryServiceAccounts({ count: serviceAccounts().length })] : []),
     ].join(" · ");
