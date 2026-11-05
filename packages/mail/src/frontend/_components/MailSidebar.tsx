@@ -53,7 +53,7 @@ export type MailSidebarOpenMailbox = {
   onMoveConversation: (input: { itemId: string; destinationFolderId: string }) => void | Promise<void>;
   onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
   /**
-   * The mailbox's Code page. Only administrators of the mailbox and people with access to its Code get the entry;
+   * The mailbox's Code page. Only people who manage the mailbox and people with access to its Code get the entry;
    * `attention` marks paused Code or removed access.
    */
   code?: { active: boolean; attention?: boolean };

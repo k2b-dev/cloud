@@ -56,7 +56,7 @@ an application answers `access.readable`. A Code account never counts as a
 resource manager and cannot receive `admin`, including through direct storage
 writes or account reclassification.
 
-Code accounts cannot receive API tokens, models-only keys, OAuth clients or
+Code accounts cannot receive API keys, including models-only keys, OAuth clients or
 OAuth tokens. App keys belong only to a `resource_bound` account for
 `cloud.app/<appId>`, never to a Code account. The ordinary account creation
 and credential APIs remain limited to their existing kinds.

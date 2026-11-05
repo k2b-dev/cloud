@@ -275,3 +275,24 @@ For the complete YAML vocabulary and checked examples, see [Mail workflow YAML r
 ## Confirm a Spaces destination after an upgrade {icon="shield-check"}
 
 If an incoming automation shows **Needs attention**, it is paused and its saved steps remain available. Choose **Edit automation**, select its Spaces item or event destination again, and save. Then enable it. The person who originally authorized Spaces access must confirm it again. A configured Space remains the only destination for that step; Mail does not widen access when it upgrades an automation.
+
+## Let mailbox Code work in a Space or another place {icon="code"}
+
+Code of a mailbox runs as the mailbox's service account. Open **Code** in the mailbox sidebar to see it. Only people who manage the mailbox and people with access to its Code see this entry.
+
+The service account starts without access to other places. Whoever manages the target decides about access, for example the person who manages a Space. Approving a Code version gives no access to a target.
+
+:::steps
+1. Open **Code** in the mailbox sidebar.
+2. Choose **Copy handle** at the top of the Code page.
+3. Send the handle to the person who manages the target, for example in a chat.
+4. That person adds the service account in the target's share dialog with **View** or **Edit**.
+:::
+
+The next run of the Code can use the target. A service account never gets **Manage**. If you manage the target yourself, add the service account there yourself. Code of another object gets access to this mailbox the same way: whoever manages the mailbox adds its service account in the mailbox's share dialog.
+
+## Understand a refused Code call {icon="alert-triangle"}
+
+When a target refuses a call, the run shows it. People who may edit the Code see the action, the target, and **Copy handle**. People who only read the Code see **A call was refused.** Either the service account lacks the needed access at the target, or the target no longer exists. Ask the person who manages the target to add the service account, or to give it **Edit** if it has only **View**. The next run tries again.
+
+The Cloud administrator's policy decides which kinds of calls need an approved version. With the default policy, reading runs without approval. AI use, internet requests, and changes that other people see need a version that a Cloud administrator approved. **The policy does not allow this.** means that the policy or a fixed rule for Code forbids this call, for example an internet address that the Code does not declare. An approval does not change that. If the run says that the version needs approval, a Cloud administrator must approve it first. Calls that would ask a person first, such as sending or deleting, never run from Code in this release.

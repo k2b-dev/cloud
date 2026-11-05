@@ -2040,6 +2040,8 @@ describe("Dienstkonto shares use normal grant callbacks", () => {
           await waitFor(() => !row.getAttribute("aria-busy"), "completed save");
         }
         expect(updates).toEqual(["write", "read"]);
+        // A Dienstkonto never has an API key, so nothing here, not even an accessible label, offers or names one.
+        expect(dom.root.innerHTML).not.toMatch(/API[ -]?(Key|Schlüssel|Token)/i);
         expect(queries).toHaveLength(1);
         expect(queries[0]!.pathname).toBe("/api/accounts/entities");
         expect(queries[0]!.searchParams.get("search")).toBe("code-abcdefghjk");
