@@ -117,6 +117,24 @@ databaseSuite()("Code presentation in app access lists", () => {
         expect(entry?.serviceAccountHandle).toBe(authority === owner ? account!.handle : undefined);
         expect(entry?.displayName?.includes("Private owner title")).toBe(authority === owner);
       }
+      const canManage = () => {
+        throw new Error("Repair must not evaluate the app-owned restriction for presentation");
+      };
+      const repaired = await changeAppAccess({
+        app: f.app,
+        authority: owner,
+        repair: true,
+        canManage,
+        change: { action: "update", accessId: granted.entry!.id, permission: "read" },
+      });
+      expect(repaired.entry?.id).toBe(granted.entry!.id);
+      expect(repaired.entry?.serviceAccountHandle).toBeUndefined();
+      expect(repaired.entry?.displayName).not.toContain("Private owner title");
+      const snapshot = await readAppAccess({ app: f.app, authority: owner, repair: true, canManage });
+      const entry = snapshot.entries.find((entry) => entry.id === granted.entry!.id);
+      expect(entry).toBeDefined();
+      expect(entry?.serviceAccountHandle).toBeUndefined();
+      expect(entry?.displayName).not.toContain("Private owner title");
     } finally {
       await f.cleanup();
       await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
