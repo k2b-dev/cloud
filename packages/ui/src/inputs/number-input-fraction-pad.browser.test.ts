@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 const entry = resolve(import.meta.dir, "number-input-fraction-pad.fixture.ts");
 const fixture = `
@@ -39,16 +39,19 @@ test("blur pads the price while typing preserves raw text, caret and field width
     await page.addScriptTag({ content: script });
     const field = page.getByRole("spinbutton", { name: "Price" });
     expect(await field.inputValue()).toBe("321,40");
+    await settled(page);
     const width = (await field.boundingBox())!.width;
     await field.fill("321,4");
     await field.evaluate((node: HTMLInputElement) => node.setSelectionRange(3, 3));
     await page.keyboard.press("ArrowLeft");
     expect(await field.inputValue()).toBe("321,4");
     expect(await field.evaluate((node: HTMLInputElement) => node.selectionStart)).toBe(2);
+    await settled(page);
     expect((await field.boundingBox())!.width).toBe(width);
     await page.getByRole("button", { name: "Leave", exact: true }).click();
     expect(await field.inputValue()).toBe("321,40");
     expect(await page.locator("body").getAttribute("data-changes")).toBe("1");
+    await settled(page);
     expect((await field.boundingBox())!.width).toBe(width);
   } finally {
     await context.close();
