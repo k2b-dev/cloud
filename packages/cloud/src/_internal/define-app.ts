@@ -613,7 +613,6 @@ export const defineApp = <
     ${head.app}
     <link rel="icon" href="${appFaviconHref(opts.id, faviconVersion)}">
     <style data-cloud-css-layers>@layer properties, theme, base, components, utilities;</style>
-    <link rel="preload" href="/public/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>
     ${FONT_PRELOAD_LINKS}
     <link rel="stylesheet" href="${versionedPublicHref("/public/fonts.css", sharedVersion)}">
     <link rel="stylesheet" href="${versionedPublicHref("/public/tabler-icons.css", sharedVersion)}">
