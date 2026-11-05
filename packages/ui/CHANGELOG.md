@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.47.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.46.0...npm-ui-v0.47.0) (2026-11-05)
+
+
+### Features
+
+* **ui:** a decision can wait for the network, and a phone screen can take the footer's place ([#2643](https://github.com/k2b-dev/cloud/issues/2643)) ([6ded792](https://github.com/k2b-dev/cloud/commit/6ded792a1aa27389e3aea9e2153b36315c492d60))
+* **ui:** detail sections carry link commands, loading states, and access rows ([#2603](https://github.com/k2b-dev/cloud/issues/2603)) ([f8e3586](https://github.com/k2b-dev/cloud/commit/f8e3586ddf48eb76a4bb664f51974fb3ab2f3fae))
+* **ui:** the mobile shell's header, tab bar, and sidebar stand still in view transitions ([#2620](https://github.com/k2b-dev/cloud/issues/2620)) ([5d601eb](https://github.com/k2b-dev/cloud/commit/5d601eb1786003f72aebdbb8598f19925d5b15dc))
+
+
+### Bug Fixes
+
+* **cloud:** the access dialog's states and level menu match the approved mockup ([#2631](https://github.com/k2b-dev/cloud/issues/2631)) ([290f221](https://github.com/k2b-dev/cloud/commit/290f221f1218fe888b9bb2d2a8558cb63562ba76))
+
+
+### Performance Improvements
+
+* **ui:** keep Cloud app counter islands small ([#2622](https://github.com/k2b-dev/cloud/issues/2622)) ([9709b1a](https://github.com/k2b-dev/cloud/commit/9709b1ac0fb657c712907364383acd3c191539df))
+* **ui:** the virtual feed measures before it writes ([#2637](https://github.com/k2b-dev/cloud/issues/2637)) ([ff70a91](https://github.com/k2b-dev/cloud/commit/ff70a9151f159e008dc445943505de029975baae))
+
 ## [0.46.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.45.0...npm-ui-v0.46.0) (2026-11-03)
 
 
