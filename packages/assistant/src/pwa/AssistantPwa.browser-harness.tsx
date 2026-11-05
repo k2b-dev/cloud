@@ -300,6 +300,23 @@ const address: PwaAddress =
         ? { level: "all", archived: screen === "all-archive", query: allQuery }
         : { level: "start" };
 const noAi = has("noai", "noai-admin", "noai-chat");
+// `mic=blocked`: the device refuses the microphone, as after a person said no.
+if (params.get("mic") === "blocked")
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      getUserMedia: () => Promise.reject(new DOMException("Permission denied", "NotAllowedError")),
+      enumerateDevices: () => Promise.resolve([]),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
+  });
+// `standalone=1`: the page runs as the installed app, without browser chrome.
+if (params.get("standalone")) {
+  const original = window.matchMedia.bind(window);
+  window.matchMedia = (query: string) =>
+    query === "(display-mode: standalone)" ? Object.assign(original(query), { matches: true }) : original(query);
+}
 const offline = has("offline", "chat-offline", "chat-approval-offline", "all-offline", "menu-offline", "chat-attach-offline");
 if (offline) Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
 const empty = has("start-empty");
@@ -417,7 +434,13 @@ const props: AssistantPwaProps = {
   userId: "robin",
   name,
   icon,
-  status: { ...models, enabled: !noAi, visionModelConfigured: true, ...(noAi ? { options: [] } : {}) },
+  status: {
+    ...models,
+    enabled: !noAi,
+    visionModelConfigured: true,
+    liveDictationAvailable: Boolean(params.get("dictation")),
+    ...(noAi ? { options: [] } : {}),
+  },
   canConfigure: has("noai-admin"),
   timeZone: "Europe/Berlin",
   renderedAt: NOW,
