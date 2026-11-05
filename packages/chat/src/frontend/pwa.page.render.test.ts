@@ -163,15 +163,17 @@ describe("Chat in the Cloud app", () => {
     expect(document.querySelector('.chat-app__list a[href^="/app/chat"]')).toBeNull();
   });
 
-  test("channel discovery restores its search inside the PWA's open page", async () => {
+  test("channel discovery keeps its authorized seed while the PWA loads the view", async () => {
     signIn("app");
     channelsSpy.mockResolvedValue(ok({ items: [{ ...conversations[0]!, channel: true, purpose: "Studio decisions" }], nextCursor: null }));
     const { response, document } = await render("/pwa/chat/channels?q=studio");
     expect(response.status).toBe(200);
     expect(channelsSpy.mock.calls.at(-1)?.[0]).toMatchObject({ query: { q: "studio" } });
     expect(document.querySelector(".chat-app")?.hasAttribute("data-open")).toBe(true);
-    expect(document.querySelector(".chat-app__main")?.textContent).toContain("Studio decisions");
-    expect(document.querySelector('.chat-app__main input[value="studio"]')).not.toBeNull();
+    expect(document.querySelector(".chat-app__main")?.textContent).toContain("Loading…");
+    const props = [...document.querySelectorAll("solid-island")].map((island) => island.getAttribute("data-props")).join(" ");
+    expect(props).toContain("Studio decisions");
+    expect(props).toContain("studio");
   });
 
   test("a system thread filter does not turn into the personal Unread list on reload", async () => {

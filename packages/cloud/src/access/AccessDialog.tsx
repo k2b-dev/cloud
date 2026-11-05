@@ -1,14 +1,16 @@
 import {
+  AnchoredPopover,
   Button,
   ChangeList,
   type ChangeListItem,
+  ChoiceList,
   CopyButton,
   dialogCore,
   IconButton,
   NoticeCard,
   PanelDialog,
   prompts,
-  Select,
+  Skeleton,
   StatusBadge,
   Switch,
   TextInput,
@@ -30,6 +32,7 @@ import {
   emptyDraft,
   lastManagerKeys,
   managerCount,
+  managerKeys,
   removeRow,
   restoreRow,
   saveOrder,
@@ -39,6 +42,7 @@ import { accessMessages } from "./messages";
 import { type AllowedLevel, type GrantableLevel, levelKey, type ResolvedLevel, resolveAllowedLevels } from "./PermissionEditor";
 import PrincipalAvatar from "./PrincipalAvatar";
 import PrincipalPicker from "./PrincipalPicker";
+import { principalKey } from "./principal-key";
 import { principalLabel } from "./principal-label";
 import { serviceAccountKindDisplay } from "./service-account-kind";
 
@@ -50,7 +54,10 @@ export type AccessDialogProps = {
   resourceName: string;
   /** One line under the title, such as "Space · Spaces". */
   subtitle?: string;
-  initialEntries: AccessEntry[];
+  /** The stored entries. Pass `loadEntries` instead to open at once and show the dialog loading. */
+  initialEntries?: AccessEntry[];
+  /** Reads the stored entries while the dialog shows rows that are still loading; a failure offers Try again. */
+  loadEntries?: (signal: AbortSignal) => Promise<AccessEntry[]>;
   /** `false` shows who has access without controls. */
   canEdit?: boolean;
   /** The same seams as `PermissionEditor`; the dialog calls them only when the person saves. */
@@ -119,7 +126,33 @@ export function AccessDialog(
   const t = () => accessDialogMessages.resolve([locale()]).t;
   const access = () => accessMessages.resolve([locale()]).t;
   const canEdit = () => props.canEdit !== false;
-  const [draft, setDraft] = createSignal<AccessDraft>(emptyDraft(props.initialEntries));
+  // What was stored when the dialog started; a save makes the draft's base a new list.
+  let baseline: readonly AccessEntry[] = props.initialEntries ?? [];
+  const [draft, setDraft] = createSignal<AccessDraft>(emptyDraft(baseline));
+  const [loadState, setLoadState] = createSignal<"ready" | "loading" | "failed">(
+    props.initialEntries === undefined && props.loadEntries ? "loading" : "ready",
+  );
+  const loading = () => loadState() !== "ready";
+  let loadAbort: AbortController | undefined;
+  const load = async () => {
+    const read = props.loadEntries;
+    if (!read) return;
+    loadAbort?.abort();
+    const controller = new AbortController();
+    loadAbort = controller;
+    setLoadState("loading");
+    try {
+      const entries = await read(controller.signal);
+      if (controller.signal.aborted) return;
+      baseline = entries;
+      setDraft(emptyDraft(entries));
+      setLoadState("ready");
+    } catch {
+      if (!controller.signal.aborted) setLoadState("failed");
+    }
+  };
+  if (loadState() === "loading") void load();
+  onCleanup(() => loadAbort?.abort());
   const [saving, setSaving] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
   const [summaryOpen, setSummaryOpen] = createSignal(true);
@@ -171,6 +204,17 @@ export function AccessDialog(
     (row.principal.type === "authenticated" || row.principal.type === "public") && generalRow(row.principal.type)?.key === row.key;
   const peopleRows = () => rows().filter((row) => !isObjectAccount(row.display.serviceAccountKind) && !isGeneralSwitch(row));
   const objectAccountRows = () => rows().filter((row) => isObjectAccount(row.display.serviceAccountKind));
+  /** In read-only mode, who can change access: the people and groups that manage it, by name. */
+  const readOnlyLine = () => {
+    // The same managers the last-manager rule counts: unscoped, and not shadowed by a denial.
+    const managing = managerKeys(draft(), props.effectiveEntries);
+    const names = rows()
+      .filter((row) => managing.has(row.key) && (row.principal.type === "user" || row.principal.type === "group"))
+      .map((row) => nameOf(row));
+    return names.length > 0
+      ? t().readOnlyManagers({ names: new Intl.ListFormat(locale(), { type: "conjunction" }).format(names) })
+      : t().readOnly;
+  };
   const showGeneral = () =>
     props.allowAuthenticated !== false || props.allowPublic === true || rows().some((row) => generalPrincipal(row.principal));
   const showObjectAccounts = () => props.findServiceAccount !== undefined || objectAccountRows().length > 0;
@@ -311,7 +355,7 @@ export function AccessDialog(
       });
       if (!discard || disposed) return;
     }
-    props.close(changes().length === 0 && draft().base !== props.initialEntries);
+    props.close(changes().length === 0 && draft().base !== baseline);
   };
   props.setDismissHandler?.(() => void dismiss());
 
@@ -343,28 +387,99 @@ export function AccessDialog(
       );
     return null;
   };
-  const levelSelect = (row: DraftRow) => {
-    const protectedRow = () => lastManagers().has(row.key);
+  /** What a level means when the resource gives no sentence of its own. */
+  const defaultDescription = (level: GrantableLevel) =>
+    level === "read" ? t().levelReadDescription : level === "write" ? t().levelWriteDescription : t().levelAdminDescription;
+  /**
+   * The level of one row as a menu of choices, each with what it means, as in the approved mockup. `onRemove` adds
+   * "Remove" at its foot; the last manager keeps Manage and cannot be removed there either.
+   */
+  const LevelMenu = (menuProps: { row: DraftRow; onRemove?: (trigger: HTMLElement) => void }) => {
+    const [open, setOpen] = createSignal(false);
+    let trigger: HTMLButtonElement | undefined;
+    let menu: HTMLDivElement | undefined;
+    const row = () => menuProps.row;
+    const protectedRow = () => lastManagers().has(row().key);
+    const current = () => (row().next ? levelKey(row().next!.permission, row().next!.scope) : "");
+    const options = () =>
+      levels(row().principal).map((option) => {
+        const locked = protectedRow() && (option.level !== "admin" || option.scope !== undefined);
+        return {
+          value: option.key,
+          label: option.label,
+          icon: option.icon ? `ti ${option.icon.replace(/^ti\s+/, "")}` : undefined,
+          disabled: locked,
+          description: locked
+            ? t().lastManagerOption({ level: manageLabel(row().principal) })
+            : (option.description ?? defaultDescription(option.level)),
+        };
+      });
     return (
-      <Select
-        aria-label={t().levelFor({ name: nameOf(row) })}
-        value={() => (row.next ? levelKey(row.next.permission, row.next.scope) : "")}
-        disabled={!canEdit() || saving()}
-        options={levels(row.principal).map((option) => {
-          const locked = protectedRow() && (option.level !== "admin" || option.scope !== undefined);
-          return {
-            value: option.key,
-            label: option.label,
-            disabled: locked,
-            description: locked ? t().lastManagerOption({ level: manageLabel(row.principal) }) : option.description,
-          };
-        })}
-        onValueChange={(key) => {
-          const option = levels(row.principal).find((candidate) => candidate.key === key);
-          if (option)
-            edit((current) => setLevel(current, row, { permission: option.level, ...(option.scope ? { scope: option.scope } : {}) }));
-        }}
-      />
+      <>
+        <button
+          ref={trigger}
+          type="button"
+          class="k2b-choice-trigger w-full"
+          aria-label={t().levelFor({ name: nameOf(row()) })}
+          aria-haspopup="dialog"
+          aria-expanded={open()}
+          disabled={!canEdit() || saving()}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <span class="k2b-choice-trigger__value">{levelLabel(row().principal, row().next)}</span>
+          <i class="ti ti-chevron-down" aria-hidden="true" />
+        </button>
+        {/* Mounted only while open, so a long list carries no menu per row. */}
+        <Show when={open()}>
+          <AnchoredPopover
+            anchor={open() ? trigger : null}
+            onClose={() => setOpen(false)}
+            label={t().levelFor({ name: nameOf(row()) })}
+            width="21rem"
+            initialFocus={() =>
+              menu?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]:not(:disabled)') ??
+              menu?.querySelector<HTMLElement>('[role="radio"]:not(:disabled)')
+            }
+          >
+            <div ref={menu} class="flex flex-col gap-2 p-2">
+              <ChoiceList
+                aria-label={t().levelFor({ name: nameOf(row()) })}
+                value={current}
+                options={options()}
+                onValueChange={(key) => {
+                  const option = levels(row().principal).find((candidate) => candidate.key === key);
+                  if (option)
+                    edit((draftNow) =>
+                      setLevel(draftNow, row(), { permission: option.level, ...(option.scope ? { scope: option.scope } : {}) }),
+                    );
+                  setOpen(false);
+                }}
+              />
+              <Show when={menuProps.onRemove}>
+                {(remove) => (
+                  <div class="flex flex-wrap items-center gap-2 px-1 pt-1">
+                    <Button
+                      variant="text"
+                      class="text-[var(--k2b-danger)]"
+                      disabled={protectedRow() || saving()}
+                      onClick={() => {
+                        setOpen(false);
+                        if (trigger) remove()(trigger);
+                      }}
+                    >
+                      <i class="ti ti-user-minus" aria-hidden="true" />
+                      {t().removeEntry}
+                    </Button>
+                    <Show when={protectedRow()}>
+                      <span class="text-[13px] text-dimmed">{t().lastManagerHint({ level: manageLabel(row().principal) })}</span>
+                    </Show>
+                  </div>
+                )}
+              </Show>
+            </div>
+          </AnchoredPopover>
+        </Show>
+      </>
     );
   };
   /** Undo may not leave the resource without a manager, for example by bringing back a denial. */
@@ -373,18 +488,34 @@ export function AccessDialog(
   const AccessRow = (rowProps: { row: DraftRow }) => {
     const row = () => rowProps.row;
     const protectedRow = () => lastManagers().has(row().key);
+    /** Removes the row from the X or the level menu. A stored row keeps Undo in its place; an added row leaves. */
+    const removeFrom = (control: HTMLElement) => {
+      const item = control.closest("li");
+      const added = !row().entry;
+      edit((current) => removeRow(current, row()));
+      queueMicrotask(() =>
+        (added
+          ? document.querySelector<HTMLInputElement>("dialog[open] input[role=combobox]")
+          : item?.querySelector<HTMLButtonElement>("button[data-access-undo]")
+        )?.focus(),
+      );
+    };
     return (
-      <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2" classList={{ "[&>:first-child]:opacity-50": !row().next }}>
+      <li class="flex items-center gap-3 py-2" classList={{ "[&>:first-child]:opacity-50": !row().next }}>
         <PrincipalAvatar
           entry={{ principal: row().principal, avatarHash: row().display.avatarHash, serviceAccountKind: row().display.serviceAccountKind }}
           label={nameOf(row())}
         />
-        <span class="min-w-0 flex-1 basis-40">
+        <span class="min-w-0 flex-1 overflow-hidden">
+          {/* As in the approved mockup: the mark sits beside the name, and on a phone in the line below it. */}
           <span class="flex min-w-0 items-center gap-2 text-[15px] font-medium text-primary">
             <span class="truncate">{nameOf(row())}</span>
-            {mark(row())}
+            <span class="contents max-sm:hidden">{mark(row())}</span>
           </span>
-          <span class="block truncate text-[13px] text-dimmed">{kindLine(row())}</span>
+          <span class="flex min-w-0 items-center gap-2 text-[13px] text-dimmed">
+            <span class="contents sm:hidden">{mark(row())}</span>
+            <span class="truncate">{kindLine(row())}</span>
+          </span>
         </span>
         <Show
           when={row().next && canEdit()}
@@ -395,7 +526,7 @@ export function AccessDialog(
             >
               {/* Undo takes the place of level and remove, so the row keeps its size and nothing below moves. */}
               <span class="ml-auto flex shrink-0 items-center justify-end gap-1">
-                <span class="flex w-36 justify-end sm:w-40">
+                <span class="flex w-28 justify-end sm:w-40">
                   <Button
                     variant="text"
                     data-access-undo=""
@@ -416,13 +547,13 @@ export function AccessDialog(
           }
         >
           <span class="ml-auto flex shrink-0 items-center gap-1">
-            <span class="w-36 sm:w-40">
+            <span class="w-28 sm:w-40">
               {/* A stored denial is shown, never offered: it can only be removed. */}
               <Show
                 when={row().next?.permission !== "none"}
                 fallback={<span class="text-sm text-secondary">{levelLabel(row().principal, row().next)}</span>}
               >
-                {levelSelect(row())}
+                <LevelMenu row={row()} onRemove={removeFrom} />
               </Show>
             </span>
             <IconButton
@@ -430,18 +561,7 @@ export function AccessDialog(
               variant="ghost"
               disabled={saving() || protectedRow()}
               data-access-remove=""
-              onClick={(event) => {
-                const item = event.currentTarget.closest("li");
-                const added = !row().entry;
-                edit((current) => removeRow(current, row()));
-                // A stored row stays with Undo in its place; an added row leaves, and focus returns to the search.
-                queueMicrotask(() =>
-                  (added
-                    ? document.querySelector<HTMLInputElement>("dialog[open] input[role=combobox]")
-                    : item?.querySelector<HTMLButtonElement>("button[data-access-undo]")
-                  )?.focus(),
-                );
-              }}
+              onClick={(event) => removeFrom(event.currentTarget)}
             >
               <i class="ti ti-x" aria-hidden="true" />
             </IconButton>
@@ -498,14 +618,24 @@ export function AccessDialog(
         </span>
         {/* On a phone the level moves under the description; the switch stays beside the name. */}
         <Show when={on() && rowProps.type === "authenticated" && canEdit() && row()}>
-          {(current) => <span class="order-3 w-full pl-11 sm:order-none sm:w-40 sm:shrink-0 sm:pl-0">{levelSelect(current())}</span>}
+          {(current) => (
+            <span class="order-3 w-full pl-11 sm:order-none sm:w-40 sm:shrink-0 sm:pl-0">
+              <LevelMenu row={current()} />
+            </span>
+          )}
         </Show>
-        <Switch
-          aria-label={rowProps.type === "public" ? t().publicLabel : t().signedInLabel}
-          value={on}
-          disabled={!canEdit() || saving() || Boolean(row() && lastManagers().has(row()!.key))}
-          onValueChange={toggle}
-        />
+        {/* Read-only shows the state in words, as the people rows show their level. */}
+        <Show
+          when={canEdit()}
+          fallback={<span class="shrink-0 text-sm text-secondary">{on() ? levelLabel(principal, row()?.next ?? null) : t().off}</span>}
+        >
+          <Switch
+            aria-label={rowProps.type === "public" ? t().publicLabel : t().signedInLabel}
+            value={on}
+            disabled={saving() || loading() || Boolean(row() && lastManagers().has(row()!.key))}
+            onValueChange={toggle}
+          />
+        </Show>
       </li>
     );
   };
@@ -551,40 +681,94 @@ export function AccessDialog(
       />
       <PanelDialog.Body>
         <div class="flex flex-col gap-3">
-          <Show when={canEdit()} fallback={<p class="text-[13px] text-dimmed">{t().readOnly}</p>}>
-            <PrincipalPicker
-              existing={rows()
-                .filter((row) => row.next)
-                .map((row) => row.principal)}
-              allowAuthenticated={false}
-              allowPublic={false}
-              allowServiceAccounts={props.allowAgents !== false}
-              serviceAccountKinds={["agent", "standalone"]}
-              serviceAccountStatus="active"
-              placeholder={t().search}
-              disabled={saving()}
-              onSelect={(principal, display) => edit((current) => addPrincipal(current, principal, display, firstLevel(principal)))}
-            />
+          <Show
+            when={canEdit()}
+            fallback={
+              <Show when={!loading()}>
+                <p class="text-[13px] text-dimmed">{readOnlyLine()}</p>
+              </Show>
+            }
+          >
+            <Show when={!loading()}>
+              <PrincipalPicker
+                existing={rows()
+                  .filter((row) => row.next)
+                  .map((row) => row.principal)}
+                allowAuthenticated={false}
+                allowPublic={false}
+                allowServiceAccounts={props.allowAgents !== false}
+                serviceAccountKinds={["agent", "standalone"]}
+                serviceAccountStatus="active"
+                placeholder={t().search}
+                disabled={saving()}
+                // Someone already on the list stays in the results, greyed with their level, so the search never looks
+                // like it missed them.
+                takenReason={(principal) => {
+                  const listed = rows().find((row) => row.next && principalKey(row.principal) === principalKey(principal));
+                  return listed ? t().alreadyHas({ level: levelLabel(listed.principal, listed.next) }) : undefined;
+                }}
+                empty={(query) => (
+                  <span class="flex flex-col items-center gap-1 py-2 text-center">
+                    <i class="ti ti-search-off text-lg text-dimmed" aria-hidden="true" />
+                    <span>{t().nobodyNamed({ query })}</span>
+                    <span class="text-dimmed">{t().searchHint}</span>
+                  </span>
+                )}
+                onSelect={(principal, display) => edit((current) => addPrincipal(current, principal, display, firstLevel(principal)))}
+              />
+            </Show>
           </Show>
 
           <PanelDialog.Section
             title={
               <>
-                {t().people} <span class="font-normal text-dimmed">{peopleRows().filter((row) => row.next).length}</span>
+                {t().people} <span class="font-normal text-dimmed">{loading() ? "" : peopleRows().filter((row) => row.next).length}</span>
               </>
             }
           >
-            <Show when={peopleRows().length > 0} fallback={<p class="text-[13px] text-dimmed">{t().nobodyListed}</p>}>
-              <ul class="flex flex-col">
-                {/* Rows are keyed by principal, so a staged change keeps the row, its controls and the focus. */}
-                <For each={peopleRows().map((row) => row.key)}>
-                  {(key) => <Show when={rows().find((row) => row.key === key)}>{(row) => <AccessRow row={row()} />}</Show>}
-                </For>
-              </ul>
+            <Show
+              when={loadState() === "ready"}
+              fallback={
+                <Show
+                  when={loadState() === "failed"}
+                  fallback={
+                    <ul class="flex flex-col" aria-busy="true">
+                      <span class="sr-only" role="status">
+                        {t().loading}
+                      </span>
+                      <For each={["max-w-[62%]", "max-w-[48%]", "max-w-[58%]", "max-w-[52%]"]}>
+                        {(width) => (
+                          <li class="flex items-center gap-3 py-2" aria-hidden="true">
+                            <Skeleton class="h-8 w-8 shrink-0 rounded-full" />
+                            <Skeleton class={`h-3 min-w-0 flex-1 ${width}`} />
+                            <Skeleton class="ml-auto h-8 w-28 shrink-0 sm:w-40" />
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  }
+                >
+                  <NoticeCard tone="danger" role="alert">
+                    <span>{t().loadFailed}</span>{" "}
+                    <Button variant="secondary" size="sm" onClick={() => void load()}>
+                      {t().retry}
+                    </Button>
+                  </NoticeCard>
+                </Show>
+              }
+            >
+              <Show when={peopleRows().length > 0} fallback={<p class="text-[13px] text-dimmed">{t().nobodyListed}</p>}>
+                <ul class="flex flex-col">
+                  {/* Rows are keyed by principal, so a staged change keeps the row, its controls and the focus. */}
+                  <For each={peopleRows().map((row) => row.key)}>
+                    {(key) => <Show when={rows().find((row) => row.key === key)}>{(row) => <AccessRow row={row()} />}</Show>}
+                  </For>
+                </ul>
+              </Show>
             </Show>
           </PanelDialog.Section>
 
-          <Show when={showGeneral()}>
+          <Show when={!loading() && showGeneral()}>
             <PanelDialog.Section title={t().general}>
               <ul class="flex flex-col">
                 <Show when={props.allowAuthenticated !== false || generalRow("authenticated")}>
@@ -610,7 +794,7 @@ export function AccessDialog(
             </PanelDialog.Section>
           </Show>
 
-          <Show when={showObjectAccounts()}>
+          <Show when={!loading() && showObjectAccounts()}>
             <PanelDialog.Section
               title={
                 <>
@@ -741,24 +925,33 @@ export function AccessDialog(
         </div>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <div class="flex w-full flex-wrap items-center justify-end gap-2">
-          <span class="mr-auto flex basis-full items-center gap-2 text-sm text-secondary sm:basis-auto" role="status">
-            <Show when={changes().length > 0} fallback={t().noChanges}>
-              <b>{t().changeCount({ count: changes().length })}</b>
-              <Button variant="text" size="sm" onClick={() => setSummaryOpen((open) => !open)} aria-expanded={summaryOpen()}>
-                {summaryOpen() ? t().hideChanges : t().showChanges}
+        <Show
+          when={canEdit()}
+          fallback={
+            <div class="flex w-full justify-end">
+              <Button variant="secondary" onClick={() => void dismiss()}>
+                {t().close}
               </Button>
-            </Show>
-          </span>
-          <Button variant="secondary" disabled={saving()} onClick={() => void dismiss()}>
-            {t().cancel}
-          </Button>
-          <Show when={canEdit()}>
+            </div>
+          }
+        >
+          <div class="flex w-full flex-wrap items-center justify-end gap-2">
+            <span class="mr-auto flex basis-full items-center gap-2 text-sm text-secondary sm:basis-auto" role="status">
+              <Show when={changes().length > 0} fallback={t().noChanges}>
+                <b>{t().changeCount({ count: changes().length })}</b>
+                <Button variant="text" size="sm" onClick={() => setSummaryOpen((open) => !open)} aria-expanded={summaryOpen()}>
+                  {summaryOpen() ? t().hideChanges : t().showChanges}
+                </Button>
+              </Show>
+            </span>
+            <Button variant="secondary" disabled={saving()} onClick={() => void dismiss()}>
+              {t().cancel}
+            </Button>
             <Button disabled={changes().length === 0} loading={saving()} onClick={() => void save()}>
               {t().save}
             </Button>
-          </Show>
-        </div>
+          </div>
+        </Show>
       </PanelDialog.Footer>
     </PanelDialog>
   );

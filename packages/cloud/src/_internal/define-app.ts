@@ -27,7 +27,7 @@ import { bindProcessApplicationId, clearProcessApplicationId } from "./process-i
  * Returns `{ ssr, plugin, config, meta, start }`.
  */
 
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HtmlFn, SsrConfig, SsrOptions } from "@k2b/ssr";
 import { createConfig as createSsrConfig } from "@k2b/ssr";
@@ -75,6 +75,7 @@ import { sessionOriginGuard } from "../server/middleware/session-origin";
 import { createPublicSurfaceHandler, validatePublicSurfaceRoutes } from "./public-surface";
 import "../events/app-access";
 import { createNestedCapabilityQuery } from "../capabilities/nested";
+import { PWA_ASSET_MANIFEST_PATH } from "../contracts/pwa-assets";
 import { connections } from "../runtime/connections";
 import { DEPENDENCY_STARTUP_BUDGET_MS } from "../runtime/startup-budget";
 import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-template";
@@ -118,6 +119,7 @@ import { createInstallableRoutes } from "./installable-assets";
 import { installableHead, installableThemeScript } from "./installable-head";
 import { createPageResponses } from "./page-responses";
 import { getProcessSync, startProcessSync } from "./process-sync";
+import { readPwaStaticAssets } from "./pwa-assets";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
 import { canonicalRoute, isOwnAppPath, validateAppRegistryEntry } from "./registry-validation";
@@ -611,7 +613,6 @@ export const defineApp = <
     ${head.app}
     <link rel="icon" href="${appFaviconHref(opts.id, faviconVersion)}">
     <style data-cloud-css-layers>@layer properties, theme, base, components, utilities;</style>
-    <link rel="preload" href="/public/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>
     ${FONT_PRELOAD_LINKS}
     <link rel="stylesheet" href="${versionedPublicHref("/public/fonts.css", sharedVersion)}">
     <link rel="stylesheet" href="${versionedPublicHref("/public/tabler-icons.css", sharedVersion)}">
@@ -928,12 +929,25 @@ export const defineApp = <
       // island chunk would land in telemetry as its own route.
       const invocationApp = { getApp: async (id: string) => (id === meta.id ? meta : null) };
       const publicSurface = createPublicSurfaceHandler(opts.public ? publicRouter : undefined, isDevelopment);
+      // A process serves one immutable production build; hash its final public output once, lazily.
+      let pwaAssets: ReturnType<typeof readPwaStaticAssets> | undefined;
       const server = new Hono<AuthContext>()
         .use("*", sessionOriginGuard(opts.sessionlessRoutes))
         .all(PUBLIC_SURFACE_PREFIX, publicSurface)
         .all(`${PUBLIC_SURFACE_PREFIX}/*`, publicSurface)
         .use("*", routeTemplate)
         .get(APP_READINESS_PATH, () => appReadinessResponse(meta.id))
+        .get(PWA_ASSET_MANIFEST_PATH, async (c) => {
+          c.header("Cache-Control", "no-store");
+          if (isDevelopment) return c.json([]);
+          try {
+            pwaAssets ??= readPwaStaticAssets(dirname(Bun.main), meta.id, ssrMountPath, buildMetadata.release);
+            return c.json(await pwaAssets);
+          } catch (error) {
+            pwaAssets = undefined;
+            throw error;
+          }
+        })
         .route(ssrMountPath, routes(config))
         .all(`${ssrMountPath}/*`, (c) => c.notFound())
         .all("/public/*", servePublicAsset(isDevelopment, sharedStylesheetVersion(buildMetadata.release)))

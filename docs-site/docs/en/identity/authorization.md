@@ -709,10 +709,19 @@ level, and further entries of the audience appear in the list. Removing a denial
 asks nothing, because nobody loses access by it, and **Undo** is disabled when
 it would leave the resource without a manager.
 The search offers people, groups, and agents; it never finds the account of an
-object or app by name.
+object or app by name. Someone already on the list stays in the results, greyed
+with their level, and a search without results names what was searched.
+
+Each row's level opens a menu of the offered levels, each with one sentence on
+what it means, and **Remove** at its foot. Pass `description` in
+`allowedLevels` for wording that fits the resource; otherwise the dialog uses
+general sentences. Read-only (`canEdit: false`) names who manages the resource,
+shows **General** in words, and offers only **Close**. Pass `loadEntries(signal)`
+instead of `initialEntries` to open the dialog at once: rows that are still
+loading take the list's place, and a failure offers **Try again**.
 
 Pass `findServiceAccount(handle, signal)` to add such service accounts by their
-identifier. Send the resource as the lookup's target: your server answers only
+handle. Send the resource as the lookup's target: your server answers only
 someone who manages that resource, returns nothing for any other identifier,
 and never searches by name. Without the callback the **Service accounts**
 section shows existing rows only. `extraSections` adds further sections, such
@@ -727,6 +736,17 @@ still pending; changes already saved stay saved, and the dialog resolves
 `false`. Reload the list after any change your seams saved, also when the
 dialog resolves `false`: a save can fail halfway and the person can discard
 the rest.
+
+Settings open the dialog from a summary instead of a second list:
+`AccessSummary` from `@k2b/cloud/access/ui` shows a few faces and one line such
+as "3 people, groups and agents · All signed-in people: off · 1 service
+account". It counts each principal once, at its strongest grant, and leaves out
+a part without entries. API keys keep their own section. The faces open the
+full list with each level. Pass the same `allowedLevels` and `effectiveEntries` as to the
+dialog, so the levels read in the app's words and shadowed grants do not count.
+Put **Edit access** with the `ti-lock-access` icon beside it. Someone who
+cannot open the dialog still needs the full list, for example the read-only
+`PermissionEditor`.
 
 ### Confirm access changes
 

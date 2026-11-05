@@ -1,15 +1,14 @@
 import { principalKey } from "@k2b/cloud/access/ui";
-import { Button, InlineGuidance, LocaleProvider, prompts, TextInput } from "@k2b/ui";
+import { Button, InlineGuidance, TextInput } from "@k2b/ui";
 import { createEffect, createMemo, createResource, createSignal, type JSX, on, onCleanup, Show } from "solid-js";
 import type { z } from "zod";
-import { chatMessages } from "../messages";
 import { MEMBER_PAGE_SIZE, type MemberPreviewSchema, type MemberPrincipal } from "../service/contracts";
 import { type ChatDialogStore, type Conversation, DialogActions, DialogError, errorMessage, useChatMessages } from "./chat-dialog";
 import { createIntent } from "./create-intent";
 import MemberPicker, { type ChosenMember } from "./MemberPicker";
 
 type Preview = z.infer<typeof MemberPreviewSchema>;
-type AddPeopleProps = {
+export type AddPeopleProps = {
   store: ChatDialogStore;
   conversation: Conversation;
   guest: boolean;
@@ -26,20 +25,6 @@ export const DISCOVERABLE_FROM = 21;
 const PREVIEW_DELAY_MS = 250;
 
 /** Adds people and groups; resolves with a new chat's ID when the person starts one without the history instead. */
-export const openAddPeopleDialog = (props: AddPeopleProps): Promise<string | undefined> =>
-  prompts.dialog<string>(
-    (close, context) => (
-      // A prompt renders outside the workspace, so its content gets the workspace's locale again.
-      <LocaleProvider locale={props.locale}>
-        <AddPeopleDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
-      </LocaleProvider>
-    ),
-    {
-      title: chatMessages.resolve([props.locale]).t.addPeople,
-      icon: "ti ti-user-plus",
-      size: "medium",
-    },
-  );
 
 /**
  * What an addition means for the chat: who joins and sees the history, and when the chat becomes quiet. Both sizes come

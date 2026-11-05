@@ -1,13 +1,17 @@
+import { accessMemberEntries } from "@k2b/cloud/access/ui";
 import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
+import type { AccessMember } from "@k2b/cloud/contracts";
 import type { GeoAvailabilityData } from "@k2b/cloud/contracts/geo";
-import { documentNavigate } from "@k2b/ssr/nav";
+import { documentNavigate, refreshCurrentPath } from "@k2b/ssr/nav";
 import type { Paginated } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import {
   Button,
   ButtonLink,
   DescriptionList,
+  DetailAccess,
   DetailPanel,
   Format,
   IconButton,
@@ -54,6 +58,8 @@ type Props = {
   writableBooks: Array<{ id: string; name: string }>;
   /** Books where the current user is an admin (controls e.g. note deletion). */
   adminBookIds: string[];
+  /** Books whose access list the current user may read: access of their own, decided on the server. */
+  memberBookIds: string[];
   currentUserId: string;
   showEmpty?: boolean;
   initialFavoriteKeys: string[];
@@ -98,6 +104,48 @@ export default function ContactDetailPanel(props: Props) {
   const [addressId, setAddressId] = createSignal(props.initialAddressId ?? null);
   const [addressesOpen, setAddressesOpen] = createSignal(false);
   const [quickEditing, setQuickEditing] = createSignal(false);
+  // Who has access belongs to the contact's book: it loads after the first paint, once per book, and only for
+  // people with access of their own.
+  const accessBookId = () => {
+    const bookId = target()?.bookId;
+    return bookId && props.memberBookIds.includes(bookId) ? bookId : null;
+  };
+  const [accessWanted, setAccessWanted] = createSignal(false);
+  onMount(() => setAccessWanted(true));
+  // Loaded lists stay for the page, so going back to a book shows its list at once without another read.
+  const [accessCache, setAccessCache] = createSignal<ReadonlyMap<string, AccessMember[]>>(new Map());
+  const accessMembers = query.create<string, AccessMember[]>({
+    source: () => accessBookId() ?? "",
+    enabled: () => {
+      const bookId = accessBookId();
+      return accessWanted() && bookId !== null && !accessCache().has(bookId);
+    },
+    load: async (bookId, { abortSignal }) => {
+      const response = await apiClient.books[":bookId"].access.members.$get({ param: { bookId } }, { init: { signal: abortSignal } });
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().accessLoadFailed));
+      const members = await response.json();
+      setAccessCache((cache) => new Map(cache).set(bookId, members));
+      return members;
+    },
+  });
+  /** Forgets a book's list and reads it again, after a retry or a change in the book's settings. */
+  const reloadAccess = (bookId: string) => {
+    setAccessCache((cache) => {
+      const next = new Map(cache);
+      next.delete(bookId);
+      return next;
+    });
+    void accessMembers.refresh();
+  };
+  // Managing access is the book's settings; its code loads on first use.
+  const openBookAccess = async (bookId: string) => {
+    const settings = await importOnDemand(() => import("./BookSettingsDialog"));
+    if (!settings) return;
+    const result = await settings.openBookSettingsDialog({ bookId, initialTab: "access" });
+    reloadAccess(bookId);
+    if (result.workspaceChanged && !result.deleted) refreshCurrentPath();
+  };
+  const accessState = (bookId: string) => (accessCache().has(bookId) ? "ready" : accessMembers.error() ? "error" : "loading");
   const [orgTreeSource, setOrgTreeSource] = createSignal<string | null>(null);
   const [favoriteEvents, setFavoriteEvents] = createSignal(new Map<string, boolean>());
   const favoriteFor = (contact: Pick<Contact, "bookId" | "id">) => {
@@ -393,7 +441,8 @@ export default function ContactDetailPanel(props: Props) {
         const hasFormalName = () => !!(c().label && (c().firstName || c().lastName));
         const hasPersonal = () => hasFormalName() || !!(c().birthday || c().salutation || c().pronouns || c().preferredLanguage);
         const hasOrgTree = () => c().parentContactId !== null || c().members.length > 0;
-        const hasMoreAbout = () => c().addresses.length > 0 || c().bankAccounts.length > 0 || hasPersonal() || hasWork();
+        const accessShown = () => accessBookId() === c().bookId;
+        const hasMoreAbout = () => accessShown() || c().addresses.length > 0 || c().bankAccounts.length > 0 || hasPersonal() || hasWork();
         // The one main action is the first way to reach the contact; the rest stay quiet beside it.
         const mainAction = () => (c().emails[0] ? "email" : c().phones[0] ? "call" : "comment");
         const actionVariant = (action: "email" | "call" | "comment") => (mainAction() === action ? "subtle" : "secondary");
@@ -578,6 +627,7 @@ export default function ContactDetailPanel(props: Props) {
                     <DetailPanel.Body scrollPreserveKey="contacts-detail">
                       <DetailPanel.Section
                         title={t().properties}
+                        icon="ti ti-list-details"
                         actions={
                           actions.canEdit() && !quickEditing() ? (
                             <Button variant="ghost" size="xs" onClick={() => setQuickEditing(true)}>
@@ -607,7 +657,7 @@ export default function ContactDetailPanel(props: Props) {
                       </DetailPanel.Section>
 
                       <Show when={hasReach()}>
-                        <DetailPanel.Section title={t().reach}>
+                        <DetailPanel.Section title={t().reach} icon="ti ti-address-book">
                           <div class="flex flex-col gap-1">
                             <For each={c().emails}>
                               {(email) => (
@@ -661,9 +711,25 @@ export default function ContactDetailPanel(props: Props) {
                         </DetailPanel.Section>
                       </Show>
 
+                      {/* Order of use (UI-27): fields, then the comments, then the contact's place in its organization. */}
+                      <Show when={`${c().bookId}:${c().id}`} keyed>
+                        {(_contactKey) => (
+                          <ContactNotesSection
+                            bookId={c().bookId}
+                            contactId={c().id}
+                            currentUserId={props.currentUserId}
+                            initialNotesPage={
+                              c().id === props.initialContactId && c().bookId === props.initialBookId ? props.initialNotesPage : undefined
+                            }
+                            canWrite={actions.canEdit()}
+                          />
+                        )}
+                      </Show>
+
                       <Show when={hasOrganization()}>
                         <DetailPanel.Section
                           title={t().organization}
+                          icon="ti ti-sitemap"
                           actions={
                             <>
                               <Show when={hasOrgTree()}>
@@ -758,25 +824,29 @@ export default function ContactDetailPanel(props: Props) {
                         </DetailPanel.Section>
                       </Show>
 
-                      <Show when={`${c().bookId}:${c().id}`} keyed>
-                        {(_contactKey) => (
-                          <ContactNotesSection
-                            bookId={c().bookId}
-                            contactId={c().id}
-                            currentUserId={props.currentUserId}
-                            initialNotesPage={
-                              c().id === props.initialContactId && c().bookId === props.initialBookId ? props.initialNotesPage : undefined
-                            }
-                            canWrite={actions.canEdit()}
-                          />
-                        )}
-                      </Show>
-
                       <Show when={hasMoreAbout()}>
                         <DetailPanel.Group title={t().moreAboutContact}>
+                          {/* Read-only for everyone with access of their own; public-only readers never get the list. */}
+                          <Show when={accessShown()}>
+                            <DetailAccess
+                              entries={accessMemberEntries(accessCache().get(c().bookId) ?? [], {
+                                currentUserId: props.currentUserId,
+                                locale: locale(),
+                              })}
+                              state={accessState(c().bookId)}
+                              onRetry={() => reloadAccess(c().bookId)}
+                              note={t().accessWholeBook}
+                              manage={
+                                props.adminBookIds.includes(c().bookId)
+                                  ? { label: t().manageAccess, onClick: () => void openBookAccess(c().bookId) }
+                                  : undefined
+                              }
+                            />
+                          </Show>
                           <Show when={c().addresses.length > 0}>
                             <DetailPanel.Section
                               title={t().addresses}
+                              icon="ti ti-map-pin"
                               collapsible
                               summary={addressSummary()}
                               open={addressesOpen()}
@@ -812,7 +882,7 @@ export default function ContactDetailPanel(props: Props) {
                             </DetailPanel.Section>
                           </Show>
                           <Show when={c().bankAccounts.length > 0}>
-                            <DetailPanel.Section title={t().bankDetails} collapsible summary={bankSummary()}>
+                            <DetailPanel.Section title={t().bankDetails} icon="ti ti-building-bank" collapsible summary={bankSummary()}>
                               <div class="flex flex-col gap-3">
                                 <For each={c().bankAccounts}>
                                   {(account) => (
@@ -841,7 +911,7 @@ export default function ContactDetailPanel(props: Props) {
                           </Show>
 
                           <Show when={hasPersonal()}>
-                            <DetailPanel.Section title={t().personal} collapsible summary={personalSummary()}>
+                            <DetailPanel.Section title={t().personal} icon="ti ti-user" collapsible summary={personalSummary()}>
                               <DescriptionList
                                 layout="rows"
                                 size="sm"
@@ -865,7 +935,7 @@ export default function ContactDetailPanel(props: Props) {
                           </Show>
 
                           <Show when={hasWork()}>
-                            <DetailPanel.Section title={t().work} collapsible summary={workSummary()}>
+                            <DetailPanel.Section title={t().work} icon="ti ti-briefcase" collapsible summary={workSummary()}>
                               <DescriptionList
                                 layout="rows"
                                 size="sm"

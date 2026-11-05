@@ -136,6 +136,7 @@ const serverBody = (scenario: Scenario) =>
       initialDetail: detail(scenario.item ?? task, scenario.attachments),
       dateConfig: { locale: scenario.locale, timeZone: "Europe/Berlin" },
       canWrite: scenario.canWrite ?? true,
+      accessVisible: false,
       mailIntegrationAvailable: false,
     }),
   );
@@ -726,20 +727,23 @@ describe("Spaces item detail in a browser", () => {
           expect(type.unit).toBeNull();
           expect(type.input).toEqual({ size: view.touch ? "16px" : type.due, opacity: "0" });
 
-          // No section has an icon: every heading, the "More about this task" title and its collapsed rows included,
-          // starts on the same text edge.
-          const headings = await page.evaluate(() =>
-            Array.from(
-              window.document.querySelectorAll(
-                ".k2b-detail-panel__section-header h3, .k2b-detail-panel__section-summary .k2b-detail-panel__section-title, .k2b-detail-panel__group-title, .k2b-discussion h3",
-              ),
-            )
-              .filter((element) => !element.closest("[hidden]"))
-              .map((element) => Math.round(element.getBoundingClientRect().left)),
-          );
-          expect(headings.length).toBeGreaterThan(4);
-          expect(new Set(headings).size).toBe(1);
-          expect(await page.locator(".k2b-detail-panel__section-icon").count()).toBe(0);
+          // Every section has an icon (UI-27), so every heading, the closed rows under "More about this task" and the
+          // comments included, starts on one text edge after it.
+          const outline = await page.evaluate(() => {
+            const visible = (selector: string) =>
+              Array.from(window.document.querySelectorAll(selector)).filter((element) => !element.closest("[hidden]"));
+            const headings = visible(
+              ".k2b-detail-panel__section-header h3, .k2b-detail-panel__section-summary .k2b-detail-panel__section-title, .k2b-discussion h3",
+            );
+            return {
+              edges: headings.map((element) => Math.round(element.getBoundingClientRect().left)),
+              sections: visible(".k2b-detail-panel__section, .k2b-discussion").length,
+              icons: visible(".k2b-detail-panel__section-icon i, .k2b-discussion__icon i").length,
+            };
+          });
+          expect(outline.edges.length).toBeGreaterThan(4);
+          expect(new Set(outline.edges).size).toBe(1);
+          expect(outline.icons).toBe(outline.sections);
 
           // Hovering a row paints its quiet surface and moves nothing; the blocker's remove button only fades in.
           for (const term of ["Fällig", "Schätzung", "Priorität", "Tags"]) {

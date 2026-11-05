@@ -29,3 +29,5 @@ Cloud administrators also need access to see a book in Contacts; **Administratio
 :::
 
 A book always keeps at least one person, group, or agent with **Manage** access; an API key does not count.
+
+Everyone with access of their own, directly, through a group, or as a signed-in person, sees who has access to the book and with which level under **More about this contact** › **Access** in a contact's details. People who only read a public book do not see that list.

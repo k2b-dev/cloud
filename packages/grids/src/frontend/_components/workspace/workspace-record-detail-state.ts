@@ -5,6 +5,8 @@ import type { ExpansionViewer } from "../../../service/relation-access";
 import type { WorkspaceCommon, WorkspaceRecordDetail } from "./workspace-state-model";
 
 const DETAIL_PAGE_SIZE = 100;
+/** The reverse relations' page size, the same as the browser's "Load more" pages. */
+const REFERENCED_BY_FIRST_PAGE = 5;
 
 export const writableDocumentTemplates = (common: WorkspaceCommon, tableId: string): DocumentTemplateSummary[] =>
   (common.catalog.documentTemplatesByTable[tableId] ?? []).filter(
@@ -24,7 +26,7 @@ export const loadRecordDetailData = async (params: {
   const fileFieldIds = params.fields.filter((field) => field.type === "file" && !field.deletedAt).map((field) => field.id);
   const table = await gridsService.table.get(params.tableId);
   if (!table) throw new Error("Table not found");
-  const [relationLabels, filesByField, documents, snapshots, auditEntries, combinedOrigin] = await Promise.all([
+  const [relationLabels, filesByField, documents, snapshots, auditEntries, combinedOrigin, referencedBy] = await Promise.all([
     params.scope === "history" ? {} : gridsService.relations.buildLabelCache([params.record], params.fields, params.viewer),
     params.scope === "history"
       ? {}
@@ -51,6 +53,19 @@ export const loadRecordDetailData = async (params: {
           return result.data;
         })
       : null,
+    // The first page of the records that reference this one comes with the record, so "Linked from" is there in the
+    // first paint and nothing moves when it would arrive. A failure leaves it to the browser, which says so.
+    params.scope === "history" || table.kind === "federated"
+      ? null
+      : gridsService.record
+          .listReferencedBy({
+            targetTableId: params.tableId,
+            targetRecordId: params.recordId,
+            limit: REFERENCED_BY_FIRST_PAGE,
+            locale: params.locale,
+          })
+          .then((result) => (result.ok ? result.data : null))
+          .catch(() => null),
   ]);
   return {
     recordId: params.recordId,
@@ -60,6 +75,7 @@ export const loadRecordDetailData = async (params: {
     snapshots,
     auditEntries,
     combinedOrigin,
+    referencedBy,
   };
 };
 
@@ -71,4 +87,5 @@ export const emptyRecordDetail = (recordId: string): WorkspaceRecordDetail => ({
   snapshots: [],
   auditEntries: [],
   combinedOrigin: null,
+  referencedBy: null,
 });

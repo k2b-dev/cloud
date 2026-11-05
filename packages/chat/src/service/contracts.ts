@@ -3,7 +3,7 @@ import {
   CapabilitySemanticLinkSchema,
   CloudResourceReaderViewSchema,
   CloudResourceRefSchema,
-} from "@k2b/cloud/contracts";
+} from "@k2b/cloud/contracts/capabilities";
 import { z } from "zod";
 
 export const MEMBER_PAGE_SIZE = 100;

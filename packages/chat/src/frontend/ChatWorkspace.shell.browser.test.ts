@@ -41,7 +41,7 @@ const load = async (chat: string, theme: "light" | "dark", options: BrowserConte
     await page.evaluate(
       ({ props }) => {
         document.getElementById("root")!.replaceChildren();
-        window.mountChat(props, "en");
+        return window.mountChat(props, "en");
       },
       { props: harness.props({ chat }) },
     );

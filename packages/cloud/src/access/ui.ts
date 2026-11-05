@@ -7,6 +7,7 @@
  */
 
 export { AccessDialog, type AccessDialogProps, type FoundServiceAccount, openAccessDialog } from "./AccessDialog";
+export { AccessSummary } from "./AccessSummary";
 export { type AppAccessEditorProps, default as AppAccessEditor } from "./AppAccessEditor";
 export { accessMemberEntries } from "./access-members";
 export { appAccessAdapter } from "./app-access-adapter";

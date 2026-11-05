@@ -1,6 +1,15 @@
 import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import type { DateContext } from "@k2b/stdlib";
-import { DescriptionList, DetailPanel, type DropdownItem, StatusBadge, useLocale } from "@k2b/ui";
+import {
+  DescriptionList,
+  type DetailLinkItem,
+  DetailLinks,
+  DetailPanel,
+  DetailProperties,
+  type DropdownItem,
+  StatusBadge,
+  useLocale,
+} from "@k2b/ui";
 import { children, For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { ColumnSpec, FormatSpec } from "../../../contracts";
@@ -38,8 +47,11 @@ type RecordReadViewProps = {
   scrollPreserveKey?: string;
   /** State notices right below the header, such as a finalization review. */
   notices?: JSX.Element;
-  /** More linked sections after the record's own relations, such as "Referenced by". */
-  relationsAfter?: JSX.Element;
+  /**
+   * Renders the record's one Links section from its outgoing relations, for example with the records that reference
+   * it. Without it, the section shows the outgoing relations alone.
+   */
+  links?: (outgoing: () => readonly DetailLinkItem[]) => JSX.Element;
   /** More file sections after the record's file fields, such as generated documents. */
   attachmentsAfter?: JSX.Element;
   /** Notes or comments on the record. */
@@ -162,12 +174,29 @@ export default function RecordReadView(props: RecordReadViewProps) {
     });
 
   const technicalItems = () => [
-    { term: t().table, description: props.tableName },
-    { term: t().recordId, description: <span class="block truncate">{props.record.id}</span> },
-    { term: t().versionSection, description: String(props.record.version) },
-    { term: t().created, description: formatDate(props.record.createdAt) },
-    { term: t().updated, description: formatDate(props.record.updatedAt) },
+    { id: "table", label: t().table, value: props.tableName },
+    { id: "id", label: t().recordId, value: <span class="block truncate">{props.record.id}</span> },
+    { id: "version", label: t().versionSection, value: String(props.record.version) },
+    { id: "created", label: t().created, value: formatDate(props.record.createdAt) },
+    { id: "updated", label: t().updated, value: formatDate(props.record.updatedAt) },
   ];
+
+  /** Each relation value as a row: the field, then the linked record; an empty relation stays as a disabled row. */
+  const outgoingLinks = (): DetailLinkItem[] =>
+    relationFields().flatMap((field): DetailLinkItem[] => {
+      const items = relationItems(field);
+      const targetTableId = relationTargetTableId(field);
+      const icon = fieldTypeIcon(field.type, field.icon);
+      if (items.length === 0 || !targetTableId)
+        return [{ id: field.id, title: `${field.name} · —`, description: field.description ?? undefined, icon, disabled: true }];
+      return items.map((item) => ({
+        id: `${field.id}:${item.id}`,
+        title: `${field.name} · ${item.label}`,
+        description: field.description ?? undefined,
+        icon,
+        href: `/app/grids/${encodeURIComponent(props.baseId)}/table/${encodeURIComponent(targetTableId)}?record=${encodeURIComponent(item.id)}`,
+      }));
+    });
 
   return (
     <DetailPanel>
@@ -189,7 +218,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
         {props.notices}
 
         <Show when={detailsFields().length > 0 || bodyFields().length === 0}>
-          <DetailPanel.Section title={t().fields}>
+          <DetailPanel.Section title={t().fields} icon="ti ti-list-details">
             <Show when={detailsFields().length > 0} fallback={<p class="grids-details-none">{t().noValues}</p>}>
               <DescriptionList
                 layout="rows"
@@ -203,19 +232,27 @@ export default function RecordReadView(props: RecordReadViewProps) {
           </DetailPanel.Section>
         </Show>
 
+        {/* Order of use (UI-27): fields, then the discussion, then the record's own content and what belongs to it. */}
+        {props.discussion}
+
         <For each={contentFields()}>
           {(field) => (
-            <DetailPanel.Section title={field.name} description={field.description ?? undefined}>
+            <DetailPanel.Section
+              title={field.name}
+              icon={fieldTypeIcon(field.type, field.icon)}
+              description={field.description ?? undefined}
+            >
               <div class="break-words text-sm leading-relaxed text-secondary">{renderField(field, props.record)}</div>
             </DetailPanel.Section>
           )}
         </For>
 
-        <Show when={relationFields().length > 0}>
-          <DetailPanel.Section title={t().linked}>
-            <Show
-              when={mode() !== "snapshot"}
-              fallback={
+        {/* A snapshot keeps the relation values as text; a live record has one Links section (UI-27). */}
+        <Show
+          when={mode() !== "snapshot"}
+          fallback={
+            <Show when={relationFields().length > 0}>
+              <DetailPanel.Section title={t().linked} icon="ti ti-arrows-exchange">
                 <DescriptionList
                   layout="rows"
                   size="sm"
@@ -227,50 +264,24 @@ export default function RecordReadView(props: RecordReadViewProps) {
                         .join(", ") || "—",
                   }))}
                 />
-              }
-            >
-              <For each={relationFields()}>
-                {(field) => {
-                  const items = () => relationItems(field);
-                  const targetTableId = relationTargetTableId(field);
-                  return (
-                    <Show
-                      when={items().length > 0 && targetTableId ? targetTableId : undefined}
-                      fallback={
-                        <DetailPanel.Action
-                          type="button"
-                          disabled
-                          title={`${field.name} · —`}
-                          description={field.description ?? undefined}
-                          leading={<i class={fieldTypeIcon(field.type, field.icon)} aria-hidden="true" />}
-                        />
-                      }
-                    >
-                      {(resolvedTableId) => (
-                        <For each={items()}>
-                          {(item) => (
-                            <DetailPanel.Action
-                              href={`/app/grids/${encodeURIComponent(props.baseId)}/table/${encodeURIComponent(
-                                resolvedTableId(),
-                              )}?record=${encodeURIComponent(item.id)}`}
-                              title={`${field.name} · ${item.label}`}
-                              description={field.description ?? undefined}
-                              leading={<i class={fieldTypeIcon(field.type, field.icon)} aria-hidden="true" />}
-                            />
-                          )}
-                        </For>
-                      )}
-                    </Show>
-                  );
-                }}
-              </For>
+              </DetailPanel.Section>
             </Show>
-          </DetailPanel.Section>
+          }
+        >
+          <Show
+            when={props.links}
+            fallback={
+              <Show when={relationFields().length > 0}>
+                <DetailLinks incoming={[]} outgoing={outgoingLinks()} limit={Number.POSITIVE_INFINITY} />
+              </Show>
+            }
+          >
+            {(links) => links()(outgoingLinks)}
+          </Show>
         </Show>
-        {props.relationsAfter}
 
         <Show when={fileFields().length > 0}>
-          <DetailPanel.Section title={t().files}>
+          <DetailPanel.Section title={t().files} icon="ti ti-paperclip">
             <div class="flex flex-col gap-3">
               <For each={fileFields()}>
                 {(field) => (
@@ -289,13 +300,9 @@ export default function RecordReadView(props: RecordReadViewProps) {
         </Show>
         {props.attachmentsAfter}
 
-        {props.discussion}
-
         <DetailPanel.Group title={t().moreAboutRecord}>
           {props.more}
-          <DetailPanel.Section title={t().technicalDetails} collapsible summary={t().technicalSummary}>
-            <DescriptionList layout="rows" size="sm" items={technicalItems()} />
-          </DetailPanel.Section>
+          <DetailProperties title={t().technicalDetails} summary={t().technicalSummary} items={technicalItems()} />
         </DetailPanel.Group>
       </DetailPanel.Body>
     </DetailPanel>

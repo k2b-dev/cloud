@@ -5,7 +5,7 @@ section: Frontend
 order: 835
 description: Add application pages for devices to the installable Cloud app.
 tags: [mobile, pwa, routing, layout]
-updated: 2026-10-23
+updated: 2026-11-05
 ---
 
 # Pages in the Cloud app
@@ -65,8 +65,10 @@ mark; `0`, an error, or another answer shows none.
 a `PwaPartSummary`: `{ "count": n, "text": "…" }`. Start shows `text` under
 the part instead of its `description`, and the sidebar shows `count` quietly
 beside a part without a `badge`. Write `text` in the request's locale, as one
-line of at most 200 characters, such as "5 tasks for you · 1 today". Until the
-route answers, or when it fails, Start shows the `description`.
+line of at most 200 characters, such as "5 tasks for you · 1 today". Start reserves an
+empty summary line until the route answers, and clears it when a read fails. The line
+stays the same height when live text arrives; long text is truncated visually. Parts
+without a summary route keep their `description`.
 
 Both routes are read once a minute and when the app returns to the
 foreground, and must be among the application's own paths. Chat answers both
@@ -193,7 +195,9 @@ Automatic is the default and follows the device.
 
 App pages switch at once, without the cross-fade that web pages use between
 documents. A browser ignores taps while such a transition runs, so a quick
-second tap in the tab bar would be lost.
+second tap in the tab bar would be lost. Inside a part, a navigation with
+`@k2b/ssr/nav` keeps its view transition, and only the content takes part:
+the shell's header, tab bar, and sidebar show the next page at once.
 
 A tab or sidebar row switches at the first touch. The item shows as selected, the header
 shows the title of the tab's page, and the content area is empty. The page
@@ -225,6 +229,13 @@ part, render both on one page with
 `PwaLayout bare`, and keep the selection in the address. A reload, Back, and
 rotating then show the same selection. Spaces does this for one task at
 `/pwa/spaces/<space>/<task>`.
+
+Header Back returns to a recorded predecessor by traversing browser history,
+so Forward can reopen the detail. For a direct link without that predecessor,
+replace the current entry with the parent. In Chat, a threaded chat opened
+from the list on a wide screen returns to that list. On a phone, the list opens
+the thread directory first; a thread returns to that directory. Opening Info
+preserves this return path, and closing Info returns to the chat.
 
 On a wide screen, a page whose title the sidebar's head already says passes
 `sidebarTitle`, as Start does. Keep the touch rules at every width: an iPad is
@@ -352,13 +363,34 @@ own gesture, such as a drag handle, sets its own `touch-action`.
 
 ## Offline and updates
 
-The Cloud app's service worker handles only navigations below `/pwa/` and
-caches nothing. Every page and every API response comes from the network.
+The Cloud app keeps public, versioned JavaScript and stylesheets on the device,
+so revisiting a part can reuse them even after the browser clears its HTTP cache.
+Content-hashed fonts can also be kept; fonts with stable filenames still use the
+network. Files enter this separate cache when used, up to 16 MiB across the app.
+The oldest files leave first when space is needed, and a worker update removes
+files outside the currently registered builds. The browser may evict this cache.
+
+Each file is checked against the final build's SHA-256 digest before reuse.
+The worker obtains those digests through its own network-served source;
+application pages cannot supply them. Application authors get this behavior
+through `defineApp()` without an application-owned worker. Applications built
+before this contract continue to use the network until rebuilt.
+
+Every page and every API response still comes from the network. HTML, private
+responses, account data, and unversioned scripts never enter the worker cache.
+Public static files need no cleanup on sign-out or unpairing; account drafts
+still follow [Keep drafts](#keep-drafts).
 When the installation cannot be reached or the gateway cannot reach the
 application, the app shows its offline page with **Try again**. While a part's
 application is not registered, its pages show the app's not-found page. An
 open page shows a "You're offline" notice above the tab bar until the
 connection returns.
+
+A cached part does not become an offline application: starting or reloading it
+without the network shows the offline page, because its document and data are
+never stored. An already open part retains its current display and can load a
+previously cached static chunk, but fetching new data or saving still needs a
+connection.
 
 Parts have no offline mode of their own. Write actions need the network: keep
 the action available, report a failure in a toast with **Retry**, and never
@@ -443,9 +475,10 @@ result at once and saves in the background, as described in
 ### Judge loading speed
 
 Judge loading speed on a production build. In production, the device's
-browser keeps stylesheets, scripts, and fonts in its cache, so a tab switch
-usually loads only its page. After an application restarts or updates, its
-first page loads its stylesheets again. A development stack serves the same
+browser keeps stylesheets, scripts, and fonts in its HTTP cache. The Cloud app
+also keeps verified versioned files in its worker cache, so a tab switch
+usually loads only its page and current data. After an application updates, its
+first page loads files for the new build. A development stack serves the same
 files uncompressed and asks the server again for each of them on every
 page. Over a slow or remote connection, such as a VPN, a tab switch then takes
 a second or more, while the same switch in production takes a few hundred
