@@ -40,7 +40,7 @@ const load = async (options: BrowserContextOptions, address: { chat: string; thr
   await page.goto(new URL(`/app/chat/c/${address.chat}${address.thread ? `/t/${address.thread}` : ""}`, harness.url).href);
   await page.evaluate((props) => {
     document.documentElement.lang = "de";
-    window.mountChat(props, "de");
+    return window.mountChat(props, "de");
   }, harness.props(address));
   await page.locator(".chat-workspace").waitFor();
   await settled(page);

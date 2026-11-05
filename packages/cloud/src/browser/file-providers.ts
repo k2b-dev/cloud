@@ -17,6 +17,7 @@ import {
   fileProviderIssues,
 } from "../contracts/file-provider";
 import { LOCALE_HEADER } from "../shared/locale";
+import { beginAppAction } from "./app-actions";
 import { FileProviderError } from "./file-provider-error";
 
 export { FileProviderError } from "./file-provider-error";
@@ -633,64 +634,69 @@ export const saveProviderFile = async (
     onProgress?: (loaded: number, total: number) => void;
   },
 ): Promise<SavedProviderFile> => {
-  if (!provider.save) throw new FileProviderError("NOT_FOUND", "This app does not store files", 404);
-  if (input.body.size > provider.save.maxBytes) throw tooLarge();
-  const opened = await invokeCapabilityWithDataSchema(
-    {
-      appId: provider.appId,
-      capabilityId: provider.save.id,
-      kind: "action",
-      input: { parent: input.parent, name: input.name, mediaType: saveMediaType(input.body.type), size: input.body.size },
-      idempotencyKey: input.idempotencyKey,
-      signal: caller.signal,
-    },
-    FileProviderSaveDataSchema,
-    options(caller),
-  );
-  if (!opened.ok) throw failure(opened.error);
-  const stream = opened.data.stream;
-  if (stream?.direction !== "write" || stream.size !== input.body.size)
-    throw new FileProviderError("INVALID_APP_RESPONSE", "The provider returned no matching write stream", 502);
-  caller.onStream?.();
-  const control = (verb: "status" | "abort") =>
-    transferCapabilityStream(stream, verb, { ...options(caller), signal: verb === "status" ? caller.signal : undefined });
-  const abort = () => void control("abort").catch(() => undefined);
-  caller.onProgress?.(0, stream.size);
-  let response: Response | undefined;
+  const finishAction = beginAppAction();
   try {
-    response = await sendWriteStream(stream, input.body, caller, caller.signal, (loaded) => caller.onProgress?.(loaded, stream.size));
-  } catch (error) {
+    if (!provider.save) throw new FileProviderError("NOT_FOUND", "This app does not store files", 404);
+    if (input.body.size > provider.save.maxBytes) throw tooLarge();
+    const opened = await invokeCapabilityWithDataSchema(
+      {
+        appId: provider.appId,
+        capabilityId: provider.save.id,
+        kind: "action",
+        input: { parent: input.parent, name: input.name, mediaType: saveMediaType(input.body.type), size: input.body.size },
+        idempotencyKey: input.idempotencyKey,
+        signal: caller.signal,
+      },
+      FileProviderSaveDataSchema,
+      options(caller),
+    );
+    if (!opened.ok) throw failure(opened.error);
+    const stream = opened.data.stream;
+    if (stream?.direction !== "write" || stream.size !== input.body.size)
+      throw new FileProviderError("INVALID_APP_RESPONSE", "The provider returned no matching write stream", 502);
+    caller.onStream?.();
+    const control = (verb: "status" | "abort") =>
+      transferCapabilityStream(stream, verb, { ...options(caller), signal: verb === "status" ? caller.signal : undefined });
+    const abort = () => void control("abort").catch(() => undefined);
+    caller.onProgress?.(0, stream.size);
+    let response: Response | undefined;
+    try {
+      response = await sendWriteStream(stream, input.body, caller, caller.signal, (loaded) => caller.onProgress?.(loaded, stream.size));
+    } catch (error) {
+      if (caller.signal?.aborted) {
+        abort();
+        throw error;
+      }
+    }
+    let lost = new FileProviderError("APP_UNAVAILABLE", "The file could not be saved", offline() ? 0 : 503);
+    if (response) {
+      const answer = await readCapabilityResponse(response, SaveResultSchema);
+      if (answer.ok) {
+        caller.onProgress?.(stream.size, stream.size);
+        return receipt(answer.data, input.name, input.body.size);
+      }
+      if (!INTERRUPTED_WRITE.includes(answer.error.status)) throw failure(answer.error);
+      lost = failure(answer.error);
+    }
+    // The bytes may have arrived and only the answer was lost; the stream's status knows.
+    const status = await control("status").then(
+      async (answer) => {
+        const body: unknown = await answer.json().catch(() => null);
+        return { ok: answer.ok, status: answer.status, body };
+      },
+      () => null,
+    );
+    const state = status?.ok ? CapabilityStreamStatusSchema.safeParse(status.body) : null;
+    if (state?.success && state.data.state === "completed") return receipt(state.data.result, input.name, input.body.size);
     if (caller.signal?.aborted) {
       abort();
-      throw error;
+      throw caller.signal.reason;
     }
+    // The status's own refusal, such as a taken name or a lost permission, says more than the interrupted write.
+    const refused = status && !status.ok ? CapabilityErrorSchema.safeParse(status.body) : null;
+    if (status && refused?.success) throw failure({ ...refused.data, status: status.status });
+    throw lost;
+  } finally {
+    finishAction();
   }
-  let lost = new FileProviderError("APP_UNAVAILABLE", "The file could not be saved", offline() ? 0 : 503);
-  if (response) {
-    const answer = await readCapabilityResponse(response, SaveResultSchema);
-    if (answer.ok) {
-      caller.onProgress?.(stream.size, stream.size);
-      return receipt(answer.data, input.name, input.body.size);
-    }
-    if (!INTERRUPTED_WRITE.includes(answer.error.status)) throw failure(answer.error);
-    lost = failure(answer.error);
-  }
-  // The bytes may have arrived and only the answer was lost; the stream's status knows.
-  const status = await control("status").then(
-    async (answer) => {
-      const body: unknown = await answer.json().catch(() => null);
-      return { ok: answer.ok, status: answer.status, body };
-    },
-    () => null,
-  );
-  const state = status?.ok ? CapabilityStreamStatusSchema.safeParse(status.body) : null;
-  if (state?.success && state.data.state === "completed") return receipt(state.data.result, input.name, input.body.size);
-  if (caller.signal?.aborted) {
-    abort();
-    throw caller.signal.reason;
-  }
-  // The status's own refusal, such as a taken name or a lost permission, says more than the interrupted write.
-  const refused = status && !status.ok ? CapabilityErrorSchema.safeParse(status.body) : null;
-  if (status && refused?.success) throw failure({ ...refused.data, status: status.status });
-  throw lost;
 };

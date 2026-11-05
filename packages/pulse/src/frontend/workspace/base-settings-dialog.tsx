@@ -1,4 +1,4 @@
-import { openAccessDialog, PermissionEditor } from "@k2b/cloud/access/ui";
+import { AccessSummary, openAccessDialog } from "@k2b/cloud/access/ui";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { text } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
@@ -458,7 +458,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                 <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
                   <SettingsGroup.Action>
                     <Button size="sm" variant="secondary" disabled={!access.data()} onClick={runEditAccess}>
-                      <i class="ti ti-pencil" aria-hidden="true" />
+                      <i class="ti ti-lock-access" aria-hidden="true" />
                       {t().editAccess}
                     </Button>
                   </SettingsGroup.Action>
@@ -481,16 +481,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                       </NoticeCard>
                     }
                   >
-                    {(entries) => (
-                      <PermissionEditor
-                        initialEntries={entries()}
-                        canEdit={false}
-                        grantAccess={grantAccess}
-                        updateAccess={updateAccess}
-                        revokeAccess={revokeAccess}
-                        allowedLevels={accessLevels()}
-                      />
-                    )}
+                    {(entries) => <AccessSummary entries={entries()} allowedLevels={accessLevels()} />}
                   </Show>
                 </SettingsGroup>
               </Show>

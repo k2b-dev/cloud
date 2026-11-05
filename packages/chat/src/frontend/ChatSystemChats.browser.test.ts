@@ -59,7 +59,7 @@ const load = async (
     await page.evaluate(
       (props) => {
         document.documentElement.lang = "de";
-        window.mountChat(props, "de");
+        return window.mountChat(props, "de");
       },
       { ...harness.props(address), embedded: address.embedded },
     );
@@ -678,7 +678,7 @@ test("personal Unread and the system directory filter survive reload and Back in
     await page.reload();
     await page.evaluate(async () => {
       const props = await (await fetch(`/__props?path=${encodeURIComponent(location.pathname + location.search)}`)).json();
-      window.mountChat(props, "de");
+      await window.mountChat(props, "de");
     });
     await sidebar.getByRole("button", { name: "Ungelesen", exact: true }).waitFor();
     expect(await sidebar.getByRole("button", { name: "Ungelesen", exact: true }).getAttribute("aria-pressed")).toBe("true");

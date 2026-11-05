@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-10-28
+updated: 2026-11-04
 ---
 
 # Layout and navigation
@@ -214,10 +214,7 @@ arrives. Other faces load when the page first uses them and appear with
 Latin. Keep them out of lines whose wrapping decides where the rest of a page
 sits, especially on a vertically centered page.
 
-Every page also preloads the Tabler icon font. It is much larger than the text
-faces, so on a slow connection it can still arrive after the first frame. Until
-then, each icon already has its final width, so buttons and text next to it do
-not grow or move sideways when the font arrives.
+The Tabler icon font loads when a page uses icons, after its stylesheet is read. The template does not preload the full icon font. The icon preset reserves a one-em box before the font arrives, so the label beside an icon keeps its position.
 
 An application preloads the font files of the `@k2b/ui` release that its
 `@k2b/cloud` version depends on, and Core serves the files of its own release.

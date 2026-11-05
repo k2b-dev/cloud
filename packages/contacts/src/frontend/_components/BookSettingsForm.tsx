@@ -1,4 +1,4 @@
-import { type GrantableLevel, openAccessDialog, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import { AccessSummary, type GrantableLevel, openAccessDialog, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
@@ -449,19 +449,15 @@ export default function BookSettingsForm(props: Props) {
           <SettingsGroup title={t().peopleGroupsTitle} description={t().peopleGroupsDescription}>
             <SettingsGroup.Action>
               <Button size="sm" variant="secondary" disabled={!props.context().accessEntries} onClick={runEditAccess}>
-                <i class="ti ti-pencil" aria-hidden="true" />
+                <i class="ti ti-lock-access" aria-hidden="true" />
                 {t().editAccess}
               </Button>
             </SettingsGroup.Action>
             <Show when={props.context().accessEntries}>
               {(accessEntries) => (
-                <PermissionEditor
+                <AccessSummary
                   // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
-                  initialEntries={accessEntries().filter((entry) => entry.serviceAccountKind !== "resource_bound")}
-                  canEdit={false}
-                  grantAccess={(principal, permission) => grantAccess({ bookId: bookId(), principal, permission })}
-                  updateAccess={(accessId, permission) => updateAccess({ bookId: bookId(), accessId, permission })}
-                  revokeAccess={(accessId) => revokeAccess({ bookId: bookId(), accessId })}
+                  entries={accessEntries().filter((entry) => entry.serviceAccountKind !== "resource_bound")}
                 />
               )}
             </Show>

@@ -132,12 +132,18 @@ describe("Studio sharing in the shared access dialog", () => {
       // A stored row reads like a new one: the server's line with its level.
       expect(ui.row("Code von einkauf@beispiel.de").textContent).toContain("Dienstkonto eines Postfachs · darf benutzen");
       expect(services.textContent?.match(/Wer den Code bearbeitet, handelt mit diesem Recht\./g)).toHaveLength(1);
-      const levels = Array.from(ui.row("Code von einkauf@beispiel.de").querySelectorAll('[role="option"]')).map((node) =>
-        node.textContent?.trim(),
-      );
-      expect(levels).toEqual(["Benutzen"]);
+      const offered = (name: string) => {
+        const row = ui.row(name);
+        row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+        const levels = Array.from(row.querySelectorAll('[role="radio"]')).map((node) => node.textContent ?? "");
+        row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+        return levels;
+      };
+      const levels = offered("Code von einkauf@beispiel.de");
+      expect(levels).toHaveLength(1);
+      expect(levels[0]).toStartWith("Benutzen");
       // People keep both Studio levels.
-      const ownerLevels = Array.from(ui.row("Mia Hoffmann").querySelectorAll('[role="option"]')).map((node) => node.textContent ?? "");
+      const ownerLevels = offered("Mia Hoffmann");
       expect(ownerLevels.map((label) => label.slice(0, label.startsWith("Benutzen") ? 8 : 9))).toEqual(["Benutzen", "Verwalten"]);
       expect(ui.section("Personen").textContent).not.toContain("Code von");
     } finally {
@@ -148,7 +154,8 @@ describe("Studio sharing in the shared access dialog", () => {
   test("a Code account's row in the shared dialog never offers Verwalten", async () => {
     const ui = await setup();
     try {
-      const options = Array.from(ui.row("Code von einkauf@beispiel.de").querySelectorAll('[role="option"]')).map(
+      ui.row("Code von einkauf@beispiel.de").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+      const options = Array.from(ui.row("Code von einkauf@beispiel.de").querySelectorAll('[role="radio"]')).map(
         (node) => node.textContent ?? "",
       );
       expect(options.length).toBeGreaterThan(0);
@@ -167,7 +174,7 @@ describe("Studio sharing in the shared access dialog", () => {
     }
   });
 
-  test("without a Code account the sentence is absent, and the section still offers adding one by its identifier", async () => {
+  test("without a Code account the sentence is absent, and the section still offers adding one by its handle", async () => {
     const ui = await setup({ entries: [owner] });
     try {
       const services = ui.section("Dienstkonten");
@@ -178,14 +185,14 @@ describe("Studio sharing in the shared access dialog", () => {
     }
   });
 
-  test("a Code account added by its identifier gets Use on Save, through the normal grant", async () => {
+  test("a Code account added by its handle gets Use on Save, through the normal grant", async () => {
     const ui = await setup({ entries: [owner] });
     try {
       ui.button("Dienstkonto hinzufügen").click();
       const input = ui.dom.root.querySelector<HTMLInputElement>('input[aria-label="Kennung des Dienstkontos"]')!;
       input.value = "code-7k2q9m4xwt";
       input.dispatchEvent(new Event("input", { bubbles: true }));
-      // A complete identifier is looked up as it is typed; the hit below the field adds the account.
+      // A complete handle is looked up as it is typed; the hit below the field adds the account.
       const hit = () =>
         Array.from(ui.dom.root.querySelectorAll<HTMLButtonElement>("li button")).find((item) =>
           item.textContent?.includes("Code von info@beispiel.de"),

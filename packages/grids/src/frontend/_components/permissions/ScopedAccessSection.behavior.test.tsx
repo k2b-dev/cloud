@@ -4,6 +4,14 @@ import { delegateEvents, isServer, render } from "solid-js/web";
 import { precedenceScenarios, type ScenarioPrincipal } from "@/access-precedence.test-fixture";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../ui/test/dom";
 
+/** Opens a row's level menu and picks a level, as a person would. */
+const chooseLevel = (row: Element, level: string) => {
+  row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+  Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]'))
+    .find((option) => option.textContent?.includes(level))!
+    .click();
+};
+
 const domTest = isServer ? test.skip : test;
 
 const waitFor = async (condition: () => boolean, label: string) => {
@@ -46,16 +54,19 @@ const openDialog = async (dom: DomTestHarness) => {
   Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button"))
     .find((button) => button.textContent?.trim() === "Edit access")!
     .click();
-  await waitFor(() => !!dom.document.querySelector('[role="dialog"] input[role=combobox]'), "the access dialog");
-  return dom.document.querySelector<HTMLElement>('[role="dialog"]')!;
+  await waitFor(
+    () => !!dom.document.querySelector('[role="dialog"]:not(.k2b-avatar-stack__popover) input[role=combobox]'),
+    "the access dialog",
+  );
+  return dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)')!;
 };
 const closeDialog = async (dom: DomTestHarness) => {
-  const dialog = dom.document.querySelector<HTMLElement>('[role="dialog"]');
+  const dialog = dom.document.querySelector<HTMLElement>('[role="dialog"]:not(.k2b-avatar-stack__popover)');
   if (!dialog) return;
   Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
     .find((button) => button.textContent?.trim() === "Cancel")
     ?.click();
-  await waitFor(() => !dom.document.querySelector('[role="dialog"]'), "the dialog to close");
+  await waitFor(() => !dom.document.querySelector('[role="dialog"]:not(.k2b-avatar-stack__popover)'), "the dialog to close");
 };
 
 domTest("the base access section turns read-only once a saved change costs the person Manage access", async () => {
@@ -94,9 +105,7 @@ domTest("the base access section turns read-only once a saved change costs the p
   try {
     const dialog = await openDialog(dom);
     const row = Array.from(dialog.querySelectorAll("li")).find((item) => item.textContent?.includes("Quentin Dorn"))!;
-    Array.from(row.querySelectorAll<HTMLElement>('[role="option"]'))
-      .find((option) => option.textContent?.includes("Edit"))!
-      .click();
+    chooseLevel(row, "Edit");
     await waitFor(() => dialog.textContent?.includes("1 change") === true, "one change");
     Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.trim() === "Save")!

@@ -1,5 +1,6 @@
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
-import { PWA_AUTH_PATH, PWA_SCOPE, type PwaPlatform } from "@k2b/cloud/contracts";
+import type { PwaPlatform } from "@k2b/cloud/contracts/pwa";
+import { PWA_AUTH_PATH, PWA_SCOPE } from "@k2b/cloud/contracts/pwa-paths";
 
 /** An answer of Core's phone endpoints; `status` 0 means the request did not reach Cloud. */
 export type PhoneAnswer = { status: number; code?: string; body: unknown };

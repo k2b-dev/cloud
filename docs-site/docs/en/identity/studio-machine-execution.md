@@ -39,7 +39,7 @@ lists an account bound to an object or app. Grant such an account through
 `cld assistant studio-admin grant`.
 
 Code service accounts are not machines in this sense. Someone who manages the
-app adds one by its identifier under **Service accounts** and gives it **Use**,
+app adds one by its handle under **Service accounts** and gives it **Use**,
 like a person; it never gets Manage. Code accounts do not appear under
 **Machine execution** and cannot hold execution, data, secret, HTTP, or sharing
 rights here. See [Code account handles](/en/docs/identity/code-service-account-handles).

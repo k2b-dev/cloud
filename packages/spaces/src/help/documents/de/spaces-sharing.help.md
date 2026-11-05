@@ -35,6 +35,8 @@ Formulare mit einer Fußzeile zeigen die Anzahl der Änderungen. Prüfe diese Za
 - **Verwalten:** Zusätzlich Wormholes, GitHub-Token, Zugriff, API Keys, den Kalenderexport und das Löschen ändern.
 :::
 
+Wer eigenen Zugriff hat, direkt, über eine Gruppe oder als angemeldete Person, sieht am Ende der Details eines Eintrags unter **Zugriff**, wer Zugriff hat und mit welcher Stufe. Wer einen öffentlichen Space nur öffnet, sieht diese Liste nicht.
+
 ## Einer Integration oder einem Agenten Zugriff geben {icon="key"}
 
 Füge den Agenten unter **Freigabe → Zugriff** hinzu. Der Eintrag zeigt Name und Kontoart. Mit Zugriff **Verwalten** und dem Token-Scope `admin` kann das Konto Freigaben über die API verwalten. Ein Token mit dem Scope `read` kann keine Freigaben ändern.

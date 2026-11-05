@@ -67,7 +67,7 @@ const shot = async (page: Page, name: string) => {
 };
 
 /**
- * Settles after pointer input. The dialog moves content on its own, for example when it scrolls the identifier field
+ * Settles after pointer input. The dialog moves content on its own, for example when it scrolls the handle field
  * into view, and a control that slides under the resting pointer starts its hover transition while the page settles.
  * The pointer rests on the backdrop instead, where nothing reacts to it.
  */
@@ -107,8 +107,9 @@ describe("AccessDialog in a browser", () => {
         const before = await Promise.all(["Jonas Weber", "Logistik", "Lagerbot", "Lea Schmitt"].map((name) => rowTop(page, name)));
         const lea = page.locator("dialog li", { hasText: "Lea Schmitt" });
         await lea.locator("button[aria-haspopup]").first().click();
+        // The level menu offers each level with what it means, as in the approved mockup.
         await page
-          .locator('[role="option"]', { hasText: locale === "de" ? "Bearbeiten" : "Edit" })
+          .locator('[role="dialog"] [role="radio"]', { hasText: locale === "de" ? "Bearbeiten" : "Edit" })
           .last()
           .click();
         await page.locator(`dialog button[aria-label="${locale === "de" ? "Lagerbot entfernen" : "Remove Lagerbot"}"]`).click();
@@ -135,9 +136,9 @@ describe("AccessDialog in a browser", () => {
       }
     });
 
-  // Mockup v31 `editor · A · suche-kennung`: an identifier in the search for people finds the service account.
+  // Mockup v31 `editor · A · suche-kennung`: a handle in the search for people finds the service account.
   for (const width of [1280, 390])
-    test(`de ${width}px: an identifier in the search shows the marked hit in the sheet and adds it under Dienstkonten`, async () => {
+    test(`de ${width}px: a handle in the search shows the marked hit in the sheet and adds it under Dienstkonten`, async () => {
       const page = await open(width, "de");
       try {
         await page.locator("dialog input[role=combobox]").fill("code-7k2q9m4xwt");

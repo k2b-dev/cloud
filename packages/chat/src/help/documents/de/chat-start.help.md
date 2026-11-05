@@ -8,6 +8,9 @@ order: 100
 
 Chat ist für Gespräche mit anderen Personen, eigene Notizen und Kanäle, die du abonnierst.
 
+
+Formulare, Suche, Chat-Info sowie Kanal- und Thread-Seiten laden beim Öffnen. Solange sie laden, steht der Hinweis in dieser Ansicht. Schlägt das Laden fehl, wähle dort **Erneut versuchen**.
+
 ## Einen Chat starten {icon="message-plus"}
 
 :::steps

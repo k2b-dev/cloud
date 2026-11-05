@@ -437,7 +437,7 @@ const asset = (input: Partial<PwaAsset> = {}): PwaAsset => ({
 test("pwa is opt-in; existing origins are HTTPS and restricted to the mobile flows", () => {
   expect(parseArgs([]).pages).toEqual([...defaultPageIds]);
   expect(parseArgs(["--pages", "pwa,faq"]).pages).toEqual(["pwa", "faq"]);
-  expect(pageApps.pwa).toEqual(["pwa", "spaces"]);
+  expect(pageApps.pwa).toEqual(["pwa", "spaces", "chat"]);
   expect(parseArgs(["--pages", "pwa", "--origin", "https://example.test:443/"])).toMatchObject({ origin: "https://example.test" });
   for (const origin of [
     "http://example.test",
@@ -453,6 +453,15 @@ test("pwa is opt-in; existing origins are HTTPS and restricted to the mobile flo
   for (const value of ["1", "2", "1000"]) expect(parseArgs(["--rtt", value]).rttMs).toBe(Number(value));
   for (const value of ["0", "-1", "1001", "2.5", "NaN", "1ms"]) expect(() => parseArgs(["--rtt", value])).toThrow();
   expect(() => parseArgs(["--rtt"])).toThrow();
+});
+
+test("PWA comparison metrics preserve decoded bytes and unsupported CLS", () => {
+  const parsed = pwaStep({ interactiveMs: 400, requests: 12, cls: null, assets: [asset({ decodedBodySize: 1000 })] });
+  expect(parsed.interactiveMs).toBe(400);
+  expect(parsed.requests).toBe(12);
+  expect(parsed.cls).toBeNull();
+  expect(parsed.assets[0]?.decodedBodySize).toBe(1000);
+  expect(() => pwaStep({ cls: -1 })).toThrow();
 });
 
 test("the PWA schema accepts complete steps and rejects invalid timing, step and cache states", () => {
@@ -578,7 +587,7 @@ test("the cache gate counts only repeated public/SSR non-cache assets on WebKit 
 });
 
 test("PWA Markdown includes the step medians, device and cache gate without the cold-load table", () => {
-  const profile = pwaProfile();
+  const profile = pwaProfile({ steps: [pwaStep(), pwaStep({ id: "launch-first", interactiveMs: 200, requests: 3, cls: 0.00001555 })] });
   profile.summary = summarizePwa(profile.steps);
   const result = resultSchema.parse({
     ...legacyResult(),
@@ -592,6 +601,7 @@ test("PWA Markdown includes the step medians, device and cache gate without the 
   expect(summary).toContain("| tab-start-spaces | 1 | allowed | 0 | 10 | 12 | 100 | 120 | — | — |");
   expect(summary).toContain("WebKit iphone: 0 re-requested /public or /_ssr assets on tab switches and relaunches");
   expect(summary).not.toContain("| Browser / profile |");
+  expect(summary).toContain("| 1 samples | 100 | 200 | 0 | 0 | 3 | 0.00001555 |");
 });
 
 test("help lists the opt-in mobile flows, remote token and added RTT", () => {

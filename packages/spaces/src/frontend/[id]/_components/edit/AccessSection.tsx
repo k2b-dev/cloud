@@ -1,4 +1,4 @@
-import { type GrantableLevel, openAccessDialog, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import { AccessSummary, type GrantableLevel, openAccessDialog, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
 import type { Principal } from "@k2b/cloud/contracts";
 import { Button, prompts, SettingsGroup } from "@k2b/ui";
 import { createComputed, createSignal, on, onCleanup } from "solid-js";
@@ -92,17 +92,11 @@ export function PermissionsSection(props: {
     <SettingsGroup title={m.peopleAndGroups} description={m.accessDescription}>
       <SettingsGroup.Action>
         <Button size="sm" variant="secondary" onClick={run}>
-          <i class="ti ti-pencil" aria-hidden="true" />
+          <i class="ti ti-lock-access" aria-hidden="true" />
           {m.editAccess}
         </Button>
       </SettingsGroup.Action>
-      <PermissionEditor
-        initialEntries={entries()}
-        canEdit={false}
-        grantAccess={grantAccess}
-        updateAccess={updateAccess}
-        revokeAccess={revokeAccess}
-      />
+      <AccessSummary entries={entries()} />
     </SettingsGroup>
   );
 }

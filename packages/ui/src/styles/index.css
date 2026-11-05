@@ -7842,7 +7842,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: pointer;
 }
 
-.k2b-ui .k2b-choice-option:not(:disabled):hover,
+.k2b-ui .k2b-choice-option:not(:disabled):not([aria-disabled="true"]):hover,
 .k2b-ui .k2b-choice-option[data-focused="true"] {
   color: var(--k2b-text);
   background: var(--k2b-hover);
@@ -7851,6 +7851,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-choice-option[aria-selected="true"] {
   color: var(--k2b-text);
   background: var(--k2b-selected);
+}
+
+/* Shown but not pickable, such as someone already on the list: quiet, and the reason stays readable. */
+.k2b-ui .k2b-choice-option[aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .k2b-ui .k2b-choice-option:disabled {

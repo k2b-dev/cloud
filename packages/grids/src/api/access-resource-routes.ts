@@ -1,8 +1,9 @@
-import { AccessEntrySchema, ErrorResponseSchema, GrantAccessSchema } from "@k2b/cloud/contracts";
+import { AccessEntrySchema, AccessMemberSchema, ErrorResponseSchema, GrantAccessSchema, toAccessMember } from "@k2b/cloud/contracts";
 import { type AuthContext, getLocale, jsonResponse, type PermissionLevel, respond } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { unshadowedGrants } from "../access-precedence";
 import { ShortIdSchema } from "../contracts";
 import {
   type AccessResourceType,
@@ -91,6 +92,23 @@ const listResource = async (c: Context<AuthContext>, config: AccessRouteConfig, 
   return c.json(await config.list(id, "admin"));
 };
 
+/**
+ * Who has access to a base and with which role, read-only, for everyone who reads it. Base grants never include the
+ * public tier, so reading a base is access of one's own. Denials and the grants they shadow are left out: the list
+ * names who has access, not who is refused, and it carries no grant IDs or dates.
+ */
+const listBaseMembers = async (c: Context<AuthContext>, deps: AccessRouteDeps) => {
+  const config = CONFIGS.base;
+  const id = await resolveResourceId(c, config, deps);
+  if (!id) return c.json({ message: config.notFound(apiMessages(c)) }, 404);
+  const gate = await deps.gate(c, { baseId: id }, "read");
+  if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+  const entries = unshadowedGrants(await listBaseAccess(id)).filter(
+    (entry) => entry.permission !== "none" && entry.principal.type !== "public",
+  );
+  return c.json(entries.map(toAccessMember));
+};
+
 const grantResource = async (
   c: Context<AuthContext>,
   config: AccessRouteConfig,
@@ -147,6 +165,21 @@ const grantDescription = (config: AccessRouteConfig) =>
 export const createAccessResourceRoutes = (deps: AccessRouteDeps = defaultDeps) =>
   new Hono<AuthContext>()
     .get(CONFIGS.base.path, listDescription(CONFIGS.base), (c) => listResource(c, CONFIGS.base, deps))
+    .get(
+      `${CONFIGS.base.path}/members`,
+      describeRoute({
+        tags: ["Grids:Access"],
+        summary: "List who has access to a base",
+        description:
+          "Names and roles of everyone with access to a base, read-only. Requires read access; denials and grant IDs are not listed.",
+        responses: {
+          200: jsonResponse(z.array(AccessMemberSchema), "Who has access"),
+          403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+          404: jsonResponse(ErrorResponseSchema, "Base not found"),
+        },
+      }),
+      (c) => listBaseMembers(c, deps),
+    )
     .post(CONFIGS.base.path, grantDescription(CONFIGS.base), v("json", GrantAccessSchema), (c) =>
       grantResource(c, CONFIGS.base, c.req.valid("json"), deps),
     )

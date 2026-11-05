@@ -174,3 +174,10 @@
   color: var(--k2b-text-muted);
   font-size: 0.875rem;
 }
+
+/* Live summaries replace this reserved line without moving the following part. */
+.pwa-start a[data-pwa-summary] .k2b-navigation__copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

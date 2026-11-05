@@ -36,6 +36,8 @@ When a form has a footer, review its count of changes and choose **Save changes*
 - **Manage:** Also change wormholes, the GitHub token, access, API keys, the calendar export, and deletion.
 :::
 
+Everyone with access of their own, direct, through a group, or as a signed-in person, sees who has access and with which level under **Access** at the end of an item’s details. People who only open a public Space do not see that list.
+
 ## Give an integration or agent access {icon="key"}
 
 Add its agent under **Sharing → Access**. The entry shows the account name and kind. With **Manage** access and an `admin` token scope, it can manage access through the API. A read-only token cannot change sharing.

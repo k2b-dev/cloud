@@ -822,6 +822,26 @@ export type CapabilityError = {
 export type CapabilityInvocationResult<T> = { ok: true; data: CapabilityResult<T> } | { ok: false; error: CapabilityError };
 export type CapabilityActionReviewResult = { ok: true; data: CapabilityActionReviewData } | { ok: false; error: CapabilityError };
 
+/**
+ * One labelled fact of a result. A `date` or `date-time` value is a machine date that the reader formats in their
+ * locale and time zone; the first one also appears as a short date on the result's row.
+ */
+export const CloudResourceMetadataSchema = z
+  .object({
+    label: z.string().min(1).max(120),
+    value: z.string().max(1000),
+    format: z.enum(["date", "date-time"]).optional().describe("date: YYYY-MM-DD or RFC 3339; date-time: RFC 3339 with offset."),
+  })
+  .strict()
+  .superRefine((entry, context) => {
+    const schema =
+      entry.format === "date" ? CapabilityReviewDateSchema : entry.format === "date-time" ? CapabilityReviewDateTimeSchema : null;
+    if (schema?.safeParse(entry.value).success === false)
+      context.addIssue({ code: "custom", path: ["value"], message: "Invalid date or time" });
+  });
+
+export type CloudResourceMetadata = z.infer<typeof CloudResourceMetadataSchema>;
+
 export const CloudResourceViewSchema = z
   .object({
     ref: CloudResourceRefSchema.describe("Stable identity of the result."),
@@ -831,18 +851,7 @@ export const CloudResourceViewSchema = z
     context: CloudResourceReferenceSchema.shape.context,
     status: CloudResourceReferenceSchema.shape.status,
     priority: z.number().int().min(0).max(9).optional().describe("App-local relevance hint from zero to nine."),
-    metadata: z
-      .array(
-        z
-          .object({
-            label: z.string().min(1).max(120),
-            value: z.string().max(1000),
-          })
-          .strict(),
-      )
-      .max(20)
-      .optional()
-      .describe("Small structured metadata shown with the result."),
+    metadata: z.array(CloudResourceMetadataSchema).max(20).optional().describe("Small structured metadata shown with the result."),
     links: z.array(CapabilitySemanticLinkSchema).min(1).max(10).describe("Semantic links for the resource."),
   })
   .strict();

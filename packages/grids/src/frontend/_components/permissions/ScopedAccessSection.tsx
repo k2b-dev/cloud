@@ -1,4 +1,4 @@
-import { openAccessDialog, PermissionEditor } from "@k2b/cloud/access/ui";
+import { AccessSummary, openAccessDialog, PermissionEditor } from "@k2b/cloud/access/ui";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts/shared";
 import { Button, NoticeCard, Placeholder, SettingsGroup, useLocale } from "@k2b/ui";
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
@@ -166,7 +166,7 @@ export function ScopedAccessSection(props: Props) {
       <SettingsGroup.Action>
         <Show when={props.canEdit && manageable()}>
           <Button size="sm" variant="secondary" type="button" disabled={!entries()} onClick={run}>
-            <i class="ti ti-pencil" aria-hidden="true" />
+            <i class="ti ti-lock-access" aria-hidden="true" />
             {t().editAccess}
           </Button>
         </Show>
@@ -188,16 +188,24 @@ export function ScopedAccessSection(props: Props) {
         }
       >
         {(loadedEntries) => (
-          <PermissionEditor
-            initialEntries={loadedEntries()}
-            canEdit={false}
-            allowPublic={props.scope.type === "customApp"}
-            allowedLevels={levels()}
-            effectiveEntries={unshadowedGrants}
-            grantAccess={grant}
-            updateAccess={update}
-            revokeAccess={revoke}
-          />
+          // Who manages sees the summary and opens the editor for the rest; anyone else keeps the full list here.
+          <Show
+            when={props.canEdit && manageable()}
+            fallback={
+              <PermissionEditor
+                initialEntries={loadedEntries()}
+                canEdit={false}
+                allowPublic={props.scope.type === "customApp"}
+                allowedLevels={levels()}
+                effectiveEntries={unshadowedGrants}
+                grantAccess={grant}
+                updateAccess={update}
+                revokeAccess={revoke}
+              />
+            }
+          >
+            <AccessSummary entries={loadedEntries()} allowedLevels={levels()} effectiveEntries={unshadowedGrants} />
+          </Show>
         )}
       </Show>
       <Show when={refreshError()}>

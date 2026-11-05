@@ -1,7 +1,8 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import type { DateContext } from "@k2b/stdlib";
 import { ConversationSchema } from "../service/contracts";
 import { dayLabel, lastMessageLine, listTime, messageTime, sameDay } from "./chat-format";
+import { createMessageDates } from "./chat-message-dates";
 
 const config = (locale: string): DateContext => ({ locale, timeZone: "Europe/Berlin", firstDayOfWeek: 1 });
 
@@ -86,4 +87,52 @@ for (const locale of ["en", "de"]) {
     expect(lastMessageLine(direct, "viewer", locale)).toBe("Hello");
     expect(lastMessageLine({ ...direct, memberCount: 3 }, "viewer", locale)).toBe("Lea: Hello");
   });
+}
+
+test("conversation dates format each message once and reuse label formatters", () => {
+  const parts = spyOn(Intl.DateTimeFormat.prototype, "formatToParts");
+  const construct = spyOn(Intl, "DateTimeFormat");
+  try {
+    const dates = createMessageDates(config("en"));
+    const now = new Date("2026-10-12T22:15:00Z");
+    const items = Array.from({ length: 40 }, (_, index) => ({ at: `2026-10-0${1 + (index % 6)}T12:00:00Z` }));
+    for (const item of items) {
+      const value = dates.read(item);
+      expect(dates.read(item)).toBe(value);
+      expect(dates.label(item, now)).toBeTruthy();
+      dates.label(item, now);
+    }
+    expect(construct).toHaveBeenCalledTimes(2);
+    expect(parts).toHaveBeenCalledTimes(items.length + 1);
+  } finally {
+    parts.mockRestore();
+    construct.mockRestore();
+  }
+});
+
+for (const locale of ["en", "de", "ar"]) {
+  for (const timeZone of ["Europe/Berlin", "America/New_York", "Asia/Kathmandu"]) {
+    test(`conversation date cache preserves ${locale}/${timeZone} labels, midnight and DST`, () => {
+      const context = { locale, timeZone };
+      const dates = createMessageDates(context);
+      for (const now of ["2026-10-12T22:15:00Z", "2026-10-25T23:15:00Z", "2026-03-29T22:15:00Z", "2026-12-31T23:15:00Z"]) {
+        for (const at of [
+          "2026-10-12T22:05:00Z",
+          "2026-10-12T21:59:00Z",
+          "2026-10-11T12:00:00Z",
+          "2026-10-06T12:00:00Z",
+          "2025-10-06T12:00:00Z",
+          "2026-10-25T00:30:00Z",
+          "2026-10-25T01:30:00Z",
+          "2026-03-28T23:05:00Z",
+          "2026-12-31T23:30:00Z",
+        ]) {
+          const item = { at };
+          expect(dates.read(item).time).toBe(messageTime(at, context));
+          expect(dates.label(item, new Date(now))).toBe(dayLabel(at, new Date(now), context));
+          expect(dates.read(item).dayKey === dates.read({ at: now }).dayKey).toBe(sameDay(at, now, context));
+        }
+      }
+    });
+  }
 }

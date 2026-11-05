@@ -4,6 +4,14 @@ import * as navigation from "@k2b/ssr/nav";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../ui/test/dom";
 
+/** Opens a row's level menu and picks a level, as a person would. */
+const chooseLevel = (row: Element, level: string) => {
+  row.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+  Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]'))
+    .find((option) => option.textContent?.includes(level))!
+    .click();
+};
+
 const entry = (id: string, name: string, permission: AccessEntry["permission"]): AccessEntry => ({
   id: `00000000-0000-4000-8000-00000000000${id}`,
   principal: { type: "user", userId: `10000000-0000-4000-8000-00000000000${id}` },
@@ -199,13 +207,13 @@ describe("AI administration access", () => {
     test(`${kind} finds by Kennung, adds a service-account row and saves its UUID`, async () => {
       const ui = await setup(kind);
       ui.button("Add service account")!.click();
-      const input = ui.dialog()!.querySelector<HTMLInputElement>('input[aria-label="Identifier of the service account"]')!;
-      // A name is never looked up; Enter says that no service account has this identifier.
+      const input = ui.dialog()!.querySelector<HTMLInputElement>('input[aria-label="Handle of the service account"]')!;
+      // A name is never looked up; Enter says that no service account has this handle.
       input.value = "Code von Werkstatt";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      await until(() => ui.dialog()?.textContent?.includes("No service account with this identifier") === true);
-      // A complete identifier is looked up as it is typed; its hit below the field adds the row.
+      await until(() => ui.dialog()?.textContent?.includes("No service account with this handle") === true);
+      // A complete handle is looked up as it is typed; its hit below the field adds the row.
       input.value = handle;
       input.dispatchEvent(new Event("input", { bubbles: true }));
       const hit = () =>
@@ -217,9 +225,11 @@ describe("AI administration access", () => {
       await until(() => ui.dialog()?.textContent?.includes("1 change") === true);
       expect(ui.row("Code von Werkstatt").textContent).toContain("Service account");
       expect(ui.dialog()!.textContent).toContain("Whoever edits the code acts with this right.");
-      expect(Array.from(ui.row("Code von Werkstatt").querySelectorAll('[role="option"]')).map((node) => node.textContent)).not.toContain(
-        "Manage",
-      );
+      ui.row("Code von Werkstatt").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
+      expect(
+        Array.from(ui.row("Code von Werkstatt").querySelectorAll('[role="radio"]')).some((node) => node.textContent?.includes("Manage")),
+      ).toBe(false);
+      ui.row("Code von Werkstatt").querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click();
       expect(calls).toEqual([`lookup core.ai.${kind} ${kind}-1 ${handle}`]);
       ui.button("Save")!.click();
       await until(() => !ui.dialog());
@@ -235,9 +245,7 @@ describe("AI administration access", () => {
     expect(ui.dialog()!.textContent).toContain("Access through projects");
     expect(ui.dialog()!.textContent).toContain("Support desk");
     const row = Array.from(ui.dialog()!.querySelectorAll("li")).find((item) => item.textContent?.includes("Lea Schmitt"))!;
-    Array.from(row.querySelectorAll<HTMLElement>('[role="option"]'))
-      .find((option) => option.textContent?.includes("Edit"))!
-      .click();
+    chooseLevel(row, "Edit");
     await until(() => ui.dialog()?.textContent?.includes("1 change") === true);
     expect(calls).toEqual([]);
     ui.button("Save")!.click();
@@ -266,9 +274,7 @@ describe("AI administration access", () => {
     state.entries = [mia, lea, ben];
     state.deleteFails = true;
     const ui = await setup("skill");
-    Array.from(ui.row("Lea Schmitt").querySelectorAll<HTMLElement>('[role="option"]'))
-      .find((option) => option.textContent?.includes("Edit"))!
-      .click();
+    chooseLevel(ui.row("Lea Schmitt"), "Edit");
     ui.row("Ben Albers").querySelector<HTMLButtonElement>('button[aria-label="Remove Ben Albers"]')!.click();
     await until(() => ui.dialog()?.textContent?.includes("2 changes") === true);
     ui.button("Save")!.click();

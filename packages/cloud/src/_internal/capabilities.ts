@@ -1397,15 +1397,27 @@ const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityAc
 };
 
 /**
- * The Universal Search data schemas a live manifest may declare: the current one, and the one before results gained
- * `context` and `status`, so an app built by the previous release keeps its search while Core is already newer. Its
- * results still parse, because both fields are optional.
+ * The Universal Search data schemas a live manifest may declare: the current one, the one before metadata gained
+ * `format`, and the one before results gained `context` and `status`, so an app built by an earlier release keeps its
+ * search while Core is already newer. Its results still parse, because the newer fields are optional.
  */
 let searchDataHashes: string[] | undefined;
-const universalSearchDataHashes = () =>
-  (searchDataHashes ??= [UniversalSearchDataSchema, z.array(CloudResourceViewSchema.omit({ context: true, status: true })).max(100)].map(
-    (schema) => capabilityHash(projectSchema(schema, "Universal Search data", "output")),
-  ));
+const universalSearchDataHashes = () => {
+  if (searchDataHashes) return searchDataHashes;
+  const untypedMetadata = CloudResourceViewSchema.extend({
+    metadata: z
+      .array(z.object({ label: z.string().min(1).max(120), value: z.string().max(1000) }).strict())
+      .max(20)
+      .optional()
+      .describe("Small structured metadata shown with the result."),
+  });
+  searchDataHashes = [
+    UniversalSearchDataSchema,
+    z.array(untypedMetadata).max(100),
+    z.array(untypedMetadata.omit({ context: true, status: true })).max(100),
+  ].map((schema) => capabilityHash(projectSchema(schema, "Universal Search data", "output")));
+  return searchDataHashes;
+};
 
 const assertUsableCommand = (command: CapabilityCommandManifest): void => {
   z.fromJSONSchema(structuredClone(command.inputSchema));

@@ -11,11 +11,11 @@ const hues = { group: "#22c55e", authenticated: "#3b82f6" } as const;
 const codeHue = "#0369a1";
 
 /**
- * Accounts that run code show the code icon: the account of an object, and Code's own service accounts, which keep
- * their kind `code` where the code lane adds it, so the dialog can still refuse them Manage.
+ * Code's own service accounts show the code icon; they keep their kind `code` where the code lane adds it, so the
+ * dialog can still refuse them Manage. The account behind an object's API keys shows the key icon.
  */
-const codeKinds: ReadonlySet<string> = new Set(["resource_bound", "code"]);
-const runsCode = (kind: string | undefined) => kind !== undefined && codeKinds.has(kind);
+const kindIcons: Readonly<Record<string, string>> = { code: "ti ti-code", resource_bound: "ti ti-key" };
+const kindIcon = (kind: string | undefined) => (kind === undefined ? undefined : kindIcons[kind]);
 
 /** The 32px avatar of an access entry in the expanded editor and on the denial page. */
 export default function PrincipalAvatar(props: {
@@ -40,10 +40,16 @@ export default function PrincipalAvatar(props: {
     <Show
       when={props.entry.principal.type === "user" ? props.entry.principal : undefined}
       fallback={
-        // The account of an object runs its code: it shows the code icon in the square of service accounts unless it
-        // has a picture.
-        props.entry.principal.type === "service_account" && runsCode(props.entry.serviceAccountKind) && !props.entry.avatarHash ? (
-          <Avatar name={props.label} icon="ti ti-code" shape="square" size="sm" class="h-8 w-8" style={{ "--k2b-avatar-hue": codeHue }} />
+        // A Code account or an API key shows its icon in the square of service accounts unless it has a picture.
+        props.entry.principal.type === "service_account" && kindIcon(props.entry.serviceAccountKind) && !props.entry.avatarHash ? (
+          <Avatar
+            name={props.label}
+            icon={kindIcon(props.entry.serviceAccountKind)}
+            shape="square"
+            size="sm"
+            class="h-8 w-8"
+            style={props.entry.serviceAccountKind === "code" ? { "--k2b-avatar-hue": codeHue } : undefined}
+          />
         ) : props.entry.principal.type === "service_account" ? (
           <CloudAvatar
             username={props.label}

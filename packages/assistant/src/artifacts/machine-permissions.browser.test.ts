@@ -168,7 +168,7 @@ test("Studio machine rights recover from load/save failure inside the shared acc
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const errors = pageErrors(page);
     await page.goto(server.url.href);
-    const dialog = page.locator("dialog[open]");
+    const dialog = page.locator("dialog[open]:not(.k2b-avatar-stack__popover)");
     await dialog.getByText("Machine rights could not be loaded.", { exact: true }).waitFor();
     state.failLoad = false;
     await dialog.getByRole("button", { name: "Refresh", exact: true }).click();
@@ -261,7 +261,7 @@ test("Studio machine rights recover from load/save failure inside the shared acc
 }, 60000);
 
 for (const width of [1280, 390])
-  test(`de ${width}px: a Code account gets Use by its identifier like a person, and the dialog fits`, async () => {
+  test(`de ${width}px: a Code account gets Use by its handle like a person, and the dialog fits`, async () => {
     const { server, state } = await serve();
     let browser: Awaited<ReturnType<typeof launchBrowser>> | undefined;
     try {
@@ -269,7 +269,7 @@ for (const width of [1280, 390])
       const page = await browser.newPage({ viewport: { width, height: 900 } });
       const errors = pageErrors(page);
       await page.goto(`${server.url.href}?lang=de`);
-      const dialog = page.locator("dialog[open]");
+      const dialog = page.locator("dialog[open]:not(.k2b-avatar-stack__popover)");
       await dialog.getByRole("region", { name: "Maschinenausführung", exact: true }).getByText("Invoice agent", { exact: true }).waitFor();
       await settled(page);
       const services = dialog.locator("section", { has: page.locator("h3", { hasText: /^Dienstkonten/ }) });
@@ -285,13 +285,14 @@ for (const width of [1280, 390])
       expect(await clipped("Code von einkauf-und-rechnungseingang@beispiel.de")).toBe(false);
       // Agents stay with people; only Code and object accounts sit under Dienstkonten.
       expect(await services.getByText("Invoice agent").count()).toBe(0);
-      await code.locator("button[aria-haspopup]").first().click();
-      const options = await page.locator('[role="option"]:visible').allTextContents();
-      expect(options.map((option) => option.trim())).toEqual(["Benutzen"]);
+      await code.locator('button[aria-haspopup="dialog"]').first().click();
+      const options = await page.locator('[role="radio"]:visible').allTextContents();
+      expect(options).toHaveLength(1);
+      expect(options[0]?.trim()).toStartWith("Benutzen");
       await page.keyboard.press("Escape");
       // Scrolling moves controls under a resting pointer and starts their hover transitions; park it on the backdrop.
       await page.mouse.move(1, 1);
-      for (const control of [code.locator("button[aria-haspopup]").first(), code.getByRole("button", { name: /entfernen$/ })]) {
+      for (const control of [code.locator('button[aria-haspopup="dialog"]').first(), code.getByRole("button", { name: /entfernen$/ })]) {
         await control.scrollIntoViewIfNeeded();
         await settled(page);
         expect(await control.isVisible()).toBe(true);
@@ -325,7 +326,7 @@ for (const width of [1280, 390])
 
       await services.locator("li button", { hasText: "Code von info@beispiel.de" }).click();
       const added = services.locator("li", { hasText: "Code von info@beispiel.de" });
-      await added.getByText("Neu", { exact: true }).first().waitFor();
+      await added.getByText("Neu", { exact: true }).filter({ visible: true }).waitFor();
       await dialog.getByText("1 Änderung", { exact: true }).waitFor();
       await settled(page);
       expect(await overflow(page)).toEqual({ page: true, fits: true, wide: [] });

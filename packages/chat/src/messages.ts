@@ -94,6 +94,7 @@ export const chatMessages = i18n.define({
       listFailed: "The chats could not be loaded. Try again.",
       savingList: "Saving your list…",
       loadingChats: "Loading chats…",
+      loadingCode: "Loading…",
 
       searchChats: "Search",
       searchNoResults: ({ q }: { q: string }) => `Nothing found for “${q}”.`,
@@ -595,6 +596,7 @@ export const chatMessages = i18n.define({
       listFailed: "Die Chats konnten nicht geladen werden. Versuche es noch einmal.",
       savingList: "Deine Liste wird gespeichert…",
       loadingChats: "Chats werden geladen…",
+      loadingCode: "Wird geladen…",
 
       searchChats: "Suchen",
       searchNoResults: ({ q }: { q: string }) => `Nichts gefunden für „${q}“.`,

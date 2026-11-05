@@ -27,6 +27,8 @@ type Props = {
   listHref: string;
   onRetry: () => void;
   onCompletedChange: (shortId: string, done: boolean) => void;
+  /** Re-read after a write; owns recovery feedback and resolves after a covering canonical snapshot. */
+  onRefresh?: () => Promise<void>;
 };
 
 type EntryState = { saving: boolean; failed: boolean };
@@ -57,17 +59,31 @@ export default function TaskDetail(props: Props) {
   const [entries, setEntries] = createSignal<ReadonlyMap<string, boolean>>(new Map());
   const [entryStates, setEntryStates] = createSignal<ReadonlyMap<string, EntryState>>(new Map());
   const isDone = () => done() ?? summary()?.completed ?? false;
+  const checklist = createMemo(() => new Map(task()?.checklist.map((entry) => [entry.id, entry])));
   const checked = (entry: PwaTask["checklist"][number]) => entries().get(entry.id) ?? entry.completed;
   const writable = () => task()?.canWrite ?? true;
   // The server renders the controls before this island runs; until then a tap would do nothing.
   const [mounted, setMounted] = createSignal(false);
   onMount(() => setMounted(true));
   const ready = () => props.state.kind === "ready" && mounted();
-  // A completion saved here or elsewhere reaches the task: the task's state counts again.
+  const refresh = async () => {
+    try {
+      await props.onRefresh?.();
+      return true;
+    } catch {
+      // The canonical reader exposes its error with Retry; keep the saved overlay until it catches up.
+      return false;
+    }
+  };
+  // A new canonical snapshot retires settled overlays; writes still in flight keep their visible choice.
   createEffect(
     on(
-      () => task()?.completed,
-      () => setDone(undefined),
+      task,
+      () => {
+        if (!doneSaving()) setDone(undefined);
+        setEntries((current) => new Map([...current].filter(([id]) => entryStates().get(id)?.saving)));
+        setEntryStates((current) => new Map([...current].filter(([, state]) => state.saving)));
+      },
       { defer: true },
     ),
   );
@@ -79,8 +95,14 @@ export default function TaskDetail(props: Props) {
     setDone(next);
     setDoneSaving(true);
     const outcome = await saveCompletion({ item: current, completed: next, userId: props.userId, locale: locale() });
+    if (outcome === "saved") {
+      props.onCompletedChange(current.shortId, next);
+      const refreshed = await refresh();
+      setDoneSaving(false);
+      if (refreshed && props.onRefresh) setDone(undefined);
+      return;
+    }
     setDoneSaving(false);
-    if (outcome === "saved") return props.onCompletedChange(current.shortId, next);
     setDone(!next);
     if (outcome === "failed")
       retryToast(
@@ -106,7 +128,17 @@ export default function TaskDetail(props: Props) {
     const response = await apiClient[":id"].items[":itemId"].checklist[":entryId"]
       .$patch({ param: { id: current.spaceShortId, itemId: current.shortId, entryId: entry.id }, json: { completed: value } })
       .catch(() => null);
-    if (response?.ok) return patchState(entry.id, undefined);
+    if (response?.ok) {
+      const refreshed = await refresh();
+      patchState(entry.id, undefined);
+      if (refreshed && props.onRefresh)
+        setEntries((map) => {
+          const next = new Map(map);
+          next.delete(entry.id);
+          return next;
+        });
+      return;
+    }
     // The server kept the old state: the box springs back.
     setEntries((map) => new Map(map).set(entry.id, !value));
     if (response && (response.status === 403 || response.status === 404)) {
@@ -124,13 +156,13 @@ export default function TaskDetail(props: Props) {
     return current ? workSchedule(current, props.dateConfig, t().allDay) : null;
   };
 
-  const section = (title: string, aside: JSX.Element | undefined, body: JSX.Element, asideTone?: "danger") => (
+  const section = (title: string, aside: (() => JSX.Element) | undefined, body: JSX.Element, asideTone?: () => "danger" | undefined) => (
     <section class="spaces-pwa-task__section">
       <h4>
         {title}
         <Show when={aside}>
-          <span class="spaces-pwa-task__aside" data-tone={asideTone} aria-live="polite">
-            {aside}
+          <span class="spaces-pwa-task__aside" data-tone={asideTone?.()} aria-live="polite">
+            {aside?.()}
           </span>
         </Show>
       </h4>
@@ -287,27 +319,29 @@ export default function TaskDetail(props: Props) {
                 <Show when={loaded().checklist.length}>
                   {section(
                     t().checklist,
-                    unsaved() ? (
-                      t().unsaved({ count: unsaved() })
-                    ) : savingEntries() ? (
-                      <>
-                        <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-                        {t().saving}
-                      </>
-                    ) : (
-                      t().checked({ done: loaded().checklist.filter(checked).length, total: loaded().checklist.length })
-                    ),
+                    () =>
+                      unsaved() ? (
+                        t().unsaved({ count: unsaved() })
+                      ) : savingEntries() ? (
+                        <>
+                          <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
+                          {t().saving}
+                        </>
+                      ) : (
+                        t().checked({ done: loaded().checklist.filter(checked).length, total: loaded().checklist.length })
+                      ),
                     <ul class="spaces-pwa-task__checklist">
-                      <For each={loaded().checklist}>
-                        {(entry) => {
-                          const state = () => entryStates().get(entry.id);
+                      <For each={[...checklist().keys()]}>
+                        {(id) => {
+                          const entry = () => checklist().get(id)!;
+                          const state = () => entryStates().get(id);
                           return (
-                            <li data-done={checked(entry) || undefined}>
+                            <li data-done={checked(entry()) || undefined}>
                               <Checkbox
-                                label={entry.label}
-                                value={() => checked(entry)}
+                                label={entry().label}
+                                value={() => checked(entry())}
                                 disabled={!loaded().canWrite || !mounted() || state()?.saving}
-                                onValueChange={(value) => void toggleEntry(entry, value)}
+                                onValueChange={(value) => void toggleEntry(entry(), value)}
                               />
                               <span class="spaces-pwa-task__slot">
                                 <Show when={state()?.saving}>
@@ -316,9 +350,9 @@ export default function TaskDetail(props: Props) {
                                 <Show when={state()?.failed}>
                                   <IconButton
                                     class="spaces-pwa-task__retry"
-                                    label={t().retryItem({ label: entry.label })}
+                                    label={t().retryItem({ label: entry().label })}
                                     tooltip={false}
-                                    onClick={() => void toggleEntry(entry, !checked(entry))}
+                                    onClick={() => void toggleEntry(entry(), !checked(entry()))}
                                   >
                                     <i class="ti ti-refresh" aria-hidden="true" />
                                   </IconButton>
@@ -329,7 +363,7 @@ export default function TaskDetail(props: Props) {
                         }}
                       </For>
                     </ul>,
-                    unsaved() ? "danger" : undefined,
+                    () => (unsaved() ? "danger" : undefined),
                   )}
                 </Show>
                 {/* A reader who may change the task may comment on it; one field per task, so a draft never moves. */}

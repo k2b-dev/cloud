@@ -218,7 +218,7 @@ Universal Search and can be filtered by application. The HTTP API and
 `cld assistant projects` expose the same metadata, context, and access model.
 
 In **Administration > AI > Skills** and **Projects**, open **Permissions** and
-choose **Add service account**. Paste the Code account's exact identifier
+choose **Add service account**. Paste the Code account's exact handle
 (`code-` followed by ten characters), choose **Find**, add the result, and
 save the changes. A name, UUID, partial identifier, or unknown identifier finds
 no Code account. The lookup requires Manage on this Skill or Project; Cloud

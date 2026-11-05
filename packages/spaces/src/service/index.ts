@@ -91,6 +91,8 @@ export const spacesService = {
     permission: {
       canAccess: spaces.canAccess,
       get: spaces.getPermission,
+      /** Access of one's own, without public access; it decides who may read who has access. */
+      member: access.getSpaceMemberPermission,
     },
     admin: {
       list: async (config: { pagination?: PageParams; filter?: { query?: string } }): Promise<Paginated<spaces.SpaceAdminListItem>> => {

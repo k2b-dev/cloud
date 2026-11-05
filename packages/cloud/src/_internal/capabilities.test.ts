@@ -12,6 +12,7 @@ import {
   CapabilityPageSchema,
   type CapabilityQueryManifest,
   CapabilitySemanticLinkSchema,
+  CloudResourceViewSchema,
   cloudResourceRefAppId,
   defineCapabilities,
   resolveCapabilityResourceReader,
@@ -28,6 +29,7 @@ import {
   reviewCompiledCapability,
   serializeCapabilityProviderResult,
 } from "./capabilities";
+import { projectSchema } from "./capability-schemas";
 
 const context = {
   actor: {
@@ -807,6 +809,40 @@ describe("capability v1 compilation", () => {
     const { manifestHash: _manifestHash, ...collisionBase } = collision;
     expect(() => parseCapabilityManifest({ ...collisionBase, manifestHash: capabilityHash(collisionBase) }, "example")).toThrow(
       "declared more than once",
+    );
+  });
+
+  test("keeps the Universal Search of an app built before result metadata had a format", () => {
+    const search = {
+      title: "Search items",
+      description: "Finds items for the global search surface.",
+      input: UniversalSearchInputSchema,
+      data: UniversalSearchDataSchema,
+      openWorld: false,
+      universalSearch: { tags: [{ tag: "item", title: "Items", description: "Search test items." }] },
+      run: async () => ok({ data: [] }),
+    };
+    const manifest = compileCapabilities("example", defineCapabilities({ protocolVersion: 2, queries: { search } })).manifest;
+    const untypedView = CloudResourceViewSchema.extend({
+      metadata: z
+        .array(z.object({ label: z.string().min(1).max(120), value: z.string().max(1000) }).strict())
+        .max(20)
+        .optional()
+        .describe("Small structured metadata shown with the result."),
+    });
+    for (const view of [untypedView, untypedView.omit({ context: true, status: true })]) {
+      const copy = structuredClone(manifest);
+      const query = copy.queries[0]!;
+      query.dataSchema = projectSchema(z.array(view).max(100), "Universal Search data", "output");
+      query.schemaHash = capabilityHash({ inputSchema: query.inputSchema, dataSchema: query.dataSchema });
+      const { manifestHash: _previous, ...base } = copy;
+      expect(parseCapabilityManifest({ ...base, manifestHash: capabilityHash(base) }, "example").queries[0]?.universalSearch).toEqual(
+        search.universalSearch,
+      );
+    }
+    // The data schema the release before `format` declared; the untyped view above must reproduce it.
+    expect(capabilityHash(projectSchema(z.array(untypedView).max(100), "Universal Search data", "output"))).toBe(
+      "ee85e1db41be2f7f916468539134714faa4b2e594fad0887bb4cae5bc93d0a88",
     );
   });
 

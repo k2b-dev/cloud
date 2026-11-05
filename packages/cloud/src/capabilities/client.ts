@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { beginAppAction } from "../browser/app-actions";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_CATALOG_BYTES,
@@ -78,6 +79,7 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
   headers.set("accept", "application/json");
   headers.set("content-type", "application/json");
   if (invocation.idempotencyKey) headers.set("idempotency-key", invocation.idempotencyKey);
+  const finishAction = invocation.kind === "action" ? beginAppAction() : () => {};
   try {
     const response = await (options.fetch ?? globalThis.fetch)(requestUrl(options.baseUrl ?? "/api", capabilityPath(invocation)), {
       method: "POST",
@@ -103,6 +105,8 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
     return result;
   } catch (cause) {
     return unavailable(cause, invocation, clientLocale(options.headers));
+  } finally {
+    finishAction();
   }
 };
 

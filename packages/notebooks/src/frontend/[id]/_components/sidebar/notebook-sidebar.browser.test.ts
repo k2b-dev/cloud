@@ -138,6 +138,7 @@ const ctx = (homepageNoteId: string | null = "Home01"): NotebookContext => ({
   attachmentCount: 0,
   favoriteNoteIds: [],
   tags: [],
+  pageTemplates: [],
   workspaceCursor: null,
   dateConfig: { locale: "en", timeZone: "UTC" },
   sidebarFilter: {},
@@ -178,7 +179,13 @@ const parentOf = (nodes: NoteTreeNode[], id: string): string | null => {
 const handleApi = async (request: Request, path: string): Promise<Response> => {
   const query = new URL(request.url).searchParams;
   if (path === "workspace-state")
-    return Response.json({ notebook: api.notebook, favoriteNoteIds: api.favoriteNoteIds, tags: api.tags, attachmentCount: 0 });
+    return Response.json({
+      notebook: api.notebook,
+      favoriteNoteIds: api.favoriteNoteIds,
+      tags: api.tags,
+      attachmentCount: 0,
+      pageTemplates: [],
+    });
   if (path === "tree/levels") {
     const levels = (query.get("levels") ?? "").split(",").filter(Boolean);
     return Response.json({

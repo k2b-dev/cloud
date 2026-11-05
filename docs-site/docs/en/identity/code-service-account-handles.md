@@ -104,7 +104,7 @@ endpoint retains exact-handle matching and its user-wide Valkey budget.
 
 Resource-bound API-key accounts have no handle: the database permits this
 column only for `kind = 'code'`. This lookup does not accept their UUID or
-introduce another identifier.
+introduce another handle.
 
 ## Wire a resource share dialog
 

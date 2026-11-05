@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import type { ResourcePrincipal } from "@k2b/cloud/contracts";
+import { type AccessMember, type ResourcePrincipal, toAccessMember } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
   type AccessSubject,
@@ -541,6 +541,21 @@ export const loadMailboxAccessEntries = async (
     ORDER BY (grants.scope = 'assigned'), ${PERMISSION_ORDER()}, a.created_at, a.id
   `;
   return resolveDisplayNames(rows.map(mapAccess), display);
+};
+
+/** A read-only access row; `scope: "assigned"` marks access to assigned conversations only. */
+export type MailboxAccessMember = AccessMember & { scope?: "assigned" };
+
+/**
+ * Who has access to a mailbox and with which role, read-only: names and roles without grant IDs or dates. Only
+ * people with mailbox-wide access of their own may read it; an assigned-only grant sees its own conversations and
+ * nothing about the rest of the mailbox, as with related mail and contacts.
+ */
+export const listMailboxAccessMembers = async (context: MailRequestContext, mailboxId: string): Promise<Result<MailboxAccessMember[]>> => {
+  const access = await getMailboxAccess(context, mailboxId);
+  if (access?.scope !== "mailbox") return fail(err.forbidden("Access denied"));
+  const entries = await loadMailboxAccessEntries(mailboxId);
+  return ok(entries.map((entry) => ({ ...toAccessMember(entry), ...(entry.scope ? { scope: entry.scope } : {}) })));
 };
 
 const listMailboxAccessWithAuthority = async (

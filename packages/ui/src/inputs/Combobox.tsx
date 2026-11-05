@@ -7,8 +7,16 @@ import type { FieldProps, MaybeAccessor } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
 import { useSelectMessages } from "./select-messages";
 
-/** `badge` names what kind of result this is, such as "Service account", at the end of the row. */
-export type ComboboxOption = { id: string; label: string; description?: string; icon?: string; badge?: string };
+export type ComboboxOption = {
+  id: string;
+  label: string;
+  description?: string;
+  icon?: string;
+  /** Names what kind of result this is, at the end of the row. */
+  badge?: string;
+  /** Shown but cannot be picked, such as someone who is already on the list; say why in `description`. */
+  disabled?: boolean;
+};
 export type ComboboxProps = FieldProps & {
   readOnly?: boolean;
   query?: MaybeAccessor<string>;
@@ -88,7 +96,10 @@ export function Combobox(props: ComboboxProps): JSX.Element {
   createEffect(
     on(options, (list) => {
       const index = props.autoHighlight;
-      if (index !== undefined && focusedIndex() < 0 && popover.open() && list.length > 0) setFocusedIndex(Math.min(index, list.length - 1));
+      if (index === undefined || focusedIndex() >= 0 || !popover.open() || list.length === 0) return;
+      // A result that cannot be picked is never the one Enter takes: the next one that can, or none.
+      const start = Math.min(index, list.length - 1);
+      setFocusedIndex(list[start]?.disabled ? nextEnabledChoiceIndex(list, start, 1) : start);
     }),
   );
   createEffect(() => {
@@ -99,7 +110,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
     }
   });
   const select = (option: ChoiceOption<string> & { badge?: string }) => {
-    if (props.disabled || props.readOnly) return;
+    if (props.disabled || props.readOnly || option.disabled) return;
     popover.hide();
     props.onSelect({ id: option.value, label: option.label, description: option.description, icon: option.icon, badge: option.badge });
     if (props.freeText) {
@@ -237,8 +248,11 @@ export function Combobox(props: ComboboxProps): JSX.Element {
                     class="k2b-choice-option"
                     role="option"
                     aria-selected={index() === focusedIndex()}
+                    aria-disabled={option().disabled ? "true" : undefined}
                     data-focused={index() === focusedIndex() ? "true" : undefined}
-                    onPointerMove={() => focus(index())}
+                    onPointerMove={() => {
+                      if (!option().disabled) focus(index());
+                    }}
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => select(option())}
                   >

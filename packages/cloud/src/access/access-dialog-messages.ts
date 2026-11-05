@@ -11,11 +11,12 @@ export const accessDialogMessages = i18n.define({
       signedInLabel: "All signed-in people",
       publicLabel: "Public with link",
       serviceAccounts: "Service accounts",
+      apiKeys: "API keys",
       addServiceAccount: "Add service account",
-      serviceAccountHandle: "Identifier of the service account",
-      serviceAccountHandlePlaceholder: "Identifier from the code page, for example code-7k2q9m4xwt",
+      serviceAccountHandle: "Handle of the service account",
+      serviceAccountHandlePlaceholder: "Handle from the code page, for example code-7k2q9m4xwt",
       serviceAccountFind: "Find",
-      serviceAccountNotFound: "No service account with this identifier, or you cannot add it here.",
+      serviceAccountNotFound: "No service account with this handle, or you cannot add it here.",
       serviceAccountLookupFailed: "The service account could not be looked up.",
       serviceAccountJoins: ({ kind }: { kind: string }) => `${kind} · goes to Service accounts`,
       serviceAccountNote: ({ name }: { name: string }) =>
@@ -24,7 +25,7 @@ export const accessDialogMessages = i18n.define({
       add: "Add",
       serviceAccountCount: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: "1 service account", other: `${count} service accounts` }),
-      serviceAccountSearching: "Looking up the identifier …",
+      serviceAccountSearching: "Looking up the handle …",
       accountMay: ({ level }: { level: string }) => `may ${level.toLowerCase()}`,
       accountMayAlone: ({ level }: { level: string }) => `May ${level.toLowerCase()}`,
       codeMayAll: ({ level }: { level: string }) => `The code may do everything ${level} allows, not only what it calls today.`,
@@ -45,7 +46,21 @@ export const accessDialogMessages = i18n.define({
       denialRemoved: ": the denial is removed, other entries apply again",
       peopleMay: ({ level }: { level: string }) => ` may ${level}`,
       signedInOff: "Off. Only those listed above have access.",
-      signedInOn: ({ level }: { level: string }) => `Everyone with an account may ${level}, including guests.`,
+      signedInOn: ({ level }: { level: string }) =>
+        `Everyone with an account may ${level}, including guests. Agents and service accounts need their own access.`,
+      nobodyNamed: ({ query }: { query: string }) => `Nobody is called “${query}”.`,
+      searchHint: "Search by name, email or group.",
+      alreadyHas: ({ level }: { level: string }) => `already has ${level}`,
+      readOnlyManagers: ({ names }: { names: string }) => `Only those who manage it can change access: ${names}.`,
+      close: "Close",
+      off: "Off",
+      loading: "Loading access",
+      loadFailed: "Access could not be loaded.",
+      levelReadDescription: "Sees the content.",
+      levelWriteDescription: "Adds and changes content.",
+      levelAdminDescription: "Also changes settings and access.",
+      removeEntry: "Remove",
+      lastManagerHint: ({ level }: { level: string }) => `First give someone else “${level}”.`,
       signedInChangeOff: " is off",
       publicOff: "Off. Without signing in, nobody sees anything.",
       publicOn: "Anyone with the link can view, also without signing in.",
@@ -85,6 +100,16 @@ export const accessDialogMessages = i18n.define({
       person: "Person",
       serviceAccount: "Service account",
       you: "You",
+      summaryTitle: "Who has access",
+      summaryStackLabel: ({ name, more }: { name: string; more: number }) =>
+        more === 0
+          ? `Who has access: ${name}`
+          : i18n.plural(more, "en", { one: `Who has access: ${name} and 1 more`, other: `Who has access: ${name} and ${more} more` }),
+      summaryMembers: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: "1 person, group or agent", other: `${count} people, groups and agents` }),
+      summaryOff: "off",
+      summaryServiceAccounts: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: "1 service account", other: `${count} service accounts` }),
     },
     de: {
       title: ({ name }) => `Zugriff auf ${name}`,
@@ -94,6 +119,7 @@ export const accessDialogMessages = i18n.define({
       signedInLabel: "Alle angemeldeten Personen",
       publicLabel: "Öffentlich per Link",
       serviceAccounts: "Dienstkonten",
+      apiKeys: "API Keys",
       addServiceAccount: "Dienstkonto hinzufügen",
       serviceAccountHandle: "Kennung des Dienstkontos",
       serviceAccountHandlePlaceholder: "Kennung von der Code-Seite, etwa code-7k2q9m4xwt",
@@ -127,7 +153,21 @@ export const accessDialogMessages = i18n.define({
       denialRemoved: ": die Sperre wird entfernt, andere Einträge gelten wieder",
       peopleMay: ({ level }) => ` dürfen ${level.toLowerCase()}`,
       signedInOff: "Aus. Nur, wer oben steht, hat Zugriff.",
-      signedInOn: ({ level }) => `Alle Personen mit Konto dürfen ${level.toLowerCase()}, auch Gäste.`,
+      signedInOn: ({ level }) =>
+        `Alle Personen mit Konto dürfen ${level.toLowerCase()}, auch Gäste. Agenten und Dienstkonten brauchen ein eigenes Recht.`,
+      nobodyNamed: ({ query }) => `Niemand heißt „${query}“.`,
+      searchHint: "Suche nach Name, E-Mail oder Gruppe.",
+      alreadyHas: ({ level }) => `hat schon ${level}`,
+      readOnlyManagers: ({ names }) => `Den Zugriff ändern nur Personen, die verwalten: ${names}.`,
+      close: "Schließen",
+      off: "Aus",
+      loading: "Zugriff wird geladen",
+      loadFailed: "Der Zugriff konnte nicht geladen werden.",
+      levelReadDescription: "Sieht den Inhalt.",
+      levelWriteDescription: "Legt Inhalte an und ändert sie.",
+      levelAdminDescription: "Ändert dazu Einstellungen und Zugriff.",
+      removeEntry: "Entfernen",
+      lastManagerHint: ({ level }) => `Gib erst jemand anderem „${level}“.`,
       signedInChangeOff: " ist aus",
       publicOff: "Aus. Ohne Anmeldung sieht niemand etwas.",
       publicOn: "Jeder mit dem Link kann ansehen, auch ohne Anmeldung.",
@@ -174,6 +214,18 @@ export const accessDialogMessages = i18n.define({
       person: "Person",
       serviceAccount: "Dienstkonto",
       you: "Du",
+      summaryTitle: "Wer Zugriff hat",
+      summaryStackLabel: ({ name, more }) =>
+        more === 0
+          ? `Wer Zugriff hat: ${name}`
+          : i18n.plural(more, "de", {
+              one: `Wer Zugriff hat: ${name} und 1 weiterer Eintrag`,
+              other: `Wer Zugriff hat: ${name} und ${more} weitere Einträge`,
+            }),
+      summaryMembers: ({ count }) =>
+        i18n.plural(count, "de", { one: "1 Person, Gruppe oder Agent", other: `${count} Personen, Gruppen und Agenten` }),
+      summaryOff: "aus",
+      summaryServiceAccounts: ({ count }) => i18n.plural(count, "de", { one: "1 Dienstkonto", other: `${count} Dienstkonten` }),
     },
   },
 });

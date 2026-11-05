@@ -35,6 +35,7 @@ describe("Notebook workspace container head", () => {
     attachmentCount: 0,
     favoriteNoteIds: [],
     tags: [{ tag: "garden", count: 2 }],
+    pageTemplates: [],
     workspaceCursor: null,
     dateConfig: { locale: "en", timeZone: "UTC" },
     sidebarFilter: {},

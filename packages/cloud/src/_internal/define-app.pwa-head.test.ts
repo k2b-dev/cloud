@@ -62,7 +62,6 @@ const WEB_DOCUMENT = `<!DOCTYPE html>
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="icon" href="/public/head-probe/favicon.svg">
     <style data-cloud-css-layers>@layer properties, theme, base, components, utilities;</style>
-    <link rel="preload" href="/public/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/public/fonts/ibm-plex-sans-latin-400-normal-3b646991d30055a9.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/public/fonts/ibm-plex-sans-latin-500-normal-0717336fb31fcdcd.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/public/fonts/ibm-plex-sans-latin-600-normal-8960851d691c054e.woff2" as="font" type="font/woff2" crossorigin>
@@ -83,6 +82,13 @@ ${"  "}
 const head = (html: string) => html.slice(0, html.indexOf("</head>"));
 
 describe("document head", () => {
+  test("lets used icons request their font after CSS instead of preloading the full font", async () => {
+    for (const path of ["/app/head-probe", "/pwa/head-probe"]) {
+      const html = head(await (await server.request(path)).text());
+      expect(html).toContain('<link rel="stylesheet" href="/public/tabler-icons.css">');
+      expect(html).not.toContain('href="/public/tabler-icons.woff2"');
+    }
+  });
   test("keeps the fixed web head apart from the shared bootstrap", async () => {
     expect(stable(await (await server.request("/app/head-probe")).text())).toBe(WEB_DOCUMENT);
   });

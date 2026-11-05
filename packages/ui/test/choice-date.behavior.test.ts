@@ -500,6 +500,45 @@ describe("@k2b/ui choice and date browser behavior", () => {
     }
   });
 
+  test("a Combobox result that cannot be picked is shown but never taken", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Combobox } = await import("../src/inputs/Combobox");
+    const picks: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Combobox, {
+          label: "Person",
+          autoHighlight: 0,
+          debounceMs: 0,
+          fetchData: async () => [
+            { id: "lea", label: "Lea Schmitt", description: "already has View", disabled: true },
+            { id: "tom", label: "Tom Berg" },
+          ],
+          onSelect: (option) => picks.push(option.id),
+        }),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>('[role="combobox"]')!;
+      input.value = "Le";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await Bun.sleep(0);
+      const lea = dom.root.querySelector<HTMLElement>('[role="option"]')!;
+      expect(lea.getAttribute("aria-disabled")).toBe("true");
+      // The highlight skips the taken result, so Enter takes the next one.
+      expect(dom.document.getElementById(input.getAttribute("aria-activedescendant") ?? "")?.textContent).toContain("Tom Berg");
+      lea.click();
+      expect(picks).toEqual([]);
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      expect(picks).toEqual(["tom"]);
+    } finally {
+      dispose();
+      popover.restore();
+      dom.cleanup();
+    }
+  });
+
   test("the first Combobox search waits in rows instead of claiming no results", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);

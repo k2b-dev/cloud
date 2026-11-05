@@ -60,6 +60,25 @@ Zum Wiederherstellen brauchst du Zugriff **Bearbeiten**. Eine gesperrte Notiz ka
 
 **Markdown**
 
+## Eine Notiz mit einer Vorlage beginnen {icon="template"}
+
+Eine Vorlage gibt einer neuen Notiz Überschriften, Tabellen und Aufgabenlisten. Jedes Notizbuch bietet **Besprechungsprotokoll**, **Projektseite** und **Entscheidung**. Du kannst eigene Vorlagen hinzufügen.
+
+1. Wähle oben in der Seitenleiste **Neue Notiz**.
+2. Wähle im Menü eine Vorlage.
+
+Cloud setzt für `{{date}}` das heutige Datum und für `{{author}}` deinen Namen ein. Die neue Notiz bleibt nicht mit ihrer Vorlage verbunden.
+
+:::reference
+- **Leere Notiz:** Eine Notiz mit nur einem Titel zeigt unter dem Titel **Mit einer Vorlage beginnen**. Wähle dort eine Vorlage. Sie ersetzt die leere Notiz. Drücke ⌘Z (Windows und Linux: Strg+Z), um das rückgängig zu machen.
+- **Slash-Menü:** Tippe /vorlage in einer Notiz und wähle eine Vorlage. In einer Notiz mit Text kommen die Abschnitte der Vorlage an den Cursor.
+- **Eigene Vorlage:** Öffne das Menü einer Notiz und wähle **Als Vorlage speichern …**. Gib der Vorlage einen Namen. Die Vorlage übernimmt den aktuellen Text der Notiz.
+- **Umbenennen oder löschen:** Öffne **Einstellungen → Notizbuch → Vorlagen**. Notizen aus einer Vorlage bleiben, wie sie sind.
+- **Wer was darf:** Mit Zugriff **Ansehen** siehst du die Vorlagen. Mit Zugriff **Bearbeiten** nutzt, speicherst, benennst und löschst du sie. Ein Notizbuch hat höchstens 100 eigene Vorlagen.
+- **Telefon:** Öffne das Menü und wähle **Neue Notiz aus Vorlage**.
+- **Terminal:** `cld notebooks page-templates` listet, nutzt, speichert, benennt und löscht Vorlagen.
+:::
+
 ## Eine nützliche Notiz schreiben {icon="pencil"}
 
 :::reference

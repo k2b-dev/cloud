@@ -1,5 +1,5 @@
 import { Combobox, type ComboboxOption, useLocale } from "@k2b/ui";
-import type { JSX } from "solid-js";
+import { createSignal, type JSX } from "solid-js";
 import { CODE_ACCOUNT_HANDLE_PATTERN, type Principal, type ServiceAccountKind, type ServiceAccountStatus } from "../contracts/shared";
 import { accessMessages } from "./messages";
 import { principalKey } from "./principal-key";
@@ -23,7 +23,7 @@ type Entity =
         status: "active" | "disabled";
       };
     };
-/** A service account found by its identifier, ready to become a row. */
+/** A service account found by its handle, ready to become a row. */
 export type FoundServiceAccount = {
   principal: Principal;
   display: { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind };
@@ -52,11 +52,16 @@ export default function PrincipalPicker(props: {
   placeholder?: string;
   /** The consumer's name and description for every signed-in person. */
   signedIn?: { label: string; description: string };
-  /** Replaces the default text when a search finds nobody. */
-  empty?: JSX.Element;
   /**
-   * Looks up an exact Code identifier (`code-` and 10 characters) with the resource as the target, as the consumer's
-   * own identifier field does. Such a query asks only this lookup, never the directory, so names never find these
+   * Keeps a principal that is already on the list in the results, shown but not pickable, with this reason such as
+   * "already has Edit". Without it, such principals are left out of the results.
+   */
+  takenReason?: (principal: Principal) => string | undefined;
+  /** Shown instead of the default text when a search finds nothing, with the typed search. */
+  empty?: JSX.Element | ((query: string) => JSX.Element);
+  /**
+   * Looks up an exact Code handle (`code-` and 10 characters) with the resource as the target, as the consumer's
+   * own handle field does. Such a query asks only this lookup, never the directory, so names never find these
    * accounts; the hit carries the "Service account" badge.
    */
   findServiceAccount?: (handle: string, signal: AbortSignal) => Promise<FoundServiceAccount | null>;
@@ -78,7 +83,9 @@ export default function PrincipalPicker(props: {
     badge?: string;
   };
   let selectable = new Map<string, Entry>();
+  const [lastQuery, setLastQuery] = createSignal("");
   const load = async (search: string, signal: AbortSignal): Promise<ComboboxOption[]> => {
+    setLastQuery(search.trim());
     const entries: Entry[] = [];
     if (props.allowAuthenticated !== false)
       entries.push({
@@ -121,9 +128,11 @@ export default function PrincipalPicker(props: {
         url.searchParams.set("service_account_status", props.serviceAccountStatus);
       }
       url.searchParams.set("per_page", "10");
-      const users = props.existing?.flatMap((p) => (p.type === "user" ? [p.userId] : [])) ?? [];
-      const groups = props.existing?.flatMap((p) => (p.type === "group" ? [p.groupId] : [])) ?? [];
-      const services = props.existing?.flatMap((p) => (p.type === "service_account" ? [p.serviceAccountId] : [])) ?? [];
+      // With a reason for listed principals, the server must return them too, so they can show greyed.
+      const excluded = props.takenReason ? [] : (props.existing ?? []);
+      const users = excluded.flatMap((p) => (p.type === "user" ? [p.userId] : []));
+      const groups = excluded.flatMap((p) => (p.type === "group" ? [p.groupId] : []));
+      const services = excluded.flatMap((p) => (p.type === "service_account" ? [p.serviceAccountId] : []));
       if (users.length) url.searchParams.set("exclude_user_ids", users.join(","));
       if (groups.length) url.searchParams.set("exclude_group_ids", groups.join(","));
       if (services.length) url.searchParams.set("exclude_service_account_ids", services.join(","));
@@ -174,20 +183,21 @@ export default function PrincipalPicker(props: {
       }
     }
     const existing = new Set(props.existing?.map(principalKey));
+    const taken = (e: Entry) => (existing.has(principalKey(e.principal)) ? (props.takenReason?.(e.principal) ?? null) : undefined);
+    // A principal on the list stays visible when a reason is given, so the search never looks like it missed someone.
     // A search lists only what it finds, so "everyone" does not answer a name and hide that nobody matched.
     const query = search.trim().toLowerCase();
     const found = (e: Entry) =>
       search.length < 2 || (e.principal.type !== "authenticated" && e.principal.type !== "public") || e.label.toLowerCase().includes(query);
-    const filtered = entries.filter((e) => !existing.has(principalKey(e.principal)) && found(e));
+    const shown = entries.filter((e) => taken(e) !== null && found(e));
     if (signal.aborted) return [];
-    selectable = new Map(filtered.map((e) => [principalKey(e.principal), e]));
-    return filtered.map((e) => ({
-      id: principalKey(e.principal),
-      label: e.label,
-      icon: e.icon,
-      description: e.description,
-      badge: e.badge,
-    }));
+    selectable = new Map(shown.filter((e) => taken(e) === undefined).map((e) => [principalKey(e.principal), e]));
+    return shown.map((e): ComboboxOption => {
+      const reason = taken(e);
+      return typeof reason === "string"
+        ? { id: principalKey(e.principal), label: e.label, icon: e.icon, description: reason, disabled: true }
+        : { id: principalKey(e.principal), label: e.label, icon: e.icon, description: e.description, badge: e.badge };
+    });
   };
   return (
     <Combobox
@@ -204,7 +214,7 @@ export default function PrincipalPicker(props: {
             : t().addBasic)
       }
       fetchData={load}
-      empty={props.empty}
+      empty={typeof props.empty === "function" ? props.empty(lastQuery()) : props.empty}
       onSelect={(option) => {
         const entry = selectable.get(option.id);
         if (entry)

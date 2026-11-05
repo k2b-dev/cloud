@@ -9,6 +9,7 @@ import {
   getMailboxPermission,
   grantMailboxAccess,
   listMailboxAccess,
+  listMailboxAccessMembers,
   type MailboxAccess,
   requireMailboxAccess,
   requireMailboxPermission,
@@ -178,6 +179,40 @@ suite("mail access to assigned conversations", () => {
     ]);
     // Only managers list access; an assigned-only grant never manages.
     expect((await listMailboxAccess(groupMember.context, mailboxId)).ok).toBe(false);
+  });
+
+  test("who has access is readable with mailbox-wide access of one's own, never with assigned-only access", async () => {
+    const colleague = await createUser("colleague");
+    const granted = await grantMailboxAccess({
+      context: owner.context,
+      mailboxId,
+      principal: { type: "user", userId: colleague.id },
+      permission: "read",
+      scope: "mailbox",
+    });
+    expect(granted.ok).toBe(true);
+
+    const listed = await listMailboxAccessMembers(colleague.context, mailboxId);
+    if (!listed.ok) throw new Error(listed.error.message);
+    expect(listed.data).toContainEqual(expect.objectContaining({ principal: { type: "user", userId: owner.id }, permission: "admin" }));
+    expect(listed.data).toContainEqual(
+      expect.objectContaining({ principal: { type: "user", userId: assignedReader.id }, permission: "read", scope: "assigned" }),
+    );
+    for (const member of listed.data) {
+      expect(member).not.toHaveProperty("id");
+      expect(member).not.toHaveProperty("createdAt");
+    }
+    expect((await listMailboxAccessMembers(owner.context, mailboxId)).ok).toBe(true);
+    // The managers' list with grant IDs stays theirs.
+    expect((await listMailboxAccess(colleague.context, mailboxId)).ok).toBe(false);
+    // Assigned-only readers, through a grant or a group, and outsiders never see it.
+    for (const reader of [assignedReader, groupMember, outsider]) {
+      const refused = await listMailboxAccessMembers(reader.context, mailboxId);
+      expect(refused.ok).toBe(false);
+      if (!refused.ok) expect(refused.error.status).toBe(403);
+    }
+    // The later tests count this mailbox's grants; the colleague leaves again.
+    if (granted.ok) expect((await revokeMailboxAccess({ context: owner.context, mailboxId, accessId: granted.data.id })).ok).toBe(true);
   });
 
   test("assigned-only grants allow read or write for people and groups, once per principal", async () => {

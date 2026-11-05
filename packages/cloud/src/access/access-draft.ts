@@ -118,6 +118,17 @@ export const managerCount = (
   effective: (entries: readonly AccessEntry[]) => readonly AccessEntry[] = (entries) => entries,
 ): number => effective(resultEntries(draft)).filter((entry) => !entry.scope && isManagerEntry(entry)).length;
 
+/** Keys of every row that manages the resource after saving, counted as the resource's rules count them. */
+export const managerKeys = (
+  draft: AccessDraft,
+  effective: (entries: readonly AccessEntry[]) => readonly AccessEntry[] = (entries) => entries,
+): Set<string> =>
+  new Set(
+    effective(resultEntries(draft))
+      .filter((entry) => !entry.scope && isManagerEntry(entry))
+      .map((entry) => entry.id),
+  );
+
 /** Keys of rows that are the only manager after saving: they cannot lose Manage or be removed. */
 export const lastManagerKeys = (
   draft: AccessDraft,

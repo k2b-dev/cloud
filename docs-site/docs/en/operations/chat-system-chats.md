@@ -463,3 +463,13 @@ The provider's standard `view.container` supplies the container's `ref` and
 capability uses a fresh nested reader under the incoming authority; display
 metadata never grants access to other items or replaces credential scope and
 resource binding checks.
+
+
+## Browser loading
+
+Chat loads forms, search, info and the channel and thread views when they open.
+Those destinations initially show the same loading notice on the server and in
+the browser, then use the authorized snapshot already supplied by the server.
+A failed code download leaves a visible **Try again** action in that destination.
+The conversation and composer remain in the initial island bundle. Browser
+validation of messages and live responses remains enabled.

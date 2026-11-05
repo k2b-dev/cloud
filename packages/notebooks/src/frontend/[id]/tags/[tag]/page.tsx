@@ -98,7 +98,7 @@ export default ssr<AuthContext>(async (c) => {
   // Book shows its reading order; the other modes show the bounded sidebar.
   const [bookNavigation, sidebar] = await Promise.all([
     isBookMode ? loadBookNavigation(notebook, null, locale) : Promise.resolve(EMPTY_NAVIGATION),
-    loadSidebarWithoutNote({ notebook, userId: user.id, sort: settings.treeSort, locale, filter: sidebarFilter }),
+    loadSidebarWithoutNote({ notebook, userId: user.id, sort: settings.treeSort, locale, filter: sidebarFilter, permission }),
   ]);
   const totalPages = Math.max(1, Math.ceil(paginatedResult.total / PER_PAGE));
   const baseHref = buildTagPageUrl(notebook.shortId, tagParam);

@@ -71,7 +71,7 @@ target grants no access to it.
 The shared permission editor accepts a Code account returned by its identity
 provider and shows it as an ordinary row with View and Edit. It never offers
 Manage. The general directory still excludes Code accounts: target-scoped
-lookup by exact identifier is supplied separately. Do not add name search or
+lookup by exact handle is supplied separately. Do not add name search or
 fall back to the Code owner's personal grants.
 
 For server-side account handling, `@k2b/cloud/services` exports two independent

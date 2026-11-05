@@ -352,7 +352,7 @@ test("a Code handle is resolved only in the supplied target and becomes a UUID p
 });
 
 for (const reason of ["no target", "empty target-scoped result (not a manager, missing, deleted or filtered account)"]) {
-  test(`a Code identifier refuses ${reason} with the surface's non-disclosing message`, async () => {
+  test(`a Code handle refuses ${reason} with the surface's non-disclosing message`, async () => {
     let lookups = 0;
     const ctx = {
       options: { locale: "de" },

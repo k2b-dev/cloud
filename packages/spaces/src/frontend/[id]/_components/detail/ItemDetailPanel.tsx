@@ -1,5 +1,7 @@
+import { accessMemberEntries } from "@k2b/cloud/access/ui";
 import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import type { AccessMember } from "@k2b/cloud/contracts";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
@@ -9,7 +11,9 @@ import {
   DateTimePicker,
   DescriptionList,
   type DescriptionListItem,
+  DetailAccess,
   DetailPanel,
+  DetailProperties,
   type DropdownItem,
   IconButton,
   IconButtonLink,
@@ -102,6 +106,8 @@ type Props = {
   blocks?: SpaceTaskDependent[];
   dateConfig?: DateContext;
   canWrite: boolean;
+  /** Who has access to the space; `null` for people who may not read it, such as public-link readers. */
+  access: { members: readonly AccessMember[]; state: "ready" | "loading" | "error"; retry: () => void } | null;
   mailIntegrationAvailable: boolean;
   scrollPreserveKey: string;
 };
@@ -1123,6 +1129,7 @@ export default function ItemDetailPanel(props: Props) {
           <Show when={propertyItems().length > 0}>
             <DetailPanel.Section
               title={t.properties}
+              icon="ti ti-list-details"
               actions={
                 canEditItem() ? (
                   <IconActionButton icon="ti ti-pencil" title={t.editItem} onClick={() => void handleEdit()} disabled={isLoading()} />
@@ -1137,6 +1144,7 @@ export default function ItemDetailPanel(props: Props) {
             <DetailPanel.Section
               class="[view-transition-name:space-item-detail-description]"
               title={t.description}
+              icon="ti ti-align-left"
               actions={
                 canEditItem() ? (
                   <IconActionButton
@@ -1152,64 +1160,7 @@ export default function ItemDetailPanel(props: Props) {
             </DetailPanel.Section>
           </Show>
 
-          <Show when={!isEvent() && (canEditItem() || hasChecklist())}>
-            <DetailPanel.Section
-              title={t.checklist}
-              meta={`${(props.checklist ?? []).filter((entry) => entry.completed).length}/${props.checklist?.length ?? 0}`}
-            >
-              <TaskChecklistSection
-                spaceId={props.spaceId}
-                itemId={props.item.id}
-                entries={props.checklist ?? []}
-                canWrite={canEditItem()}
-                onChanged={reconcileAfterWrite}
-              />
-            </DetailPanel.Section>
-          </Show>
-
-          <Show when={canShowInvitations()}>
-            <EventInvitations spaceId={props.spaceId} itemId={props.item.id} title={props.item.title} />
-          </Show>
-
-          <Show when={!isEvent() && props.work?.progress}>
-            {(note) => (
-              <DetailPanel.Section title={t.workProgress}>
-                <MarkdownView markdown={note().content} headingScale="compact" class="text-sm" />
-              </DetailPanel.Section>
-            )}
-          </Show>
-          <Show when={!isEvent() && props.work?.result}>
-            {(result) => (
-              <DetailPanel.Section title={t.workResult}>
-                <MarkdownView markdown={result().content} headingScale="compact" class="text-sm" />
-                <Show when={result().commit}>
-                  <code class="text-xs break-all">{result().commit}</code>
-                </Show>
-              </DetailPanel.Section>
-            )}
-          </Show>
-
-          <Show when={canEditItem() || hasLinks()}>
-            <ItemLinksSection
-              spaceId={props.spaceId}
-              itemId={props.item.id}
-              references={references()}
-              links={props.links ?? []}
-              canEdit={canEditItem()}
-              onChanged={reconcileAfterWrite}
-            />
-          </Show>
-
-          <Show when={!isEvent() && (canEditItem() || hasMedia())}>
-            <TaskAttachmentsSection
-              spaceId={props.spaceId}
-              itemId={props.item.id}
-              attachments={props.attachments ?? []}
-              canWrite={canEditItem()}
-              onChanged={reconcileAfterWrite}
-            />
-          </Show>
-
+          {/* Order of use (UI-27): fields, then the discussion, then the item's own content and what belongs to it. */}
           {/* The discussion starts with the item's reactions: no heading, no frame, every chip, and "Add reaction" at the end.
               A generated occurrence of a series is no item of its own and has none. */}
           <Show when={!isGeneratedOccurrence() && (canEditItem() || (props.item.reactions?.length ?? 0) > 0)}>
@@ -1250,17 +1201,86 @@ export default function ItemDetailPanel(props: Props) {
             />
           </Show>
 
-          <DetailPanel.Group title={isEvent() ? t.moreAboutEvent : t.moreAboutTask}>
-            <DetailPanel.Section title={t.technicalDetails} collapsible summary={t.technicalSummary}>
-              <DescriptionList
-                layout="rows"
-                size="sm"
-                items={[
-                  { term: t.created, description: dates.formatDateTime(props.item.createdAt, props.dateConfig) },
-                  { term: t.updated, description: dates.formatDateTime(props.item.updatedAt, props.dateConfig) },
-                  { term: "ID", description: <span class="break-all font-mono text-dimmed">{props.item.id}</span> },
-                ]}
+          <Show when={!isEvent() && (canEditItem() || hasChecklist())}>
+            <DetailPanel.Section
+              title={t.checklist}
+              icon="ti ti-checklist"
+              meta={`${(props.checklist ?? []).filter((entry) => entry.completed).length}/${props.checklist?.length ?? 0}`}
+            >
+              <TaskChecklistSection
+                spaceId={props.spaceId}
+                itemId={props.item.id}
+                entries={props.checklist ?? []}
+                canWrite={canEditItem()}
+                onChanged={reconcileAfterWrite}
               />
+            </DetailPanel.Section>
+          </Show>
+
+          <Show when={canShowInvitations()}>
+            <EventInvitations spaceId={props.spaceId} itemId={props.item.id} title={props.item.title} />
+          </Show>
+
+          <Show when={!isEvent() && props.work?.progress}>
+            {(note) => (
+              <DetailPanel.Section title={t.workProgress} icon="ti ti-progress">
+                <MarkdownView markdown={note().content} headingScale="compact" class="text-sm" />
+              </DetailPanel.Section>
+            )}
+          </Show>
+          <Show when={!isEvent() && props.work?.result}>
+            {(result) => (
+              <DetailPanel.Section title={t.workResult} icon="ti ti-flag-check">
+                <MarkdownView markdown={result().content} headingScale="compact" class="text-sm" />
+                <Show when={result().commit}>
+                  <code class="text-xs break-all">{result().commit}</code>
+                </Show>
+              </DetailPanel.Section>
+            )}
+          </Show>
+
+          <Show when={canEditItem() || hasLinks()}>
+            <ItemLinksSection
+              spaceId={props.spaceId}
+              itemId={props.item.id}
+              references={references()}
+              links={props.links ?? []}
+              canEdit={canEditItem()}
+              onChanged={reconcileAfterWrite}
+            />
+          </Show>
+
+          <Show when={!isEvent() && (canEditItem() || hasMedia())}>
+            <TaskAttachmentsSection
+              spaceId={props.spaceId}
+              itemId={props.item.id}
+              attachments={props.attachments ?? []}
+              canWrite={canEditItem()}
+              onChanged={reconcileAfterWrite}
+            />
+          </Show>
+
+          <DetailPanel.Group title={isEvent() ? t.moreAboutEvent : t.moreAboutTask}>
+            {/* Read-only for everyone with access of their own; public-link readers never get the list. */}
+            <Show when={props.access}>
+              {(access) => (
+                <DetailAccess
+                  entries={accessMemberEntries(access().members, { currentUserId: props.currentUserId, locale: locale() })}
+                  state={access().state}
+                  onRetry={access().retry}
+                  note={t.accessWholeSpace}
+                />
+              )}
+            </Show>
+            <DetailProperties
+              title={t.technicalDetails}
+              summary={t.technicalSummary}
+              items={[
+                { id: "created", label: t.created, value: dates.formatDateTime(props.item.createdAt, props.dateConfig) },
+                { id: "updated", label: t.updated, value: dates.formatDateTime(props.item.updatedAt, props.dateConfig) },
+                { id: "id", label: "ID", value: <span class="break-all font-mono text-dimmed">{props.item.id}</span> },
+              ]}
+            >
               <Show when={cloudId.available()}>
                 <DetailPanel.Action
                   type="button"
@@ -1269,7 +1289,7 @@ export default function ItemDetailPanel(props: Props) {
                   onClick={() => cloudId.copy({ type: "spaces.item", id: props.item.id })}
                 />
               </Show>
-            </DetailPanel.Section>
+            </DetailProperties>
           </DetailPanel.Group>
         </DetailPanel.Body>
       </DetailPanel>
