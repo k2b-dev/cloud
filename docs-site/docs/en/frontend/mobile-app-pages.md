@@ -152,7 +152,7 @@ export default ssr<AuthContext>(async (c) => {
 | --- | --- |
 | No app session | `302` to `/pwa/_auth/session/launch?to=<path and query>`; Core renews the session and returns the device to the same page |
 | No app session after that return (`pwa_launch` in the query) | `302` to `/pwa/?pwa=unavailable`, which stops a redirect loop |
-| Signed in without the required role | `403` page in the Cloud app's layout |
+| Signed in without the required role | `403` page in the Cloud app's layout, titled with the part's name, such as "Inventory is not available to you" |
 
 Each of these responses sets `Cache-Control: private, no-store`. For other errors, call
 `ssr.error(c, status, { layout: "pwa" })`; see
@@ -176,6 +176,7 @@ pages. Declare `/public/<app-id>` when the part has its own styles.
 | `back` | Optional `{ href, label, withSidebar }` for going up inside the part, for example from a detail to its list; `withSidebar: false` hides it beside the sidebar |
 | `actions` | At most two icon buttons at the end of the header |
 | `bare` | The page brings its own heads and scroll areas, such as `AppWorkspace.Main` levels; `title` still names the document |
+| `screen` | Below 48 rem, the page opens as a screen of its own without the tab bar, such as one chat with its composer at the bottom edge; a part that opens or leaves such a screen in place calls [`MobileShell.setScreen`](/en/ui/layout/mobile-shell) |
 | `children` | The page content, in the app's only scroll area |
 
 It renders the app's document head, a

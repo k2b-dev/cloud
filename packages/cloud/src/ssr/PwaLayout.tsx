@@ -35,6 +35,11 @@ export type PwaLayoutProps = {
    * navigation. `title` still names the document.
    */
   bare?: boolean;
+  /**
+   * The page opens as a screen of its own below 48rem, such as one chat with its composer at the bottom edge: the tab
+   * bar steps aside. A part that changes this in place calls `MobileShell.setScreen` from `@k2b/ui`.
+   */
+  screen?: boolean;
   children: JSX.Element;
 };
 
@@ -116,6 +121,7 @@ export default function PwaLayout(props: PwaLayoutProps) {
       <MobileShell
         header={<MobileShell.Header title={props.title} sidebarTitle={props.sidebarTitle} back={props.back} actions={props.actions} />}
         scroll={!props.bare}
+        screen={props.screen}
         footer={user && parts.length > 0 ? <TabBar label={t.tabs} items={items} /> : undefined}
         sidebar={user ? sidebar : undefined}
       >

@@ -15,6 +15,9 @@ export const pwaMessages = i18n.define({
       otherAccount: ({ cloud, name }: { cloud: string; name: string }) =>
         `Chrome on this device is signed in to ${cloud} as ${name}. Changes in the app may be saved to that account. Sign out of ${cloud} in Chrome.`,
       errorAction: "Back to Start",
+      partForbidden: ({ name }: { name: string }) => `${name} is not available to you`,
+      partForbiddenDescription: ({ name }: { name: string }) =>
+        `Your administrators decide who may use ${name}. Ask them if you need it.`,
     },
     de: {
       tabs: "App",
@@ -26,7 +29,10 @@ export const pwaMessages = i18n.define({
       reload: "Neu laden",
       otherAccount: ({ cloud, name }: { cloud: string; name: string }) =>
         `Chrome auf diesem Gerät ist bei ${cloud} als ${name} angemeldet. Änderungen in der App werden womöglich in diesem Konto gespeichert. Melde dich in Chrome von ${cloud} ab.`,
-      errorAction: "Zurück zum Start",
+      errorAction: "Zum Start",
+      partForbidden: ({ name }: { name: string }) => `${name} ist für dich nicht freigegeben`,
+      partForbiddenDescription: ({ name }: { name: string }) =>
+        `Wer ${name} nutzen darf, legt die Verwaltung fest. Frag dort nach, wenn du es brauchst.`,
     },
   },
 });

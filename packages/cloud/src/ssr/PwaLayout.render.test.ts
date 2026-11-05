@@ -197,11 +197,27 @@ describe("ssr.pwaAccess", () => {
     ]);
   });
 
+  test("a part that refuses names itself, in the reader's language", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory", { presentation: { baseLocale: "en", translations: { de: { name: "Lager" } } } })];
+    try {
+      const english = await render("/pwa/admin-only");
+      expect(english.response.status).toBe(403);
+      expect(english.document.querySelector(".k2b-placeholder")?.textContent).toContain("Inventory is not available to you");
+      expect(english.document.title).toContain("Inventory is not available to you");
+      const german = await render("/pwa/admin-only", { "Accept-Language": "de" });
+      expect(german.document.querySelector(".k2b-placeholder")?.textContent).toContain("Lager ist für dich nicht freigegeben");
+      expect(german.document.querySelector('.k2b-placeholder a[href="/pwa/"]')?.textContent).toBe("Zum Start");
+    } finally {
+      apps = [];
+    }
+  });
+
   test("renders the app's 404 in the phone frame", async () => {
     const { response, document } = await render("/pwa/missing", { "Accept-Language": "de" });
     expect(response.status).toBe(404);
     expect(document.querySelector(".k2b-mobile-shell__title")?.textContent).toBe("Seite nicht gefunden");
-    expect(document.querySelector(".k2b-placeholder a")?.textContent).toBe("Zurück zum Start");
+    expect(document.querySelector(".k2b-placeholder a")?.textContent).toBe("Zum Start");
   });
 });
 
