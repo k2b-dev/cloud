@@ -59,7 +59,7 @@ Cloud uses JSON-RPC for:
 
 | Area | Required operations |
 | --- | --- |
-| Users | add, modify, delete, find, show |
+| Users | add, modify, enable, disable, delete, find, show |
 | Groups | add, modify, delete, find, show |
 | Membership | add and remove members |
 | Member managers | add and remove member managers |
@@ -138,6 +138,46 @@ what happens when an IPA-backed account expires or leaves synchronization scope:
 Review the destination category's allowed-access policy before changing this.
 Retaining an account does not guarantee it can sign in, and a provider transition
 is not a migration of workstation file ownership.
+
+When approving a local guest's FreeIPA request, Cloud checks the existing
+username before creating an account. An expired or disabled account with the
+same email can be reactivated. Cloud keeps its numeric user and group IDs,
+home directory and existing directory memberships, restores the configured
+sync and full-user groups, and sends a temporary password through the usual
+welcome notification. The audit action is `accounts.user.reactivate`.
+
+Cloud refuses a different or missing email, a changed stored numeric user ID,
+or an active account without a matching interrupted reactivation. Resolve
+these conflicts by verifying the person's directory identity; do not delete
+and recreate the account. FreeIPA must expose its unique entry ID for safe
+retries. If approval fails after a remote change, resolve the reported error
+and retry the pending request. Cloud checks the saved unique entry ID before
+continuing, even if the account is already active. Access is restored after
+the password and group changes. A failure while restoring access or committing
+the local link attempts to restore the original expiry and disabled state.
+If that compensation fails, Operations logs an access rollback failure; keep
+the request pending and retry after resolving the directory error.
+
+A missing directory account with a stored IPA numeric user ID is also refused:
+Cloud does not silently replace that identity with a new numeric owner.
+
+If the directory entry, server or email changed after an interrupted attempt,
+inspect the exact user's row in `auth.ipa_reactivations`, including its saved
+remote ID and original access state. Verify the old and current directory
+identities and numeric owners before recovery. Prefer restoring the original
+entry and matching account details. An operator may clear a stale claim only
+by its exact Cloud user ID and saved remote ID, after verifying the target is
+expired or disabled and its mail and numeric identity belong to that person.
+Clearing a claim does not permit linking an active account or replacing a
+missing numeric identity.
+
+Reactivation preserves an account that still exists in FreeIPA. It does not
+automatically restore numeric IDs lost through an earlier deletion and recreation. For an
+already recreated account, the operator must verify the old and current
+numeric IDs and repair filesystem ownership and ACLs on the affected storage,
+or restore the original directory identity through a planned recovery. This
+requires a backup and an explicit storage recovery procedure; approving the
+Cloud request alone does not repair NFS ownership.
 
 **Sync Cron** (`freeipa.sync_cron`) defaults to `*/5 * * * *`: every five minutes
 in the Cloud timezone. Use Operations to inspect sync logs.

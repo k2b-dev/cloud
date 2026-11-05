@@ -10,6 +10,10 @@ const catalog = i18n.define({
       resourceNotFound: "The requested Accounts resource was not found",
       conflictingChange: "The Accounts change conflicts with the current state",
       emailAlreadyUsed: "An account with this email already exists.",
+      ipaIdentityConflict:
+        "The existing FreeIPA account cannot be safely linked to this person. Ask an administrator to verify its identity.",
+      ipaMissingConflict: "The original FreeIPA account is missing. Restore its directory identity before approving this request.",
+      ipaActiveConflict: "The existing FreeIPA account is active. Ask an administrator to verify its identity before linking it.",
       operationFailed: "The Accounts operation failed",
       userUpdated: "User updated.",
       avatarUpdated: "Avatar updated.",
@@ -32,6 +36,10 @@ const catalog = i18n.define({
       resourceNotFound: "Die angeforderte Accounts-Ressource wurde nicht gefunden",
       conflictingChange: "Die Accounts-Änderung steht im Konflikt mit dem aktuellen Stand",
       emailAlreadyUsed: "Diese E-Mail-Adresse wird bereits von einem Konto verwendet.",
+      ipaIdentityConflict:
+        "Das vorhandene FreeIPA-Konto kann dieser Person nicht sicher zugeordnet werden. Bitte einen Administrator, die Identität zu prüfen.",
+      ipaMissingConflict: "Das ursprüngliche FreeIPA-Konto fehlt. Stelle vor der Freigabe die Verzeichnisidentität wieder her.",
+      ipaActiveConflict: "Das vorhandene FreeIPA-Konto ist aktiv. Bitte einen Administrator, vor der Verknüpfung die Identität zu prüfen.",
       operationFailed: "Der Accounts-Vorgang ist fehlgeschlagen",
       userUpdated: "Benutzer aktualisiert.",
       avatarUpdated: "Profilbild aktualisiert.",
@@ -63,6 +71,9 @@ export const accountsApiErrorMessage = (status: number, locale?: string | null, 
   if (status === 401 || status === 403) return t.accessDenied;
   if (status === 404) return t.resourceNotFound;
   if (status === 409 && baseMessage === "An account with this email already exists.") return t.emailAlreadyUsed;
+  if (status === 409 && baseMessage === accountsApiMessages("en").ipaIdentityConflict) return t.ipaIdentityConflict;
+  if (status === 409 && baseMessage === accountsApiMessages("en").ipaMissingConflict) return t.ipaMissingConflict;
+  if (status === 409 && baseMessage === accountsApiMessages("en").ipaActiveConflict) return t.ipaActiveConflict;
   if (status === 409) return t.conflictingChange;
   if (status >= 500) return t.operationFailed;
   return t.invalidRequest;
