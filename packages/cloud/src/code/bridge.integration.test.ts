@@ -553,6 +553,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
 
   test.each([false, true])("generation failures settle known usage before payload-free runner projection (unknown=%s)", async (unknown) => {
     await resetFixture({ personal: true, entry: true, policyRows: ["ai"] });
+    await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
     const run = spyOn(decision, "runAiStructured").mockImplementation(async (request) => {
       request.onUsage?.({ model: decisionResultFixture.model, usage: { input: 30, output: 2 } });
       request.onUsage?.({ model: decisionResultFixture.model, usage: unknown ? undefined : { input: 10, output: 1, estimated: true } });
@@ -580,6 +581,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       expect(await response.json()).toEqual({ ok: false, error: { code: "quota_exhausted", status: 429 } });
       const [budget] = await sql`SELECT ai_reference_cost::text AS cost,ai_reserved_cost::text AS reserved,ai_budget_call
         FROM code.runs WHERE id=${claims.runId}::uuid`;
+      expect(run).toHaveBeenCalledTimes(1);
       expect(budget).toEqual({ cost: unknown ? "1.000000000000" : "0.000046000000", reserved: "0", ai_budget_call: null });
       const counters = await sql<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget
         WHERE scope_key=${claims.codeId} OR scope_key=json_build_array('person',${userId}::text)::text`;
