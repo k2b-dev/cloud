@@ -1,3 +1,4 @@
+import { autoBin, computeDomain, niceStep } from "@k2b/stdlib";
 import { z } from "zod";
 
 /** Optional caller policy. Rendering itself has no AI input budget. */
@@ -272,3 +273,65 @@ export const chartDateTime = (value: string): number | undefined => {
 
 /** One chart as the shared renderers read it. */
 export type ChartInput = z.output<ReturnType<typeof chartKinds>>;
+
+export type ChartAxisInput = { label?: string; domain?: number[]; ticks?: number; scale?: "linear" | "log"; format?: ChartFormat };
+
+const dateTime = (value: number | string) => (typeof value === "number" ? value : (chartDateTime(value) ?? Number.NaN));
+/** The renderer's default tick count. */
+const TICKS = 5;
+
+export const chartReferenceValues = (input: ChartInput, name: "x" | "y") =>
+  "references" in input ? (input.references ?? []).filter((ref) => (ref.axis ?? "y") === name).map((ref) => dateTime(ref.value)) : [];
+
+/** The value axes of a chart with what they show: the data checks and the label room read them alike. */
+export const chartValueAxes = (input: ChartInput): { values: number[]; axis?: ChartAxisInput; zero?: boolean; name: "x" | "y" }[] => {
+  if (input.kind === "bar") return [{ values: input.data.map((item) => item.value), axis: input.yAxis, zero: true, name: "y" }];
+  if (input.kind === "boxplot") return [{ values: input.data.flatMap((item) => item.values), axis: input.yAxis, name: "y" }];
+  if (input.kind === "histogram") {
+    if (!input.references?.length) return [{ values: input.data, name: "x" }];
+    const { edges, counts } = autoBin(input.data, input.bins);
+    return [
+      { values: edges, name: "x" },
+      { values: counts, zero: true, name: "y" },
+    ];
+  }
+  if (input.kind !== "line" && input.kind !== "scatter") return [];
+  const points = input.series.flatMap((series) => series.data);
+  return [
+    { values: points.map((point) => dateTime(point.x)), axis: input.xAxis, name: "x" },
+    { values: points.map((point) => point.y), axis: input.yAxis, name: "y" },
+  ];
+};
+
+/**
+ * Whether the renderer can step from the lowest to the highest tick. Values that differ by less than the float
+ * precision of their size, such as 1e17 and 1e17 + 16, would make it count forever.
+ */
+const steppable = (values: number[], ticks = TICKS) => {
+  const [min, max] = computeDomain(values);
+  const step = niceStep(max - min, ticks);
+  return [Math.floor(min / step) * step, Math.ceil(max / step) * step].every((value) => value + step !== value && value - step !== value);
+};
+
+/** Rejects only precision ranges that would make the renderer count ticks forever. */
+export function chartSteppingIssue(input: ChartInput): string | undefined {
+  // Check raw observations before autoBin computes histogram edges.
+  if (input.kind === "histogram" && !steppable(input.data))
+    return "The values differ too little for their size to label an axis; subtract a common offset first.";
+  for (const { values: data, axis, zero, name } of chartValueAxes(input)) {
+    const values = [...data, ...chartReferenceValues(input, name)];
+    if (axis?.scale !== "log" && !axis?.domain && !steppable(zero ? [...values, 0] : values, axis?.ticks))
+      return "The values differ too little for their size to label an axis; subtract a common offset first.";
+  }
+  return undefined;
+}
+
+/** Application chart schema: permissive observations, with the renderer's tick-safety guard. */
+export const chartSchema = (limits?: ChartLimits) =>
+  chartKinds(limits).superRefine(
+    (chart, context) => {
+      const issue = chartSteppingIssue(chart);
+      if (issue) context.addIssue({ code: "custom", message: issue });
+    },
+    { when: (payload) => payload.issues.length === 0 },
+  );

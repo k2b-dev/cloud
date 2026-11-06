@@ -1,3 +1,5 @@
+import type { CodePageNode, CodePageTree } from "./page-contract";
+
 /** A target identity created by a generated factory, never an authorization grant. */
 declare const __codeHandle: unique symbol;
 export type CodeHandle<Type extends string, Id extends string = string> = {
@@ -7,7 +9,7 @@ export type CodeHandle<Type extends string, Id extends string = string> = {
 };
 /** Visitor identity is presentation and handler input, never the authority for SDK data calls. */
 export type CodeUser = { id: string; groups: string[] };
-/** Basic request helpers for future routes. No middleware system is part of Code. */
+/** Request helpers for hosted routes. No middleware system is part of Code. */
 export type CodeRequest = {
   raw: Request;
   param(name: string): string;
@@ -22,6 +24,7 @@ export type CodeContext = {
   user: CodeUser | null;
   json(value: unknown, status?: number): Response;
   text(value: string, status?: number): Response;
+  page(tree: CodePageTree | CodePageNode): Response;
   redirect(location: string, status?: number): Response;
 };
 /** A webhook is anonymous and must verify its request explicitly. */

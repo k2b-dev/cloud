@@ -318,3 +318,69 @@ when deciding whether a separate authorized action is appropriate.
 Optional images and `model: { id }`, provider-dependent image support, quota
 failures and byte limits follow
 [Typed decision questions](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions).
+
+## Return a page
+
+Use `c.page(tree)` for a Cloud-rendered document. In a `.tsx` entry file, import
+`jsx` and the description components from `@sdk`. The checker compiles TSX with
+this factory; there is no application JSX framework or Hono in the bundle.
+
+```tsx
+import { app, jsx, Page, Section, Text, Form, Chart } from "@sdk";
+
+app.get("/", c => c.page(
+  <Page title="Workshop">
+    <Section title="Today">
+      <Text>Scan an item to open its details.</Text>
+      <Chart.Bar title="Items" data={[{ label: "Ready", value: 12 }]} />
+      <Form title="Find an item" action="/find" submit="Find"
+        fields={[{ type: "scan", name: "barcode", label: "Barcode", required: true }]} />
+    </Section>
+  </Page>
+));
+app.post("/find", async c => {
+  const form = await c.req.formData();
+  return c.redirect(`/items/${encodeURIComponent(String(form.get("barcode") ?? ""))}`);
+});
+```
+
+Components build data only. The root is `{ version: 1, kind: "Page", title,
+children }`. You can also construct this description directly. Core checks
+every returned tree before rendering it. Text is escaped. Unknown kinds and
+properties, HTML/SVG, event handlers, functions, accessors and foreign links
+are rejected. `c.html()` is unavailable.
+
+The version 1 allow-list is:
+
+| Node | Description fields |
+| --- | --- |
+| `Page` | `title`, `children`; root only, `version: 1` |
+| `Section` | `title`, `children` |
+| `Text` | `text`; TSX also accepts a text child |
+| `Heading` | `text`, optional `level: 2 \| 3 \| 4` |
+| `Table` | `title`, `columns: [{ key, label }]`, `rows` of scalar values |
+| `Form` | `title`, `action`, `fields`, `submit`; always POST |
+| `Detail` | `title`, `items: [{ label, value }]` |
+| `Chart` | `description: { kind, … }`; portable chart data, no callbacks |
+| `Link` | `label`, `href` |
+| `Button`, `Action` | `label`, `action`, optional string `values`; always POST |
+| `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` |
+
+Fields have `name`, `label`, `type`, optional `value` and `required`. Types are
+`text`, `email`, `number`, `textarea`, `select`, `checkbox` and `scan`. Only
+`select` takes `options: [{ value, label }]`. Values match the field type.
+Field names are unique; `_csrf` is reserved. Cloud inserts the CSRF token into
+forms and actions and removes it before invoking the handler. Links and POST
+destinations resolve inside `/code/<id>/`; they cannot leave that Code.
+
+The first renderer presents chart descriptions as their data tables and scan
+fields as text inputs. Chart drawings, camera scanning and live subscriptions
+are separate renderer work. Supported chart descriptions are `bar`, `line`,
+`scatter`, `pie`, `donut`, `histogram`, `gauge`, `sparkline`, `boxplot`, `heatmap`,
+`barGauge` and `stat`, with matching `Chart.Bar`, `Chart.Line`, etc. builders.
+The portable chart data contract is exported by `@k2b/editor/chart-schema`.
+
+A tree is limited to 64 KiB, 256 nodes and 12 node levels. A table has at most
+200 rows and 20 columns; a form has at most 40 fields. Portable chart budgets
+are eight series, 200 values per series and 1,600 marks. Request and response
+limits still apply to the complete envelope.

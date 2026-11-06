@@ -74,7 +74,7 @@ beforeAll(async () => {
   await copyFile(host.isolate, join(image, "checker-isolate"));
   await chmod(join(image, "compiler/tsc"), 0o755);
   await chmod(join(image, "checker-isolate"), 0o755);
-});
+}, 60_000);
 afterAll(async () => {
   async function clean(path: string): Promise<void> {
     for (const entry of await readdir(path, { withFileTypes: true })) {
@@ -645,3 +645,52 @@ app.post("/save", c => c.redirect("/hello/saved"));`);
   ).toEqual({ kind: "json", status: 200, body: JSON.stringify({ person: "visitor", name: "Valentin" }) });
   expect(result.bundle).not.toContain("hono");
 }, 30_000);
+
+test("TSX builds checked page descriptions without a framework bundle", async () => {
+  const result = await checkCode(
+    {
+      ...base,
+      entry: "code.tsx",
+      limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 },
+      files: {
+        "code.tsx": `import { app, jsx, Page, Section, Text, Form, Chart } from "@sdk";
+app.get("/", c => c.page(<Page title="Items"><Section title="Today"><Text>Hello {"there"}</Text><Chart.Bar title="Count" data={[{label:"One",value:2}]} /><Form title="Find" action="/find" fields={[{type:"scan",name:"barcode",label:"Barcode"}]} submit="Find" /></Section></Page>));`,
+      },
+    },
+    host,
+  );
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
+  const response = await module["route:GET:/"](
+    { method: "GET", path: "/", query: "", params: {}, contentType: "text/plain", body: "", user: null },
+    { call: async () => null },
+  );
+  expect(response).toMatchObject({
+    kind: "page",
+    tree: {
+      version: 1,
+      kind: "Page",
+      title: "Items",
+      children: [
+        { kind: "Section", title: "Today", children: [{ kind: "Text", text: "Hello there" }, { kind: "Chart" }, { kind: "Form" }] },
+      ],
+    },
+  });
+  for (const runtime of ["solid-js", "hono", "react/jsx-runtime"]) expect(result.bundle).not.toContain(runtime);
+}, 30000);
+test("TSX refuses intrinsic HTML and handler props", async () => {
+  for (const child of ["<div>HTML</div>", "<Text onClick={() => {}}>Handler</Text>"]) {
+    const result = await checkCode(
+      {
+        ...base,
+        entry: "code.tsx",
+        limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 },
+        files: { "code.tsx": `import { app, jsx, Page, Text } from "@sdk"; app.get("/",c=>c.page(<Page title="Bad">${child}</Page>));` },
+      },
+      host,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.diagnostics.some((diagnostic) => diagnostic.code.startsWith("TS"))).toBe(true);
+  }
+}, 60000);
