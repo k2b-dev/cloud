@@ -4,14 +4,22 @@ import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, rmdir, unlink, writeFile 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
-import { CODE_INITIAL_SOURCE } from "../../../core/src/code/authoring-contracts";
+import codeCli from "../../../core/src/cli/code";
+import {
+  CODE_INITIAL_SOURCE,
+  CODE_PROJECT_TSCONFIG,
+  codeAuthoringContracts,
+  codeInitialFiles,
+} from "../../../core/src/code/authoring-contracts";
 import { readCodeCheckLimits } from "../../../core/src/code/runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "../../../core/src/code/settings";
 import { capabilityHash } from "../_internal/capability-schemas";
 import { compileCapabilityManifest } from "../capabilities/testing";
+import type { CloudCliContext } from "../cli";
 import { type CodeCheckHost, checkCode } from "./checker";
 import { CODE_CHECK_LIMITS, type CodeCheckRequest, CodeVersionManifestSchema } from "./checker-contract";
 import { generateCodeSdk } from "./generator";
+import { validateCodePage } from "./page-contract";
 import { sdkFixture } from "./sdk.test-fixture";
 
 let directory: string;
@@ -109,6 +117,81 @@ test("the unchanged init template passes the real checker with default Core job 
     settings.mockRestore();
   }
 });
+
+test("cld code init's TSX page passes cld code check and its generated editor tsconfig", async () => {
+  const owner = { kind: "resource" as const, ref: { type: "work-shop.workshop", id: "owner-shop" } };
+  const template = codeInitialFiles(owner);
+  const config = { version: 1, codeId: "c_fixture", title: "Overview", owner, entry: template.entry, baseVersionId: null };
+  const root = join(directory, "init-tsx");
+  const project = join(root, "work-shop", "owner-shop");
+  const outputs: unknown[] = [];
+  const commands: string[] = [];
+  const context: CloudCliContext = {
+    args: ["init"],
+    flags: { title: "Overview", "owner-type": owner.ref.type, "owner-id": owner.ref.id, out: root },
+    options: { profile: "fixture", server: "https://cloud.test", token: "fixture", output: "json", locale: "en" },
+    getDefault: async () => undefined,
+    setDefault: async () => {},
+    createApiClient: () => {
+      throw new Error("unused");
+    },
+    fetch: async (path, init) => {
+      commands.push(path);
+      if (path.endsWith("/init")) return Response.json({ version: 1, config, files: template.files });
+      if (path.endsWith("/sdk"))
+        return Response.json({
+          version: 1,
+          files: {
+            "sdk/sdk.d.ts": sdk.declarations,
+            "sdk/sdk.js": sdk.runtime,
+            "tsconfig.json": JSON.stringify(CODE_PROJECT_TSCONFIG),
+          },
+        });
+      expect(path).toBe("/api/code/authoring/check");
+      const input = codeAuthoringContracts.check.input.parse(JSON.parse(String(init?.body)));
+      expect(input).toEqual({ codeId: config.codeId, ...template });
+      const result = await checkCode({ ...base, entry: input.entry, files: input.files }, host);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+      expect(result.manifest.entrypoints).toMatchObject([{ kind: "route", route: { method: "GET", path: "/", public: false } }]);
+      return Response.json({ version: 1, result, manifest: { ...result.manifest, entry: input.entry, policyRows: [] }, permissions: [] });
+    },
+    readJson: async (response) => response.json(),
+    print: (value) => {
+      outputs.push(value);
+    },
+    write: async (value) => {
+      outputs.push(value);
+    },
+    error: (message) => {
+      throw new Error(message);
+    },
+    json: (value) => {
+      outputs.push(value);
+    },
+    jsonLine: (value) => {
+      outputs.push(value);
+    },
+    table: () => {
+      throw new Error("unused");
+    },
+  };
+  expect(template.entry).toBe("code.tsx");
+  expect(await codeCli.run(context)).toBe(0);
+  context.args = ["sdk", "pull", project];
+  context.flags = {};
+  expect(await codeCli.run(context)).toBe(0);
+  context.args = ["check", project];
+  expect(await codeCli.run(context)).toBe(0);
+  expect(commands).toEqual(["/api/code/authoring/init", "/api/code/authoring/sdk", "/api/code/authoring/check"]);
+  expect(outputs.at(-1)).toMatchObject({ result: { ok: true } });
+  const types = Bun.spawn([host.compiler, "--checkers", "1", "--project", join(project, "tsconfig.json"), "--pretty", "false"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exit, stdout, stderr] = await Promise.all([types.exited, new Response(types.stdout).text(), new Response(types.stderr).text()]);
+  expect({ exit, stdout, stderr }).toEqual({ exit: 0, stdout: "", stderr: "" });
+}, 60_000);
 
 test("core.ai.decide is AI in the generated SDK and mail triage checks category before urgency", async () => {
   const manifests = [compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } })];
@@ -646,7 +729,7 @@ app.post("/save", c => c.redirect("/hello/saved"));`);
   expect(result.bundle).not.toContain("hono");
 }, 30_000);
 
-test("TSX builds checked page descriptions without a framework bundle", async () => {
+test("TSX and object pages produce identical validated trees without a framework bundle", async () => {
   const result = await checkCode(
     {
       ...base,
@@ -654,7 +737,14 @@ test("TSX builds checked page descriptions without a framework bundle", async ()
       limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 },
       files: {
         "code.tsx": `import { app, jsx, Page, Section, Text, Form, Chart } from "@sdk";
-app.get("/", c => c.page(<Page title="Items"><Section title="Today"><Text>Hello {"there"}</Text><Chart.Bar title="Count" data={[{label:"One",value:2}]} /><Form title="Find" action="/find" fields={[{type:"scan",name:"barcode",label:"Barcode"}]} submit="Find" /></Section></Page>));`,
+app.get("/", c => c.page(<Page title="Items"><Section title="Today"><Text>Hello {"there"}</Text><Chart.Bar title="Count" data={[{label:"One",value:2}]} /><Form title="Find" action="/find" fields={[{type:"scan",name:"barcode",label:"Barcode"}]} submit="Find" /></Section></Page>));
+app.get("/object", c => c.page({
+  version: 1, kind: "Page", title: "Items", children: [{ kind: "Section", title: "Today", children: [
+    { kind: "Text", text: "Hello there" },
+    { kind: "Chart", description: { kind: "bar", title: "Count", data: [{ label: "One", value: 2 }] } },
+    { kind: "Form", title: "Find", action: "/find", fields: [{ type: "scan", name: "barcode", label: "Barcode" }], submit: "Find" },
+  ] }],
+}));`,
       },
     },
     host,
@@ -677,6 +767,15 @@ app.get("/", c => c.page(<Page title="Items"><Section title="Today"><Text>Hello 
       ],
     },
   });
+  const objectPath = join(directory, "object-page.mjs");
+  await writeFile(objectPath, result.bundle);
+  const objectModule = await import(objectPath);
+  const objectResponse = await objectModule["route:GET:/object"](
+    { method: "GET", path: "/object", query: "", params: {}, contentType: "text/plain", body: "", user: null },
+    { call: async () => null },
+  );
+  expect(response).toEqual(objectResponse);
+  expect(validateCodePage(response.tree, "c_fixture")).toEqual(validateCodePage(objectResponse.tree, "c_fixture"));
   for (const runtime of ["solid-js", "hono", "react/jsx-runtime"]) expect(result.bundle).not.toContain(runtime);
 }, 30000);
 test("TSX refuses intrinsic HTML and handler props", async () => {
