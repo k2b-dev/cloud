@@ -1729,8 +1729,11 @@ title. It appears when the row is hovered, keyboard-focused, current, or has
 its menu open. Touch-only screens always show the actions. The counts stay in
 the accessibility tree while hidden. Omit the leading icon when every object would show the same
 one. A plain object-row icon sits in a soft chip of the accent ink
-`--k2b-app-workspace-active`; custom
+`--k2b-app-workspace-active`, as far from the row's start as from its top and
+bottom; custom
 icon content, such as an avatar, keeps its own treatment in the same 2rem box.
+Entries inside one resource, such as the dashboards of a Pulse base, are not
+object rows: they use the default row with a plain glyph and no chip.
 Object rows keep their title on one line that fades out.
 
 ```tsx

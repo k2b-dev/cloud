@@ -1,5 +1,5 @@
 import { niceStep } from "@k2b/stdlib";
-import type { ChartProps } from "@k2b/ui";
+import { type ChartLegendEntry, type ChartProps, prepareChartSnapshot } from "@k2b/ui";
 import type { DashboardRange } from "../../dashboard-contracts";
 import type { DashboardPanelData } from "../../dashboard-result";
 import { sqlTimestamp } from "../../sql-result-values";
@@ -48,17 +48,18 @@ export const dashboardLine = (
   data: DashboardPanelData,
   locale: string,
   window?: { from: string; to: string },
-): Extract<ChartProps, { kind: "line" }> => {
+) => {
   const x = data.columns.findIndex((column) => column.name === panel.x);
   const group = data.columns.findIndex((column) => column.name === panel.series);
-  const series = new Map<string, { label: string; data: { x: number; y: number }[] }>();
+  // `id` names the series by its source group and column, independent of its position in the result.
+  const series = new Map<string, { id: string; label: string; data: { x: number; y: number }[] }>();
   for (const row of data.rows) {
     const time = sqlTimestamp(row[x], data.columns[x]?.type ?? "");
     for (const [index, column] of data.columns.entries()) {
       if (index === x || index === group) continue;
       const label = group < 0 ? column.name : `${dashboardCell(row[group], locale)}${data.columns.length > 3 ? ` · ${column.name}` : ""}`;
       const key = JSON.stringify([group < 0 ? null : row[group], column.name]);
-      const value = series.get(key) ?? { label, data: [] };
+      const value = series.get(key) ?? { id: key, label, data: [] };
       const y = number(row[index]);
       if (Number.isFinite(time) && y !== null) value.data.push({ x: time, y });
       series.set(key, value);
@@ -93,9 +94,8 @@ export const dashboardLine = (
     kind: "line",
     series: [...series.values()],
     smooth: false,
-    legend: true,
-    legendPlacement: "top-start",
-    interactive: true,
+    // ChartExplorer lists the series below the plot, where long names wrap.
+    legend: false,
     maxGap: spacing.length ? Math.min(...spacing) * 1.5 : undefined,
     xAxis: {
       domain,
@@ -122,6 +122,44 @@ export const dashboardLine = (
           : [],
       ),
     }),
+  } satisfies Extract<ChartProps, { kind: "line" }>;
+};
+/**
+ * One table row per drawn point. The key is the series and the point's time, so a selection stays on the same
+ * measurement when a refresh drops older points; a repeated time in one series counts up.
+ */
+export type DashboardLineRow = { key: string; at: number; series: string; value: number };
+/**
+ * The line panel as ChartExplorer data: the same axis, references, and tooltips as `dashboardLine`, one row per
+ * point for the table and Copy data, and the series names for the explorer's wrapping legend.
+ */
+export const dashboardLineExplorer = (
+  panel: PublicDashboardPanel,
+  data: DashboardPanelData,
+  locale: string,
+  window?: { from: string; to: string },
+) => {
+  const { tooltip, ...line } = dashboardLine(panel, data, locale, window);
+  const keys = line.series.map((series) => {
+    const seen = new Map<number, number>();
+    return series.data.map((point) => {
+      const repeat = seen.get(point.x) ?? 0;
+      seen.set(point.x, repeat + 1);
+      return JSON.stringify([series.id, point.x, repeat]);
+    });
+  });
+  const key = (seriesIndex: number | undefined, index: number) => keys[seriesIndex ?? 0]?.[index] ?? "";
+  const rows: DashboardLineRow[] = line.series.flatMap((series, seriesIndex) =>
+    series.data.map((point, index) => ({ key: key(seriesIndex, index), at: point.x, series: series.label, value: point.y })),
+  );
+  const legend: ChartLegendEntry[] =
+    line.series.length > 1 ? line.series.map((series, index) => ({ label: series.label, color: index })) : [];
+  return {
+    data: {
+      rows,
+      chart: prepareChartSnapshot(line, { key: ({ datum }) => key(datum.seriesIndex, datum.index), tooltip }),
+    },
+    legend,
   };
 };
 export const dashboardCategories = (panel: PublicDashboardPanel, data: DashboardPanelData, locale: string) => {

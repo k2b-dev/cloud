@@ -1,10 +1,28 @@
-import { Button, Chart, type ChartCursor, DataTable, Disclosure, IconButton, Skeleton, StatCell, useLocale } from "@k2b/ui";
+import {
+  Button,
+  Chart,
+  type ChartCursor,
+  ChartExplorer,
+  type ChartSnapshot,
+  DataTable,
+  Disclosure,
+  IconButton,
+  Skeleton,
+  StatCell,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, lazy, Show, Suspense } from "solid-js";
 import type { DashboardPanel } from "../../dashboard-contracts";
 import { readOverviewNumber } from "../../overview-number";
 import { usePulseMessages } from "../use-messages";
 import type { DashboardPanelResult, PublicDashboardPanel } from "./dashboard-client";
-import { dashboardCategories, dashboardCell, dashboardCountries, dashboardLine } from "./dashboard-data";
+import { type DashboardLineRow, dashboardCategories, dashboardCell, dashboardCountries, dashboardLineExplorer } from "./dashboard-data";
+
+// A line panel keeps its explorer, header and height while it has no points to draw.
+const noLine: { chart: ChartSnapshot; rows: DashboardLineRow[] } = {
+  chart: { kind: "line", svg: "", width: 480, height: 280, stretch: true, marks: [] },
+  rows: [],
+};
 
 // The country shapes load only for dashboards that show a map.
 const CountryMap = lazy(() => import("@k2b/ui/country-map").then((module) => ({ default: module.CountryMap })));
@@ -37,7 +55,9 @@ export default function DashboardPanelView(props: {
   );
   const data = () => props.result?.lastGood?.data;
   const line = createMemo(() =>
-    data() && props.panel.kind === "line" ? dashboardLine(props.panel, data()!, locale(), props.result?.lastGood ?? undefined) : null,
+    data() && props.panel.kind === "line"
+      ? dashboardLineExplorer(props.panel, data()!, locale(), props.result?.lastGood ?? undefined)
+      : null,
   );
   const categoryResult = createMemo(() => {
     if (!data() || !["bar", "funnel"].includes(props.panel.kind)) return { data: [], error: false };
@@ -82,8 +102,9 @@ export default function DashboardPanelView(props: {
   const Table = () => (
     <DataTable
       ariaLabel={props.panel.title}
+      class="pulse-dashboard__table"
       density="compact"
-      surface="plain"
+      surface="paper"
       rows={data()?.rows ?? []}
       renderCell={({ value }) => dashboardCell(value, locale())}
       columns={(data()?.columns ?? []).map((column, index) => ({
@@ -93,6 +114,63 @@ export default function DashboardPanelView(props: {
       }))}
     />
   );
+  // Loading and failure take the place of the panel's content, at its height.
+  const Feedback = () => (
+    <Show
+      when={props.result?.status === "error" || malformed()}
+      fallback={
+        <div class="pulse-dashboard__feedback" role="status" aria-label={t().dashboardLoading}>
+          <Skeleton class={props.panel.kind === "number" ? "h-[72px] w-full" : "h-[170px] w-full"} />
+        </div>
+      }
+    >
+      <div class="pulse-dashboard__feedback" role="alert">
+        <strong>{t().dashboardPanelFailed}</strong>
+        <p class="text-sm text-secondary">{failure()}</p>
+        <Button variant="secondary" size="sm" disabled={props.pending || props.retryDisabled} onClick={props.retry}>
+          {t().retry}
+        </Button>
+      </div>
+    </Show>
+  );
+  const unit = () => (props.panel.unit ? ` (${props.panel.unit})` : "");
+  const lineColumns = () => [
+    {
+      id: "at",
+      label: t().dashboardTime,
+      // Seconds always, milliseconds when the sample has them: two samples never share a shown or copied time.
+      value: (row: DashboardLineRow) =>
+        new Intl.DateTimeFormat(locale(), {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          ...(row.at % 1000 ? { fractionalSecondDigits: 3 as const } : {}),
+          hourCycle: "h23",
+          timeZone: "UTC",
+        }).format(row.at),
+      sortValue: (row: DashboardLineRow) => row.at,
+    },
+    ...((line()?.legend.length ?? 0) > 1
+      ? [
+          {
+            id: "series",
+            label: t().dashboardSeries,
+            value: (row: DashboardLineRow) => row.series,
+            sortValue: (row: DashboardLineRow) => row.series,
+          },
+        ]
+      : []),
+    {
+      id: "value",
+      label: `${t().overviewValue}${unit()}`,
+      value: (row: DashboardLineRow) => dashboardCell(row.value, locale()),
+      sortValue: (row: DashboardLineRow) => row.value,
+      align: "right" as const,
+    },
+  ];
   return (
     <article
       class="pulse-dashboard__panel"
@@ -110,7 +188,34 @@ export default function DashboardPanelView(props: {
       <Show when={props.panel.kind === "number" && (!numberValue() || malformed())}>
         <h3 class="pulse-dashboard__number-placeholder-title">{props.panel.title}</h3>
       </Show>
-      <Show when={props.panel.kind !== "number"}>
+      <Show when={props.panel.kind === "line"}>
+        <div class="pulse-dashboard__explorer" data-single-series={(line()?.data.chart.marks.length ?? 0) > 0 && !line()?.legend.length}>
+          <ChartExplorer
+            title={props.panel.title}
+            description={<p class="pulse-dashboard__description">{props.panel.description}</p>}
+            actions={
+              <Show when={props.private && "sql" in props.panel}>
+                <SqlButton />
+              </Show>
+            }
+            data={line()?.data ?? noLine}
+            legend={line()?.legend}
+            empty={
+              <Show when={data() && !malformed()} fallback={<Feedback />}>
+                <div class="pulse-dashboard__feedback">
+                  <p class="text-secondary">{t().dashboardNoRows}</p>
+                </div>
+              </Show>
+            }
+            columns={lineColumns()}
+            cursor={props.cursor}
+            height="13.5rem"
+            tableRows={100}
+            renderDetails={false}
+          />
+        </div>
+      </Show>
+      <Show when={props.panel.kind !== "number" && props.panel.kind !== "line"}>
         <div class="pulse-dashboard__panel-head">
           <h3>{props.panel.title}</h3>
           <Show when={props.private && "sql" in props.panel}>
@@ -122,26 +227,13 @@ export default function DashboardPanelView(props: {
       <Show
         when={data() && !malformed()}
         fallback={
-          <Show
-            when={props.result?.status === "error" || malformed()}
-            fallback={
-              <div class="pulse-dashboard__feedback" role="status" aria-label={t().dashboardLoading}>
-                <Skeleton class={props.panel.kind === "number" ? "h-[72px] w-full" : "h-[170px] w-full"} />
-              </div>
-            }
-          >
-            <div class="pulse-dashboard__feedback" role="alert">
-              <strong>{t().dashboardPanelFailed}</strong>
-              <p class="text-sm text-secondary">{failure()}</p>
-              <Button variant="secondary" size="sm" disabled={props.pending || props.retryDisabled} onClick={props.retry}>
-                {t().retry}
-              </Button>
-            </div>
+          <Show when={props.panel.kind !== "line"}>
+            <Feedback />
           </Show>
         }
       >
         <Show
-          when={data()!.rows.length}
+          when={data()!.rows.length || props.panel.kind === "line"}
           fallback={
             <div class="pulse-dashboard__feedback">
               <p class="text-secondary">{t().dashboardNoRows}</p>
@@ -186,13 +278,6 @@ export default function DashboardPanelView(props: {
                     })}
                   />
                 </Show>
-              </div>
-            )}
-          </Show>
-          <Show when={line()}>
-            {(options) => (
-              <div class="pulse-dashboard__plot" data-single-series={options().series.length === 1}>
-                <Chart {...options()} cursor={props.cursor} labels={{ interactiveLine: props.panel.title }} />
               </div>
             )}
           </Show>
@@ -255,9 +340,7 @@ export default function DashboardPanelView(props: {
             </div>
           </Show>
           <Show when={props.panel.kind === "table"}>
-            <div class="pulse-dashboard__table">
-              <Table />
-            </div>
+            <Table />
           </Show>
           <Show when={props.result?.attribution}>
             {(attribution) => (

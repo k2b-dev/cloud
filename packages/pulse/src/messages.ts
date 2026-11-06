@@ -53,6 +53,8 @@ export const pulseMessages = i18n.define({
       dashboardSelect: "Select a dashboard",
       dashboardFunnel: "Funnel stages",
       dashboardConversion: "of first stage",
+      dashboardTime: "Time (UTC)",
+      dashboardSeries: "Series",
 
       sql: "SQL",
       dashboards: "Dashboards",
@@ -636,6 +638,8 @@ export const pulseMessages = i18n.define({
       dashboardSelect: "Dashboard auswählen",
       dashboardFunnel: "Funnel-Schritte",
       dashboardConversion: "vom ersten Schritt",
+      dashboardTime: "Zeit (UTC)",
+      dashboardSeries: "Reihe",
 
       sql: "SQL",
       dashboards: "Dashboards",
