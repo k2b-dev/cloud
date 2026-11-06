@@ -1,4 +1,4 @@
-import type { charts, MapViewport } from "@k2b/stdlib";
+import type { MapViewport } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
 import {
   createEffect,
@@ -15,7 +15,7 @@ import {
 } from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
-import { chartKinds, chartRenderers } from "../charts/core";
+import { chartKinds, chartRenderers } from "../charts/core/registry";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -154,7 +154,7 @@ export type ChartProps = {
       ? StateTimelineChartOptions
       : K extends "bar"
         ? BarChartOptions
-        : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+        : Omit<Parameters<(typeof chartRenderers)[K]>[0], "width" | "height" | "inspect">);
 }[ChartKind];
 
 /** Pure renderer options: component layout, events and inspection are configured elsewhere. */

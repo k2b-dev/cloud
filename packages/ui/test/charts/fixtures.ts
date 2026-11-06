@@ -1,5 +1,4 @@
-import { expect, test } from "bun:test";
-import type { ChartProps } from "../content/Chart";
+import type { ChartProps } from "../../src/content/Chart";
 
 /** Shared fictional inputs for entry-point, renderer and hydration parity. */
 export const chartFixtures = {
@@ -36,7 +35,3 @@ export const chartFixtures = {
   map: { kind: "map", series: [{ data: [{ latitude: 52, longitude: 13 }] }] },
   stateTimeline: { kind: "stateTimeline", rows: [{ label: "Queue", intervals: [{ from: 1, to: 2, state: "ok" }] }] },
 } satisfies { [K in ChartProps["kind"]]: Extract<ChartProps, { kind: K }> };
-
-test("every chart fixture has its matching discriminator", () => {
-  for (const [kind, spec] of Object.entries(chartFixtures)) expect(String(spec.kind)).toBe(kind);
-});

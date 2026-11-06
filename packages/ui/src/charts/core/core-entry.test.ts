@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
-import { chartDatumRoles, chartKinds } from "./index";
+import { chartDatumRoles } from "./index";
+import { chartKinds } from "./registry";
 
 test("core entry bundles for server and browser without Solid or DOM", async () => {
   for (const target of ["bun", "browser"] as const) {

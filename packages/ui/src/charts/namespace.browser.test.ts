@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { launchBrowser } from "../../test/browser";
-import { chartFixtures } from "./chart-fixtures.test";
+import { launchBrowser, pageErrors } from "../../test/browser";
+import { chartFixtures } from "../../test/charts/fixtures";
 
 test("named charts preserve browser output and reactive data at desktop and phone widths", async () => {
   const build = await Bun.build({
@@ -22,7 +22,7 @@ test("named charts preserve browser output and reactive data at desktop and phon
             import { createComponent, createSignal } from "solid-js";
             import { render } from "solid-js/web";
             import { Chart } from ${JSON.stringify(resolve(import.meta.dir, "../../dist/browser/charts.js"))};
-            import { chartKinds } from ${JSON.stringify(resolve(import.meta.dir, "core/index.ts"))};
+            import { chartKinds } from ${JSON.stringify(resolve(import.meta.dir, "core/registry.ts"))};
             const fixtures = ${JSON.stringify(chartFixtures)};
             for (const [name, kind] of Object.entries(chartKinds)) {
               const section = document.createElement("section");
@@ -50,10 +50,9 @@ test("named charts preserve browser output and reactive data at desktop and phon
     for (const width of [1440, 390]) {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
       try {
-        const errors: string[] = [];
-        page.on("pageerror", (error) => errors.push(error.message));
+        const errors = pageErrors(page);
         await page.setContent(`<html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}
-          body{margin:0;padding:24px;background:white;color:#202632}main{display:grid;gap:24px;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr))}section{min-width:0}h2{font:600 16px sans-serif}.direct,.named{height:220px}.named{display:none}
+          body{margin:0;padding:24px;background:white;color:#202632}main{display:grid;gap:24px;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr))}section{min-width:0}h2{font:600 16px sans-serif}.direct,.named{height:220px}
           </style></head><body class="k2b-ui"><main></main><button>Update</button><div id="reactive" style="height:200px"></div></body></html>`);
         await page.addScriptTag({ content: bundle });
         const equal = await page

@@ -63,7 +63,9 @@ import { Chart } from "@k2b/ui/charts";
 
 `@k2b/ui/charts/core` exposes the UI-owned `ChartKind`, `ChartDatum`,
 `ChartDatumRole`, `ChartNumberFormat`, `ChartDateFormat`, and `ChartFormat`
-contracts without Solid or DOM dependencies. Number formats are serializable:
+contracts without Solid or DOM dependencies. Its only runtime export is
+`chartDatumRoles`; the renderer registry and namespace map stay internal during
+the renderer port. Number formats are serializable:
 `style` is `number`, `percent`, or `currency`, with optional `currency`, `unit`,
 `decimals`, and `compact`. Date formats use `{ date: "day" | "minute" | "second" }`.
 The editor validates these descriptions before turning them into formatters.
@@ -71,7 +73,7 @@ The editor validates these descriptions before turning them into formatters.
 To add a chart kind, register its pure renderer in `charts/core/registry.ts`. Its key defines the
 discriminator and capitalized namespace member, including the narrowed props.
 Keep any kind-specific presentation adaptation in `renderChartSvg`. Add a
-fixture to `chart-fixtures.test.ts`; the namespace render test checks both forms.
+fixture to `packages/ui/test/charts/fixtures.ts`; the namespace render test checks both forms.
 
 ## A legend above a line chart
 

@@ -5,9 +5,9 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { chartFixtures } from "../../test/charts/fixtures";
 import type { ChartKindProps } from "../content/Chart";
-import { chartFixtures } from "./chart-fixtures.test";
-import { chartKinds } from "./core";
+import { chartKinds } from "./core/registry";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-chart-namespace-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
