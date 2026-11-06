@@ -5,6 +5,7 @@ import * as registry from "../../_internal/registry";
 import * as invocation from "../../capabilities/server-invoke";
 import { compileCapabilityManifest } from "../../capabilities/testing";
 import type { AppEventEnvelope } from "../../contracts/app-events";
+import { AppAccessDeniedError } from "../../server/middleware/app-access";
 import * as identity from "../identity/issue-invocation";
 import { type Mandate, mandates } from "../mandates";
 import { authorizeResourceEvent, type ResourceEventBinding } from "./resources";
@@ -114,4 +115,14 @@ test("a negative reader answer cancels; an unavailable reader retries", async ()
   await expect(authorizeResourceEvent("consumer", binding, event)).rejects.toThrow("APP_UNAVAILABLE");
   resolve.mockResolvedValue(null);
   expect(await authorizeResourceEvent("consumer", binding, event)).toBe(false);
+});
+
+test("lost app access cancels without calling the reader", async () => {
+  access.mockRejectedValue(new AppAccessDeniedError({ id: "consumer" }));
+  expect(await authorizeResourceEvent("consumer", binding, event)).toBe(false);
+  expect(invoke).not.toHaveBeenCalled();
+});
+test("an aborted delivery never reads or invokes the subscriber", async () => {
+  await expect(authorizeResourceEvent("consumer", binding, event, AbortSignal.abort())).rejects.toThrow();
+  expect(load).not.toHaveBeenCalled();
 });

@@ -86,6 +86,8 @@ export function createEventAcceptance(db: () => SQL, reconcile: () => Promise<vo
     const subjectKey = `${envelope.subject.type}:${envelope.subject.id}`;
     try {
       await db().begin(async (tx) => {
+        if (envelope.place)
+          await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`cloud.resource-event:${envelope.type}@${envelope.version}`},0))`;
         const inserted = await tx`
           INSERT INTO events.app_events(id, type, version, source, subject_key, envelope, state, code)
           VALUES (${envelope.id}::uuid, ${envelope.type}, ${envelope.version}, ${envelope.source}, ${subjectKey},

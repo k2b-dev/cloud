@@ -359,9 +359,10 @@ broker. In the workload activation transaction, call `subscribeResourceEvent`
 with the subscriber `appId`, full event `type`, `version`, and a `binding`:
 `consumer`, stable workload `key`, immutable `revision`, `mandateId`,
 `mandateRevision`, and exact `place: { type, id }`. Registration is idempotent
-for the complete binding. A cancelled binding stays cancelled; resuming creates
-a new revision. Events published before registration are excluded, including
-older events still in the publisher outbox. No implicit catch-up occurs.
+for an active complete binding. Reusing a cancelled binding fails; resuming
+creates a fresh registration revision. Mandate revision changes also require
+cancelling and registering again. Events published before registration are excluded, including
+older events still in the publisher outbox. Registration and event acceptance serialize the activation boundary. No implicit catch-up occurs.
 
 The consumer receives the binding, original reference envelope and standard
 delivery context. It must recheck its current workload revision and enabled
@@ -372,6 +373,7 @@ permission to read content or perform an effect: subsequent capability calls
 still enforce the workload's policy and current grants. Keep resource event
 data reference-only; read content through authorized capabilities.
 
+Use transaction handles, never a pool, for both registration and cancellation.
 Cancel subscriptions in the same transaction that disables or replaces the
 workload. Cancellation fences outstanding delivery claims; an admission that
 committed first is already separate workload work. Offline consumer code leaves
