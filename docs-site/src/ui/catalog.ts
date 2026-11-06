@@ -313,6 +313,7 @@ const portableSections = [
       page("match-text", "MatchText", "ti ti-highlight", "Search matches marked in a result's name or path."),
       page("steps", "Steps", "ti ti-list-numbers", "Ordered instructions with accent numbers."),
       page("charts", "Charts", "ti ti-chart-line", "Typed responsive charts and interactive state timelines."),
+      page("money", "Money", "ti ti-coin", "Amounts that show their direction: turquoise in, violet out."),
       page("tables", "DataTable", "ti ti-table", "Basic records and professional panels with search, filters, actions, and pagination."),
       page("calendar", "Calendar", "ti ti-calendar-month", "Controlled generic calendar navigation and items."),
       page(
