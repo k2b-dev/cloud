@@ -329,8 +329,9 @@ test("a line panel is a chart explorer with exact values, units and a table of e
     await panel.getByRole("button", { name: "Diagrammansicht", exact: true }).click();
     await tab.getByRole("menuitemradio", { name: "Tabelle", exact: true }).click();
     const table = panel.getByRole("table");
+    await table.locator("tbody tr").first().waitFor();
     expect(await table.locator("thead th").allTextContents()).toEqual(["Zeit (UTC)", "Reihe", "Wert (/s)"]);
-    expect(await table.locator("tbody tr").count()).toBeGreaterThan(0);
+    // The table takes the chart's place at the same viewport height.
     expect(await panel.locator(".k2b-chart-explorer__viewport").evaluate((el) => el.getBoundingClientRect().height)).toBe(216);
   } finally {
     await tab.close();
