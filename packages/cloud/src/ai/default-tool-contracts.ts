@@ -146,6 +146,9 @@ const flatChartSchema = () => {
       ),
     x: z.array(ChartLabel).max(CLOUD_AI_CHART_MAX_VALUES).optional().describe("bar: aligned category labels."),
     compare: z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }).optional(),
+    marks: z.enum(["bars", "dots"]).optional(),
+    total: z.number().positive().optional(),
+    dots: z.number().int().min(2).optional(),
     share: z.boolean().optional(),
     limit: z.number().int().positive().optional(),
     tone: z.enum(["in", "out"]).optional(),
@@ -161,7 +164,7 @@ const flatChartSchema = () => {
       .max(CLOUD_AI_CHART_MAX_VALUES)
       .optional()
       .describe("hbar: grouped rows of aligned segment values."),
-    layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional().describe("bar: category layout."),
+    layout: z.enum(["columns", "rows", "grouped", "stacked", "nested"]).optional().describe("bar: category layout."),
     series: z
       .array(
         z.union([
@@ -220,7 +223,7 @@ const chartInputSchema = () => {
         .describe(`Groups: 2..${CLOUD_AI_GROUP_MAX_CHARTS} related charts, each with a kind.`),
       linkX: z.boolean().optional().describe("Groups: share the x cursor between line charts with the same kind of x."),
       layout: z
-        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked"])
+        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked", "nested"])
         .optional()
         .describe("Groups: stack or grid. Bar: columns, rows, grouped or stacked."),
     })

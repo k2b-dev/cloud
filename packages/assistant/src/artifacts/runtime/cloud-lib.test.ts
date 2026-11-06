@@ -719,3 +719,28 @@ test("cloud.chart renders funnels with start and previous shares in app frames",
   expect(markup).not.toContain("<style>");
   expect(markup).not.toMatch(/NaN|Infinity/);
 });
+
+test("cloud.chart preserves nested dot counts and grey capacity in app frames", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "bar",
+        title: "Campaign",
+        marks: "dots",
+        layout: "nested",
+        total: 100,
+        dots: 20,
+        x: ["A"],
+        series: [
+          { label: "Opened", data: [80] },
+          { label: "Clicked", data: [30] },
+        ],
+      },
+      "de-DE",
+    ),
+  );
+  expect(markup.match(/class="k2b-chart-dot"/g)).toHaveLength(20);
+  expect(markup).toContain('data-dot-series="remainder"');
+  expect(markup).toContain("Gesamt");
+  expect(markup).not.toContain("<style>");
+});

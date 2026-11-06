@@ -26,8 +26,12 @@ export type BarChartOptions = {
   /** Aligned categories and series. Null observations are gaps. */
   x?: string[];
   series?: { label: string; data: (number | null)[] }[];
-  layout?: "columns" | "rows" | "grouped" | "stacked";
+  layout?: "columns" | "rows" | "grouped" | "stacked" | "nested";
   normalize?: boolean;
+  marks?: "bars" | "dots";
+  /** Dot matrix capacity in source units and an even mark budget (default 100). */
+  total?: number;
+  dots?: number;
   /** Explicit rows form a ranked list; shares include every source item, including the remainder. */
   share?: boolean;
   limit?: number;
@@ -556,6 +560,8 @@ export function seriesBarLayout(opts: BarChartOptions, size = { width: 480, heig
     throw new RangeError("Bar series must have the same length as x");
   if (opts.compare && series.length !== 1) throw new RangeError("Bar comparison needs exactly one current series");
   if (opts.normalize && opts.layout !== "stacked") throw new RangeError("Normalized bars must be stacked");
+  const dot = opts.marks === "dots" ? nestedDots(opts) : undefined;
+  if (opts.layout === "nested" && !dot) throw new RangeError("Nested bars require dot marks");
   if (opts.layout === "stacked" && opts.yAxis?.scale === "log") throw new RangeError("Stacked bars need a linear axis");
   if (opts.layout === "stacked" && series.some((s) => s.data.some((v) => v !== null && v < 0)))
     throw new RangeError("Stacked bars require nonnegative values");
@@ -568,11 +574,13 @@ export function seriesBarLayout(opts: BarChartOptions, size = { width: 480, heig
     opts.layout === "stacked"
       ? totals.filter((v): v is number => v !== null)
       : series.flatMap((s) => s.data.filter((v): v is number => v !== null));
-  const scale = valueScale(
-    opts.normalize ? [0, 1] : [...values, ...(opts.compare?.data.filter((v): v is number => v !== null) ?? [])],
-    opts.yAxis,
-    true,
-  );
+  const scale: Scale = dot
+    ? { domain: [0, dot.total], ticks: [0, 0.25, 0.5, 0.75, 1].map((v) => v * dot.total), log: false }
+    : valueScale(
+        opts.normalize ? [0, 1] : [...values, ...(opts.compare?.data.filter((v): v is number => v !== null) ?? [])],
+        opts.yAxis,
+        true,
+      );
   const format = valueFormat(opts);
   const units = size.width / narrow(opts);
   const legend = opts.legend !== false;
@@ -603,19 +611,54 @@ export function seriesBarLayout(opts: BarChartOptions, size = { width: 480, heig
       if (value !== null && opts.layout === "stacked") acc += value;
       return { seriesIndex, raw, value, base };
     });
-    return { label, index, center, current, total: totals[index]!, previous: opts.compare?.data[index] };
+    const matrix =
+      dot && current.every((v) => v.raw !== null && Number.isFinite(v.raw))
+        ? Array.from({ length: dot.count }, (_, k) => {
+            const rowHeight = Math.max(0, bottom - top) / (dot.count / 2),
+              cell = Math.min(rowHeight, (slot * 0.8) / 2);
+            const matched = current.findLastIndex((v) => k < Math.round((v.raw! / dot.total) * dot.count));
+            const seriesIndex = matched < 0 ? null : matched;
+            return {
+              x: center + ((k % 2) - 0.5) * cell * 1.05,
+              y: bottom - (Math.floor(k / 2) + 0.5) * rowHeight,
+              radius: Math.min(cell, rowHeight) * 0.36,
+              seriesIndex,
+            };
+          })
+        : [];
+    return { label, index, center, current, total: totals[index]!, previous: opts.compare?.data[index], matrix };
   });
   const barWidthPx =
     (opts.compare
       ? Math.min(slot * 0.32, 26)
       : Math.min(slot * (opts.layout === "stacked" ? 0.56 : 0.8 / Math.max(1, entries.length)), opts.layout === "stacked" ? 40 : 22)) /
     units;
-  return { ...size, columns, totals, scale, left, right, top, bottom, slot, y, format, units, entries, legend, legendLayout, barWidthPx };
+  return {
+    ...size,
+    columns,
+    totals,
+    scale,
+    left,
+    right,
+    top,
+    bottom,
+    slot,
+    y,
+    format,
+    units,
+    entries,
+    legend,
+    legendLayout,
+    barWidthPx,
+    dot,
+  };
 }
 
 const renderSeriesBars = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }) => {
   const g = seriesBarLayout(opts, opts);
   const parts = [renderHeader(opts, opts.width)];
+  const dotStyle = (index: number) =>
+    `fill:var(--stdlib-chart-c1,#3b82f6);fill-opacity:${g.entries.length < 2 ? 1 : 0.4 + (index * 0.6) / (g.entries.length - 1)}`;
   const labels = categoryLabels(opts.locale);
   const change = new Intl.NumberFormat(opts.locale ?? "en", { style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" });
   const text = (x: number, y: number, value: string, cls = "stdlib-chart-tick-label", anchor = "start", extra = "") =>
@@ -625,7 +668,7 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
       const y = headerHeight(opts) + entry.y;
       const x = entry.x;
       parts.push(
-        `<rect class="stdlib-chart-series-${i < (opts.series?.length ?? 0) ? i % 8 : 0}" x="${x}" y="${y - 8}" width="${8 * g.units}" height="8" ${i >= (opts.series?.length ?? 0) ? 'style="fill:none;stroke:var(--stdlib-chart-c1);"' : ""}/>`,
+        `<rect class="stdlib-chart-series-${i < (opts.series?.length ?? 0) ? i % 8 : 0}" x="${x}" y="${y - 8}" width="${8 * g.units}" height="8" ${i >= (opts.series?.length ?? 0) ? 'style="fill:none;stroke:var(--stdlib-chart-c1);"' : g.dot ? `style="${dotStyle(i)};stroke:none"` : ""}/>`,
       );
       if (i >= (opts.series?.length ?? 0))
         parts.push(
@@ -682,9 +725,13 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
         value: delta ?? "–",
         formatted: delta === null || previous === 0 ? "–" : change.format(delta / Math.abs(previous!)),
       });
-    } else if (opts.layout === "stacked") {
-      fields.reverse();
-      fields.push({ key: "total", value: column.total ?? "–", formatted: column.total === null ? "–" : g.format(column.total) });
+    } else if (opts.layout === "stacked" || g.dot) {
+      if (!g.dot) fields.reverse();
+      fields.push({
+        key: "total",
+        value: g.dot?.total ?? column.total ?? "–",
+        formatted: g.dot ? g.format(g.dot.total) : column.total === null ? "–" : g.format(column.total),
+      });
     }
     let marks = `<rect class="k2b-chart-category-band" fill="none" pointer-events="all" x="${column.center - g.slot / 2}" y="${g.top}" width="${g.slot}" height="${Math.max(0, g.bottom - g.top)}" rx="6"/>`;
     const bar = (value: number, base: number, x: number, width: number, color: number, previous = false) => {
@@ -704,7 +751,10 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
       }
       return `<g class="k2b-chart-previous">${rect.replace("/>", ' style="fill:var(--stdlib-chart-c1,#3b82f6);fill-opacity:.14;stroke:var(--stdlib-chart-c1,#3b82f6);stroke-width:1"/>')}${lines.join("")}</g>`;
     };
-    if (opts.compare) {
+    if (g.dot) {
+      for (const point of column.matrix)
+        marks += `<circle class="k2b-chart-dot" data-dot-series="${point.seriesIndex ?? "remainder"}" cx="${point.x}" cy="${point.y}" r="${point.radius}" style="${point.seriesIndex === null ? "fill:var(--k2b-border-strong,#d4d4d8)" : dotStyle(point.seriesIndex)};stroke:none"/>`;
+    } else if (opts.compare) {
       const bw = Math.min(g.slot * 0.32, 26);
       const gap = Math.min(1.5, g.slot * 0.08);
       if (column.previous !== null && Number.isFinite(column.previous) && (!g.scale.log || column.previous! > 0))
@@ -850,3 +900,26 @@ const renderRankedBars = (opts: BarChartOptions & { width: number; height: numbe
     .replace("</style>", ".k2b-chart-ranked :is(.stdlib-chart-tick-label,.stdlib-chart-bar-value){font-size:13px}</style>")
     .replace("<svg ", '<svg data-bar-layout="rows" ');
 };
+
+/** Nested counts share a zero baseline: each later series is a subset of the previous one. */
+function nestedDots(opts: BarChartOptions) {
+  const series = opts.series ?? [];
+  const total = opts.total ?? Math.max(1, ...series.flatMap((s) => s.data.filter((v): v is number => v !== null && Number.isFinite(v))));
+  const count = opts.dots ?? 100;
+  if (opts.layout !== "nested" || !series.length || opts.compare || opts.normalize || opts.yAxis?.scale === "log")
+    throw new RangeError("Dot matrices require nested series on a linear axis, without comparison or normalization");
+  if (!Number.isFinite(total) || total <= 0 || !Number.isSafeInteger(count) || count < 2 || count % 2)
+    throw new RangeError("Dot matrices need a positive total and an even positive dot count");
+  if (opts.yAxis?.domain && (opts.yAxis.domain[0] !== 0 || opts.yAxis.domain[1] !== total))
+    throw new RangeError("Dot matrix domain must be zero to total");
+  series.forEach((s, i) =>
+    s.data.forEach((v, j) => {
+      if (v === null || !Number.isFinite(v)) return;
+      if (v < 0 || v > total) throw new RangeError("Nested counts must be nonnegative and at most total");
+      const parent = series[i - 1]?.data[j];
+      if (i > 0 && parent != null && Number.isFinite(parent) && v > parent)
+        throw new RangeError("Each nested count must be a subset of the previous series");
+    }),
+  );
+  return { total, count };
+}

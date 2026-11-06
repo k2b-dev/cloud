@@ -996,3 +996,11 @@ Use `kind="bar" layout="rows"` for a ranked list of nonnegative values. Rows sor
 Both descriptions accept `format: NumberFormat` for source values. Percentage calculations keep their own format. The inherited locale formats shares and the remainder label. They use the same category band, keyboard inspection, touch guard and fixed host states as other category charts.
 
 Category hover bands carry a transparent SVG presentation fill, so standalone SVGs and base-styled print or app frames retain the same drawing. Series legends use at most one quarter of the frame and truncate long names; the tooltip and data table retain full names. Dense grouped bars drop their inner gap before reducing bar width. Category labels stay whole and thin to fit. Missing totals display “–”; zero observations remain zero. Comparison changes and total labels inherit the UI locale.
+
+### Nested dot matrix
+
+Use `kind="bar" marks="dots" layout="nested"` for counts inside a shared capacity. Each later series must be a subset of the previous series: clicks are part of opens, so both measure from zero. Counts must be nonnegative and no larger than `total`.
+
+Each category is two dots wide. The smallest nested subset uses the strongest color, the larger set's remainder is lighter, and unused capacity is grey. `total` defaults to the largest observed count (at least one); `dots` defaults to 100 and must be an even positive integer. Values round to the nearest dot; tooltips, live legend values and the data table retain the exact counts. Every dot counts toward the host's mark budget before rendering.
+
+A missing nested observation leaves the category drawing as a gap. Zero counts retain a fully grey matrix. The full category is one hover, keyboard and tap target, and the tooltip stays at the top of the plot when moving between its dots. Comparisons, logarithmic scales and normalization are unavailable for nested matrices.
