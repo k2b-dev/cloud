@@ -368,6 +368,7 @@ test("loading retains panel slots, per-panel failures retry, outages retain last
     panels.set("p95", {
       json: {
         panelId: "p95",
+        attribution: null,
         status: "error",
         error: "TIME_LIMIT",
         lastGood: null,
@@ -390,6 +391,7 @@ test("loading retains panel slots, per-panel failures retry, outages retain last
     panels.set("req", {
       json: {
         panelId: "req",
+        attribution: null,
         status: "error",
         error: "STORE_UNAVAILABLE",
         lastGood: null,
@@ -430,9 +432,32 @@ test("a map panel shades countries, names them, and answers a tap on a phone in 
       await panel.locator('path[data-country="DE"]').hover();
       await panel.locator(".k2b-country-map__readout", { hasText: "Deutschland" }).waitFor();
       expect((await panel.locator(".k2b-country-map").boundingBox())!.height).toBe(before!.height);
+      // DB-IP Lite (CC BY 4.0) needs its link beside the results; panels without countries carry none.
+      const credit = panel.locator("[data-geoip-attribution] a");
+      expect(await credit.textContent()).toBe("IP Geolocation by DB-IP");
+      expect(await credit.getAttribute("href")).toBe("https://db-ip.com");
+      expect(await tab.locator("[data-geoip-attribution]").count()).toBe(1);
     } finally {
       await tab.close();
     }
+  }
+}, 30_000);
+
+test("a map panel drops the DB-IP link while the City database comes from another provider", async () => {
+  let release: () => void = () => {};
+  const deferred = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { tab, panels } = await open({ dashboard: dashboardTestKinds, deferred });
+  try {
+    const map = dashboardTestKinds.definition.panels.find((panel) => panel.kind === "map")!;
+    panels.set(map.id, { json: { ...dashboardTestPanelResult(map), attribution: null } satisfies DashboardPanelResult });
+    release();
+    await ready(tab);
+    await tab.locator('[data-panel="countries"] .k2b-country-map path[data-country="DE"]').waitFor();
+    expect(await tab.locator("[data-geoip-attribution]").count()).toBe(0);
+  } finally {
+    await tab.close();
   }
 }, 30_000);
 
@@ -491,6 +516,7 @@ test("cleared data replaces the shown result, while a cache miss for the same da
     await tab.waitForFunction(() => !document.querySelector('[data-panel][aria-busy="true"]'));
     const waiting = (variant: string): DashboardPanelResult => ({
       panelId: "req",
+      attribution: null,
       status: "waiting",
       error: null,
       lastGood: null,
@@ -779,6 +805,7 @@ test("server admission waiting keeps a loading state until the shared result bec
     panels.set("req", {
       json: {
         panelId: "req",
+        attribution: null,
         status: "waiting",
         error: null,
         lastGood: null,
@@ -1092,6 +1119,7 @@ test("cold polling respects future backoff across visibility changes and expired
       panels.set("req", {
         json: {
           panelId: "req",
+          attribution: null,
           status: "waiting",
           error: null,
           lastGood: null,

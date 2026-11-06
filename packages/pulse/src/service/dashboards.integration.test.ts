@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { DBIP_ATTRIBUTION } from "@k2b/cloud/contracts";
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { DashboardDefinitionSchema } from "../dashboard-contracts";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
@@ -219,6 +220,7 @@ suiteFor("database")("SQL dashboard permissions, publication and durable runs", 
       cache,
       runs: createDashboardRuns({ now: () => at }),
       now: () => at,
+      attribution: async () => DBIP_ATTRIBUTION,
       privateRun: async () => {
         calls++;
         if (clear) await sql`UPDATE pulse.base_stores SET reset_generation=reset_generation+1 WHERE base_id=${baseId}::uuid`;
@@ -226,7 +228,11 @@ suiteFor("database")("SQL dashboard permissions, publication and durable runs", 
       },
     });
     const input = { identity, baseId, dashboardId: dashboard.id, panelId: "visits", range: {} };
-    expect(await read(input)).toMatchObject({ ok: true, data: { status: "ready", lastGood: { data: { rows: [[42]] } } } });
+    // A panel without country data carries no DB-IP credit, even while DB-IP is active.
+    expect(await read(input)).toMatchObject({
+      ok: true,
+      data: { status: "ready", attribution: null, lastGood: { data: { rows: [[42]] } } },
+    });
     snapshots.clear();
     expect(await read(input)).toMatchObject({ ok: true, data: { status: "waiting", lastGood: null } });
     expect(calls).toBe(1);

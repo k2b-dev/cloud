@@ -259,6 +259,15 @@ export default function DashboardPanelView(props: {
               <Table />
             </div>
           </Show>
+          <Show when={props.result?.attribution}>
+            {(attribution) => (
+              <p class="pulse-dashboard__source" data-geoip-attribution="">
+                <a href={attribution().url} target="_blank" rel="noopener noreferrer">
+                  {attribution().text}
+                </a>
+              </p>
+            )}
+          </Show>
         </Show>
         <Show when={props.result?.status === "error"}>
           <div class="mt-2 flex flex-col items-start gap-1 text-sm" role="alert">

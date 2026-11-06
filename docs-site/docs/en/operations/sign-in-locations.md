@@ -5,7 +5,7 @@ section: Operations
 order: 1146
 description: Manage bundled and uploaded sign-in location databases, updates, proxy requirements, and privacy limits.
 tags: [operations, identity, privacy]
-updated: 2026-11-01
+updated: 2026-11-06
 ---
 
 # Sign-in locations
@@ -53,7 +53,7 @@ and otherwise unmodified. The admin page shows this attribution while any
 active database is from DB-IP. Any page that displays or uses DB-IP database
 results must link to DB-IP.com. Application authors receive this requirement
 in the lookup result’s `attribution` field; it applies to reports using saved country
-results too. A non-DB-IP City upload removes that attribution from country
+results too. Pulse dashboards show the link on panels with country data. A non-DB-IP City upload removes that attribution from country
 lookup results, even if the ASN database still uses DB-IP.
 
 ## Application country lookups
