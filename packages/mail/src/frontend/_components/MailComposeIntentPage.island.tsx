@@ -29,6 +29,10 @@ type WritableMailbox = {
 export default function MailComposeIntentPage(props: {
   mailboxes: WritableMailbox[];
   initialMailboxId: string;
+  /** The only verified sender of the only sending mailbox; the page then opens the composer without a chooser. */
+  directIdentityId?: string | null;
+  /** The page opened from a Command link, whose handler supplies the recipient before a direct start. */
+  commandPending?: boolean;
   autoStart: boolean;
   mailto: string | null;
   returnHref: string | null;
@@ -54,6 +58,10 @@ export default function MailComposeIntentPage(props: {
   const [commandError, setCommandError] = createSignal<string>();
   const [retryCommand, setRetryCommand] = createSignal<() => Promise<boolean>>();
   const parsedIntent = createMemo(() => parseMailtoIntent(mailto()));
+  // The server found nothing to choose. A failed or cancelled start falls back to the choosers, which then load the senders.
+  const directIdentityId = props.initialMailboxId ? props.directIdentityId : null;
+  const [direct, setDirect] = createSignal(Boolean(directIdentityId));
+  const [commandDone, setCommandDone] = createSignal(!props.commandPending);
   const commandAbort = new AbortController();
   onCleanup(() => commandAbort.abort());
   onMount(() => {
@@ -88,10 +96,15 @@ export default function MailComposeIntentPage(props: {
                       { title: copy.recipient, minQueryLength: 0 },
                     )
                   )?.value;
-            if (commandAbort.signal.aborted || !selected) return;
+            if (commandAbort.signal.aborted || !selected) {
+              setDirect(false);
+              return;
+            }
             setMailto(`mailto:${encodeURIComponent(selected.email)}`);
           }
+          setCommandDone(true);
         } catch (error) {
+          setDirect(false);
           setCommandError(error instanceof Error ? error.message : mailCommandMessages.resolve([locale()]).t.unavailable);
           // This form owns error feedback and retry; do not add a second global toast.
         } finally {
@@ -99,7 +112,10 @@ export default function MailComposeIntentPage(props: {
         }
       }),
     );
-    void consumeCommandLink();
+    void consumeCommandLink().finally(() => {
+      // A link the page could not run, such as an unknown or invalid Command, keeps the choosers and its error.
+      if (!commandDone()) setDirect(false);
+    });
   });
   const intentData = () => {
     const parsed = parsedIntent();
@@ -142,7 +158,7 @@ export default function MailComposeIntentPage(props: {
   const [autoStartFailed, setAutoStartFailed] = createSignal(false);
   const identityResults = query.create<string, { mailboxId: string; items: SenderIdentity[] }>({
     source: mailboxId,
-    enabled: () => Boolean(mailboxId()),
+    enabled: () => Boolean(mailboxId()) && !direct(),
     load: async (selectedMailboxId, { abortSignal }) => {
       const response = await apiClient.mailboxes[":mailboxId"]["sender-identities"].$get(
         { param: { mailboxId: selectedMailboxId } },
@@ -193,16 +209,16 @@ export default function MailComposeIntentPage(props: {
     }
   };
   const selectedIdentity = createMemo(() => identities().find((identity) => identity.id === identityId()) ?? null);
-  const draftCreation = mutations.create<{ seed: MailDraftSeed; identityId: string }, { mailboxId: string; identity: SenderIdentity }>({
-    mutation: async ({ mailboxId: selectedMailboxId, identity }, { abortSignal }) => {
+  const draftCreation = mutations.create<{ seed: MailDraftSeed; identityId: string }, { mailboxId: string; identityId: string }>({
+    mutation: async ({ mailboxId: selectedMailboxId, identityId }, { abortSignal }) => {
       const parsed = parsedIntent();
       if (!parsed.ok) throw new Error(intentErrorMessage(parsed.code));
       const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
-        { param: { mailboxId: selectedMailboxId }, json: mailComposeDraftSeedInput(identity.id, parsed.intent) },
+        { param: { mailboxId: selectedMailboxId }, json: mailComposeDraftSeedInput(identityId, parsed.intent) },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await readApiError(response, t().draftCreateFailed));
-      return { seed: await response.json(), identityId: identity.id };
+      return { seed: await response.json(), identityId };
     },
     onSuccess: ({ seed, identityId }) => {
       writeMailSenderPreference(localStorage, seed.mailboxId, identityId);
@@ -210,6 +226,8 @@ export default function MailComposeIntentPage(props: {
         if (!seedStorage) throw new Error(t().localMessageFailed);
         storeMailDraftSeed(seedStorage, seed);
       } catch {
+        setAutoStartFailed(true);
+        setDirect(false);
         void prompts.error(t().localMessageFailed, {
           title: t().startMessageFailed,
         });
@@ -221,6 +239,7 @@ export default function MailComposeIntentPage(props: {
     },
     onError: (error) => {
       setAutoStartFailed(true);
+      setDirect(false);
       return prompts.error(error.message, { title: t().startMessageFailed });
     },
   });
@@ -233,7 +252,7 @@ export default function MailComposeIntentPage(props: {
     const selectedMailboxId = mailboxId();
     const identity = selectedIdentity();
     if (!selectedMailboxId || !identity || draftCreation.loading() || commandLoading() || commandError()) return;
-    draftCreation.mutate({ mailboxId: selectedMailboxId, identity });
+    draftCreation.mutate({ mailboxId: selectedMailboxId, identityId: identity.id });
   };
 
   let autoStartAttempted = false;
@@ -253,14 +272,24 @@ export default function MailComposeIntentPage(props: {
     createDraft();
   });
 
+  let directStartAttempted = false;
+  createEffect(() => {
+    if (!direct() || !directIdentityId || !commandDone() || directStartAttempted) return;
+    // A failed direct start shows the choosers and waits for the person; it never starts again on its own.
+    directStartAttempted = true;
+    autoStartAttempted = true;
+    draftCreation.mutate({ mailboxId: props.initialMailboxId, identityId: directIdentityId });
+  });
+
   const autoStartPending = createMemo(
     () =>
-      props.autoStart &&
-      parsedIntent().ok &&
-      Boolean(selectedMailbox()) &&
-      !autoStartFailed() &&
-      !identityError() &&
-      (identityLoading() || draftCreation.loading() || Boolean(selectedIdentity())),
+      direct() ||
+      (props.autoStart &&
+        parsedIntent().ok &&
+        Boolean(selectedMailbox()) &&
+        !autoStartFailed() &&
+        !identityError() &&
+        (identityLoading() || draftCreation.loading() || Boolean(selectedIdentity()))),
   );
 
   return (

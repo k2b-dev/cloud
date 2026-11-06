@@ -50,7 +50,7 @@ A browser can remember an earlier rejection and not ask again. If no prompt appe
 4. Choose **Email link setup** again.
 :::
 
-An email link can fill To, Cc, Bcc, Subject, and a plain-text Body. Before Cloud creates the draft, it shows the mailbox where you have **Edit** access and the verified sender. Links cannot choose a hidden sender, attach local files, or send automatically. In browsers without support for protocol handlers, you can still use **Compose** normally.
+An email link can fill To, Cc, Bcc, Subject, and a plain-text Body. Other Cloud apps open the same page, for example to write to a contact. When you have **Edit** access to exactly one mailbox and that mailbox has exactly one verified sender, the draft opens directly with that sender. Otherwise Cloud first shows the mailboxes where you have **Edit** access and their verified senders, and it starts with the sender you used last. If the only sender is not verified yet, the page says why. Links cannot choose a hidden sender, attach local files, or send automatically. **Back** returns to the page where you opened the link. In browsers without support for protocol handlers, you can still use **Compose** normally.
 
 ## Choose Markdown or Plain text {icon="route"}
 
