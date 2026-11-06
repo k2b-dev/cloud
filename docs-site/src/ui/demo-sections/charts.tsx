@@ -482,7 +482,7 @@ export const BarChartStatesDemo = () => (
     id="charts-bar-states"
     chip={{ kind: "component", name: "Chart · bar", from: "@k2b/ui" }}
     description="Bar charts label every category: columns when all labels fit a phone, otherwise one row per category with its value."
-    code={`<Chart kind="bar"
+    code={`<Chart.Bar
   data={[{ label: "Northwestern coastal region", value: 184000 }, { label: "Eastern uplands", value: 97000 }]}
   xAxis={{ label: "Region" }}
   yAxis={{ label: "Revenue", format: (value) => euro.format(value) }} />`}
@@ -492,7 +492,7 @@ export const BarChartStatesDemo = () => (
         {(state) => (
           <section>
             <p>{state.title}</p>
-            <Chart {...state.chart} />
+            <Chart.Bar {...state.chart} />
           </section>
         )}
       </For>

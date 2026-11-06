@@ -1,4 +1,5 @@
-import { type ChartDatum, escapeXml } from "@k2b/stdlib";
+import { escapeXml } from "@k2b/stdlib";
+import type { ChartDatum } from "../charts/core";
 import { type ChartKind, type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./Chart";
 import { type ChartSelection, type ChartTooltip, type ChartTooltipFormatter, isChartDatum } from "./chart-inspection-core";
 
