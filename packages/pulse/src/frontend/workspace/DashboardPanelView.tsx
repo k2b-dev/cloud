@@ -156,6 +156,8 @@ export default function DashboardPanelView(props: {
           ...(row.at % 1000 ? { fractionalSecondDigits: 3 as const } : {}),
           hourCycle: "h23",
           timeZone: props.timeZone,
+          // The offset keeps the two instants of a repeated hour apart in the table and in copied rows.
+          timeZoneName: "shortOffset",
         }).format(row.at),
       sortValue: (row: DashboardLineRow) => row.at,
     },

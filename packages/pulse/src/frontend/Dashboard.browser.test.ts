@@ -333,6 +333,8 @@ test("a line panel is a chart explorer with exact values, units and a table of e
     const table = panel.getByRole("table");
     await table.locator("tbody tr").first().waitFor();
     expect(await table.locator("thead th").allTextContents()).toEqual(["Zeit (Europe/Berlin)", "Reihe", "Wert (/s)"]);
+    // Each time carries its offset, so the two instants of a repeated hour stay apart in copied rows.
+    expect(await table.locator("tbody tr").first().locator("td").first().textContent()).toMatch(/GMT[+-]\d/);
     // The table takes the chart's place at the same viewport height.
     expect(await panel.locator(".k2b-chart-explorer__viewport").evaluate((el) => el.getBoundingClientRect().height)).toBe(216);
   } finally {

@@ -59,7 +59,7 @@ export const dashboardLine = (
   // `id` names the series by its source group and column, independent of its position in the result.
   const series = new Map<string, { id: string; label: string; data: { x: number; y: number }[] }>();
   for (const row of data.rows) {
-    const time = sqlTimestamp(row[x], data.columns[x]?.type ?? "");
+    const time = sqlTimestamp(row[x], data.columns[x]?.type ?? "", timeZone);
     for (const [index, column] of data.columns.entries()) {
       if (index === x || index === group) continue;
       const label = group < 0 ? column.name : `${dashboardCell(row[group], locale)}${data.columns.length > 3 ? ` · ${column.name}` : ""}`;
@@ -70,7 +70,7 @@ export const dashboardLine = (
       series.set(key, value);
     }
   }
-  const times = [...new Set(data.rows.map((row) => sqlTimestamp(row[x], data.columns[x]?.type ?? "")))]
+  const times = [...new Set(data.rows.map((row) => sqlTimestamp(row[x], data.columns[x]?.type ?? "", timeZone)))]
     .filter(Number.isFinite)
     .sort((a, b) => a - b);
   const spacing = times

@@ -203,3 +203,17 @@ test("dashboard times never format in UTC: no fixed UTC zone or suffix in the da
     expect({ file, utc: source.match(/timeZone:\s*"UTC"|["'`] UTC["'`]|\+ " UTC"/g) }).toEqual({ file, utc: null });
   }
 });
+test("a date bucket from toDate(ts, :base_tz) starts at midnight in the base zone, east and west of UTC", () => {
+  const panel = { ...dashboardTestDashboard.definition.panels[4]!, series: undefined, columns: ["tag", "besucher"], x: "tag", unit: "" };
+  const data = {
+    columns: [
+      { name: "tag", type: "Date" },
+      { name: "besucher", type: "UInt64" },
+    ],
+    rows: [["2026-10-25", "12"]],
+  };
+  const newYork = dashboardLineExplorer(panel, data, { locale: "en", timeZone: "America/New_York" });
+  expect(new Date(newYork.data.rows[0]!.at).toISOString()).toBe("2026-10-25T04:00:00.000Z");
+  expect(newYork.data.chart.marks[0]!.tooltip.title).toBe("Oct 25, 12:00 AM");
+  expect(new Date(dashboardLineExplorer(panel, data, berlin).data.rows[0]!.at).toISOString()).toBe("2026-10-24T22:00:00.000Z");
+});
