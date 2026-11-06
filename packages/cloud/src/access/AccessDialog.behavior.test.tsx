@@ -75,6 +75,12 @@ describe("AccessDialog", () => {
     const dom = createDomTestHarness();
     dom.document.documentElement.lang = "en";
     delegateEvents(["click", "input"], dom.document);
+    // Every Cloud page names the signed-in person in its shell data; the dialog marks them "You" from there.
+    const shell = dom.document.createElement("script");
+    shell.id = "cloud-shell-data";
+    shell.type = "application/json";
+    shell.textContent = JSON.stringify({ profile: { userId: mia.principal.type === "user" ? mia.principal.userId : undefined } });
+    dom.document.body.append(shell);
     const { AccessDialog } = await import("./AccessDialog");
     const { prompts } = await import("@k2b/ui");
     const calls: string[] = [];
@@ -88,7 +94,6 @@ describe("AccessDialog", () => {
           allowedLevels={overrides.allowedLevels}
           findServiceAccount={overrides.findServiceAccount}
           canEdit={overrides.canEdit}
-          viewerUserId={mia.principal.type === "user" ? mia.principal.userId : undefined}
           grantAccess={async (principal, permission, _display, scope) => {
             calls.push(`grant ${principal.type} ${permission}${scope ? ` ${scope}` : ""}`);
             return { id: "00000000-0000-4000-8000-000000000009", principal, permission, createdAt: "now" };

@@ -343,6 +343,28 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
+  test("a warning confirmation carries the warning tone and keeps a primary confirm button", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { prompts } = await import("../src/feedback/prompts");
+
+    const result = prompts.confirm("This to-do isn't due for another 2 days. Complete it anyway?", {
+      title: "Complete early?",
+      confirmText: "Complete",
+      variant: "warning",
+    });
+    await settle();
+    expect(dom.document.querySelector(".k2b-dialog.k2b-dialog--warning")).not.toBeNull();
+    expect(dom.document.querySelector('.k2b-dialog__header i[data-tone="warning"]')?.className).toBe("ti ti-alert-triangle");
+    expect(dom.document.querySelector("[data-dialog-tone-label]")?.textContent).toBe("Warning");
+    const buttons = [...dom.document.querySelectorAll<HTMLButtonElement>(".k2b-dialog__actions button")];
+    expect(buttons.map((button) => button.dataset.variant)).toEqual(["secondary", "primary"]);
+    const confirmClick = (buttons[1] as HTMLButtonElement & { $$click?: () => void }).$$click;
+    confirmClick?.();
+    expect(await result).toBe(true);
+    dom.cleanup();
+  });
+
   test("cancels a typed confirmation without requiring the phrase", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";

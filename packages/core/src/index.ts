@@ -27,6 +27,7 @@ import { managesAiPrincipalSearchTarget } from "./api/ai-principal-search-target
 import { createCodeActivationRoutes } from "./api/code-activation";
 import { createCodeAdminRoutes } from "./api/code-admin";
 import { createCodeAuthoringRoutes } from "./api/code-authoring";
+import { createAnonymousGeoRoutes } from "./api/geo-anonymous";
 import identityInvocationRoutes from "./api/identity-invocation";
 import identityMandateRoutes from "./api/identity-mandates";
 import identityOAuthDeviceApprovalRoutes, { terminalLogins } from "./api/identity-oauth-device-approval";
@@ -80,6 +81,7 @@ const router = new Hono<AuthContext>()
   .route("/", identityPublicRoutes)
   .route("/", mcpProtectedResource)
   .route("/api/ai/live", aiLive.routes(aiLiveChannels))
+  .route("/api/_internal/geo/v1", createAnonymousGeoRoutes())
   .route("/api/_internal/identity/v1/migration-probe", createAppMigrationProbeRoutes())
   .route("/api/_internal/identity/v1", identityInvocationRoutes)
   .route("/api/_internal/identity/v1", identityMandateRoutes)

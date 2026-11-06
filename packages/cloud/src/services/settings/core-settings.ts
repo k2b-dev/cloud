@@ -485,24 +485,6 @@ export const CORE_SETTINGS = {
       translations: { de: { label: "Monatsbudget Geo (Credits)", description: "Harte Cloud-Grenze je Kalendermonat in app.timezone." } },
     },
   },
-  "geo.person_daily_credits": {
-    kind: "number",
-    label: "Daily geo credits per person",
-    description: "Hard limit per access subject and local day; must not exceed the monthly budget. Agents and service accounts count too.",
-    default: 300,
-    integer: true,
-    min: 0,
-    max: GEO_MAX_CREDITS,
-    presentation: {
-      translations: {
-        de: {
-          label: "Tägliche Geo-Credits pro Person",
-          description:
-            "Harte Grenze je Zugriffsidentität und lokalem Tag; darf das Monatsbudget nicht überschreiten. Gilt auch für Agenten und Dienstkonten.",
-        },
-      },
-    },
-  },
 
   // ── AI ──────────────────────────────────────────────────────────────────
   "ai.enabled": {

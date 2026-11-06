@@ -72,7 +72,6 @@ export function createArtifactActions(props: {
         artifactId: item.id,
         title: item.title,
         published: Boolean(item.publishedRevision),
-        viewerUserId: props.userId,
         locale: locale(),
         entries,
         loadProjects: () => artifactClient.projects(item.id),

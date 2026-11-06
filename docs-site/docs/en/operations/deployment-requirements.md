@@ -287,7 +287,9 @@ Core's [geo Queries](/en/docs/platform/places-and-maps) need outbound HTTPS to
 **Administration → Places and maps**. Core checks it with one provider lookup
 before storing it as the secret `geo.api_key`. There is no endpoint setting or
 new environment variable.
-Choose `geo.plan`, then review the monthly and per-person daily credit limits.
+Choose `geo.plan`, then review the installation-wide monthly credit budget and
+request rate. Address autocomplete can be called anonymously only through
+`CLOUD_CORE_INTERNAL_ORIGIN`; keep Core private behind the gateway.
 Core creates its durable geo ledger during startup migrations.
 Routing shares these settings and counters. Core atomically reserves its full
 provider chain using straight-line distance times a fixed detour factor of 2.0.
@@ -767,7 +769,7 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |
 | HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts; [keep Gotenberg offline](#keep-gotenberg-offline) | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). `GOTENBERG_URL` can bootstrap `gotenberg.url`; Dev Compose sets it to `http://gotenberg:3000`. A saved setting wins. Without a URL, Grids tells users that an administrator must configure PDF rendering. |
 | Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test native notification delivery to an opted-in browser with Cloud visible and with no open Cloud tab. Notification history does not depend on browser push. |
-| City search | Core’s Geoapify EU service (`geo.api_key`) | Sign-in required. Core `address.autocomplete` suggests up to five German cities for at least three characters and charges the caller’s geo budget. `GEO_NOT_CONFIGURED` means an administrator must configure Core. `GEO_BUDGET_EXHAUSTED` includes its scope and reset time. Forecasts for known coordinates remain independent. |
+| City search | Core’s Geoapify EU service (`geo.api_key`) | Sign-in required. Core `address.autocomplete` suggests up to five German cities for at least three characters and charges the installation-wide geo budget. `GEO_NOT_CONFIGURED` means an administrator must configure Core. `GEO_BUDGET_EXHAUSTED` includes its scope and reset time. Forecasts for known coordinates remain independent. |
 
 For S3 snapshots, enter credentials in the individual notebook's snapshot
 configuration, not invented global S3 credential environment keys. Snapshots upload

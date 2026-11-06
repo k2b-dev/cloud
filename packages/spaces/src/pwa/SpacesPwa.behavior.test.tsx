@@ -34,6 +34,14 @@ const work: OverviewWork = {
 };
 const detail = (shortId: string, title: string): PwaTask => ({
   ...row(shortId, title),
+  statusId: "Col001",
+  statuses: [
+    { id: "Col001", name: "Open", color: "#94a3b8", done: false },
+    { id: "Col009", name: "Done", color: "#16a34a", done: true },
+  ],
+  tags: [],
+  claim: null,
+  blocked: false,
   spaceColor: "#16a34a",
   event: false,
   completed: false,
@@ -117,6 +125,7 @@ const mount = (path: string, initialTask?: PwaTask) => {
           return createComponent(SpacesPwa, {
             userId: "0b8f2d4e-1c3a-4f5b-9d6e-7a8b9c0d1e2f",
             initialList: { kind: "mine", view: "mine" },
+            me: { id: "0b8f2d4e-1c3a-4f5b-9d6e-7a8b9c0d1e2f", kind: "user", displayName: "Mia Muster", avatarHash: null },
             initialWork: work,
             spaces: [{ shortId: "Space1", name: "Summer fair", color: "#16a34a", openCount: 2, canWrite: true, pinned: false }],
             dateConfig: { locale: "en", timeZone: "UTC" },

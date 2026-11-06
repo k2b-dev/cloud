@@ -13,7 +13,15 @@ import { TextInput } from "../inputs/TextInput";
 import { KeyedFor } from "../internal/keyed-for";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
-import { contentClass, DialogHeader, type PromptContent, panelClass, promptTone, sharedPrompts } from "./prompt-confirm";
+import {
+  contentClass,
+  DialogHeader,
+  type PromptContent,
+  panelClass,
+  promptButtonVariant,
+  promptTone,
+  sharedPrompts,
+} from "./prompt-confirm";
 import { resolvePromptMessages } from "./prompt-messages";
 
 export { DialogHeader } from "./prompt-confirm";
@@ -25,7 +33,7 @@ export interface DialogOptions {
   icon?: string;
   confirmText?: string;
   cancelText?: string | false;
-  variant?: "danger" | "primary" | "success";
+  variant?: "danger" | "primary" | "success" | "warning";
   /** `full` fills the available viewport and becomes edge-to-edge on narrow screens. */
   size?: "small" | "medium" | "large" | "wide" | "full";
   surface?: "default" | "bare";
@@ -170,7 +178,7 @@ type PromptFormOptions<T extends Record<string, FieldSchema>> = {
   fields: T;
   confirmText?: string;
   cancelText?: string | false;
-  variant?: "danger" | "primary" | "success";
+  variant?: "danger" | "primary" | "success" | "warning";
   size?: DialogOptions["size"];
   cancelBehavior?: DialogOptions["cancelBehavior"];
 };
@@ -424,7 +432,7 @@ const PromptFormDialog = <T extends Record<string, FieldSchema>>(props: {
             {props.config.cancelText || resolveUiMessages().cancel}
           </button>
         </Show>
-        <button type="submit" class="k2b-button" data-variant={props.config.variant ?? "primary"}>
+        <button type="submit" class="k2b-button" data-variant={promptButtonVariant(props.config.variant)}>
           {props.config.confirmText ?? resolveUiMessages().save}
         </button>
       </footer>
@@ -714,7 +722,7 @@ export const prompts = Object.assign(sharedPrompts, {
           />
           <div class="k2b-dialog__body">{content}</div>
           <footer class="k2b-dialog__actions">
-            <button type="button" class="k2b-button" data-variant={options?.variant ?? "primary"} onClick={() => close()}>
+            <button type="button" class="k2b-button" data-variant={promptButtonVariant(options?.variant)} onClick={() => close()}>
               {options?.confirmText || resolveUiMessages().ok}
             </button>
           </footer>

@@ -44,7 +44,6 @@ const open = () =>
     artifactId: "App234",
     title: "Angebotsrechner",
     published: true,
-    viewerUserId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     locale: document.documentElement.lang || "en",
     entries,
     loadProjects: async () => [],
