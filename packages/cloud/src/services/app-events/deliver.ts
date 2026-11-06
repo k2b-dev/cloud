@@ -4,6 +4,7 @@ import type { AppEventEnvelope } from "../../contracts/app-events";
 import { audit } from "../audit";
 import { signAppEventInvocation } from "../identity/invocation-token";
 import { toPgTextArray } from "../postgres";
+import { authorizeResourceEvent, ResourceEventBindingSchema, resourceEventConsumer } from "./resources";
 
 export const APP_EVENT_DELIVERY_BACKOFF_MS = [1_000, 5_000, 30_000, 120_000, 600_000, 1_800_000, 3_600_000] as const;
 export const APP_EVENT_DELIVERY_ATTEMPTS = APP_EVENT_DELIVERY_BACKOFF_MS.length + 1;
@@ -24,6 +25,8 @@ type Delivery = {
 type Dependencies = {
   fetch?: typeof fetch;
   sign?: typeof signAppEventInvocation;
+  authorizeResource?: typeof authorizeResourceEvent;
+  resourceConsumer?: typeof resourceEventConsumer;
 };
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 1000);
 async function auditFailure(tx: SQL, row: Delivery, code: string | null) {
@@ -123,7 +126,7 @@ export function createEventDelivery(
   const deliver = async (row: Delivery) => {
     try {
       const [subscription] = await db()`
-        SELECT state, reason FROM events.app_subscriptions WHERE id = ${row.subscription_id}
+        SELECT state, reason, resource_binding FROM events.app_subscriptions WHERE id = ${row.subscription_id}
       `;
       if (subscription?.state === "cancelled") {
         await finish(row, "cancelled", "subscription_removed");
@@ -136,6 +139,39 @@ export function createEventDelivery(
             attempts = attempts - 1, claimed_until = NULL, claim_token = NULL, next_attempt_at = now(), updated_at = now()
           WHERE id = ${row.id}::uuid AND claim_token = ${row.claim_token}::uuid AND state IN ('pending', 'retrying')
         `;
+        return;
+      }
+      if (subscription.resource_binding !== null && subscription.resource_binding !== undefined) {
+        const binding = ResourceEventBindingSchema.parse(subscription.resource_binding);
+        const consumer = (dependencies.resourceConsumer ?? resourceEventConsumer)(binding.consumer);
+        if (!consumer) {
+          await postpone(row);
+          return;
+        }
+        if (!(await (dependencies.authorizeResource ?? authorizeResourceEvent)(row.app_id, binding, row.envelope))) {
+          await finish(row, "cancelled", "resource_access_revoked");
+          return;
+        }
+        const signal = AbortSignal.timeout(DELIVERY_TIMEOUT_MS);
+        let onAbort = () => {};
+        const aborted = new Promise<never>((_, reject) => {
+          onAbort = () => reject(signal.reason);
+          signal.addEventListener("abort", onAbort, { once: true });
+        });
+        try {
+          await Promise.race([
+            consumer(binding, row.envelope, {
+              subscriptionId: row.subscription_id,
+              eventId: row.event_id,
+              attempt: row.attempts,
+              signal,
+            }),
+            aborted,
+          ]);
+        } finally {
+          signal.removeEventListener("abort", onAbort);
+        }
+        await finish(row, "done", null);
         return;
       }
       const app = await findApp(row.app_id);

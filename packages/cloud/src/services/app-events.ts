@@ -11,12 +11,15 @@ import { createEventAcceptance } from "./app-events/accept";
 import { createEventAdministration } from "./app-events/admin";
 import { createDeclarationSync } from "./app-events/declarations";
 import { createEventDelivery } from "./app-events/deliver";
+import type { authorizeResourceEvent, resourceEventConsumer } from "./app-events/resources";
 import { startEventDispatcher } from "./app-events/runtime";
 import type { signAppEventInvocation } from "./identity/invocation-token";
 import { logger } from "./logging";
 import { superviseRuntimeTask } from "./runtime-lifecycle";
 
 export { APP_EVENT_DELIVERY_ATTEMPTS, APP_EVENT_DELIVERY_BACKOFF_MS } from "./app-events/deliver";
+export type { ResourceEventBinding, ResourceEventConsumer } from "./app-events/resources";
+export { cancelResourceEventSubscriptions, registerResourceEventConsumer, subscribeResourceEvent } from "./app-events/resources";
 
 const log = logger("app-events:broker");
 const topicInventory = lazySync((sync) => () => sync.listTopics({ idPrefix: "cloud:app-events" }));
@@ -26,6 +29,8 @@ type BrokerDependencies = {
   getApp?: typeof getCapability;
   fetch?: typeof fetch;
   sign?: typeof signAppEventInvocation;
+  authorizeResource?: typeof authorizeResourceEvent;
+  resourceConsumer?: typeof resourceEventConsumer;
   deadLetters?: (after?: string) => Promise<TopicDeadLetter<AppEventEnvelope>[]>;
   streams?: () => AsyncIterable<Pick<TopicInventoryEntry, "id" | "firstSequence">>;
 };

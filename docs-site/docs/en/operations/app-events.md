@@ -36,6 +36,15 @@ within the retained window, then inspect backlog and failures. If status reports
 events that have expired. Rolling back code does not remove homes already
 created or reverse completed handler effects.
 
+Core also migrates `events.app_subscriptions.resource_binding` for
+mandate-bound workload subscriptions. Roll out Core before enabling such
+workloads. They use the existing delivery queue and retention budget. Ordinary
+app subscriptions to resource events remain blocked. A resource delivery
+cancelled with `resource_access_revoked` means its mandate or current read
+access no longer permits delivery; redelivery never bypasses those checks.
+Workload pause or revision replacement cancels pending deliveries with
+`workload_changed`. Resuming starts a fresh subscription cutoff.
+
 ## Inspect readiness and failures
 
 Open **Administration → Apps** (`/admin/apps`), select an app and open **Events**
