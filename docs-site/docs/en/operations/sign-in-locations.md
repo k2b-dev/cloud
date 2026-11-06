@@ -40,11 +40,12 @@ custom images, the module returns no place or network name for that type.
 Browser and operating system descriptions still work. When first used, it logs each missing or invalid database once;
 sign-ins load the module when they describe the request. A lookup failure also
 returns no details from the affected database and logs once.
-Core maps the files through Bun, which needs write access to open them,
-although Core never writes to them. With a read-only root filesystem, such as
-`readOnlyRootFilesystem` or `docker run --read-only`, bundled lookups therefore
-return no place or network details and log each database's failure once.
-Uploaded databases do not need filesystem write access.
+Core supports a read-only root filesystem, including Kubernetes
+`securityContext.readOnlyRootFilesystem: true` and `docker run --read-only`.
+It opens bundled snapshots with read access only; uploads remain in Postgres.
+After upgrading, run `cld admin geoip status --json`: both types should report
+`bundled: true` and `source: "bundled"`, unless an upload is active.
+No database upload, reset, or writable mount is needed.
 
 The databases are © DB-IP.com, licensed under
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/):
@@ -117,10 +118,12 @@ minute and switches to the replacement. A restarted Core also starts a refresh w
 startup. Uploads and resets have audit entries with the type, build date,
 checksum, size, and administrator; file contents are not included in the audit.
 
-An uploaded database is held in each Core process's memory, using about its
-unpacked file size. The bundled snapshot is memory-mapped. A type uses one
-reader at a time. Plan memory for the upload and for other instances reloading
-it; uploads do not change the server's request-body limit.
+Each active database is held in each Core process's memory, using about its
+unpacked file size. Bundled files load on first use; the current City and ASN
+snapshots together need about 130 MiB per Core instance. A type uses one
+active reader at a time. Allow temporary headroom for a replacement or a bundled
+status check as well as the rest of Core's workload; uploads do not change
+the server's request-body limit.
 
 ## Privacy and accuracy
 
