@@ -765,7 +765,8 @@ jobs:
             --env CLOUD_IDENTITY_JWKS_ORIGIN=http://app-core:3000
             --env CLOUD_OAUTH_JWKS_ORIGIN=http://app-oauth:3000
             --env CLOUD_CORE_INTERNAL_ORIGIN=http://app-core:3000)
-          docker run --detach --name app-core "${common[@]}" \
+          docker run --detach --read-only --name app-core "${common[@]}" \
+            --env APP_URL=http://127.0.0.1:3000 \
             --env CLOUD_IDENTITY_KEY_ENCRYPTION_KEY=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f \
             --env CLOUD_OAUTH_BROKER_SECRET=abababababababababababababababababababababababababababababababab \
             --env ADMIN_LOGIN_TOKEN=ci-admin \
@@ -774,8 +775,7 @@ jobs:
           for container in app-core gateway; do
             [[ "$(docker exec "$container" id -u)" != "0" ]] || { echo "$container runs as root" >&2; exit 1; }
           done
-          # Core maps the GeoIP snapshot as its runtime user, and Bun.mmap opens files read-write.
-          docker exec app-core bun -e 'for (const kind of ["city", "asn"]) if (Bun.mmap(`/app/geoip/dbip-${kind}-lite.mmdb`, { shared: false }).length < 1e6) throw new Error(`${kind} snapshot is incomplete`)'
+          docker exec app-core bun -e 'for (const kind of ["city", "asn"]) if (Bun.file(`/app/geoip/dbip-${kind}-lite.mmdb`).size < 1e6) throw new Error(`${kind} snapshot is incomplete`)'
           for _attempt in {1..90}; do
             ready=$(curl --silent --fail http://127.0.0.1:3001/_cloud/ready || true)
             routes=$(curl --silent --fail http://127.0.0.1:3000/health | jq -r '.routeTable.routeCount // 0' || echo 0)
@@ -788,6 +788,19 @@ jobs:
           done
           docker logs app-core; docker logs gateway
           exit 1
+      - name: Verify bundled GeoIP databases through read-only Core
+        run: |
+          set -euo pipefail
+          token=$(curl --silent --show-error --fail-with-body -X POST http://127.0.0.1:3000/api/auth/admin-login \
+            -H 'content-type: application/json' --data '{"token":"ci-admin"}' | jq -er .session_token)
+          # The first emergency sign-in must accept the legal documents before using admin APIs.
+          version=$(curl --silent --show-error --fail-with-body -H "cookie: session_token=$token" http://127.0.0.1:3000/auth/continue \
+            | grep -oE 'data-legal-version="[a-f0-9]{64}"' | grep -oE '[a-f0-9]{64}')
+          curl --silent --show-error --fail-with-body -X POST http://127.0.0.1:3000/api/auth/legal-consent \
+            -H "authorization: Bearer $token" -H 'origin: http://127.0.0.1:3000' -H 'content-type: application/json' \
+            --data "{\"accepted\":true,\"version\":\"$version\"}"
+          curl --silent --show-error --fail-with-body -H "authorization: Bearer $token" http://127.0.0.1:3000/api/admin/core/geoip \
+            | jq -e '.databases | length == 2 and all(.[]; .source == "bundled" and .bundled == true and (.databaseType | type == "string"))'
       - if: always()
         run: docker rm --force notes app-core gateway postgres nats valkey || true
 

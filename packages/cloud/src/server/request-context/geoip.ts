@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { isIP } from "node:net";
 import { Reader } from "mmdb-lib";
 import { DBIP_ATTRIBUTION, type GeoIpKind, type IpCountryResult } from "../../contracts/geoip";
@@ -190,7 +191,7 @@ export const hasBoundedMmdbMetadata = (bytes: Uint8Array): boolean =>
   boundedMmdbMetadataStart(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)) !== -1;
 
 export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "bundled" | "uploaded" = "bundled") => {
-  // This Buffer is a view: Buffer.from(bytes) would copy the entire mmap.
+  // This Buffer is a view: Buffer.from(bytes) would copy the entire database.
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const metadataStart = boundedMmdbMetadataStart(buffer);
   if (metadataStart === -1) return null;
@@ -295,8 +296,8 @@ export const createGeoIp = (
   };
   const open = (kind: "city" | "asn", path: string): GeoIpDatabase | null => {
     try {
-      // A private mapping: pages load on demand and a stray write never reaches the file.
-      const database = openGeoIpDatabase(kind, Bun.mmap(path, { shared: false }));
+      // Bun.mmap requires a writable file even for private mappings. Image files must open read-only.
+      const database = openGeoIpDatabase(kind, readFileSync(path));
       if (!database)
         logOnce(kind, `GeoIP ${kind} snapshot is invalid; sign-in ${kind === "city" ? "locations" : "network names"} are unavailable`);
       return database;
@@ -315,7 +316,7 @@ export const createGeoIp = (
   };
   const install = (kind: GeoIpKind, database: GeoIpDatabase | null) => {
     generations[kind]++;
-    // Undefined opens the bundled mapping lazily, without retaining a second reader.
+    // Undefined opens the bundled snapshot lazily, without retaining a second reader.
     if (database) databases[kind] = database;
     else delete databases[kind];
   };
