@@ -2135,7 +2135,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         const page = await open(boxPath);
         try {
           const section = sidebar(page).locator(".mail-sidebar-hidden-mailboxes");
-          await section.getByRole("button", { name: /Hidden mailboxes/ }).click();
+          await section.getByRole("button", { name: /^Hidden/ }).click();
           const hidden = section.locator('[data-mailbox="Box005"]');
           expect(await hidden.locator("a").getAttribute("href")).toBe("/app/mail/Box005");
           const saved = page.waitForRequest((request) => request.method() === "PATCH" && request.url().endsWith("/Box005/preference"));

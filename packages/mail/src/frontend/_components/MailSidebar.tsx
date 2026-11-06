@@ -216,8 +216,7 @@ export default function MailSidebar(
     restoreFocus(
       hadFocus,
       hide
-        ? (rowLink(neighborId, scope) ??
-            scope.querySelector<HTMLElement>("button.mail-sidebar-hidden-toggle, .mail-sidebar-hidden-toggle button"))
+        ? (rowLink(neighborId, scope) ?? scope.querySelector<HTMLElement>(".mail-sidebar-hidden-mailboxes button[aria-expanded]"))
         : rowLink(mailbox.id, scope),
     );
   };
@@ -457,7 +456,7 @@ export default function MailSidebar(
         <AppWorkspace.SidebarItem
           icon={`ti ${moreOpen() ? "ti-chevron-down" : "ti-chevron-right"}`}
           onClick={() => setMoreExpanded((current) => !current)}
-          data={{ expanded: moreOpen() }}
+          expanded={moreOpen()}
         >
           {messages().more}
         </AppWorkspace.SidebarItem>
@@ -738,25 +737,26 @@ export default function MailSidebar(
               }
             >
               <For each={visibleMailboxes()}>{mailboxRow}</For>
-              {/* Hidden mailboxes fold into one quiet row at the end of the list, like the open mailbox's "More". */}
-              <Show when={hiddenMailboxes().length > 0}>
+            </AppWorkspace.SidebarSection>
+            {/* Hidden mailboxes fold into one quiet row after the list, like the open mailbox's "More". A plain section
+                keeps the row and its mailboxes in a phone's chip strip too. */}
+            <Show when={hiddenMailboxes().length > 0}>
+              <AppWorkspace.SidebarSection class="mail-sidebar-hidden-mailboxes">
                 <AppWorkspace.SidebarItem
                   icon={`ti ${hiddenOpen() ? "ti-chevron-down" : "ti-chevron-right"}`}
                   title={`${messages().hiddenMailboxes} (${formatCount(hiddenMailboxes().length)})`}
                   class="mail-sidebar-hidden-toggle"
-                  data={{ expanded: hiddenOpen() }}
+                  expanded={hiddenOpen()}
                   onClick={() => setHiddenOpen((open) => !open)}
                 >
                   <AppWorkspace.SidebarItemLabel>{messages().hidden}</AppWorkspace.SidebarItemLabel>
                   <AppWorkspace.SidebarItemMeta>{formatCount(hiddenMailboxes().length)}</AppWorkspace.SidebarItemMeta>
                 </AppWorkspace.SidebarItem>
                 <Show when={hiddenOpen()}>
-                  <div class="mail-sidebar-hidden-mailboxes" role="group" aria-label={messages().hiddenMailboxes}>
-                    <For each={hiddenMailboxes()}>{mailboxRow}</For>
-                  </div>
+                  <For each={hiddenMailboxes()}>{mailboxRow}</For>
                 </Show>
-              </Show>
-            </AppWorkspace.SidebarSection>
+              </AppWorkspace.SidebarSection>
+            </Show>
             <span class="sr-only" aria-live="polite">
               {announcement()}
             </span>

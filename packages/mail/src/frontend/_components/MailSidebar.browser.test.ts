@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { MailSidebarHarnessOptions } from "./MailSidebar.browser-harness";
 
 // The mailbox list's quiet rows: Hidden, and the Mailboxes menu with New mailbox and Deleted mailboxes. Set
@@ -118,8 +118,7 @@ const load = async (
   deleted = options.deleted ?? deletedNames;
   const page = await (await browser.newContext({ viewport: { width: options.width ?? 1440, height: 900 } })).newPage();
   page.setDefaultTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url.href);
   if (options.theme === "dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
   await page.evaluate((harnessOptions: MailSidebarHarnessOptions) => window.mountMailSidebar(harnessOptions), {
