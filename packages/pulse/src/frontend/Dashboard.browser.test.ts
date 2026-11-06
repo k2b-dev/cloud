@@ -56,6 +56,7 @@ const open = async (
     listError?: boolean;
     now?: string;
     paginated?: boolean;
+    browserZone?: string;
   } = {},
 ) => {
   const dashboard = options.dashboard ?? dashboardTestDashboard;
@@ -82,7 +83,7 @@ const open = async (
   };
   let listResponse: Reply = { json: dashboardTestSnapshot };
   let overviewResponse: Reply = { json: overview };
-  const tab = await browser.newPage({ viewport: { width: options.width ?? 1440, height: 1000 } });
+  const tab = await browser.newPage({ viewport: { width: options.width ?? 1440, height: 1000 }, timezoneId: options.browserZone });
   await pauseWorkspaceClock(tab.clock, new Date(options.now ?? dashboardTestNow));
   const requests: { path: string; body: unknown; key: string | undefined }[] = [];
   const panels = new Map<string, Reply>();
@@ -118,7 +119,7 @@ const open = async (
     ...workspaceFixture,
     initialNow: dashboardTestNow,
     initialOverview: { data: overview, error: null },
-    initialBases: workspaceFixture.initialBases.map((base) => ({ ...base, name: "Betrieb" })),
+    initialBases: workspaceFixture.initialBases.map((base) => ({ ...base, name: "Betrieb", timezone: "Europe/Berlin" })),
     initialPermissions: { write: !options.readOnly, admin: !options.readOnly },
     initialRouteState: readWorkspacePathState(url, workspaceFixture.initialBaseId),
     initialDashboards: {
@@ -144,6 +145,7 @@ const open = async (
             id: dashboard.id,
             name: dashboard.name,
             revision: dashboard.revision,
+            timeZone: "Europe/Berlin",
             panels: dashboard.definition.panels.map(({ sql: _sql, params: _params, ...panel }) => panel),
           },
           range: props.initialRouteState.dashboardRange ?? { range: "24h" as const },
@@ -330,7 +332,7 @@ test("a line panel is a chart explorer with exact values, units and a table of e
     await tab.getByRole("menuitemradio", { name: "Tabelle", exact: true }).click();
     const table = panel.getByRole("table");
     await table.locator("tbody tr").first().waitFor();
-    expect(await table.locator("thead th").allTextContents()).toEqual(["Zeit (UTC)", "Reihe", "Wert (/s)"]);
+    expect(await table.locator("thead th").allTextContents()).toEqual(["Zeit (Europe/Berlin)", "Reihe", "Wert (/s)"]);
     // The table takes the chart's place at the same viewport height.
     expect(await panel.locator(".k2b-chart-explorer__viewport").evaluate((el) => el.getBoundingClientRect().height)).toBe(216);
   } finally {
@@ -387,7 +389,28 @@ test("range presets reload their selected value and Back restores the prior rang
   }
 }, 60_000);
 
-test("custom dashboard range validates input and reloads the applied UTC time", async () => {
+test("dashboard times read in the base zone, never in UTC or the browser's zone, private and public", async () => {
+  for (const isPublic of [false, true]) {
+    // The browser sits in New York; the base reads its dashboard in Berlin, where 14:32 UTC is 16:32.
+    const { tab } = await open({ public: isPublic, browserZone: "America/New_York" });
+    try {
+      await ready(tab);
+      const band = await tab.locator(".pulse-dashboard__band").textContent();
+      expect(band).toContain("20.10.2026, 16:32");
+      const chart = tab.locator('[data-panel="req"] .k2b-chart');
+      await chart.focus();
+      await chart.press("ArrowRight");
+      const tooltip = tab.locator('[data-panel="req"] [role="tooltip"]:popover-open');
+      await tooltip.waitFor();
+      const shown = `${band} ${await tooltip.textContent()} ${await tab.locator(".pulse-dashboard").textContent()}`;
+      expect({ isPublic, utc: shown.includes("UTC") }).toEqual({ isPublic, utc: false });
+    } finally {
+      await tab.close();
+    }
+  }
+}, 30_000);
+
+test("custom dashboard range reads wall-clock time in the base zone and requests the exact instant", async () => {
   const { tab, requests } = await open();
   try {
     await ready(tab);
@@ -406,17 +429,20 @@ test("custom dashboard range validates input and reloads the applied UTC time", 
     expect(await tab.getByRole("link", { name: "Eigener Zeitraum", exact: true }).getAttribute("aria-current")).toBe("true");
     expect(await custom.getAttribute("aria-expanded")).toBe("false");
     await custom.click();
-    await tab.getByRole("button", { name: "Von (UTC)", exact: true }).click();
+    // 00:00 UTC is 02:00 in Berlin (CEST); the picker names the zone it reads in.
+    expect(await tab.getByRole("button", { name: "Von", exact: true }).textContent()).toContain("02:00");
+    await tab.getByRole("button", { name: "Von", exact: true }).click();
     const picker = tab.locator(".k2b-date-popover:popover-open");
+    expect(await picker.textContent()).toContain("Europe/Berlin");
     await picker.getByRole("textbox").fill("08:30");
     expect(await picker.getByRole("textbox").inputValue()).toBe("08:30");
     await picker.locator(".k2b-date-apply").click();
-    expect(await tab.getByRole("button", { name: "Von (UTC)", exact: true }).textContent()).toContain("08:30");
+    expect(await tab.getByRole("button", { name: "Von", exact: true }).textContent()).toContain("08:30");
     await tab.getByRole("button", { name: "Zeitraum übernehmen", exact: true }).click();
     // Previous panel data can remain ready while the new document navigation commits.
-    await tab.waitForURL((url) => url.searchParams.get("from") === "2026-10-01T08:30:00.000Z");
+    await tab.waitForURL((url) => url.searchParams.get("from") === "2026-10-01T06:30:00.000Z");
     await ready(tab);
-    expect(new URL(tab.url()).searchParams.get("from")).toBe("2026-10-01T08:30:00.000Z");
+    expect(new URL(tab.url()).searchParams.get("from")).toBe("2026-10-01T06:30:00.000Z");
     expect(
       requests
         .filter((req) => req.path.includes("/panels/"))
@@ -781,7 +807,7 @@ test("the actual SSR page and first client render preserve dashboard structure i
     const props: PulseWorkspaceProps = {
       ...workspaceFixture,
       initialNow: dashboardTestNow,
-      initialBases: workspaceFixture.initialBases.map((base) => ({ ...base, name: "Betrieb" })),
+      initialBases: workspaceFixture.initialBases.map((base) => ({ ...base, name: "Betrieb", timezone: "Europe/Berlin" })),
       initialRouteState: { view: "dashboards", sourceId: "", dashboardId: dashboardTestDashboard.id, dashboardRange: { range: "24h" } },
       initialDashboards: dashboardTestSnapshot,
       initialOverview: { data: { ...baseOverviewFixture, attention: { items: [], total: 0, nextOffset: null } }, error: null },

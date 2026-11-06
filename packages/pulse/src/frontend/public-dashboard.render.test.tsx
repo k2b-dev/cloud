@@ -35,6 +35,7 @@ const document = {
   id: dashboardTestDashboard.id,
   name: dashboardTestDashboard.name,
   revision: dashboardTestDashboard.revision,
+  timeZone: "Europe/Berlin",
   panels: dashboardTestDashboard.definition.panels.map(({ sql: _sql, params: _params, ...panel }) => panel),
 };
 const panelRead = spyOn(panels, "readDashboardPanel").mockResolvedValue(fail(err.notFound("Dashboard panel")));

@@ -75,6 +75,7 @@ export const readPublicDashboard = async (token: string) => {
     id: loaded.dashboard.short_id,
     name: loaded.dashboard.name,
     revision: loaded.dashboard.revision,
+    timeZone: loaded.base.timezone,
     panels: definition.panels.map(({ sql: _sql, params: _params, ...presentation }) => presentation),
   });
 };

@@ -31,6 +31,10 @@ export const dashboardSections = <T extends PublicDashboardPanel>(panels: T[]) =
     description: panels[0]?.sectionDescription,
   }));
 };
+/** Every dashboard time reads in the base's time zone, so the server and every viewer show the same clock. */
+export type DashboardClock = { locale: string; timeZone: string };
+export const dashboardDateTime = (clock: DashboardClock) =>
+  new Intl.DateTimeFormat(clock.locale, { dateStyle: "medium", timeStyle: "short", timeZone: clock.timeZone });
 export const dashboardCell = (value: unknown, locale: string): string =>
   value === null || value === undefined
     ? "—"
@@ -46,9 +50,10 @@ const number = (value: unknown): number | null =>
 export const dashboardLine = (
   panel: PublicDashboardPanel,
   data: DashboardPanelData,
-  locale: string,
+  clock: DashboardClock,
   window?: { from: string; to: string },
 ) => {
+  const { locale, timeZone } = clock;
   const x = data.columns.findIndex((column) => column.name === panel.x);
   const group = data.columns.findIndex((column) => column.name === panel.series);
   // `id` names the series by its source group and column, independent of its position in the result.
@@ -72,7 +77,7 @@ export const dashboardLine = (
     .slice(1)
     .map((time, index) => time - times[index]!)
     .filter((distance) => distance > 0);
-  const date = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
+  const date = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone });
   // A bucket such as toStartOfDay() may begin before :from. The chart rejects
   // points outside its domain, so the window widens to the data, never clips it.
   const domain: [number, number] | undefined = window
@@ -88,7 +93,7 @@ export const dashboardLine = (
       : span <= 8 * 86400000
         ? { weekday: "short" }
         : { month: "2-digit", day: "2-digit" }),
-    timeZone: "UTC",
+    timeZone,
   });
   return {
     kind: "line",
@@ -136,10 +141,10 @@ export type DashboardLineRow = { key: string; at: number; series: string; value:
 export const dashboardLineExplorer = (
   panel: PublicDashboardPanel,
   data: DashboardPanelData,
-  locale: string,
+  clock: DashboardClock,
   window?: { from: string; to: string },
 ) => {
-  const { tooltip, ...line } = dashboardLine(panel, data, locale, window);
+  const { tooltip, ...line } = dashboardLine(panel, data, clock, window);
   const keys = line.series.map((series) => {
     const seen = new Map<number, number>();
     return series.data.map((point) => {

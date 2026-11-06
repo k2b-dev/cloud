@@ -16,7 +16,14 @@ import type { DashboardPanel } from "../../dashboard-contracts";
 import { readOverviewNumber } from "../../overview-number";
 import { usePulseMessages } from "../use-messages";
 import type { DashboardPanelResult, PublicDashboardPanel } from "./dashboard-client";
-import { type DashboardLineRow, dashboardCategories, dashboardCell, dashboardCountries, dashboardLineExplorer } from "./dashboard-data";
+import {
+  type DashboardLineRow,
+  dashboardCategories,
+  dashboardCell,
+  dashboardCountries,
+  dashboardDateTime,
+  dashboardLineExplorer,
+} from "./dashboard-data";
 
 // A line panel keeps its explorer, header and height while it has no points to draw.
 const noLine: { chart: ChartSnapshot; rows: DashboardLineRow[] } = {
@@ -33,6 +40,7 @@ export default function DashboardPanelView(props: {
   pending: boolean;
   retryDisabled?: boolean;
   cursor: ChartCursor;
+  timeZone: string;
   retry: () => void;
   private: boolean;
 }) {
@@ -56,7 +64,7 @@ export default function DashboardPanelView(props: {
   const data = () => props.result?.lastGood?.data;
   const line = createMemo(() =>
     data() && props.panel.kind === "line"
-      ? dashboardLineExplorer(props.panel, data()!, locale(), props.result?.lastGood ?? undefined)
+      ? dashboardLineExplorer(props.panel, data()!, { locale: locale(), timeZone: props.timeZone }, props.result?.lastGood ?? undefined)
       : null,
   );
   const categoryResult = createMemo(() => {
@@ -95,10 +103,7 @@ export default function DashboardPanelView(props: {
             ? t().dashboardStoreUnavailable
             : t().dashboardPanelFailureDetail;
   const lastAt = () => props.result?.lastGood?.at;
-  const stamp = () =>
-    lastAt()
-      ? new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(lastAt()!)) + " UTC"
-      : "";
+  const stamp = () => (lastAt() ? dashboardDateTime({ locale: locale(), timeZone: props.timeZone }).format(new Date(lastAt()!)) : "");
   const Table = () => (
     <DataTable
       ariaLabel={props.panel.title}
@@ -137,7 +142,8 @@ export default function DashboardPanelView(props: {
   const lineColumns = () => [
     {
       id: "at",
-      label: t().dashboardTime,
+      // Copied rows leave the dashboard, so the column names the zone its times read in.
+      label: `${t().dashboardTime} (${props.timeZone})`,
       // Seconds always, milliseconds when the sample has them: two samples never share a shown or copied time.
       value: (row: DashboardLineRow) =>
         new Intl.DateTimeFormat(locale(), {
@@ -149,7 +155,7 @@ export default function DashboardPanelView(props: {
           second: "2-digit",
           ...(row.at % 1000 ? { fractionalSecondDigits: 3 as const } : {}),
           hourCycle: "h23",
-          timeZone: "UTC",
+          timeZone: props.timeZone,
         }).format(row.at),
       sortValue: (row: DashboardLineRow) => row.at,
     },

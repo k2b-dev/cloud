@@ -9,7 +9,7 @@ import { createDashboardActions, type DashboardActions } from "./dashboard-actio
 import type { DashboardTarget, PublicDashboardPanel } from "./dashboard-client";
 import { dashboardRangeSearch } from "./dashboard-client";
 import { createDashboardController } from "./dashboard-controller";
-import { dashboardSections } from "./dashboard-data";
+import { dashboardDateTime, dashboardSections } from "./dashboard-data";
 import { dashboardStyles } from "./dashboard-styles";
 
 export type DashboardViewProps = {
@@ -18,6 +18,8 @@ export type DashboardViewProps = {
   target: DashboardTarget;
   range: DashboardRange;
   path: string;
+  /** The base's time zone: every time on the dashboard and the custom range read in it. */
+  timeZone: string;
   actions?: DashboardActions;
   private?: { dashboard: Dashboard; base: { id: string; name: string }; canWrite: boolean; overview?: Overview | null };
 };
@@ -25,9 +27,8 @@ export default function DashboardView(props: DashboardViewProps) {
   const t = usePulseMessages(),
     locale = useLocale();
   const c = createDashboardController({ target: props.target, panels: props.panels, range: props.range });
-  const cursor = createChartCursor({
-    formatX: (x) => new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(x) + " UTC",
-  });
+  const clock = () => ({ locale: locale(), timeZone: props.timeZone });
+  const cursor = createChartCursor({ formatX: (x) => dashboardDateTime(clock()).format(x) });
   const sections = createMemo(() => dashboardSections(props.panels));
   const stats = () => props.panels.filter((panel) => panel.kind === "number");
   const [custom, setCustom] = createSignal(!!props.range.from);
@@ -64,11 +65,7 @@ export default function DashboardView(props: DashboardViewProps) {
     results()
       .flatMap((result) => (result.lastGood ? [result.lastGood.at] : []))
       .sort()[0];
-  const timestamp = () =>
-    lastGood()
-      ? new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(lastGood()!)) +
-        " UTC"
-      : "";
+  const timestamp = () => (lastGood() ? dashboardDateTime(clock()).format(new Date(lastGood()!)) : "");
   // A panel that cannot render its result fails alone; the island boundary would blank the whole dashboard.
   const renderPanel = (panel: PublicDashboardPanel | DashboardPanel) => (
     <ErrorBoundary
@@ -102,6 +99,7 @@ export default function DashboardView(props: DashboardViewProps) {
         pending={c.pending().includes(panel.id)}
         retryDisabled={c.pending().length > 0}
         cursor={cursor}
+        timeZone={props.timeZone}
         retry={() => void c.refresh(panel.id)}
         private={!!props.private}
       />
@@ -176,8 +174,9 @@ export default function DashboardView(props: DashboardViewProps) {
               navigateTo(rangeHref({ range: props.range.range, from: new Date(from()!).toISOString(), to: new Date(to()!).toISOString() }));
             }}
           >
-            <DateTimePicker label={t().dashboardFrom} value={from()} onValueChange={setFrom} dateConfig={{ timeZone: "UTC" }} />
-            <DateTimePicker label={t().dashboardTo} value={to()} onValueChange={setTo} dateConfig={{ timeZone: "UTC" }} />
+            {/* Wall-clock time in the base's zone, which the picker panel names; both emit exact instants. */}
+            <DateTimePicker label={t().dashboardFrom} value={from()} onValueChange={setFrom} dateConfig={{ timeZone: props.timeZone }} />
+            <DateTimePicker label={t().dashboardTo} value={to()} onValueChange={setTo} dateConfig={{ timeZone: props.timeZone }} />
             <Button type="submit" variant="secondary">
               {t().dashboardApplyRange}
             </Button>
