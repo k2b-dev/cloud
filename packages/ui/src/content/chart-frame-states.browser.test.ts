@@ -50,6 +50,7 @@ const open = async (width: number) => {
   );
   await page.addScriptTag({ content: bundle });
   await page.waitForSelector(".frame-bar .stdlib-chart-bar");
+  await settled(page);
   return { page, errors };
 };
 
@@ -98,7 +99,8 @@ for (const width of [1280, 390]) {
 test("the stale line offers Try again in one line, and a failure without rows has its own button", async () => {
   const { page } = await open(1280);
   await page.evaluate(() => (window as unknown as { setFrameState(s: string): void }).setFrameState("stale"));
-  await expect(page.locator(".k2b-chart-explorer__status-line").textContent()).resolves.toContain("As of 09:12 · Refresh failed");
+  await settled(page);
+  expect(await page.locator(".k2b-chart-explorer__status-line").textContent()).toContain("As of 09:12 · Refresh failed");
   await page.evaluate(() => (window as unknown as { setFrameState(s: string): void }).setFrameState("error"));
   await page.getByRole("button", { name: "Try again" }).click();
   await page.waitForSelector(".frame-bar .stdlib-chart-bar");
@@ -111,6 +113,7 @@ test("calm hover: a light band behind the column, no outline, and a tooltip that
   const rect = (await bar.boundingBox())!;
   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height - 4);
   await page.waitForSelector('.frame-bar[data-inspecting="category"]');
+  await settled(page);
   const first = await page.evaluate(() => {
     const chart = document.querySelector(".frame-bar")!;
     const tip = chart.querySelector<HTMLElement>('[role="tooltip"]')!;
@@ -149,6 +152,7 @@ test("calm hover: rows get a band from the baseline to the longest bar", async (
   const rect = (await bar.boundingBox())!;
   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
   await page.waitForSelector('.rows-bar[data-inspecting="category"]');
+  await settled(page);
   const band = await page.evaluate(() => {
     const chart = document.querySelector<HTMLElement>(".rows-bar")!;
     return {

@@ -175,6 +175,11 @@ export function createChartInspector(options: {
       id = options.tooltip()?.id;
     if (container && id) describe(container, id, false);
     options.container()?.removeAttribute("data-inspecting");
+    const inspected = options.container();
+    if (inspected) {
+      for (const name of ["left", "top", "width", "height"]) inspected.style.removeProperty(`--k2b-chart-band-${name}`);
+      if (!inspected.getAttribute("style")) inspected.removeAttribute("style");
+    }
     const tooltip = options.tooltip();
     if (tooltip) {
       try {
