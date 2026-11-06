@@ -2,7 +2,7 @@ import type { ChartDatum, charts } from "@k2b/stdlib";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartCursor, ChartCursorState } from "./chart-cursor";
 
-export type ChartKind = keyof typeof charts | "hbar";
+export type ChartKind = keyof typeof charts | "hbar" | "funnel";
 
 export type ChartDatumRef = Pick<ChartDatum, "role" | "index" | "seriesIndex">;
 export const sameChartDatum = (a: ChartDatumRef, b: ChartDatumRef) =>

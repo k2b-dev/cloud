@@ -13,6 +13,8 @@ import {
   svgRoot,
 } from "@k2b/stdlib";
 
+import { barLabels, barPercent } from "../charts/core/bar-labels";
+
 /**
  * Bar chart options: stdlib's `charts.bar` options plus a title for the category axis and a separate value format.
  * The wrapper owns size and inspection.
@@ -24,6 +26,11 @@ export type BarChartOptions = {
   series?: { label: string; data: (number | null)[] }[];
   layout?: "columns" | "rows" | "grouped" | "stacked" | "nested";
   normalize?: boolean;
+  /** Explicit rows form a ranked list; shares include every source item, including the remainder. */
+  share?: boolean;
+  limit?: number;
+  tone?: "in" | "out";
+  locale?: string;
   compare?: { label: string; data: (number | null)[] };
 
   /** Value axis. `label` titles it, `format` writes its ticks and, without `valueFormat`, the printed values. */
@@ -186,6 +193,8 @@ const columnsFit = (opts: BarChartOptions, finite: Plan["finite"], width: number
 /** The renderer's plan for a chart: its layout and logical height at `width`, derived from the data alone. */
 const barChartPlan = (opts: BarChartOptions, width = 480): Plan => {
   const finite = finiteItems(opts.data ?? []);
+  if (opts.layout === "rows" && !opts.series)
+    return { layout: "rows", height: rankedBarLayout(opts, { width, height: 280 }).height, finite, header: headerHeight(opts) };
   if (opts.series) return { layout: "columns", height: 280, finite, header: headerHeight(opts) };
   const header = headerHeight(opts);
   if (!finite.length) return { layout: "columns", height: 280, finite, header };
@@ -487,6 +496,7 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
  */
 export const renderBarChartSvg = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }): string => {
   if (opts.series) return renderSeriesBars(opts);
+  if (opts.layout === "rows") return renderRankedBars(opts);
   const plan = barChartPlan(opts, opts.width);
   // The empty drawing of stdlib's bar chart, written here so bundles leave out stdlib's whole bar renderer.
   if (!plan.finite.length)
@@ -702,4 +712,88 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
     }
   if (opts.xAxis?.label) parts.push(text((g.left + g.right) / 2, opts.height - 2, opts.xAxis.label, "stdlib-chart-axis-label", "middle"));
   return svgRoot(opts, parts.join("")).replace("<svg ", '<svg data-bar-layout="columns" data-category-inspection="true" ');
+};
+
+/** Ranked rows retain original indices. A limit changes the drawing, never the denominator or source data. */
+export function rankedBarLayout(opts: BarChartOptions, size = { width: 480, height: 280 }) {
+  if (opts.limit !== undefined && (!Number.isInteger(opts.limit) || opts.limit < 1))
+    throw new RangeError("Bar list limit must be a positive integer");
+  if (opts.data?.some((d) => Number.isFinite(d.value) && d.value < 0)) throw new RangeError("Ranked bar lists require nonnegative values");
+  const sorted = (opts.data ?? [])
+    .map((item, index) => ({ ...item, index }))
+    .sort((a, b) => (Number.isFinite(b.value) ? b.value : -Infinity) - (Number.isFinite(a.value) ? a.value : -Infinity));
+  const total = sorted.reduce((sum, d) => sum + (Number.isFinite(d.value) ? d.value : 0), 0);
+  const shown = sorted.slice(0, opts.limit),
+    rest = sorted.slice(shown.length);
+  const top = headerHeight(opts),
+    unit = size.width / narrow(opts),
+    format = opts.valueFormat ?? opts.yAxis?.format ?? ((v: number) => new Intl.NumberFormat(opts.locale ?? "en").format(v)),
+    percent = barPercent(opts.locale);
+  const shareWidth = opts.share ? 48 * unit : 0;
+  const valueWidth = Math.max(20, ...shown.map((d) => chartTextWidth(Number.isFinite(d.value) ? format(d.value) : "–"))) * unit;
+  const labelWidth = Math.max(8, (size.width - shareWidth - valueWidth - 36 * unit) / unit);
+  const max = Math.max(0, ...sorted.map((d) => (Number.isFinite(d.value) ? d.value : 0)));
+  const rows = shown.map((d, rank) => ({
+    ...d,
+    rank: rank + 1,
+    y: top + rank * 36,
+    width: Number.isFinite(d.value) && max > 0 ? (d.value / max) * size.width : 0,
+    share: Number.isFinite(d.value) && total > 0 ? d.value / total : null,
+  }));
+  return {
+    ...size,
+    height: Math.max(size.height, top + rows.length * 36 + (rest.length ? 24 : 0)),
+    rows,
+    total,
+    rest,
+    restValue: rest.reduce((sum, d) => sum + (Number.isFinite(d.value) ? d.value : 0), 0),
+    top,
+    unit,
+    format,
+    percent,
+    shareWidth,
+    labelWidth,
+  };
+}
+
+const renderRankedBars = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }) => {
+  const g = rankedBarLayout(opts, opts),
+    labels = barLabels(opts.locale);
+  const parts = [renderHeader(opts, opts.width)];
+  const color = "var(--stdlib-chart-c1)";
+  const text = (x: number, y: number, value: string, anchor = "start", cls = "stdlib-chart-tick-label") =>
+    `<text class="${cls}" x="${x}" y="${y}" text-anchor="${anchor}">${escapeXml(value)}</text>`;
+  for (const row of g.rows) {
+    const value = Number.isFinite(row.value) ? row.value : null,
+      written = value === null ? "–" : g.format(value);
+    const share = row.share === null ? "–" : g.percent.format(row.share);
+    const label = wrapLabel(row.label, (g.labelWidth * 11) / 13, 1).lines[0] ?? row.label;
+    const marks = `<rect class="k2b-chart-category-band" x="0" y="${row.y}" width="${g.width}" height="32" rx="6"/><rect x="0" y="${row.y}" width="${row.width}" height="32" rx="6" style="fill:color-mix(in srgb,${color} 16%,transparent);pointer-events:none"/>${text(10 * g.unit, row.y + 20, label)}${text(g.width - 10 * g.unit - g.shareWidth, row.y + 20, written, "end", "stdlib-chart-bar-value")}${opts.share ? text(g.width - 10 * g.unit, row.y + 20, share, "end") : ""}`;
+    parts.push(
+      chartDatumSvg(
+        marks,
+        {
+          role: "item",
+          index: row.index,
+          label: row.label,
+          anchor: [g.width / 2, row.y],
+          values: [
+            { key: "value", value: value ?? "–", formatted: written },
+            { key: "percent", value: row.share === null ? "–" : row.share * 100, formatted: share },
+            { key: "rank", value: row.rank },
+          ],
+        },
+        opts.inspect ?? false,
+      ).replace(
+        /<title>[\s\S]*?<\/title>/,
+        `<title>${escapeXml(`${row.label} · ${written} · ${share} · ${labels.rank}: ${row.rank}`)}</title>`,
+      ),
+    );
+  }
+  if (g.rest.length)
+    parts.push(text(10 * g.unit, g.top + g.rows.length * 36 + 16, `${labels.more({ n: g.rest.length })} · ${g.format(g.restValue)}`));
+  return svgRoot(
+    { ...opts, height: g.height, className: [opts.className, "k2b-chart-ranked"].filter(Boolean).join(" ") },
+    parts.join(""),
+  ).replace("<svg ", '<svg data-bar-layout="rows" data-category-inspection="true" ');
 };

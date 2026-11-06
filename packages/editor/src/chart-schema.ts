@@ -30,7 +30,22 @@ export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
 export const chartKindSchema = () =>
-  z.enum(["bar", "hbar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
+  z.enum([
+    "bar",
+    "hbar",
+    "funnel",
+    "line",
+    "scatter",
+    "pie",
+    "donut",
+    "histogram",
+    "gauge",
+    "sparkline",
+    "boxplot",
+    "heatmap",
+    "barGauge",
+    "stat",
+  ]);
 
 export const chartParts = (limits?: ChartLimits) => {
   const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
@@ -155,6 +170,10 @@ export const chartKinds = (limits?: ChartLimits) => {
         ).optional(),
         layout: z.enum(["columns", "rows", "grouped", "stacked", "nested"]).optional(),
         normalize: z.boolean().optional(),
+        share: z.boolean().optional(),
+        limit: z.number().int().positive().optional(),
+        tone: z.enum(["in", "out"]).optional(),
+        format: numberFormat.optional(),
         compare: z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }).optional(),
         xAxis: ChartAxis.pick({ label: true }).strict().optional(),
         yAxis: ChartAxis.optional(),
@@ -166,6 +185,10 @@ export const chartKinds = (limits?: ChartLimits) => {
       .superRefine((bar, ctx) => {
         const issue = (message: string) => ctx.addIssue({ code: "custom", message });
         if (limits && !bar.series && !bar.data.length) issue("A bar chart needs data or aligned series.");
+        if ((bar.share !== undefined || bar.limit !== undefined || bar.tone !== undefined) && bar.layout !== "rows")
+          issue("Share, limit and tone require rows layout.");
+        if (bar.layout === "rows" && bar.data.some((d) => Number.isFinite(d.value) && d.value < 0))
+          issue("Ranked bar lists require nonnegative values.");
         if (bar.series) {
           if (!bar.x || bar.series.some((s) => s.data.length !== bar.x?.length)) issue("Bar series must have the same length as x.");
           if (bar.data.length) issue("Use data or aligned series, not both.");
@@ -180,6 +203,12 @@ export const chartKinds = (limits?: ChartLimits) => {
         if (bar.compare && (bar.series?.length !== 1 || bar.compare.data.length !== bar.x?.length || bar.layout === "stacked"))
           issue("Comparison needs one current series and aligned previous values.");
       }),
+    z.object({
+      kind: z.literal("funnel"),
+      ...ChartKindCommon,
+      data: list(z.object({ label: ChartLabel, value: z.number().nonnegative().nullable() }), 1, limits?.maxValues),
+      format: numberFormat.optional(),
+    }),
     z
       .object({
         kind: z.literal("hbar"),

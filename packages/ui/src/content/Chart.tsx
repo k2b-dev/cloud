@@ -4,6 +4,7 @@ import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
+import { type FunnelOptions, renderFunnelSvg } from "../charts/core/funnel";
 import { type HorizontalBarOptions, hbarLayout, renderHbarSvg } from "../charts/core/hbar";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
@@ -141,13 +142,15 @@ export type ChartProps = {
       : {}) &
     (K extends "stateTimeline"
       ? StateTimelineChartOptions
-      : K extends "hbar"
-        ? HorizontalBarOptions
-        : K extends "bar"
-          ? BarChartOptions
-          : K extends keyof typeof charts
-            ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-            : never);
+      : K extends "funnel"
+        ? FunnelOptions
+        : K extends "hbar"
+          ? HorizontalBarOptions
+          : K extends "bar"
+            ? BarChartOptions
+            : K extends keyof typeof charts
+              ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+              : never);
 }[ChartKind];
 
 /** Pure renderer options: component layout, events and inspection are configured elsewhere. */
@@ -180,6 +183,7 @@ export const renderChartSvg = (
   height: number,
   mapViewport?: MapViewport,
   timelineViewport?: StateTimelineDomain,
+  locale = "en",
 ): string => {
   const {
     kind,
@@ -212,8 +216,15 @@ export const renderChartSvg = (
       }),
     );
   }
+  if (kind === "funnel")
+    return responsiveChartSvg(
+      renderFunnelSvg({ ...(opts as FunnelOptions), locale: (opts as FunnelOptions).locale ?? locale, width, height, inspect: true }),
+    );
   if (kind === "hbar") return responsiveChartSvg(renderHbarSvg({ ...(opts as HorizontalBarOptions), width, height, inspect: true }));
-  if (kind === "bar") return responsiveChartSvg(renderBarChartSvg({ ...(opts as BarChartOptions), width, height, inspect: true }));
+  if (kind === "bar")
+    return responsiveChartSvg(
+      renderBarChartSvg({ ...(opts as BarChartOptions), locale: (opts as BarChartOptions).locale ?? locale, width, height, inspect: true }),
+    );
   // A time axis needs an explicit X domain: it maps its round ticks onto the axis the renderer drew over it.
   const timeAxis = props.kind === "line" ? props.timeAxis : undefined;
   const timeDomain = timeAxis && props.kind === "line" ? lineTimeDomain(props) : undefined;
@@ -257,6 +268,7 @@ const isEmpty = (props: ChartProps): boolean => {
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);
   }
+  if (props.kind === "funnel") return !props.data.length;
   if (props.kind === "hbar") return !props.rows.length;
   if (props.kind === "bar")
     return props.series
@@ -598,6 +610,7 @@ const Chart = (props: ChartProps): JSX.Element => {
       size().height,
       interactiveMap() ? mapViewport() : undefined,
       interactiveTimeline() ? timelineViewport() : undefined,
+      locale(),
     ),
   );
   createEffect(() => {

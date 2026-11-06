@@ -23,9 +23,11 @@ import {
 import {
   type BarChartOptions,
   barChartLayout,
+  type FunnelOptions,
   type HorizontalBarOptions,
   hbarLayout,
   renderBarChartSvg,
+  renderFunnelSvg,
   renderHbarSvg,
 } from "@k2b/ui/charts";
 import { z } from "zod";
@@ -34,13 +36,15 @@ import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTim
 export * from "./chart-schema";
 
 type RenderOptions = {
-  [K in ChartInput["kind"]]: { kind: K } & (K extends "hbar"
-    ? HorizontalBarOptions
-    : K extends "bar"
-      ? BarChartOptions
-      : K extends keyof typeof charts
-        ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-        : never);
+  [K in ChartInput["kind"]]: { kind: K } & (K extends "funnel"
+    ? FunnelOptions
+    : K extends "hbar"
+      ? HorizontalBarOptions
+      : K extends "bar"
+        ? BarChartOptions
+        : K extends keyof typeof charts
+          ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+          : never);
 }[ChartInput["kind"]];
 
 /**
@@ -69,6 +73,9 @@ const labels = /* @__PURE__ */ i18n.define({
       whiskerLow: "Whisker low",
       whiskerHigh: "Whisker high",
       delta: "Change",
+      startShare: "Share of start",
+      previousShare: "Share of previous step",
+      rank: "Rank",
     },
     de: {
       category: "Kategorie",
@@ -86,6 +93,9 @@ const labels = /* @__PURE__ */ i18n.define({
       whiskerLow: "Unterer Whisker",
       whiskerHigh: "Oberer Whisker",
       delta: "Änderung",
+      startShare: "Anteil am Start",
+      previousShare: "Anteil am vorigen Schritt",
+      rank: "Rang",
     },
   },
 });
@@ -267,6 +277,8 @@ const formattedValues = (input: ChartInput): number[] => {
       ];
     case "hbar":
       return input.rows.flatMap((r) => r.values.filter((v): v is number => v !== null));
+    case "funnel":
+      return input.data.flatMap((d) => (d.value === null ? [] : [d.value]));
     case "pie":
     case "donut":
     case "heatmap":
@@ -287,7 +299,7 @@ const formattedValues = (input: ChartInput): number[] => {
   }
 };
 const formats = (input: ChartInput, locale: string): Formats => {
-  const yFormat = "yAxis" in input ? numberFormat(input.yAxis?.format) : "format" in input ? input.format : undefined;
+  const yFormat = ("yAxis" in input ? numberFormat(input.yAxis?.format) : undefined) ?? ("format" in input ? input.format : undefined);
   const y = chartNumberFormatters(yFormat, locale, formattedValues(input));
   const xFormat = "xAxis" in input && input.kind !== "bar" ? input.xAxis?.format : undefined;
   const x = chartNumberFormatters(numberFormat(xFormat), locale);
@@ -378,6 +390,8 @@ export function chartRenderOptions(
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
   switch (input.kind) {
+    case "funnel":
+      return { kind: "funnel", data: input.data, valueFormat: format.value, locale };
     case "hbar":
       return {
         kind: "hbar",
@@ -398,6 +412,10 @@ export function chartRenderOptions(
           series: input.series,
           layout: input.layout,
           normalize: input.normalize,
+          share: input.share,
+          limit: input.limit,
+          tone: input.tone,
+          locale,
           compare: input.compare,
           xAxis: input.xAxis,
           yAxis: axis(yAxis, options.formats?.y ?? format.tick),
@@ -546,6 +564,8 @@ const decode = (value: string) =>
 export const drawChart = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
+    case "funnel":
+      return renderFunnelSvg({ ...options, ...common });
     case "hbar":
       return renderHbarSvg({ ...options, ...common, height: hbarLayout(options).height });
     case "bar":
@@ -635,8 +655,8 @@ export function chartRows(
   const add = (datum: ChartDatum): ChartRow => {
     const cells: Record<string, string> = {};
     const values: Record<string, string | number> = {};
-    const cell = (id: string, label: string, value: string | number, text: string) => {
-      if (!columns.has(id)) columns.set(id, { id, label, numeric: typeof value === "number" });
+    const cell = (id: string, label: string, value: string | number, text: string, numeric = typeof value === "number") => {
+      if (!columns.has(id)) columns.set(id, { id, label, numeric });
       cells[id] = text;
       values[id] = value;
     };
@@ -675,7 +695,30 @@ export function chartRows(
             : input.kind === "hbar"
               ? input.series[seriesIndex]!
               : input.series![seriesIndex]!.label;
-        cell(field.key, label, value, field.formatted ?? String(value));
+        cell(field.key, label, value, field.formatted ?? String(value), true);
+        continue;
+      }
+      if (
+        field.key === "startPercent" ||
+        field.key === "previousPercent" ||
+        field.key === "rank" ||
+        ((input.kind === "bar" || input.kind === "funnel") && typeof value === "string")
+      ) {
+        cell(
+          field.key,
+          field.key === "startPercent"
+            ? t.startShare
+            : field.key === "previousPercent"
+              ? t.previousShare
+              : field.key === "rank"
+                ? t.rank
+                : field.key === "percent"
+                  ? t.share
+                  : t.value,
+          value,
+          field.formatted ?? String(value),
+          true,
+        );
         continue;
       }
       if (typeof value !== "number" || field.key === "total") continue;
@@ -718,7 +761,19 @@ export function chartRows(
     rows.push(row);
     return row;
   };
-  return { add, columns: () => [...columns.values()], table: (): ChartTable => ({ columns: [...columns.values()], rows }) };
+  return {
+    add,
+    columns: () => [...columns.values()],
+    table: (): ChartTable => {
+      if (input.kind === "bar" && input.layout === "rows" && input.limit !== undefined) {
+        const source = { ...input, limit: undefined };
+        const all = chartRows(source, locale, options);
+        for (const datum of chartSvgMarks(drawChart(chartRenderOptions(source, locale)))) all.add(datum);
+        return all.table();
+      }
+      return { columns: [...columns.values()], rows };
+    },
+  };
 }
 
 /** The data behind every mark of the chart as a table: the accessible alternative and what Copy data copies. */
