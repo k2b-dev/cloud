@@ -87,10 +87,10 @@ else
       );
       const cell = () => dom.root.querySelector<HTMLElement>('.k2b-ste-cell[data-r="1"]')!;
       const wrap = () => dom.root.querySelector<HTMLElement>(".k2b-ste-table")!;
+      // Grips, right-click and keys open the cell menu without a trigger; find the open one.
       const menu = () => {
         if (phone) return dom.document.querySelector<HTMLElement>("dialog [role='menu']")!;
-        const trigger = dom.root.querySelector<HTMLElement>(".k2b-dropdown__trigger[aria-expanded='true']");
-        return dom.document.getElementById(trigger?.getAttribute("aria-controls") ?? "")!;
+        return [...dom.document.querySelectorAll<HTMLElement>(".k2b-ste-table-menu")].find((element) => element.matches(":popover-open"))!;
       };
       const key = (key: string, extra: KeyboardEventInit = {}) => {
         const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...extra });
@@ -340,8 +340,9 @@ else
       try {
         const column = h.wrap().querySelector<HTMLButtonElement>(".k2b-ste-addColumn")!;
         const row = h.wrap().querySelector<HTMLButtonElement>(".k2b-ste-addRow")!;
-        expect(column.textContent).toBe("+");
+        expect(column.querySelector(".ti-plus")).not.toBeNull();
         expect(column.getAttribute("aria-label")).toBe("Add column");
+        expect(row.getAttribute("aria-label")).toBe("+ Row");
         expect(getComputedStyle(column).gridColumn).toBe("2");
         expect(getComputedStyle(column).gridRow).toBe("1");
         expect(getComputedStyle(row).gridRow).toBe("2");

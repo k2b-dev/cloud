@@ -1,0 +1,6 @@
+### Successful idle background checks generated durable lifecycle spans
+
+- **What happened:** Sync's generic lifecycle observer wrote a start and a completion for every job and scheduler delivery, including callbacks that found no work.
+- **Root cause:** Transport lifecycle events carry no handler results, so the observer could not distinguish an idle application check from useful work.
+- **Error class:** Observability write amplification from idle background loops.
+- **Guard:** `background-loop.integration.test.ts` exercises an explicit result-based background handler through the real observer, requires zero span row writes for idle success and one complete write for work, preserves retry/error/recovery history, and leaves neighboring schedules traced. It also holds trace SQL pending while a wrapped job completes and verifies that summary exceptions cannot retry completed work. `background-loop-policy.test.ts` guards the 1,024 static-loop bound; `sync-folder-outcome.test.ts` covers draft-only and removal-only work plus an otherwise idle UIDVALIDITY reset. Mail's sync-due scheduler keeps ordinary tracing because its result does not count every effect. Opted-in handlers summarize their run through the wrapper; independent domain spans and retention are unchanged.

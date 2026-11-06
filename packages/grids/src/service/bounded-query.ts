@@ -76,9 +76,9 @@ const runBoundedQueryDirect = async <T>(query: unknown, timeoutMs: number, signa
       abort = () => {
         if (!queryActive || cancelRequest) return;
         pending.cancel();
-        // Bun's local cancel flag does not reliably interrupt a statement on
-        // a reserved connection. PostgreSQL cancellation targets exactly this
-        // backend while preserving the connection for a safe reset.
+        // cancel() only rejects a statement it can still reach; PostgreSQL
+        // cancellation targets exactly this backend while preserving the
+        // connection for a safe reset.
         cancelRequest = sql`SELECT pg_cancel_backend(${backend.pid})`.execute().catch(() => undefined);
       };
       signal?.addEventListener("abort", abort, { once: true });

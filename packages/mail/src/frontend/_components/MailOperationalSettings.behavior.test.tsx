@@ -157,6 +157,50 @@ describe("Mail folder maintenance", () => {
     }
   });
 
+  test("counts messages that could not be loaded quietly while the mailbox stays active", async () => {
+    globalThis.fetch = Object.assign(async () => Response.json(operations), { preconnect: originalFetch.preconnect });
+    const dom = createDomTestHarness();
+    const [{ default: MailOperationalSettings }, { LocaleProvider }] = await Promise.all([
+      import("./MailOperationalSettings"),
+      import("@k2b/ui"),
+    ]);
+    const [failed, setFailed] = createSignal(1);
+    const dispose = render(
+      () =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(MailOperationalSettings, {
+              mailbox,
+              get health() {
+                return { ...health, health: "active" as const, hydration: { complete: 40, pending: 0, failed: failed() } };
+              },
+              bindings: [],
+              connections: [],
+              dateConfig: { locale: "de", timeZone: "UTC" },
+              reloading: false,
+              onReload: async () => undefined,
+              onWorkspaceChange: () => undefined,
+            });
+          },
+        }),
+      dom.root,
+    );
+    const count = () => dom.document.querySelector("[data-mail-failed-message-count]");
+    try {
+      expect(count()?.textContent).toBe("1 Nachricht konnte nicht geladen werden");
+      expect(dom.document.querySelector(".k2b-status-badge")?.textContent).toBe("Aktiv");
+      expect(dom.document.body.textContent).not.toContain("Prüfung erforderlich");
+      setFailed(3);
+      expect(count()?.textContent).toBe("3 Nachrichten konnten nicht geladen werden");
+      setFailed(0);
+      expect(count()).toBeNull();
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("explains a timed-out synchronization instead of the generic degraded status", async () => {
     globalThis.fetch = Object.assign(async () => Response.json(operations), { preconnect: originalFetch.preconnect });
     const dom = createDomTestHarness();

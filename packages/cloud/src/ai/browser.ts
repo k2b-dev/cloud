@@ -1,3 +1,5 @@
+import { fetchAppAction } from "../browser/app-actions";
+
 export {
   CODE_RUNTIME_TOOL_NAMES,
   CodeActionInput,
@@ -55,7 +57,12 @@ export {
 } from "./default-tool-contracts";
 export { guessAiMediaType } from "./file-media-type";
 export { AI_PROJECT_FILE_MOUNT, AI_SKILL_FILE_MOUNT } from "./file-mount";
-export { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";
+export {
+  AI_FILES_MAX_FILE_BYTES_DEFAULT,
+  AI_IMAGE_INPUT_MAX_BYTES,
+  AI_TURN_ATTACHMENT_MAX_ITEMS,
+  AI_TURN_IMAGE_MAX_TOTAL_BYTES,
+} from "./limits";
 export {
   AI_LOCAL_BATCH_MAX_ITEMS,
   AI_LOCAL_INSTRUCTIONS_MAX_BYTES,
@@ -118,6 +125,7 @@ export {
   splitAiSkillMarkdown,
   validateAiSkillReferences,
 } from "./skill-format";
+export { type AiMessageTimelineItem, buildAiMessageTimeline } from "./timeline";
 export { isAiImageMediaType } from "./types";
 
 export type LaunchAssistantInput = {
@@ -147,7 +155,7 @@ export const launchAssistant = async (input: LaunchAssistantInput): Promise<Assi
   if ((input.draft?.content.length ?? 0) + files.length > 20) {
     throw new Error("Assistant drafts can contain at most 20 parts");
   }
-  const response = await fetch("/api/ai/conversations", {
+  const response = await fetchAppAction("/api/ai/conversations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(createInput),
@@ -163,12 +171,15 @@ export const launchAssistant = async (input: LaunchAssistantInput): Promise<Assi
         files.map(async (file) => {
           const form = new FormData();
           form.set("file", file);
-          const upload = await fetch(`/api/ai/conversations/${encodeURIComponent(conversation.id)}/files`, { method: "POST", body: form });
+          const upload = await fetchAppAction(`/api/ai/conversations/${encodeURIComponent(conversation.id)}/files`, {
+            method: "POST",
+            body: form,
+          });
           if (!upload.ok) throw new Error(`Could not attach ${file.name}`);
           return (await upload.json()) as { file: Omit<Extract<AiDraftContentPart, { type: "file" }>, "type"> };
         }),
       );
-      const draftResponse = await fetch(`/api/ai/conversations/${encodeURIComponent(conversation.id)}/draft`, {
+      const draftResponse = await fetchAppAction(`/api/ai/conversations/${encodeURIComponent(conversation.id)}/draft`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -180,7 +191,7 @@ export const launchAssistant = async (input: LaunchAssistantInput): Promise<Assi
       conversation = { ...conversation, draft: (await draftResponse.json()) as AiConversation["draft"] };
     }
   } catch (error) {
-    await fetch(`/api/ai/conversations/${encodeURIComponent(conversation.id)}/archive`, { method: "POST" }).catch(() => undefined);
+    await fetchAppAction(`/api/ai/conversations/${encodeURIComponent(conversation.id)}/archive`, { method: "POST" }).catch(() => undefined);
     throw error;
   }
   return {
@@ -199,6 +210,14 @@ export {
   chatTaskReasonState,
   chatTaskStopSentence,
 } from "./chat-task-reasons";
+export {
+  createLiveDictationSource,
+  type DictationDevice,
+  type DictationErrorCode,
+  type DictationEvent,
+  type DictationSession,
+  type DictationSource,
+} from "./live-dictation-browser";
 export {
   CLOUD_AI_STATS_MAX_ITEMS,
   CLOUD_AI_TABLE_MAX_COLUMNS,

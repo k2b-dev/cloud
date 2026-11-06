@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { type AccessMember, toAccessMember } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
   type AccessSubject,
@@ -195,13 +196,46 @@ const PERMISSION_ORDER = () => sql`
   END DESC
 `;
 
+type MailboxGrants = { mailbox: PermissionLevel; assigned: PermissionLevel };
+
+const accessReadGrants = new WeakMap<MailRequestContext, Map<string, Promise<MailboxGrants>>>();
+
+/**
+ * A context for one read that assembles a view from many services, which resolves a mailbox's grants
+ * once instead of once per service: 68 of the 109 statements of opening a conversation. Use it only for
+ * a read that finishes with its request, never for a change, a stream or background work. Checks inside
+ * a transaction still read the grants, because they pass their own client.
+ */
+export const withOneAccessRead = (context: MailRequestContext): MailRequestContext => {
+  const scoped = { ...context };
+  accessReadGrants.set(scoped, new Map());
+  return scoped;
+};
+
 /** The request's strongest grant in each scope, capped by its credential like every Mail permission. */
 const resolveMailboxGrants = async (
   context: MailRequestContext,
   mailboxId: string,
   includeDeleted: boolean,
   db: SqlClient,
-): Promise<{ mailbox: PermissionLevel; assigned: PermissionLevel }> => {
+): Promise<MailboxGrants> => {
+  const read = db === sql ? accessReadGrants.get(context) : undefined;
+  if (!read) return readMailboxGrants(context, mailboxId, includeDeleted, db);
+  const key = `${mailboxId}:${includeDeleted}`;
+  const known = read.get(key);
+  if (known) return known;
+  const grants = readMailboxGrants(context, mailboxId, includeDeleted, db);
+  read.set(key, grants);
+  grants.catch(() => read.delete(key));
+  return grants;
+};
+
+const readMailboxGrants = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  includeDeleted: boolean,
+  db: SqlClient,
+): Promise<MailboxGrants> => {
   const none = { mailbox: "none", assigned: "none" } as const;
   if (!(await isCurrentActorActive(context, db))) return none;
   if (!isResourceBoundToMailbox(context, mailboxId)) return none;
@@ -467,6 +501,21 @@ export const loadMailboxAccessEntries = async (mailboxId: string): Promise<Mailb
     ORDER BY (grants.scope = 'assigned'), ${PERMISSION_ORDER()}, a.created_at, a.id
   `;
   return resolveDisplayNames(rows.map(mapAccess));
+};
+
+/** A read-only access row; `scope: "assigned"` marks access to assigned conversations only. */
+export type MailboxAccessMember = AccessMember & { scope?: "assigned" };
+
+/**
+ * Who has access to a mailbox and with which role, read-only: names and roles without grant IDs or dates. Only
+ * people with mailbox-wide access of their own may read it; an assigned-only grant sees its own conversations and
+ * nothing about the rest of the mailbox, as with related mail and contacts.
+ */
+export const listMailboxAccessMembers = async (context: MailRequestContext, mailboxId: string): Promise<Result<MailboxAccessMember[]>> => {
+  const access = await getMailboxAccess(context, mailboxId);
+  if (access?.scope !== "mailbox") return fail(err.forbidden("Access denied"));
+  const entries = await loadMailboxAccessEntries(mailboxId);
+  return ok(entries.map((entry) => ({ ...toAccessMember(entry), ...(entry.scope ? { scope: entry.scope } : {}) })));
 };
 
 const listMailboxAccessWithAuthority = async (

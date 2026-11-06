@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import {
@@ -11,7 +12,7 @@ import {
   type RequestActor,
   type Result,
 } from "@k2b/cloud/server";
-import { type SQLQuery, sql } from "bun";
+import type { SQLQuery } from "bun";
 import { app } from "../config";
 import { chatMessages } from "../messages";
 import { type ResourceDecision, type ResourceRef, readResource } from "./resource-access";

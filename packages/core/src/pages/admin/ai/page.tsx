@@ -127,7 +127,7 @@ export default ssr<AuthContext>(async (c) => {
           config: budgetConfig,
           personalizationTokens,
           models: index.models
-            .filter((m) => m.kind === "chat" && m.enabled)
+            .filter((m) => (m.kind === "chat" || m.kind === "decision") && m.enabled)
             .map((m) => ({
               id: m.id,
               label: m.label,

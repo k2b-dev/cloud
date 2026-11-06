@@ -274,7 +274,31 @@ const listTheme = EditorView.theme({
   ".custom-list-dot": { boxSizing: "border-box", width: "0.375rem", height: "0.375rem", borderRadius: "50%", background: "currentColor" },
   ".custom-list-dot-1": { width: "0.4rem", height: "0.4rem", background: "none", border: "1.5px solid currentColor" },
   ".custom-list-dot-2": { width: "0.35rem", height: "0.35rem", borderRadius: "1px" },
-  ".custom-list-task-marker": { width: "1rem", height: "1rem", margin: "0", accentColor: "var(--k2b-action-solid)" },
+  // Not the native box: it ignores border-radius, so it could not match the @k2b/ui checkbox.
+  ".custom-list-task-marker": {
+    appearance: "none",
+    boxSizing: "border-box",
+    width: "1rem",
+    height: "1rem",
+    margin: "0",
+    border: "1px solid var(--k2b-border-strong)",
+    borderRadius: "0.25rem",
+    background: "var(--k2b-surface)",
+    boxShadow: "none",
+    cursor: "pointer",
+  },
+  ".custom-list-task-marker::before": { display: "none" },
+  ".custom-list-task-marker:checked": {
+    borderColor: "var(--k2b-action-solid)",
+    backgroundColor: "var(--k2b-action-solid)",
+    // Two gradient strokes, not an image: a host's img-src policy may refuse a data: URL, and an input has no reliable pseudo-element in every engine.
+    backgroundImage:
+      "linear-gradient(45deg, transparent 27%, #fff 29.5%, #fff 49.2%, transparent 51.7%), linear-gradient(135deg, transparent 41.1%, #fff 43.6%, #fff 60.6%, transparent 63.1%)",
+    backgroundPosition: "23.08% 0, 68.97% 0",
+    backgroundRepeat: "no-repeat",
+    backgroundSize: "22% 100%, 42% 100%",
+    forcedColorAdjust: "none",
+  },
   ".custom-list-task-checked": {
     color: "var(--k2b-placeholder-color)",
     textDecoration: "line-through",

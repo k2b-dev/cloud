@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   createAccess,
   deleteAccess,
@@ -13,7 +14,6 @@ import {
 } from "@k2b/cloud/server";
 import { audit, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import { ChatComposeInputSchema } from "../commands";
 import { messagePreview } from "../system-messages";
@@ -69,6 +69,7 @@ import { deletedPeople } from "./former-accounts";
 import { chatLive } from "./live";
 import { publishMembership } from "./live-updates";
 import { appendMessage, personSnapshots, queueAddedNotification } from "./message-store";
+import { notificationOutbox } from "./notification-delivery";
 import { projectRead, type ReadProjection, readProjection, unreadQuery } from "./read-state";
 import { discussionIncomplete, readerBatch, readResource } from "./resource-access";
 import { messageCondition, type ThreadBudget, visibleThreadIdPage } from "./thread-access";
@@ -80,7 +81,10 @@ const creationLimit = ratelimit({ id: "chat.conversation.create", limit: CREATE_
 export const transaction = async <T>(work: (db: typeof sql) => Promise<Result<T>>): Promise<Result<T>> => {
   try {
     const result = await sql.begin(work);
-    if (result.ok) chatLive.wake();
+    if (result.ok) {
+      chatLive.wake();
+      void notificationOutbox.notify();
+    }
     return result;
   } catch (error) {
     if (error instanceof TransactionFailure) return fail(error.error);
@@ -573,7 +577,10 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
         ),
       });
     });
-    if (result.ok) chatLive.wake();
+    if (result.ok) {
+      chatLive.wake();
+      void notificationOutbox.notify();
+    }
     return result;
   } catch (error) {
     if (error instanceof TransactionFailure) return fail(error.error);

@@ -31,7 +31,7 @@ for (const locale of ["en", "de"]) {
       const link = html.match(/<a\b[^>]*class="k2b-filter-chip[^>]*>[\s\S]*?<\/a>/)?.[0];
       expect(link).toBeDefined();
       expect(link).toContain(`href="${href.replaceAll("&", "&amp;")}"`);
-      expect(link).toContain(locale === "de" ? "Dienstkonten" : "Service accounts");
+      expect(link).toContain(locale === "de" ? "Agenten" : "Agents");
       expect(link!.includes('data-active="true"')).toBe(active);
       expect(link!.includes('aria-current="true"')).toBe(active);
       expect(link).not.toContain('data-variant="primary"');

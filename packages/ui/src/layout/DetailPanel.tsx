@@ -127,6 +127,15 @@ export type DetailPanelActionButtonProps = DetailPanelActionBaseProps &
 
 export type DetailPanelActionProps = DetailPanelActionLinkProps | DetailPanelActionButtonProps;
 
+/** A row that only shows something, such as a person and their role: the columns of an action, without a command. */
+export type DetailPanelRowProps = {
+  title: JSX.Element;
+  description?: JSX.Element;
+  leading?: JSX.Element;
+  trailing?: JSX.Element;
+  class?: string;
+};
+
 export type DetailPanelSectionProps = DetailPanelSectionBaseProps &
   (
     | {
@@ -159,6 +168,7 @@ type DetailPanelComponent = ((props: DetailPanelProps) => JSX.Element) & {
   Group: (props: DetailPanelGroupProps) => JSX.Element;
   Section: (props: DetailPanelSectionProps) => JSX.Element;
   Action: (props: DetailPanelActionProps) => JSX.Element;
+  Row: (props: DetailPanelRowProps) => JSX.Element;
 };
 
 const classNames = (base: string, extra?: string): string => (extra ? `${base} ${extra}` : base);
@@ -316,7 +326,7 @@ const SectionTitleMeta = (props: Pick<DetailPanelSectionBaseProps, "count" | "me
 
 const DetailPanelActionContent = (props: DetailPanelActionBaseProps): JSX.Element => (
   <>
-    {/* Always present, so every row's text starts on the section's text edge. */}
+    {/* Hidden while empty: a row's icon, or its text when it has none, starts on the section's text edge. */}
     <span class="k2b-detail-panel__action-leading">{props.leading}</span>
     <span class="k2b-detail-panel__action-copy">
       <span class="k2b-detail-panel__action-title">{props.title}</span>
@@ -410,6 +420,12 @@ const DetailPanelAction = (props: DetailPanelActionProps): JSX.Element => {
     </Show>
   );
 };
+
+const DetailPanelRow = (props: DetailPanelRowProps): JSX.Element => (
+  <div class={classNames("k2b-detail-panel__row", props.class)}>
+    <DetailPanelActionContent title={props.title} description={props.description} leading={props.leading} trailing={props.trailing} />
+  </div>
+);
 
 const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
   const headingId = `k2b-detail-panel-section-${createUniqueId()}`;
@@ -531,7 +547,7 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
           </header>
         </div>
         <div ref={body} id={bodyId} hidden={!open()} class="k2b-detail-panel__section-body">
-          {props.children}
+          {resolved()}
         </div>
       </section>
     </Show>
@@ -550,5 +566,6 @@ DetailPanel.Summary = DetailPanelSummary;
 DetailPanel.Group = DetailPanelGroup;
 DetailPanel.Section = DetailPanelSection;
 DetailPanel.Action = DetailPanelAction;
+DetailPanel.Row = DetailPanelRow;
 
 export default DetailPanel;

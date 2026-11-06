@@ -65,12 +65,15 @@ const linePrefix = (pattern: RegExp, prefix: (state: EditorState, n: number) => 
   for (const r of state.selection.ranges)
     for (let n = state.doc.lineAt(r.from).number; n <= state.doc.lineAt(r.to).number; n++) lines.add(n);
   const all = [...lines].every((n) => pattern.test(state.doc.line(n).text));
-  const changes = [...lines].map((n) => {
-    const line = state.doc.line(n);
-    const m = pattern.exec(line.text);
-    return all && m ? { from: line.from, to: line.from + m[0].length } : { from: line.from, insert: prefix(state, n) };
-  });
-  view.dispatch({ changes, userEvent: "input.format" });
+  const changes = state.changes(
+    [...lines].map((n) => {
+      const line = state.doc.line(n);
+      const m = pattern.exec(line.text);
+      return all && m ? { from: line.from, to: line.from + m[0].length } : { from: line.from, insert: prefix(state, n) };
+    }),
+  );
+  // A caret at the line start follows the new prefix, so the next typed letter lands after it.
+  view.dispatch({ changes, selection: state.selection.map(changes, 1), userEvent: "input.format" });
   view.focus();
   return true;
 };
@@ -84,14 +87,14 @@ const heading = (level: number) => (view: EditorView) => {
   const prefix = `${"#".repeat(level)} `;
   const lines = [...numbers].sort((a, b) => a - b).map((number) => state.doc.line(number));
   const remove = lines.every((line) => line.text.startsWith(prefix));
-  view.dispatch({
-    changes: lines.map((line) => ({
+  const changes = state.changes(
+    lines.map((line) => ({
       from: line.from,
       to: line.from + (/^#{1,6} /.exec(line.text)?.[0].length ?? 0),
       insert: remove ? "" : prefix,
     })),
-    userEvent: "input.format",
-  });
+  );
+  view.dispatch({ changes, selection: state.selection.map(changes, 1), userEvent: "input.format" });
   view.focus();
   return true;
 };

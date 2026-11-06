@@ -66,6 +66,7 @@ export default ssr<AuthContext>(async (c) => {
   const {
     entries: permissionEntries,
     adminBookIds: internalAdminBookIds,
+    memberBookIds: internalMemberBookIds,
     writableBooks: internalWritableBooks,
   } = await loadContactBookPermissions({ books: internalBooks, actor: c.get("actor"), accessSubject: c.get("accessSubject") });
   const currentPermission = permissionForBook(permissionEntries, book.id);
@@ -135,6 +136,7 @@ export default ssr<AuthContext>(async (c) => {
   const selectedPublicContact = projectedSelected[0] ?? null;
   const publicBookIds = new Map(internalBooks.map((entry, index) => [entry.id, books[index]!.id]));
   const adminBookIds = internalAdminBookIds.map((id) => publicBookIds.get(id)!).filter(Boolean);
+  const memberBookIds = internalMemberBookIds.map((id) => publicBookIds.get(id)!).filter(Boolean);
   const writableBooks = internalWritableBooks
     .map((entry) => ({ ...entry, id: publicBookIds.get(entry.id)! }))
     .filter((entry) => Boolean(entry.id));
@@ -206,6 +208,7 @@ export default ssr<AuthContext>(async (c) => {
               bookNames={bookNames}
               writableBooks={writableBooks}
               adminBookIds={adminBookIds}
+              memberBookIds={memberBookIds}
               currentUserId={user.id}
               showEmpty={false}
               initialFavoriteKeys={favoriteKeys}

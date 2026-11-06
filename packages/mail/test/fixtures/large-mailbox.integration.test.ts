@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import { sql } from "@k2b/cloud";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { FILING_FOLDER_ROLES } from "../../src/folder-display-rules";
 import type { MailRequestContext } from "../../src/service/auth";
 import { createMailbox } from "../../src/service/mailboxes";
 import { hydrateMessageFromSource } from "../../src/service/message-hydration";
@@ -125,19 +126,24 @@ suite("large mailbox fixture persistence", () => {
       { id: string; short_id: string }[]
     >`SELECT f.id,f.short_id FROM mail.folders f JOIN mail.remote_resources r ON r.id=f.remote_resource_id WHERE r.mailbox_id=${id}::uuid`;
     const byUuid = new Map(ids.map((f) => [f.id, f.short_id]));
-    let unread = 0,
-      total = 0,
+    // A work folder's unread badge counts open conversations only (done and snoozed ones leave its list); filing folders count every unread message.
+    const closed = new Set(plan.conversations.filter((c) => c.status === "done" || c.snoozedUntil).map((c) => c.id));
+    const filing = new Set(plan.folders.filter((f) => FILING_FOLDER_ROLES.includes(f.role)).map((f) => f.id));
+    const badge = (folderId: string) =>
+      plan.messages.filter(
+        (m) => m.folder === folderId && !m.flags.includes("\\Seen") && (filing.has(folderId) || !closed.has(m.conversation)),
+      ).length;
+    let total = 0,
       unreadConversations = 0;
     for (const folder of folders.data) {
       const declared = plan.shape.totals[byUuid.get(folder.id)!]!;
       expect(folder.total).toBe(declared.total);
-      expect(folder.unread).toBe(declared.unread);
+      expect(folder.unread).toBe(badge(byUuid.get(folder.id)!));
       total += folder.total;
-      unread += folder.unread;
       let cursor: string | undefined,
         conversations = 0;
       do {
-        const result = await listConversations({ context, mailboxId: id, folderId: folder.id, cursor, limit: 50 });
+        const result = await listConversations({ context, mailboxId: id, folderId: folder.id, includeDone: true, cursor, limit: 50 });
         if (!result.ok) throw new Error(result.error.message);
         conversations += result.data.items.length;
         unreadConversations += result.data.items.filter((item) => item.unread).length;
@@ -146,7 +152,6 @@ suite("large mailbox fixture persistence", () => {
       expect(conversations).toBe(declared.conversations);
     }
     expect(total).toBe(plan.shape.messages);
-    expect(unread).toBe(plan.shape.unread);
     expect(unreadConversations).toBe(plan.shape.unreadConversations);
     const counts = await getConversationViewCounts({ context, mailboxId: id });
     if (!counts.ok) throw new Error(counts.error.message);

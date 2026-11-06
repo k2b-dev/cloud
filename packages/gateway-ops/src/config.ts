@@ -107,6 +107,7 @@ export const app = defineApp({
 
     ...natsDiagnosticsSettings,
     "gateway.health_check_schedule": {
+      adminWrite: "application",
       kind: "cron",
       label: "Health Check Schedule",
       default: "*/5 * * * *",

@@ -1,8 +1,10 @@
 import { type CloudCliText, cliAmbiguityText, localizeCloudCliText } from "@k2b/cloud/cli";
+import { AccessMemberSchema, PaginationQuerySchema, parsePagination, toAccessMember } from "@k2b/cloud/contracts";
 import {
   type AccessSubject,
   type AuthContext,
   auth,
+  expectUserBackedActor,
   getDateConfig,
   getLocale,
   getTimeZone,
@@ -112,7 +114,14 @@ import { CreateEventInvitationDraftInputSchema, EventInvitationContextSchema, Ev
 import { OverviewViewSchema, OverviewWorkSchema } from "../overview-contracts";
 import { myTasksMessages } from "../pwa/messages";
 import { spacesService } from "../service";
-import { getActorsSpacePermissions, isSpaceResourceId, permissionFromScopes, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
+import {
+  getActorSpaceMemberPermission,
+  getActorsSpacePermissions,
+  isSpaceResourceId,
+  permissionFromScopes,
+  SPACE_RESOURCE_TYPE,
+  SPACES_APP_ID,
+} from "../service/access";
 import { InvalidActivityCursorError } from "../service/activity";
 import { resolveByteRange } from "../service/byte-range";
 import { loadCalendarEvents, loadCalendarSources } from "../service/calendar-view";
@@ -2199,19 +2208,19 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Create template",
-      description: `Create a task or event template. Requires admin access; names are unique per space and kind, and a space keeps at most ${MAX_ITEM_TEMPLATES_PER_KIND} templates per kind.`,
+      description: `Create a task or event template. Requires write access; names are unique per space and kind, and a space keeps at most ${MAX_ITEM_TEMPLATES_PER_KIND} templates per kind.`,
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemTemplateSchema, "Created template"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
-        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
         404: jsonResponse(ErrorResponseSchema, "Space or tag not found"),
         409: jsonResponse(ErrorResponseSchema, "Name taken or template limit reached"),
       },
     }),
     v("json", CreateItemTemplateSchema),
     async (c) => {
-      const { internalId: spaceId, user, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      const { internalId: spaceId, user, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
       if (error) return error;
       const data = await resolveTemplateTags(spaceId!, c.req.valid("json"));
       if (!data.ok) return respond(c, data);
@@ -2254,19 +2263,19 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "Update template",
       description:
-        "Change template fields; tag and assignee lists are replaced. Requires admin access. Items already created stay as they are.",
+        "Change template fields; tag and assignee lists are replaced. Requires write access. Items already created stay as they are.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemTemplateSchema, "Updated template"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
-        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
         404: jsonResponse(ErrorResponseSchema, "Template or tag not found"),
         409: jsonResponse(ErrorResponseSchema, "Name taken"),
       },
     }),
     v("json", UpdateItemTemplateSchema),
     async (c) => {
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
       if (error) return error;
       const template = await requireTemplateInSpace(spaceId!, c.req.param("templateId") ?? "");
       if (!template.ok) return respond(c, template);
@@ -2281,16 +2290,16 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Delete template",
-      description: "Delete a template. Requires admin access. Items created from it stay.",
+      description: "Delete a template. Requires write access. Items created from it stay.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Template deleted"),
-        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
         404: jsonResponse(ErrorResponseSchema, "Template not found"),
       },
     }),
     async (c) => {
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
       if (error) return error;
       const template = await requireTemplateInSpace(spaceId!, c.req.param("templateId") ?? "");
       if (!template.ok) return respond(c, template);
@@ -2452,12 +2461,12 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "Create item",
       description:
-        "Create a new item (event, todo, or ticket). A task deadline is YYYY-MM-DD (all-day, default) or an ISO date-time (timed); deadlineAllDay identifies date-only responses.",
+        "Create a new item (event, todo, or ticket). requestKey deduplicates identical retries by the same actor for 24 hours. A task deadline is YYYY-MM-DD (all-day, default) or an ISO date-time (timed); deadlineAllDay identifies date-only responses.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemSchema, "Created item"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
-        409: jsonResponse(ErrorResponseSchema, "Occurrence override already exists"),
+        409: jsonResponse(ErrorResponseSchema, "Occurrence or request-key conflict (IDEMPOTENCY_CONFLICT / CREATE_RESULT_GONE)"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Space not found"),
       },
@@ -2469,20 +2478,27 @@ const app = new Hono<AuthContext>()
 
       const { internalId: spaceId, user, error } = await checkSpaceAccess(c, spaceShortId, "write");
       if (error) return error;
+      const replay = await spacesService.item.replayCreate({
+        spaceId: spaceId!,
+        data,
+        actor: getSpaceActivityActor(c),
+        access: { actor: c.get("actor"), subject: c.get("accessSubject") },
+      });
+      if (!replay.ok) return respond(c, replay);
+      if (replay.data) return respond(c, ok(replay.data));
       const resolvedData = await resolveItemData(spaceId!, data);
       if (!resolvedData.ok) return respond(c, resolvedData);
       return respond(
         c,
-        projectMutation(
-          spacesService.item.create({
-            spaceId: spaceId!,
-            data: resolvedData.data,
-            createdBy: user?.id ?? null,
-            dateConfig: getDateConfig(c),
-            actor: getSpaceActivityActor(c),
-          }),
-          projectItems,
-        ),
+        spacesService.item.create({
+          spaceId: spaceId!,
+          data: resolvedData.data,
+          publicRequest: data,
+          createdBy: user?.id ?? null,
+          dateConfig: getDateConfig(c),
+          actor: getSpaceActivityActor(c),
+          access: { actor: c.get("actor"), subject: c.get("accessSubject") },
+        }),
       );
     },
   )
@@ -2520,7 +2536,7 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "Update item",
       description:
-        "Update item properties. A task deadline is YYYY-MM-DD (all-day) or an ISO date-time (timed); null clears it. Responses include deadlineAllDay.",
+        "Update item properties. Use addAssigneeIds/removeAssigneeIds for concurrent assignment edits. expectedTitle mismatches return TITLE_CONFLICT (409). A task deadline is YYYY-MM-DD (all-day) or an ISO date-time (timed); null clears it. Responses include deadlineAllDay.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemSchema, "Updated item"),
@@ -2550,9 +2566,11 @@ const app = new Hono<AuthContext>()
         projectMutation(
           spacesService.item.update({
             id: itemCheck.data.id,
+            expectedSpaceId: spaceId!,
             data: resolvedData.data,
             dateConfig: getDateConfig(c),
             actor: getSpaceActivityActor(c),
+            access: { actor: c.get("actor"), subject: c.get("accessSubject") },
           }),
           projectItems,
         ),
@@ -3087,6 +3105,31 @@ const app = new Hono<AuthContext>()
     },
   )
 
+  // List who has access, read-only
+  .get(
+    "/:id/access/members",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "List who has access",
+      description:
+        "Names and roles of everyone with access to a space, read-only. Requires read permission of one's own: public access alone does not show who else has access.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.array(AccessMemberSchema), "Who has access"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Space not found"),
+      },
+    }),
+    async (c) => {
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "read");
+      if (error) return error;
+      const member = await getActorSpaceMemberPermission(spaceId!, { actor: c.get("actor"), subject: getSpaceAccessSubject(c).subject });
+      if (!hasPermission(member, "read")) return respond(c, fail(err.forbidden("Access denied")));
+      const entries = await spacesService.access.list({ spaceId: spaceId! });
+      return respond(c, ok(entries.items.map(toAccessMember)));
+    },
+  )
+
   // Grant Access
   .post(
     "/:id/access",
@@ -3194,6 +3237,44 @@ const app = new Hono<AuthContext>()
 // but this route intentionally exposes no Space content or resource settings.
 const adminApp = new Hono<AuthContext>()
   .use(auth.requireRole("admin"))
+  .get(
+    "/",
+    auth.requireOAuthScope("read", "admin"),
+    describeRoute({
+      tags: ["Spaces Admin"],
+      summary: "List Spaces for access recovery",
+      description: "Lists Space metadata and access counts without calendar export tokens. Requires Cloud admin.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.object({
+            items: z.array(SpaceSchema.omit({ icalToken: true }).extend({ permissionCount: z.number() })),
+            page: z.number(),
+            perPage: z.number(),
+            total: z.number(),
+            hasNext: z.boolean(),
+            summary: z.object({ total: z.number(), orphaned: z.number(), totalPermissions: z.number() }),
+          }),
+          "Space metadata and access counts",
+        ),
+        403: jsonResponse(ErrorResponseSchema, "Cloud admin required"),
+      },
+    }),
+    v("query", PaginationQuerySchema.extend({ search: z.string().max(200).optional() })),
+    async (c) => {
+      c.header("Cache-Control", "private, no-store");
+      const query = c.req.valid("query");
+      const filter = { query: query.search };
+      const [spaces, summary] = await Promise.all([
+        spacesService.space.admin.list({ pagination: parsePagination(query), filter }),
+        spacesService.space.admin.summary({ filter }),
+      ]);
+      return respond(
+        c,
+        ok({ ...spaces, items: await projectSpaces(spaces.items.map(({ icalToken: _icalToken, ...item }) => item)), summary }),
+      );
+    },
+  )
   .get(
     "/:id/access",
     describeRoute({
@@ -3322,7 +3403,7 @@ const adminApp = new Hono<AuthContext>()
     async (c) => {
       const { internalId: spaceId, error } = await requireExistingSpace(c, c.req.param("id") ?? "");
       if (error) return error;
-      return respondMessage(c, spacesService.space.remove({ id: spaceId! }), "spaceDeleted");
+      return respondMessage(c, spacesService.space.remove({ id: spaceId!, actorId: expectUserBackedActor(c).id }), "spaceDeleted");
     },
   );
 

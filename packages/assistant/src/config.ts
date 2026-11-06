@@ -45,6 +45,7 @@ export const app = defineApp({
   ],
   settings: {
     "assistant.rsql_allowed_targets": {
+      adminWrite: "application",
       kind: "string_list",
       default: ["rsql"],
       label: "rsql allowed targets",
@@ -63,6 +64,7 @@ export const app = defineApp({
     },
 
     "assistant.storage_file_mib": {
+      adminWrite: "application",
       kind: "number",
       default: 50,
       min: 1,
@@ -81,6 +83,7 @@ export const app = defineApp({
       },
     },
     "assistant.storage_total_mib": {
+      adminWrite: "application",
       kind: "number",
       default: 250,
       min: 1,
@@ -98,12 +101,14 @@ export const app = defineApp({
       },
     },
     "assistant.rsql_url": {
+      adminWrite: "application",
       kind: "string",
       default: "",
       label: "rsql server URL",
       presentation: { translations: { de: { label: "rsql-Serveradresse" } } },
     },
     "assistant.rsql_api_token": {
+      adminWrite: "application",
       kind: "secret",
       default: "",
       label: "rsql API token",
@@ -120,6 +125,7 @@ export const app = defineApp({
     requiresAuth: true,
   },
   panel: { href: "/app/assistant/panel", label: "Assistant", icon: "ti ti-sparkles" },
+  pwa: { requiresRoles: ["user"], badge: "/api/assistant/pwa/badge", order: 1 },
   openapi: "/api/assistant/openapi.json",
   routes: ["/api/assistant", "/app/assistant", "/public/assistant", "/admin/assistant"],
 });

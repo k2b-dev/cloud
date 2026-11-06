@@ -1,4 +1,5 @@
 import type { MailSearchExpression, MailSearchField } from "../../contracts";
+import { type MailFolderNamed, mailFolderNames } from "../../folder-names";
 import { type MailFolderTreeEntry, mailFolderPaths } from "../../folder-tree";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
@@ -225,7 +226,7 @@ const sizeLabel = (bytes: number, locale: string): string => {
  * authoritative, so a reference outside it belongs to a deleted folder or tag. IDs are never shown.
  */
 export type MailSearchSummaryReferences = {
-  folders?: readonly MailFolderTreeEntry[];
+  folders?: readonly (MailFolderTreeEntry & MailFolderNamed)[];
   tags?: readonly { id: string; name: string }[];
 };
 
@@ -235,7 +236,7 @@ export const summarizeMailSearchExpression = (
   references: MailSearchSummaryReferences = {},
 ): string => {
   const messages = mailRemainingMessages.resolve([locale]).t;
-  const folderPaths = references.folders ? mailFolderPaths(references.folders) : null;
+  const folderPaths = references.folders ? mailFolderPaths(references.folders, mailFolderNames(locale)) : null;
   const tagNames = references.tags ? new Map(references.tags.map((tag) => [tag.id, tag.name])) : null;
   const summarize = (node: MailSearchExpression): string => {
     if (node.type === "not") return `${messages.not} (${summarize(node.expression)})`;

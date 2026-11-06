@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import { sql } from "bun";
-import { createDisposableDatabase, suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
+import { sql } from "@k2b/cloud";
+import { suiteFor, testInfra, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 import { migrate as migratePulse } from "./migrate";
 
 const migrate = () => migratePulse("Europe/Berlin");
 
 const enabled = testInfra.database !== undefined,
   databaseTest = enabled ? test : test.skip;
-let database: Awaited<ReturnType<typeof createDisposableDatabase>> | undefined;
+let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
 const base = "11111111-1111-4111-8111-111111111111",
   source = "22222222-2222-4222-8222-222222222222",
   workload = "55555555-5555-4555-8555-555555555555",
@@ -16,8 +16,7 @@ const base = "11111111-1111-4111-8111-111111111111",
   access = "44444444-4444-4444-8444-444444444444";
 beforeAll(async () => {
   if (!enabled) return;
-  database = await createDisposableDatabase("pulse_schema");
-  process.env.DATABASE_URL = database.url;
+  database = await useFreshDatabase("pulse_schema");
   const [row] = await sql`SELECT current_database() AS name`;
   if (row?.name !== database.name) throw new Error("Schema tests need their own database; run this file in its own process");
 });
@@ -78,6 +77,8 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         { version: 4, name: "sql_console" },
         { version: 5, name: "overview_alerts" },
         { version: 6, name: "agent_source_ownership" },
+        { version: 7, name: "sql_dashboards" },
+        { version: 8, name: "receipt_checkpoints" },
       ]);
       expect(await sql`SELECT extname FROM pg_extension ORDER BY extname`).toEqual(extensions);
       const ddl = await readFile(`${import.meta.dir}/schema.ts`, "utf8");
@@ -94,6 +95,9 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         "base_internal_targets",
         "base_stores",
         "bases",
+        "dashboard_operations",
+        "dashboard_runs",
+        "dashboards",
         "event_kinds",
         "ingest_idempotency",
         "metric_defs",
@@ -188,6 +192,18 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
     await migrate();
     expect((await sql`SELECT created_by_subject FROM pulse.sources WHERE id=${source}::uuid`)[0]?.created_by_subject).toBe(
       "service_account:fixture",
+    );
+  });
+  databaseTest("migration 8 preserves receipt identities and invalidates old completions once", async () => {
+    await sql`DELETE FROM pulse.schema_migrations WHERE version=8`;
+    await sql`ALTER TABLE pulse.ingest_idempotency DROP COLUMN reset_generation,DROP COLUMN checkpoint_id,DROP COLUMN pending_checkpoint_id`.simple();
+    await sql`INSERT INTO pulse.ingest_idempotency(source_id,idempotency_key,request_hash,state,accepted_at,planned_states,response,expires_at)
+      VALUES(${source}::uuid,'upgrade','preserved','done','2026-10-17T12:00:00Z','[]','{"metrics":0,"events":1,"states":0}','2026-10-18T12:00:00Z')`;
+    const before = await sql<Record<string, unknown>[]>`SELECT * FROM pulse.ingest_idempotency WHERE idempotency_key='upgrade'`;
+    await Promise.all([migrate(), migrate()]);
+    expect(await sql`SELECT version FROM pulse.schema_migrations WHERE version=8`).toHaveLength(1);
+    expect(await sql<Record<string, unknown>[]>`SELECT * FROM pulse.ingest_idempotency WHERE idempotency_key='upgrade'`).toEqual(
+      before.map((receipt) => ({ ...receipt, reset_generation: null, checkpoint_id: null, pending_checkpoint_id: null })),
     );
   });
   databaseTest("refuses unknown newer versions before touching old data", async () => {

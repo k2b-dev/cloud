@@ -204,7 +204,7 @@
 
 .k2b-ui .k2b-settings-page__heading h1 {
   color: var(--k2b-text);
-  font-size: 1.0625rem;
+  font-size: 1.125rem;
   font-weight: 650;
   line-height: 1.3;
   letter-spacing: -0.018em;
@@ -258,14 +258,14 @@
   min-width: 0;
 }
 
-/* Sections sit 2rem apart: the body's 0.75rem gap plus this margin, or the
+/* Sections sit 1.5rem apart: the body's 0.75rem gap plus this margin, or the
    margin alone when sections follow each other outside a page body. */
 .k2b-ui .k2b-settings-section + .k2b-settings-section {
-  margin-top: 2rem;
+  margin-top: 1.5rem;
 }
 
 .k2b-ui .k2b-settings-page__body > .k2b-settings-section:not(:first-child) {
-  margin-top: 1.25rem;
+  margin-top: 0.75rem;
 }
 
 /* Actions wrap below the heading before the subtitle gets squeezed. The icon
@@ -301,19 +301,21 @@
   margin: 0;
 }
 
+/* The group step of the type scale: below the 18 px page title, above the
+   13 px field name. */
 .k2b-ui .k2b-settings-section__heading h2 {
   color: var(--k2b-text);
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  line-height: 1.35;
-  letter-spacing: -0.018em;
+  line-height: 1.25rem;
+  letter-spacing: -0.012em;
 }
 
 .k2b-ui .k2b-settings-section__heading p {
   margin-top: 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
-  line-height: 1.45;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
 }
 
 /* Actions never grow past the header, so more actions than a narrow row holds
@@ -332,12 +334,46 @@
   min-width: 0;
 }
 
-.k2b-ui .k2b-settings-section__body > .k2b-settings-field {
-  padding: 0.75rem 0;
+.k2b-ui .k2b-settings-section__body > :not(.k2b-settings-field) {
+  margin: 0.5rem 0;
 }
 
-.k2b-ui .k2b-settings-section__body > :not(.k2b-settings-field) {
-  margin: 0.75rem 0;
+/* From 860 px of room the group title takes its own column beside the rows,
+   so the title costs no row of its own and every name and field still share
+   one edge. The title stays in view while its rows scroll. Narrower, it sits
+   above them. The query reads the section's own width, not the viewport, so a
+   dialog, a column or a full page decide alike. */
+/* A size container takes no width from its content, so it fills its parent's
+   width even where that parent would shrink to fit. */
+.k2b-ui .k2b-settings-section {
+  container: k2b-settings-section / inline-size;
+  width: 100%;
+}
+
+@container k2b-settings-section (min-width: 53.75rem) {
+  .k2b-ui .k2b-settings-section__layout {
+    display: grid;
+    grid-template-columns: 10.5rem minmax(0, 1fr);
+    column-gap: 1.5rem;
+    align-items: start;
+  }
+
+  /* The icon keeps its line with the heading; actions take their own line below. */
+  .k2b-ui .k2b-settings-section__layout > .k2b-settings-section__header {
+    position: sticky;
+    top: 0;
+    /* The title's line meets the first row's name: the row's 0.5rem plus the name's 0.375rem. */
+    padding: 0.875rem 0 0;
+  }
+
+  .k2b-ui .k2b-settings-section__layout > .k2b-settings-section__header > .k2b-settings-section__heading {
+    min-width: 0;
+  }
+
+  .k2b-ui .k2b-settings-section__layout > .k2b-settings-section__header > .k2b-settings-section__actions {
+    flex-basis: 100%;
+    flex-shrink: 1;
+  }
 }
 
 /* Narrow surfaces stack one scrolling category row above the panel, with the
@@ -387,9 +423,15 @@
   overflow-y: hidden;
   padding: 0.5rem 0.75rem;
   scrollbar-width: thin;
+  /* The fade has to reach past the row's end padding into the last label, or
+     that label ends at a hard edge. A category scrolled into view stops
+     outside the fade. */
+  --scroll-fade-size: 2.5rem;
+  scroll-padding-inline: var(--scroll-fade-size);
 }
 
-/* In the row a divider separates groups; their labels need the rail's width. */
+/* In the row, space separates groups (no divider line); their labels need the
+   rail's width. */
 .k2b-ui .k2b-settings__tab-group {
   display: flex;
   min-width: 0;
@@ -399,8 +441,7 @@
 }
 
 .k2b-ui .k2b-settings__tab-group + .k2b-settings__tab-group {
-  padding-left: 0.25rem;
-  border-left: 1px solid var(--k2b-border);
+  margin-left: 0.75rem;
 }
 
 .k2b-ui .k2b-settings__tab-group-label {
@@ -457,8 +498,10 @@
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
-/* Cloud's icon is `shrink-0 text-sm`; the label is one line that fades out at
-   its end (`k2b-truncate-fade`), which needs a shrinkable box, not a flex column. */
+/* Cloud's icon is `shrink-0 text-sm`. In the scrolling row the label keeps one
+   line and the row scrolls; in the side rail it wraps to two balanced lines and
+   only a longer label fades out at the end of the second (`k2b-truncate-fade-lines`,
+   which needs a line height of at least 1.3 and a shrinkable box). */
 .k2b-ui .k2b-settings__tabs button > i {
   flex-shrink: 0;
   font-size: 0.875rem;
@@ -466,6 +509,8 @@
 
 .k2b-ui .k2b-settings__tabs button > span {
   min-width: 0;
+  line-height: 1.3;
+  text-wrap: balance;
 }
 
 /* The close control comes first in the DOM but sits after the category row,
@@ -485,7 +530,6 @@
   min-height: 0;
   flex-direction: column;
   overflow: clip;
-  border-top: 1px solid var(--k2b-border);
 }
 
 /* Cloud's panel is `h-full overflow-y-auto` and the padding lives on the inner
@@ -560,7 +604,7 @@
 
 .k2b-ui .k2b-settings-group + .k2b-settings-group,
 .k2b-ui .k2b-settings-collection + .k2b-settings-collection {
-  margin-top: 2rem;
+  margin-top: 1.5rem;
 }
 
 .k2b-ui .k2b-settings-group__header,
@@ -591,18 +635,18 @@
 .k2b-ui .k2b-settings-group__heading h3,
 .k2b-ui .k2b-settings-collection__heading h3 {
   color: var(--k2b-text);
-  font-size: 1rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  line-height: 1.35;
-  letter-spacing: -0.018em;
+  line-height: 1.25rem;
+  letter-spacing: -0.012em;
 }
 
 .k2b-ui .k2b-settings-group__heading p,
 .k2b-ui .k2b-settings-collection__heading p {
   margin-top: 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
-  line-height: 1.5;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
 }
 
 .k2b-ui .k2b-settings-group__action,
@@ -693,24 +737,117 @@
   background: var(--k2b-surface-muted);
 }
 
-/* Cloud's `SettingsField` row is `flex flex-col gap-1.5 px-3 py-3` directly on
-   the surface it sits on — no fill and no radius of its own. index.css used to
-   declare it as `display: grid` with a muted rounded background, which reads
-   as a nested paper inside settings panels that are already papers. */
+/* A settings field sits directly on the surface: no fill, no radius and no
+   side inset of its own. The frame around it owns the edge, so a field's name
+   starts where its group title starts; the field adds only the 0.5rem above
+   and below that spaces one row from the next. */
 .k2b-ui .k2b-settings-field {
-  display: flex;
+  container: k2b-settings-field / inline-size;
+  width: 100%;
   min-width: 0;
-  flex-direction: column;
-  gap: 0.375rem;
-  padding: 0.75rem;
+  padding: 0.5rem 0;
 }
 
-/* Cloud: `flex flex-col gap-0.5` around the label row and the description. */
+/* One setting is one row: name and one sentence of help, the field, and where
+   the value comes from. Narrow, the source stays beside the name and the field
+   takes the full width below; from 640 px of the field's own room, all three
+   share one line with fixed columns, so every name, field and source on a page
+   starts at the same edge. A message about the field stays under the field. */
+.k2b-ui .k2b-settings-field__row {
+  display: grid;
+  min-width: 0;
+  grid-template-areas:
+    "copy source"
+    "control control";
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.375rem 0.75rem;
+}
+
 .k2b-ui .k2b-settings-field__copy {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 0.125rem;
+  grid-area: copy;
+}
+
+.k2b-ui .k2b-settings-field__control {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.375rem;
+  grid-area: control;
+}
+
+.k2b-ui .k2b-settings-field__source {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  text-align: end;
+  grid-area: source;
+}
+
+/* A way back to the default reads as quiet text, as loud as the source it
+   replaces and never as loud as the setting's name. */
+.k2b-ui .k2b-settings-field__source .k2b-button[data-variant="text"] {
+  min-height: 0;
+  padding: 0;
+  color: var(--k2b-text-secondary);
+  font: inherit;
+  line-height: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--k2b-border-strong);
+  text-underline-offset: 0.125rem;
+}
+
+.k2b-ui .k2b-settings-field__source .k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-text);
+  text-decoration-color: currentColor;
+}
+
+/* The field's width follows its kind, not the room: a number never stretches
+   to the width of a URL and keeps room for its steppers. Narrow rows give
+   choices and text the full width. The width reaches the control itself, also
+   through a fieldset that disables it, never a message or notice beside it. */
+.k2b-ui .k2b-settings-field[data-width="short"] .k2b-settings-field__control > .k2b-field,
+.k2b-ui .k2b-settings-field[data-width="short"] .k2b-settings-field__control > fieldset > .k2b-field {
+  width: 100%;
+  max-width: 10rem;
+}
+
+/* An editor (`full`) keeps its name above it at every width. */
+@container k2b-settings-field (min-width: 40rem) {
+  .k2b-ui .k2b-settings-field:not([data-width="full"]) > .k2b-settings-field__row {
+    grid-template-areas: "copy control";
+    grid-template-columns: minmax(11.25rem, 15rem) minmax(0, 27.5rem);
+    column-gap: 1rem;
+  }
+
+  .k2b-ui .k2b-settings-field:not([data-width="full"]) > .k2b-settings-field__row:has(> .k2b-settings-field__source) {
+    grid-template-areas: "copy control source";
+    grid-template-columns: minmax(11.25rem, 15rem) minmax(0, 27.5rem) 6rem;
+  }
+
+  /* The name's first line meets the middle of a 2rem field. */
+  .k2b-ui .k2b-settings-field:not([data-width="full"]) > .k2b-settings-field__row > :is(.k2b-settings-field__copy, .k2b-settings-field__source) {
+    padding-top: 0.375rem;
+  }
+
+  .k2b-ui .k2b-settings-field:not([data-width="full"]) > .k2b-settings-field__row > .k2b-settings-field__source {
+    justify-content: flex-start;
+    text-align: start;
+  }
+
+  .k2b-ui .k2b-settings-field[data-width="medium"] .k2b-settings-field__control > .k2b-field,
+  .k2b-ui .k2b-settings-field[data-width="medium"] .k2b-settings-field__control > fieldset > .k2b-field {
+    width: 100%;
+    max-width: 17.5rem;
+  }
 }
 
 .k2b-ui .k2b-settings-field__heading,
@@ -729,8 +866,9 @@
    down at 0.75rem, smaller than its own description in Cloud's proportions. */
 .k2b-ui .k2b-settings-field__heading strong {
   color: var(--k2b-text);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 500;
+  line-height: 1.25rem;
 }
 
 /* Cloud: `text-[11px] font-medium text-amber-700`. */
@@ -992,11 +1130,19 @@ html {
   background: var(--k2b-surface-muted);
 }
 
+/* The drawer's muted surface sets it apart from Main, without a line. The
+   border box keeps its height, so the edge stays where the handle sits. */
 .k2b-ui .k2b-app-workspace__drawer {
   grid-area: drawer;
   height: var(--k2b-workspace-panel-size);
-  border-top: 1px solid var(--k2b-border);
   background: var(--k2b-surface-muted);
+}
+
+/* Forced colours paint both surfaces as Canvas, so only a line keeps the edge. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-app-workspace__drawer {
+    border-top: 1px solid CanvasText;
+  }
 }
 
 .k2b-ui .k2b-app-workspace__drawer[hidden],
@@ -1118,11 +1264,11 @@ html {
    Cloud's panel. On hover, on keyboard focus, and while it drags, a handle
    shows a short grip. A column handle darkens the shadow its boundary
    already has (see the column boundaries below), so an edge keeps one shadow
-   with one geometry in every state. The drawer and a standalone separator,
-   which have no such shadow, show a soft shadow on the side of the region
-   that they resize. All of it is paint only, so nothing moves. Space, not a
-   line, separates columns; only the drawer, a row with its own top border,
-   also draws its edge. */
+   with one geometry in every state; the drawer's handle darkens the drawer's
+   edge shade the same way (see the drawer edge below). A standalone
+   separator, which has no such shadow, shows a soft shadow on the side of
+   the region that it resizes. All of it is paint only, so nothing moves. No
+   handle draws a line. */
 .k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator) {
   --k2b-resize-shadow-edge: rgb(24 24 27 / 0.035);
   --k2b-resize-shadow-mid: rgb(24 24 27 / 0.014);
@@ -1135,20 +1281,6 @@ html {
   --k2b-resize-shadow-mid: rgb(0 0 0 / 0.036);
 }
 
-.k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="drawer"]::before {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  left: 0;
-  height: 1px;
-  content: "";
-  opacity: 0;
-  background: var(--k2b-border-strong);
-  transform: translateY(-50%);
-  transition: opacity 120ms ease-out;
-}
-
-.k2b-ui .k2b-app-workspace__resize:where([data-app-workspace-resize="drawer"][data-workspace-resize-shadow="true"])::after,
 .k2b-ui .k2b-resize-separator::after {
   position: absolute;
   top: 0;
@@ -1183,11 +1315,7 @@ html {
   background: linear-gradient(to right, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
 }
 
-.k2b-ui
-  :is(
-    .k2b-app-workspace__resize[data-app-workspace-resize="drawer"][data-workspace-resize-shadow="true"],
-    .k2b-resize-separator[data-orientation="horizontal"][data-resize-edge="start"]
-  )::after {
+.k2b-ui .k2b-resize-separator[data-orientation="horizontal"][data-resize-edge="start"]::after {
   top: 50%;
   right: 0;
   bottom: auto;
@@ -1797,6 +1925,50 @@ html {
   }
 }
 
+/* The drawer's edge: one quiet shade, as at a column boundary. The drawer
+   lies slightly higher than Main, so the shade lies on Main above the edge:
+   24 px tall, darkest at the edge, and lighter over the final 96 px. Main and
+   the drawer can share a surface (a navigation pane above it), so the
+   surface step alone does not always show the edge. The drawer is no
+   containing block: the workspace grid places the shade in the drawer's
+   area, so the scrolling drawer neither clips nor moves it, and the border
+   box, and with it the edge under the handle, keeps its place. The drawer's
+   resize handle only darkens this shade while it is hovered, focused, or
+   dragged. */
+@media screen {
+  .k2b-ui .k2b-app-workspace__drawer::before {
+    --k2b-workspace-shade-edge: var(--k2b-shadow-column-edge);
+    --k2b-workspace-shade-mid: var(--k2b-shadow-column-mid);
+    position: absolute;
+    /* Above Main's content, below a floating Detail and the resize handles (20). */
+    z-index: 19;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 1.5rem;
+    grid-area: drawer;
+    content: "";
+    pointer-events: none;
+    background: linear-gradient(to bottom, transparent, var(--k2b-workspace-shade-mid) 45%, var(--k2b-workspace-shade-edge));
+    mask-image: linear-gradient(to right, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
+    transform: translateY(-100%);
+    transition:
+      --k2b-workspace-shade-edge var(--k2b-motion-fast) var(--k2b-ease-out),
+      --k2b-workspace-shade-mid var(--k2b-motion-fast) var(--k2b-ease-out);
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__resize[data-app-workspace-resize="drawer"][data-workspace-resize-shadow="true"]:is(
+      :hover,
+      :focus-visible,
+      [data-workspace-resize-active="true"]
+    )
+    + .k2b-app-workspace__drawer::before {
+    --k2b-workspace-shade-edge: var(--k2b-shadow-column-active-edge);
+    --k2b-workspace-shade-mid: var(--k2b-shadow-column-active-mid);
+  }
+}
+
 /* A horizontal scroller in `Main` marked `k2b-detail-trail`. It is the
    viewport that clips the surface where the panel's column begins, so it
    carries the surface's radius: a column or table cut beside the panel ends
@@ -1993,14 +2165,20 @@ html {
     margin: 0;
   }
 
+  /* The rail's own surface separates it from the panel, without a line. */
   .k2b-ui .k2b-settings__rail {
-    border-right: 1px solid var(--k2b-border);
     background: var(--k2b-surface-muted);
+  }
+
+  /* Forced colours paint rail and panel as Canvas, so only a line keeps the edge. */
+  @media (forced-colors: active) {
+    .k2b-ui .k2b-settings__rail {
+      border-right: 1px solid CanvasText;
+    }
   }
 
   .k2b-ui .k2b-settings__content {
     grid-area: 1 / 2;
-    border-top: 0;
   }
 
   .k2b-ui .k2b-settings__tabs {
@@ -2021,8 +2199,7 @@ html {
   }
 
   .k2b-ui .k2b-settings__tab-group + .k2b-settings__tab-group {
-    padding-left: 0;
-    border-left: 0;
+    margin-left: 0;
   }
 
   .k2b-ui .k2b-settings__tab-group-label {
@@ -2031,6 +2208,7 @@ html {
 
   .k2b-ui .k2b-settings__tabs button {
     width: 100%;
+    white-space: normal;
   }
 
   .k2b-ui .k2b-settings__section {
@@ -2210,7 +2388,7 @@ html {
 
 /* The head: one 46 px row above the work area, without a line under it. It
    shows on a page with a page above it (`data-trail="up"`), unless from
-   64 rem the sidebar marks the page (see below), and from 48 to 64 rem
+   64 rem the sidebar marks the page or its ancestor (see below), and from 48 to 64 rem
    whenever the workspace has an overlay sidebar, whose button it holds. The page's own `PageTitle` replaces the head's title; the
    head then stays only for that button. A nested workspace's head never
    carries the title. */
@@ -2229,11 +2407,18 @@ html {
   display: flex;
 }
 
-.k2b-ui:has(.k2b-page-title:not([data-fallback])) .k2b-app-workspace__head {
+/* A page that renders its own `PageTitle` needs no title from the chrome. The
+   host marks the page, or the `k2b-ui` root, with `data-k2b-own-title` (see
+   `PageTrailProvider`); the doubled attribute keeps the weight of the former
+   document-wide `:has()`. */
+:is(.k2b-ui[data-k2b-own-title][data-k2b-own-title], .k2b-ui [data-k2b-own-title][data-k2b-own-title]) .k2b-app-workspace__head {
   display: none;
 }
 
-.k2b-ui:has(.k2b-page-title:not([data-fallback])) .k2b-app-workspace__head > .k2b-app-workspace__head-lead > .k2b-page-title {
+:is(.k2b-ui[data-k2b-own-title][data-k2b-own-title], .k2b-ui [data-k2b-own-title][data-k2b-own-title])
+  .k2b-app-workspace__head
+  > .k2b-app-workspace__head-lead
+  > .k2b-page-title {
   display: none;
 }
 
@@ -2308,12 +2493,15 @@ html {
 }
 
 /* A page without its own `h1` keeps the head's heading for assistive
-   technology, whether or not the visible title shows. */
-.k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
-  .k2b-app-workspace:not(:has(.k2b-app-workspace__main h1))
-  > .k2b-app-workspace__head[data-row]
+   technology, whether or not the visible title shows. The head asks the
+   content after it (a head comes before Content), not the workspace its whole
+   subtree: a `:has()` on a large ancestor restyles it entirely on every change
+   inside. */
+.k2b-ui
+  .k2b-app-workspace
+  > .k2b-app-workspace__head[data-row]:not(:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__main h1))
   > .k2b-app-workspace__head-lead
-  > .k2b-app-workspace__head-heading {
+  > .k2b-app-workspace__head-heading:not([data-k2b-own-title][data-k2b-own-title] *) {
   display: block;
 }
 
@@ -2354,9 +2542,10 @@ html {
   flex: 1 1 auto;
 }
 
-/* The filters move as one group; on their own row they scroll sideways.
-   Both scrollers keep room for focus rings in a padding that a negative
-   margin returns, so no ring is cut and nothing moves. */
+/* The filters move as one group; on their own row they scroll sideways and,
+   like the view strip, fade at an edge that hides chips. Both scrollers keep
+   room for focus rings in a padding that a negative margin returns, so no
+   ring is cut and nothing moves. */
 .k2b-ui .k2b-app-workspace__head-filters {
   gap: 0.375rem;
   overflow: auto hidden;
@@ -2369,8 +2558,11 @@ html {
   padding: 0.25rem;
 }
 
-.k2b-ui .k2b-app-workspace__head-filters {
-  scroll-padding-inline: 0.25rem;
+/* A chip-row fade reaches past the focus padding into the cut chip, and a
+   chip focused by keyboard scrolls clear of it. */
+.k2b-ui .k2b-app-workspace__head-filters[data-scroll-fade-mode] {
+  --scroll-fade-size: 1.5rem;
+  scroll-padding-inline: var(--scroll-fade-size);
 }
 
 .k2b-ui .k2b-app-workspace__head-filters::-webkit-scrollbar {
@@ -2448,6 +2640,13 @@ html {
   }
 }
 
+/* A primary that opens a menu says so with a quiet chevron after its label. */
+.k2b-ui .k2b-app-workspace__head-primary-chevron {
+  margin-inline-start: 0.25rem;
+  font-size: 0.875rem;
+  opacity: 0.85;
+}
+
 /* After filters and compact views give way, the primary keeps its name
    for assistive technology while its icon frees space for the view strip.
    If the lead and actions still cannot fit, flex puts them on separate rows. */
@@ -2521,10 +2720,10 @@ html {
   /* A visible title takes the first row with the actions; the views move to
      their own row. The title shows here only on a page with a way up that
      does not render its own `PageTitle`. */
-  .k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+  .k2b-ui
     .k2b-app-workspace__head[data-row][data-trail="up"]
     > .k2b-app-workspace__head-lead
-    > .k2b-app-workspace__head-views {
+    > .k2b-app-workspace__head-views:not([data-k2b-own-title][data-k2b-own-title] *) {
     order: 2;
     flex: 1 1 100%;
     margin-inline: -1rem;
@@ -2551,6 +2750,11 @@ html {
 
   .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__item[data-compact-hidden] {
     display: none;
+  }
+
+  /* The phone's view strip scrolls; a fitting strip keeps every view it shows here (see ViewTabs `fit`). */
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__list {
+    --k2b-view-tabs-fit: none;
   }
 
   .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__more {
@@ -2593,16 +2797,22 @@ html {
 }
 
 @container k2b-app-area (min-width: 64rem) {
-  /* A sidebar that marks the current page already names it, so the head
-     shows neither the title nor the way up beside it; Alt+Up still goes up.
+  /* A sidebar that marks the current page, or the item a deeper page belongs
+     to (`active="ancestor"`), already names the place and links the way up,
+     so the head shows neither the title nor the way up beside it; Alt+Up
+     still goes up.
      On a page without its own `h1` the head's heading stays for assistive
      technology. A collapsed sidebar shows no names and keeps the head. */
   .k2b-ui
-    .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
-      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
-    )
-    > .k2b-app-workspace__head[data-trail="up"] {
+    .k2b-app-workspace:not([data-sidebar-collapsed="true"])
+    > :is(
+      .k2b-app-workspace__head:has(
+          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
+          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
+        ),
+      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
+      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
+    )[data-trail="up"] {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -2615,22 +2825,30 @@ html {
   }
 
   .k2b-ui
-    .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
-      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+    .k2b-app-workspace:not([data-sidebar-collapsed="true"])
+    > :is(
+      .k2b-app-workspace__head:has(
+          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
+          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
+        ),
+      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
+      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
     )
-    > .k2b-app-workspace__head
     > .k2b-app-workspace__head-lead
     > .k2b-page-title {
     display: none;
   }
 
   .k2b-ui
-    .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
-      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
-    ):not(:has(.k2b-app-workspace__main h1))
-    > .k2b-app-workspace__head
+    .k2b-app-workspace:not([data-sidebar-collapsed="true"])
+    > :is(
+      .k2b-app-workspace__head:has(
+          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
+          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
+        ),
+      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
+      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
+    ):not(:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__main h1))
     > .k2b-app-workspace__head-lead
     > .k2b-app-workspace__head-heading {
     display: block;
@@ -2717,14 +2935,14 @@ html {
 
     /* A head row shows the title beside the overlay's button, as the head
        does, unless the page shows its own. */
-    .k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+    .k2b-ui
       .k2b-app-workspace:has(
         > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > .k2b-app-workspace__head[data-row]
       > .k2b-app-workspace__head-lead
-      > .k2b-page-title.k2b-page-title {
+      > .k2b-page-title.k2b-page-title:not([data-k2b-own-title][data-k2b-own-title] *) {
       display: flex;
     }
 
@@ -3242,6 +3460,11 @@ html {
   margin-inline: -0.75rem -0.5rem;
 }
 
+/* A level's own parent in the same column: its step shows at every width. */
+.k2b-ui .k2b-app-workspace__level-head > .k2b-app-workspace__level-back--own {
+  display: inline-flex;
+}
+
 .k2b-ui .k2b-app-workspace__level-back .ti {
   width: 1.25rem;
   height: 1.25rem;
@@ -3271,6 +3494,14 @@ html {
   display: block;
 }
 
+/* The page step of the type scale: the page's own title sits above every
+   group title in it (18 > 14 > 13 > 12 px). Columns that lead to the page and
+   details beside it keep the 14 px column step. */
+.k2b-ui .k2b-app-workspace__main-pane[data-workspace-heading="page"] > .k2b-app-workspace__level-head .k2b-app-workspace__level-title > h2 {
+  font-size: 1.125rem;
+  line-height: 1.5rem;
+}
+
 .k2b-ui .k2b-app-workspace__level-title > h2:has(> .k2b-app-workspace__level-lead) {
   display: flex;
   align-items: center;
@@ -3284,6 +3515,71 @@ html {
 
 .k2b-ui .k2b-app-workspace__level-title > h2:has(> .k2b-app-workspace__level-lead) > .k2b-truncate-fade {
   min-width: 0;
+}
+
+/* A title that switches places is a button of the title's size: its text, lead and chevron stay where a plain
+   title stands, and only the surface answers hover and focus. */
+.k2b-ui .k2b-app-workspace__level-title > h2[data-switcher] {
+  display: flex;
+  min-width: 0;
+}
+
+/* The switcher's menu lives in the top layer; its host takes no room beside the title. */
+.k2b-ui .k2b-app-workspace__level-title > .k2b-dropdown {
+  display: contents;
+}
+
+.k2b-ui .k2b-app-workspace__level-switch {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline: -0.5rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 0.625rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.k2b-ui .k2b-app-workspace__level-switch > .k2b-app-workspace__level-lead {
+  display: inline-flex;
+  flex: none;
+}
+
+.k2b-ui .k2b-app-workspace__level-switch > .k2b-truncate-fade {
+  display: block;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-app-workspace__level-switch-chevron {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 1.125rem;
+  font-weight: 400;
+}
+
+.k2b-ui .k2b-app-workspace__level-switch:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+.k2b-ui .k2b-app-workspace__level-switch:active,
+.k2b-ui .k2b-app-workspace__level-switch[aria-expanded="true"] {
+  background: var(--k2b-app-workspace-hover);
+}
+
+@media (hover: hover) {
+  .k2b-ui .k2b-app-workspace__level-switch:hover {
+    background: var(--k2b-app-workspace-hover);
+  }
 }
 
 /* The title takes focus only when a level change hid the focused control. */
@@ -3320,6 +3616,14 @@ html {
   padding-inline: 0.5rem;
 }
 
+/* A page level's content starts at its title's edge: the body owns the whole
+   inset, so a form, a frame or a table needs none of its own. A MobileShell
+   pads its levels itself and keeps its rule. */
+.k2b-ui .k2b-app-workspace__main-pane[data-workspace-heading="page"] > .k2b-app-workspace__level-body {
+  padding-inline: 1rem;
+  padding-top: 0.5rem;
+}
+
 /* A navigation surface used as a level leaves the inset to its body. */
 .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"][data-workspace-level] {
   padding-inline: 0;
@@ -3349,6 +3653,11 @@ html {
       padding-inline-end: 0;
       scrollbar-width: auto;
       scrollbar-color: auto;
+    }
+
+    /* A page level keeps its 1rem end edge: 0.5rem padding and the 0.5rem track. */
+    .k2b-ui .k2b-app-workspace__main-pane[data-workspace-heading="page"] > .k2b-app-workspace__level-body:not([data-scroll="false"], .k2b-mobile-shell__main *) {
+      padding-inline-end: 0.5rem;
     }
 
     .k2b-ui .k2b-app-workspace__level-body:not([data-scroll="false"], .k2b-mobile-shell__main *)::-webkit-scrollbar,
@@ -3551,14 +3860,14 @@ html {
     }
 
     /* The head's title comes back unless the page shows its own. */
-    .k2b-ui:not(:has(.k2b-page-title:not([data-fallback])))
+    .k2b-ui
       .k2b-app-workspace:has(
         > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"]),
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden], [data-mobile="stacked"])
       )
       > .k2b-app-workspace__head
       > .k2b-app-workspace__head-lead
-      > .k2b-page-title.k2b-page-title {
+      > .k2b-page-title.k2b-page-title:not([data-k2b-own-title][data-k2b-own-title] *) {
       display: flex;
     }
 
@@ -3883,30 +4192,27 @@ html {
 /* ------------------------------------------------------------ mobile shell */
 
 /* While a phone shell is the page, the document never scrolls, so iOS has
-   nothing to rubber-band; only the shell's scroll area does. */
-html:has(.k2b-mobile-shell),
-html:has(.k2b-mobile-shell) body {
+   nothing to rubber-band; only the shell's scroll area does. The shell marks
+   the document (`data-k2b-mobile-shell`); a `:has()` on the document would
+   restyle the whole page on every change inside it. */
+html[data-k2b-mobile-shell],
+html[data-k2b-mobile-shell] body {
   overflow: hidden;
   overscroll-behavior: none;
 }
 
-/* No pinch zoom on the whole page, portalled dialogs and menus included. iOS
-   ignores `user-scalable=no`; it honours touch-action. Zero specificity, so a
-   component's own touch-action, such as a drag handle's `none`, still wins. */
-:where(html:has(.k2b-mobile-shell) *) {
-  touch-action: pan-x pan-y;
-}
-
 /* App-sized controls on every pointer: 44 px targets, and 16 px field text,
-   so iOS never zooms into a focused field. */
-html:has(.k2b-mobile-shell) .k2b-button,
-html:has(.k2b-mobile-shell) .k2b-dropdown__trigger,
-html:has(.k2b-mobile-shell) .k2b-segmented-control button {
+   so iOS never zooms into a focused field. Inside the shell they apply from
+   the first paint, outside it, in portalled dialogs and menus, once the shell
+   has marked the document. */
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-button,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-dropdown__trigger,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-segmented-control button {
   min-height: 44px;
 }
 
-html:has(.k2b-mobile-shell) input:not([type="checkbox"]):not([type="radio"]),
-html:has(.k2b-mobile-shell) textarea {
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) input:not([type="checkbox"]):not([type="radio"]),
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) textarea {
   min-height: 44px;
   font-size: 16px;
 }
@@ -3918,33 +4224,34 @@ html:has(.k2b-mobile-shell) textarea {
    segmented options stay compact so several fit one row. Shared components
    that are sized for dense desktop surfaces follow the scale while a shell is
    mounted; icon buttons keep their glyph sizes. */
-html:has(.k2b-mobile-shell) .k2b-ui,
-html:has(.k2b-mobile-shell) .k2b-button:not(.k2b-icon-button) {
+html[data-k2b-mobile-shell] .k2b-ui,
+.k2b-ui .k2b-mobile-shell,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-button:not(.k2b-icon-button) {
   font-size: 1rem;
 }
 
-html:has(.k2b-mobile-shell) .k2b-panel-dialog__heading h2 {
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-panel-dialog__heading h2 {
   font-size: 1.125rem;
   letter-spacing: normal;
 }
 
-html:has(.k2b-mobile-shell) .k2b-settings-section__heading h2,
-html:has(.k2b-mobile-shell) .k2b-notice-card__title,
-html:has(.k2b-mobile-shell) .k2b-placeholder__title {
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-settings-section__heading h2,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card__title,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-placeholder__title {
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.5rem;
 }
 
-html:has(.k2b-mobile-shell) .k2b-settings-section__heading p,
-html:has(.k2b-mobile-shell) .k2b-notice-card__description,
-html:has(.k2b-mobile-shell) .k2b-notice-card__body,
-html:has(.k2b-mobile-shell) .k2b-placeholder__description,
-html:has(.k2b-mobile-shell) .k2b-navigation__copy small,
-html:has(.k2b-mobile-shell) .k2b-segmented-control .k2b-segmented-control__option,
-html:has(.k2b-mobile-shell) .k2b-field__label,
-html:has(.k2b-mobile-shell) .k2b-field__description,
-html:has(.k2b-mobile-shell) .k2b-field__error {
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-settings-section__heading p,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card__description,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card__body,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-placeholder__description,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-navigation__copy small,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-segmented-control .k2b-segmented-control__option,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-field__label,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-field__description,
+:is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-field__error {
   font-size: 0.875rem;
   line-height: 1.25rem;
 }
@@ -3965,6 +4272,44 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 
 .k2b-ui .k2b-mobile-shell > :not(.k2b-mobile-shell__main) {
   flex: none;
+}
+
+/* The frame stands still in a view transition, within the document and
+   between documents: the header, the sidebar, and the footer, such as a tab
+   bar, are groups of their own that show the next page's frame at once, so
+   only the content area takes part in the transition. One shell per page
+   keeps the names unique; a part that is not shown takes no part. While a
+   modal dialog is open, its backdrop lies over the frame, so the frame stays
+   in the page's own picture. */
+html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__header {
+  view-transition-name: k2b-mobile-shell-header;
+}
+
+html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__sidebar {
+  view-transition-name: k2b-mobile-shell-sidebar;
+}
+
+html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main + * {
+  view-transition-name: k2b-mobile-shell-footer;
+}
+
+::view-transition-group(k2b-mobile-shell-header),
+::view-transition-group(k2b-mobile-shell-sidebar),
+::view-transition-group(k2b-mobile-shell-footer) {
+  animation-name: none;
+}
+
+/* The browser's own cross-fade of the pictures ends at once: the old picture
+   is gone and the new one is there from the first frame. The group no longer
+   animates, so the pictures keep their end state themselves. */
+::view-transition-old(k2b-mobile-shell-header),
+::view-transition-old(k2b-mobile-shell-sidebar),
+::view-transition-old(k2b-mobile-shell-footer),
+::view-transition-new(k2b-mobile-shell-header),
+::view-transition-new(k2b-mobile-shell-sidebar),
+::view-transition-new(k2b-mobile-shell-footer) {
+  animation-duration: 0s;
+  animation-fill-mode: both;
 }
 
 /* As high with a title alone as with Back or a 44 px action, so the title and
@@ -4053,6 +4398,24 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   display: none;
 }
 
+/* A screen of its own, such as an open chat on a phone, reaches the bottom
+   edge: the footer steps aside. Beside the sidebar there is no footer. */
+.k2b-ui .k2b-mobile-shell[data-k2b-screen] > .k2b-mobile-shell__main ~ * {
+  display: none;
+}
+
+/* While the on-screen keyboard is up, the footer under it steps aside, and
+   content that owns the bottom edge and asks for it ("keyboard") stands above
+   the keyboard. Content that follows the visual viewport itself, such as a
+   chat's frame, keeps its own place. */
+.k2b-ui .k2b-mobile-shell[data-k2b-keyboard] > .k2b-mobile-shell__main ~ * {
+  display: none;
+}
+
+.k2b-ui .k2b-mobile-shell[data-k2b-keyboard] [data-k2b-shell-bottom="keyboard"] {
+  margin-bottom: var(--k2b-mobile-shell-keyboard, 0px);
+}
+
 /* The content keeps its place, so the footer under the finger never moves
    between the press and the click that ends the tap. */
 .k2b-ui .k2b-mobile-shell[data-k2b-content-heads][data-k2b-switching] > .k2b-mobile-shell__main,
@@ -4106,7 +4469,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
     grid-column: 1;
   }
 
-  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) > :not(.k2b-mobile-shell__sidebar) {
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__sidebar ~ :not(.k2b-mobile-shell__sidebar) {
     grid-column: 2;
     min-width: 0;
   }
@@ -4116,7 +4479,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   }
 
   /* The sidebar replaces the footer, such as a tab bar. */
-  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) > .k2b-mobile-shell__main ~ * {
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__sidebar ~ .k2b-mobile-shell__main ~ * {
     display: none;
   }
 
@@ -4143,13 +4506,13 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   }
 
   /* Toasts belong to the page beside the sidebar: centred at its bottom edge. */
-  html:has(.k2b-mobile-shell > .k2b-mobile-shell__sidebar):not(:has(dialog:modal)) .k2b-ui [data-k2b-toast-container] {
+  html[data-k2b-mobile-shell="sidebar"]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b-toast-container] {
     --k2b-toast-rail-left: 15rem;
     --k2b-toast-rail-width: auto;
     align-items: center;
   }
 
-  html:has(.k2b-mobile-shell > .k2b-mobile-shell__sidebar):not(:has(dialog:modal))
+  html[data-k2b-mobile-shell="sidebar"]:not([data-k2b-mobile-shell-modal])
     .k2b-ui
     [data-k2b-toast-container]
     > .k2b-toast-slot {
@@ -5206,5 +5569,21 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
     )
     > .k2b-app-workspace__head.k2b-app-workspace__head[data-workspace-head-pane] {
     --k2b-workspace-head-end: 1rem;
+  }
+}
+
+/* Details buttons, shared and app-owned: while their panel is open they show
+   the selection fill in the platform blue, without a border or shadow. Only
+   colour and fill change, so opening moves nothing. */
+.k2b-ui .k2b-details-toggle[aria-expanded="true"],
+.k2b-ui .k2b-details-toggle[aria-expanded="true"]:hover:not(:disabled) {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
+@media (forced-colors: active) {
+  .k2b-ui .k2b-details-toggle[aria-expanded="true"] {
+    forced-color-adjust: none;
+    color: HighlightText;
+    background: Highlight;
   }
 }

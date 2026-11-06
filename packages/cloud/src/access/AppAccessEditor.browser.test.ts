@@ -178,7 +178,7 @@ describe("App access through real browser controls and same-origin transport", (
           );
         expect(await heights()).toEqual([36, 36, 36]);
         const picker = page.locator("input[role=combobox]");
-        expect(await picker.getAttribute("placeholder")).toBe("Person, Gruppe oder Dienstkonto hinzufügen");
+        expect(await picker.getAttribute("placeholder")).toBe("Person, Gruppe, Agenten oder Dienstkonto hinzufügen");
         expect(await picker.evaluate((element) => getComputedStyle(element).textOverflow)).toBe("ellipsis");
         expect(await picker.evaluate((element) => getComputedStyle(element).fontSize)).toBe("15px");
         await picker.fill("Lea");
@@ -186,7 +186,7 @@ describe("App access through real browser controls and same-origin transport", (
         await settled(page);
         expect(await heights()).toEqual([36, 36, 36]);
         expect(await row(page, "Buchhaltung").getByText("Gruppe · 4 Personen", { exact: true }).count()).toBe(1);
-        expect(await row(page, "Monatsabschluss").getByText("Dienstkonto", { exact: true }).count()).toBe(1);
+        expect(await row(page, "Monatsabschluss").getByText("Agent (nur API Key)", { exact: true }).count()).toBe(1);
         expect(await row(page, "Anna Muster").getByText("Person · du", { exact: true }).count()).toBe(1);
         const geometry = await row(page, "Buchhaltung").evaluate((element) => {
           const avatar = element.children[0]!.getBoundingClientRect();
@@ -489,7 +489,7 @@ describe("App access through real browser controls and same-origin transport", (
       expect(colors.text).not.toBe(colors.body);
       expect(await page.getByText("Bisher nutzten alle angemeldeten Personen", { exact: false }).count()).toBe(0);
       const signedIn = row(page, "Alle angemeldeten Personen");
-      await signedIn.getByText("Jede Person mit Konto in dieser Cloud", { exact: true }).waitFor();
+      await signedIn.getByText("Jede Person mit Konto in dieser Cloud, auch Gäste", { exact: true }).waitFor();
       expect(await level(page, "Alle angemeldeten Personen").isDisabled()).toBe(true);
       expect(errors).toEqual([]);
     } finally {
@@ -681,7 +681,7 @@ test("bootstrap shows the inherited signed-in grant, dismisses its notice and ha
     });
     await notice.waitFor();
     // The approved term for the signed-in audience, the same one the notice uses, and nobody's own marker.
-    await row(page, "Alle angemeldeten Personen").getByText("Jede Person mit Konto in dieser Cloud", { exact: true }).waitFor();
+    await row(page, "Alle angemeldeten Personen").getByText("Jede Person mit Konto in dieser Cloud, auch Gäste", { exact: true }).waitFor();
     expect(await level(page, "Alle angemeldeten Personen").textContent()).toBe("Nutzen");
     await page.getByRole("button", { name: "Hinweis schließen", exact: true }).click();
     expect(await notice.count()).toBe(0);
@@ -781,9 +781,12 @@ for (const width of [390, 768, 1440]) {
         // Administration stays available for repair; its presence never grants application use.
         expect(data.apps.map((app: { id: string }) => app.id).sort()).toEqual(allowed ? ["admin", "home", "invoices"] : ["admin", "home"]);
         expect(data.theme).toBe("dark");
-        const navigation = page.locator(width >= 768 ? ".layout-rail" : ".cloud-tab-bar");
-        expect(await navigation.getByRole("link", { name: "Invoices", exact: true }).count()).toBe(allowed ? 1 : 0);
-        expect(await navigation.locator('a[href^="/fictional/hidden"]').count()).toBe(0);
+        // Phones have no bottom dock: the app menu below is their way to the apps.
+        if (width >= 768) {
+          const navigation = page.locator(".layout-rail");
+          expect(await navigation.getByRole("link", { name: "Invoices", exact: true }).count()).toBe(allowed ? 1 : 0);
+          expect(await navigation.locator('a[href^="/fictional/hidden"]').count()).toBe(0);
+        } else expect(await page.locator(".cloud-tab-bar").count()).toBe(0);
         // Open via the real shell control, including the phone menu variant.
         const chrome = page.locator(width >= 768 ? ".layout-rail" : ".layout-header");
         await chrome.getByRole("button", { name: "Open apps", exact: true }).click();

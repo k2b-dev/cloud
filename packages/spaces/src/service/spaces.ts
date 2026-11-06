@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { type AccessSubject, hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { decryptSecret, encryptSecret, logger, serviceAccounts } from "@k2b/cloud/services";
+import { audit, decryptSecret, encryptSecret, logger, serviceAccounts } from "@k2b/cloud/services";
 import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { CreateSpace, MutationResult, Space, SpaceDetail, UpdateSpace } from "@/contracts";
 import { newShortId, withShortIdRetry } from "../lib/short-id";
 import {
@@ -356,10 +356,10 @@ export const getDetail = async (params: { id: string }): Promise<SpaceDetail | n
   if (!spaceRow) return null;
 
   const columns = await sql<DbColumn[]>`
-    SELECT id, space_id, name, color, rank::text AS rank, is_done
-    FROM spaces.columns
-    WHERE space_id = ${params.id}
-    ORDER BY rank
+    SELECT c.id, c.space_id, c.name, c.color, c.rank::text AS rank, c.is_done
+    FROM spaces.columns c
+    WHERE c.space_id = ${params.id}
+    ORDER BY c.rank, c.short_id COLLATE "C"
   `;
 
   const tags = await sql<DbTag[]>`
@@ -505,10 +505,17 @@ export const update = async (params: { id: string; data: UpdateSpace; actor?: Sp
 /**
  * Delete a space
  */
-export const remove = async (params: { id: string }): Promise<MutationResult<void>> => {
+export const remove = async (params: { id: string; actorId?: string }): Promise<MutationResult<void>> => {
   const deleted = await sql.begin(async (tx) => {
     const result = await tx`DELETE FROM spaces.spaces WHERE id = ${params.id}`;
-    if (result.count > 0) await publishSpaceChange(tx, { type: "space.deleted", spaceId: params.id });
+    if (result.count > 0) {
+      if (params.actorId)
+        await audit.record(
+          { action: "spaces.delete", outcome: "allowed", actor: { userId: params.actorId }, target: { type: "space", id: params.id } },
+          tx,
+        );
+      await publishSpaceChange(tx, { type: "space.deleted", spaceId: params.id });
+    }
     return result.count > 0;
   });
   if (!deleted) {

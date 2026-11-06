@@ -54,8 +54,6 @@ export function ContextMenuBase(
     openAt?: (open: (x: number, y: number) => void) => void;
     title?: string;
     closeWith?: (close: () => void) => void;
-    /** Decides whether a right-click or a key opens this menu; a refused event keeps the browser's menu. ListContextMenu picks its row here. */
-    accept?: (event: MouseEvent | KeyboardEvent) => boolean;
   },
 ): JSX.Element {
   const messages = useUiMessages();
@@ -222,7 +220,6 @@ export function ContextMenuBase(
           if (props.disabled) return;
           // An enclosing context menu must not take over the browser's own either.
           if (keepsNativeMenu(event.target)) return void event.stopPropagation();
-          if (props.accept && !props.accept(event)) return;
           event.preventDefault();
           event.stopPropagation();
           open(event.clientX, event.clientY);
@@ -232,8 +229,7 @@ export function ContextMenuBase(
           // A nested context menu already opened its own; a field keeps the browser's.
           if (
             event.defaultPrevented ||
-            (props.keepNativeMenu && event.target instanceof Element && event.target.closest(NATIVE_MENU_TARGETS)) ||
-            (props.accept && !props.accept(event))
+            (props.keepNativeMenu && event.target instanceof Element && event.target.closest(NATIVE_MENU_TARGETS))
           )
             return;
           event.preventDefault();

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { browserName, launchBrowser, settled } from "../../test/browser";
+import { browserName, launchBrowser, pressAcrossRebuild, settled } from "../../test/browser";
 
 // How far the field grows, whether it ever collapses to be measured, and whether anything moves are results of layout
 // in a real engine. The composer sits under a VirtualFeed, as in a conversation, inside a size container.
@@ -661,6 +661,57 @@ describe(`default slash ChatComposer in ${browserName}`, () => {
         await page.evaluate(() => fixture.resolveSearch([{ id: "replacement", name: "Replacement", description: "New result" }]));
         await page.locator('[role="option"]').filter({ hasText: "New result" }).waitFor();
         expect(await page.locator('[role="option"]').filter({ hasText: "Previous result" }).count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`rows that arrive while a command is pressed wait for the release, so it lands on that command at ${width}px`, async () => {
+      const page = await open({ mode: "slash", width });
+      try {
+        const field = page.locator("textarea").first();
+        await field.fill("/do");
+        await page.waitForFunction(() => fixture.searchCount() === 1);
+        const option = page.locator('[role="option"]').filter({ hasText: "Finish this action" });
+        await option.waitFor();
+        await settled(page);
+        const before = await option.boundingBox();
+        await pressAcrossRebuild(page, option, async () => {
+          // Server rows arrive during the press, as the Assistant's searched sections do (#2079).
+          await page.evaluate(() =>
+            fixture.resolveSearch(
+              ["One", "Two", "Three"].map((name) => ({ id: `server-${name}`, name: `do-${name}`, description: `Server ${name}` })),
+            ),
+          );
+          await page.evaluate(() => new Promise((frame) => requestAnimationFrame(() => requestAnimationFrame(frame))));
+          expect(await option.boundingBox()).toEqual(before);
+        });
+        await page.locator('.k2b-chat-composer__status-line[data-tone="done"]').waitFor();
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`rows held back during a press show once the pointer is released elsewhere at ${width}px`, async () => {
+      const page = await open({ mode: "slash", width });
+      try {
+        const field = page.locator("textarea").first();
+        await field.fill("/do");
+        await page.waitForFunction(() => fixture.searchCount() === 1);
+        const option = page.locator('[role="option"]').filter({ hasText: "Finish this action" });
+        await option.waitFor();
+        await settled(page);
+        const box = (await option.boundingBox())!;
+        const fieldBox = (await field.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.evaluate(() => fixture.resolveSearch([{ id: "server-late", name: "do-late", description: "Server late" }]));
+        expect(await page.locator('[role="option"]').filter({ hasText: "Server late" }).count()).toBe(0);
+        // The release lands outside the list, so nothing runs, and the held rows show.
+        await page.mouse.move(fieldBox.x + 8, fieldBox.y + fieldBox.height / 2);
+        await page.mouse.up();
+        await page.locator('[role="option"]').filter({ hasText: "Server late" }).waitFor();
+        expect(await page.locator(".k2b-chat-composer__status-line").count()).toBe(0);
       } finally {
         await page.close();
       }

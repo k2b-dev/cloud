@@ -1,0 +1,153 @@
+/* The Assistant part of the Cloud app (/pwa/assistant). Flat sections on the shell's surface, no boxes. */
+
+.assistant-pwa { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.assistant-pwa-workspace { flex: 1; min-height: 0; }
+
+/* The part's icon in a tinted tile, at the head and over a new chat. */
+.assistant-pwa-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.5rem;
+  background: var(--ui-app-selected-nav);
+  color: var(--ui-app-accent-text, var(--k2b-action));
+  font-size: 1.125rem;
+}
+.assistant-pwa-mark[data-size="lg"] { width: 3rem; height: 3rem; border-radius: 0.875rem; font-size: 1.75rem; }
+
+/* Start: the list scrolls, the field stays under the thumb. */
+.assistant-pwa-start { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.assistant-pwa-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 0.5rem 1rem; }
+.assistant-pwa-start__composer { flex: none; padding: 0.25rem 0.5rem 0.5rem; }
+.assistant-pwa-start__composer:empty { display: none; }
+
+.assistant-pwa-section { margin: 0.75rem 0.75rem 0.25rem; font-size: 0.8125rem; font-weight: 600; color: var(--k2b-text-secondary); }
+
+.assistant-pwa-rows { list-style: none; margin: 0; padding: 0; }
+.assistant-pwa-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.75rem;
+  row-gap: 0.125rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  color: var(--k2b-text);
+  text-decoration: none;
+}
+.assistant-pwa-row:active { background: var(--k2b-hover, var(--k2b-surface-muted)); }
+@media (hover: hover) { .assistant-pwa-row:hover { background: var(--k2b-hover, var(--k2b-surface-muted)); } }
+.assistant-pwa-row:focus-visible { outline: 2px solid var(--k2b-focus-ring, var(--k2b-action)); outline-offset: -2px; }
+.assistant-pwa-row[aria-current="page"] { background: var(--ui-app-selected-nav); }
+.assistant-pwa-row__title { min-width: 0; font-size: 0.9375rem; font-weight: 500; white-space: nowrap; overflow: hidden; }
+.assistant-pwa-row[data-unread] .assistant-pwa-row__title { font-weight: 650; }
+.assistant-pwa-row__when { align-self: baseline; color: var(--k2b-text-muted); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+.assistant-pwa-row__meta {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+.assistant-pwa-row__meta .assistant-conversation-status { flex: none; font-size: 0.8125rem; }
+.assistant-pwa-row__meta .assistant-conversation-status:empty { display: none; }
+.assistant-pwa-row__preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-pwa-row[data-unread] .assistant-pwa-row__preview { padding-inline-end: 1rem; }
+.assistant-pwa-row__dot {
+  position: absolute;
+  inset-inline-end: 0.875rem;
+  bottom: 0.75rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--ui-app-accent-text, var(--k2b-action));
+}
+.assistant-pwa-row--skeleton { pointer-events: none; }
+.k2b-ui .assistant-pwa-skeleton { height: 0.875rem; margin-block: 0.25rem; border-radius: 0.375rem; width: 62%; }
+.k2b-ui .assistant-pwa-skeleton--when { width: 2.5rem; }
+.k2b-ui .assistant-pwa-skeleton--line { height: 0.75rem; width: 78%; }
+.assistant-pwa-rows li:nth-child(3n + 2) .assistant-pwa-skeleton:first-child { width: 48%; }
+.assistant-pwa-rows li:nth-child(3n) .assistant-pwa-skeleton:first-child { width: 56%; }
+.assistant-pwa-rows li:nth-child(2n) .assistant-pwa-skeleton--line { width: 64%; }
+
+.assistant-pwa-all {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  margin: 0.25rem 0 0;
+  padding: 0 0.75rem;
+  border-radius: 0.75rem;
+  color: var(--k2b-text);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+.assistant-pwa-all__count { color: var(--k2b-text-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+
+/* Empty: one sign, one sentence and three ways to start, at the list's place. */
+.assistant-pwa-empty { display: flex; flex-direction: column; align-items: center; gap: 0.625rem; padding: 3rem 1.25rem 1rem; text-align: center; }
+.assistant-pwa-empty h2 { margin: 0.5rem 0 0; font-size: 1.125rem; font-weight: 600; }
+.assistant-pwa-empty p { max-width: 22rem; margin: 0; color: var(--k2b-text-secondary); font-size: 0.9375rem; }
+.assistant-pwa-starters { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; margin-top: 0.75rem; }
+
+/* The reason line above the field: offline, no AI, or what failed. */
+.assistant-pwa-hint { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--k2b-text-secondary); }
+.assistant-pwa-hint--error > .ti { color: var(--k2b-danger-text); }
+.assistant-pwa-hint__link { margin-inline-start: 0.25rem; color: var(--k2b-action); font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
+
+/* One chat: the timeline scrolls, the field stays at the bottom edge and pads the safe area itself, because a chat
+   on a phone is a screen of its own without the tab bar. */
+.assistant-pwa-chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.assistant-pwa-chat__timeline { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.assistant-pwa-chat__root { flex: 1; min-height: 0; }
+.assistant-pwa-chat__composer,
+.assistant-pwa-new__composer { flex: none; padding: 0.25rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom)); }
+.assistant-pwa-chat__composer > *,
+.assistant-pwa-new__composer > * { max-width: 48rem; margin-inline: auto; }
+.assistant-pwa-chat-skeleton { display: flex; flex-direction: column; gap: 0.5rem; box-sizing: border-box; width: 100%; max-width: 48rem; margin: 0 auto; padding: 1rem; }
+.k2b-ui .assistant-pwa-skeleton-bubble { width: 70%; height: 2.75rem; margin: 1rem 0 1.5rem auto; border-radius: 1.25rem; }
+.k2b-ui .assistant-pwa-skeleton-line { height: 0.75rem; width: 92%; border-radius: 0.375rem; }
+.k2b-ui .assistant-pwa-skeleton-line:nth-child(3) { width: 84%; }
+.k2b-ui .assistant-pwa-skeleton-line:nth-child(4) { width: 58%; }
+
+/* A new chat: the part's sign above the field, in the middle of the screen. */
+.assistant-pwa-new { display: flex; flex-direction: column; justify-content: center; height: 100%; padding: 1.5rem 1rem 0; }
+.assistant-pwa-new__head { display: flex; flex-direction: column; align-items: center; margin-bottom: 1.5rem; }
+
+.assistant-pwa-full { display: flex; flex: 1; align-items: center; justify-content: center; height: 100%; padding: 1.5rem; }
+
+/* From 64rem of app-area width the list stands beside the chat, as the shell's levels do: the start's field and the
+   way back to the list are already in view there. */
+@container k2b-app-area (min-width: 64rem) {
+  .k2b-ui .assistant-pwa-narrow-only { display: none; }
+}
+.assistant-pwa-row__pin { flex: none; font-size: 0.875rem; }
+.assistant-pwa-hint--warning > .ti { color: var(--k2b-warning-text); }
+button.assistant-pwa-hint__link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+
+/* A recording above the field: its level with Discard and Stop, then its text on the way, a failure, or the result,
+   all on one row of the same height. */
+.assistant-pwa-recording { display: flex; align-items: center; gap: 0.5rem; min-height: 1.875rem; padding: 0 0 0.375rem; color: var(--k2b-text-secondary); font-size: 0.8125rem; }
+.assistant-pwa-recording__text { min-width: 0; }
+
+/* Every chat: the search field above the list keeps a reserved line for why it waits. */
+.assistant-pwa-search { padding: 0.25rem 0.25rem 0.5rem; }
+.assistant-pwa-search__note {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 1.25rem;
+  margin: 0.375rem 0.25rem 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+}
+.assistant-pwa-more { margin: 0.75rem; color: var(--k2b-text-muted); font-size: 0.8125rem; text-align: center; }
+.assistant-pwa-all__lead { color: var(--k2b-text-muted); }
+.assistant-pwa-all__chevron { margin-inline-start: auto; color: var(--k2b-text-muted); }
+.assistant-pwa-empty--quiet > .ti { color: var(--k2b-text-muted); font-size: 1.5rem; }
+.assistant-pwa-sheet-title { margin: 0; padding: 0 0.75rem 0.25rem; font-size: 0.9375rem; font-weight: 600; }

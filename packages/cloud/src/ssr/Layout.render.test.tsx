@@ -249,7 +249,8 @@ describe("Cloud layouts SSR", () => {
         expect(html.includes('data-shell-focus="true"'), path + " focus").toBe(hidden);
         expect(html.includes('data-cloud-shell-focus-toggle="hide"'), path + " hide").toBe(controls);
         expect(html.includes('data-cloud-shell-focus-toggle="show"'), path + " show").toBe(controls);
-        expect(html.includes('class="cloud-shell-show"')).toBe(controls);
+        expect(html.includes("data-cloud-shell-focus-return")).toBe(controls);
+        expect(html.includes('class="cloud-shell-show"')).toBe(false);
         expect(html.includes("data-cloud-shell-reveal")).toBe(controls);
       }
     } finally {
@@ -268,7 +269,7 @@ describe("Cloud layouts SSR", () => {
     const html = await (await server.request("/layout")).text();
     expect(html).toContain('data-layout-full-page="true"');
     const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
-    expect(css).toContain('html:has(.cloud-app-canvas[data-layout-full-page="true"])');
+    expect(css).toContain('html:has(> body > .cloud-app-canvas[data-layout-full-page="true"])');
     expect(css).toContain("overscroll-behavior: none;");
   });
   test("the shell reserves a stable scrollbar gutter on the page scroller it owns", async () => {
@@ -294,7 +295,7 @@ describe("Cloud layouts SSR", () => {
     const mobileStart = css.indexOf("@media not all and (min-width: 768px) {");
     const mobileShell = css.slice(mobileStart, css.indexOf("\n}", mobileStart));
     expect(mobileShell).toMatch(
-      /html:has\(\.cloud-app-canvas:not\(\[data-layout-full-page\], \[data-layout-authenticated\]\)\) \{ scrollbar-gutter: stable; \}/,
+      /html:has\(> body > \.cloud-app-canvas:not\(\[data-layout-full-page\], \[data-layout-authenticated\]\)\) \{ scrollbar-gutter: stable; \}/,
     );
   });
   test("admin children inherit the request locale during SSR", async () => {
@@ -361,8 +362,8 @@ describe("Cloud layouts SSR", () => {
     const header = html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1];
     expect(header).toBeDefined();
     expect(header).not.toContain("md:hidden");
-    expect(html).toContain('<div class="hidden min-w-0 items-center lg:flex">');
-    expect(html).toContain('<div class="flex items-center gap-1 lg:hidden">');
+    expect(html).toContain('<div class="min-w-0 items-center max-lg:hidden lg:flex">');
+    expect(html).toContain('<div class="items-center gap-1 max-lg:flex lg:hidden">');
     // Home and Sign in stay server markup, so focus on them survives the shell's mount.
     const chrome = withoutIslands(html).match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
     expect(chrome).toContain('href="/"');
@@ -384,20 +385,19 @@ describe("Cloud layouts SSR", () => {
     }
     // The header remains for phones only, and it never carries breadcrumbs or an avatar.
     expect(html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1]).toContain("md:hidden");
-    expect(html).not.toContain("hidden min-w-0 items-center lg:flex");
+    expect(html).not.toContain("min-w-0 items-center max-lg:hidden lg:flex");
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
-    expect(html).toContain('class="layout-rail hidden w-14 shrink-0 flex-col md:flex"');
-    // Home stays in the rail; phones get Home and the person's apps in the bar, as server markup outside the shell's
-    // islands, so focus on it survives their mount.
+    expect(html).toContain('class="layout-rail w-14 shrink-0 flex-col max-md:hidden md:flex"');
+    // Home stays in the rail. Phones have no bottom dock: their title row holds search, help and the app menu, which
+    // leads with Start, and no panel button; help opens the panel there.
     const chrome = withoutIslands(html);
     expect(chrome).toMatch(/<aside class="layout-rail[^"]*"><div class="layout-rail-logo[^"]*"><a href="\/" aria-label="Home">/);
-    expect(chrome.match(/<header[\s\S]*?<\/header>/)?.[0]).not.toContain('href="/"');
-    const bar = chrome.slice(chrome.indexOf('class="cloud-tab-bar"'));
-    expect(bar).toContain('href="/"');
-    expect(bar).toContain('data-tab="home"');
-    const start = bar.match(/<a href="\/"[^>]*>([\s\S]*?)<\/a>/)?.[1];
-    expect(start).toContain('<span class="k2b-truncate-fade">Home</span>');
-    for (const app of badgeApps) expect(bar).toContain(`href="${app.nav.href}"`);
+    const header = html.match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
+    expect(withoutIslands(header)).not.toContain('href="/"');
+    expect(html).not.toContain("cloud-tab-bar");
+    expect(header).toContain('aria-label="Open help"');
+    expect(header).toContain('aria-label="Open apps"');
+    expect(header).not.toContain("data-cloud-panel-toggle");
     // The page trail travels as JSON that cannot end its script element or carry markup.
     const source = html.match(/<script type="application\/json" data-k2b-page-trail>([^<]*)<\/script>/)?.[1] ?? "";
     expect(source).toContain("\\u003cnotes>");
@@ -645,7 +645,8 @@ test("page swap replaces only the content column and its page data", async () =>
       // Not a keyed region: nav keeps keyed regions across pushes, and a new page starts at the top as after a load.
       expect(column.querySelector("main")?.getAttribute("data-scroll-preserve")).toBe("cloud-main");
       expect(column.querySelector("main")?.getAttribute("data-scroll-page")).toBe("");
-      for (const selector of ["#cloud-panel", ".layout-rail", ".cloud-tab-bar", ".cloud-shell-reveal"]) {
+      expect(canvas.querySelector(".cloud-tab-bar")).toBeNull();
+      for (const selector of ["#cloud-panel", ".layout-rail", ".cloud-shell-reveal"]) {
         expect(canvas.querySelector(selector)).not.toBeNull();
         expect(column.querySelector(selector)).toBeNull();
       }

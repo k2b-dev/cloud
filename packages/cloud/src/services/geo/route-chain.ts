@@ -44,7 +44,7 @@ export const runGeoRouteChain = async <T>(
   const { ledger, bucket, cache, now } = dependencies;
   const { accessSubject } = geoIdentity(context);
   context.signal?.throwIfAborted();
-  const maximumCredits = Math.min(config.personDailyCredits, config.monthlyCredits);
+  const maximumCredits = config.monthlyCredits;
   if (reserveCost > maximumCredits * 1000) limitExceeded("reservationCredits", maximumCredits, reserveCost / 1000);
   let reservation: Awaited<ReturnType<typeof ledger.reserve>>;
   try {

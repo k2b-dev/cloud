@@ -101,6 +101,7 @@ const startIdleListener = (options: {
     closedAt: [] as number[],
     health: [] as { state: string; error?: unknown }[],
     reachable: [] as string[],
+    folderSyncs: 0,
   };
   let releaseIterator: ((value: IteratorResult<ConnectorChangeHint>) => void) | null = null;
   const task = runImapPushBinding(
@@ -135,7 +136,9 @@ const startIdleListener = (options: {
           },
         };
       },
-      enqueueFolder: async () => undefined,
+      enqueueFolder: async () => {
+        events.folderSyncs += 1;
+      },
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
@@ -722,6 +725,40 @@ describe("IMAP push lease renewal", () => {
       expect(await listener.task).toEqual({ error: null });
     }));
 
+  test("a connected IDLE listener checks its folder once a minute besides its hints", () =>
+    withFakeTimers(async () => {
+      const listener = startIdleListener({ leader: new FakeMutex() });
+      await listener.listening;
+      await settle();
+      expect(listener.events.folderSyncs).toBe(1);
+
+      // The scheduled sync leaves the folder to its listener: one check a minute, not two.
+      await advance(5 * 60_000);
+      expect(listener.events.folderSyncs).toBe(6);
+      expect(listener.events.closedAt).toEqual([]);
+
+      listener.controller.abort(new Error("test shutdown"));
+      expect(await listener.task).toEqual({ error: null });
+    }));
+
+  test("a quiet listener writes its unchanged health at most once a minute", () =>
+    withFakeTimers(async () => {
+      const listener = startIdleListener({ leader: new FakeMutex() });
+      await listener.listening;
+      await settle();
+      const before = listener.events.health.length;
+
+      // Lease renewals run every 20 seconds; the unchanged state is written once a minute.
+      await advance(5 * 60_000);
+      const writes = listener.events.health.slice(before);
+      expect(writes.length).toBeGreaterThanOrEqual(4);
+      expect(writes.length).toBeLessThanOrEqual(5);
+      expect(writes.every((patch) => patch.state === "listening")).toBe(true);
+
+      listener.controller.abort(new Error("test shutdown"));
+      expect(await listener.task).toEqual({ error: null });
+    }));
+
   test("keeps the listener up through one renewal the lease store did not answer", () =>
     withFakeTimers(async () => {
       const leader = new ScriptedMutex();
@@ -822,7 +859,7 @@ describe("IMAP push lease renewal", () => {
       const callsBefore = leader.extendCalls;
 
       await advance(80_000);
-      // One renewal per heartbeat interval plus the fallback reconciliation checks.
+      // One renewal per heartbeat interval plus the folder check.
       expect(leader.extendCalls).toBeGreaterThanOrEqual(callsBefore + 4);
       expect(listener.events.closedAt).toEqual([]);
 

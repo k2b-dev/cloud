@@ -186,6 +186,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   let focusIndex = -1;
   let fresh: HTMLElement[] = [];
   let restoring = false;
+  let restoreVersion = 0;
   let restoreAgain = false;
   let pendingAnnouncement: T[] = [];
   let announceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -268,20 +269,20 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
    * not: rows moved down would show empty space above the first item, and rows moved up would put the first items
    * out of the scroll range's reach. The margin is the overscan, so the write lands before the engine draws there.
    */
-  const mayDefer = (top: number) => deferring() && Math.min(viewport.scrollTop, top) > OVERSCAN;
+  const mayDefer = (top: number, physicalTop?: number) => deferring() && Math.min(physicalTop ?? viewport.scrollTop, top) > OVERSCAN;
   /** Scrolls to `target`, within what the layout can reach, and returns the position the reader gets. */
-  const writeTop = (target: number, immediate: boolean) => {
-    const next = Math.min(Math.max(0, total() - viewport.clientHeight), Math.max(0, target));
-    if (!immediate && mayDefer(next)) {
+  const writeTop = (target: number, immediate: boolean, height: number) => {
+    const next = Math.min(Math.max(0, total() - height), Math.max(0, target));
+    const from = viewport.scrollTop;
+    if (!immediate && mayDefer(next, from)) {
       // The rows move instead; the scroll range stays the same, so the engine clamps nothing.
-      lastTop = viewport.scrollTop;
+      lastTop = from;
       deferred = next - lastTop;
       feed.style.height = `${total() - deferred}px`;
       return next;
     }
     deferred = 0;
     feed.style.height = `${total()}px`;
-    const from = viewport.scrollTop;
     if (Math.abs(from - next) > 0.5) viewport.scrollTop = next;
     lastTop = viewport.scrollTop;
     if (Math.abs(lastTop - from) > 0.5) owedUntil = performance.now() + END_WAIT_MS;
@@ -289,10 +290,10 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   };
 
   let visibleKeys: { first: string; last: string } | null | undefined;
-  const reportVisible = () => {
+  const reportVisible = (top?: number, height?: number) => {
     if (!props.onVisibleChange) return;
-    const top = logicalTop();
-    const bottom = top + viewport.clientHeight;
+    top ??= logicalTop();
+    const bottom = top + (height ?? viewport.clientHeight);
     let first = -1;
     let last = -1;
     if (bottom > top && hi > lo)
@@ -311,9 +312,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     props.onVisibleChange(first < 0 ? null : { first: list[first]!, last: list[last]! });
   };
 
-  const updateRange = () => {
-    const top = logicalTop();
-    const height = viewport.clientHeight;
+  const updateRange = (top = logicalTop(), height = viewport.clientHeight) => {
     const indices: number[] = [];
     if (hi > lo) {
       const start = indexAt(top - OVERSCAN);
@@ -327,7 +326,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     renderRows(indices);
     setTabStop(focusIndex >= lo && focusIndex < hi ? focusIndex : hi > lo ? indexAt(top + height - 1) : -1);
     // Newly mounted rows still have estimates; report only after their heights are measured.
-    if (!restoring && !fresh.some((node) => node.isConnected)) reportVisible();
+    if (!restoring && !fresh.some((node) => node.isConnected)) reportVisible(top, height);
   };
 
   const measure = (measured: ReadonlyArray<readonly [HTMLElement, number]>) => {
@@ -452,6 +451,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       return;
     }
     restoring = true;
+    const restored = ++restoreVersion;
+    const height = viewport.clientHeight;
     let target = 0;
     let top = 0;
     // Following the end shows the end of all items from now on, so later moves are judged against it.
@@ -461,9 +462,10 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         restoreAgain = false;
         recompute();
         target = stick ? total() : offsetOf(anchor.index) - anchor.delta;
-        top = writeTop(target, immediate);
-        updateRange();
-        setVersion((value) => value + 1);
+        top = Math.min(Math.max(0, total() - height), Math.max(0, target));
+        // Row heights do not depend on their translation or the feed's scroll position. Mount and measure the
+        // logical range first; writing the final geometry once avoids a layout flush on every correction pass.
+        updateRange(top, height);
         if (pass === MEASURE_PASSES) break;
         // Rows mounted here reach the ResizeObserver only next frame (its loop limit), so measure them now.
         const mounted = fresh.filter((node) => node.isConnected);
@@ -471,14 +473,17 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         if (measure(mounted.map((node) => [node, node.getBoundingClientRect().height] as const))) restoreAgain = true;
         if (!restoreAgain) break;
       }
+      top = writeTop(target, immediate, height);
+      setVersion((value) => value + 1);
       // A position the layout cannot reach, above its start or past its end, becomes the one the reader sees, so a
       // page that loads there later keeps it instead of moving to it.
       if (!stick && Math.abs(top - target) > 0.5) anchor = { index: anchor.index, delta: offsetOf(anchor.index) - top };
     } finally {
       restoring = false;
     }
-    checkEdges();
-    reportVisible();
+    checkEdges(lastTop + deferred, height);
+    // A synchronous edge load can restore another window; that restore already reports its final geometry.
+    if (restored === restoreVersion) reportVisible(lastTop + deferred, height);
   };
 
   /**
@@ -657,10 +662,10 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   };
 
   /** Grows the window or asks for more items when the reader nears an edge. */
-  const checkEdges = () => {
+  const checkEdges = (top?: number, height?: number) => {
     if (hi <= lo || restoring) return;
-    const top = logicalTop();
-    const height = viewport.clientHeight;
+    top ??= logicalTop();
+    height ??= viewport.clientHeight;
     // Rows measured taller than estimated can grow the window past the cap without any edge moving.
     if (total() > MAX_WINDOW && trimWindow(top + height / 2 > total() / 2 ? "start" : "end")) {
       restore(true);

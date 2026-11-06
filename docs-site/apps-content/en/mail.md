@@ -15,7 +15,7 @@ It keeps portable mail state synchronized with the provider while adding team
 context such as assignments, comments, local tags, reminders, and follow-up state.
 
 The sidebar lists **Focus** and your mailboxes, with pinned mailboxes first.
-The open mailbox expands to Inbox, Drafts, Scheduled, Send problems, Sent,
+The open mailbox expands to Inbox, Drafts, Outbox, Send problems, Sent,
 Archive/Trash/Junk under **More**, and custom folders. In the sidebar, the open
 mailbox and its folders share a quiet teal surface. Other mailboxes stay readable
 and clickable with less emphasis. On a phone, open the mailbox title to reach
@@ -28,7 +28,7 @@ The head contains view tabs (**All**, **Needs action**, **Assigned to me**,
 views) and a **Search** chip for an active structured search. The **Tag** icon
 next to **Search** filters by a local tag; its tooltip
 names the selected tag. Open it to change or clear that choice.
-Remove the **Search** chip or use **Reset** to clear filters. Folders, Scheduled, and
+Remove the **Search** chip or use **Reset** to clear filters. Folders, Outbox, and
 Send problems have no view tabs. Use the magnifier or press `/` to search:
 the input replaces the views, with field and place options beside it (below it
 on a phone). Text searches the whole mailbox by default; **Place** can restrict
@@ -41,10 +41,17 @@ the head. Selection replaces the views with its count and labeled actions;
 for conversations or individual messages, plus details, tools, and Settings
 according to your access.
 
-Drafts and Scheduled show their count in the workspace head. Draft rows lead
-with the subject, followed by recipients and a preview, with the edit time and
-person who started the draft. Members with write access can open a draft to
-continue it; readers can view the list.
+Drafts and Outbox show their count in the workspace head. Outbox also shows its
+count in the sidebar. It includes immediate sends in the waiting queue after
+their undo window and sends scheduled for later. Sends stay out while Undo or its
+dispatch grace is still running. Counts and rows follow your current
+conversation access and refresh as sends complete, without reloading the page.
+Open Outbox to inspect or cancel a waiting send; cancellation is refused once
+processing has begun.
+
+Draft rows lead with the subject, followed by recipients and a preview, with
+the edit time and person who started the draft. Members with write access can
+open a draft to continue it; readers can view the list.
 
 Assignee filters in search and saved-view summaries read **Assigned to a
 specific person**. Open the search editor to change the selected
@@ -826,6 +833,9 @@ send-safety review and approval.
 
 ## Check failed synchronization
 
+For delayed message content, see [Diagnose delayed Mail content](/en/docs/operations/mail-body-hydration)
+to distinguish hydration queue wait, provider contention, and delayed discovery.
+
 When the provider limits requests, Mail retries unconfirmed flag changes and
 incomplete message downloads. Read state, flags, and labels are not skipped,
 and a partial body is not marked complete. A provider that reports a larger
@@ -888,6 +898,13 @@ mailbox that match. When at least one in ten of the newest messages match, searc
 checks the mailbox from the newest message on until those 1,000 are found;
 otherwise it reads the matches through the search index. Add a more specific
 word, or choose **Newest first**, to reach older matches.
+
+Cloud search and the `search` capability list every matching message, newest
+first, from every mailbox the person may read (up to 200, most recently active
+first). Each result names its sender below the subject, the mailbox too when
+results come from several mailboxes, and shows the date. Its details add the
+recipients, folder, mailbox and number of attachments, and it opens that
+message.
 
 Cloud search and the `search` capability search up to four mailboxes at a time.
 Each mailbox has three seconds, and the whole search has six. A mailbox's search

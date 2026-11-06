@@ -67,7 +67,6 @@ const item = (index: number, overrides: Partial<MailListItem> = {}): MailListIte
   unread: index % 3 === 0,
   activeFolderIds: [],
   flagged: false,
-  hasAttachments: false,
   messageCount: 1,
   workStatus: "needs_action",
   assigneeUserIds: [],
@@ -86,7 +85,7 @@ const items: MailListItem[] = [
     participantLabels: ["Mara Example", "Jonas Sample"],
     assigneeUserIds: ["user-jonas"],
     messageCount: 5,
-    hasAttachments: true,
+    attachmentCount: 2,
     localTags: [tag("Event", "#8b5cf6"), tag("Offer", "#f59e0b"), tag("Accounting", "#0ea5e9"), tag("Members", "#10b981")],
   }),
   item(1, { subject: "Question about invoice 2026-0418", participantLabels: ["Paul Probe"], workStatus: "waiting" }),
@@ -1294,78 +1293,6 @@ describe("Mail row actions", () => {
   }
 });
 
-describe("Mail row right-click menu", () => {
-  const trigger = (id: string) => `${row(id)} .k2b-progressive-action button[aria-haspopup]`;
-  /** The entries of the open right-click menu, or null without one. The menu renders within the event that opens it. */
-  const contextItems = async (page: Page) => {
-    const menu = page.locator(".k2b-context-menu");
-    return (await menu.count()) ? (await menu.getByRole("menuitem").allTextContents()).map((item) => item.trim()) : null;
-  };
-  const title = (page: Page, id: string) => page.locator(linkOf(id)).getAttribute("title");
-  /** A closed menu gives Cv0002 its tooltip back once the menu reports that it closed. */
-  const tooltipBack = (page: Page) =>
-    page.waitForFunction(
-      (selector) => document.querySelector(selector)?.getAttribute("title") === "Person 2: Room booking 2",
-      linkOf("Cv0002"),
-    );
-  /** The "…" menu's entries, read once while it is open, with the row's tooltip at that moment. */
-  const dotsMenu = async (page: Page, id: string) => {
-    await pointAt(page, row(id));
-    await page.click(trigger(id));
-    await page.locator(`${row(id)} .k2b-dropdown__menu:popover-open`).waitFor();
-    const items = (await page.locator(`${row(id)} .k2b-dropdown__menu [role="menuitem"]`).allTextContents()).map((item) => item.trim());
-    const tooltip = await title(page, id);
-    await page.keyboard.press("Escape");
-    await page.waitForFunction((selector) => document.querySelector(selector)?.getAttribute("aria-expanded") !== "true", trigger(id));
-    return { items, tooltip };
-  };
-
-  test("right-click and Shift+F10 open the row's own menu, and no native tooltip covers either menu", async () => {
-    const page = await load();
-    await page.locator(row("Cv0002")).waitFor();
-    const dots = await dotsMenu(page, "Cv0002");
-    expect(dots.items).toContain("Archive");
-    expect(dots.tooltip).toBeNull();
-    await tooltipBack(page);
-
-    await page.locator(linkOf("Cv0002")).click({ button: "right" });
-    expect(await contextItems(page)).toEqual(dots.items);
-    expect(await title(page, "Cv0002")).toBeNull();
-    expect(await page.locator(`${row("Cv0002")}[data-context-menu-open]`).count()).toBe(1);
-    await page.keyboard.press("Escape");
-    await page.locator(".k2b-context-menu").waitFor({ state: "detached" });
-    await tooltipBack(page);
-
-    await page.locator(linkOf("Cv0002")).focus();
-    await page.keyboard.press("Shift+F10");
-    expect(await contextItems(page)).toEqual(dots.items);
-    expect(await page.evaluate(() => document.activeElement?.closest(".k2b-context-menu") !== null)).toBe(true);
-    await page.keyboard.press("Escape");
-    await page.locator(".k2b-context-menu").waitFor({ state: "detached" });
-    expect(await page.evaluate(() => document.activeElement?.closest(".mail-list-entry")?.getAttribute("data-conversation-id"))).toBe(
-      "Cv0002",
-    );
-    expect(page.errors).toEqual([]);
-    await close(page);
-  }, 30_000);
-
-  test("the right-click menu matches each row's state, and selection mode leaves the browser its menu", async () => {
-    const page = await load();
-    await page.locator(row("Cv0003")).waitFor();
-    // Cv0003 is unread, Cv0002 read: their first entries differ as in their "…" menus.
-    const unread = await dotsMenu(page, "Cv0003");
-    await page.locator(linkOf("Cv0003")).click({ button: "right" });
-    expect(await contextItems(page)).toEqual(unread.items);
-    await page.keyboard.press("Escape");
-    await close(page);
-
-    const selecting = await load({ selectionMode: true });
-    await selecting.locator(linkOf("Cv0002")).click({ button: "right" });
-    expect(await contextItems(selecting)).toBeNull();
-    await close(selecting);
-  }, 30_000);
-});
-
 describe("Mail columns view time column", () => {
   /** The page renders shortly after NOW; each time is the longest of its kind in German or English. */
   const longest = (unread: boolean): MailListItem[] => [
@@ -1850,7 +1777,7 @@ describe("scoped flag search builder", () => {
               await trigger.press("Enter");
               await currentPage.locator('input[name="q"]').waitFor({ state: "visible" });
             }
-            await currentPage.getByRole("button", { name: "Search filters", exact: true }).click();
+            await currentPage.getByRole("button", { name: "More filters", exact: true }).click();
             await currentPage.getByRole("dialog").waitFor({ state: "visible" });
           };
           await openBuilder(currentPage);
@@ -1921,7 +1848,7 @@ test("scoped flag folder lookup recovers without losing the filter", async () =>
     );
     if (await page.getByRole("button", { name: "Search (/)", exact: true }).count())
       await page.getByRole("button", { name: "Search (/)", exact: true }).click();
-    await page.getByRole("button", { name: "Search filters", exact: true }).click();
+    await page.getByRole("button", { name: "More filters", exact: true }).click();
     await page.getByRole("alert").waitFor({ state: "visible" });
     expect(await page.getByRole("combobox", { name: "Folder", exact: true }).isDisabled()).toBe(true);
     fail = false;

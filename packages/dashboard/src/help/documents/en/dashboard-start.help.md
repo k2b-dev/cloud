@@ -32,5 +32,5 @@ Dashboard is your personal start page and overview across Cloud. It shows widget
 :::
 
 :::info Settings scope
-Dashboard settings require a session of a person, not of a service account. They are stored with your account and apply on every device where you sign in.
+Dashboard settings require a session of a person, not of an agent or service account. They are stored with your account and apply on every device where you sign in.
 :::

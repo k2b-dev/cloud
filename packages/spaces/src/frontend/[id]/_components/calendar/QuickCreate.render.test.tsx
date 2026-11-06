@@ -15,7 +15,7 @@ afterEach(() => setSystemTime());
 
 const { default: QuickCreate, quickCreateDefaults } = await import("./QuickCreate");
 
-test("QuickCreate renders shared Enter and Escape caps inside its decorative hint", () => {
+test("QuickCreate offers Template in its footer at a fixed width and reserves the template's line", () => {
   const html = renderToString(() =>
     createComponent(QuickCreate, {
       spaceId: "Space1",
@@ -23,14 +23,32 @@ test("QuickCreate renders shared Enter and Escape caps inside its decorative hin
       kind: "event",
       defaults: {},
       columnId: "Column1",
+      templates: [],
+      onCreateTemplate() {},
       onCreated() {},
       onMoreOptions() {},
     }),
   );
-  expect(html.match(/class="k2b-kbd"/g)).toHaveLength(2);
-  expect(html).toContain('<kbd class="k2b-kbd__key">↵</kbd>');
-  expect(html).toContain('<kbd class="k2b-kbd__key">Esc</kbd>');
-  expect(html).toMatch(/<span[^>]+aria-hidden="true"[^>]*>.*k2b-kbd/s);
+  // The footer's first control opens the templates; it keeps one width whatever it names.
+  expect(html).toMatch(/<button[^>]*aria-haspopup="menu"[^>]*class="[^"]*w-\[9\.5rem\]/);
+  expect(html).toContain("Template");
+  // The line that names what a template adds is there before any template is chosen, so choosing one moves nothing.
+  expect(html).toMatch(/<p[^>]*min-h-\[1\.125rem\][^>]*data-spaces-quick-create-from/);
+});
+
+test("QuickCreate without templates or the right to make them shows no Template button", () => {
+  const html = renderToString(() =>
+    createComponent(QuickCreate, {
+      spaceId: "Space1",
+      days: { first: "2026-10-14", last: "2026-10-14" },
+      kind: "task",
+      defaults: {},
+      columnId: "Column1",
+      onCreated() {},
+      onMoreOptions() {},
+    }),
+  );
+  expect(html).not.toContain('aria-haspopup="menu"');
 });
 
 test("quick create uses the last selected date without a slot, and the slot instant with a slot", () => {

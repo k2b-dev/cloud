@@ -1,9 +1,9 @@
 import { afterEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { CalendarEventsDataSchema, CalendarListDataSchema, type CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { accounts, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import "../../../../scripts/fixtures/authorization-preload";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import spacesApi from "../api";

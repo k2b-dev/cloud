@@ -39,6 +39,10 @@ export const getLocalConfigPaths = (home = homedir()) => {
   return { configDirectory, configFile };
 };
 
+/** Where `cld acp` remembers which chat each editor session uses. */
+export const getAcpSessionStateDirectory = (home = homedir()): string =>
+  resolve(process.env.XDG_STATE_HOME || join(home, ".local", "state"), "cloud", "cld", "acp-sessions");
+
 /** Classify local access by the real target, including symlinks and future files. */
 export const classifyLocalPath = (path: string, options: { workspace: string; home?: string }): LocalPathAccess => {
   const home = realPath(resolve(options.home ?? homedir()));

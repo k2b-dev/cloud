@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import type { AccessSubject } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { buildSpacePrincipalCondition } from "./access";
 
 type SqlExecutor = typeof sql;

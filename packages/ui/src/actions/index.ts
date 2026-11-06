@@ -11,10 +11,13 @@ export { activeDrag, DragSource, DropTarget, useKeyboardDrag } from "./DragAndDr
 export type {
   DropdownAction,
   DropdownActionBase,
+  DropdownAnchor,
   DropdownChoice,
   DropdownItemProps,
   DropdownPosition,
   DropdownProps,
+  DropdownReturnFocus,
+  DropdownSearch,
   DropdownSection,
   DropdownTriggerProps,
 } from "./Dropdown";
@@ -23,8 +26,6 @@ export type { FilterChipOption, FilterChipProps, FilterChipSection, FilterToggle
 export { FilterChip, FilterToggle } from "./FilterChip";
 export type { GestureKind, GestureMenuAction, GestureMenuItem, GestureMenuProps, GestureMenuSection } from "./GestureMenu";
 export { GestureMenu } from "./GestureMenu";
-export type { ListContextMenuProps } from "./ListContextMenu";
-export { ListContextMenu } from "./ListContextMenu";
 export type { RemoveButtonProps } from "./RemoveButton";
 export { RemoveButton } from "./RemoveButton";
 export type { SegmentedControlProps, SegmentOption } from "./SegmentedControl";

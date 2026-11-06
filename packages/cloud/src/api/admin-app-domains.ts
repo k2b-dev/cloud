@@ -22,7 +22,7 @@ export const createAdminAppDomainRoutes = (
     .use("/:appId/domains/*", authenticate)
     .use("/:appId/domains/*", async (c, next) => {
       c.header("Cache-Control", "no-store");
-      if (c.req.method !== "GET") return auth.requireOAuthScope("admin")(c, next);
+      if (c.req.method !== "GET") return auth.requireOAuthScope("write", "admin")(c, next);
       return next();
     })
     .get("/:appId/domains", describe("List assigned domains and their last check"), v("param", appParams), (c) =>

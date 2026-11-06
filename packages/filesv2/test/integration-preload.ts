@@ -1,14 +1,12 @@
 import { afterAll } from "bun:test";
-import { sql } from "bun";
 import { createDisposableDatabase, initializeTestPlatform, ownTestDatabase, testInfra } from "../../../scripts/fixtures/test-infra";
 import { closePlatformClients } from "../../cloud/src/runtime/clients";
 
 /**
  * Filesv2 integration suites create stand-in `auth`/`settings`/`audit` tables
  * and truncate them, which is only safe in a database nobody else uses. The
- * default `sql` binds to `DATABASE_URL` on first use and Cloud modules use it
- * at import time, so the private database is claimed here, before any test
- * module loads. Run the suites with `bun test --isolate` so each file gets
+ * platform `sql` handle is rebound here after selecting the private database,
+ * before any test module loads. Run the suites with `bun test --isolate` so each file gets
  * its own fresh database.
  */
 if (testInfra.database) {
@@ -19,7 +17,6 @@ if (testInfra.database) {
   await initializeTestPlatform("filesv2");
   afterAll(async () => {
     await closePlatformClients();
-    await sql.close().catch(() => undefined);
     await database.drop();
   });
   // Real effects also record audit and logging data in this isolated database.

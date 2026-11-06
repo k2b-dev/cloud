@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import type { SQL } from "bun";
 
 const targets = {
   "audit.events": { column: "metadata", timestamp: "created_at", id: "bigint" },

@@ -82,7 +82,7 @@ store for one credential per user, connection, or resource.
 Keep searchable metadata in normal columns and encrypt only the secret value:
 
 ```ts
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { secrets } from "@k2b/cloud/services";
 
 const encrypted = await secrets.encrypt({
@@ -134,7 +134,7 @@ For example, the owner writes a credential and a reader reports missing or
 unreadable credentials as an explicit state:
 
 ```ts
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { secrets } from "@k2b/cloud/services";
 
 // Owner application, after its migration created the table.

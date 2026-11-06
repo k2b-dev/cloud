@@ -8,8 +8,8 @@ import { defaultRailPreferences } from "@k2b/cloud/contracts/rail-preferences";
 import * as server from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { railPreferences } from "@k2b/cloud/services/rail-preferences";
-import * as cloudSsr from "@k2b/cloud/ssr";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
+import { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
 import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
@@ -24,6 +24,7 @@ import { launchBrowser } from "../../../../ui/test/browser";
 const root = mkdtempSync(join(tmpdir(), "core-account-pages-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
+const cloudSsr = await import("@k2b/cloud/ssr");
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 // Core's canvas paint. The tests render the pages in a stand-in for the page shell without
@@ -96,19 +97,27 @@ let freeIpaEnabled = false;
 let requestsEnabled = false;
 
 const spies: Array<{ mockRestore(): void }> = [];
+/** The title array the page last gave the shell's layout. */
+let layoutTitle: Parameters<typeof derivePageTrail>[0];
 beforeEach(() => {
   setSystemTime(new Date(now));
   user = localUser;
   freeIpaEnabled = false;
   requestsEnabled = false;
   spies.push(
-    spyOn(cloudSsr, "Layout").mockImplementation(((props: { c: Parameters<typeof server.getLocale>[0]; children: JSX.Element }) =>
-      createComponent(LocaleProvider, {
+    spyOn(cloudSsr, "Layout").mockImplementation(((props: {
+      c: Parameters<typeof server.getLocale>[0];
+      title?: Parameters<typeof derivePageTrail>[0];
+      children: JSX.Element;
+    }) => {
+      layoutTitle = props.title;
+      return createComponent(LocaleProvider, {
         locale: server.getLocale(props.c),
         get children() {
           return props.children;
         },
-      })) as never),
+      });
+    }) as never),
     spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
     spyOn(services.coreSettings, "get").mockImplementation(
       async (key) =>
@@ -314,10 +323,14 @@ const measure = async (view: View, path: Path, locale: "en" | "de", dark = false
       const nav = main.querySelector("nav")!;
       const panel = main.querySelector(".account-page")!;
       const visible = (value: string) => value !== "none" && !/rgba\(.*,\s*0\)$/.test(value) && value !== "transparent";
-      // Every block that paints a border or a shadow: a frame. Controls, tags, table cells and
-      // the notices' forced-colours border are content, not frames.
+      // Every block that paints a border or a shadow: a frame. Controls and their field edge, tags,
+      // table cells and the notices' forced-colours border are content, not frames.
       const frames = Array.from(main.querySelectorAll<HTMLElement>("section, article, div, ul, header, nav"))
-        .filter((element) => element.checkVisibility() && !element.closest("button, a, table, .tag, .k2b-input-shell, .k2b-notice-card"))
+        .filter(
+          (element) =>
+            element.checkVisibility() &&
+            !element.closest("button, a, table, .tag, .k2b-input-shell, .k2b-multi-select-trigger, .k2b-notice-card"),
+        )
         .filter((element) => {
           const style = getComputedStyle(element);
           const border = Number.parseFloat(style.borderTopWidth) > 0 && style.borderTopStyle !== "none" && visible(style.borderTopColor);
@@ -339,13 +352,19 @@ const measure = async (view: View, path: Path, locale: "en" | "de", dark = false
           const style = getComputedStyle(section);
           return `${style.borderTopWidth} ${style.backgroundColor}`;
         }),
-        // How far each section's first content sits below its header, and whether its actions stay inside the panel.
-        sectionSpacing: Array.from(panel.querySelectorAll<HTMLElement>(".k2b-settings-section")).flatMap((section) => {
+        // How far each section's first content sits below its header, or below the section's top where the header
+        // stands in its own column beside the content, and whether its actions stay inside the panel.
+        sectionSpacing: Array.from(panel.querySelectorAll<HTMLElement>(".k2b-settings-section")).flatMap((section): (number | string)[] => {
           const header = section.querySelector(".k2b-settings-section__header")!.getBoundingClientRect();
+          const body = section.querySelector(".k2b-settings-section__body")!.getBoundingClientRect();
           const first = Array.from(section.querySelectorAll<HTMLElement>(".k2b-settings-section__body *")).find(
             (element) => element.checkVisibility() && element.getBoundingClientRect().height > 0,
           );
-          return first ? [Math.round(first.getBoundingClientRect().top - header.bottom)] : [];
+          if (!first) return [];
+          const top = first.getBoundingClientRect().top;
+          return header.right <= body.left
+            ? [`beside ${Math.round(top - section.getBoundingClientRect().top)}`]
+            : [Math.round(top - header.bottom)];
         }),
         actionsPastPanel: Math.max(
           0,
@@ -388,7 +407,7 @@ describe("account pages in a browser", () => {
     expect(inherited).toContain('href="/me/access"');
   });
 
-  test("mark the current account section with Core's navigation fill and ink, in light and dark", async () => {
+  test("mark the current account section with the selected edge and fill in Core's ink, in light and dark", async () => {
     for (const dark of [false, true])
       for (const path of tabs) {
         const tab = await open(desktop, path, "en", dark);
@@ -399,13 +418,18 @@ describe("account pages in a browser", () => {
             const canvas = document.querySelector(".cloud-app-canvas")!;
             const probe = document.createElement("span");
             probe.style.cssText =
-              "position:absolute;visibility:hidden;background:var(--ui-app-selected-nav);color:var(--ui-app-accent-text)";
+              "position:absolute;visibility:hidden;background:color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));color:var(--ui-app-accent-text)";
             canvas.append(probe);
             const appFill = getComputedStyle(probe).backgroundColor;
             const appInk = getComputedStyle(probe).color;
             probe.style.background = "var(--ui-selected)";
             const platformFill = getComputedStyle(probe).backgroundColor;
+            probe.style.background = "var(--k2b-tray)";
+            const tray = getComputedStyle(probe).backgroundColor;
             probe.remove();
+            // The notification views are a segment: a grey track, the current view the selected thumb without a shadow.
+            const segment = canvas.querySelector(".account-tabs--segment");
+            const thumb = segment?.querySelector('[aria-current="page"]');
             const current = canvas.querySelector('.account-tabs [aria-current="page"]')!;
             return {
               href: current.getAttribute("href"),
@@ -414,6 +438,14 @@ describe("account pages in a browser", () => {
               appFill,
               appInk,
               platformFill,
+              segment: segment
+                ? {
+                    track: getComputedStyle(segment).backgroundColor,
+                    tray,
+                    thumb: thumb ? getComputedStyle(thumb).backgroundColor : null,
+                    shadow: thumb ? getComputedStyle(thumb).boxShadow : null,
+                  }
+                : null,
               otherFills: Array.from(canvas.querySelectorAll('.account-tabs a:not([aria-current="page"])')).map(
                 (link) => getComputedStyle(link).backgroundColor,
               ),
@@ -423,6 +455,11 @@ describe("account pages in a browser", () => {
           expect(colors.fill).toBe(colors.appFill);
           expect(colors.ink).toBe(colors.appInk);
           expect(colors.fill).not.toBe(colors.platformFill);
+          if (path === "/me/notifications") {
+            expect(colors.segment?.track).toBe(colors.segment?.tray);
+            expect(colors.segment?.thumb).toBe(colors.appFill);
+            expect(colors.segment?.shadow?.split(/,(?![^(]*\))/).every((part) => part.includes("inset"))).toBe(true);
+          }
           expect(colors.otherFills.length).toBeGreaterThan(0);
           expect(colors.otherFills.every((fill) => fill === "rgba(0, 0, 0, 0)")).toBe(true);
         } finally {
@@ -471,7 +508,7 @@ describe("account pages in a browser", () => {
     for (const view of [desktop, phone])
       for (const path of Object.keys(pages) as Path[]) {
         const result = await measure(view, path, "en");
-        expect({ path, width: view.width, spacing: result.sectionSpacing.filter((gap) => gap !== 12) }).toEqual({
+        expect({ path, width: view.width, spacing: result.sectionSpacing.filter((gap) => gap !== 8 && gap !== "beside 8") }).toEqual({
           path,
           width: view.width,
           spacing: [],
@@ -620,6 +657,12 @@ describe("account pages in a browser", () => {
     } finally {
       await tab.close();
     }
+  }, 30_000);
+
+  test("the delivery history shows no way up above the account tabs, which lead back to the notification preferences", async () => {
+    const html = await content("/me/notifications/history", "en");
+    expect(derivePageTrail(layoutTitle, "/me", "Cloud", "/me/notifications/history")).toEqual({ title: "Delivery history", ancestors: [] });
+    expect(html).toMatch(/<a [^>]*href="\/me\/notifications"/);
   }, 30_000);
 
   test("warn about the account expiry only when it is close", async () => {

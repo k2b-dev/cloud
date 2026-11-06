@@ -1,0 +1,6 @@
+### Every editor thread grows the cld profile, and every message waits for seven requests
+
+- **What happened:** `cld acp` wrote two profile defaults per editor thread and never removed them, so the cld config grew with every thread, and `session/list` read that config once per listed chat. Each message waited for seven sequential requests, and a slow editor received one update per streamed text delta without any bound on the queue.
+- **Root cause:** The session mapping used per-key profile defaults to avoid lost updates between parallel editors, which made the keys impossible to enumerate and bound. The prompt read the chat twice before and once after the turn, and reloaded Cloud Skills with every message. The update queue was an unbounded promise chain.
+- **Error class:** Unbounded storage growth.
+- **Guard:** `packages/assistant/src/cli/acp.test.ts` "ACP round trips and bounded state" counts the four requests of a message, checks that `session/list` reads no profile default, that the session store keeps its bound and forgets a chat that is gone, and that a slow editor gets coalesced text. `stream.test.ts` "a long streamed reply costs time in proportion to its length" catches a quadratic text path.

@@ -1486,6 +1486,45 @@ exit "$BROWSER_EXIT"
     }
   });
 
+  test("reloadCredentials picks up a login that happened after the command started", async () => {
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    const pluginDir = join(dir, "package-relogin");
+    const write = (token: string, server = "https://cloud.test") =>
+      writeFile(configPath, JSON.stringify({ currentProfile: "default", profiles: { default: { server, token } } }));
+    await packInlinePlugin(
+      pluginDir,
+      `import { writeFile } from "node:fs/promises";
+      export default { name: "relogin", summary: "Log in again", run: async (ctx) => {
+        const before = ctx.options.token;
+        const config = (server) =>
+          JSON.stringify({
+            currentProfile: "other",
+            profiles: { default: { server, token: "fresh" }, other: { server: "https://cloud.test", token: "someone-else" } },
+          });
+        await writeFile(process.env.CLD_CONFIG, config("https://cloud.test"));
+        await ctx.reloadCredentials();
+        const after = ctx.options.token;
+        await writeFile(process.env.CLD_CONFIG, config("https://other.test"));
+        const moved = await ctx.reloadCredentials().then(() => "reloaded", (error) => error.message);
+        ctx.json({ before, after, moved, token: ctx.options.token });
+        return 0;
+      } };`,
+    );
+    await write("stale");
+    const install = await runCli(configPath, ["plugins", "install", pluginDir, "--yes"], { XDG_CONFIG_HOME: dir });
+    expect(install.exitCode, install.stderr).toBe(0);
+    await write("stale");
+    const result = await runCli(configPath, ["plugins", "run", "relogin"], { XDG_CONFIG_HOME: dir });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      before: "stale",
+      after: "fresh",
+      moved: 'Profile "default" now uses https://other.test. Start the command again to use it.',
+      token: "fresh",
+    });
+  });
+
   test("failed fd0 refresh-token persistence revokes the new token and removes the local OAuth session", async () => {
     const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0 };
     const server = startMockServer(state);

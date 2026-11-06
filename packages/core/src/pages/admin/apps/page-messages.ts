@@ -1,6 +1,9 @@
 import { i18n } from "@k2b/stdlib";
+import type { StartRejection } from "./model";
 
 type N = { count: number };
+type StartRejectionReason = StartRejection["reason"];
+type StartRejectionNext = "restart" | "reenable" | "newKey";
 
 export const appsPageMessages = i18n.define({
   baseLocale: "en",
@@ -8,7 +11,6 @@ export const appsPageMessages = i18n.define({
     en: {
       apps: "Apps",
       addApp: "Add app",
-      pick: "Choose an app to see its state, access, keys and events.",
       summary: ({ total, ok, warn, error, idle }: { total: number; ok: number; warn: number; error: number; idle: number }) =>
         [
           i18n.plural(total, "en", { one: "1 app", other: `${total} apps` }),
@@ -20,6 +22,17 @@ export const appsPageMessages = i18n.define({
           .filter(Boolean)
           .join(" · "),
       unchecked: ({ count }: N) => `Error rates not checked for ${count} more apps.`,
+      search: "Search apps",
+      problems: ({ count }: N) => `Problems ${count}`,
+      columnApp: "App",
+      columnStatus: "State",
+      columnVersion: "Version",
+      columnAddress: "Address",
+      columnProblem: "Problem",
+      noMatch: "No app matches the search or filter.",
+      showAllApps: "Show all apps",
+      closeDetail: "Close details",
+      settingsTerm: "Settings",
       statusOk: "Running",
       statusWarn: "Disturbed",
       statusError: "Not running",
@@ -27,14 +40,12 @@ export const appsPageMessages = i18n.define({
       noRoutes: "no routes",
       addedOn: ({ date }: { date: string }) => `added on ${date}`,
       moreHints: ({ count }: N) => `+${count}`,
-      actionsFor: ({ name }: { name: string }) => `Actions for ${name}`,
       open: "Open",
       adminOf: ({ name }: { name: string }) => `${name} administration`,
       logs: "Logs",
       metrics: "Metrics",
       remove: "Remove from list …",
-      removeOff: "Remove from list",
-      removeOnlyStopped: "Only when the app is not running",
+      removeTerm: "Remove",
       removeOffValue: "only when stopped",
       removeOffNever: "after the first start",
       empty: "No apps yet. Apps appear here after their first start. Use “Add app” for an app that never ran.",
@@ -50,7 +61,7 @@ export const appsPageMessages = i18n.define({
       closeHint: "Close hint",
       // Level 2
       groupState: "State",
-      groupOverview: "Overview",
+      groupOverview: "Connections",
       groupMore: "More",
       runtime: "Runtime",
       routes: "Routes",
@@ -107,6 +118,25 @@ export const appsPageMessages = i18n.define({
       hintEnvStartText: ({ name }: { name: string }) =>
         `${name} takes its database, Valkey and NATS from its own environment. With a key, it fetches them from Core when it starts.`,
       hintEnvStartShort: "Still starts with its environment",
+      hintEnvStartKeyText: ({ name }: { name: string }) =>
+        `${name} still takes its database, Valkey and NATS from its own environment although it has a key. Put the key into the deployment; then it fetches them from Core when it starts.`,
+      hintStartRejectedShort: ({ reason }: { reason: StartRejectionReason }) =>
+        `Start refused · ${{ revoked: "key revoked", expired: "key expired", disabled: "background access off", connections_not_permitted: "key may not fetch connections" }[reason]}`,
+      hintStartRejectedLead: ({ name, live }: { name: string; live: boolean }) =>
+        live ? `A start of ${name} was refused.` : `${name} does not start.`,
+      /** Why Core refused the start; `off` says whether background access is still off. */
+      hintStartRejectedText: ({ reason, when, off }: { reason: StartRejectionReason; when: string; off: boolean }) =>
+        reason === "disabled"
+          ? `Core refused the start ${when} because the app's background access ${off ? "is" : "was"} off.`
+          : `Core refused the key ${when} because it ${{ revoked: "was revoked", expired: "has expired", connections_not_permitted: "may not fetch connections" }[reason]}.`,
+      /** What still stands between the app and its next start, as Core sees it now. */
+      hintStartRejectedNext: ({ next }: { next: StartRejectionNext }) =>
+        ({
+          restart: "A valid key exists and background access is on: put the key into the deployment and restart the app.",
+          reenable: "Turn background access on again and restart the app.",
+          newKey: "Create a new key and replace it in the deployment.",
+        })[next],
+      actReenable: "Turn on again",
       hintRotationShort: "Rotation in progress",
       actNewKey: "Create new key",
       docsWhatNow: "What to do? (documentation)",
@@ -159,7 +189,7 @@ export const appsPageMessages = i18n.define({
       fixedRule: ({ rule }: { rule: string }) => `${rule}. The app decides this; there is nothing to set here.`,
       accessAdmin: "You edit access as a Cloud administrator. This does not let you use the app. Every change is logged.",
       accessSub: ({ name }: { name: string }) =>
-        `Only these people, groups and service accounts see ${name} in the start menu, in search and in the Assistant.`,
+        `Only these people, groups, agents and service accounts see ${name} in the start menu, in search and in the Assistant.`,
       // Events
       eventsSub: ({ name }: { name: string }) => `Hears: events of other apps ${name} reacts to. Sends: events ${name} reports.`,
       showAll: ({ count }: N) => `Show all ${count}`,
@@ -238,7 +268,6 @@ export const appsPageMessages = i18n.define({
     de: {
       apps: "Apps",
       addApp: "App hinzufügen",
-      pick: "Wähle eine App, um Zustand, Zugriff, Schlüssel und Ereignisse zu sehen.",
       summary: ({ total, ok, warn, error, idle }: { total: number; ok: number; warn: number; error: number; idle: number }) =>
         [
           total === 1 ? "1 App" : `${total} Apps`,
@@ -250,6 +279,17 @@ export const appsPageMessages = i18n.define({
           .filter(Boolean)
           .join(" · "),
       unchecked: ({ count }: N) => `Fehlerquoten für ${count} weitere Apps nicht geprüft.`,
+      search: "App suchen",
+      problems: ({ count }: N) => `Probleme ${count}`,
+      columnApp: "App",
+      columnStatus: "Zustand",
+      columnVersion: "Version",
+      columnAddress: "Adresse",
+      columnProblem: "Problem",
+      noMatch: "Keine App passt zur Suche oder zum Filter.",
+      showAllApps: "Alle Apps zeigen",
+      closeDetail: "Detail schließen",
+      settingsTerm: "Einstellungen",
       statusOk: "Läuft",
       statusWarn: "Gestört",
       statusError: "Läuft nicht",
@@ -257,14 +297,12 @@ export const appsPageMessages = i18n.define({
       noRoutes: "keine Routen",
       addedOn: ({ date }: { date: string }) => `hinzugefügt am ${date}`,
       moreHints: ({ count }: N) => `+${count}`,
-      actionsFor: ({ name }: { name: string }) => `Aktionen für ${name}`,
       open: "Öffnen",
       adminOf: ({ name }: { name: string }) => `Verwaltung von ${name}`,
       logs: "Protokolle",
       metrics: "Metriken",
       remove: "Aus der Liste entfernen …",
-      removeOff: "Aus der Liste entfernen",
-      removeOnlyStopped: "Nur wenn die App nicht läuft",
+      removeTerm: "Entfernen",
       removeOffValue: "nur wenn gestoppt",
       removeOffNever: "nach dem ersten Start",
       empty: "Noch keine App. Apps erscheinen hier nach ihrem ersten Start. Eine App, die noch nie lief, legst du mit „App hinzufügen“ an.",
@@ -279,7 +317,7 @@ export const appsPageMessages = i18n.define({
       movedCredentials: "App-Zugangsdaten stehen jetzt bei jeder App unter „Schlüssel“ › „Tokens für Host-Betrieb“.",
       closeHint: "Hinweis schließen",
       groupState: "Zustand",
-      groupOverview: "Übersicht",
+      groupOverview: "Verbindungen",
       groupMore: "Weiteres",
       runtime: "Laufzeit",
       routes: "Routen",
@@ -333,6 +371,24 @@ export const appsPageMessages = i18n.define({
       hintEnvStartText: ({ name }: { name: string }) =>
         `${name} holt Datenbank, Valkey und NATS aus der eigenen Env. Mit einem Schlüssel holt die App sie beim Start von Core.`,
       hintEnvStartShort: "Startet noch mit Env",
+      hintEnvStartKeyText: ({ name }: { name: string }) =>
+        `${name} holt Datenbank, Valkey und NATS noch aus der eigenen Env, obwohl es einen Schlüssel gibt. Hinterlege den Schlüssel im Deployment, dann holt die App sie beim Start von Core.`,
+      hintStartRejectedShort: ({ reason }: { reason: StartRejectionReason }) =>
+        `Start abgelehnt · ${{ revoked: "Schlüssel widerrufen", expired: "Schlüssel abgelaufen", disabled: "Hintergrundzugriff aus", connections_not_permitted: "Schlüssel darf keine Verbindungen holen" }[reason]}`,
+      hintStartRejectedLead: ({ name, live }: { name: string; live: boolean }) =>
+        live ? `Ein Start von ${name} wurde abgelehnt.` : `${name} startet nicht.`,
+      hintStartRejectedText: ({ reason, when, off }: { reason: StartRejectionReason; when: string; off: boolean }) =>
+        reason === "disabled"
+          ? `Core hat den Start ${when} abgelehnt, weil der Hintergrundzugriff der App aus ${off ? "ist" : "war"}.`
+          : `Core hat den Schlüssel ${when} beim Start abgelehnt, weil er ${{ revoked: "widerrufen ist", expired: "abgelaufen ist", connections_not_permitted: "keine Verbindungen holen darf" }[reason]}.`,
+      hintStartRejectedNext: ({ next }: { next: StartRejectionNext }) =>
+        ({
+          restart:
+            "Ein gültiger Schlüssel existiert und der Hintergrundzugriff ist an: Hinterlege den Schlüssel im Deployment und starte die App neu.",
+          reenable: "Aktiviere den Hintergrundzugriff wieder und starte die App neu.",
+          newKey: "Erzeuge einen neuen Schlüssel und tausche ihn im Deployment aus.",
+        })[next],
+      actReenable: "Wieder aktivieren",
       hintRotationShort: "Rotation läuft",
       actNewKey: "Neuen Schlüssel erzeugen",
       docsWhatNow: "Was tun? (Fibel)",
@@ -381,7 +437,7 @@ export const appsPageMessages = i18n.define({
       fixedRule: ({ rule }: { rule: string }) => `${rule}. Das legt die App fest; hier gibt es dazu nichts einzustellen.`,
       accessAdmin: "Du bearbeitest den Zugriff als Cloud-Admin. Nutzen kannst du die App damit nicht. Jede Änderung steht im Protokoll.",
       accessSub: ({ name }: { name: string }) =>
-        `Nur diese Personen, Gruppen und Dienstkonten sehen ${name} im Start-Menü, in der Suche und beim Assistenten.`,
+        `Nur diese Personen, Gruppen, Agenten und Dienstkonten sehen ${name} im Start-Menü, in der Suche und beim Assistenten.`,
       eventsSub: ({ name }: { name: string }) =>
         `Hört: Ereignisse anderer Apps, auf die ${name} reagiert. Sendet: Ereignisse, die ${name} meldet.`,
       showAll: ({ count }: N) => `Alle ${count} anzeigen`,

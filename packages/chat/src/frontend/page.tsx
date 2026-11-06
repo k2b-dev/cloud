@@ -1,3 +1,4 @@
+import { getLiveDictationStatus } from "@k2b/cloud/ai";
 import { type AuthContext, getDateConfig, getLocale, getUserBackedActor } from "@k2b/cloud/server";
 import { Layout, PanelLayout } from "@k2b/cloud/ssr";
 import { getCookie } from "hono/cookie";
@@ -54,6 +55,7 @@ export default ssr<AuthContext>(async (c) => {
   });
   if (!preferences.ok) throw new Error("Chat preferences could not be loaded");
   const collapsed = preferences.data.collapsed;
+  const liveDictation = (await getLiveDictationStatus(accessSubject)).available;
   // Without access the page names neither the chat nor whether it exists.
   const title = channelsPage
     ? t.browseChannels
@@ -83,6 +85,7 @@ export default ssr<AuthContext>(async (c) => {
       guest={getUserBackedActor(c)?.profile === "guest"}
       panel={chatId && view.open && c.req.query("panel") === "info" ? "info" : null}
       viewerId={accessSubject.userId}
+      liveDictation={liveDictation}
       dateConfig={getDateConfig(c)}
       now={now.toISOString()}
       deviceNotice={parseDeviceNotice(getCookie(c, CHAT_DEVICE_NOTICE_COOKIE), now)}

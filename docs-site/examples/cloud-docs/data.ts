@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { type AccessSubject, buildAccessPrincipalCondition, err, fail, ok, type RequestActor, type Result } from "@k2b/cloud/server";
 import { escapeLikePattern, isUniqueViolation, requestPublicHttps, secrets, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { createPgOutbox } from "@k2b/cloud/services/outbox";
-import { sql } from "bun";
 
 type InventoryItem = {
   id: string;

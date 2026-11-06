@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { aiSkillLoadTools } from "@k2b/cloud/ai";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { notebooksCapabilities } from "./capabilities";
 import { SKILLS } from "./skills";
 
@@ -42,4 +44,14 @@ test("Notebooks skill keeps safe partial editing and structure guidance", () => 
 
 test("main instructions stay compact", () => {
   expect(SKILLS[0]!.instructions.length).toBeLessThan(5000);
+});
+
+test("Skills load only capabilities the app declares", () => {
+  const manifest = compileCapabilityManifest("notebooks", notebooksCapabilities);
+  const declared = [...manifest.queries, ...manifest.actions].map((operation) => `notebooks.${operation.localId}`);
+  for (const skill of SKILLS) {
+    const names = aiSkillLoadTools(skill.extraFrontmatter);
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) expect(declared).toContain(name);
+  }
 });

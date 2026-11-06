@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, setSystemTime, test } from "bun:test";
 import { appApproval } from "@k2b/cloud/browser/app-approval";
 import { createRoot } from "solid-js";
 import { createDomTestHarness, type DomTestHarness } from "../../../packages/ui/test/dom";
@@ -68,6 +68,8 @@ const pendingCommands: Array<{ operation: string; accept?: string[] }> = [];
 let pendingLogins: Login[] = [];
 let actStatus = 200;
 let dropAct = false;
+/** How the Cloud answers a poll: normally, unreachable, or refusing this device. */
+let polls: "ok" | "down" | "forbidden" = "ok";
 const vault: Vault = {
   header: () => undefined,
   status: () => "open",
@@ -95,6 +97,7 @@ beforeEach(() => {
   pendingLogins = [];
   actStatus = 200;
   dropAct = false;
+  polls = "ok";
   // The Cloud: discovery, then signed device commands. Signatures are the SDK's concern and are not checked here.
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -124,6 +127,8 @@ beforeEach(() => {
       }
       if (command.operation === "pending") {
         pendingCommands.push(command);
+        if (polls === "down") throw new Error("unreachable");
+        if (polls === "forbidden") return new Response(null, { status: 403 });
         return Response.json({ requests: pendingLogins, pollAfterSeconds: 5 });
       }
       if (command.operation === "action") return Response.json(actionView());
@@ -139,6 +144,7 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
+  setSystemTime();
   dispose();
   globalThis.fetch = realFetch;
   dom.cleanup();
@@ -481,3 +487,34 @@ test("an open sign-in stays open with its offline note when the phone loses its 
     stop();
   }
 });
+
+for (const scenario of ["recheck", "other tab", "forbidden"] as const) {
+  test(`a reload after a failed poll: ${scenario}`, async () => {
+    const start = Date.parse("2026-11-03T13:00:00.000Z");
+    setSystemTime(new Date(start));
+    polls = scenario === "forbidden" ? "forbidden" : "down";
+    const { auth, binding } = await paired();
+    // The first poll's answer; the test's timeout bounds the wait.
+    while (!auth.states()[binding.id]) await Bun.sleep(10);
+    expect(auth.states()[binding.id]?.error).toBe(scenario === "forbidden" ? "forbidden" : "unavailable");
+    const failed = pendingCommands.length;
+    const reservation = () => tables.get("operations")?.get(`poll:${binding.id}`);
+    // The failure backed off beyond the poll interval.
+    expect(Number(reservation())).toBeGreaterThan(start + appApproval.limits.pollSeconds * 1000);
+    polls = "ok";
+    if (scenario === "other tab") tables.get("operations")?.set(`poll:${binding.id}`, start + 30_000);
+    const kept = reservation();
+    // One poll interval after the failure, the reload may poll at once.
+    setSystemTime(new Date(start + appApproval.limits.pollSeconds * 1000));
+    await auth.recheck(binding);
+    if (scenario === "recheck") {
+      expect(pendingCommands.length).toBeGreaterThan(failed);
+      expect(auth.states()[binding.id]?.error).toBeUndefined();
+      return;
+    }
+    // A refused device is not asked again, and another tab's newer reservation stays as it is.
+    expect(pendingCommands.length).toBe(failed);
+    expect(reservation()).toBe(kept);
+    expect(auth.states()[binding.id]?.error).toBe(scenario === "forbidden" ? "forbidden" : "unavailable");
+  });
+}

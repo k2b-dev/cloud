@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { aiConversations, aiProjects, migrateCloudAi } from "@k2b/cloud/ai";
-import { sql } from "bun";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { studioFiles } from "./file-transfer";

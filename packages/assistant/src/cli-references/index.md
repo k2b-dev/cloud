@@ -81,10 +81,15 @@ stdin and stdout for editors such as T3 Code and Zed. It uses the signed-in
 Cloud profile and the editor's project folder. Chats stay in Cloud.
 Sending, deleting, sharing, and inviting wait for confirmation in Cloud; the
 editor shows the chat link and can only reject these requests. Remembered
-editor approvals last at most for the chat.
+editor approvals last at most for the chat. Local Bash is offered only to
+editors with form support, because an editor can answer its permission prompts
+automatically.
 
 See [Assistant in editors](https://cloud.k2b.dev/en/docs/ai/editors) for setup,
 commands, forms, and session behavior.
+
+An editor saves folder trust only through a form; without forms, folder
+instructions load for one session.
 
 ## Interactive and print modes
 
@@ -488,7 +493,7 @@ the corresponding administrator access/grant/change-grant commands and
 `delete <resource-id> --yes` for confirmed deletion.
 
 Read redacted connection state with `studio-admin settings`. Configure using
-`studio-admin configure --input-file <private-json-file>` with `url` and `token`;
+`studio-admin configure --input-file <private-json-file> --yes` with `url` and `token`;
 omit `token` to preserve it, or add `--test` to test without saving. Never put
 the token directly in command arguments. Settings cannot replace a server that
 still owns databases or pending cleanup. Central inventory covers shared data
@@ -672,7 +677,7 @@ Manage). Project members inherit Use on linked published Apps:
 cld assistant code file-upload APP --file invoice.pdf --key invoices/invoice.pdf
 cld assistant code file-download APP --key invoices/invoice.pdf --out invoice.pdf
 cld assistant studio-admin storage-settings --json
-cld assistant studio-admin storage-configure --input-file limits.json
+cld assistant studio-admin storage-configure --input-file limits.json --yes
 ```
 
 The administrator input is `{"fileMiB":50,"totalMiB":250}`. Omit fields you do

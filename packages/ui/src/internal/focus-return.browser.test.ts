@@ -54,7 +54,7 @@ render(
     createComponent(Select, { label: "Fruit", options, value: "pears" }),
     createComponent(Select, { label: "Snack", options, value: "pears", searchable: true }),
     createComponent(MultiSelectInput, { label: "Basket", options, value: ["pears"] }),
-    createComponent(DatePicker, { label: "Due", value: "2026-09-30" }),
+    createComponent(DatePicker, { label: "Due", value: "2026-09-30", appearance: "plain" }),
     createComponent(ContextMenu, { label: "Note", items: [{ label: "Pin", action: () => {} }], children: "Shopping note" }),
     createComponent(Button, { size: "sm", variant: "secondary", onClick: () => setPhoto(true), children: "View photo" }),
     createComponent(Show, {

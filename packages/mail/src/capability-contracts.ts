@@ -220,7 +220,7 @@ export const AttachmentReadInputSchema = resourceReadInputSchema("mail.attachmen
 export const DraftReadInputSchema = resourceReadInputSchema("mail.draft", "List drafts");
 export const CommentReadInputSchema = resourceReadInputSchema("mail.comment", "List conversation comments");
 export const ReminderReadInputSchema = resourceReadInputSchema("mail.reminder", "Get personal reminder");
-export const DeliveryReadInputSchema = resourceReadInputSchema("mail.delivery", "List scheduled deliveries");
+export const DeliveryReadInputSchema = resourceReadInputSchema("mail.delivery", "List waiting deliveries");
 
 export const SenderIdentityDataSchema = z
   .object({
@@ -349,6 +349,10 @@ export const ConversationListInputSchema = z
       .nullable()
       .optional()
       .describe("Optional saved work queue view."),
+    includeDone: z
+      .boolean()
+      .optional()
+      .describe("Also list done and snoozed conversations, which the list leaves out without a view, work status, or filing folder."),
     cursor: CursorSchema,
     limit: VocabularyLimitSchema,
   })

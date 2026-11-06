@@ -49,7 +49,8 @@ export default ssr<AuthContext>(async (c) => {
         </div>
       );
     return (
-      <Layout c={c} title={[{ title: id === actor.id ? t.title : user.displayName || user.uid, href: returnTo }, { title: t.pair }]}>
+      // The pairing dialog's close returns to `returnTo`, so the shell draws no way up above it.
+      <Layout c={c} title={t.pair}>
         {id === actor.id ? (
           <AccountHub user={actor} active="security" loginLabel={policy.login.label}>
             {content()}

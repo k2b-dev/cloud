@@ -8,6 +8,7 @@ import { createConfig } from "@k2b/ssr";
 import { type Context, Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { checkFixtureSessionOrigin } from "../../../../../../scripts/fixtures/session-origin";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 
 /** States the captures and tests switch with `?state=`. */
@@ -82,6 +83,13 @@ export const fixtureEntries = (state: BaseFixtureState): SettingFieldDef[] => [
   entry("app", "app.copyright", "string", "© 2026 Beispiel GmbH", { label: "Copyright" }),
   entry("app", "app.documentation_url", "url", "https://docs.example.org", { label: "Documentation website" }),
   entry("app", "app.cleanup_schedule", "cron", "0 3 * * *", { label: "Cleanup schedule", isCustom: false, valueSource: "default" }),
+  entry("cli", "cli.plugins.access", "enum", "full_users", {
+    label: "Who may install cld plugins",
+    options: [
+      { value: "full_users", label: "Full accounts" },
+      { value: "all_users", label: "All accounts, including guests" },
+    ],
+  }),
   entry("gotenberg", "gotenberg.url", "url", "http://gotenberg:3000", { label: "Gotenberg address" }),
   entry("gotenberg", "gotenberg.username", "string", "", { label: "User name" }),
   entry("gotenberg", "gotenberg.password", "secret", "", { label: "Password" }),
@@ -110,7 +118,7 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
   const { BaseFormView } = await import("./view");
-  const { generalSections, pdfSections } = await import("./sections");
+  const { cliSections, generalSections, pdfSections } = await import("./sections");
   const { SigninFormView } = await import("../signin/view");
   const { freeipaSections, signinSections } = await import("../signin/sections");
 
@@ -172,7 +180,11 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
     page: { title?: string; theme: "light" | "dark" };
   };
   const pages = new Hono<{ Variables: Variables }>();
-  const render = (section: "general" | "pdf", groups: string[]) => (c: Context<{ Variables: Variables }>) => {
+  pages.use("*", async (c, next) => {
+    await next();
+    c.header("Set-Cookie", "session_token=fixture-session; Path=/; HttpOnly; SameSite=Lax");
+  });
+  const render = (section: "general" | "pdf" | "cli", groups: string[]) => (c: Context<{ Variables: Variables }>) => {
     const url = new URL(c.req.url);
     const locale = url.searchParams.get("locale") === "en" ? "en" : "de";
     const state = (url.searchParams.get("state") ?? "normal") as BaseFixtureState;
@@ -182,7 +194,7 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
     c.set("settings", { app: { name: "Cloud", locale } });
     c.set("page", { title: "Base settings", theme: "light" });
     const entries = (state === "normal" ? stored : fixtureEntries(state)).filter((item) => groups.includes(item.group));
-    const sections = section === "general" ? generalSections(locale) : pdfSections(locale);
+    const sections = section === "general" ? generalSections(locale) : section === "cli" ? cliSections(locale) : pdfSections(locale);
     const body = renderToString(() => createComponent(BaseFormView, { c, locale, section, groups, sections, entries }));
     return c.html(
       `<!doctype html><html lang="${locale}" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
@@ -208,6 +220,7 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
   pages.get("/admin/signin/freeipa", renderSignin("freeipa", "freeipa"));
   pages.get("/admin/base", render("general", ["app"]));
   pages.get("/admin/base/pdf", render("pdf", ["gotenberg"]));
+  pages.get("/admin/base/cli", render("cli", ["cli"]));
 
   const stateOf = (request: Request) =>
     (new URL(request.headers.get("referer") ?? "http://x/").searchParams.get("state") ?? "normal") as BaseFixtureState;
@@ -275,6 +288,8 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
     hostname: "127.0.0.1",
     port: options.port ?? 0,
     async fetch(request) {
+      const refused = await checkFixtureSessionOrigin(request);
+      if (refused) return refused;
       const url = new URL(request.url);
       if (url.pathname === "/fixture.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
       if (url.pathname === "/fonts.css") return new Response(fontCss, { headers: { "Content-Type": "text/css" } });

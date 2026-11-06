@@ -70,7 +70,6 @@ export const createGeoService = (
   const budgets = (settings: GeoConfig) => ({
     timezone: settings.timezone,
     monthlyCredits: settings.monthlyCredits,
-    personDailyCredits: settings.personDailyCredits,
   });
   const recordTransition = async (
     event: "monthly_budget_exhausted" | "provider_key_rejected" | "route_cost_overrun",
@@ -109,8 +108,6 @@ export const createGeoService = (
     const identity = geoCallIdentity(context);
     const locale = context.locale ?? "en";
     const key = geoCacheKey(fn, cacheInput, locale);
-    const hit = await cache.get(key, schema);
-    if (hit !== null) return hit;
     const deadline = AbortSignal.timeout(GEO_TIMEOUT_MS[fn]);
     const signal = context.signal ? AbortSignal.any([context.signal, deadline]) : deadline;
     const release = await bucket.acquire(fn, geoPlan(settings).rps);
@@ -118,6 +115,8 @@ export const createGeoService = (
     let settlementAttempted = false;
     const reference = geoReferenceCost({ fn, limit });
     try {
+      const hit = await cache.get(key, schema);
+      if (hit !== null) return hit;
       // A canceled request which has not been sent never reserves provider credit.
       signal.throwIfAborted();
       reserved = await ledger.reserve(
@@ -196,6 +195,9 @@ export const createGeoService = (
       geoIdentity(context);
       return autocomplete(input, context);
     },
+    // The internal-only Core route supplies no person or application authority.
+    autocompleteAnonymous: (input: GeoAutocompleteInput, context: Pick<GeoContext, "locale" | "signal" | "requestId">) =>
+      autocomplete(input, context),
     // Only the App-PWA service calls this after locking the pairing and optional visit authority.
     autocompleteForAppPwa: (input: GeoAutocompleteInput, context: AppPwaGeoContext) => autocomplete(input, context),
     async geocode(input: GeoGeocodeInput, context: GeoContext) {

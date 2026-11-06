@@ -785,12 +785,6 @@
   pointer-events: none;
 }
 
-/* On a phone bar tab, the tab's badge slot places the count at the icon's corner. */
-.k2b-tab-bar__badge > .cloud-app-badge {
-  position: static;
-  display: block;
-}
-
 /* On the corner of the rail icon, not of its 44 px target. */
 .rail-item > .cloud-app-badge {
   top: 0.25rem;
@@ -828,6 +822,19 @@
 .dark .rail-item-active:hover {
   color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 45%, white);
   background: transparent;
+}
+
+/* The panel button: the blue of search and help; an open panel keeps a fill. */
+.rail-item-panel[aria-expanded="true"],
+.rail-item-panel[aria-expanded="true"]:hover {
+  color: var(--color-blue-600);
+  background: color-mix(in srgb, var(--color-blue-500) 16%, transparent);
+}
+
+.dark .rail-item-panel[aria-expanded="true"],
+.dark .rail-item-panel[aria-expanded="true"]:hover {
+  color: var(--color-blue-300);
+  background: color-mix(in srgb, var(--color-blue-500) 24%, transparent);
 }
 
 /* Profile preferences stay Cloud-owned because their placement follows the
@@ -874,7 +881,7 @@
   bottom: 0;
   left: 100%;
   display: none;
-  width: min(14rem, calc(100vw - 1rem));
+  width: min(17rem, calc(100vw - 1rem));
   flex-direction: column;
   gap: 0.125rem;
   padding: 0.25rem;
@@ -899,6 +906,41 @@
   width: 1rem;
   flex: none;
   text-align: center;
+}
+
+.layout-profile-preferences__panel .menu-item > .k2b-kbd {
+  margin-left: auto;
+}
+
+/* The sidebar entry, the preferences, and sign-out are three sections, each
+   below a line, in the hover panel and in the touch menu alike. */
+.layout-profile-preferences__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.layout-profile-preferences__section + .layout-profile-preferences__section::before,
+.k2b-ui .layout-profile-preferences__menu .k2b-dropdown__section[data-divided="true"]::before {
+  content: "";
+  height: 1px;
+  flex: none;
+  margin: 0.0625rem 0.5rem;
+  background: var(--ui-border);
+}
+
+.k2b-ui .layout-profile-preferences__menu .k2b-dropdown__section[data-divided="true"] {
+  padding-top: 0;
+  margin-top: 0.125rem;
+}
+
+/* Sign-out ends the session: the danger tone, as in the touch menu. */
+.layout-profile-preferences__panel .menu-item[data-danger="true"] {
+  color: var(--k2b-danger-text);
+}
+
+.layout-profile-preferences__panel .menu-item[data-danger="true"]:is(:hover, :focus-visible) {
+  background: var(--k2b-danger-surface);
 }
 
 .layout-profile-preferences > .layout-profile-preferences__dropdown {
@@ -1121,4 +1163,43 @@
 
 .file-tree > li > div[data-state="drop-target"] {
   background: color-mix(in srgb, var(--color-blue-500) 8%, var(--ui-surface)) !important;
+}
+
+/* A page swap that takes longer than 200 ms shows a thin bar at the top; faster ones show nothing,
+   and the old content stays until the new page arrives. */
+.cloud-app-canvas[data-nav-pending]::before {
+  content: "";
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  z-index: 60;
+  height: 2px;
+  background: var(--k2b-action-solid);
+  transform-origin: left;
+  pointer-events: none;
+  animation: cloud-nav-pending 8s cubic-bezier(0.1, 0.7, 0.2, 1) 200ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloud-app-canvas[data-nav-pending]::before {
+    animation: cloud-nav-pending-still 1ms linear 200ms both;
+  }
+}
+
+@keyframes cloud-nav-pending {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(0.9);
+  }
+}
+
+@keyframes cloud-nav-pending-still {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }

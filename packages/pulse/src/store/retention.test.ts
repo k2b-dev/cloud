@@ -17,6 +17,7 @@ const row: StoreRow = {
   retention_days: 30,
   rollup_retention_days: 365,
   sensitive_retention_hours: 24,
+  reset_generation: "0",
   checkpoint_id: null,
   pending_checkpoint_id: null,
   write_block_reason: null,

@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1080
 description: Choose account types, configure sign-in and manage account lifecycle.
 tags: [accounts, administration, authentication]
-updated: 2026-10-28
+updated: 2026-11-03
 ---
 
 # Accounts and sign-in
@@ -41,6 +41,11 @@ sign out instead. Later sign-ins continue directly to your destination.
 Operators configure the documents under **Administration → Base settings → Legal** (`/admin/base/legal`). Configure
 them before inviting users. Existing sessions remain valid after an upgrade;
 accounts without a recorded acceptance are asked at their next sign-in.
+
+Guest accounts cannot use Spaces, Grids, Contacts, Mail, Pulse, or Venue,
+including their APIs and CLI commands, even with an object grant. Public links
+and independent object keys keep their own authentication. See the
+[upgrade check for operators](/en/docs/operations/app-access-upgrade#check-guest-access-before-upgrading).
 
 ## Start with your scenario
 

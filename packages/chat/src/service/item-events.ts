@@ -1,8 +1,8 @@
+import { sql } from "@k2b/cloud";
 import type { DiscussionProvider } from "@k2b/cloud/capabilities/server";
 import { ResourceActivityEventSchema } from "@k2b/cloud/contracts";
 import { fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { z } from "zod";
 import { type ChatContext, messages, requireConversation } from "./access";
 import { type ItemEventsPageSchema, ItemEventsQuerySchema } from "./contracts";

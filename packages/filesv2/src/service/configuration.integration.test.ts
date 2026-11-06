@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { redis, sql } from "@k2b/cloud";
 import { secrets, settings } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
-import { redis, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { testActor, testCall } from "../../test/files-call";

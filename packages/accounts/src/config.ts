@@ -17,11 +17,15 @@ export const app = defineApp({
         name: "Zugänge",
         description: "Konten, Gruppen, Zugriffe und Kontoanfragen verwalten.",
         widgets: { "admin-queue": { title: "Administrationsaufgaben", description: "Offene Kontoanfragen und bald ablaufende Konten." } },
+        adminGroups: { people: "Personen" },
+        adminLinks: { "/app/accounts": "Personen" },
       },
     },
   },
   appearance: { accent: "#4f46e5", background: { from: "#6366f1" } },
   basePath: "/app/accounts",
+  // Lists, filters and actions change only the content column; the rail and panel stay.
+  pageSwap: true,
   baseUrl: "http://app-accounts:3000",
   notifications: NOTIFICATIONS,
   nav: {
@@ -31,6 +35,10 @@ export const app = defineApp({
     requiresAuth: true,
     requiresRoles: ["user"],
   },
+  // The admin bar leads to People here, under Operations; the page stays in this app for every role.
+  adminNav: [
+    { section: "people", id: "people", label: "People", links: [{ label: "People", href: "/app/accounts", icon: "ti ti-users" }] },
+  ],
   widgets: [
     {
       id: "admin-queue",

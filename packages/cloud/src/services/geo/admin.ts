@@ -18,7 +18,6 @@ import { toPgTextArray } from "../postgres";
 import * as settings from "../settings";
 import { decryptValue } from "../settings/crypto";
 import { SETTINGS_MAP, validateSettingValue } from "../settings/defaults";
-import { assertGeoBudgetPair } from "../settings/geo-budget";
 import { GeoProviderError } from "./errors";
 import { GeoapifyAdapter } from "./geoapify";
 import { geoPeriods } from "./ledger";
@@ -32,7 +31,6 @@ const BUDGET_FIELDS: ReadonlyArray<[GeoBudgetField, string]> = [
   ["customRps", "geo.custom_rps"],
   ["customDailyCredits", "geo.custom_daily_credits"],
   ["monthlyCredits", "geo.monthly_budget_credits"],
-  ["personDailyCredits", "geo.person_daily_credits"],
 ];
 const BUDGET_KEYS = [PLAN_KEY, ...BUDGET_FIELDS.map(([, name]) => name)];
 const KEY_ACTION = "core.geo.key_set";
@@ -130,7 +128,6 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
         customRps: config.customRps,
         customDailyCredits: config.customDailyCredits,
         monthlyCredits: config.monthlyCredits,
-        personDailyCredits: config.personDailyCredits,
         unreadable: [["plan", PLAN_KEY] as const, ...BUDGET_FIELDS].flatMap(([field, name]) =>
           states.get(name)?.stored === "unreadable" ? [field] : [],
         ),
@@ -151,8 +148,8 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
       db()<
         { used: number }[]
       >`SELECT used::float8 AS used FROM geo.usage WHERE scope = 'cloud' AND subject = '*' AND period = ${periods.cloud.period}`,
-      db()<{ used: number; at_limit: number }[]>`
-        SELECT COALESCE(sum(used), 0)::float8 AS used, count(*) FILTER (WHERE used >= ${config.personDailyCredits * 1000} AND subject NOT LIKE 'app:%')::int AS at_limit
+      db()<{ used: number }[]>`
+        SELECT COALESCE(sum(used), 0)::float8 AS used
         FROM geo.usage WHERE scope = 'person' AND period = ${periods.person.period}`,
       db()<{ function_group: string; used: number }[]>`
         SELECT function_group, used::float8 AS used FROM geo.shares WHERE scope = 'cloud' AND subject = '*' AND period = ${periods.cloud.period}`,
@@ -176,7 +173,6 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
         group,
         credits: (shares.find((row) => row.function_group === group)?.used ?? 0) / 1000,
       })),
-      peopleAtLimit: today?.at_limit ?? 0,
       routeCostOverruns: overruns?.count ?? 0,
       timezone: config.timezone,
     };
@@ -232,8 +228,7 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
       const inactive = BUDGET_FIELDS.flatMap(([, name]) => (name in updates ? [] : [name]));
       const resets: string[] = [];
       await db().begin(async (tx) => {
-        // Same lock and final-pair rule as every other writer of these settings.
-        await assertGeoBudgetPair(tx, updates, []);
+        // Validate each value through the settings registry.
         // Saving the form is the explicit replacement of a value this installation cannot read.
         for (const [name, value] of Object.entries(updates)) await settings.set(name, value, tx, { replaceUnreadable: true });
         // Decided under the row lock: a value another writer repaired meanwhile stays.

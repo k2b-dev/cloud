@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Which box a focus scrolls is decided by layout, which happy-dom does not
 // model, so a real engine renders the shipped stylesheet.
@@ -140,6 +140,179 @@ describe("@k2b/ui SettingsModal scrolling", () => {
         // The panel contains whatever a tab renders, so the control sits in the frame itself to lie beyond it.
         await page.evaluate(focusHiddenControl, { parent: ".k2b-settings", style: "top:300%" });
         expect(await page.evaluate(layout)).toEqual(before);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+});
+
+/** Two groups with more categories than a phone row shows. */
+const crowdedModal = () =>
+  renderToString(() =>
+    createComponent(SettingsModal, {
+      title: "Mailbox settings",
+      onClose: () => {},
+      get children() {
+        return ["Personal", "Compose", "Mailbox", "Delivery"].map((group) =>
+          createComponent(SettingsModal.Group, {
+            title: group,
+            get children() {
+              return [1, 2].map((index) =>
+                createComponent(SettingsModal.Tab, { id: `${group}-${index}`.toLowerCase(), title: `${group} ${index}`, children: group }),
+              );
+            },
+          }),
+        );
+      },
+    }),
+  );
+
+describe("@k2b/ui SettingsModal separation", () => {
+  for (const [name, viewport] of Object.entries(viewports)) {
+    test(`separates groups and the category list from the panel without lines on a ${name}`, async () => {
+      const page = await browser.newPage({ viewport });
+      try {
+        await page.setContent(
+          `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+            `<body class="k2b-ui"><div style="height:86vh;display:flex;flex-direction:column">${crowdedModal()}</div></body></html>`,
+        );
+        await settled(page);
+        const lines = await page.evaluate(() => {
+          const sides = ["top", "right", "bottom", "left"];
+          const selectors = [
+            ".k2b-settings__rail",
+            ".k2b-settings__tabs",
+            ".k2b-settings__tab-group",
+            ".k2b-settings__content",
+            ".k2b-settings__body",
+          ];
+          return {
+            borders: selectors.flatMap((selector) =>
+              Array.from(document.querySelectorAll(selector)).flatMap((element) => {
+                const style = getComputedStyle(element);
+                return sides
+                  .filter((side) => Number.parseFloat(style.getPropertyValue(`border-${side}-width`)) > 0)
+                  .map((side) => `${selector} ${side}`);
+              }),
+            ),
+            separators: document.querySelectorAll('.k2b-settings__rail :is(hr, [role="separator"])').length,
+          };
+        });
+        expect(lines).toEqual({ borders: [], separators: 0 });
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
+  test("forced colours keep a line beside the desktop rail, where rail and panel both become Canvas", async () => {
+    const page = await browser.newPage({ viewport: viewports.desktop });
+    try {
+      await page.emulateMedia({ forcedColors: "active" });
+      await page.setContent(
+        `<!doctype html><html><head><style>${css}</style></head>` +
+          `<body class="k2b-ui"><div style="height:86vh;display:flex;flex-direction:column">${crowdedModal()}</div></body></html>`,
+      );
+      await settled(page);
+      expect(await page.locator(".k2b-settings__rail").evaluate((rail) => getComputedStyle(rail).borderRightStyle)).toBe("solid");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("the phone row fades out into the last category it cuts", async () => {
+    const page = await browser.newPage({ viewport: viewports.phone });
+    try {
+      await page.setContent(
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+          `<body class="k2b-ui"><div style="height:86vh;display:flex;flex-direction:column">${crowdedModal()}</div></body></html>`,
+      );
+      // The island measures the overflow and sets this attribute; the page is only server-rendered here.
+      await page.locator(".k2b-settings__tabs").evaluate((element) => element.setAttribute("data-scroll-fade", "bottom"));
+      await settled(page);
+      const fade = await page.locator(".k2b-settings__tabs").evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          overflows: element.scrollWidth > element.clientWidth,
+          masked: style.maskImage.includes("linear-gradient"),
+          reachesPastPadding:
+            Number.parseFloat(style.getPropertyValue("--scroll-fade-size")) * 16 > Number.parseFloat(style.paddingRight) + 16,
+        };
+      });
+      expect(fade).toEqual({ overflows: true, masked: true, reachesPastPadding: true });
+
+      // Selecting a category scrolls it into view the way the modal does; it must stop outside the fade.
+      const revealed = await page.locator(".k2b-settings__tabs").evaluate((row) => {
+        const tab = row.querySelectorAll<HTMLElement>('[role="tab"]')[5]!;
+        tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+        const fadeSize = Number.parseFloat(getComputedStyle(row).getPropertyValue("--scroll-fade-size")) * 16;
+        return tab.getBoundingClientRect().right <= row.getBoundingClientRect().right - fadeSize + 1;
+      });
+      expect(revealed).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+/** A rail with the longest category label of Mail's mailbox settings. */
+const groupedModal = () =>
+  renderToString(() =>
+    createComponent(SettingsModal, {
+      title: "Postfach-Einstellungen",
+      onClose: () => {},
+      get children() {
+        return [
+          createComponent(SettingsModal.Group, {
+            title: "Postfach",
+            get children() {
+              return createComponent(SettingsModal.Tab, { id: "general", title: "Allgemein", icon: "ti ti-id", children: "General" });
+            },
+          }),
+          createComponent(SettingsModal.Group, {
+            title: "Zustellung",
+            get children() {
+              return createComponent(SettingsModal.Tab, {
+                id: "delivery",
+                title: "Konten und Identitäten",
+                icon: "ti ti-send",
+                children: "Delivery",
+              });
+            },
+          }),
+        ];
+      },
+    }),
+  );
+
+describe("@k2b/ui SettingsModal category labels", () => {
+  // The rail may wrap a label to two lines; whether it needs to depends on the engine's font.
+  for (const [name, viewport, maxLines] of [
+    ["desktop rail at 1440", { width: 1440, height: 900 }, 2],
+    ["phone row", viewports.phone, 1],
+  ] as const) {
+    test(`shows a long category label in full in the ${name}`, async () => {
+      const page = await browser.newPage({ viewport });
+      try {
+        await page.setContent(
+          `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+            `<body class="k2b-ui"><div style="height:86vh;display:flex;flex-direction:column">${groupedModal()}</div></body></html>`,
+        );
+        await settled(page);
+        const label = await page
+          .locator('[role="tab"]', { hasText: "Konten und Identitäten" })
+          .locator("span")
+          .evaluate((element) => ({
+            overflowsInline: element.scrollWidth > element.clientWidth,
+            overflowsBlock: element.scrollHeight > element.clientHeight,
+            lines: Math.round(element.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(element).lineHeight)),
+          }));
+        expect({ overflowsInline: label.overflowsInline, overflowsBlock: label.overflowsBlock }).toEqual({
+          overflowsInline: false,
+          overflowsBlock: false,
+        });
+        expect(label.lines).toBeLessThanOrEqual(maxLines);
       } finally {
         await page.close();
       }

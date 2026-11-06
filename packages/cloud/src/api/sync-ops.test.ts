@@ -64,7 +64,7 @@ const mount = (dependencies: Parameters<typeof createSyncOpsProxyRoutes>[0] = {}
   );
 
 describe("Core Sync operations broker", () => {
-  test("requires authentication and OAuth admin scope before lookup or issuance", async () => {
+  test("requires live administrator read authority before lookup or issuance", async () => {
     const anonymous = new Hono().route("/api/admin/sync", createSyncOpsProxyRoutes());
     expect((await anonymous.request("/api/admin/sync/mail/resources")).status).toBe(401);
     for (const scopes of [[], ["read"], ["write"], ["admin"]]) {
@@ -76,8 +76,10 @@ describe("Core Sync operations broker", () => {
           return null;
         },
       });
-      expect((await routes.request("/api/admin/sync/mail/resources")).status).toBe(scopes.includes("admin") ? 404 : 403);
-      expect(lookups).toBe(scopes.includes("admin") ? 1 : 0);
+      expect((await routes.request("/api/admin/sync/mail/resources")).status).toBe(
+        scopes.includes("read") || scopes.includes("admin") ? 404 : 403,
+      );
+      expect(lookups).toBe(scopes.includes("read") || scopes.includes("admin") ? 1 : 0);
     }
   });
 
@@ -103,8 +105,8 @@ describe("Core Sync operations broker", () => {
         return apps;
       },
     });
-    expect((await denied.request("/api/admin/sync")).status).toBe(403);
-    expect(reads).toBe(0);
+    expect((await denied.request("/api/admin/sync")).status).toBe(200);
+    expect(reads).toBe(1);
   });
 
   test("forwards only a method and route bound invocation to the registry target", async () => {

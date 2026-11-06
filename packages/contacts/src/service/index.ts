@@ -9,7 +9,15 @@ import {
   userFromActor,
 } from "@k2b/cloud/server";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
-import { capByCredential, credentialPermission, getActorBookPermission, isContactsAdministrator, readableBookScope } from "./access";
+import {
+  capByCredential,
+  credentialPermission,
+  getActorBookMemberPermission,
+  getActorBookPermission,
+  isContactsAdministrator,
+  listBookAccessMembers,
+  readableBookScope,
+} from "./access";
 import * as addressLocation from "./address-location";
 import * as apiKeys from "./api-keys";
 import * as books from "./books";
@@ -210,6 +218,9 @@ export const contactsService = {
     permission: {
       forActor: (config: { bookId: string; actor: RequestActor; accessSubject: AccessSubject }): Promise<PermissionLevel> =>
         getActorBookPermission(config),
+      /** Access of one's own, without public access; it decides who may read who has access. */
+      memberForActor: (config: { bookId: string; actor: RequestActor; accessSubject: AccessSubject }): Promise<PermissionLevel> =>
+        getActorBookMemberPermission(config),
     },
     access: {
       list: async (
@@ -225,6 +236,18 @@ export const contactsService = {
         const access = await authorizeBook(config.bookId, config, "admin");
         if (!access.ok) return access;
         return ok(await books.access.list(config));
+      },
+      /** Who has access, read-only, for everyone with access of their own; public access alone is refused. */
+      members: async (config: BookCaller & { bookId: string }) => {
+        const access = await authorizeBook(config.bookId, config, "read");
+        if (!access.ok) return access;
+        const member = await getActorBookMemberPermission({
+          bookId: config.bookId,
+          actor: config.actor,
+          accessSubject: config.accessSubject,
+        });
+        if (!hasPermission(member, "read")) return fail(err.forbidden("Access denied"));
+        return ok(await listBookAccessMembers(config.bookId));
       },
       grant: async (config: BookCaller & { bookId: string; principal: AccessEntry["principal"]; permission: PermissionLevel }) => {
         const access = await authorizeBook(config.bookId, config, "admin");

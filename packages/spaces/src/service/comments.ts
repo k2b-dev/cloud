@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { type DateContext, type PageParams, type Paginated, paginate } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { MutationResult, SpaceComment } from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import * as activity from "./activity";

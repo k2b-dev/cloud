@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { z } from "zod";
 import { attachments } from "./attachments";
 import { channels } from "./channels";

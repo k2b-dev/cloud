@@ -1,12 +1,12 @@
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { decodeJwt } from "jose";
 import { compileReviewFixture } from "../../../packages/cloud/src/_internal/capability-review.test-fixture";
 import { createMeMandateRoutes } from "../../../packages/cloud/src/api/me";
 import type { CapabilityActionPolicy } from "../../../packages/cloud/src/contracts/capabilities";
+import { sql } from "../../../packages/cloud/src/runtime/clients";
 import { auth } from "../../../packages/cloud/src/server";
 import { mandates } from "../../../packages/cloud/src/services/mandates";
 import { toPgTextArray } from "../../../packages/cloud/src/services/postgres";

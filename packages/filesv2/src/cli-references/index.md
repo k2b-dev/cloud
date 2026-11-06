@@ -740,7 +740,7 @@ other settings.
 ```bash
 cld filesv2 admin configuration get --json > ./filesv2.json
 # Edit ./filesv2.json before submitting it.
-cld filesv2 admin configuration set --input-file ./filesv2.json --json
+cld filesv2 admin configuration set --input-file ./filesv2.json --json --yes
 ```
 
 `set --stdin` also works. Inline `--input` is rejected so secrets stay out of

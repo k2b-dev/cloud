@@ -10,9 +10,11 @@
  * before paging through individual requests.
  */
 import { type AuthContext, auth, rateLimit, respond, v } from "@k2b/cloud/server";
+import { logging } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
+import { parseBrowserFilter } from "./browser/filter";
 import { TELEMETRY_RANGES, TELEMETRY_ROUTE_SORTS } from "./contracts";
 import { getTelemetryOverview, getTelemetryTimeseries, listTelemetryEvents, listTelemetryRoutes } from "./service";
 
@@ -56,6 +58,10 @@ const app = new Hono<AuthContext>()
   .use(auth.requireRole("admin"))
 
   /** Request counts split by error class — 429 counted separately from other 4xx. */
+  .get("/browser", auth.requireOAuthScope("read", "admin"), async (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json(await logging.webVitals(parseBrowserFilter(new URL(c.req.url)), new Date()));
+  })
   .get("/overview", v("query", ScopeQuerySchema), async (c) => respond(c, ok(await getTelemetryOverview(scopeOf(c.req.valid("query"))))))
 
   /** Bucketed request/error series for the selected range. */

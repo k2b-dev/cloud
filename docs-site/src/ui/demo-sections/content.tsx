@@ -76,7 +76,7 @@ import {
 import { batch, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
-import { BarChartStatesDemo, ChartDemo } from "./charts";
+import { BarChartStatesDemo, ChartDemo, CountryMapDemo } from "./charts";
 import { FileGridDemo } from "./file-grid";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
@@ -291,6 +291,7 @@ type Row = { id: string; name: string; owner: string; requests: number };
 const rows: Row[] = [
   { id: "api", name: "Public API", owner: "Platform", requests: 18492 },
   { id: "docs", name: "Documentation", owner: "Design systems", requests: 3274 },
+  { id: "mail", name: "Mail delivery", owner: "Messaging", requests: 7310 },
 ];
 const columns: DataTableColumn<Row>[] = [
   { id: "name", header: ({ col }) => `Name (${col.id})`, value: "name", sortable: true },
@@ -311,16 +312,16 @@ const TableDemo = () => {
         { kind: "component", name: "DataTable", from: "@k2b/ui" },
         { kind: "component", name: "Pagination", from: "@k2b/ui" },
       ]}
-      description="The basic form renders exact typed records. Sorting, selection, totals, and pagination stay application-owned."
+      description="The basic form renders exact typed records between a grey head, row lines, and lighter column lines. A selected row is a fill only. Sorting, selection, totals, and pagination stay application-owned."
       code={`<DataTable
   rows={ordered()}
   columns={columns}
   getRowId={(row) => row.id}
-  selectedRowId="api"
+  selectedRowId="mail"
   sort={sort()}
   renderCell={({ col, value, render }) => col.id === "name" ? <strong>{value}</strong> : render(value)}
   onSortChange={setSort}
-  footer={{ values: { name: "Total", requests: 21_766 } }}
+  footer={{ values: { name: "Total", requests: 29_076 } }}
 />
 <Pagination currentPage={2} totalPages={6} baseUrl="?page=" />`}
     >
@@ -328,12 +329,12 @@ const TableDemo = () => {
         rows={ordered()}
         columns={columns}
         getRowId={(row) => row.id}
-        selectedRowId="api"
+        selectedRowId="mail"
         sort={sort()}
         onSortChange={setSort}
         renderHeader={({ render }) => render()}
         renderCell={({ col, value, render }) => (col.id === "name" ? <strong>{String(value)}</strong> : render(value))}
-        footer={{ values: { name: "Total", requests: 21766 } }}
+        footer={{ values: { name: "Total", requests: 29076 } }}
         scrollPreserveKey="content-demo-table"
       />
       <Pagination currentPage={2} totalPages={6} baseUrl="?page=" />
@@ -2032,6 +2033,7 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <ChartDemo window={new URLSearchParams(props.search).get("window") === "1h" ? "1h" : "24h"} />
       <BarChartStatesDemo />
+      <CountryMapDemo />
       <DemoCard
         id="line-top-legend"
         chip={{ kind: "component", name: "Chart", from: "@k2b/ui" }}

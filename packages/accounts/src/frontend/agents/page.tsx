@@ -22,8 +22,8 @@ export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
   const page = parsePage(c.req.query("page"));
   const perPage = 100;
-  const [pendingRequestsPage, agents] = await Promise.all([
-    accountsService.accountRequest.list({ access: { userId: user.id, isAdmin: true }, filter: { status: "pending" } }),
+  const [pendingRequests, agents] = await Promise.all([
+    accountsService.accountRequest.countPending(),
     serviceAccounts.listStandalone({ page, perPage }),
   ]);
   const totalPages = Math.max(1, Math.ceil(agents.total / perPage));
@@ -36,7 +36,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.agents }]}>
-      <AccountsWorkspace active="agents" isAdmin pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-agents">
+      <AccountsWorkspace active="agents" isAdmin pendingRequests={pendingRequests} scrollPreserveKey="accounts-agents">
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-agents-title">
             <h1 class="text-base font-semibold text-primary">{t.agents}</h1>

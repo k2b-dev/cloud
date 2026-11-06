@@ -4,11 +4,11 @@ import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
 import routes from "../../api/admin-core-settings";
 import { sql } from "../../runtime/clients";
 import { stubConnections } from "../../runtime/connections.test-fixture";
+import { audit } from "../audit";
 import { session } from "../session";
 import { buildProjectedUser } from "../session/user";
 import { decryptValue, encryptValue } from "./crypto";
 import { SETTINGS_MAP } from "./defaults";
-import { assertGeoBudgetPair } from "./geo-budget";
 import * as settings from "./index";
 import * as store from "./store";
 
@@ -24,6 +24,7 @@ afterAll(() => {
   secretStub?.mockRestore();
 });
 beforeEach(() => {
+  spyOn(audit, "record").mockResolvedValue();
   secretStub = stubConnections({ appSecret: { current: "test-only-geo-budget" } });
   spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-02T03:04:05Z"));
   const user = buildProjectedUser({
@@ -114,149 +115,17 @@ const save = (body: unknown) =>
   });
 const mutations = (queries: Array<{ query: string }>) => queries.filter(({ query }) => /^(UPDATE|INSERT|DELETE)/.test(query));
 
-test("unrelated settings do not acquire the geo lock or read the pair", async () => {
+test("monthly budgets are independent of obsolete stored daily values", async () => {
+  const tx = await transaction({ [day]: "unreadable" });
+  expect((await save({ updates: { [month]: 0 } })).status).toBe(204);
+  expect(await decryptValue(tx.rows.get(month)!)).toBe(0);
+  expect(tx.rows.get(day)).toBe("broken-ciphertext");
+  expect(tx.queries.some(({ key }) => key === day)).toBe(false);
+});
+test("the removed daily setting is not writable", async () => {
   const tx = await transaction();
-  await assertGeoBudgetPair(tx.db, { "app.name": "Cloud" }, ["geo.api_key"]);
-  expect(tx.queries).toEqual([]);
-});
-
-test("standalone writes and resets reject invalid final pairs before mutation", async () => {
-  for (const [key, value, reset, current] of [
-    [month, 299, false, { [day]: 300 }],
-    [day, 301, false, { [month]: 300 }],
-    [day, 0, true, { [month]: 299 }],
-    [month, 0, true, { [day]: 90001 }],
-  ] as const) {
-    const tx = await transaction(current);
-    await expect(reset ? store.deleteKey(key) : store.writeKey(key, value)).rejects.toMatchObject({
-      code: "geo_budget_invalid",
-      status: 400,
-    });
-    expect(tx.begin).toHaveBeenCalledTimes(1);
-    expect(tx.queries[0]?.query).toContain("pg_advisory_xact_lock");
-    expect(mutations(tx.queries)).toEqual([]);
-    tx.begin.mockRestore();
-  }
-});
-
-test("standalone valid writes and resets validate and invalidate after commit", async () => {
-  for (const reset of [false, true]) {
-    const tx = await transaction({ [month]: 90000, [day]: 200 });
-    if (reset) await store.deleteKey(day);
-    else await store.writeKey(day, 500);
-    expect(tx.queries.filter(({ query }) => query.includes("pg_advisory_xact_lock"))).toHaveLength(1);
-    expect(tx.queries.at(-1)?.query).toContain(reset ? "DELETE" : "UPDATE settings.entries SET value = ?,");
-    expect(store.invalidateSettingsCache).toHaveBeenLastCalledWith([day]);
-    tx.begin.mockRestore();
-  }
-});
-
-test("bulk updates validate the final pair once in either field order", async () => {
-  for (const [current, updates] of [
-    [
-      { [month]: 90000, [day]: 300 },
-      { [month]: 100, [day]: 50 },
-    ],
-    [
-      { [month]: 90000, [day]: 300 },
-      { [day]: 50, [month]: 100 },
-    ],
-    [
-      { [month]: 100, [day]: 50 },
-      { [day]: 500, [month]: 1000 },
-    ],
-    [
-      { [month]: 100, [day]: 50 },
-      { [month]: 1000, [day]: 500 },
-    ],
-  ] as const) {
-    const tx = await transaction(current);
-    expect((await save({ updates })).status).toBe(204);
-    expect(tx.queries.filter(({ query }) => query.includes("pg_advisory_xact_lock"))).toHaveLength(1);
-    expect(tx.queries.some(({ query }) => query.startsWith("SELECT value"))).toBeFalse();
-    for (const [key, value] of Object.entries(updates!)) {
-      expect(await decryptValue(tx.rows.get(key)!)).toBe(value);
-      expect(tx.updatedBy.get(key)).toBe(actorId);
-    }
-    tx.begin.mockRestore();
-  }
-});
-
-test("bulk rejects invalid single updates, resets, and pairs with coded 400", async () => {
-  for (const [current, body] of [
-    [{ [month]: 90000, [day]: 300 }, { updates: { [month]: 299 } }],
-    [{ [month]: 300 }, { updates: { [day]: 301 } }],
-    [{ [month]: 100 }, { resets: [day] }],
-    [{ [day]: 90001 }, { resets: [month] }],
-    [{}, { updates: { [month]: 100, [day]: 101 } }],
-    [{}, { updates: { [day]: 101, [month]: 100 } }],
-    [{}, { updates: { [month]: 100 }, resets: [day] }],
-  ] as const) {
-    const tx = await transaction(current);
-    const response = await save(body);
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({
-      code: "geo_budget_invalid",
-      errors: { [day]: expect.any(String), [month]: expect.any(String) },
-    });
-    expect(mutations(tx.queries)).toEqual([]);
-    tx.begin.mockRestore();
-  }
-});
-
-test("single reset route owns pair validation inside its transaction", async () => {
-  const tx = await transaction({ [month]: 299, [day]: 50 });
-  const response = await routes.request(`/${day}`, { method: "DELETE", headers: { Cookie: "session_token=test" } });
-  expect(response.status).toBe(400);
-  expect(await response.json()).toMatchObject({ code: "geo_budget_invalid" });
+  expect((await save({ updates: { [day]: 1 } })).status).toBe(400);
   expect(mutations(tx.queries)).toEqual([]);
-});
-
-test("bulk repairs unreadable monthly values with replacement or reset and still validates the pair", async () => {
-  for (const [body, expectedMonth, expectedDay, status] of [
-    [{ updates: { [month]: 500, [day]: 400 }, replaceUnreadable: [month] }, 500, 400, 204],
-    [{ updates: { [month]: 200, [day]: 400 }, replaceUnreadable: [month] }, 200, 400, 400],
-    [{ updates: { [month]: 500 }, replaceUnreadable: [month] }, 500, 300, 204],
-    [{ updates: { [month]: 200 }, replaceUnreadable: [month] }, 200, 300, 400],
-    [{ resets: [month] }, 90000, 300, 204],
-    [{ resets: [month], updates: { [day]: 90001 } }, 90000, 90001, 400],
-    [{ resets: [day, month] }, 90000, 300, 204],
-  ] as const) {
-    const tx = await transaction({ [month]: "unreadable", [day]: 300 });
-    const response = await save(body);
-    expect(response.status).toBe(status);
-    expect(tx.queries.some(({ query, key }) => query.startsWith("SELECT value") && key === month)).toBeFalse();
-    if (status === 400) {
-      expect(await response.json()).toMatchObject({ code: "geo_budget_invalid" });
-      expect(mutations(tx.queries)).toEqual([]);
-    } else {
-      for (const key of Object.keys("updates" in body ? body.updates : {})) expect(tx.updatedBy.get(key)).toBe(actorId);
-      expect(tx.rows.has(month) ? await decryptValue(tx.rows.get(month)!) : SETTINGS_MAP.get(month)?.default).toBe(expectedMonth);
-      expect(tx.rows.has(day) ? await decryptValue(tx.rows.get(day)!) : SETTINGS_MAP.get(day)?.default).toBe(expectedDay);
-    }
-    tx.begin.mockRestore();
-  }
-});
-
-test("unreplaced unreadable values retain the recovery error", async () => {
-  for (const [unreadable, changed] of [
-    [month, day],
-    [day, month],
-  ] as const) {
-    const tx = await transaction({ [unreadable]: "unreadable" });
-    await expect(assertGeoBudgetPair(tx.db, { [changed]: 500 }, [])).rejects.toMatchObject({ code: "setting_unreadable", key: unreadable });
-    const response = await save({ updates: { [changed]: 500 } });
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ code: "setting_unreadable" });
-    expect(mutations(tx.queries)).toEqual([]);
-    const reset = await routes.request(`/${changed}`, { method: "DELETE", headers: { Cookie: "session_token=test" } });
-    expect(reset.status).toBe(409);
-    expect(await reset.json()).toMatchObject({ code: "setting_unreadable" });
-    tx.begin.mockRestore();
-  }
-  const tx = await transaction({ [month]: "unreadable" });
-  expect((await save({ updates: { [month]: 1000 } })).status).toBe(409);
-  expect(tx.begin).not.toHaveBeenCalled();
 });
 
 test("the generic settings route refuses the Geoapify key, which only the verifying geo route writes", async () => {

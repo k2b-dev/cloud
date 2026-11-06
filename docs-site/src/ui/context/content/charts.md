@@ -139,6 +139,7 @@ All kinds accept these wrapper props:
 | `style` | Solid `JSX.CSSProperties` or a CSS string on the wrapper. Set height here, not with a `height` prop. |
 | `labels` | Optional `ChartLabels` overrides. Keys: `empty`, `series`, `interactiveMap`, `interactiveTimeline`, `interactiveLine`, `interactiveChart`, `zoomIn`, `zoomOut`, `resetMap`, `resetTimeline`. Region names fall back to a nonblank chart `title` (or `label` for stat/gauge), then the inherited UI messages. Other omitted keys use the inherited UI messages. These do not rename tooltip fields; use `tooltip` for domain labels. |
 | `interactive` | Boolean, default `false`. Enables map and state-timeline navigation: pan, zoom and reset controls. Tooltips and keyboard inspection work without it, including with `interactive={false}`. |
+| `timeAxis` | Line charts only: `{ timeZone, locale? }` when X values are instants in Unix milliseconds. Ticks land on round wall times in `timeZone`: minutes (1, 2, 5, 10, 15, 30), hours (1, 2, 3, 6, 12), days, Monday weeks, months, or years, the finest step that keeps about `xAxis.ticks` + 2 ticks (default 5). Ticks follow the zone across daylight-saving changes. `xAxis.format` labels them; without it a tick shows its clock time, the day at local midnight, the month, or the year in `locale`. Without `xAxis.domain`, the axis spans the plotted instants. Snapshots for `ChartExplorer` take the same option. |
 | `maxGap` | Line charts only: positive finite distance in numeric X units (milliseconds for epoch timestamps). Larger distances start a new line segment; isolated samples remain visible. Supports straight, smooth and step lines. Combining it with `area` or `errorBand` fills throws. Omit it to preserve continuous lines. |
 | `cursor` | Optional `ChartCursor` from `createChartCursor()`. Connects line charts by numeric X value; other kinds ignore it. Hover is independent of `selected` and does not reload data or rebuild SVG. |
 | `selected` | Optional `ChartDatumRef \| null`: `{ role, index, seriesIndex? }` using the current input snapshot. Highlights a datum without selecting it or opening a tooltip. Missing references paint nothing. Map stable application IDs to these indices after every data replacement. |
@@ -729,6 +730,7 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | `sort`, `onSortChange` | Optional controlled `DataTableSort \| null`. Otherwise `defaultSort` initializes local sort; default `null`. |
 | `renderDetails` | Optional row renderer replacing the DescriptionList inside the selection Paper. `false` hides the whole local detail area, for a parent-owned shared Paper. |
 | `description`, `class` | Optional JSX below the heading and extra root class. |
+| `actions` | Optional owner actions in the header before Copy data, such as a button that shows the query behind the chart. Keep them icon-sized. The actions move below the title only when the title itself does not fit beside them; a long description wraps in the space the title leaves, so explorers side by side keep one header layout. |
 | `headingLevel` | Level of the title heading, `2`–`6`; default `3`. Use one level below the surrounding heading, for example `4` for charts under a group's `h3`. |
 | `cursor` | Optional shared `ChartCursor` for a line snapshot. Same matching and lifecycle as `Chart.cursor`; table mode does not participate. |
 | `height` | CSS viewport height; default `"18rem"`, shared by chart and scrollable table. |
@@ -928,3 +930,29 @@ the chart colors that series that way; without it the filter shows no swatch),
 `failed`, and `onRetry`. It does not load data. Keep the displayed request tied to
 the last committed snapshot while a new desired request is pending. Its exported
 `ChartFilterControlsProps` type describes the same contract.
+
+## Country map
+
+`CountryMap` shades countries on a world map by one value and names the same
+numbers in a ranked list. Import it from its own entry, because the country
+shapes add about 90 KB; it makes no network request.
+
+```tsx
+import { CountryMap } from "@k2b/ui/country-map";
+
+<CountryMap
+  label="Visitors by country"
+  data={[
+    { code: "DE", value: 1240 },
+    { code: "FR", value: 410 },
+    { code: "SG", value: 35 },
+  ]}
+/>
+```
+
+`code` is an ISO 3166-1 alpha-2 code. Names follow the inherited locale. Pointing
+at or tapping a country shows its value and share below the map; the list keeps
+every number readable without a pointer. Countries too small for a shape appear
+as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
+out. With no data the neutral map stays; the host shows its own empty message.
+Use `format` for units and `limit` to change how many countries the list names.

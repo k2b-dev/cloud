@@ -9,7 +9,7 @@ export type ManagerCandidate = {
 
 /**
  * Whether an entry keeps its resource manageable: `admin` for a user, a group,
- * all signed-in users, or a standalone or agent service account. Public access
+ * all signed-in people, or a standalone or agent service account. Public access
  * never counts, and neither do resource-bound or user-delegated keys: they
  * disappear with their key or their user without passing the resource's rules.
  */
