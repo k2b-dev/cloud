@@ -24,7 +24,7 @@ import type { CodeContext } from "./access";
 import { CODE_EVENT_CONSUMER, syncCodeEventSubscriptions } from "./event-subscriptions";
 import { admitCodeEvent, listCodeRunsWithEvents, replayCodeEventDelivery, startCodeEventConsumer } from "./events";
 import { processCodeOwnerDeleted } from "./lifecycle";
-import { claimCodeRuns } from "./scheduling";
+import { claimCodeRuns, reconcileCodeRuns } from "./scheduling";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, findCode } from "./store";
 
@@ -320,6 +320,35 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     expect(await findCode(codeId)).toMatchObject({ state: "deleting" });
     expect((await broker.deliveries()).items[0]).toMatchObject({ state: "cancelled" });
   });
+  test("pause preserves admitted events and explicit recovery after version switch reuses the never-started run", async () => {
+    await publish(28);
+    await broker.work();
+    const original = (await runs())[0]!;
+    await sql.begin(async (db) => {
+      await db`SELECT id FROM code.codes WHERE id=${codeId} FOR UPDATE`;
+      await cancelResourceEventSubscriptions(db, CODE_EVENT_CONSUMER, codeId);
+      await db`UPDATE code.codes SET state='paused' WHERE id=${codeId}`;
+    });
+    await reconcileCodeRuns();
+    expect((await runs())[0]).toMatchObject({ id: original.id, state: "queued" });
+    await version();
+    await activate();
+    await reconcileCodeRuns();
+    expect((await runs())[0]).toMatchObject({ id: original.id, state: "failed" });
+    const [recoverable] = (await listCodeRunsWithEvents({ codeId, limit: 20 }, editor)).eventDeliveries;
+    expect(recoverable).toMatchObject({ eventId: id(28), state: "failed", code: "code_not_active" });
+    await replayCodeEventDelivery(codeId, recoverable!.id, editor);
+    await broker.work();
+    expect(await runs()).toEqual([expect.objectContaining({ id: original.id, version_id: versionId, state: "queued" })]);
+    expect(await sql`SELECT * FROM code.run_requests`).toHaveLength(1);
+    expect(await sql`SELECT * FROM code.run_outbox`).toHaveLength(1);
+    // A started attempt is an effect boundary and must never be rebound by delivery replay.
+    await sql`UPDATE code.runs SET generation=1,started_at=clock_timestamp(),state='failed',outcome='code_not_active',ended_at=clock_timestamp()`;
+    const done = (await broker.deliveries()).items.find(
+      (row: Record<string, unknown>) => row.state === "done" && row.code !== "workload_replayed",
+    )!;
+    await expect(replayCodeEventDelivery(codeId, String(done.id), editor)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
   test("backpressure stays failed and visible in the platform queue, then deliberate replay admits one run", async () => {
     backlog = 1;
     await publish(18, "one");
@@ -345,7 +374,10 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(replayCodeEventDelivery(codeId, id(999), editor)).rejects.toMatchObject({ code: "CONFLICT" });
     await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp()`;
-    expect(await replayCodeEventDelivery(codeId, String(failed!.id), editor)).toEqual({ deliveryId: failed!.id });
+    await version();
+    await activate();
+    expect((await listCodeRunsWithEvents({ codeId, limit: 20 }, editor)).eventDeliveries).toHaveLength(1);
+    expect((await replayCodeEventDelivery(codeId, String(failed!.id), editor)).deliveryId).not.toBe(failed!.id);
     await broker.work();
     expect(await runs()).toHaveLength(2);
     expect((await listCodeRunsWithEvents({ codeId, limit: 20 }, editor)).eventDeliveries).toHaveLength(0);

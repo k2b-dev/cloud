@@ -1,7 +1,8 @@
 import { sql } from "@k2b/cloud";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { type AppEventDeliveryContext, type AppEventEnvelope, AppEventEnvelopeSchema } from "@k2b/cloud/contracts/app-events";
-import { appEventBroker, type ResourceEventBinding, registerResourceEventConsumer } from "@k2b/cloud/services/app-events";
+import { audit } from "@k2b/cloud/services";
+import { type ResourceEventBinding, registerResourceEventConsumer, replayResourceEventDelivery } from "@k2b/cloud/services/app-events";
 import { type CodeContext, CodeDataError, codePerson } from "./access";
 import { CODE_EVENT_CONSUMER } from "./event-subscriptions";
 import { codeSettings } from "./settings";
@@ -45,7 +46,17 @@ export async function admitCodeEvent(
       return { cancelled: true as const };
     const requestKey = `event:${envelope.id}`;
     const [receipt] = await db`SELECT run_id FROM code.run_requests WHERE code_id=${code.id} AND request_key=${requestKey}`;
-    if (receipt) return;
+    let recoverRun: string | undefined;
+    if (receipt) {
+      const [run] = await db<{ id: string; recoverable: boolean }[]>`SELECT id,
+        (trigger='event' AND generation=0 AND started_at IS NULL AND NOT effect_started
+          AND state='failed' AND outcome='code_not_active'
+          AND EXISTS(SELECT FROM events.app_deliveries WHERE subscription_id=${context.subscriptionId}
+            AND event_id=${envelope.id}::uuid AND code='workload_replay')) AS recoverable
+        FROM code.runs WHERE id=${receipt.run_id}::uuid FOR UPDATE`;
+      if (!run?.recoverable) return;
+      recoverRun = run.id;
+    }
     const [delivery] = await db<{ seq: string; subject_key: string }[]>`SELECT seq,subject_key FROM events.app_deliveries
       WHERE subscription_id=${context.subscriptionId} AND event_id=${envelope.id}::uuid FOR SHARE`;
     if (!delivery) return { cancelled: true as const };
@@ -61,18 +72,25 @@ export async function admitCodeEvent(
       WHERE code_id=${code.id} AND trigger='event' AND state IN ('queued','running')`;
     if ((waiting?.count ?? 0) >= backlog) throw new Error("code_event_backlog_full");
     context.signal.throwIfAborted();
-    const runId = await insertCodeRun(
-      {
-        codeId: code.id,
-        versionId: code.activeVersionId,
-        trigger: "event",
-        entrypoint: entry.entrypoint,
-        input: AppEventEnvelopeSchema.parse(envelope),
-      },
-      db,
-    );
+    const runId =
+      recoverRun ??
+      (await insertCodeRun(
+        {
+          codeId: code.id,
+          versionId: code.activeVersionId,
+          trigger: "event",
+          entrypoint: entry.entrypoint,
+          input: AppEventEnvelopeSchema.parse(envelope),
+        },
+        db,
+      ));
+    if (recoverRun) {
+      // Only a never-started run can be explicitly rebound. Completed or attempted runs retain their receipt and effects.
+      await db`UPDATE code.runs SET version_id=${code.activeVersionId}::uuid,entrypoint=${entry.entrypoint},state='queued',outcome=NULL,ended_at=NULL
+        WHERE id=${runId}::uuid`;
+      await db`INSERT INTO code.run_outbox(run_id) VALUES(${runId}::uuid) ON CONFLICT DO NOTHING`;
+    } else await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${requestKey},${runId}::uuid)`;
     await db`UPDATE code.runs SET event_subject_key=${`${envelope.type}@${envelope.version}:${delivery.subject_key}`},event_sequence=${delivery.seq}::bigint WHERE id=${runId}::uuid`;
-    await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${requestKey},${runId}::uuid)`;
     context.signal.throwIfAborted();
   });
 }
@@ -91,37 +109,53 @@ async function listCodeEventDeliveries(codeId: string) {
       createdAt: string;
     }[]
   >`
-    SELECT delivery.id,delivery.event_id AS "eventId",event.type AS "eventType",delivery.state,CASE WHEN delivery.last_error='code_event_backlog_full' THEN delivery.last_error ELSE delivery.code END AS code,delivery.attempts,
+    SELECT delivery.id,delivery.event_id AS "eventId",event.type AS "eventType",
+      CASE WHEN delivery.state IN ('done','cancelled') THEN 'failed' ELSE delivery.state END AS state,
+      CASE WHEN delivery.state='done' THEN 'code_not_active' WHEN delivery.last_error='code_event_backlog_full' THEN delivery.last_error ELSE delivery.code END AS code,delivery.attempts,
       to_char(delivery.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt"
     FROM events.app_deliveries delivery JOIN events.app_subscriptions subscription ON subscription.id=delivery.subscription_id
     JOIN events.app_events event ON event.id=delivery.event_id
+    LEFT JOIN code.run_requests receipt ON receipt.code_id=${codeId} AND receipt.request_key='event:'||event.id::text
+    LEFT JOIN code.runs run ON run.id=receipt.run_id
     WHERE subscription.resource_binding->>'consumer'=${CODE_EVENT_CONSUMER} AND subscription.resource_binding->>'key'=${codeId}
-      AND delivery.state IN ('pending','retrying','failed') ORDER BY (delivery.state='failed') DESC,delivery.seq ASC LIMIT 20`;
+      AND delivery.code IS DISTINCT FROM 'workload_replayed'
+      AND event.received_at>=clock_timestamp()-interval '30 days'
+      AND (delivery.state IN ('pending','retrying','failed') OR (delivery.state='cancelled' AND delivery.code IN ('workload_changed','resource_access_revoked'))
+        OR (delivery.state='done' AND run.state='failed' AND run.outcome='code_not_active' AND run.generation=0 AND run.started_at IS NULL AND NOT run.effect_started))
+      ORDER BY (delivery.state NOT IN ('pending','retrying')) DESC,delivery.seq ASC LIMIT 20`;
 }
 /** Deliberate retry of delivery only; the permanent event receipt prevents repeating an admitted run. */
 export async function replayCodeEventDelivery(codeId: string, deliveryId: string, context: CodeContext) {
   codePerson(context, true);
   const { permission } = await readCode(codeId, context);
   if (permission !== "editor") throw new CodeDataError("FORBIDDEN", "Only Code editors may retry delivery.");
-  return sql
-    .begin(async (db) => {
-      await db`SELECT id FROM code.codes WHERE id=${codeId} FOR UPDATE`;
-      const code = await findCode(codeId, db);
-      if (!code || code.state !== "active") throw new CodeDataError("CONFLICT", "Code must be active.");
-      const [delivery] = await db`SELECT delivery.id FROM events.app_deliveries delivery
+  return sql.begin(async (db) => {
+    await db`SELECT id FROM code.codes WHERE id=${codeId} FOR UPDATE`;
+    const code = await findCode(codeId, db);
+    if (!code || code.state !== "active") throw new CodeDataError("CONFLICT", "Code must be active.");
+    const [delivery] = await db`SELECT delivery.id FROM events.app_deliveries delivery
       JOIN events.app_subscriptions subscription ON subscription.id=delivery.subscription_id
-      WHERE delivery.id=${deliveryId}::uuid AND delivery.state='failed' AND subscription.state='active'
+      LEFT JOIN code.run_requests receipt ON receipt.code_id=${codeId} AND receipt.request_key='event:'||delivery.event_id::text
+      LEFT JOIN code.runs run ON run.id=receipt.run_id
+      WHERE delivery.id=${deliveryId}::uuid AND (delivery.state='failed' OR (delivery.state='cancelled' AND delivery.code IN ('workload_changed','resource_access_revoked'))
+        OR (delivery.state='done' AND run.state='failed' AND run.outcome='code_not_active' AND run.generation=0 AND run.started_at IS NULL AND NOT run.effect_started))
         AND subscription.resource_binding->>'consumer'=${CODE_EVENT_CONSUMER} AND subscription.resource_binding->>'key'=${codeId}
       FOR UPDATE OF delivery`;
-      if (!delivery) throw new CodeDataError("CONFLICT", "The failed delivery is no longer available for retry.");
-      // The platform administration method owns retry counters, retention and audit. Run after releasing our row lock.
-      return { id: String(delivery.id) };
-    })
-    .then(async (delivery) => {
-      const result = await appEventBroker.redeliver(delivery.id, { userId: codePerson(context, true).id });
-      if (!result) throw new CodeDataError("CONFLICT", "The delivery changed before retry.");
-      return { deliveryId: delivery.id };
-    });
+    if (!delivery) throw new CodeDataError("CONFLICT", "The failed delivery is no longer available for retry.");
+    const id = await replayResourceEventDelivery(db, String(delivery.id), CODE_EVENT_CONSUMER, codeId);
+    if (!id) throw new CodeDataError("CONFLICT", "The event or matching current registration is unavailable for retry.");
+    await audit.record(
+      {
+        action: "core.code.event.redeliver",
+        outcome: "allowed",
+        actor: { userId: codePerson(context, true).id },
+        target: { type: "code", id: codeId },
+        metadata: { deliveryId: id, previousDeliveryId: deliveryId },
+      },
+      db,
+    );
+    return { deliveryId: id };
+  });
 }
 
 export async function listCodeRunsWithEvents(input: Parameters<typeof listCodeRuns>[0], context: CodeContext) {

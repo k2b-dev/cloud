@@ -355,7 +355,7 @@ export async function reconcileCodeRuns(): Promise<void> {
     for (const run of expired) await settleRun(run.id, run.timed_out ? "wall_clock_limit" : "lease_lost", limits, db);
     await db`UPDATE code.runs r SET state='failed',outcome=CASE WHEN r.deadline_at<=clock_timestamp() THEN 'wall_clock_limit' ELSE 'code_not_active' END,ended_at=clock_timestamp()
       WHERE r.id IN(SELECT q.id FROM code.runs q JOIN code.codes c ON c.id=q.code_id WHERE q.state='queued'
-        AND (c.state<>'active' OR q.version_id IS DISTINCT FROM c.active_version_id OR q.deadline_at<=clock_timestamp())
+        AND ((c.state<>'active' AND NOT(q.trigger='event' AND q.generation=0)) OR q.version_id IS DISTINCT FROM c.active_version_id OR q.deadline_at<=clock_timestamp())
         ORDER BY q.created_at,q.id LIMIT 100 FOR UPDATE OF q SKIP LOCKED)`;
     // Periodic outbox repair covers queue retention, delivery exhaustion and a ticket consumed while all Codes were busy.
     await db`INSERT INTO code.run_outbox(run_id) SELECT id FROM code.runs WHERE state='queued'
