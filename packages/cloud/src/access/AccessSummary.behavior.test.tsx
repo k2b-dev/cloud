@@ -11,12 +11,11 @@ const lagerbot = entry("3", { type: "service_account", serviceAccountId: "s1" },
   displayName: "Lagerbot",
   serviceAccountKind: "agent",
 });
-// Code's own account; the kind arrives with the code lane, so the contract type does not list it yet.
 const code = (id: string) =>
-  ({
-    ...entry(id, { type: "service_account", serviceAccountId: `c${id}` }, "write", { displayName: `Code ${id}` }),
+  entry(id, { type: "service_account", serviceAccountId: `c${id}` }, "write", {
+    displayName: `Code ${id}`,
     serviceAccountKind: "code",
-  }) as unknown as AccessEntry;
+  });
 const apiKey = entry("6", { type: "service_account", serviceAccountId: "k1" }, "read", {
   displayName: "Einkauf 2027",
   serviceAccountKind: "resource_bound",

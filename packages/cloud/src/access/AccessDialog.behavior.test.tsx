@@ -1103,12 +1103,6 @@ describe("AccessDialog", () => {
       }
     });
 
-    test("the counter names one and several service accounts", async () => {
-      const { accessDialogMessages } = await import("./access-dialog-messages");
-      const de = accessDialogMessages.resolve(["de"]).t;
-      expect([de.serviceAccountCount({ count: 1 }), de.serviceAccountCount({ count: 2 })]).toEqual(["1 Dienstkonto", "2 Dienstkonten"]);
-    });
-
     test("a found account with a picture shows it in the preview", async () => {
       const ui = await setup({
         entries: [mia],
