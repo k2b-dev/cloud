@@ -241,7 +241,7 @@ test("funnels and ranked lists keep safe fills in standalone and base-only hosts
       ).toEqual(["rgb(59, 130, 246)", "rgb(59, 130, 246)"]);
       expect(
         await page
-          .locator(".k2b-chart-ranked [data-chart-datum] > rect:not(.k2b-chart-category-band)")
+          .locator(".k2b-chart-ranked rect:not(.k2b-chart-category-band)")
           .evaluate((n) => getComputedStyle(n).fill),
       ).toBe("rgb(59, 130, 246)");
     }
