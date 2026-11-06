@@ -71,9 +71,9 @@ export type CodeVersionPermission = z.infer<typeof CodeVersionPermissionSchema>;
 /** Exact checked resource event registration. It carries no resource grants. */
 export const CodeEventTriggerSchema = z
   .object({
-    type: CapabilityQualifiedIdSchema,
-    version: z.number().int().positive(),
-    place: CloudResourceRefSchema,
+    type: CapabilityQualifiedIdSchema.describe("Qualified event type from the capability catalog."),
+    version: z.number().int().positive().describe("Exact declared event version."),
+    place: CloudResourceRefSchema.describe("Exact resource owner whose events this registration accepts."),
   })
   .strict();
 
@@ -89,7 +89,7 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
     .array(
       z
         .object({
-          kind: z.enum(["schedule", "manual", "event"]).describe("Scheduled or manually invoked entrypoint."),
+          kind: z.enum(["schedule", "manual", "event"]).describe("Scheduled, manually invoked or event-triggered entrypoint."),
           entrypoint: z.string().min(1).describe("Named ESM export selected by the runner."),
           title: CodeAutomationTitleSchema.optional().describe("Optional reviewed display title; entrypoint remains the stable key."),
           event: CodeEventTriggerSchema.optional().describe("Exact event version and owner place for an event entrypoint."),

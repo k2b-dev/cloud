@@ -4,6 +4,7 @@ import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CodeCheckedVersionManifest } from "@k2b/cloud/contracts";
 import type { AppEventEnvelope } from "@k2b/cloud/contracts/app-events";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
+import { accounts } from "@k2b/cloud/services";
 import { cancelResourceEventSubscriptions, createAppEventBroker, type ResourceEventBinding } from "@k2b/cloud/services/app-events";
 import { resolveInvocationAuthority } from "@k2b/cloud/services/identity/invocation-actor";
 import { z } from "zod";
@@ -13,13 +14,16 @@ import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
+import { migrate as migrateLifecycle } from "../migrate/core/code-lifecycle";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateEvents } from "../migrate/core/events";
 import { migrate as migrateSettings } from "../migrate/core/settings";
+import type { CodeContext } from "./access";
 import { CODE_EVENT_CONSUMER, syncCodeEventSubscriptions } from "./event-subscriptions";
-import { admitCodeEvent, startCodeEventConsumer } from "./events";
+import { admitCodeEvent, listCodeRunsWithEvents, replayCodeEventDelivery, startCodeEventConsumer } from "./events";
+import { processCodeOwnerDeleted } from "./lifecycle";
 import { claimCodeRuns } from "./scheduling";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, findCode } from "./store";
@@ -59,6 +63,7 @@ databaseSuite()("Code event delivery to durable run admission", () => {
   let broker: ReturnType<typeof createAppEventBroker>;
   let stopConsumer: (() => void) | undefined;
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
+  let editor: CodeContext;
   let versionId: string, mandateId: string, subscriptionId: string, binding: ResourceEventBinding, time: string;
   let readable = true,
     backlog = 100,
@@ -183,7 +188,13 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     await migratePolicy();
     await migrateVersions();
     await migrateScheduling();
+    await migrateLifecycle();
     await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${owner}::uuid,'event-owner','local','user')`;
+    const user = await accounts.users.get({ id: owner });
+    if (!user) throw new Error("Missing event editor fixture");
+    editor = {
+      authority: { actor: { kind: "user", user }, accessSubject: { type: "user", userId: owner }, credentialKind: "session", scopes: [] },
+    };
     settings = spyOn(codeSettings, "get").mockImplementation(async (key) =>
       key === "core.code.event_backlog" ? backlog : CODE_SETTINGS[key].default,
     );
@@ -198,6 +209,8 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     await sql`INSERT INTO auth.service_accounts(id,name,kind,created_by) VALUES(${principal}::uuid,${`code:${place.type}:${place.id}`},'code',${owner}::uuid)`;
     await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title,state,created_by)
       VALUES(${codeId},'resource',${place.type},${place.id},${principal}::uuid,'Events','draft',${owner}::uuid)`;
+    await sql`INSERT INTO auth.access(id,user_id,permission) VALUES(${id(3)}::uuid,${owner}::uuid,'write')`;
+    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${codeId},${id(3)}::uuid)`;
     readable = true;
     backlog = 100;
     sequence = 0;
@@ -296,6 +309,17 @@ databaseSuite()("Code event delivery to durable run admission", () => {
       await admitCodeEvent(binding, envelope, { subscriptionId, eventId: envelope.id, attempt: 1, signal: new AbortController().signal }),
     ).toEqual({ cancelled: true });
   });
+  test("owner deletion cancels an already claimed event before any run is admitted", async () => {
+    await publish(26);
+    const claims = await broker.claim();
+    await sql`SELECT events.enqueue(${id(27)}::uuid,'fixture','code_owner_deleted','collection-a',${JSON.stringify(place)}::text::jsonb)`;
+    const [report] = await sql<Parameters<typeof processCodeOwnerDeleted>[0][]>`SELECT * FROM events.outbox WHERE id=${id(27)}::uuid`;
+    await processCodeOwnerDeleted(report!);
+    for (const claim of claims) await broker.deliver(claim);
+    expect(await runs()).toHaveLength(0);
+    expect(await findCode(codeId)).toMatchObject({ state: "deleting" });
+    expect((await broker.deliveries()).items[0]).toMatchObject({ state: "cancelled" });
+  });
   test("backpressure stays failed and visible in the platform queue, then deliberate replay admits one run", async () => {
     backlog = 1;
     await publish(18, "one");
@@ -308,10 +332,23 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     const failed = (await broker.deliveries()).items.find((row: Record<string, unknown>) => row.eventId === id(19));
     expect(failed).toMatchObject({ state: "failed", attempts: 8 });
     expect(await runs()).toHaveLength(1);
+    const list = await listCodeRunsWithEvents({ codeId, limit: 20 }, editor);
+    expect(list.eventDeliveries).toEqual([
+      expect.objectContaining({ id: failed!.id, eventId: id(19), state: "failed", code: "code_event_backlog_full" }),
+    ]);
+    expect(list.eventDeliveries[0]).not.toHaveProperty("data");
+    await expect(
+      replayCodeEventDelivery(codeId, String(failed!.id), {
+        ...editor,
+        authority: { ...editor.authority, credentialKind: "api_key", scopes: ["read"] },
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(replayCodeEventDelivery(codeId, id(999), editor)).rejects.toMatchObject({ code: "CONFLICT" });
     await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp()`;
-    expect(await broker.redeliver(String(failed!.id), { userId: owner })).toBeTruthy();
+    expect(await replayCodeEventDelivery(codeId, String(failed!.id), editor)).toEqual({ deliveryId: failed!.id });
     await broker.work();
     expect(await runs()).toHaveLength(2);
+    expect((await listCodeRunsWithEvents({ codeId, limit: 20 }, editor)).eventDeliveries).toHaveLength(0);
     expect(await sql`SELECT * FROM code.run_requests WHERE request_key=${`event:${id(19)}`}`).toHaveLength(1);
   });
   test("one subject runs in admission order even when per-Code concurrency is increased", async () => {

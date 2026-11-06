@@ -353,7 +353,16 @@ test("only a confirmed Code version invocation passes human entry rules", async 
     workloadId: "version-a",
   };
   expect(await usableAppIds(authority, apps)).toEqual(new Set(apps.map((app) => app.id)));
-  for (const app of apps) expect(evaluateAppAccess(authority, app)).toBe(true);
+  for (const app of apps) {
+    expect(evaluateAppAccess(authority, app)).toBe(true);
+    expect(await canUseApp(authority, app)).toBe(true);
+  }
+  const resourceApp = {
+    id: "resource-app",
+    access: compileAppAccess(appAccess.resources({ adapters: { collection: { hasAnyRight: async () => false } } })),
+  };
+  authority.actor.delegation.workloadEvent = "55555555-5555-4555-8555-555555555555";
+  expect(await canUseApp(authority, resourceApp)).toBe(true);
   authority.actor.delegation.workloadType = "ai.chat-task";
   expect(await usableAppIds(authority, apps)).toEqual(new Set());
   authority.actor.delegation.workloadType = "code.version";

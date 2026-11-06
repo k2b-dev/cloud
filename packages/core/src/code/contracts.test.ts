@@ -5,6 +5,7 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityExecutionContext,
   CloudResourceReaderViewSchema,
+  CodeCheckedVersionManifestSchema,
   type User,
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
@@ -96,6 +97,7 @@ describe("Core Code data contracts", () => {
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
     ).toEqual(
       [
+        "code.event.redeliver",
         "code.pause",
         "code.policy.update",
         "code.resume",
@@ -107,6 +109,28 @@ describe("Core Code data contracts", () => {
         "code.version.submit",
       ].map((id) => ({ id, code: false })),
     );
+  });
+  test("checked event registrations require exact metadata and a matching stable entrypoint", () => {
+    const event = { type: "fixture.changed", version: 1, place: { type: "fixture.collection", id: "one" } };
+    const entry = { kind: "event", entrypoint: "event:fixture.changed@1", event, cron: null, file: "code.ts", line: 1 };
+    const manifest = {
+      version: 1,
+      entry: "code.ts",
+      entrypoints: [entry],
+      permissions: [],
+      policyRows: ["read"],
+      ai: false,
+      hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+    };
+    expect(CodeCheckedVersionManifestSchema.safeParse(manifest).success).toBe(true);
+    for (const invalid of [
+      { ...entry, event: undefined },
+      { ...entry, entrypoint: "event:fixture.changed@2" },
+      { ...entry, cron: "* * * * *" },
+      { ...entry, kind: "manual" },
+      { ...entry, event: { ...event, place: undefined } },
+    ])
+      expect(CodeCheckedVersionManifestSchema.safeParse({ ...manifest, entrypoints: [invalid] }).success).toBe(false);
   });
   test("owner union has exactly one opaque identity; source paths cannot escape the source tree", () => {
     expect(CodeOwnerSchema.parse({ kind: "resource", ref: { type: "example.mailbox", id: "m_1234" } })).toEqual({

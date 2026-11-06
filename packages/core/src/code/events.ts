@@ -71,7 +71,7 @@ export async function admitCodeEvent(
       },
       db,
     );
-    await db`UPDATE code.runs SET event_subject_key=${delivery.subject_key},event_sequence=${delivery.seq}::bigint WHERE id=${runId}::uuid`;
+    await db`UPDATE code.runs SET event_subject_key=${`${envelope.type}@${envelope.version}:${delivery.subject_key}`},event_sequence=${delivery.seq}::bigint WHERE id=${runId}::uuid`;
     await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${requestKey},${runId}::uuid)`;
     context.signal.throwIfAborted();
   });
@@ -96,7 +96,7 @@ async function listCodeEventDeliveries(codeId: string) {
     FROM events.app_deliveries delivery JOIN events.app_subscriptions subscription ON subscription.id=delivery.subscription_id
     JOIN events.app_events event ON event.id=delivery.event_id
     WHERE subscription.resource_binding->>'consumer'=${CODE_EVENT_CONSUMER} AND subscription.resource_binding->>'key'=${codeId}
-      AND delivery.state IN ('pending','retrying','failed') ORDER BY delivery.seq DESC LIMIT 20`;
+      AND delivery.state IN ('pending','retrying','failed') ORDER BY (delivery.state='failed') DESC,delivery.seq ASC LIMIT 20`;
 }
 /** Deliberate retry of delivery only; the permanent event receipt prevents repeating an admitted run. */
 export async function replayCodeEventDelivery(codeId: string, deliveryId: string, context: CodeContext) {
