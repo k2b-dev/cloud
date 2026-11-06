@@ -89,7 +89,7 @@ test("compatible readers omit unknown event fields and schemas, localize only pr
   expect(parseCapabilityManifest({ ...broken, manifestHash: capabilityHash(broken) }, "core").events).toEqual([]);
 });
 
-test("publisher enqueues validated original JSON in the supplied transaction", async () => {
+test("publisher enqueues validated original JSON with the transaction clock despite process clock skew", async () => {
   setSystemTime(new Date("2026-01-01T00:00:00Z"));
   const definitions = capabilities();
   const publisher = appEvents(definitions);
@@ -97,6 +97,7 @@ test("publisher enqueues validated original JSON in the supplied transaction", a
   const writes: { query: string; values: unknown[] }[] = [];
   const tx = new Proxy(client, {
     apply(_target, _receiver, [strings, ...values]) {
+      if (strings.join("").includes("clock_timestamp")) return Promise.resolve([{ time: "2026-01-02T00:00:00.123456Z" }]);
       writes.push({ query: strings.join("?"), values });
       return Promise.resolve([]);
     },
@@ -115,7 +116,7 @@ test("publisher enqueues validated original JSON in the supplied transaction", a
     expect(sent).toMatchObject({
       source: "core",
       type: "core.user.created",
-      time: "2026-01-01T00:00:00.000Z",
+      time: "2026-01-02T00:00:00.123456Z",
       subject: { type: "core.user", id: userId },
       cause: { requestId: "request-1" },
     });
@@ -295,7 +296,8 @@ test("an app-ID publisher resolves the framework binding lazily without importin
   const client = new SQL("postgres://localhost/unused_test");
   let writes = 0;
   const tx = new Proxy(client, {
-    apply() {
+    apply(_target, _receiver, [strings]) {
+      if (strings.join("").includes("clock_timestamp")) return Promise.resolve([{ time: "2026-01-01T00:00:00.000000Z" }]);
       writes++;
       return Promise.resolve([]);
     },
