@@ -57,6 +57,7 @@ const labels = /* @__PURE__ */ i18n.define({
       category: "Category",
       series: "Series",
       value: "Value",
+      total: "Total",
       share: "Share",
       from: "From",
       to: "To",
@@ -74,6 +75,7 @@ const labels = /* @__PURE__ */ i18n.define({
       category: "Kategorie",
       series: "Datenreihe",
       value: "Wert",
+      total: "Gesamt",
       share: "Anteil",
       from: "Von",
       to: "Bis",
@@ -381,6 +383,7 @@ export function chartRenderOptions(
     case "hbar":
       return {
         kind: "hbar",
+        locale,
         series: input.series,
         rows: input.rows,
         legend: input.legend,
@@ -393,6 +396,7 @@ export function chartRenderOptions(
       if (input.kind === "bar")
         return {
           kind: "bar",
+          locale,
           data: input.data,
           x: input.x,
           series: input.series,
@@ -668,7 +672,7 @@ export function chartRows(
             ? field.key === "previous" && input.kind === "bar"
               ? (input.compare?.label ?? field.key)
               : field.key === "total"
-                ? t.value
+                ? t.total
                 : field.key === "delta"
                   ? t.delta
                   : field.key

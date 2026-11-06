@@ -1737,7 +1737,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart [data-chart-datum] {
   cursor: crosshair;
 }
-.k2b-ui .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
+.k2b-ui .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle):not(.k2b-chart-category-band) {
   stroke: var(--k2b-chart-inspection-color) !important;
   stroke-width: 2px;
   vector-effect: non-scaling-stroke;
@@ -16450,7 +16450,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__details:empty { display: none; }
 .k2b-ui .k2b-chart-explorer__detail-paper { padding: .75rem 1rem; }
 .k2b-ui .k2b-chart-explorer__detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; color: var(--k2b-text-muted); font-size: .75rem; }
-.k2b-ui .k2b-chart [data-selected] > :is(rect, path, circle) {
+.k2b-ui .k2b-chart [data-selected] > :is(rect, path, circle):not(.k2b-chart-category-band) {
   stroke: var(--k2b-chart-selection-color, var(--k2b-chart-selection-fallback-color)) !important;
   stroke-width: 3px;
   vector-effect: non-scaling-stroke;
@@ -17284,7 +17284,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Category inspection keeps every mark unchanged; only the category band appears. */
-.k2b-ui .k2b-chart-category-band { fill: transparent; stroke: none; }
+.k2b-ui .k2b-chart-category-band { stroke: none; }
 .k2b-ui .k2b-chart [data-inspected] > .k2b-chart-category-band { fill: color-mix(in srgb, currentColor 5%, transparent); }
 .k2b-ui .k2b-chart [data-inspected]:has(> .k2b-chart-category-band) > :is(rect,path,circle) { stroke: none !important; }
-.k2b-ui .k2b-chart-previous > rect { fill: color-mix(in srgb, var(--stdlib-chart-c1) 14%, var(--k2b-surface)); stroke: var(--stdlib-chart-c1); stroke-width: 1px; }
+.k2b-ui .stdlib-chart .k2b-chart-group-heading { font-size: 11.5px; font-weight: 600; opacity: 1; }
+.k2b-ui .stdlib-chart .k2b-chart-segment-value { font-size: 11px; font-weight: 500; fill: currentColor; opacity: 1; }

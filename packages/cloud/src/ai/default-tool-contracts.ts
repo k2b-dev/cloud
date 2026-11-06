@@ -158,7 +158,7 @@ const flatChartSchema = () => {
       .max(CLOUD_AI_CHART_MAX_VALUES)
       .optional()
       .describe("hbar: grouped rows of aligned segment values."),
-    layout: z.enum(["columns", "rows", "grouped", "stacked", "nested"]).optional().describe("bar: category layout."),
+    layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional().describe("bar: category layout."),
     series: z
       .array(
         z.union([
@@ -170,8 +170,12 @@ const flatChartSchema = () => {
       .min(1)
       .max(CLOUD_AI_CHART_MAX_SERIES)
       .optional()
-      .describe("line, scatter: label/data, optional reference role; line: style. Line needs 2 points per series."),
-    xAxis: ChartAxis.optional().describe("line, scatter: x axis. bar: only label, the category axis title."),
+      .describe(
+        "bar: aligned label/data counts; hbar: series names. line, scatter: label/data points, optional reference role; line: style. Line needs 2 points per series.",
+      ),
+    xAxis: ChartAxis.extend({ ordered: z.boolean().optional() })
+      .optional()
+      .describe("line, scatter: x axis. bar: label titles categories; ordered keeps their sequence."),
     yAxis: ChartAxis.optional().describe("bar, line, scatter, boxplot: y axis; label names the value, format sets units."),
     legend: z
       .boolean()
@@ -213,7 +217,7 @@ const chartInputSchema = () => {
         .describe(`Groups: 2..${CLOUD_AI_GROUP_MAX_CHARTS} related charts, each with a kind.`),
       linkX: z.boolean().optional().describe("Groups: share the x cursor between line charts with the same kind of x."),
       layout: z
-        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked", "nested"])
+        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked"])
         .optional()
         .describe("Groups: stack or grid. Bar: columns, rows, grouped or stacked."),
     })

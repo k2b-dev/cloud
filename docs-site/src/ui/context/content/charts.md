@@ -985,3 +985,5 @@ every number readable without a pointer. Countries too small for a shape appear
 as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
+
+Category hover bands carry a transparent SVG presentation fill, so standalone SVGs and base-styled print or app frames retain the same drawing. Series legends use at most one quarter of the frame and truncate long names; the tooltip and data table retain full names. Dense grouped bars drop their inner gap before reducing bar width. Category labels stay whole and thin to fit. Missing totals display “–”; zero observations remain zero. Comparison changes and total labels inherit the UI locale.

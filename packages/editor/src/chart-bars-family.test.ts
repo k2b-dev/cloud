@@ -39,3 +39,23 @@ test("portable horizontal bars reject mismatched or negative segments", () => {
   expect(schema.safeParse({ ...spec, rows: [{ label: "bad", values: [1] }] }).success).toBe(false);
   expect(schema.safeParse({ ...spec, rows: [{ label: "bad", values: [-1, 2] }] }).success).toBe(false);
 });
+
+test("all-null totals are gaps and localized total headers agree with inspection", () => {
+  const input = schema.parse({ ...base, x: ["Gap"], series: [{ label: "Shop", data: [null] }], layout: "stacked" });
+  const table = chartTable(input, "de");
+  expect(table.columns.find((c) => c.id === "total")?.label).toBe("Gesamt");
+  expect(table.rows[0]?.cells.total).toBe("–");
+  expect(schema.safeParse({ ...base, layout: "nested" }).success).toBe(false);
+  expect(schema.safeParse({ ...base, xAxis: { ordered: true } }).success).toBe(true);
+});
+
+test("Notebook horizontal rows reserve their growing drawing height", async () => {
+  const { notebookChartHeight } = await import("./markdown/lib/chart-blocks");
+  const input = schema.parse({
+    kind: "hbar",
+    title: "Rows",
+    series: ["Count"],
+    rows: Array.from({ length: 20 }, (_, i) => ({ label: `Row ${i}`, values: [i] })),
+  });
+  expect(notebookChartHeight(input, "en")).toBeGreaterThan(600);
+});
