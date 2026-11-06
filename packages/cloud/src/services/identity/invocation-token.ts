@@ -90,7 +90,7 @@ const validateInvocationClaims = (claims: z.infer<typeof InvocationPayloadBaseSc
     (claims.parent_invocation_id
       ? claims.exp <= claims.iat ||
         claims.exp - claims.iat > CLOUD_INVOCATION_TOKEN_TTL_SECONDS ||
-        !(claims.op.startsWith("capability.query:") || (subjectProbe && claims.op === "app-access.check"))
+        !claims.op.startsWith("capability.query:")
       : claims.exp - claims.iat !== CLOUD_INVOCATION_TOKEN_TTL_SECONDS) ||
     claims.nbf !== claims.iat
   ) {

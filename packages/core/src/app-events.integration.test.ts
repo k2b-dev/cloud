@@ -154,7 +154,15 @@ suiteFor("database")("Core app event broker", () => {
     entries[0]!.manifest.events![0]!.place = "item";
     const place = { type: "eventsource.item", id: id(100) };
     await broker.reconcileSubscriptions();
-    const binding = { consumer: "fixture", key: "workload", revision: "version-1", mandateId: id(200), mandateRevision: 1, place };
+    const binding = {
+      consumer: "fixture",
+      key: "workload",
+      revision: "version-1",
+      mandateId: id(200),
+      mandateRevision: 1,
+      mandateOwnerAppId: "receivera",
+      place,
+    };
     const subscription = await subscribeResourceEvent(sql, { appId: "receivera", type: "eventsource.changed", version: 1, binding });
     await sql`UPDATE events.app_subscriptions SET first_seen_at='1999-01-01T00:00:00Z' WHERE id=${subscription}`;
     await broker.accept({ ...event(60), place }, 1);
@@ -187,7 +195,15 @@ suiteFor("database")("Core app event broker", () => {
   test("revoked access and cancelled workloads never reach resource handlers", async () => {
     entries[0]!.manifest.events![0]!.place = "item";
     const place = { type: "eventsource.item", id: id(100) };
-    const binding = { consumer: "fixture", key: "workload", revision: "version-1", mandateId: id(200), mandateRevision: 1, place };
+    const binding = {
+      consumer: "fixture",
+      key: "workload",
+      revision: "version-1",
+      mandateId: id(200),
+      mandateRevision: 1,
+      mandateOwnerAppId: "receivera",
+      place,
+    };
     const subscription = await subscribeResourceEvent(sql, { appId: "receivera", type: "eventsource.changed", version: 1, binding });
     await sql`UPDATE events.app_subscriptions SET first_seen_at='1999-01-01T00:00:00Z' WHERE id=${subscription}`;
     await broker.accept({ ...event(64), place }, 1);

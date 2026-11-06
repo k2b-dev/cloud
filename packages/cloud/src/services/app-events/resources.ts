@@ -1,17 +1,21 @@
 import type { SQL } from "bun";
 import { z } from "zod";
 import { capabilityHash } from "../../_internal/capability-schemas";
+import { createCapabilityDeadline } from "../../_internal/capability-timeout";
 import { getCapability } from "../../_internal/registry";
 import { readCapabilityResponse } from "../../capabilities/response";
 import type { AppEventDeliveryContext, AppEventEnvelope } from "../../contracts/app-events";
 import {
+  CAPABILITY_ORIGIN_HEADER,
   CapabilityAppIdSchema,
   CapabilityQualifiedIdSchema,
   CloudResourceRefSchema,
   capabilityResultSchema,
 } from "../../contracts/capabilities";
 import { AppAccessDeniedError } from "../../server/middleware/app-access";
-import { issueInvocationToken, resolveIssuanceAuthority } from "../identity/issue-invocation";
+import { issueInvocationToken, requireRegisteredAppAccess, resolveIssuanceAuthority } from "../identity/issue-invocation";
+import { NESTED_INVOCATION_SETUP_BUDGET_MS, nestedInvocationLeases } from "../identity/nested-invocation";
+import { logger } from "../logging";
 import { mandates } from "../mandates";
 
 /** Core-owned workloads bind one immutable revision, mandate and exact place. Never browser input. */
@@ -25,6 +29,7 @@ export const ResourceEventBindingSchema = z
     key: z.string().min(1).max(200),
     revision: z.string().min(1).max(200),
     mandateId: z.uuid(),
+    mandateOwnerAppId: CapabilityAppIdSchema,
     mandateRevision: z.number().int().positive(),
     place: CloudResourceRefSchema,
   })
@@ -94,7 +99,7 @@ export async function authorizeResourceEvent(
   const mandate = await mandates.get(binding.mandateId);
   if (
     !mandate ||
-    mandate.ownerAppId !== appId ||
+    mandate.ownerAppId !== binding.mandateOwnerAppId ||
     mandate.state !== "active" ||
     !mandate.confirmedAt ||
     mandate.revision !== binding.mandateRevision ||
@@ -116,6 +121,12 @@ export async function authorizeResourceEvent(
   } as const;
   const authority = await resolveIssuanceAuthority({ ...principal, scopes: [] }, appId);
   if (!authority) return false;
+  try {
+    await requireRegisteredAppAccess(authority, appId, { signal });
+  } catch (error) {
+    if (error instanceof AppAccessDeniedError) return false;
+    throw error;
+  }
   signal?.throwIfAborted();
   const separator = binding.place.type.indexOf(".");
   const source = binding.place.type.slice(0, separator);
@@ -142,15 +153,35 @@ export async function authorizeResourceEvent(
     if (error instanceof AppAccessDeniedError) return false;
     throw error;
   }
-  const response = await fetch(`${provider.endpoint}/queries/${encodeURIComponent(reader)}`, {
-    method: "POST",
-    redirect: "error",
-    headers: { authorization: `Bearer ${signed.token}`, "content-type": "application/json" },
-    body: JSON.stringify({ input: { id: binding.place.id } }),
-    signal: signal ?? AbortSignal.timeout(30_000),
-  });
-  const result = await readCapabilityResponse(response, capabilityResultSchema(z.unknown(), { consumer: true }), undefined, signal);
-  if (result.ok) return true;
-  if (["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"].includes(result.error.code)) return false;
-  throw new Error(`Resource event reader unavailable: ${result.error.code}`);
+  const budget = signal ?? AbortSignal.timeout(30_000);
+  const setup = createCapabilityDeadline(NESTED_INVOCATION_SETUP_BUDGET_MS, budget);
+  try {
+    await setup.wait(() =>
+      nestedInvocationLeases.create(signed.claims, { appId: source, deadline: signed.claims.exp * 1000, origin: "app" }, setup.signal),
+    );
+  } finally {
+    setup.clear();
+  }
+  try {
+    const response = await fetch(`${provider.endpoint}/queries/${encodeURIComponent(reader)}`, {
+      method: "POST",
+      redirect: "error",
+      headers: {
+        authorization: `Bearer ${signed.token}`,
+        "content-type": "application/json",
+        "x-cloud-capability-schema-hash": operation.schemaHash,
+        [CAPABILITY_ORIGIN_HEADER]: "app",
+      },
+      body: JSON.stringify({ input: { id: binding.place.id } }),
+      signal: budget,
+    });
+    const result = await readCapabilityResponse(response, capabilityResultSchema(z.unknown(), { consumer: true }), undefined, budget);
+    if (result.ok) return true;
+    if (["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"].includes(result.error.code)) return false;
+    throw new Error(`Resource event reader unavailable: ${result.error.code}`);
+  } finally {
+    await nestedInvocationLeases
+      .revoke(signed.claims.jti)
+      .catch(() => logger("app-events:broker").warn("Resource visibility lease cleanup failed"));
+  }
 }

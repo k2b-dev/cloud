@@ -443,5 +443,5 @@ The selected local handler controls its own effects. Its output is a count:
 
 Resource visibility checks carry a query-only, mandate-bound event proof. The
 provider revalidates the active subscription and claimed delivery before its
-ordinary Type reader checks the principal's current read access. The proof
-expires with that claim and cannot authorize an Action or a workload run.
+ordinary Type reader checks the principal's current read access. The proof is usable only while a delivery of that event for that mandate is
+claimed and cannot authorize an Action or a workload run.

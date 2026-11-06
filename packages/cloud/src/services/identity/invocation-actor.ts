@@ -110,7 +110,7 @@ export const resolveInvocationAuthority = async (
         AND (${claims.act.sub}='app:core' OR subscription.app_id=substring(${claims.act.sub} from 5))
         AND subscription.resource_binding->>'mandateId'=mandate.id::text
         AND (subscription.resource_binding->>'mandateRevision')::int=mandate.revision
-        AND mandate.revision=${claims.mandate_revision} AND mandate.owner_app_id=subscription.app_id
+        AND mandate.revision=${claims.mandate_revision} AND mandate.owner_app_id=subscription.resource_binding->>'mandateOwnerAppId'
         AND mandate.workload_type=${claims.workload_type} AND mandate.workload_id=${claims.workload_id}
         AND mandate.state='active' AND mandate.confirmed_at IS NOT NULL
         AND (mandate.expires_at IS NULL OR mandate.expires_at>clock_timestamp())
