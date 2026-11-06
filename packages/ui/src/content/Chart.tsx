@@ -15,7 +15,7 @@ import {
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
-import { chartKinds } from "../charts/core";
+import { chartKinds } from "../charts/core/registry";
 import { type ChartDrawingOptions, chartRenderHeight, preservesAspectRatio, renderChartSvg } from "../charts/core/render";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";

@@ -98,7 +98,7 @@ before turning them into formatter callbacks; callbacks are not saved JSON.
 To add a chart kind, register its pure renderer in `charts/core/registry.ts`. Its key defines the
 discriminator and capitalized namespace member, including the narrowed props.
 Keep any kind-specific presentation adaptation in `renderChartSvg`. Add a
-fixture to `chart-fixtures.test.ts`; the namespace render test checks both forms.
+fixture to `packages/ui/test/charts/fixtures.ts`; the namespace render test checks both forms.
 
 ## A legend above a line chart
 

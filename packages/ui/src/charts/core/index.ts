@@ -10,7 +10,6 @@ export {
 } from "../../content/chart-state-timeline";
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export * from "./inspection";
-export { chartKinds, chartRenderers } from "./registry";
 export * from "./render";
 export * from "./snapshot";
 export * from "./svg";
