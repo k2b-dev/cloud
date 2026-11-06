@@ -1193,8 +1193,9 @@ suiteFor(
     expect(receipts?.count).toBe(0);
     await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp() WHERE id=${manual.runId}::uuid`;
     const admitted = await processCurrentCodeScheduleTick(tick);
-    expect(admitted?.duplicate).toBeFalse();
-    expect((await state(admitted!.runId)).state).toBe("queued");
+    if (!admitted) throw new Error("Expected a due one-time run after its predecessor ended");
+    expect(admitted.duplicate).toBeFalse();
+    expect((await state(admitted.runId)).state).toBe("queued");
     expect(await processCurrentCodeScheduleTick(tick)).toEqual({ ...admitted, duplicate: true });
   });
   test("one-time admission rejects future, expired and stale definitions without consuming a receipt", async () => {
