@@ -4,6 +4,17 @@ import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 
 const examples = {
+  hbar: {
+    description: "Horizontal bars · Quarterly orders by channel, with group headings and totals.",
+    chart: {
+      kind: "hbar",
+      series: ["Q1", "Q2"],
+      rows: [
+        { group: "Store", label: "Furniture", values: [35, 46] },
+        { group: "Web", label: "Lighting", values: [49, 34] },
+      ],
+    },
+  },
   line: {
     description: "Line · Requests rise from 12 to 42 per second. Inspect individual points with the pointer or keyboard.",
     chart: {
@@ -243,6 +254,7 @@ type TooltipField = { label: string; unit?: string; names?: Record<string, strin
 type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
 const tooltipExamples: Record<ChartKind, TooltipExample> = {
+  hbar: { title: "Quarterly orders", fields: { Q1: { label: "Q1" }, Q2: { label: "Q2" }, total: { label: "Total" } } },
   line: {
     title: "Request rate",
     fields: {

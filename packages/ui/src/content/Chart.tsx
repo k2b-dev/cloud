@@ -4,6 +4,7 @@ import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
+import { type HorizontalBarOptions, hbarLayout, renderHbarSvg } from "../charts/core/hbar";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -140,9 +141,13 @@ export type ChartProps = {
       : {}) &
     (K extends "stateTimeline"
       ? StateTimelineChartOptions
-      : K extends "bar"
-        ? BarChartOptions
-        : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+      : K extends "hbar"
+        ? HorizontalBarOptions
+        : K extends "bar"
+          ? BarChartOptions
+          : K extends keyof typeof charts
+            ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+            : never);
 }[ChartKind];
 
 /** Pure renderer options: component layout, events and inspection are configured elsewhere. */
@@ -156,6 +161,7 @@ export type ChartRenderOptions = {
 /** Keep the fixed 28-unit bar-gauge rows inside the shared SSR/browser coordinate space. */
 export const chartRenderHeight = (props: ChartRenderOptions): number => {
   if (props.kind === "stateTimeline") return stateTimelineHeight(props.rows.length, props.legend !== false);
+  if (props.kind === "hbar") return hbarLayout(props).height;
   if (props.kind === "bar") return barChartLayout(props).height;
   if (props.kind === "barGauge") return Math.max(280, (props.title || props.subtitle ? 42 : 16) + props.data.length * 28 + 14);
   return 280;
@@ -206,6 +212,7 @@ export const renderChartSvg = (
       }),
     );
   }
+  if (kind === "hbar") return responsiveChartSvg(renderHbarSvg({ ...(opts as HorizontalBarOptions), width, height, inspect: true }));
   if (kind === "bar") return responsiveChartSvg(renderBarChartSvg({ ...(opts as BarChartOptions), width, height, inspect: true }));
   // A time axis needs an explicit X domain: it maps its round ticks onto the axis the renderer drew over it.
   const timeAxis = props.kind === "line" ? props.timeAxis : undefined;
@@ -250,7 +257,12 @@ const isEmpty = (props: ChartProps): boolean => {
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);
   }
-  if (props.kind === "bar" || props.kind === "donut" || props.kind === "pie") {
+  if (props.kind === "hbar") return !props.rows.length;
+  if (props.kind === "bar")
+    return props.series
+      ? !props.x?.length || !props.series.some((s) => s.data.some((v) => v !== null && Number.isFinite(v)))
+      : !props.data?.length;
+  if (props.kind === "donut" || props.kind === "pie") {
     return !props.data?.length;
   }
   if (props.kind === "histogram" || props.kind === "sparkline") {
@@ -559,7 +571,12 @@ const Chart = (props: ChartProps): JSX.Element => {
           label:
             selection.kind === "line" && field.key === "y"
               ? (selection.datum.label ?? labels().series ?? chartMessages().series)
-              : fields({ key: field.key }),
+              : (props.kind === "bar" || props.kind === "hbar") && field.key.startsWith("series:")
+                ? ((props.kind === "hbar" ? props.series[Number(field.key.slice(7))] : props.series?.[Number(field.key.slice(7))]?.label) ??
+                  fields({ key: field.key }))
+                : props.kind === "bar" && field.key === "previous"
+                  ? (props.compare?.label ?? fields({ key: field.key }))
+                  : fields({ key: field.key }),
           value:
             field.formatted ??
             (field.key === "upperInclusive"

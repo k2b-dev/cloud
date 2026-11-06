@@ -17282,3 +17282,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     transition: none;
   }
 }
+
+/* Category inspection keeps every mark unchanged; only the category band appears. */
+.k2b-ui .k2b-chart-category-band { fill: transparent; stroke: none; }
+.k2b-ui .k2b-chart [data-inspected] > .k2b-chart-category-band { fill: color-mix(in srgb, currentColor 5%, transparent); }
+.k2b-ui .k2b-chart [data-inspected]:has(> .k2b-chart-category-band) > :is(rect,path,circle) { stroke: none !important; }
+.k2b-ui .k2b-chart-previous > rect { fill: color-mix(in srgb, var(--stdlib-chart-c1) 14%, var(--k2b-surface)); stroke: var(--stdlib-chart-c1); stroke-width: 1px; }
