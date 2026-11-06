@@ -634,15 +634,23 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     ),
   );
 
-  // A sent message the loaded history covers leaves the outbox; its stored row keeps the send's key.
+  // A sent message the loaded history covers leaves the outbox; its stored row keeps the send's key. The stored message
+  // names its send's clientId, so it replaces the send also when it arrives live before the send's answer.
   const prune = () => {
     const current = store?.openConversation;
     if (!current || current.status === "no-access" || !outbox) return;
     const lastSeq = current.messages.at(-1)?.seq ?? 0;
+    const stored = new Map(
+      current.messages.flatMap((message) =>
+        message.clientId && message.author.id === props.viewerId ? [[message.clientId, message.id] as const] : [],
+      ),
+    );
     for (const send of outbox.sends(current.id)) {
-      if (!send.message) continue;
-      sendKeys.set(send.message.id, send.clientId);
-      if (send.status === "sent" && send.message.seq <= lastSeq) outbox.forget(send.clientId);
+      const id = stored.get(send.clientId) ?? send.message?.id;
+      if (!id) continue;
+      sendKeys.set(id, send.clientId);
+      if (stored.has(send.clientId) || (send.status === "sent" && send.message && send.message.seq <= lastSeq))
+        outbox.forget(send.clientId);
     }
   };
 
@@ -2037,7 +2045,6 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setLiveStore(live);
     const sync = () => {
       const focused = document.activeElement;
-      prune();
       // The reader's own message moves its chat to the top: that is the reader's action, not a move under the pointer.
       const top = live.sidebar.find((row) => row.pinnedRank === null);
       const firstUnpinned = order().find((id) => live.sidebar.some((row) => row.id === id && row.pinnedRank === null));
@@ -2048,7 +2055,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       setRows(live.sidebar);
       if (ownTop) sortRows();
       setHasMore(live.hasMoreSidebar);
-      setChat(live.openConversation);
+      // A send its stored message replaces leaves in the same step as the message arrives, so its row never goes missing.
+      batch(() => {
+        prune();
+        setChat(live.openConversation);
+      });
       if (live.openConversation?.status === "no-access") setPanel(null);
       setLiveStopped(live.liveStatus === "stopped");
       // Moving a keyed pin with insertBefore can blur its handle or menu trigger in the browser.
