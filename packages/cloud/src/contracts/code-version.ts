@@ -81,8 +81,8 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
     .array(
       z
         .object({
-          kind: z.enum(["schedule", "manual", "route"]).describe("Scheduled or manually invoked entrypoint."),
-          route: CodeRouteSchema.optional(),
+          kind: z.enum(["schedule", "manual", "route"]).describe("Scheduled, manually invoked or HTTP entrypoint."),
+          route: CodeRouteSchema.optional().describe("Checked method, path and public declaration for a route handler."),
           entrypoint: z.string().min(1).describe("Named ESM export selected by the runner."),
           title: CodeAutomationTitleSchema.optional().describe("Optional reviewed display title; entrypoint remains the stable key."),
           cron: z.string().nullable().describe("Five-field schedule expression, or null for manual execution."),

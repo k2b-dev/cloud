@@ -307,7 +307,11 @@ suiteFor(
         { trigger: string; state: string; input: unknown; output: unknown; generation: number }[]
       >`SELECT * FROM code.runs WHERE code_id=${code.codeId}`;
       expect(run).toMatchObject({ trigger: "path", state: "succeeded", input: null, output: null, generation: 1 });
-      await expect(startCodeRun({ ...code, idempotencyKey: "not-a-manual-start" }, context())).rejects.toThrow("Unknown Code entrypoint");
+      const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${owner}::uuid,'write') RETURNING id`;
+      await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${code.codeId},${grant!.id}::uuid)`;
+      await expect(
+        startCodeRun({ codeId: code.codeId, entrypoint: code.entrypoint, idempotencyKey: "not-a-manual-start" }, context()),
+      ).rejects.toThrow("Unknown Code entrypoint");
     } finally {
       runner.stop();
       await running;

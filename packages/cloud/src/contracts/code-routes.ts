@@ -3,7 +3,7 @@ import { z } from "zod";
 /** Literal, segment-based route grammar shared by checker, Core and SDK. Declaration order wins. */
 export const CodeRouteSchema = z
   .object({
-    method: z.enum(["GET", "POST", "PUT", "DELETE", "ALL"]),
+    method: z.enum(["GET", "POST", "PUT", "DELETE", "ALL"]).describe("HTTP method, or ALL for every method."),
     path: z
       .string()
       .min(1)
@@ -12,8 +12,9 @@ export const CodeRouteSchema = z
       .refine((path) => {
         const names = path.split("/").filter((s) => s.startsWith(":"));
         return new Set(names).size === names.length;
-      }),
-    public: z.boolean(),
+      })
+      .describe("Code-relative path with optional named segments."),
+    public: z.boolean().describe("Whether the route accepts anonymous visitors without a user."),
   })
   .strict();
 export type CodeRoute = z.infer<typeof CodeRouteSchema>;

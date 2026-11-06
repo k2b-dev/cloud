@@ -1,5 +1,6 @@
 ---
 title: Operate Code requests
+navTitle: Code requests
 section: Operations
 order: 920
 description: Size and diagnose Code route requests in the shared runner pool.
