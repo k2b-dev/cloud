@@ -440,3 +440,8 @@ failure stops replay and reports how many finished.
 Replay sends no fixture to Cloud and does not invoke a production subscriber.
 The selected local handler controls its own effects. Its output is a count:
 `{ "delivered": 3 }`.
+
+Resource visibility checks carry a query-only, mandate-bound event proof. The
+provider revalidates the active subscription and claimed delivery before its
+ordinary Type reader checks the principal's current read access. The proof
+expires with that claim and cannot authorize an Action or a workload run.

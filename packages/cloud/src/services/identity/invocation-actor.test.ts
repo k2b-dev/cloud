@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { sql } from "bun";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
 import { resolveInvocationAuthority } from "./invocation-actor";
 import type { CloudInvocationClaims } from "./invocation-token";
+
+useUnitClients();
 
 const claims = (principal: "user" | "service_account"): CloudInvocationClaims => ({
   iss: "https://cloud.example.test",
@@ -37,4 +40,26 @@ describe("resolveInvocationAuthority", () => {
       expect(queries).toBe(1);
     });
   }
+});
+
+test("an event visibility proof must still have a current claimed delivery before resolving the principal", async () => {
+  const proof = {
+    ...claims("service_account"),
+    credential_kind: "mandate" as const,
+    mandate_id: claims("user").sub,
+    mandate_revision: 1,
+    workload_type: "fixture",
+    workload_id: "one",
+    workload_event: claims("user").jti,
+  };
+  let count = 0;
+  const query = (() => {
+    count++;
+    return Promise.resolve([]);
+  }) as unknown as typeof sql;
+  expect(await resolveInvocationAuthority(proof, query, [])).toBeNull();
+  expect(count).toBe(1);
+  count = 0;
+  expect(await resolveInvocationAuthority({ ...proof, mandate_id: undefined }, query, [])).toBeNull();
+  expect(count).toBe(0);
 });

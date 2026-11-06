@@ -2,11 +2,16 @@ import type { SQL } from "bun";
 import { z } from "zod";
 import { capabilityHash } from "../../_internal/capability-schemas";
 import { getCapability } from "../../_internal/registry";
-import { invokeCapabilityWithDataSchema } from "../../capabilities/server-invoke";
+import { readCapabilityResponse } from "../../capabilities/response";
 import type { AppEventDeliveryContext, AppEventEnvelope } from "../../contracts/app-events";
-import { CapabilityAppIdSchema, CapabilityQualifiedIdSchema, CloudResourceRefSchema } from "../../contracts/capabilities";
+import {
+  CapabilityAppIdSchema,
+  CapabilityQualifiedIdSchema,
+  CloudResourceRefSchema,
+  capabilityResultSchema,
+} from "../../contracts/capabilities";
 import { AppAccessDeniedError } from "../../server/middleware/app-access";
-import { requireRegisteredAppAccess, resolveIssuanceAuthority } from "../identity/issue-invocation";
+import { issueInvocationToken, resolveIssuanceAuthority } from "../identity/issue-invocation";
 import { mandates } from "../mandates";
 
 /** Core-owned workloads bind one immutable revision, mandate and exact place. Never browser input. */
@@ -96,24 +101,21 @@ export async function authorizeResourceEvent(
     (mandate.expiresAt && Date.parse(mandate.expiresAt) <= Date.now())
   )
     return false;
-  const authority = await resolveIssuanceAuthority(
-    {
-      sub: mandate.subject.id,
-      principal_type: mandate.subject.type,
-      access_subject_type: mandate.subject.type,
-      access_subject_id: mandate.subject.id,
-      credential_kind: "mandate",
-      scopes: [],
-    },
-    appId,
-  );
+  const principal = {
+    sub: mandate.subject.id,
+    principal_type: mandate.subject.type,
+    access_subject_type: mandate.subject.type,
+    access_subject_id: mandate.subject.id,
+    credential_kind: "mandate",
+    scopes: [],
+    mandate_id: mandate.id,
+    mandate_revision: mandate.revision,
+    workload_type: mandate.workloadType,
+    workload_id: mandate.workloadId,
+    workload_event: envelope.id,
+  } as const;
+  const authority = await resolveIssuanceAuthority({ ...principal, scopes: [] }, appId);
   if (!authority) return false;
-  try {
-    await requireRegisteredAppAccess(authority, appId, { signal });
-  } catch (error) {
-    if (error instanceof AppAccessDeniedError) return false;
-    throw error;
-  }
   signal?.throwIfAborted();
   const separator = binding.place.type.indexOf(".");
   const source = binding.place.type.slice(0, separator);
@@ -122,11 +124,32 @@ export async function authorizeResourceEvent(
   if (!provider) throw new Error("Resource event reader unavailable");
   const reader = provider.manifest.types.find((type) => type.localId === localType)?.reader;
   if (!reader) return false;
-  const result = await invokeCapabilityWithDataSchema(
-    { appId: source, capabilityId: reader, kind: "query", input: { id: binding.place.id } },
-    z.unknown(),
-    { authority, signal: signal ?? AbortSignal.timeout(30_000) },
-  );
+  const operation = provider.manifest.queries.find((query) => query.localId === reader);
+  if (!operation || operation.stream) return false;
+  let signed: Awaited<ReturnType<typeof issueInvocationToken>>;
+  try {
+    signed = await issueInvocationToken(
+      {
+        targetAppId: source,
+        callingAppId: appId,
+        operation: `capability.query:${reader}`,
+        schemaHash: operation.schemaHash,
+        authority: { ...principal, scopes: [] },
+      },
+      { signal },
+    );
+  } catch (error) {
+    if (error instanceof AppAccessDeniedError) return false;
+    throw error;
+  }
+  const response = await fetch(`${provider.endpoint}/queries/${encodeURIComponent(reader)}`, {
+    method: "POST",
+    redirect: "error",
+    headers: { authorization: `Bearer ${signed.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ input: { id: binding.place.id } }),
+    signal: signal ?? AbortSignal.timeout(30_000),
+  });
+  const result = await readCapabilityResponse(response, capabilityResultSchema(z.unknown(), { consumer: true }), undefined, signal);
   if (result.ok) return true;
   if (["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"].includes(result.error.code)) return false;
   throw new Error(`Resource event reader unavailable: ${result.error.code}`);
