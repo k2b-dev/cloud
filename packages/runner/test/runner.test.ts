@@ -1,5 +1,6 @@
 import { expect, jest, test } from "bun:test";
-import type { RunnerBridge, RunnerCompleteRequest, RunnerLease, RunnerLeaseProof } from "@k2b/cloud/code/runner";
+import { CODE_CHECK_LIMITS } from "@k2b/cloud/code";
+import type { RunnerBridge, RunnerCompleteRequest, RunnerJobLease, RunnerLease, RunnerLeaseProof } from "@k2b/cloud/code/runner";
 import { BundleCache, bundleHash } from "../src/cache";
 import type { RunnerEngine } from "../src/engine";
 import { reserveJobIdentities } from "../src/identities";
@@ -325,6 +326,38 @@ test("C13b successfully reaped job ranges are reused without consuming productio
     expect(next.first).toBe(expected);
     next.release();
   }
+});
+
+test("checker jobs preserve Core's memory limit independently of the runtime process budget", async () => {
+  const request = { files: { "code.ts": "export {};" }, entry: "code.ts", limits: CODE_CHECK_LIMITS };
+  const input = JSON.stringify({ kind: "check", request });
+  const job: RunnerJobLease = {
+    kind: "check",
+    jobId: "11111111-1111-4111-8111-111111111111",
+    generation: 1,
+    leaseKey: "a".repeat(64),
+    deadlineAt: NOW + 30000,
+    leaseExpiresAt: NOW + 15000,
+    heartbeatMs: 5000,
+    inputBytes: Buffer.byteLength(input),
+    outputBytes: CODE_CHECK_LIMITS.outputBytes,
+  };
+  expect(config.processMemoryBytes).toBeLessThan(CODE_CHECK_LIMITS.memoryBytes);
+  const result = await executeRunnerJob(job, input, config, AbortSignal.timeout(5000), (command) => {
+    expect(command.at(-1)).toBe("/app/checker.js");
+    return Bun.spawn(
+      [
+        process.execPath,
+        "--no-env-file",
+        "-e",
+        `const input = await Bun.stdin.json();
+         if (input.limits.memoryBytes !== ${CODE_CHECK_LIMITS.memoryBytes} || "config" in input) process.exit(1);
+         console.log(JSON.stringify({ ok: false, diagnostics: [] }));`,
+      ],
+      { env: {}, stdin: "pipe", stdout: "pipe", stderr: "ignore" },
+    );
+  });
+  expect(result).toEqual({ kind: "check", result: { ok: false, diagnostics: [] } });
 });
 
 for (const cooperative of [true, false])

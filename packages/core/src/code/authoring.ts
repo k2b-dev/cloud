@@ -11,7 +11,13 @@ import { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson } from "./access";
 import { activateCodeVersion } from "./activation";
 import { createCodeCheckRequest } from "./authoring-check";
-import type { CodeAuthoringCommand, CodeAuthoringData, CodeAuthoringInput, CodeAuthoringPermission } from "./authoring-contracts";
+import {
+  CODE_INITIAL_SOURCE,
+  type CodeAuthoringCommand,
+  type CodeAuthoringData,
+  type CodeAuthoringInput,
+  type CodeAuthoringPermission,
+} from "./authoring-contracts";
 import { type Code, codeQueryContracts } from "./contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./policy";
 import { type CodePolicyRow, codePolicyRow } from "./policy-contracts";
@@ -22,8 +28,6 @@ import { codeSourceHash, createCode, listCodeRuns, listCodes, readCode, readCode
 import { simulateCode, testCode } from "./testing";
 import { diffCodeVersion, listCodeVersions, setCodePaused, submitCodeVersion } from "./versions";
 
-const initialSource =
-  'import { app } from "@sdk";\n\napp.schedule("0 8 * * 1", async () => {\n}, { name: "monday" });\nexport default app;\n';
 /** Read every chunk of one immutable version through the existing permission-aware reader. */
 async function versionText(
   codeId: string,
@@ -158,7 +162,7 @@ export const codeAuthoringServices = {
     return {
       version: 1,
       config: { version: 1, codeId: code.id, title: code.title, owner: code.owner, entry: "code.ts", baseVersionId: null },
-      files: { "code.ts": initialSource },
+      files: { "code.ts": CODE_INITIAL_SOURCE },
     };
   },
   pull: (input: CodeAuthoringInput<"pull">, context: CodeContext) => pull(input.codeId, context),

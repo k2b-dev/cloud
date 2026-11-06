@@ -8,6 +8,9 @@ import { codeSchedulingContracts } from "./scheduling-contracts";
 import { codeSecretContracts } from "./secret-contracts";
 import { CodeVersionDiffFileSchema, codeVersionContracts } from "./version-contracts";
 
+/** Source returned by init for CLI and chat checkouts. */
+export const CODE_INITIAL_SOURCE =
+  'import { app } from "@sdk";\n\napp.schedule("0 8 * * 1", async () => {\n}, { name: "monday" });\nexport default app;\n';
 /** Versioned local code.json. IDs determine folders; title and owner remain metadata. Never stores credentials. */
 export const CodeProjectSchema = z
   .object({
