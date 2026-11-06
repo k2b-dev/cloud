@@ -7,7 +7,17 @@ export type AiAdminOverview = {
   enabled: boolean;
   providers: (Pick<
     AiProvider,
-    "id" | "type" | "label" | "enabled" | "status" | "statusCode" | "statusMessage" | "statusCheckedAt" | "logo" | "credentialSet"
+    | "id"
+    | "type"
+    | "label"
+    | "dataBoundary"
+    | "enabled"
+    | "status"
+    | "statusCode"
+    | "statusMessage"
+    | "statusCheckedAt"
+    | "logo"
+    | "credentialSet"
   > & {
     modelCount: number;
   })[];
@@ -29,6 +39,7 @@ export const readAiAdminOverview = async (): Promise<AiAdminOverview> => {
       id: p.id,
       type: p.type,
       label: p.label,
+      dataBoundary: p.dataBoundary,
       enabled: p.enabled,
       status: p.status,
       statusCode: p.statusCode,

@@ -15,6 +15,7 @@ import {
   type MailRequestContext,
   type PersonalPrincipal,
   personalPrincipal,
+  userBackedActor,
 } from "./auth";
 import { readableMailboxes } from "./focus";
 
@@ -249,4 +250,27 @@ export const setMailboxViewPreference = async (
     if (!row) throw new Error("Mailbox view preference insert returned no row");
     return ok(row);
   });
+};
+
+/**
+ * Whether the person closed the sidebar notice that Focus is gone. Only people see it, so a request
+ * without one counts as closed.
+ */
+export const focusNoticeDismissed = async (context: MailRequestContext): Promise<boolean> => {
+  const user = userBackedActor(context);
+  if (!user) return true;
+  const [row] = await sql<{ dismissed: boolean }[]>`
+    SELECT focus_notice_dismissed_at IS NOT NULL AS dismissed FROM mail.personal_preferences WHERE user_id = ${user.id}::uuid`;
+  return row?.dismissed ?? false;
+};
+
+/** Closes the notice for the person on every device; closing it again keeps the first time. */
+export const dismissFocusNotice = async (context: MailRequestContext): Promise<Result<{ dismissed: true }>> => {
+  const user = userBackedActor(context);
+  if (!user) return fail(err.forbidden("Only a person can close this notice"));
+  await sql`
+    INSERT INTO mail.personal_preferences AS preference (user_id, focus_notice_dismissed_at)
+    VALUES (${user.id}::uuid, now())
+    ON CONFLICT (user_id) DO UPDATE SET focus_notice_dismissed_at = COALESCE(preference.focus_notice_dismissed_at, now())`;
+  return ok({ dismissed: true });
 };

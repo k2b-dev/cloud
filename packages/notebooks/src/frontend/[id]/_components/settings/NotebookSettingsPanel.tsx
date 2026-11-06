@@ -6,6 +6,7 @@ import { ExportSection } from "./ExportSection";
 import { FeaturesSection } from "./FeaturesSection";
 import { GeneralSection } from "./GeneralSection";
 import { notebookSettingsMessages } from "./messages";
+import { TemplatesSection } from "./TemplatesSection";
 import type { NotebookSettingsProps } from "./types";
 
 export const openNotebookSettingsDialog = (props: NotebookSettingsProps): Promise<void> =>
@@ -20,7 +21,7 @@ export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () 
   const locale = useLocale();
   const t = () => notebookSettingsMessages.resolve([locale()]).t;
   const [notebook, setNotebook] = createSignal(props.notebook);
-  const [activeTab, setActiveTab] = createSignal("general");
+  const [activeTab, setActiveTab] = createSignal(props.initialTab ?? "general");
   const [generalDirty, setGeneralDirty] = createSignal(false);
   const [exportDirty, setExportDirty] = createSignal(false);
   const activeTabDirty = () => (activeTab() === "general" ? generalDirty() : activeTab() === "export" ? exportDirty() : false);
@@ -64,6 +65,9 @@ export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () 
           </SettingsModal.Tab>
           <SettingsModal.Tab id="features" title={t().viewBehavior} icon="ti ti-toggle-right" description={t().viewBehaviorDescription}>
             <FeaturesSection notebook={notebook()} isAdmin={props.isAdmin} onNotebookChange={setNotebook} host={props.host} />
+          </SettingsModal.Tab>
+          <SettingsModal.Tab id="templates" title={t().templates} icon="ti ti-template" description={t().templatesDescription}>
+            <TemplatesSection notebook={notebook()} canWrite={props.canWrite} />
           </SettingsModal.Tab>
         </SettingsModal.Group>
 

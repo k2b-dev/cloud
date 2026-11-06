@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { CapabilityError, CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { fail, ok, type Result } from "@k2b/cloud/server";
-import { sql } from "bun";
 import type { z } from "zod";
 import { DISCUSSION_PREVIEW_LENGTH, type DiscussionItemSchema } from "../capability-contracts";
 import { threadHref } from "../frontend/threads";

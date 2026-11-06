@@ -109,6 +109,7 @@ export const installBaseline = async (sql: TransactionSQL): Promise<void> => {
       accepted_at TIMESTAMPTZ NOT NULL,
       planned_states JSONB,
       response JSONB,
+      reset_generation BIGINT, checkpoint_id UUID, pending_checkpoint_id UUID,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       expires_at TIMESTAMPTZ NOT NULL,
       PRIMARY KEY (source_id, idempotency_key),
@@ -196,6 +197,14 @@ export const installBaseline = async (sql: TransactionSQL): Promise<void> => {
     total_bytes BIGINT, measured_at TIMESTAMPTZ, disk_low_at TIMESTAMPTZ,
     outage_started_at TIMESTAMPTZ, last_outage_ended_at TIMESTAMPTZ
   )`.simple();
+};
+
+/** Existing receipts retain their plans; null validity requires replay on their next retry. */
+export const installReceiptCheckpoints = async (sql: TransactionSQL): Promise<void> => {
+  await sql`ALTER TABLE pulse.ingest_idempotency
+    ADD COLUMN IF NOT EXISTS reset_generation BIGINT,
+    ADD COLUMN IF NOT EXISTS checkpoint_id UUID,
+    ADD COLUMN IF NOT EXISTS pending_checkpoint_id UUID`.simple();
 };
 
 /** SQL console control data. migrate() holds the installation transaction lock. */
@@ -302,6 +311,37 @@ export const installOverviewAlerts = async (sql: TransactionSQL): Promise<void> 
     ADD CONSTRAINT pulse_notification_event_recipient UNIQUE(event_id,user_id)`.simple();
   await sql`CREATE INDEX ON pulse.notification_outbox(dispatch_kind,seq)`.simple();
   await sql`CREATE INDEX ON pulse.notification_outbox(dispatch_kind,base_id,seq) WHERE dispatch_kind='fanout'`.simple();
+};
+
+export const installDashboards = async (sql: TransactionSQL): Promise<void> => {
+  await sql`CREATE TABLE pulse.dashboards (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), short_id TEXT NOT NULL CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
+    base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
+    name TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 120), definition JSONB NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+    public_token_hash TEXT UNIQUE, public_exposure TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (jsonb_typeof(definition->'panels')='array' AND jsonb_array_length(definition->'panels')<=36),
+    CHECK ((public_token_hash IS NULL) = (public_exposure IS NULL))
+  )`.simple();
+  await sql`CREATE UNIQUE INDEX idx_pulse_dashboards_short_id ON pulse.dashboards(short_id)`.simple();
+  await sql`CREATE UNIQUE INDEX idx_pulse_dashboards_name ON pulse.dashboards(base_id,lower(name))`.simple();
+  await sql`CREATE INDEX ON pulse.dashboards(base_id,updated_at DESC,id)`.simple();
+  await sql`CREATE TABLE pulse.dashboard_operations (
+    base_id UUID NOT NULL REFERENCES pulse.bases(id) ON DELETE CASCADE,
+    operation_key TEXT NOT NULL, input_hash TEXT NOT NULL, response TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now()+interval '24 hours'), PRIMARY KEY(base_id,operation_key)
+  )`.simple();
+  await sql`CREATE INDEX ON pulse.dashboard_operations(expires_at)`.simple();
+  await sql`CREATE TABLE pulse.dashboard_runs (
+    dashboard_id UUID NOT NULL REFERENCES pulse.dashboards(id) ON DELETE CASCADE,
+    variant TEXT NOT NULL, slot_start TIMESTAMPTZ NOT NULL,
+    lease_id UUID, lease_until TIMESTAMPTZ, finished_at TIMESTAMPTZ,
+    failures INTEGER NOT NULL DEFAULT 0, retry_at TIMESTAMPTZ, error_code TEXT,
+    expires_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY(dashboard_id,variant)
+  )`.simple();
+  await sql`CREATE INDEX ON pulse.dashboard_runs(expires_at)`.simple();
 };
 
 /** Source ownership is durable authorization metadata, independent of activity retention. */

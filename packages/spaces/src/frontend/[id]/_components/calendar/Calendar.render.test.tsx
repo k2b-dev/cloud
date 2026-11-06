@@ -71,7 +71,9 @@ describe("Spaces calendar toolbar", () => {
       }),
     );
 
-    expect(html).toMatch(/data-variant="input"[^>]*>.*<span class="max-sm:sr-only">New event<\/span><\/span><\/button>/);
+    expect(html).toMatch(
+      /data-variant="input"[^>]*>.*<span class="max-sm:sr-only">New event<\/span><i class="ti ti-chevron-down[^>]*><\/i><\/span><\/button>/,
+    );
     // The filters and the count sit in the toolbar after the title; there is no second row.
     expect(html).toMatch(
       /<div class="k2b-calendar-header__content">.*aria-label="Scope".*aria-label="Priority".*aria-label="Status".*0 shown/,
@@ -259,6 +261,16 @@ describe("Spaces calendar month toolbar", () => {
 });
 
 describe("Spaces calendar colors", () => {
+  // Before the items' day, so the open tasks are not overdue yet; one test reads them past it.
+  beforeEach(() => setSystemTime(new Date("2026-08-01T12:00:00Z")));
+
+  test("an open task past its deadline turns red and says so", () => {
+    setSystemTime(new Date("2026-10-24T12:00:00Z"));
+    const urgent = chip(renderView("month", "en"), "Send the press kit");
+    expect(urgent).toContain('data-overdue="true"');
+    expect(urgent).toContain('aria-label="Send the press kit, overdue, Deadline, Priority: Urgent"');
+  });
+
   for (const locale of ["en", "de"] as const) {
     for (const view of ["day", "week", "month"] as const) {
       test(`${view} view in ${locale}: tag colors for events and tasks, tasks as markers, a flag for urgent work`, () => {

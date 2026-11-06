@@ -130,6 +130,9 @@ test("focus pages start closed with transient panel state and retain the saved w
 
 test("closed panel has a title, no iframe, tabs or Panel trigger for a single provider", async () => {
   const html = await render();
+  // The phone sheet opens at full height, so its grabber offers to shrink it.
+  expect(html).toMatch(/class="cloud-panel__grabber" data-cloud-panel-grow(?:="")? aria-label="Shrink panel"/);
+  expect(html).not.toContain("data-sheet-detent");
   expect(html).toContain('id="cloud-panel"');
   expect(html).toContain('class="cloud-panel__title"');
   expect(html).toContain('data-state="closed"');
@@ -138,12 +141,14 @@ test("closed panel has a title, no iframe, tabs or Panel trigger for a single pr
   expect(html).not.toContain("data-cloud-panel-toggle");
 });
 
-test("two providers have tabs and rail/header triggers with SSR open state", async () => {
+test("two providers have tabs and one rail trigger with SSR open state, and no trigger in the phone header", async () => {
   const html = await render("providers=2", "cloud_panel=1:second:24");
   expect(html).toContain('role="tablist" aria-label="Panels"');
   expect(html).toContain('data-cloud-panel-provider="second" aria-selected="true"');
+  // Phones reach the panel through help; its tabs lead to the other panels.
+  expect(html.match(/<header[\s\S]*?<\/header>/)?.[0]).not.toContain("data-cloud-panel-toggle");
   const buttons = html.match(/<button[^>]*data-cloud-panel-toggle[^>]*>/g) ?? [];
-  expect(buttons).toHaveLength(2);
+  expect(buttons).toHaveLength(1);
   for (const button of buttons) {
     expect(button).toContain('aria-expanded="true"');
     expect(button).toContain('aria-controls="cloud-panel"');

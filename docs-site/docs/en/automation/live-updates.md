@@ -5,7 +5,7 @@ section: Automation
 order: 645
 description: Write an application's live updates in the transaction that makes the change and serve them to its open tabs over one socket.
 tags: [live, realtime, outbox, transactions, websocket]
-updated: 2026-10-09
+updated: 2026-10-31
 ---
 
 # Live updates
@@ -221,12 +221,12 @@ refused handshake would only reach the browser as a retryable `1012`.
 | Code | Cause |
 | --- | --- |
 | `login_required` | No credential, or the session or token has ended |
-| `forbidden_origin` | A session whose `Origin` differs from the origin of the `app.url` setting |
+| `forbidden_origin` | A cookie session with a missing, null or foreign `Origin`, or `Sec-Fetch-Site: same-site` or `cross-site`; a session Bearer with a foreign Origin |
 | `missing_scope` | An OAuth token without `read` (or `admin`), as on other read routes |
 
 Browsers send `Origin` with every socket, and the gateway forwards it. A
-socket without `Origin` comes from a client that is not a web page, and it is
-served like any other request with that credential.
+cookie-authenticated socket without `Origin` is refused too. Non-browser clients
+must send the canonical public Origin or use an explicit Bearer credential.
 
 An API key reads what the application's `authorize` allows for its scopes,
 as on the API.

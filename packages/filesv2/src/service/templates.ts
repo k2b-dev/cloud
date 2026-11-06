@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   type AccessSubject,
   buildAccessPrincipalCondition,
@@ -14,7 +15,7 @@ import {
 } from "@k2b/cloud/server";
 import { accountIdentities, audit, serviceAccounts } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
-import { sql, type TransactionSQL } from "bun";
+import type { TransactionSQL } from "bun";
 import { TEMPLATE_LIMIT } from "../document-assets";
 import type { FileTemplate, TemplatePage } from "../template-contracts";
 import { FilesError, filesService } from ".";
@@ -30,7 +31,7 @@ const view = (row: Row): FileTemplate => ({
   size: row.size,
   updatedAt: row.updated_at.toISOString(),
 });
-const fields = sql`id,name,description,filename,size,updated_at`;
+const fields = () => sql`id,name,description,filename,size,updated_at`;
 async function user(actor: RequestActor) {
   if (machineActor(actor)) {
     const account = await currentMachine(actor);
@@ -80,7 +81,7 @@ async function requireUse(actor: RequestActor, subject: AccessSubject, id: strin
   if (!hasPermission(permission, "read")) throw new FilesError("forbidden", 403);
 }
 async function get(id: string) {
-  const [row] = await sql<Row[]>`SELECT ${fields} FROM filesv2.templates WHERE id=${id}::uuid`;
+  const [row] = await sql<Row[]>`SELECT ${fields()} FROM filesv2.templates WHERE id=${id}::uuid`;
   if (!row) throw new FilesError("not_found", 404);
   return view(row);
 }
@@ -126,7 +127,7 @@ async function createTemplate(
   return sql.begin(async (tx) => {
     const [row] = await tx<
       Row[]
-    >`INSERT INTO filesv2.templates(name,description,filename,bytes,size,created_by) VALUES(${input.name},${input.description},${input.filename},${data},${data.length},${self.user.id}::uuid) RETURNING ${fields}`;
+    >`INSERT INTO filesv2.templates(name,description,filename,bytes,size,created_by) VALUES(${input.name},${input.description},${input.filename},${data},${data.length},${self.user.id}::uuid) RETURNING ${fields()}`;
     await recordAudit(tx, call, action, row!.id);
     return view(row!);
   });
@@ -164,7 +165,7 @@ export function createTemplateService(files = filesService) {
       });
       const rows = await sql<
         Row[]
-      >`SELECT ${fields} FROM filesv2.templates t WHERE (${input.after ?? null}::uuid IS NULL OR t.id > ${input.after ?? null}::uuid)
+      >`SELECT ${fields()} FROM filesv2.templates t WHERE (${input.after ?? null}::uuid IS NULL OR t.id > ${input.after ?? null}::uuid)
       AND position(lower(${input.q}) in lower(t.name)) > 0
       AND (${administrative} OR EXISTS(SELECT 1 FROM filesv2.template_access ta JOIN auth.access a ON a.id=ta.access_id WHERE ta.template_id=t.id AND ${principal} AND a.permission IN ('read','write','admin')))
       ORDER BY t.id LIMIT 51`;
@@ -197,7 +198,7 @@ export function createTemplateService(files = filesService) {
       return sql.begin(async (tx) => {
         const [row] = await tx<
           Row[]
-        >`UPDATE filesv2.templates SET name=${input.name},description=${input.description},filename=COALESCE(${input.file?.filename ?? null},filename),bytes=COALESCE(${data},bytes),size=COALESCE(${data?.length ?? null},size),updated_at=now() WHERE id=${id}::uuid RETURNING ${fields}`;
+        >`UPDATE filesv2.templates SET name=${input.name},description=${input.description},filename=COALESCE(${input.file?.filename ?? null},filename),bytes=COALESCE(${data},bytes),size=COALESCE(${data?.length ?? null},size),updated_at=now() WHERE id=${id}::uuid RETURNING ${fields()}`;
         if (!row) throw new FilesError("not_found", 404);
         await recordAudit(tx, call, "update", id);
         return view(row);
@@ -210,7 +211,7 @@ export function createTemplateService(files = filesService) {
       return sql.begin(async (tx) => {
         const [row] = await tx<
           Row[]
-        >`UPDATE filesv2.templates SET filename=${input.filename},bytes=${data},size=${data.length},updated_at=now() WHERE id=${id}::uuid RETURNING ${fields}`;
+        >`UPDATE filesv2.templates SET filename=${input.filename},bytes=${data},size=${data.length},updated_at=now() WHERE id=${id}::uuid RETURNING ${fields()}`;
         if (!row) throw new FilesError("not_found", 404);
         await recordAudit(tx, call, "replace", id);
         return view(row);

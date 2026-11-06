@@ -1,6 +1,11 @@
 import { expect, mock, spyOn, test } from "bun:test";
-import { type ReservedSQL, SQL, sql } from "bun";
+import * as platform from "@k2b/cloud";
+import { sql } from "@k2b/cloud";
+import { type ReservedSQL, SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { type ActivityReadBudget, withActivityReadBudget } from "../service/activity-read-budget";
+
+useUnitClients();
 
 const services = await import("@k2b/cloud/services");
 const warning = mock(() => {});
@@ -70,9 +75,7 @@ test.each([...modes])("aborting %s cancels only its reserved backend without wai
     return cancelResult.promise;
   });
   const control = connectionFor(cancel);
-  const originalSQL = Bun.SQL;
-  const createControl = mock(() => control.connection);
-  Bun.SQL = new Proxy(originalSQL, { construct: () => createControl() });
+  const createControl = spyOn(platform, "createSql").mockReturnValue(control.connection);
   const reserve = spyOn(sql, "reserve").mockResolvedValue(own.connection);
   const sharedClose = spyOn(sql, "close");
   const controller = new AbortController();
@@ -99,7 +102,7 @@ test.each([...modes])("aborting %s cancels only its reserved backend without wai
     cancelResult.resolve([{ canceled: true }]);
     reserve.mockRestore();
     sharedClose.mockRestore();
-    Bun.SQL = originalSQL;
+    createControl.mockRestore();
   }
 });
 
@@ -223,9 +226,7 @@ test("a failed cancellation connection is observed before the original query set
   const control = connectionFor(async () => {
     throw new Error("cancellation connection unavailable");
   });
-  const originalSQL = Bun.SQL;
-  const createControl = mock(() => control.connection);
-  Bun.SQL = new Proxy(originalSQL, { construct: () => createControl() });
+  const createControl = spyOn(platform, "createSql").mockReturnValue(control.connection);
   const reserve = spyOn(sql, "reserve").mockResolvedValue(own.connection);
   const controller = new AbortController();
   try {
@@ -247,6 +248,6 @@ test("a failed cancellation connection is observed before the original query set
   } finally {
     result.reject(new Error("socket closed"));
     reserve.mockRestore();
-    Bun.SQL = originalSQL;
+    createControl.mockRestore();
   }
 });

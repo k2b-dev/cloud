@@ -1,7 +1,6 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { BaseOperationSuperseded, baseStore, storeErrorCode } from "../store/base-store";
 import { measureBaseUsage, measureInstanceDisk, verifyBaseCheckpoint, writeBaseCheckpoint } from "../store/maintenance";
 import { pulseStoreConfigured } from "../store/service";

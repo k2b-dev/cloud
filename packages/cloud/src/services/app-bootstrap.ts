@@ -84,7 +84,7 @@ export const cleanupBootstrapProofs = async (
       WHERE replay.key_id = batch.key_id AND replay.jti = batch.jti AND replay.retain_until <= now()
       RETURNING replay.jti
     `;
-    const abort = () => query.cancel();
+    const abort = () => void query.cancel().catch(() => {});
     signal?.addEventListener("abort", abort, { once: true });
     try {
       signal?.throwIfAborted();

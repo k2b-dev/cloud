@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { withAiShortIdForDb } from "@k2b/cloud/ai";
-import { sql } from "bun";
 
 export async function migrateArtifacts() {
   await sql`CREATE SCHEMA IF NOT EXISTS assistant`.simple();

@@ -2,6 +2,7 @@ import { children, createEffect, createMemo, createUniqueId, type JSX, Show } fr
 import type { MaybeAccessor } from "../inputs/field-contract";
 import { resolveMaybeAccessor } from "../inputs/field-contract";
 import { KeyedFor } from "../internal/keyed-for";
+import { revealInScroller } from "../internal/reveal-in-scroller";
 
 const tabName = (label: JSX.Element) => (typeof label === "string" ? label : undefined);
 
@@ -109,7 +110,8 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
     const removed = closing !== undefined && !items().some((item) => item.value === closing);
     if (removed) closing = undefined;
     queueMicrotask(() => {
-      buttons[index]?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      // Only the list moves: `scrollIntoView` would also scroll every ancestor, so a page would open scrolled down.
+      revealInScroller(list, buttons[index]);
       if (removed) {
         const target = items().length ? buttons[index] : root?.querySelector<HTMLElement>(".k2b-tabs__trailing button");
         target?.focus();

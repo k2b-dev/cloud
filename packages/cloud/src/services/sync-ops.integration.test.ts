@@ -25,6 +25,7 @@ integration(
     const actions: string[] = [];
     const app = new Hono<AuthContext>()
       .use("*", async (c, next) => {
+        c.set("credentialKind", "session");
         c.set("user", user);
         c.set("actor", { kind: "user", user });
         await next();
@@ -97,7 +98,15 @@ integration(
       defaults: { replicas: 1 },
     });
     const queue = sync.queue<{ value: number }>({ id: "work" });
-    const app = createSyncOpsRoutes(() => sync);
+    const app = new Hono<AuthContext>()
+      .use("*", async (c, next) => {
+        c.set("credentialKind", "session");
+        await next();
+      })
+      .route(
+        "/",
+        createSyncOpsRoutes(() => sync),
+      );
     try {
       await sync.ready();
       const reader = await queue.reader();

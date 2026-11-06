@@ -7,6 +7,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
+import { solidTestPlugin } from "../../test/solid-test-plugin";
 
 // Which control a tap reaches depends on layout and paint order, which
 // happy-dom does not model, so a real engine renders the shipped stylesheet.
@@ -36,7 +37,7 @@ await Bun.write(
   toastEntry,
   `import { toast } from ${JSON.stringify(resolve(import.meta.dir, "../feedback/toast"))};\nObject.assign(globalThis, { toast });\n`,
 );
-const toastBuild = await Bun.build({ entrypoints: [toastEntry], target: "browser", format: "iife" });
+const toastBuild = await Bun.build({ entrypoints: [toastEntry], target: "browser", format: "iife", plugins: [solidTestPlugin()] });
 if (!toastBuild.success) throw new AggregateError(toastBuild.logs, "Could not bundle toast for the browser.");
 const toastScript = await toastBuild.outputs[0]!.text();
 const phone = { viewport: { width: 390, height: 664 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };

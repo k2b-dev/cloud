@@ -343,6 +343,28 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
+  test("a warning confirmation carries the warning tone and keeps a primary confirm button", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { prompts } = await import("../src/feedback/prompts");
+
+    const result = prompts.confirm("This to-do isn't due for another 2 days. Complete it anyway?", {
+      title: "Complete early?",
+      confirmText: "Complete",
+      variant: "warning",
+    });
+    await settle();
+    expect(dom.document.querySelector(".k2b-dialog.k2b-dialog--warning")).not.toBeNull();
+    expect(dom.document.querySelector('.k2b-dialog__header i[data-tone="warning"]')?.className).toBe("ti ti-alert-triangle");
+    expect(dom.document.querySelector("[data-dialog-tone-label]")?.textContent).toBe("Warning");
+    const buttons = [...dom.document.querySelectorAll<HTMLButtonElement>(".k2b-dialog__actions button")];
+    expect(buttons.map((button) => button.dataset.variant)).toEqual(["secondary", "primary"]);
+    const confirmClick = (buttons[1] as HTMLButtonElement & { $$click?: () => void }).$$click;
+    confirmClick?.();
+    expect(await result).toBe(true);
+    dom.cleanup();
+  });
+
   test("cancels a typed confirmation without requiring the phrase", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
@@ -561,6 +583,8 @@ describe("@k2b/ui feedback runtime", () => {
     const { dialogCore } = await import("../src/feedback/dialog-core");
     const { prompts } = await import("../src/feedback/prompts");
 
+    // The prompt's date field was imported in an earlier test with a different document.
+    delegateEvents(["keydown", "click", "focusout"], dom.document);
     const formResult = prompts.form({
       fields: {
         releaseDate: { type: "datetime", dateOnly: true, default: "2026-08-03" },
@@ -568,16 +592,24 @@ describe("@k2b/ui feedback runtime", () => {
     });
     await settle();
 
-    dom.document.querySelector<HTMLButtonElement>(".k2b-date-trigger")?.click();
-    await settle();
+    const input = dom.document.querySelector<HTMLInputElement>(".k2b-date-field input")!;
+    const openCalendar = async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      await settle();
+    };
+    await openCalendar();
     const nextDay = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("[data-date-day]")).find(
       (day) => day.dataset.dateDay !== "2026-08-03" && day.dataset.outside !== "true",
     );
     expect(nextDay).toBeDefined();
+    const key = nextDay!.dataset.dateDay!;
     nextDay?.click();
     await settle();
 
-    expect(nextDay?.getAttribute("aria-selected")).toBe("true");
+    // The picked day reaches the prompt's value and comes back as the field's selection.
+    expect(input.value).toBe(`${key.slice(5, 7)}/${key.slice(8)}/${key.slice(0, 4)}`);
+    await openCalendar();
+    expect(dom.document.querySelector(`[data-date-day="${key}"]`)?.getAttribute("aria-selected")).toBe("true");
 
     dialogCore.close();
     expect(await formResult).toBeNull();

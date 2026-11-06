@@ -10,7 +10,7 @@
  *
  * Ingest and retention live in `../../telemetry`; this module only reads.
  */
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { SLOW_REQUEST_MS } from "../../telemetry";
 import { TELEMETRY_RANGES, type TelemetryRange, type TelemetryRouteScope, type TelemetryRouteSort } from "./contracts";
 
@@ -76,7 +76,7 @@ export type TelemetryQuery = {
  * otherwise vanish from a grouped view. Falling back to the route prefix
  * keeps history readable — coarser, but never blank.
  */
-const ROUTE_EXPR = sql`COALESCE(NULLIF(path_template, ''), route_prefix)`;
+const ROUTE_EXPR = () => sql`COALESCE(NULLIF(path_template, ''), route_prefix)`;
 
 const rangeFilter = (range: TelemetryRange) => sql`bucket >= now() - (${TELEMETRY_RANGES[range].hours}::int * INTERVAL '1 hour')`;
 
@@ -85,7 +85,7 @@ const scopeFilter = (query: TelemetryQuery) => {
   const route = query.route?.trim() || null;
   return sql`
     (${appId}::text IS NULL OR app_id = ${appId})
-    AND (${route}::text IS NULL OR ${ROUTE_EXPR} = ${route})
+    AND (${route}::text IS NULL OR ${ROUTE_EXPR()} = ${route})
   `;
 };
 
@@ -219,7 +219,7 @@ export const listTelemetryRoutes = async (
   >`
     SELECT
       app_id,
-      ${ROUTE_EXPR} AS route,
+      ${ROUTE_EXPR()} AS route,
       COALESCE(SUM(request_count), 0)::int AS requests,
       COALESCE(SUM(error_count), 0)::int AS errors,
       COALESCE(SUM(slow_count), 0)::int AS slow_requests,
@@ -227,7 +227,7 @@ export const listTelemetryRoutes = async (
       MAX(max_duration_ms)::float AS max_duration_ms
     FROM gateway.telemetry_rollups_minute
     WHERE ${rangeFilter(query.range)} AND ${scopeFilter(query)}
-    GROUP BY app_id, ${ROUTE_EXPR}
+    GROUP BY app_id, ${ROUTE_EXPR()}
     HAVING ${routeHaving(scope)}
     ORDER BY ${routeOrdering(sort)}
     LIMIT ${RANKING_LIMIT}
@@ -275,12 +275,12 @@ export const listTelemetryEvents = async (query: TelemetryQuery, limit: number):
     }[]
   >`
     SELECT
-      id, app_id, route_prefix, ${ROUTE_EXPR} AS route,
+      id, app_id, route_prefix, ${ROUTE_EXPR()} AS route,
       method, status_code, duration_ms, error_kind, occurred_at::text
     FROM gateway.telemetry_events
     WHERE occurred_at >= now() - (${TELEMETRY_RANGES[query.range].hours}::int * INTERVAL '1 hour')
       AND (${appId}::text IS NULL OR app_id = ${appId})
-      AND (${route}::text IS NULL OR ${ROUTE_EXPR} = ${route})
+      AND (${route}::text IS NULL OR ${ROUTE_EXPR()} = ${route})
     ORDER BY occurred_at DESC
     LIMIT ${Math.max(1, Math.min(500, Math.floor(limit)))}
   `;

@@ -19,7 +19,7 @@ export const isListImageAttachment = (attachment: {
   attachment.sizeBytes >= MIN_LIST_IMAGE_BYTES &&
   !(attachment.disposition === "inline" && attachment.contentId !== null);
 
-type RowImages = {
+export type RowImages = {
   imageAttachments: { messageId: string; attachmentId: string }[];
   imageAttachmentCount: number;
 };

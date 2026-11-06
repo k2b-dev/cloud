@@ -3,8 +3,8 @@ import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
   id: "venue",
-  // APIs admit roleless service accounts; navigation keeps its narrower audience.
-  access: appAccess.signedIn({
+  // Resource-bound and roleless service accounts remain eligible.
+  access: appAccess.noGuests({
     publicRoutes: [
       "/app/venue/public/:id",
       "/app/venue/public/:id/feedback",

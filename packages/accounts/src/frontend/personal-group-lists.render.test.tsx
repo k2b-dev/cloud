@@ -67,7 +67,7 @@ test("old personal-group list URLs use normal discovery and retain ordinary list
     stubRailSnapshot(),
     spyOn(services.coreSettings, "get").mockResolvedValue(false),
     spyOn(services.linuxIdentities, "configuration").mockResolvedValue(config),
-    spyOn(services.accountsAppService.accountRequest, "list").mockResolvedValue(empty),
+    spyOn(services.accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
   ];
   try {
     const response = await server().request("/app/accounts/groups?personal=1&scope=all&search=Design", {
@@ -112,7 +112,7 @@ test("direct and indirect user memberships hide personal groups and keep normal 
         state: "ready",
       },
     }),
-    spyOn(services.accountsAppService.accountRequest, "list").mockResolvedValue(empty),
+    spyOn(services.accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
     spyOn(services.accountsAppService.user.groupId, "list").mockResolvedValue([personal.id, team.id]),
     spyOn(services.serviceAccountCredentials, "listOverview").mockResolvedValue(empty),
     spyOn(services.appApproval, "listUserDevices").mockResolvedValue([]),

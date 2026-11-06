@@ -21,7 +21,8 @@ describe("Record document detail surfaces", () => {
     expect(source).toContain("collapsible");
     expect(source).toContain("summary={");
     expect(source).toContain("title={t().createSnapshot}");
-    expect(source).not.toContain('icon="ti ti-camera"\n');
+    // Every section carries its icon (UI-27).
+    expect(source).toContain('icon="ti ti-camera"');
     expect(source).not.toContain('class="group flex min-w-0 items-center');
   });
 });

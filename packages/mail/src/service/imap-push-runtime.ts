@@ -17,6 +17,8 @@ const log = logger("mail:imap-push");
 const LEADER_LEASE_MS = 60_000;
 const CONNECTION_LEASE_MS = 60_000;
 const HEARTBEAT_INTERVAL_MS = 20_000;
+// The health row records a state change at once and an unchanged state at most this often.
+const HEALTH_HEARTBEAT_MS = 60_000;
 // A renewal that the lease store did not answer is retried until this long
 // before the last confirmed extension runs out, which leaves time to close the
 // IDLE connection before another process can take the lease over.
@@ -25,6 +27,9 @@ const MAX_RENEWAL_RETRY_DELAY_MS = 5_000;
 const SCAN_INTERVAL_MS = 15_000;
 const HINT_COALESCE_MS = 200;
 const POLL_FALLBACK_MS = 30_000;
+// A connected listener checks its folder this often besides its hints, for changes the server
+// never announced. The scheduled sync leaves such a folder to it (submitDueFolderSyncs).
+const LISTENER_CHECK_MS = 60_000;
 const MAX_PENDING_HINTS = 128;
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const STABLE_CONNECTION_MS = 60_000;
@@ -637,7 +642,7 @@ const consumeHints = async (params: {
       .finally(() => {
         fallbackTask = null;
       });
-  }, POLL_FALLBACK_MS);
+  }, LISTENER_CHECK_MS);
 
   try {
     for await (const hint of params.listener.hints) {
@@ -736,12 +741,20 @@ export const runImapPushBinding = async (
     void closeActiveListener();
   };
   // The health heartbeat runs beside the lease renewal, so a slow Postgres
-  // cannot delay an extension; at most one write is in flight.
+  // cannot delay an extension; at most one write is in flight. An unchanged
+  // state is written at most once a minute.
   let healthWrite: Promise<void> | null = null;
+  let lastHealth: { state: ImapPushHealthState; mode: ConnectorChangeListenerMode | "none"; at: number } | null = null;
   const recordHeartbeat = (): void => {
     if (healthWrite || generation === null) return;
+    const state = activeHealthState;
+    const mode = activeMode;
+    if (lastHealth?.state === state && lastHealth.mode === mode && performance.now() - lastHealth.at < HEALTH_HEARTBEAT_MS) return;
     healthWrite = dependencies
-      .updateHealth(initialPlan.bindingId, generation, { state: activeHealthState, mode: activeMode })
+      .updateHealth(initialPlan.bindingId, generation, { state, mode })
+      .then(() => {
+        lastHealth = { state, mode, at: performance.now() };
+      })
       .catch((error) => {
         log.warn("IMAP push listener health could not be recorded", { bindingId: initialPlan.bindingId, error: errorDetail(error) });
       })
@@ -754,6 +767,7 @@ export const runImapPushBinding = async (
   const writeHealth = async (patch: ImapPushHealthPatch): Promise<void> => {
     await healthWrite;
     await dependencies.updateHealth(initialPlan.bindingId, generation!, patch);
+    lastHealth = { state: patch.state, mode: patch.mode, at: performance.now() };
   };
   const loseLeases = async (lease: string, reason: ImapPushLeaseLoss["reason"], cause?: unknown): Promise<never> => {
     await closeActiveListener();
@@ -1010,7 +1024,7 @@ const defaultDependencies: ImapPushRuntimeDependencies = {
   updateHealth,
   loadRuntime: loadProviderConnectionRuntimeSnapshot,
   listen: imapSmtpConnector.listenForChanges!,
-  enqueueFolder: enqueueFolderSync,
+  enqueueFolder: (folderId) => enqueueFolderSync(folderId, { trigger: "push" }),
   enqueueReconciliation: enqueueFolderReconciliation,
   enqueueRediscovery: enqueueBindingRediscovery,
   loadReconnectBudget,

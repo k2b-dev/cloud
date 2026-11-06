@@ -67,9 +67,6 @@ const item = (index: number, overrides: Partial<MailListItem> = {}): MailListIte
   unread: index % 3 === 0,
   activeFolderIds: [],
   flagged: false,
-  imageAttachments: [],
-  imageAttachmentCount: 0,
-  hasAttachments: false,
   messageCount: 1,
   workStatus: "needs_action",
   assigneeUserIds: [],
@@ -88,7 +85,7 @@ const items: MailListItem[] = [
     participantLabels: ["Mara Example", "Jonas Sample"],
     assigneeUserIds: ["user-jonas"],
     messageCount: 5,
-    hasAttachments: true,
+    attachmentCount: 2,
     localTags: [tag("Event", "#8b5cf6"), tag("Offer", "#f59e0b"), tag("Accounting", "#0ea5e9"), tag("Members", "#10b981")],
   }),
   item(1, { subject: "Question about invoice 2026-0418", participantLabels: ["Paul Probe"], workStatus: "waiting" }),
@@ -1311,9 +1308,9 @@ describe("Mail row actions", () => {
 
 describe("Mail image thumbnails in the columns view", () => {
   const images = (ids: string[], count = ids.length) => ({
-    hasAttachments: true,
+    attachmentCount: count,
     imageAttachments: ids.map((attachmentId) => ({ messageId: "Msg001", attachmentId })),
-    imageAttachmentCount: count,
+    ...(count > ids.length ? { imageAttachmentCount: count } : {}),
   });
   const thumbnailItems = [item(1, images(["Img001", "Img002", "Img003"], 5)), item(2, images(["Broken"])), item(3), ...items.slice(4, 12)];
   /** Per row: whether its thumbnails show, their boxes, and what each box holds. */
@@ -1344,7 +1341,7 @@ describe("Mail image thumbnails in the columns view", () => {
     thumbnailRequests.length = 0;
     const page = await load({
       columns: "personal",
-      listSize: 620,
+      listSize: 1000,
       items: thumbnailItems,
       context: { viewport: { width: 1600, height: 900 } },
     });
@@ -1377,13 +1374,15 @@ describe("Mail image thumbnails in the columns view", () => {
     await close(page);
   }, 30_000);
 
-  test("a narrow app area and a phone show no thumbnails and load none", async () => {
-    for (const viewport of [
-      { width: 820, height: 900 },
-      { width: 390, height: 844 },
+  test("a narrow list beside the reader, a narrow app area and a phone show no thumbnails and load none", async () => {
+    // A wide window with a narrow list keeps the subject readable: the list's own width decides, like its columns.
+    for (const { viewport, listSize } of [
+      { viewport: { width: 1600, height: 900 }, listSize: 620 },
+      { viewport: { width: 820, height: 900 }, listSize: undefined },
+      { viewport: { width: 390, height: 844 }, listSize: undefined },
     ]) {
       thumbnailRequests.length = 0;
-      const page = await load({ columns: "personal", items: thumbnailItems, context: { viewport } });
+      const page = await load({ columns: "personal", items: thumbnailItems, listSize, context: { viewport } });
       await page.locator(row("Cv0001")).waitFor();
       const rows = await thumbnails(page);
       expect(
@@ -1882,7 +1881,7 @@ describe("scoped flag search builder", () => {
               await trigger.press("Enter");
               await currentPage.locator('input[name="q"]').waitFor({ state: "visible" });
             }
-            await currentPage.getByRole("button", { name: "Search filters", exact: true }).click();
+            await currentPage.getByRole("button", { name: "More filters", exact: true }).click();
             await currentPage.getByRole("dialog").waitFor({ state: "visible" });
           };
           await openBuilder(currentPage);
@@ -1953,7 +1952,7 @@ test("scoped flag folder lookup recovers without losing the filter", async () =>
     );
     if (await page.getByRole("button", { name: "Search (/)", exact: true }).count())
       await page.getByRole("button", { name: "Search (/)", exact: true }).click();
-    await page.getByRole("button", { name: "Search filters", exact: true }).click();
+    await page.getByRole("button", { name: "More filters", exact: true }).click();
     await page.getByRole("alert").waitFor({ state: "visible" });
     expect(await page.getByRole("combobox", { name: "Folder", exact: true }).isDisabled()).toBe(true);
     fail = false;

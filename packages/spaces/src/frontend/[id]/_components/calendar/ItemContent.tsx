@@ -52,7 +52,10 @@ export function CalendarItemContent(props: {
             {props.context.leadingTime}
           </span>
         </Show>
-        <span class="min-w-0 truncate text-[0.6875rem] font-medium in-[.k2b-calendar-day-list]:text-[0.8125rem] [[data-bar=true]_&]:font-semibold [[data-selected=true]_&]:font-semibold">
+        <span
+          class="min-w-0 truncate text-[0.6875rem] font-medium in-[.k2b-calendar-day-list]:text-[0.8125rem] [[data-bar=true]_&]:font-semibold [[data-selected=true]_&]:font-semibold"
+          data-calendar-title=""
+        >
           {props.event.title}
         </span>
         <Show when={props.flag}>

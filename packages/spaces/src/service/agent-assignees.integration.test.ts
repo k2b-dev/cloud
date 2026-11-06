@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { CreateItemTemplateSchema, ItemFilterSchema } from "../contracts";
 import { newShortId } from "../lib/short-id";
@@ -131,16 +131,26 @@ suite("Spaces service-account assignees", () => {
     });
   });
 
-  test("a claim assigns the account however it got write access", async () => {
+  test("a claim needs the account's own write access; all signed-in people is not enough", async () => {
     await withFixture(async (f) => {
       const outsider = await f.account("standalone", { grant: false });
       await f.grant(f.spaceId, null);
       const itemId = await f.task();
+      // "All signed-in people" means people: an agent needs its own right.
+      expect(await change({ ...f.context(itemId, outsider.actor), operation: "claim", claimId: crypto.randomUUID() })).toMatchObject({
+        ok: false,
+        status: 403,
+      });
+      expect(await listAssignableUsers({ spaceId: f.spaceId, search: outsider.name })).not.toContainEqual(
+        expect.objectContaining({ id: outsider.id }),
+      );
+      // Its own grant makes it a member of the space like a person: it may claim and is offered for assignment.
+      await f.grant(f.spaceId, outsider.id);
       expect(await change({ ...f.context(itemId, outsider.actor), operation: "claim", claimId: crypto.randomUUID() })).toMatchObject({
         ok: true,
       });
       expect((await get({ id: itemId }))?.assignees).toContainEqual(expect.objectContaining({ id: outsider.id, kind: "service_account" }));
-      expect(await listAssignableUsers({ spaceId: f.spaceId, search: outsider.name })).not.toContainEqual(
+      expect(await listAssignableUsers({ spaceId: f.spaceId, search: outsider.name })).toContainEqual(
         expect.objectContaining({ id: outsider.id }),
       );
     });

@@ -1,0 +1,6 @@
+### An editor turn's outcome is rewritten by best-effort follow-up requests
+
+- **What happened:** In `cld acp`, a finished or cancelled turn answered the editor with an internal error when the title refresh after the turn failed, and a Stop while offline failed instead of answering `cancelled`. A Stop during the draft write still started a turn, a request hanging after the editor left kept `cld` running, and a replayed status moved a finished tool call back to running in the editor.
+- **Root cause:** The title read and the abort request ran in `finally` and `catch` without their own error handling, so their failures replaced the turn's result. Prompt requests carried no Stop signal and no deadline, the shutdown waited without a bound, and the stale-status check ran after the editor was already notified.
+- **Error class:** Cleanup rewrites the reported error.
+- **Guard:** `packages/assistant/src/cli/acp.test.ts` "ACP turn outcome and cancellation" fails a title read, the abort request, a hanging chat or command read, and a paused draft write against the fake Cloud and checks the ACP stop reason, that no turn starts and the draft is emptied, that shutdown finishes in time, and that a 401 or a failed sign-in refresh becomes `authRequired`.

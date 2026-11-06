@@ -31,18 +31,16 @@ import type { apiClient } from "./client";
 type ListResponse = InferResponseType<(typeof apiClient.mailboxes)[":mailboxId"]["workspace-list"]["$get"], 200>;
 const inferredListView = (data: ListResponse): MailboxListView => data;
 
-// Empty image metadata is part of every row's contract; preserve the original response budgets' headroom.
-const EMPTY_ROW_IMAGE_METADATA_BYTES = Buffer.byteLength(',"imageAttachments":[],"imageAttachmentCount":0');
 // Page 2 of the folder fixture with a conversation open, measured on 2026-10-19: workspace-route sends 16,861 bytes
 // (the whole workspace and the open conversation's detail), workspace-list 4,145 bytes (the list plus the mailbox, the
 // reader's access and the saved views). The budget sits between them with room for row fields, and fails when a list
 // page carries the workspace or the selection again.
-const WORKSPACE_LIST_PAGE_TWO_MAX_BYTES = 5_000 + 3 * EMPTY_ROW_IMAGE_METADATA_BYTES;
+const WORKSPACE_LIST_PAGE_TWO_MAX_BYTES = 5_000;
 // Page 1 of the folder fixture on a folder switch, measured on 2026-10-19: workspace-route sends 48,069 bytes (the
 // list plus mailbox, folders, counts, identities and saved views), workspace-list 45,674 bytes (the list plus mailbox,
 // access and saved views). Fifty rows dominate this small mailbox; the budget sits between the two and fails when the
 // switch carries the folders, counts or identities again.
-const WORKSPACE_LIST_FOLDER_SWITCH_MAX_BYTES = 46_500 + 50 * EMPTY_ROW_IMAGE_METADATA_BYTES;
+const WORKSPACE_LIST_FOLDER_SWITCH_MAX_BYTES = 46_500;
 const anchor = new Date("2026-10-01T12:00:00.000Z");
 const suite = suiteFor("database", "nats", "valkey");
 const contextFor = (user: User): MailRequestContext => ({
@@ -61,6 +59,10 @@ const listFields = [
   "draftsMode",
   "draftsPage",
   "draftsError",
+  // Events is a list of its own: a tab or filter switch loads it through the list, as Drafts and Scheduled do.
+  "eventsMode",
+  "eventsPage",
+  "eventsError",
   "activeView",
   "savedViewId",
   "listMode",
@@ -71,6 +73,9 @@ const listFields = [
   "listCursor",
   "nextListCursor",
   "listError",
+  "hiddenDone",
+  // Assigned to me's group headings belong to its list, as the done line does.
+  "assignedGroups",
   "listTitle",
 ] as const;
 const listPart = (data: MailboxListView) =>
@@ -303,6 +308,20 @@ suite("Mail workspace list pages", () => {
         expect(seen.size).toBe(token === "reader" ? 52 : 53);
       }
     }, 30_000);
+
+  for (const token of ["owner", "reader"])
+    test(`${token}: the Events tab's list matches the full route`, async () => {
+      const scope: Scope = { name: "events", params: { view: "events" } };
+      const href = hrefFor(scope);
+      const full = await page("workspace-route", href, token, scope);
+      const list = await page("workspace-list", href, token, scope);
+      expect(listPart(list)).toEqual(listPart(full));
+      expect(Object.keys(list).sort()).toEqual(Object.keys(listPart(list)).sort());
+      expect(list.eventsMode).toBe(true);
+      // The feed replaces the conversations; the full route keeps the reader for the open conversation.
+      expect(list.listItems).toEqual([]);
+      expect(list.eventsPage === null).toBe(list.eventsError !== null);
+    });
 
   test("work guard: list pages never rebuild the workspace or read the selection", async () => {
     const spies = [

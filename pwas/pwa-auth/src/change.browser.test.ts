@@ -50,6 +50,7 @@ window.openChange = ({ locale, kind, self, name, outcome }) => {
       if (outcome === "uncertain") throw new Error("The response was lost");
       if (outcome === "stale") throw new Error("stale");
     },
+    recheck: noop,
     revoke: noop,
     syncPush: noop,
     forget: noop,
@@ -117,7 +118,8 @@ const settled = (page: Page) =>
   page.waitForFunction(() =>
     document
       .getAnimations()
-      .filter((animation) => animation.timeline === document.timeline)
+      // The card's pending glow behind the sheet never ends; only finite animations settle.
+      .filter((animation) => animation.timeline === document.timeline && Number.isFinite(animation.effect?.getTiming().iterations))
       .every((animation) => animation.playState !== "running"),
   );
 const box = (page: Page, selector: string) =>

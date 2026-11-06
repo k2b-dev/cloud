@@ -1,19 +1,21 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
-import { bindResourceAppAccess } from "../_internal/app-access-resources";
+import { bindResourceAppAccess, RESOURCE_ACCESS_PROBE_TIMEOUT_MS } from "../_internal/app-access-resources";
 import { compileCapabilities } from "../_internal/capabilities";
+import { person } from "../_internal/define-app.test-fixture";
 import { appAccess, compileAppAccess } from "../contracts/app-access";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { sql } from "../runtime/clients";
 import type { AuthContext } from "../server";
+import * as appAccessService from "../services/app-access";
 import { searchInvocationOperation } from "../services/identity/invocation-operations";
 import type { signInvocationToken } from "../services/identity/invocation-token";
-import { issueInvocationToken } from "../services/identity/issue-invocation";
+import { prepareFanoutIssuance } from "../services/identity/issue-invocation";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createSearchRoutes as buildSearchRoutes } from "./search";
 import type { SearchStreamLine } from "./search/schemas";
@@ -51,7 +53,7 @@ const app: CapabilityRegistryEntry = {
 };
 
 const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
-  const user = { id: "11111111-1111-4111-8111-111111111111", roles: ["user"] } as AuthContext["Variables"]["user"];
+  const user = person;
   c.set("actor", { kind: "user", user });
   c.set("accessSubject", { type: "user", userId: user.id });
   c.set("user", user);
@@ -116,6 +118,16 @@ const createSearchRoutes = (dependencies: Parameters<typeof buildSearchRoutes>[0
   return buildSearchRoutes({
     withActiveSigner,
     signInvocation: async (params) => fakeInvocation(params),
+    prepareFanout: (params, options) =>
+      prepareFanoutIssuance(params, {
+        ...options,
+        resolve: async () => ({
+          actor: { kind: "user", user: person },
+          accessSubject: { type: "user", userId: person.id },
+          credentialKind: "session",
+          scopes: [],
+        }),
+      }),
     ...dependencies,
     listCapabilities: async () => {
       entries = (await dependencies.listCapabilities?.()) ?? [];
@@ -138,9 +150,56 @@ const createSearchRoutes = (dependencies: Parameters<typeof buildSearchRoutes>[0
 };
 
 describe("global capability search", () => {
-  test("shares one deadline across resource discovery, issuance revalidation and provider I/O", async () => {
+  for (const accept of ["application/json", "application/x-ndjson"]) {
+    test.each([1, 15])(`resolves issuance once for %i admitted apps (${accept}) without per-target app access`, async (count) => {
+      const admitted = Array.from({ length: count }, (_, index) => provider(index));
+      const hidden = provider(99);
+      const resolve = mock(async () => ({
+        actor: { kind: "user" as const, user: person },
+        accessSubject: { type: "user" as const, userId: person.id },
+        credentialKind: "session" as const,
+        scopes: [],
+      }));
+      const sign = mock(async (params: Parameters<typeof signInvocationToken>[0]) => fakeInvocation(params));
+      const access = spyOn(appAccessService, "canUseApp");
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => [...admitted, hidden],
+        listApps: async () =>
+          [...admitted, hidden].map((entry) => ({
+            id: entry.appId,
+            name: entry.appName,
+            description: "",
+            icon: entry.appIcon,
+            routes: [],
+            baseUrl: "http://test.invalid",
+            access: entry === hidden ? appAccess.roles(["admin"]) : appAccess.signedIn(),
+          })),
+        prepareFanout: (params, options) => prepareFanoutIssuance(params, { ...options, resolve }),
+        signInvocation: sign,
+        fetch: async () => Response.json({ data: [] }),
+      });
+      try {
+        const response = await routes.request("/search?q=needle", { headers: { accept } });
+        expect(response.status).toBe(200);
+        expect(await response.text()).not.toContain(hidden.appId);
+        expect(resolve).toHaveBeenCalledTimes(1);
+        expect(access).not.toHaveBeenCalled();
+        expect(sign.mock.calls.map(([params]) => params.targetAppId)).toEqual(admitted.map((entry) => entry.appId));
+      } finally {
+        access.mockRestore();
+      }
+    });
+  }
+
+  test("shares one deadline across resource discovery, issuance and provider I/O", async () => {
     const deadline = new AbortController();
-    const timeout = spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    const probeDeadline = new AbortController();
+    const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      if (ms === 8_000) return deadline.signal;
+      if (ms === RESOURCE_ACCESS_PROBE_TIMEOUT_MS) return probeDeadline.signal;
+      throw new Error(`Unexpected extra search budget: ${ms}`);
+    });
     const accessSignals: AbortSignal[] = [];
     const declaration = appAccess.resources({
       adapters: {
@@ -168,21 +227,6 @@ describe("global capability search", () => {
           access: compileAppAccess(declaration),
         },
       ],
-      signInvocation: (params, options) =>
-        issueInvocationToken(params, {
-          ...options,
-          resolve: async () => ({
-            actor: {
-              kind: "user",
-              user: { id: params.authority.sub, roles: ["user"] } as AuthContext["Variables"]["user"],
-            },
-            accessSubject: { type: "user", userId: params.authority.sub },
-            credentialKind: "session",
-            scopes: [],
-          }),
-          getApp: async () => ({ id: app.appId, access: compileAppAccess(declaration) }),
-          sign: async (params) => fakeInvocation(params),
-        }),
       fetch: async (_url, init) => {
         providerSignal = init?.signal;
         return Response.json({ data: [] });
@@ -191,12 +235,16 @@ describe("global capability search", () => {
     try {
       const response = await routes.request("/search?q=needle");
       expect(response.status).toBe(200);
-      expect(timeout).toHaveBeenCalledTimes(1);
-      expect(timeout).toHaveBeenCalledWith(8_000);
+      // One shared search deadline replaces discovery/entry defaults. The
+      // independent short discovery probe must still inherit its cancellation.
+      // Discovery probes once; issuance asks the owner again per resource target, as before, within the same deadline.
+      expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([8_000, RESOURCE_ACCESS_PROBE_TIMEOUT_MS]);
       expect(accessSignals).toHaveLength(2);
       expect(providerSignal?.aborted).toBe(false);
       expect(accessSignals.every((signal) => !signal.aborted)).toBe(true);
+      expect(probeDeadline.signal.aborted).toBe(false);
       deadline.abort();
+      expect(probeDeadline.signal.aborted).toBe(false);
       expect(providerSignal?.aborted).toBe(true);
       expect(accessSignals.every((signal) => signal.aborted)).toBe(true);
     } finally {
@@ -409,7 +457,7 @@ describe("global capability search", () => {
       headers: { cookie: "session=test" },
     });
     expect(response.status).toBe(200);
-    expect(input).toEqual({ input: { query: "answer", tags: ["thing"], limit: 6 } });
+    expect(input).toEqual({ input: { query: "answer", tags: ["thing"], limit: 7 } });
     expect(await response.json()).toEqual({
       query: "answer",
       count: 1,
@@ -997,7 +1045,7 @@ test("resource scopes preserve opaque IDs and route only to explicitly supportin
   });
   const response = await routes.request("/search?scope_type=demo.item&scope_id=AaBb12");
   expect(response.status).toBe(200);
-  expect(calls).toEqual([{ input: { query: "", tags: [], limit: 30, scope: { type: "demo.item", id: "AaBb12" } } }]);
+  expect(calls).toEqual([{ input: { query: "", tags: [], limit: 31, scope: { type: "demo.item", id: "AaBb12" } } }]);
   for (const query of [
     "scope_type=demo.item",
     "scope_id=AaBb12",
@@ -1045,7 +1093,7 @@ test("an app tag context selects only its provider and cannot be widened by ordi
   });
   expect((await routes.request("/search?app=demo&scope_tag=project&q=plan")).status).toBe(200);
   expect(calls).toEqual([
-    { url: "http://demo:3000/api/_internal/capabilities/v1/queries/projects", input: { query: "plan", tags: ["project"], limit: 30 } },
+    { url: "http://demo:3000/api/_internal/capabilities/v1/queries/projects", input: { query: "plan", tags: ["project"], limit: 31 } },
   ]);
   calls.length = 0;
   expect((await routes.request("/search?app=demo&scope_tag=project&tag=item")).status).toBe(200);
@@ -1232,6 +1280,78 @@ describe("streamed search", () => {
     expect(demo?.type === "provider" && demo.results.map((item) => item.title)).toEqual(["second 0", "second 1", "first 0"]);
     expect(received.filter((line) => line.type === "provider")).toHaveLength(2);
     expect(received.at(-1)).toEqual({ type: "done", status: "complete", count: 3 });
+  });
+
+  test("keeps an app's own order and says when it has more rows than it lists", async () => {
+    const limits: number[] = [];
+    const routes = createSearchRoutes({
+      authenticate,
+      listCapabilities: async () => [app],
+      fetch: async (_url, init) => {
+        const { limit } = JSON.parse(String(init?.body)).input as { limit: number };
+        limits.push(limit);
+        // Newest first, which is not the order of the titles.
+        return Response.json({
+          data: ["Zebra", "Apple", "Mango"].slice(0, limit).map((title) => ({
+            ref: { type: "demo.item", id: title },
+            title,
+            priority: 8,
+            links: [{ rel: "open", href: `/app/demo/${title}` }],
+          })),
+        });
+      },
+    });
+    const providerLine = async (path: string) => {
+      const stream = lines(await routes.request(path, { headers: NDJSON }));
+      for (let line = await stream.next(); line; line = await stream.next()) if (line.type === "provider") return line;
+    };
+    const first = await providerLine("/search?app=demo&q=plan&limit=2");
+    expect(first?.results.map((item) => item.title)).toEqual(["Zebra", "Apple"]);
+    expect(first?.more).toBeTrue();
+    const all = await providerLine("/search?app=demo&q=plan&limit=3");
+    expect(all?.results.map((item) => item.title)).toEqual(["Zebra", "Apple", "Mango"]);
+    expect(all?.more).toBeUndefined();
+    expect(limits).toEqual([3, 4]);
+    expect((await routes.request("/search?app=demo&q=plan&limit=91")).status).toBe(400);
+  });
+
+  test("loads more of one app that searches with several Queries", async () => {
+    const twoQueries = compileCapabilities(
+      "demo",
+      defineCapabilities({
+        ...capabilities,
+        queries: {
+          first: { ...capabilities.queries.search, universalSearch: { tags: [{ tag: "first", title: "First", description: "First." }] } },
+          second: {
+            ...capabilities.queries.search,
+            universalSearch: { tags: [{ tag: "second", title: "Second", description: "Second." }] },
+          },
+        },
+      }),
+    ).manifest;
+    const limits: number[] = [];
+    const routes = createSearchRoutes({
+      authenticate,
+      listCapabilities: async () => [{ ...app, manifest: twoQueries }],
+      fetch: async (url, init) => {
+        const query = new URL(String(url)).pathname.split("/").at(-1)!;
+        const { limit } = JSON.parse(String(init?.body)).input as { limit: number };
+        limits.push(limit);
+        return Response.json({
+          data: Array.from({ length: Math.min(limit, 20) }, (_, index) => ({
+            ref: { type: "demo.item", id: `${query}-${index}` },
+            title: `${query} ${index}`,
+            links: [{ rel: "open", href: `/app/demo/${query}-${index}` }],
+          })),
+        });
+      },
+    });
+    const stream = lines(await routes.request("/search?app=demo&q=plan&limit=40", { headers: NDJSON }));
+    let demo: SearchStreamLine | undefined;
+    for (let line = await stream.next(); line; line = await stream.next()) if (line.type === "provider") demo = line;
+    expect(limits).toEqual([41, 41]);
+    expect(demo?.type === "provider" && demo.results).toHaveLength(40);
+    expect(demo?.type === "provider" && demo.more).toBeUndefined();
   });
 
   test("answers the catalog and unsupported tags in the same two-line shape", async () => {

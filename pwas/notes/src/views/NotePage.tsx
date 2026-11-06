@@ -1,6 +1,6 @@
 import { files as browserFiles, images } from "@k2b/stdlib/browser";
 import { Button, Dropdown, type DropdownItem, IconButton, type ToastHandle, toast } from "@k2b/ui";
-import type { TextEditorController } from "@k2b/ui/text-editor";
+import type { TextEditorController, TextEditorControls } from "@k2b/ui/text-editor";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -100,6 +100,7 @@ export function NotePage(props: { mode: NoteMode }) {
     return mode.kind === "local" ? app.records().find((entry) => entry.id === mode.id) : undefined;
   });
   const [editor, setEditor] = createSignal<TextEditorController>();
+  const [table, setTable] = createSignal<TextEditorControls>();
   const [undo, setUndo] = createSignal<() => void>(() => {});
 
   // The open document: from the store for local notes, in memory for the draft.
@@ -490,7 +491,8 @@ export function NotePage(props: { mode: NoteMode }) {
               readOnly={editorReadOnly()}
               placeholder={first() ? t().bodyPlaceholder : undefined}
               autofocus={first() ? "start" : focusNext === record()?.id ? "end" : undefined}
-              onReady={(value, undoLast) => {
+              onReady={(value, undoLast, controls) => {
+                setTable(controls);
                 setEditor(value);
                 setUndo(() => undoLast);
                 if (focusNext === record()?.id) focusNext = null;
@@ -503,7 +505,7 @@ export function NotePage(props: { mode: NoteMode }) {
         </Show>
       </main>
       <Show when={!readOnly() && props.mode.kind !== "draft" ? editor() : undefined}>
-        {(current) => <Accessory editor={current()} onUndo={() => undo()()} onFiles={(list) => void addFiles(list)} />}
+        {(current) => <Accessory editor={current()} table={table()} onUndo={() => undo()()} onFiles={(list) => void addFiles(list)} />}
       </Show>
     </div>
   );

@@ -41,7 +41,7 @@ const load = async (chat: string, theme: "light" | "dark", options: BrowserConte
     await page.evaluate(
       ({ props }) => {
         document.getElementById("root")!.replaceChildren();
-        window.mountChat(props, "en");
+        return window.mountChat(props, "en");
       },
       { props: harness.props({ chat }) },
     );
@@ -74,7 +74,8 @@ for (const theme of ["light", "dark"] as const) {
     const chat = harness.addChat({ members: [viewer, nora], count: 4, end: harness.now() });
     const { page, errors } = await load(chat, theme, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     try {
-      expect(await page.locator('.cloud-tab-bar a[data-tab="chat"]').isVisible()).toBe(true);
+      // The phone web shell has no bottom dock; the app menu in the title row leads to the other apps.
+      expect(await page.locator(".cloud-tab-bar").count()).toBe(0);
       await phoneFrame(page, 844);
       await field(page).tap();
       await focused(page);
@@ -113,8 +114,16 @@ for (const theme of ["light", "dark"] as const) {
       await page.getByRole("link", { name: "Back to chats", exact: true }).tap();
       await page.waitForURL("**/app/chat");
       await page.locator(".chat-conversation").waitFor({ state: "hidden" });
-      const tab = page.locator('.cloud-tab-bar a[data-tab="chat"]');
-      await tab.tap();
+      const menu = page.locator(".layout-header").getByRole("button", { name: "Open apps", exact: true });
+      // The way back runs a view transition, which takes every hit until it ends.
+      await settled(page);
+      expect(
+        await menu.evaluate((button) => {
+          const box = button.getBoundingClientRect();
+          return button.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+        }),
+      ).toBe(true);
+      await menu.tap();
       expect(errors).toEqual([]);
     } finally {
       await page.context().close();

@@ -25,7 +25,12 @@ An all-day deadline becomes overdue on the following day in your timezone. It st
 
 ## Start from a template {icon="template"}
 
-When a Space has templates, the dialog for a new task or event shows a **Template** row. The row offers **Blank** and the templates for that kind of item. With more than six templates, the row becomes a searchable list.
+Every **+** opens the same menu: the one in the head, the round button on a phone, **+ Task** below a column, **New task** in an empty list, and **New event** in the calendar. **Blank task** or **Blank event** comes first. Below it are the templates, each with its icon and a short line about what it proposes. **Create template…** comes last.
+
+- Press Enter on **+**, then Enter again, to create a blank item. The N key creates a blank task at once, and a blank event in the calendar.
+- From eight templates on, the menu has a search field. When no template matches, Enter creates a blank item with the typed text as its title.
+- A template in the menu opens the dialog with that template. The **Template** row in the dialog changes it. A task from **+ Task** below a column goes to that column.
+- In the calendar, the quick create offers **Template**. The selected time stays, and the template fills in the rest. A day's menu shows the templates too.
 
 A template fills in the title, description, priority, tags, and assignees. For a task, it also fills in the checklist. For an event, it fills in the location, time, and duration. A line below the description sums up what the template adds. Every field stays editable before you save, and **More options** shows all of them. When you already typed something, Spaces asks before a template replaces it.
 
@@ -37,13 +42,15 @@ A template can propose dates:
 - Proposals use your time zone. With a weekday rule, an all-day task keeps today available for its whole day. A template with a time offers today only while that time still lies ahead.
 - The placeholders `{{date}}`, `{{weekday}}`, and `{{week}}` in the title and description follow the chosen date until you edit the text. This also applies to **No date** and to a date from the picker.
 
-With **Manage** access, you set up templates in the Space settings under **Templates**: a name, the defaults, the date rule, and a due time or start time. **Assign to me** assigns whoever creates the item. Changing or deleting a template never changes items that were already created from it. Everyone who can create items can use the templates.
+**Create template…** opens the form for a new template. **Save as template** in an item's **…** menu fills the form from the item. It leaves out the date, comments, attachments, links, and checked boxes. When the title names a week such as "CW 44" or a date, the form suggests a placeholder. It replaces the text only when you choose **Replace**.
+
+With **Edit** access, you also create, change, and delete templates in the Space settings under **Templates**: a name, an optional icon, the defaults, the date rule, and a due time or start time. **Assign to me** assigns whoever creates the item. Changing or deleting a template never changes items that were already created from it. Everyone who can create items can use the templates. Without an icon, the template uses the default for tasks or events.
 
 ## Structure an item {icon="point"}
 
 :::reference
 - **Title:** Use a direct action or a noun phrase. Make the title readable in a list without opening the item.
-- **Assignees:** Assign people or service accounts with their own access to the Space when the item needs follow-up. Leave the item unassigned when it belongs in a shared queue.
+- **Assignees:** Assign people, agents or service accounts with their own access to the Space when the item needs follow-up. Leave the item unassigned when it belongs in a shared queue.
 - **Status:** Use the status to show the workflow state. Kanban views depend on a consistent status.
 - **Due date or event time:** Use a deadline for tasks and a schedule for events when the timing changes what people do next.
 - **Estimated duration:** Record a positive estimate in whole minutes when it helps someone size or schedule a task. Events use their start and end time instead.
@@ -133,11 +140,11 @@ While a task is claimed, other people see who works on it:
 
 A holder outside the assignees, such as a personal automation key or an account that was deleted, still appears first as a working row. This row has no remove action.
 
-Claiming a task also assigns it to you. The claim shows which assignee works on it now. Releasing your own claim keeps you assigned. The column does not change. **Assigned to me** includes tasks you claimed. **Unassigned** excludes tasks claimed by a person or an agent. Active service accounts with their own access to the Space can be assignees; Space API keys can be assigned only in their own Space. Personal automation keys cannot be assignees. An account that claims a task is assigned even without its own access, for example with access for all signed-in accounts. **Assigned to me** stays limited to your personal assignments.
+Claiming a task also assigns it to you. The claim shows which assignee works on it now. Releasing your own claim keeps you assigned. The column does not change. **Assigned to me** includes tasks you claimed. **Unassigned** excludes tasks claimed by a person or an agent. Active agents with their own access to the Space can be assignees; Space API keys can be assigned only in their own Space. Personal automation keys cannot be assignees. An account that claims a task is assigned even without its own access, for example with access for all signed-in accounts. **Assigned to me** stays limited to your personal assignments.
 
 **Take over** moves the claim and the assignment to you. A forced release of another account's claim also removes their assignment. If they were the only assignee, the task becomes unassigned.
 
-Removing a working person or service account from **Assigned** ends their claim. Removing someone else asks you to confirm once. If another session claimed the task, Spaces refuses an assignee list that omits that holder. Read the task again. In the CLI, release the claim before you use `assign` or `set` to remove its holder.
+Removing a working person, agent or service account from **Assigned** ends their claim. Removing someone else asks you to confirm once. If another session claimed the task, Spaces refuses an assignee list that omits that holder. Read the task again. In the CLI, release the claim before you use `assign` or `set` to remove its holder.
 
 Claims do not expire. They coordinate work and do not lock it: with **Edit** access, you can move a claimed task between open columns, and ordinary shared edits stay available. Completing your own claimed task, also by dragging it into a done column, releases the claim. With **Edit** access, you see **Take over** for the claim of another account. You confirm it in a dialog that names the current holder. If you complete a task that someone else claimed, for example by dragging it into a done column, Spaces asks once, such as "Claimed by Jana Berger – take over and complete?". It then takes the claim over and completes the task in one step. The assignees do not change. **Cancel** leaves the card where it was. Sending a task through a wormhole to another Space ends its claim the same way: your own claim ends without a question, and you take over someone else's claim after you confirm. The activity shows who took a claim over from whom.
 

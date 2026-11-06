@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { redis, sql } from "../../runtime/clients";
@@ -139,7 +140,7 @@ suite("local accounts without email", () => {
     const id = await createdId(await create({}));
     const created = await accountsAppService.user.createLoginToken({ actor: admin, id });
     if (!created.ok) throw new Error(created.error.message);
-    const ttl = await redis.ttl(`email-login:${created.data.token}`);
+    const ttl = await redis.ttl(`email-login:${createHash("sha256").update(created.data.token).digest("hex")}`);
     expect(ttl).toBeGreaterThan(0);
     expect(ttl).toBeLessThanOrEqual(300);
     expect(await magicLink.verify({ token: created.data.token })).toMatchObject({ ok: true, userId: id, email: null });

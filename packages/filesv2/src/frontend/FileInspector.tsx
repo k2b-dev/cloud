@@ -5,6 +5,7 @@ import {
   Button,
   DescriptionList,
   DetailPanel,
+  DetailProperties,
   type DropdownItem,
   FileGrid,
   FileTypeIcon,
@@ -322,6 +323,7 @@ export default function FileInspector(props: {
                     <Show when={!item().directory && previewKind(item())}>
                       <DetailPanel.Section
                         title={t().preview}
+                        icon="ti ti-eye"
                         actions={
                           <IconButton size="sm" variant="ghost" label={t().expand} onClick={() => expand(item())}>
                             <i class="ti ti-arrows-maximize" aria-hidden="true" />
@@ -358,7 +360,7 @@ export default function FileInspector(props: {
                         </Show>
                       </DetailPanel.Section>
                     </Show>
-                    <DetailPanel.Section title={t().properties} class="filesv2-inspector-info">
+                    <DetailPanel.Section title={t().properties} icon="ti ti-list-details" class="filesv2-inspector-info">
                       <DescriptionList
                         layout="rows"
                         size="sm"
@@ -434,29 +436,30 @@ export default function FileInspector(props: {
                       onShowVersions={showVersions}
                     />
                     <DetailPanel.Group title={item().directory ? t().moreAboutFolder : t().moreAboutFile}>
-                      <DetailPanel.Section title={t().technicalDetails} collapsible summary={t().technicalSummary}>
-                        <DescriptionList
-                          layout="rows"
-                          size="sm"
-                          items={[
-                            {
-                              term: t().kind,
-                              description: item().directory ? t().kindFolder : fileKindLabel({ name: item().name }, locale()),
-                            },
-                            ...(!item().directory ? [{ term: f().size, description: <Format.Bytes value={item().size} /> }] : []),
-                            {
-                              term: f().modified,
-                              description: (
-                                <>
-                                  <Show when={props.history?.env} fallback={<Format.DateTime value={item().modified} />}>
-                                    {(env) => <time datetime={item().modified}>{formatWhen(item().modified, locale(), h(), env())}</time>}
-                                  </Show>
-                                  <Show when={currentAuthor()}>{(name) => <span>, {name()}</span>}</Show>
-                                </>
-                              ),
-                            },
-                          ]}
-                        />
+                      <DetailProperties
+                        title={t().technicalDetails}
+                        summary={t().technicalSummary}
+                        items={[
+                          {
+                            id: "kind",
+                            label: t().kind,
+                            value: item().directory ? t().kindFolder : fileKindLabel({ name: item().name }, locale()),
+                          },
+                          ...(!item().directory ? [{ id: "size", label: f().size, value: <Format.Bytes value={item().size} /> }] : []),
+                          {
+                            id: "modified",
+                            label: f().modified,
+                            value: (
+                              <>
+                                <Show when={props.history?.env} fallback={<Format.DateTime value={item().modified} />}>
+                                  {(env) => <time datetime={item().modified}>{formatWhen(item().modified, locale(), h(), env())}</time>}
+                                </Show>
+                                <Show when={currentAuthor()}>{(name) => <span>, {name()}</span>}</Show>
+                              </>
+                            ),
+                          },
+                        ]}
+                      >
                         <Show when={cloudId.available() && entryRef(item())}>
                           {(ref) => (
                             <DetailPanel.Action
@@ -467,7 +470,7 @@ export default function FileInspector(props: {
                             />
                           )}
                         </Show>
-                      </DetailPanel.Section>
+                      </DetailProperties>
                     </DetailPanel.Group>
                   </DetailPanel.Body>
                 </>
@@ -494,7 +497,7 @@ export default function FileInspector(props: {
           }
         />
         <DetailPanel.Body>
-          <DetailPanel.Section title={t().properties}>
+          <DetailPanel.Section title={t().properties} icon="ti ti-list-details">
             <DescriptionList
               layout="rows"
               size="sm"
@@ -553,7 +556,11 @@ function FolderContents(props: {
   const meta = (entry: FileEntry) =>
     entry.directory ? t().kindFolder : `${fileKindLabel({ name: entry.name }, locale())} · ${formatFileViewSize(entry.size, locale())}`;
   return (
-    <DetailPanel.Section title={t().contents} count={page() && !page()?.next && rows().length > 0 ? rows().length : undefined}>
+    <DetailPanel.Section
+      title={t().contents}
+      icon="ti ti-folder"
+      count={page() && !page()?.next && rows().length > 0 ? rows().length : undefined}
+    >
       <Show
         when={!contents.error()}
         fallback={
@@ -940,6 +947,7 @@ function VersionsSection(props: {
     <DetailPanel.Group label={t().versions}>
       <DetailPanel.Section
         title={t().versions}
+        icon="ti ti-versions"
         actions={
           <span class="inline-flex size-4" role="status">
             <Show when={props.versions.state() === "ready" && props.versions.refreshing()}>

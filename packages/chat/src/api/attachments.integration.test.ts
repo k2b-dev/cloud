@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, setDefaultTimeout, spyOn, test } from "bun:test";
+import { redis, sql } from "@k2b/cloud";
 import type { AuthContext } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
-import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";

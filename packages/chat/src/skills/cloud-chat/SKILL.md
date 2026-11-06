@@ -1,6 +1,10 @@
 ---
 name: cloud-chat
 description: "Use when the person asks to use Chat for a Cloud resource discussion: reading the item discussion, posting, replying, and correcting or deleting your own recent messages."
+load-tools:
+  - chat.discussion.list
+  - chat.message.read
+  - chat.discussion.post
 ---
 
 # Discuss a Cloud item

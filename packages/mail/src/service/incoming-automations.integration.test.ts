@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
 import { getProcessSync, sql } from "@k2b/cloud";
-import { encryptSecret, mandates, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { encryptSecret, mandates, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
 import {
   createWorkflowRun,
@@ -18,9 +18,11 @@ import incomingAutomationRoutes from "../api/incoming-automations";
 import type { MailApiContext } from "../api/public-resource-boundary";
 import type { MailAutomationAction } from "../contracts";
 import { newShortId } from "../lib/short-id";
+import { migrate } from "../migrate";
 import { snapshotMailWorkflowCatalog } from "../workflows/catalog";
 import { grantMailboxAccess, listMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { loadMailAutomationActivity } from "./automation-workspace";
 import { executeMutationCommand } from "./command-runtime";
 import * as mailCommands from "./commands";
 import { type ConnectorEnvelope, MAX_IMAP_LITERAL_BYTES } from "./connectors";
@@ -473,27 +475,99 @@ suite("incoming automations", () => {
       expect(result.newlyAcceptedCount).toBe(0);
       const repeated = await startIncomingAutomationBackfill(request);
       expect(repeated.ok && repeated.data.updatedAt).toBe(result.updatedAt);
-      // The settle event closes the run's span through a queued trace write, which can land later.
-      const closedSpan = async () => {
-        const [span] = await sql<{ attributes: Record<string, unknown>; summary: Record<string, unknown> }[]>`
-          SELECT attributes, summary FROM logging.trace_spans
-          WHERE source = 'mail:incoming-automation-backfill'
-            AND attributes ->> 'mail.backfill.operation_id' = ${operationId}
-            AND ended_at IS NOT NULL
-        `;
-        return span;
-      };
-      const deadline = Date.now() + 10_000;
-      let span = await closedSpan();
-      while (!span && Date.now() < deadline) {
-        await Bun.sleep(20);
-        span = await closedSpan();
-      }
-      expect(span?.attributes["mail.mailbox.id"]).toBe(mailboxId);
-      expect(span?.summary.status).toBe("completed");
-      expect(span?.summary.dispatched).toBe(0);
+      const [stored] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM logging.trace_spans
+        WHERE span_key = ${trace.syncSpanKey("pump", "mail:incoming-automation-backfill", `${created.data.id}:${operationId}`)}
+      `;
+      expect(stored?.count).toBe(0);
+      const activity = await loadMailAutomationActivity(ownerContext, mailboxId);
+      expect(activity.ok).toBe(true);
+      if (!activity.ok) return;
+      const backfills = activity.data.items.filter((item) => item.id === `backfill:${created.data.id}:${operationId}`);
+      expect(backfills).toHaveLength(1);
+      expect(backfills[0]).toMatchObject({
+        kind: "backfill",
+        name: "Backfill · Durable backfill",
+        status: "completed",
+        detail: "0 matching messages dispatched",
+        href: `/app/mail/${mailboxId}/automations/incoming`,
+      });
+      const [journal] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM mail.activity_events
+        WHERE mailbox_id = ${mailboxId}::uuid AND action = 'incoming_automation.backfill.start'
+          AND metadata ->> 'operationId' = ${operationId}
+      `;
+      expect(journal?.count).toBe(1);
+      // Activity survives deletion of the automation and its diagnostic history.
+      await sql`DELETE FROM logging.trace_spans WHERE app_id = 'mail' AND source = 'mail:incoming-automation-backfill'`;
+      const deleted = await deleteIncomingAutomation({
+        context: ownerContext,
+        mailboxId,
+        automationId: created.data.id,
+        input: { expectedRevision: created.data.revision },
+      });
+      expect(deleted.ok).toBe(true);
+      const afterDeletion = await loadMailAutomationActivity(ownerContext, mailboxId);
+      expect(afterDeletion.ok && afterDeletion.data.items.find((item) => item.id === backfills[0]?.id)).toEqual(backfills[0]);
     } finally {
       await stopIncomingAutomationBackfillRuntime();
+    }
+  });
+
+  test("preserves legacy backfill activity on upgrade after diagnostic cleanup", async () => {
+    const created = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: "Legacy backfill",
+        enabled: true,
+        scope: { mode: "all" },
+        steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const operationId = crypto.randomUUID();
+    const traceId = crypto.randomUUID();
+    setSystemTime(new Date("2026-07-29T00:00:00.000Z"));
+    try {
+      await sql`
+        INSERT INTO logging.trace_spans (
+          trace_id, span_id, app_id, source, name, category, status, attributes, summary,
+          started_at, ended_at, updated_at, duration_ms
+        ) VALUES (
+          ${traceId}, 'legacy', 'mail', 'mail:incoming-automation-backfill', 'Mail automation backfill', 'backfill', 'ok',
+          ${{
+            "mail.mailbox.id": mailboxId,
+            "mail.incoming_automation.id": created.data.id,
+            "mail.workflow.id": created.data.workflowId,
+            "mail.backfill.operation_id": operationId,
+          }}::jsonb,
+          ${{ status: "completed", dispatched: 4 }}::jsonb,
+          '2026-07-28T10:00:00Z', '2026-07-28T10:00:02Z', '2026-07-28T10:00:02Z', 2000
+        )
+      `;
+      await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.activity_events_backfill_operation_idx`.simple();
+      await Promise.all([migrate(), migrate()]);
+      const [index] = await sql<{ present: boolean }[]>`
+        SELECT to_regclass('mail.activity_events_backfill_operation_idx') IS NOT NULL AS present`;
+      expect(index?.present).toBe(false);
+      await sql`DELETE FROM logging.trace_spans WHERE trace_id = ${traceId}`;
+      const activity = await loadMailAutomationActivity(ownerContext, mailboxId);
+      expect(activity.ok).toBe(true);
+      if (!activity.ok) return;
+      const items = activity.data.items.filter((item) => item.id === `backfill:${created.data.id}:${operationId}`);
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        status: "completed",
+        name: "Backfill · Legacy backfill",
+        detail: "4 matching messages dispatched",
+        occurredAt: "2026-07-28T10:00:00.000Z",
+        durationMs: 2_000,
+      });
+    } finally {
+      setSystemTime();
+      await sql`DELETE FROM logging.trace_spans WHERE trace_id = ${traceId}`;
     }
   });
 
@@ -872,6 +946,26 @@ suite("incoming automations", () => {
     });
     expect(enabledResult.ok && enabledResult.data.enabled).toBe(true);
     if (!enabledResult.ok) return;
+    const repeatedToggle = await setIncomingAutomationEnabled({
+      context: ownerContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: { expectedRevision: created.data.revision, enabled: true },
+    });
+    expect(repeatedToggle).toEqual(enabledResult);
+    const repeatedUpdate = await updateIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: {
+        expectedRevision: created.data.revision,
+        name: enabledResult.data.name,
+        enabled: true,
+        scope: enabledResult.data.scope,
+        steps: enabledResult.data.steps,
+      },
+    });
+    expect(repeatedUpdate).toEqual(enabledResult);
 
     const classifierId = crypto.randomUUID();
     const updated = await updateIncomingAutomation({

@@ -1,3 +1,4 @@
+export { codeMirrorDictationTarget, dictationExtension } from "./text-editor/dictation";
 export { createTextEditor, type TextEditorController, type TextEditorMode, type TextEditorOptions } from "./text-editor/engine";
 export { commands as textEditorCommands, formatLabels as textEditorFormatLabels, type InlineFormat } from "./text-editor/format";
 export {
@@ -10,6 +11,7 @@ export {
 export {
   editTableSource,
   type MenuAction,
+  renderInline,
   runMenuAction,
   runTableAction,
   type TableFocusTarget,

@@ -1,5 +1,5 @@
 /**
- * Proves that Bun's default `redis` handle and an explicit `RedisClient`
+ * Proves that the platform `redis` handle and an explicit `RedisClient`
  * reach the same Valkey when tests run through `bun run test`. Run it against
  * a disposable instance on a non-default port:
  *
@@ -7,12 +7,13 @@
  */
 
 import { afterAll, expect, test } from "bun:test";
-import { RedisClient, redis } from "bun";
+import { RedisClient } from "bun";
+import { redis } from "../../packages/cloud/src/runtime/clients";
 import { requireInfraUrl, valkeySuite } from "../../scripts/fixtures/test-infra";
 
 const runId = async (client: RedisClient): Promise<string | undefined> => /run_id:(\S+)/.exec(await client.send("INFO", ["server"]))?.[1];
 
-valkeySuite()("Bun default redis handle", () => {
+valkeySuite()("platform redis handle", () => {
   let explicit: RedisClient | undefined;
   afterAll(() => explicit?.close());
 

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 export async function migrateShareAccess(): Promise<void> {
   await sql.begin(async (tx) => {

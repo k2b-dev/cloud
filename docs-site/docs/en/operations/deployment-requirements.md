@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-31
+updated: 2026-11-02
 ---
 
 # Deployment requirements
@@ -26,6 +26,22 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 `app-mail`; the routing service is named `gateway`. The shared library, UI
 package, CLI and desktop development tools are not additional server apps in
 this service set.
+
+## Applications start with a key file and Core address
+
+This release supplies a Compose template that gives ordinary apps only
+`CLOUD_APP_KEY_FILE` and `CLOUD_CORE_INTERNAL_ORIGIN`. Core and Gateway keep
+their infrastructure environment. Core must migrate and become ready before
+applications bootstrap. An unavailable Core blocks startup for up to five
+minutes, after which the process exits and the deployment restart policy
+applies. Existing running processes retain their connections during a Core
+outage; new starts still need Core.
+
+Follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
+for the required settings check, enrollment, file permissions, strict inventory
+check, Kubernetes mount example and three rollback boundaries. Keep legacy
+configuration until the checks and background/OAuth verification pass.
+Environment overrides remain supported per value for third-party apps.
 
 ## App-domain routing and unknown hosts
 
@@ -263,7 +279,9 @@ Core's [geo Queries](/en/docs/platform/places-and-maps) need outbound HTTPS to
 **Administration → Places and maps**. Core checks it with one provider lookup
 before storing it as the secret `geo.api_key`. There is no endpoint setting or
 new environment variable.
-Choose `geo.plan`, then review the monthly and per-person daily credit limits.
+Choose `geo.plan`, then review the installation-wide monthly credit budget and
+request rate. Address autocomplete can be called anonymously only through
+`CLOUD_CORE_INTERNAL_ORIGIN`; keep Core private behind the gateway.
 Core creates its durable geo ledger during startup migrations.
 Routing shares these settings and counters. Core atomically reserves its full
 provider chain using straight-line distance times a fixed detour factor of 2.0.
@@ -320,10 +338,18 @@ While bootstrap waits, there is no HTTP listener or readiness response. A
 permanent credential/protocol failure exits immediately; an exhausted network
 budget exits so the container restart policy can retry.
 
-**Key-only production operation is not yet supported.** Keep each app's
-infrastructure environment values until the platform-client import migration
-is complete; Bun-global SQL/Redis imports still depend on them. This release
-adds the bootstrap protocol, not the operator migration. See
+Cloud no longer rewrites an application's `DATABASE_URL` to add
+`application_name`. The platform clients (`sql` and `createSql()` from
+`@k2b/cloud`) still name their connections `cloud:<app-id>` unless the URL sets
+an operator name or startup options. An application that still uses Bun-global
+clients shows no Cloud application name in `pg_stat_activity`.
+
+**Key-only production operation is supported.** Built-in applications use the
+platform connection handles. Upgrade Core and Gateway with their existing
+infrastructure environment first, enroll application keys with explicit grants,
+then adopt the key-file templates and recreate applications. Complete the strict
+status, signed probes and legacy-use observation before retiring old credentials.
+Follow [the upgrade steps](/en/docs/operations/app-key-upgrade). See
 [Runtime configuration](/en/docs/operations/runtime-configuration#bootstrap-application-connections-from-core)
 and [App keys](/en/docs/operations/app-keys#use-the-key-at-start).
 
@@ -347,6 +373,41 @@ container environment and private service network accordingly.
 Keep Core's identity key-encryption keys and the Core/OAuth broker secret out
 of the gateway. Their absence does not make it a separate trust boundary.
 See [runtime configuration](/en/docs/operations/runtime-configuration#set-infrastructure-variables).
+
+## Preserve the browser mutation origin
+
+All Cloud applications require an `Origin` exactly equal to the public origin
+of the stored `app.url` setting for cookie-bearing `POST`, `PUT`, `PATCH` and
+`DELETE` requests and cookie-authenticated WebSocket upgrades. Preserve `Origin`
+and `Sec-Fetch-Site` through the reverse proxy and gateway. Foreign and same-site sibling origins are
+rejected with `403 INVALID_ORIGIN` for HTTP mutations, including logout and SSR
+form actions. A missing or `null` Origin passes only with `Sec-Fetch-Site:
+same-origin`, which a page with `Referrer-Policy: no-referrer` sends with its
+own form posts; without either header the request is rejected. Refused WebSocket upgrades lose session authority; live sockets
+close with `1008 forbidden_origin` to stop reconnecting.
+Do not replace these headers with the proxy's or upstream service's address.
+
+When upgrading, check `app.url` against the address people use. Scripts that
+mutate state with session cookies must send that canonical Origin; prefer an
+explicit Bearer credential for integrations. WOPI, OAuth protocol endpoints,
+signed app-approval commands, token-bound shares, webhooks and ingest retain
+their own credential checks. Their declared sessionless paths cannot gain
+session authority from an attached Cloud cookie. See [Route policies](/en/docs/identity/route-policies#send-browser-mutations-from-the-cloud-origin)
+for the application contract.
+
+Application authors must run their own state-changing Cloud cookie routes through
+`app.start()` too. A separate HTTP server needs the same exact Origin check
+against the public Cloud origin before authenticating cookies or reading the
+body. Pages on another origin cannot mutate Cloud state with Cloud session
+cookies. Keep cookie-authenticated actions on the Cloud origin. For requests
+from a cross-origin embed, use a protocol with its own credential and narrowly
+declared `sessionlessRoutes`; those routes receive no Cloud session authority. Adding a
+CORS allowance or an `access.publicRoutes` entry does not exempt a cookie route.
+
+OAuth clients navigating to `/oauth/logout` now show a confirmation before the
+browser signs out. Cloud server capability and sync-operations transports set
+the canonical Origin when forwarding a session to Core; the originating
+application has already applied the same mandatory ingress check.
 
 ## Prepare the common infrastructure
 
@@ -700,7 +761,7 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |
 | HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts; [keep Gotenberg offline](#keep-gotenberg-offline) | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). `GOTENBERG_URL` can bootstrap `gotenberg.url`; Dev Compose sets it to `http://gotenberg:3000`. A saved setting wins. Without a URL, Grids tells users that an administrator must configure PDF rendering. |
 | Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test native notification delivery to an opted-in browser with Cloud visible and with no open Cloud tab. Notification history does not depend on browser push. |
-| City search | Core’s Geoapify EU service (`geo.api_key`) | Sign-in required. Core `address.autocomplete` suggests up to five German cities for at least three characters and charges the caller’s geo budget. `GEO_NOT_CONFIGURED` means an administrator must configure Core. `GEO_BUDGET_EXHAUSTED` includes its scope and reset time. Forecasts for known coordinates remain independent. |
+| City search | Core’s Geoapify EU service (`geo.api_key`) | Sign-in required. Core `address.autocomplete` suggests up to five German cities for at least three characters and charges the installation-wide geo budget. `GEO_NOT_CONFIGURED` means an administrator must configure Core. `GEO_BUDGET_EXHAUSTED` includes its scope and reset time. Forecasts for known coordinates remain independent. |
 
 For S3 snapshots, enter credentials in the individual notebook's snapshot
 configuration, not invented global S3 credential environment keys. Snapshots upload
@@ -902,6 +963,15 @@ transition and are dispatched afterwards; background notifications use the
 operator’s `app.locale` setting, and request-triggered outages retain the
 request locale.
 
+Pulse dashboards add Postgres definitions, publication hashes, and execution
+receipts to the control-data backup. Valkey stores disposable result snapshots,
+bounded to 500 entries or 64 MiB of serialized keys and data. Losing that cache
+can leave a panel waiting for its next permitted refresh; it does not permit
+another calculation in the same interval. Dashboards share SQL admission and
+read profiles but do not consume the questions quota. Public links are checked
+on every read and can be revoked by a base writer. Clearing measurements keeps
+dashboard definitions and invalidates their cached results.
+
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
 
@@ -909,10 +979,39 @@ Without a saved connection, Cloud and Pulse still report ready; Pulse data APIs
 answer `503 PULSE_STORE_NOT_CONFIGURED`, and the Pulse page shows **Pulse is not
 set up yet**. Administration remains available for setup. Production Compose does not provision ClickHouse; the operator supplies it.
 
-After a restore, Pulse compares each database’s checkpoint with Postgres and
-blocks measurement writes if they differ or the database is missing. A Cloud
-admin can recheck a corrected restore or recreate an empty database. Recreating
-removes measurements while preserving sources, source credentials, settings, and access.
+Pulse verifies each base's checkpoint before accepting measurements, mirroring
+sources, computing rollups, or pruning stored data, even while its startup scan
+is still pending. An unavailable store refuses that work while other Cloud
+applications can start normally.
+
+After a restore, Pulse blocks measurement writes if the checkpoint differs
+from Postgres or the database is missing. A Cloud admin can recheck a corrected
+restore or recreate an empty database. Recreating removes measurements while
+preserving sources, source credentials, settings, and access.
+
+Within the 24-hour idempotency window, a completed receipt returns its saved
+counts without quota or repeat writes while its reset generation and both
+committed and pending checkpoint IDs match the currently validated base.
+A checkpoint identity transition invalidates that completion. The next retry
+replays the original acceptance time, event identities, and state plan, and
+rebuilds missing metric-series mirrors. Replays pass ordinary write limits,
+including quota, and can be refused until capacity is available. Only a
+successful replay renews completion for the new identity. Existing receipts
+from before this upgrade keep their acceptance times and plans; their first
+retry must replay before completion becomes valid.
+
+Raw metrics can remain longer than their retention period while an unexpired
+receipt could need them for replay. This guarantee detects hourly checkpoint
+mismatches; it does not detect per-batch data loss within a matching checkpoint.
+Checkpoints do not recover data automatically. Restore both stores as a
+consistent set.
+
+Clearing a base increments its reset generation. An earlier scrape cannot
+write measurements, scrape history, diagnostics, or source watermarks into the
+cleared generation, even if its endpoint responds after the clear completes.
+Clear also releases the previous scrape lease. An old worker cannot release a
+new generation's lease or defer its rollups after a failure. The source
+configuration and credentials remain available for the next scrape.
 
 ## Verify readiness and upgrades
 
@@ -922,6 +1021,11 @@ apps start returning them: older strict reference schemas may reject the new
 fields. Core adds nullable columns to its existing Assistant reference index
 through its normal startup migration; no operator configuration is needed.
 See [result references](/en/docs/platform/capabilities).
+
+Universal Search result metadata may now carry a `format` for dates. Upgrade
+Core before the apps: Core accepts the search of apps built by earlier
+releases, but an earlier Core leaves out the search of an app built by this
+release until Core is upgraded. See [Search](/en/docs/platform/search).
 
 During the rollout to this release, and during a rollback to the previous
 version, replicas of the previous version write no liveness key. While they
@@ -963,6 +1067,11 @@ setup lock. Restart old and new replicas of one app one at a time until all
 run this release. Keep Core first: it creates the shared schemas and the
 installation-wide `pgcrypto` extension other applications need. Updated app
 migrations no longer create that extension independently.
+
+Pulse base responses include `memberCount`, the number of configured person,
+group and agent grants with access. The sidebar reads this authorized base
+metadata; group sizes and general-access rules are not expanded into a people
+count.
 
 ### Pulse agent telemetry actions
 
@@ -1009,9 +1118,31 @@ a healthy container alone does not prove that the caller can read a calendar.
 The aggregate reader has a 42-day view range, 100-calendar selection,
 60-call/six-concurrent-call budget, 4 MiB page budget, and caller deadline.
 
+### Upgrade Spaces task writes
+
+Spaces creates `spaces.item_create_requests` on startup for actor-scoped,
+24-hour create receipts. Task creation, its receipt and outbox commit together.
+The Spaces lifecycle starts an hourly NATS scheduler that removes expired
+receipts in bounded batches and drains on shutdown.
+Ship the matching server, browser and CLI assets together so new callers can
+use assignment deltas, title preconditions and retry keys. No configuration or
+new service is required. Verify one title conflict and one keyed create replay
+after upgrading. See [Spaces task writes](/en/docs/reference/spaces-task-mutations)
+for request fields, error codes and the retry window.
+
 ### Upgrade Spaces task deadlines
 
 Spaces adds the nullable `spaces.items.deadline_date` DATE column and the `items_deadline_one_kind` check on startup. The check permits at most one of `deadline` and `deadline_date`. Existing timestamp deadlines remain timed; there is no backfill. API and capability consumers, such as scripts, agents and integrations, must accept `deadline` as either `YYYY-MM-DD` or an ISO instant and can use `deadlineAllDay` to distinguish them. Deploy the updated Spaces server and its matching browser and CLI assets together. Verify a date-only deadline, a timed deadline, and switching between them after the upgrade.
+
+### Upgrade Spaces item templates
+
+Spaces adds a nullable `spaces.item_templates.icon` column on startup. Its check
+accepts Tabler classes such as `ti ti-report`, up to 80 characters. Existing
+templates use the default icon for their kind. Template creation, updates, and
+deletion now require Space write access, including agent credentials with write
+scope. Readers can still list and read templates. No configuration is needed.
+After upgrading, verify that a writer can create, edit, and delete a template
+and that a reader cannot.
 
 ### Upgrade Spaces user claims and assignments
 
@@ -1106,6 +1237,46 @@ or `null` when unknown. Clients can compare known checksums to identify the
 same file; matching filenames alone do not establish equal content. This uses
 the existing nullable column and needs no migration or configuration change.
 
+### Mail workspace count cache
+
+Mail reuses a reader's workspace view counts in the existing Valkey service for
+up to 30 seconds. Reads after 15 seconds refresh the snapshot in the background.
+A committed Mail live invalidation changes the mailbox's cache version before
+its live event is delivered. The covering workspace refresh therefore reads the
+new counts after an action; reload and the first browser render use one snapshot.
+The standalone conversation-count API continues to compute fresh counts.
+
+The cache needs no environment variable or operator-managed index. Mail adds two
+small tables at startup: the current version per mailbox and transaction-local
+pending invalidations. Pending rows are consumed at commit; versions advance in
+mailbox order after domain writes. No message or conversation backfill runs.
+
+A cold, expired, or invalidated cache computes the counts once per reader and
+version. Concurrent opens share a Valkey lease; healthy owners renew it every
+3.3 seconds. Fills across different readers use at most the shared SQL pool size
+minus one connection (at least one). At capacity, background refreshes are skipped
+and cold reads wait. Local and remote waiters have the same 30-second budget;
+after that the workspace API returns `503 MAIL_COUNTS_REFRESHING`, and a mailbox
+reload uses the existing service error page with a Home link. Browser reload
+retries the same mailbox. Live refresh keeps the current view on failure; a retry
+can reuse the completed fill.
+The mailbox page and workspace-route handlers allow 40 seconds of idle time
+while loading, then restore the normal request limit before responding. Database
+statements time out after 30 seconds, and shutdown drains fills for at most
+30 seconds. Mail never substitutes invented zero counts on this path.
+
+If Valkey is unavailable, Mail computes directly with the same local concurrency
+bound; reads can take longer. Entries expire on their own and contain only the
+counts for their mailbox, person, and current visibility. No cache flush is needed.
+
+The fast path needs a reusable snapshot. A continuously changing mailbox can
+still pay for the authoritative aggregate after each committed live invalidation,
+including background updates. Changes without live invalidation, including
+assignment eligibility changes, age out within 30 seconds on the next workspace
+read. Complete the rollout across replicas: an older image can reinstall the
+previous invalidation function, leaving only age-based refresh until a new image
+starts again.
+
 ### Mail storage for kept conversations
 
 Mail adds the table `mail.conversation_keeps` and a trigger on
@@ -1152,6 +1323,27 @@ Rolling back keeps the wider constraint, and the previous version ignores
 waiting verifications. After the next update, a verification that waited
 longer than 10 minutes fails with `SENDER_VERIFICATION_TIMEOUT`, and the person
 verifies the identity again.
+
+### Index Mail's provider-message lookups
+
+Mail builds `mail.remote_message_refs_provider_message_idx` concurrently
+in the background. It accelerates matching a provider message across folders
+without changing message identity rules. The command-target, provider-message,
+and optional search builds share one renewable NATS lease and reserve their
+SQL connection, so ordinary queries cannot queue behind an index waiting for
+an old snapshot. Startup does not wait for these builds. A failed or busy
+build is retried at the next start; check warnings from `mail:migrate` and
+`pg_index.indisvalid` before expecting the new plan.
+
+After deployment, compare interval deltas in `pg_stat_statements` for the
+`SELECT DISTINCT remote_ref.message_id` statement that joins `mail.folders`
+and filters `connector_ref ->> 'providerMessageId'`. The new statement adds an
+`md5` equality before the full-ID equality, so it has a new query ID. Compare
+old statement intervals with new statement intervals after the index is valid:
+calls, total execution time and shared blocks read per call. The hash bounds
+index entries for legacy oversized provider IDs; the full equality still
+rejects hash collisions. This index does not reduce the number
+of statements or row writes per idle sync run.
 
 ### Index Mail's per-message command lookups
 
@@ -1439,11 +1631,11 @@ and gives up on one after a minute; requests asked for meanwhile share one
 read after it. Hidden tabs send nothing. Count these requests when sizing the
 application.
 
-### Show app badges in the phone bar
+### Show app badges in the phone's app menu
 
-On phones, the floating bar shows the same count on an application's icon as
-the rail. It reads no extra route: the counts come from the rail's reads. No
-migration or configuration change is required.
+On phones, the web shell has no bottom bar. The app menu shows the same count
+on an application's icon as the rail. It reads no extra route: the counts come
+from the rail's reads. No migration or configuration change is required.
 
 ### Let widgets declare settings
 
@@ -2188,3 +2380,19 @@ apps through `cld admin apps keys` or Core’s administrator API. Enrollment use
 the same app-bound service account as workload credentials. Keep the current
 runtime configuration when enrolling; see [App keys](/en/docs/operations/app-keys)
 for the supported commands and recovery steps.
+
+### Cloud app static assets
+
+Rebuild applications to let the Cloud app retain their versioned static files.
+`defineApp()` supplies an internal build catalog at `/_internal/pwa-assets`; the
+Cloud app reads it directly from registered Core, shell, and part services. No
+new gateway route or operator setting is needed. Deploy the complete `_ssr` and
+`public` output beside the server bundle as before. The catalog hashes the final
+uncompressed files, including any build rewrites.
+
+The network-served worker pins the active catalogs and verifies SHA-256 on every
+cache read. An app whose catalog does not answer is left out until the next worker
+update; its files then load from the network. Worker updates remove entries absent from those builds. Static cache
+storage is limited to 16 MiB; storage denial or eviction falls back to the network.
+Pages and API responses remain network-only. See
+[Offline and updates](/en/docs/frontend/mobile-app-pages#offline-and-updates).

@@ -11,6 +11,7 @@ import {
   assertProviderKeywordsSupported,
   assertSelectedMailbox,
   assertUidValidity,
+  closeReusableImapSessions,
   connectSmtpConnection,
   countDraftUids,
   disposeImapClient,
@@ -472,6 +473,113 @@ describe("Shared IMAP sessions", () => {
       expect(stats.commands).not.toContain("EXAMINE");
       expect(stats.commands).not.toContain("UID SEARCH");
     } finally {
+      server.stop(true);
+    }
+  });
+
+  test("a kept connection serves the next session with the same key, once", async () => {
+    const { server, stats } = mailServer();
+    try {
+      const check = (key: string) =>
+        withSharedImapSession(
+          config,
+          sessionFor(server.port, 5_000),
+          (session) => imapSmtpConnector.getMessageState(session, inboxMessage),
+          {
+            reuseKey: key,
+          },
+        );
+      // Three folder checks of one account in a minute log in once; another account logs in itself.
+      await check("account:1");
+      await check("account:1");
+      await check("account:1");
+      expect({ connections: stats.connections, logins: stats.logins, logouts: stats.logouts }).toEqual({
+        connections: 1,
+        logins: 1,
+        logouts: 0,
+      });
+      await check("account:2");
+      expect(stats.logins).toBe(2);
+
+      // A session that fails gives its connection up instead of keeping it.
+      await expect(
+        withSharedImapSession(
+          config,
+          sessionFor(server.port, 5_000),
+          async (session) => {
+            await imapSmtpConnector.getMessageState(session, inboxMessage);
+            throw new Error("database failure");
+          },
+          { reuseKey: "account:1" },
+        ),
+      ).rejects.toThrow("database failure");
+      await check("account:1");
+      expect(stats.logins).toBe(3);
+    } finally {
+      await closeReusableImapSessions();
+      server.stop(true);
+    }
+    expect(stats.logouts).toBe(stats.logins);
+  });
+
+  test("a session never waits for a kept connection, and keeps none when its caller declines", async () => {
+    const { server, stats } = mailServer();
+    try {
+      const check = (key: string, keep?: () => Promise<boolean>) =>
+        withSharedImapSession(
+          config,
+          sessionFor(server.port, 5_000),
+          (session) => imapSmtpConnector.getMessageState(session, inboxMessage),
+          {
+            reuseKey: key,
+            keep,
+          },
+        );
+      // A check that knows other work waits for the account keeps no connection.
+      await check("account:declined", async () => false);
+      await check("account:declined");
+      expect(stats.logins).toBe(2);
+
+      // Two sessions of one account at once: the second opens its own connection instead of waiting.
+      const release = Promise.withResolvers<void>();
+      const first = withSharedImapSession(
+        config,
+        sessionFor(server.port, 5_000),
+        async (session) => {
+          await imapSmtpConnector.getMessageState(session, inboxMessage);
+          await release.promise;
+        },
+        { reuseKey: "account:busy" },
+      );
+      await check("account:busy");
+      expect(stats.logins).toBe(4);
+      release.resolve();
+      await first;
+    } finally {
+      await closeReusableImapSessions();
+      server.stop(true);
+    }
+  });
+
+  test("a kept connection that timed out is replaced by a new one", async () => {
+    const { server, stats } = mailServer();
+    const created: ImapSession[] = [];
+    try {
+      const check = () =>
+        withSharedImapSession(
+          config,
+          sessionFor(server.port, 200, created),
+          (session) => imapSmtpConnector.getMessageState(session, inboxMessage),
+          {
+            reuseKey: "account:timeout",
+          },
+        );
+      await check();
+      await new Promise((resolve) => created[0]!.client.once("error", resolve));
+      expect((await check()).exists).toBe(true);
+      expect(stats.connections).toBe(2);
+    } finally {
+      await closeReusableImapSessions();
       server.stop(true);
     }
   });

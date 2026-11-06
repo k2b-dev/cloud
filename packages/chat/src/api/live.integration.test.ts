@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
+import { redis, sql } from "@k2b/cloud";
 import { LIVE_LIMITS, startLiveOutbox } from "@k2b/cloud/events/testing";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
 import { get as getSetting } from "@k2b/cloud/services";
 import { useRegisteredTestApp } from "@k2b/cloud/services/identity/application.test-fixture";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
-import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { z } from "zod";

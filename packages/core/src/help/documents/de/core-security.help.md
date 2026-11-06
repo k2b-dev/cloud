@@ -2,7 +2,7 @@
 id: core-security
 title: Anmeldung und Sicherheit
 icon: ti ti-shield-lock
-description: Anmelden, Zugang wiederherstellen, eine Anmelde-App koppeln und Passkeys, API-Schlüssel und Sitzungen schützen.
+description: Anmelden, Zugang wiederherstellen, eine Anmelde-App koppeln und Passkeys, API Keys und Sitzungen schützen.
 order: 112
 ---
 
@@ -32,7 +32,7 @@ Ein bestehender Passkey funktioniert weiter, solange dein Kontotyp erlaubt ist. 
 
 Öffne für ein FreeIPA-Konto **Anmeldung** in deinem Konto, wähle **Passwort ändern** und gib dein aktuelles Passwort ein. Cloud meldet dich danach überall sonst ab: in anderen Browsern, in der Cloud-App, in der Kommandozeile und in verbundenen Apps. Verbinde die Kommandozeile danach mit `cld login` neu.
 
-In diesem Browser bleibst du angemeldet. Deine gekoppelten Anmeldegeräte bleiben gekoppelt. API-Schlüssel und Passkeys funktionieren weiter.
+In diesem Browser bleibst du angemeldet. Deine gekoppelten Anmeldegeräte bleiben gekoppelt. API Keys und Passkeys funktionieren weiter.
 
 Legst du auf der Anmeldeseite ein neues Passwort fest, zum Beispiel mit einem Link zum Zurücksetzen oder nach einem abgelaufenen Passwort, meldet Cloud dich ebenfalls überall sonst ab. Kann Cloud dich nicht überall sonst abmelden, zeigt Cloud das an. Nach einem abgelaufenen Passwort wählst du **Erneut versuchen**, bevor du weitermachst. Nach einem Link zum Zurücksetzen forderst du einen neuen Link an.
 
@@ -104,7 +104,7 @@ Koppeln, Umbenennen und Widerrufen können eine Bestätigung deiner Identität v
 
 ## Neuen Zugang bestätigen {icon="shield-lock"}
 
-Lege persönliche API-Schlüssel unter **Entwicklung → API-Schlüssel** und
+Lege persönliche API Keys unter **Entwicklung → API Keys** und
 Passkeys unter **Anmeldung → Passkeys** im Browser an. Deine Browser-Anmeldung
 muss aus den letzten zehn Minuten stammen. Bittet Cloud dich, deine Identität zu
 bestätigen, melde dich mit demselben Konto erneut an, ohne dich vorher
@@ -118,11 +118,11 @@ an die Administration.
 
 ## Konto schützen {icon="shield-lock"}
 
-:::warning Gib Wiederherstellungslinks und API-Schlüssel nie weiter
-Wer einen gültigen Wiederherstellungslink oder einen aktiven API-Schlüssel hat, kann möglicherweise mit dessen Zugriff handeln. Füge solche Daten nicht in Supportnachrichten, Screenshots oder Dokumentation ein.
+:::warning Gib Wiederherstellungslinks und API Keys nie weiter
+Wer einen gültigen Wiederherstellungslink oder einen aktiven API Key hat, kann möglicherweise mit dessen Zugriff handeln. Füge solche Daten nicht in Supportnachrichten, Screenshots oder Dokumentation ein.
 :::
 
 - Registriere Passkeys nur auf Geräten, die du kontrollierst. Gib ihnen erkennbare Namen und entferne Passkeys für Geräte, die du nicht mehr hast oder nutzt.
 - Prüfe deine letzten Kontoaktivitäten auf unerwartete Änderungen oder eine unbekannte Nutzung von Zugangsdaten.
-- Behandle API-Schlüssel wie Passwörter. Gib jeder Integration einen eigenen Schlüssel mit Ablaufdatum und widerrufe ihn, sobald du die Integration nicht mehr nutzt.
+- Behandle API Keys wie Passwörter. Gib jeder Integration einen eigenen Schlüssel mit Ablaufdatum und widerrufe ihn, sobald du die Integration nicht mehr nutzt.
 - Prüfe Browser und Konto, bevor du eine sicherheitsrelevante Aktion bestätigst.

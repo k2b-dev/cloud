@@ -215,9 +215,12 @@ suite("Mail list attachment images and thumbnail access", () => {
         { messageId: newer.short_id, attachmentId: first.short_id },
         { messageId: newer.short_id, attachmentId: second.short_id },
       ],
-      imageAttachmentCount: 2,
     });
-    expect(page.listItems.find((row) => row.id === empty.short_id)).toMatchObject({ imageAttachments: [], imageAttachmentCount: 0 });
+    // A row costs nothing for images it does not have, and names a count only beyond the three it shows.
+    expect(page.listItems.find((row) => row.id === conversation.short_id)).not.toHaveProperty("imageAttachmentCount");
+    const emptyRow = page.listItems.find((row) => row.id === empty.short_id);
+    expect(emptyRow).not.toHaveProperty("imageAttachments");
+    expect(emptyRow).not.toHaveProperty("imageAttachmentCount");
     expect(page.listItems.find((row) => row.id === many.short_id)).toMatchObject({
       imageAttachments: manyImages.slice(0, 3).map((image) => ({ messageId: expect.any(String), attachmentId: image.short_id })),
       imageAttachmentCount: 5,
@@ -237,8 +240,8 @@ suite("Mail list attachment images and thumbnail access", () => {
       imageAttachments: [{ messageId: older.id, attachmentId: expect.any(String) }],
     });
     const page = await list("owner", "messages");
-    expect(page.listItems.find((row) => row.id === older.short_id)).toMatchObject({ imageAttachmentCount: 1 });
-    expect(page.listItems.find((row) => row.id === newer.short_id)).toMatchObject({ imageAttachmentCount: 2 });
+    expect(page.listItems.find((row) => row.id === older.short_id)?.imageAttachments).toHaveLength(1);
+    expect(page.listItems.find((row) => row.id === newer.short_id)?.imageAttachments).toHaveLength(2);
   });
 
   test("assigned-only readers get images only for assigned conversations, even on a direct batch lookup", async () => {
@@ -258,13 +261,13 @@ suite("Mail list attachment images and thumbnail access", () => {
     expect(images.size).toBe(0);
   });
 
-  test("image lookup failures preserve the list with empty images", async () => {
+  test("image lookup failures preserve the list without images", async () => {
     const module = await import("../service/list-image-attachments");
     const lookup = spyOn(module, "listRowImageAttachments").mockRejectedValue(new Error("test failure"));
     try {
       const page = await list();
       expect(page.listItems.length).toBe(3);
-      for (const row of page.listItems) expect(row).toMatchObject({ imageAttachments: [], imageAttachmentCount: 0 });
+      for (const row of page.listItems) expect(row).not.toHaveProperty("imageAttachments");
     } finally {
       lookup.mockRestore();
     }

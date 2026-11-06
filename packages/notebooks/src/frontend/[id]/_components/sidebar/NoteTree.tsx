@@ -21,6 +21,7 @@ import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { useDuplicateNote } from "../detail/duplicate-note";
+import { useSaveAsTemplate } from "../detail/save-as-template";
 import { readErrorMessage } from "../settings/utils";
 import { NoteRowLabel, NoteRowMenu, NoteRowsContextMenu } from "./note-rows";
 import type { SidebarTree } from "./sidebar-tree";
@@ -83,13 +84,14 @@ export function useNoteActions(
 ) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
-  const createNoteMut = mutations.create<{ id: string }, { parentId?: string }>({
-    mutation: async (data: { parentId?: string }) => {
+  const createNoteMut = mutations.create<{ id: string }, { parentId?: string; templateId?: string }>({
+    mutation: async (data: { parentId?: string; templateId?: string }) => {
       const res = await apiClient[":id"].notes.$post({
         param: { id: notebookId },
         json: data,
       });
-      if (!res.ok) throw new Error(t().failedCreateNote);
+      // A template deleted in the meantime says so; everything else keeps the general message.
+      if (!res.ok) throw new Error(data.templateId ? await readErrorMessage(res, t().failedCreateNote) : t().failedCreateNote);
       return (await res.json()) as { id: string };
     },
     onSuccess: (data) => {
@@ -172,6 +174,9 @@ export function useNoteActions(
   });
 
   const handleCreateNote = (parentId?: string) => createNoteMut.mutate({ parentId });
+  const handleCreateFromTemplate = (templateId: string, parentId?: string) => createNoteMut.mutate({ parentId, templateId });
+  const saveAsTemplate = useSaveAsTemplate(notebookId);
+  const handleSaveAsTemplate = (node: SidebarNote) => saveAsTemplate.save({ id: node.id, title: node.title });
 
   /** Notes to move a note under, by title: the top level first, a search across the notebook as the person types. */
   const loadMoveTargets = async (node: SidebarNote, query: string, signal: AbortSignal) => {
@@ -268,6 +273,8 @@ export function useNoteActions(
 
   return {
     handleCreateNote,
+    handleCreateFromTemplate,
+    handleSaveAsTemplate,
     handleMove,
     handlePlace,
     handleSortAlphabetically,
@@ -341,6 +348,11 @@ export const noteActionItems = (
         icon: "ti ti-copy",
         label: t.duplicate,
         action: () => actions.handleCopy(node),
+      },
+      {
+        icon: "ti ti-template",
+        label: t.saveAsTemplate,
+        action: () => void actions.handleSaveAsTemplate(node),
       },
     ],
   },

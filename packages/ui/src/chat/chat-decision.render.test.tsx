@@ -84,6 +84,19 @@ describe("Chat.Decision SSR", () => {
     expect(Array.from(body.querySelectorAll("button")).map((b) => b.disabled)).toEqual([true, false, true]);
     expect(body.querySelector(".k2b-chat-decision__remember")!.getAttribute("data-variant")).toBe("text");
   });
+  test("waiting replaces every reason and disables every answer until it clears", () => {
+    const body = render(() =>
+      decision({
+        remember: { label: "Remember this choice", onSelect: noop },
+        unavailable: { text: "The recipient is unavailable." },
+        waiting: { text: "Offline. You can answer again once connected.", icon: "ti ti-wifi-off" },
+      }),
+    );
+    const reason = body.querySelector(".k2b-chat-decision__reason")!;
+    expect(reason.textContent).toBe("Offline. You can answer again once connected.");
+    expect(reason.querySelector(".ti-wifi-off")).not.toBeNull();
+    expect(Array.from(body.querySelectorAll("button")).map((b) => b.disabled)).toEqual([true, true, true]);
+  });
   test("remember is an optional enabled quiet answer", () => {
     const body = render(() => decision({ remember: { label: "Remember", onSelect: noop } }));
     expect(body.querySelectorAll("button").length).toBe(3);

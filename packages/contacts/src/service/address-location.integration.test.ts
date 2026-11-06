@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { GeoAddress, GeoGeocodeInput } from "@k2b/cloud/contracts/geo";
 import { accounts } from "@k2b/cloud/services";
 import type { Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { type BookCaller, contactsService } from ".";

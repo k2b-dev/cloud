@@ -14,7 +14,7 @@ Mit **Postfach durchsuchen** suchst du schnell im aktuellen Postfach. Standardm�
 
 Um die Suche einzugrenzen, nutze die Schaltfläche für den Suchbereich. Wähle eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichteninhalt** und **Anhangsnamen**. Bei mehreren Wörtern passt eine Nachricht, wenn jedes Wort irgendwo in ihr vorkommt, etwa der Name des Absenders und ein Wort aus dem Betreff.
 
-Für weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Status der Zusammenarbeit wählst du **Suchfilter**.
+Für weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Status der Zusammenarbeit wählst du **Weitere Filter**. Auf dem Smartphone stehen **Suchen in**, **Ort** und **Weitere Filter …** zusammen in einem Menü, dessen Knopf die aktuelle Wahl nennt, etwa **Alles · Ganzes Postfach**.
 
 Der Filterdialog zeigt die aktuelle Suche als Bedingungen, die du bearbeiten kannst. Wähle **Filter hinzufügen** für ein weiteres Feld. Sind mehrere Filter aktiv, legst du fest, ob alle oder mindestens einer zutreffen müssen. **Erweiterte Bedingungen** bleibt eingeklappt, bis du alternative oder verschachtelte Gruppen brauchst.
 
@@ -53,7 +53,7 @@ Passt erkannter Anhangstext, nennt das Ergebnis den Anhang und zeigt einen kurze
 
 ## Nachverfolgung, Zuweisung und Ordner gezielt nutzen {icon="layout-list"}
 
-Die Ansichts-Tabs im Kopfbereich zeigen, was als Nächstes geschieht und wer zuständig ist. Unter **Mehr** findest du Später, Erledigt, Letzte Aktivität, Aufbewahrt und gespeicherte Ansichten. Außer **Erledigt** lassen diese Ansichten Unterhaltungen aus, die nur im Papierkorb oder in Spam liegen. Beispiele sind Spam, den dein Anbieter dort abgelegt hat, oder E-Mails, die jemand gelöscht hat. Verschiebst du eine solche Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt.
+Die Ansichts-Tabs im Kopfbereich zeigen, was als Nächstes geschieht und wer zuständig ist. Was nicht in den Kopf passt, etwa Später, Erledigt, Letzte Aktivität, Aufbewahrt oder gespeicherte Ansichten, findest du unter **Mehr**. Außer **Erledigt** lassen diese Ansichten Unterhaltungen aus, die nur im Papierkorb oder in Spam liegen. Beispiele sind Spam, den dein Anbieter dort abgelegt hat, oder E-Mails, die jemand gelöscht hat. Verschiebst du eine solche Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt.
 
 | Ort | Ansicht | Inhalt |
 | --- | --- | --- |
@@ -63,12 +63,14 @@ Die Ansichts-Tabs im Kopfbereich zeigen, was als Nächstes geschieht und wer zus
 | Kopfbereich → Mehr | Erledigt | Als erledigt markierte Unterhaltungen |
 | Kopfbereich | Mir zugewiesen | Dir zugewiesene Unterhaltungen |
 | Kopfbereich | Nicht zugewiesen | Unterhaltungen, denen niemand zugewiesen ist, der sie noch bearbeiten kann, zum Beispiel weil die zugewiesenen Personen keinen Zugriff mehr haben |
-| Kopfbereich | Alle | E-Mails aus allen Anbieterordnern außer Papierkorb, Spam und Ordnern, deren E-Mails im Ordner bleiben |
+| Kopfbereich | Alle | Offene Unterhaltungen aus allen Anbieterordnern außer Papierkorb, Spam und Ordnern, deren E-Mails im Ordner bleiben |
 | Kopfbereich → Mehr | Letzte Aktivität | Kürzlich geänderte Unterhaltungen |
 | Kopfbereich → Mehr | Aufbewahrt | Vor dem Löschen geschützte Unterhaltungen aus jedem Ordner |
 | Seitenleiste → geöffnetes Postfach | Geplant | Nachrichten, die auf eine spätere Zustellung warten |
 
 Anbieterordner sind eine andere Ebene. Verschiebst du eine Unterhaltung in Archiv, Papierkorb, Spam oder einen anderen Anbieterordner, verschiebt sich auch die E-Mail beim Anbieter. Andere Programme können das zeigen. Markierst du eine Unterhaltung als **Erledigt**, ändert sich nur der Status der Nachverfolgung in Cloud. Die E-Mail wird weder archiviert noch verschoben oder als gelesen markiert. Der Posteingang beim Anbieter bleibt unverändert.
+
+**Alle**, der Posteingang, eigene Ordner, Tags, Filter und gespeicherte Ansichten zeigen nur offene Unterhaltungen. Erledigte und auf **Später** gestellte Unterhaltungen fehlen dort. Am Listenende steht, wie viele erledigte Unterhaltungen die Liste auslässt, zum Beispiel „1.207 erledigte Unterhaltungen · Erledigt anzeigen“. In **Alle** öffnet **Erledigt anzeigen** den Tab **Erledigt**. In einem Ordner, Tag oder Filter ergänzt der Link die Bedingung **Bearbeitungsstatus: Erledigt**. **Zurücksetzen** führt zurück zur offenen Liste. Archiv, Gesendet, Papierkorb, Spam und die Textsuche zeigen weiterhin alles. Die Zahl ungelesener E-Mails eines Ordners zählt nur offene Unterhaltungen.
 
 Mit Zugriff **Verwalten** hältst du die E-Mails eines Ordners in diesem Ordner, etwa bei einem gemeinsamen Teamordner (**Nur im Ordner**). Seine Unterhaltungen fehlen dann in diesen Ansichten und ihren Zählern:
 
@@ -106,12 +108,12 @@ Um mehrere Unterhaltungen zu bearbeiten, wähle ihre Kontrollkästchen aus. Halt
 - **Teilergebnis:** Kann Mail nur einige Befehle einreihen, bleiben die fehlgeschlagenen Unterhaltungen ausgewählt, und Mail meldet jeden Fehler.
 :::
 
-Wähle **Zuweisen**, um die Zuständigen der ausgewählten Unterhaltungen zu ändern. Wähle **Mir zuweisen**, **Mich entfernen** oder **Alle Zuweisungen entfernen**, oder suche eine Person, einen Agenten oder ein eigenständiges Dienstkonto, das zugewiesen werden kann. Eine Person, die du hinzufügst, kommt zu den anderen zugewiesenen Personen dazu und erhält eine einzige Benachrichtigung für die ganze Auswahl. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** macht die Änderung nur in den Unterhaltungen rückgängig, die sie geändert hat. **Alle Zuweisungen entfernen** bietet kein **Rückgängig**. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
+Wähle **Zuweisen**, um die Zuständigen der ausgewählten Unterhaltungen zu ändern. Wähle **Mir zuweisen**, **Mich entfernen** oder **Alle Zuweisungen entfernen**, oder suche eine Person oder einen Agenten mit geeignetem Zugriff. Eine Person, die du hinzufügst, kommt zu den anderen zugewiesenen Personen dazu und erhält eine einzige Benachrichtigung für die ganze Auswahl. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** macht die Änderung nur in den Unterhaltungen rückgängig, die sie geändert hat. **Alle Zuweisungen entfernen** bietet kein **Rückgängig**. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
 
 ### Von Handlungsbedarf aus arbeiten
 
 Wir empfehlen **Handlungsbedarf** als deinen Posteingang. Nutze Ordner zur Ablage; Ablegen und Archivieren ändern keinen Arbeitsstatus.
-Damit der Posteingang auch in anderen E-Mail-Programmen leer ist, wähle zusätzlich **Archivieren**. Archivieren setzt nicht **Erledigt**.
+Damit der Posteingang auch in anderen E-Mail-Programmen leer ist, wähle zusätzlich **Archivieren** im Menü **…** der Unterhaltung. Archivieren setzt nicht **Erledigt**.
 
 - **Persönliches Postfach:** Arbeite aus **Handlungsbedarf**. Automatisierungen markieren Unwichtiges als **Erledigt** und legen es ab. Markiere abgeschlossene Arbeit als **Erledigt**.
   **Wartet auf Antwort** folgt automatisch auf eine bestätigte menschliche Antwort. Nutze **Später anzeigen** für Arbeit, die von einem Datum abhängt.
@@ -136,13 +138,15 @@ Die Kurzansicht markiert nichts als gelesen, erstellt keine Zusammenfassung und 
 
 ## Einen vollständigen Verlauf lesen {icon="route"}
 
-Der Betreff bleibt beim Scrollen über den Nachrichten stehen. Die Nachrichtenanzahl erscheint auf breiteren Bildschirmen. Mit der ersten Schaltfläche im Leser blendest du auf breiten Bildschirmen die Liste aus oder ein. Auf dem Telefon kehrst du mit Zurück zur Liste und ihrer Kopfzeile zurück.
+Der Betreff bleibt beim Scrollen über den Nachrichten stehen. Die Nachrichtenanzahl erscheint auf breiteren Bildschirmen. Steht keine Liste neben dem Leser, führen **×** am Ende seiner Werkzeugleiste und Esc zurück zur Liste. Die Liste steht dann wieder an derselben Stelle, und die zuletzt geöffnete Unterhaltung hat den Fokus. Auf dem Telefon kehrst du mit Zurück zur Liste und ihrer Kopfzeile zurück.
 
-Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat eigene Absender, Empfänger, Datum, Inhalt und Anhänge. Klappe eine ältere Nachricht auf, wenn du ihren vollständigen Inhalt brauchst.
+Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat eigene Absender, Empfänger, Datum, Inhalt und Anhänge. Klappe eine ältere Nachricht auf, wenn du ihren vollständigen Inhalt brauchst. Eine offene Nachricht zeigt ihre Anhänge über dem Text: die Anzahl, die ersten drei Dateien mit Vorschau oder Dateityp und **Alle anzeigen**. Eine zugeklappte Nachricht zeigt die Anzahl ihrer Anhänge neben dem Datum. Bilder, die der Text schon zeigt, stehen nicht in der Liste.
 
 Über den Nachrichten kann eine optionale Zusammenfassung der Unterhaltung in einer hervorgehobenen Karte erscheinen. Um sie mit Markdown-Formatierung aktuell zu halten, nutze **Zusammenfassung bearbeiten** oder **Weitere Unterhaltungsaktionen → Zusammenfassung erstellen**. Zusammenfassungen sind gemeinsamer Mail-Kontext, und auch eine Automatisierung kann sie aktualisieren.
 
 Enthält die Unterhaltung nicht abgeschlossene Entwürfe, zeigt die Antwortaktion einen Hinweis. Öffne die **Unterhaltungsdetails**, um zu sehen, wer den neuesten Entwurf erstellt hat und wann er sich geändert hat. Dort setzt du ihn fort.
+
+In einem Postfach, das mehrere Personen nutzen, zeigt **Gerade hier** oben in den Unterhaltungsdetails, wer die Unterhaltung offen hat und wer gerade eine Antwort schreibt. Mit Zugriff auf das ganze Postfach steht unter **Mehr zu dieser Unterhaltung** › **Zugriff**, wer Zugriff hat und mit welcher Rolle. Wer nur zugewiesene Unterhaltungen sieht, sieht diese Liste nicht.
 
 Die Unterhaltungsdetails zeigen außerdem einen kleinen Abschnitt **Verwandte E-Mails** für die gesamte Unterhaltung. Mail ordnet andere Unterhaltungen aus demselben Postfach, die eine externe beteiligte Person oder denselben normalisierten Betreff teilen. Jedes Ergebnis zeigt, warum es passt. Die Aktion **Zugehörige E-Mails** auf einer Kontaktkarte ist etwas anderes: Sie öffnet eine exakte Suche nach dieser einen beteiligten Person. Keine der beiden Funktionen findet ähnliche E-Mails über Nachrichtentexte, Anhänge oder Kalendertermine.
 
@@ -152,7 +156,7 @@ Standardmäßig zeigt Mail die HTML-Fassung einer Nachricht und passt ihre Farbe
 
 HTML-Nachrichten behalten eine begrenzte Auswahl an Layout-, Typografie-, Farb-, Abstands- und Tabellenstilen. Skripte, Formulare, eingebettete Objekte, externe Stylesheets und andere aktive Inhalte werden entfernt. Externe Bilder bleiben zusätzlich blockiert, bis du sie lädst.
 
-Mail klappt den zitierten Verlauf früherer Nachrichten ein. Wähle **Zitierten Text anzeigen**, um ihn aufzuklappen, und **Zitierten Text ausblenden**, um ihn wieder einzuklappen. Ein aufgeklapptes Zitat bleibt offen, während neue Aktivität oder andere Live-Aktualisierungen eintreffen.
+Mail klappt den zitierten Verlauf früherer Nachrichten am Ende einer Nachricht ein. Wähle **Zitierten Text anzeigen**, um ihn aufzuklappen, und **Zitierten Text ausblenden**, um ihn wieder einzuklappen. Zitate zwischen den Zeilen einer Antwort und weitergeleitete Nachrichten bleiben sichtbar. Ein aufgeklapptes Zitat bleibt offen, während neue Aktivität oder andere Live-Aktualisierungen eintreffen.
 
 Die oberen Aktionen nehmen die Unterhaltung aus dem Ordner, den du gerade ansiehst, etwa dem Posteingang. Das gilt auch, wenn deine neueste Antwort in Gesendet liegt. In Ansichten über mehrere Ordner, etwa **Alle E-Mails** oder **Handlungsbedarf**, nehmen sie die Unterhaltung aus jedem Ordner, in dem sie liegt. Deine Kopien in Gesendet und Entwürfe bleiben, wo sie sind. Das gilt auch für Nachrichten in Spam, im Papierkorb oder im Ordner **All Mail** von Gmail. Die Ausnahme ist eine Unterhaltung, die nur dort liegt.
 
@@ -198,7 +202,7 @@ Eine andere Cloud-App kann einen Verweis auf eine Unterhaltung oder eine Nachric
 
 Mail bestätigt das Kopieren. Füge die Cloud-ID in der anderen App ein. Sie ist ein Link wie `https://cloud.example.com/open/mail.message/~Ab12Cd` und öffnet die Mail. Die Cloud-ID gibt keinen Zugriff: Die andere App zeigt die Mail nur Personen, die sie auch in Mail öffnen dürfen.
 
-Ein Rechtsklick in die Unterhaltung öffnet dasselbe Menü wie ihr Knopf **…**. Ein Rechtsklick auf eine Nachricht öffnet das Menü dieser Nachricht. Links, Textfelder, der Inhalt einer HTML-Nachricht und markierter Text behalten das Menü des Browsers, damit du Text wie gewohnt kopieren kannst. Mit der Tastatur drückst du Umschalt+F10 oder die Kontextmenütaste.
+Ein Rechtsklick auf eine Unterhaltung in der Liste oder in die offene Unterhaltung öffnet dasselbe Menü wie ihr Knopf **…**. Das Menü beginnt mit **Antworten** und **In neuem Fenster antworten**. Ein Rechtsklick auf eine Nachricht öffnet das Menü dieser Nachricht. Links, Textfelder, der Inhalt einer HTML-Nachricht und markierter Text behalten das Menü des Browsers, damit du Text wie gewohnt kopieren kannst. Mit der Tastatur drückst du Umschalt+F10 oder die Kontextmenütaste.
 
 ## Unterhaltungen aufbewahren, die nicht gelöscht werden dürfen {icon="lock"}
 

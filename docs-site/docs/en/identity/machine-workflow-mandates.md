@@ -10,6 +10,8 @@ updated: 2026-10-23
 
 # Machine workflow mandates
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 A Grids workflow can use an agent or standalone service account for scheduled and
 record-event execution. The account needs its own write grant on the base. The
 workflow's mandate is an additional, revocable permission for that exact workflow;

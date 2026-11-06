@@ -1,5 +1,5 @@
-import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 type Props = {
@@ -15,6 +15,7 @@ const buildUrl = (batchId: string, status: string) => {
 };
 
 export default function NotificationRecipientStatusFilters(props: Props) {
+  const { openPage } = usePageSwap();
   const messages = useAccountsMessages();
   const options = (): FilterChipSection[] => [
     {
@@ -34,7 +35,7 @@ export default function NotificationRecipientStatusFilters(props: Props) {
         icon="ti ti-circle-check"
         options={options()}
         value={props.status ? [props.status] : []}
-        onValueChange={(value) => navigateTo(buildUrl(props.batchId, value[0] ?? ""))}
+        onValueChange={(value) => openPage(buildUrl(props.batchId, value[0] ?? ""))}
         isActive={props.status.length > 0}
         defaultValue={[]}
       />

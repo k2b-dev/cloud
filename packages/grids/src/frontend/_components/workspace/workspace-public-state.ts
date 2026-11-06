@@ -17,6 +17,7 @@ import {
   toPublicViews,
 } from "../../../api/public-dto";
 import { toPublicRecordQuery } from "../../../api/public-query";
+import { toPublicReferencedByPage } from "../../../api/referenced-by";
 import {
   toPublicWorkflowLaunchers,
   toPublicWorkflowRun,
@@ -145,6 +146,8 @@ export const projectPublicWorkspaceRecordDetail = async (detail: WorkspaceRecord
     documents: { items: documents, cursor: detail.documents.nextCursor, hasMore: detail.documents.hasMore },
     snapshots,
     auditEntries: await toPublicAuditEntries(detail.auditEntries, fields),
+    // Short IDs only; the internal page never reaches the browser.
+    referencedBy: detail.referencedBy ? toPublicReferencedByPage(detail.referencedBy) : null,
   };
 };
 

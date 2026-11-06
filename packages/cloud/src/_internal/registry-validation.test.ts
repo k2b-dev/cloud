@@ -13,11 +13,24 @@ const valid = {
 
 describe("validateAppRegistryEntry", () => {
   test("accepts a valid entry", () => expect(validateAppRegistryEntry(valid)).toBeNull());
+  test("accepts an empty description without accepting a non-string", () => {
+    expect(validateAppRegistryEntry({ ...valid, description: "" })).toBeNull();
+    expect(validateAppRegistryEntry({ ...valid, description: 42 })).toContain("description");
+  });
   test("accepts a package declaration and rejects unsafe package metadata", () => {
     expect(validateAppRegistryEntry({ ...valid, package: "warenfluss" })).toBeNull();
     for (const packageName of ["../mail", "a/b", "", "Mail", 42, "a".repeat(81)]) {
       expect(validateAppRegistryEntry({ ...valid, package: packageName })).toContain("package");
     }
+  });
+  test("keeps an entry whose admin group names an area this reader does not know", () => {
+    const group = (section: unknown) => ({
+      ...valid,
+      adminNav: [{ section, label: "People", links: [{ label: "People", href: "/app/people", icon: "ti-users" }] }],
+    });
+    expect(validateAppRegistryEntry(group("people"))).toBeNull();
+    expect(validateAppRegistryEntry(group("a-later-area"))).toBeNull();
+    expect(validateAppRegistryEntry(group(42))).toContain("adminNav");
   });
   test("rejects a scalar entry", () => expect(validateAppRegistryEntry("broken")).toBe("entry must be an object"));
   test("rejects invalid routes", () => expect(validateAppRegistryEntry({ ...valid, routes: ["auth"] })).toContain("routes"));

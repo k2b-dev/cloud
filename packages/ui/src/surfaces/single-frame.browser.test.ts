@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Borders, rules and wrapping are layout, which happy-dom does not model, so a
 // real engine renders the shipped stylesheet.
@@ -105,6 +105,7 @@ const markup = () =>
     }),
     createComponent(StatGrid, {
       columns: 2,
+      title: "Contracts",
       get children() {
         return createComponent(StatCell, { label: "Expiring in 30 days", value: 4 });
       },
@@ -137,6 +138,7 @@ const measure = () => {
     fieldRules: Array.from(document.querySelectorAll(".k2b-settings-field")).map((element) => getComputedStyle(element).borderTopStyle),
     heading: box(".k2b-settings-section__heading").bottom,
     actions: box(".k2b-settings-section__actions").top,
+    headingBesideFields: box(".k2b-settings-section__header").right <= box(".k2b-settings-section__body").left,
     sectionGap: box(".k2b-settings-section + .k2b-settings-section").top - box(".k2b-settings-section").bottom,
     notice: frame(".k2b-notice-card"),
     noticeDetailSize: style(".k2b-notice-card__description").fontSize,
@@ -156,12 +158,30 @@ const measure = () => {
     groupedSections: sections.map((element) => getComputedStyle(element).backgroundColor),
     groupGap: sections[1]!.getBoundingClientRect().top - sections[0]!.getBoundingClientRect().bottom,
     statLabel: { transform: style(".k2b-stat-cell__label").textTransform, tracking: style(".k2b-stat-cell__label").letterSpacing },
+    statHeader: {
+      rule: style(".k2b-stat-grid__header").borderBottomStyle,
+      // The header and the first cell meet directly, so their surfaces alone draw the edge.
+      gap: box(".k2b-stat-cell").top - box(".k2b-stat-grid__header").bottom,
+      surfaceStep: style(".k2b-stat-grid__header").backgroundColor !== style(".k2b-stat-cell").backgroundColor,
+    },
   };
 };
 
 const transparent = "rgba(0, 0, 0, 0)";
 
 describe("@k2b/ui one frame per surface", () => {
+  test("forced colours keep a line under the StatGrid header, where both surfaces become Canvas", async () => {
+    const page = await browser.newPage({ viewport: viewports.desktop });
+    try {
+      await page.emulateMedia({ forcedColors: "active" });
+      await page.setContent(`<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui">${markup()}</body></html>`);
+      await settled(page);
+      expect(await page.locator(".k2b-stat-grid__header").evaluate((header) => getComputedStyle(header).borderBottomStyle)).toBe("solid");
+    } finally {
+      await page.close();
+    }
+  });
+
   for (const [name, viewport] of Object.entries(viewports)) {
     for (const theme of ["light", "dark"] as const) {
       test(`settings sections, notices, placeholders and detail groups draw no second frame on a ${name} in ${theme} mode`, async () => {
@@ -190,11 +210,12 @@ describe("@k2b/ui one frame per surface", () => {
           expect(result.groupGap).toBe(0);
 
           expect(result.statLabel).toEqual({ transform: "none", tracking: "normal" });
-          expect(result.sectionGap).toBe(32);
+          expect(result.statHeader).toEqual({ rule: "none", gap: 0, surfaceStep: true });
+          expect(result.sectionGap).toBe(24);
 
-          // Actions share the heading row on a desktop and wrap below it on a phone.
-          if (name === "phone") expect(result.actions).toBeGreaterThanOrEqual(result.heading);
-          else expect(result.actions).toBeLessThan(result.heading);
+          // A desktop puts the heading and its actions in a column beside the fields; a phone keeps them above.
+          expect(result.actions).toBeGreaterThanOrEqual(result.heading);
+          expect(result.headingBesideFields).toBe(name !== "phone");
         } finally {
           await page.close();
         }

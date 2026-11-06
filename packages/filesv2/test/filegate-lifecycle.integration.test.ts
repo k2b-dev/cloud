@@ -1,10 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { type ProcessSync, startProcessSync } from "@k2b/cloud";
+import { type ProcessSync, sql, startProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
 import { type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
 import { Filegate, FilegateError } from "@k2b/filegate";
-import { sql } from "bun";
 import { suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../core/src/migrate/core/audit";
 import { migratePosix } from "../../core/src/migrate/core/posix";
@@ -201,7 +200,7 @@ suite("real Filegate directory lifecycle", () => {
         `type=volume,src=${volume},dst=/data,readonly`,
         "--entrypoint",
         "cat",
-        "oven/bun:1.4.2-alpine",
+        "oven/bun:1.4.4-alpine",
         `/data/${archive.path}/document.txt`,
       ]);
       expect(readAsMember.exitCode).not.toBe(0);

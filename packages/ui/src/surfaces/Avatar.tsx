@@ -13,6 +13,9 @@ export type AvatarRing = "success" | { color: string };
 /** `square` marks an agent or service account; people stay round. */
 export type AvatarShape = "circle" | "square";
 
+/** `person` tints initials and icons by name; `neutral` keeps them gray, such as for someone outside the team. */
+export type AvatarTone = "person" | "neutral";
+
 export type AvatarProps = {
   name: string;
   src?: string | null;
@@ -23,6 +26,7 @@ export type AvatarProps = {
   /** Draws a ring with a small transparent gap inside the avatar's own box, so the avatar keeps its size and no container clips the ring. */
   ring?: AvatarRing;
   shape?: AvatarShape;
+  tone?: AvatarTone;
   loading?: "eager" | "lazy";
   class?: string;
   style?: JSX.CSSProperties | string;
@@ -68,7 +72,7 @@ export function Avatar(props: AvatarProps): JSX.Element {
           class={className()}
           data-size={props.size ?? "md"}
           data-shape={props.shape === "square" ? "square" : undefined}
-          data-tint={personTint(props.name)}
+          data-tint={props.tone === "neutral" ? undefined : personTint(props.name)}
           data-ring={ring()}
           style={style()}
           role="img"

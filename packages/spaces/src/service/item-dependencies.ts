@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import type { SQL } from "bun";
 import { MAX_ITEM_DEPENDENCIES, type MutationResult, type SpaceTaskDependency, type SpaceTaskDependent } from "@/contracts";
 import { publishSpaceChange, spacesLive } from "./live";
 

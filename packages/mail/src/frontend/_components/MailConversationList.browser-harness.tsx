@@ -239,7 +239,8 @@ window.mountMailList = (options) => {
                 open
                 defaultSize={options.listSize ?? 430}
                 minSize={300}
-                maxSize={620}
+                // The workspace's wide columns list fills the main area; a listSize above the pane's 620 stands in for it.
+                maxSize={Math.max(620, options.listSize ?? 0)}
               >
                 <MailConversationList
                   mailbox={mailbox}
@@ -303,13 +304,20 @@ window.mountMailList = (options) => {
                   onBulkAction={noop}
                   onItemAction={noop}
                   onManageTags={noop}
+                  onRespondItem={noop}
+                  onSetItemCompletion={noop}
+                  currentUserId={null}
+                  assigneeNames={() => []}
                   onMergeItem={noop}
                   onOpenHref={openHref}
                   onLoadMore={() => false}
                   onRefresh={async () => {}}
                   columns={
                     options.columns
-                      ? { shared: options.columns === "shared", assigneeNames: (ids) => ids.map((id) => id.replace("user-", "")) }
+                      ? {
+                          shared: options.columns === "shared",
+                          assignees: (ids) => ids.map((id) => ({ id, name: id.replace("user-", "") })),
+                        }
                       : undefined
                   }
                 />
@@ -344,10 +352,9 @@ window.mountMailList = (options) => {
                     readingFormat="automatic"
                     theme="light"
                     calendarIntegrationAvailable={false}
-                    listCollapsed={false}
+                    listAway={false}
                     detailsOpen={false}
                     toolbarActions={options.toolbarActions ?? ["reply"]}
-                    onToggleList={noop}
                     onToggleDetails={noop}
                     onToolbarActionsChange={noop}
                     actionPending={false}
@@ -361,6 +368,12 @@ window.mountMailList = (options) => {
                     onUndoAutomation={noop}
                     onAssignConversation={noop}
                     onAssignConversationToMe={noop}
+                    assignment={null}
+                    workStatus={null}
+                    completionPending={false}
+                    onSetCompletion={noop}
+                    respondRequest={null}
+                    onRespondRequestHandled={noop}
                     onSplitMessage={noop}
                     onKeep={noop}
                     onStopKeeping={noop}

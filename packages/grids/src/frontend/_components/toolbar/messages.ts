@@ -74,7 +74,7 @@ export const toolbarMessages = i18n.define({
       filterNumber: "Filter number",
       selectedIdentity: "Selected identity",
       removeIdentity: ({ name }: { name: string }) => `Remove ${name}`,
-      searchUsersGroups: "Search users, groups, and service accounts...",
+      searchUsersGroups: "Search users, groups, agents, and service accounts...",
       createdTime: "Created time",
       modifiedTime: "Modified time",
       deletedTime: "Deleted time",

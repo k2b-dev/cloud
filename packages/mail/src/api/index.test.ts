@@ -158,6 +158,12 @@ describe("Mail API composition", () => {
     ).toBe(true);
   });
 
+  test("exposes a read-only request for an opened message's body", () => {
+    expect(
+      api.routes.some((route) => route.method === "POST" && route.path === "/mailboxes/:mailboxId/messages/:messageId/body-request"),
+    ).toBe(true);
+  });
+
   test("exposes user reporting and platform-admin Mail security operations", () => {
     expect(
       api.routes.some((route) => route.method === "POST" && route.path === "/mailboxes/:mailboxId/messages/:messageId/security-report"),

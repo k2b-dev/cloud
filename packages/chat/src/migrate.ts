@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** Additive startup migration; rerunning preserves both data and definitions. */
 export const migrate = async (): Promise<void> => {

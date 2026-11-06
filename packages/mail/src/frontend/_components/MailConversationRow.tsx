@@ -1,8 +1,9 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Dropdown, type DropdownItem, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
+import { AvatarFaces, ContextMenu, Dropdown, type DropdownItem, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { getMailAction, type MailActionId } from "./mail-actions";
 import { useMailCloudId } from "./mail-cloud-id";
+import { type MailRespondIntent, mailConversationMenuItems } from "./mail-conversation-menu";
 import { MAX_MAIL_CONVERSATION_SELECTION } from "./mail-conversation-selection";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import {
@@ -12,13 +13,22 @@ import {
   isMailListItemActive,
   type MailListItem,
 } from "./mail-navigation";
+import { type MailRowAssignee, mailRowAssigneeLabels } from "./mail-row-assignees";
+import { mailParticipantFaces, mailParticipantSummary, mailRowParticipants } from "./mail-row-participants";
 
 /** Tags shown as pills on a row's fourth line; the rest are counted. */
 const MAX_ROW_TAGS = 3;
 
-/** A row has a fourth line only for its tags or for "Waiting"; every other row has the same three-line height. */
-export const mailRowHasFourthLine = (item: Pick<MailListItem, "localTags" | "workStatus">): boolean =>
-  item.localTags.length > 0 || item.workStatus === "waiting";
+/** Others than the sender the row names wrote, so the row shows who took part (`participants` is left out otherwise). */
+const mailRowShowsParticipants = (item: Pick<MailListItem, "selectionKind" | "participants">): boolean =>
+  item.selectionKind === "conversation" && Boolean(item.participants?.length);
+
+/**
+ * A row has a fourth line only for its tags, for "Waiting", or for the faces of others who wrote; every other row has
+ * the same three-line height.
+ */
+export const mailRowHasFourthLine = (item: Pick<MailListItem, "localTags" | "workStatus" | "selectionKind" | "participants">): boolean =>
+  item.localTags.length > 0 || item.workStatus === "waiting" || mailRowShowsParticipants(item);
 
 type MailConversationRowState = {
   selectedConversationId: string | null;
@@ -28,6 +38,7 @@ type MailConversationRowState = {
   canWrite: boolean;
   spamAction: "junk" | "not_spam";
   dateConfig: DateContext;
+  currentUserId: string | null;
 };
 
 type MailConversationRowActions = {
@@ -37,6 +48,12 @@ type MailConversationRowActions = {
   manageTags: (item: MailListItem) => void | Promise<void>;
   /** Absent for a person who sees only assigned conversations. */
   merge?: (item: MailListItem) => void | Promise<void>;
+  /** Opens the conversation and answers its latest message there or in a window of its own. */
+  respond: (item: MailListItem, intent: MailRespondIntent, options: { window: boolean }) => void;
+  /** Absent where nobody can be assigned, as in a personal mailbox. */
+  assignToMe?: (item: MailListItem) => void;
+  assigneeNames: (userIds: readonly string[]) => string[];
+  setCompletion: (item: MailListItem, completion: "done" | "open") => void;
 };
 
 /** The list's quick look card; rows anchor it and report mouse rests, with the row and the pointer, and leaves for its request. */
@@ -48,8 +65,8 @@ type MailConversationRowQuickLook = Pick<HoverPreviewController<string>, "id" | 
 
 /** The columns view (F2) draws one line per conversation; shared mailboxes add who is responsible and the status. */
 export type MailConversationRowColumns = {
-  /** Names of the people responsible, or null in a personal mailbox where the column is left out. */
-  assignees: string[] | null;
+  /** The people responsible, or null in a personal mailbox where the column is left out. */
+  assignees: MailRowAssignee[] | null;
 };
 
 /** At most this many image thumbnails; the rest are counted. */
@@ -62,11 +79,11 @@ const MAX_ROW_THUMBNAILS = 3;
  */
 function MailRowThumbnails(props: { item: MailListItem; requestUrl: URL }) {
   const images = () =>
-    props.item.imageAttachments.slice(0, MAX_ROW_THUMBNAILS).flatMap((image) => {
+    (props.item.imageAttachments ?? []).slice(0, MAX_ROW_THUMBNAILS).flatMap((image) => {
       const href = buildMailAttachmentThumbnailHref(props.requestUrl, image);
       return href ? [{ key: image.attachmentId, href }] : [];
     });
-  const more = () => Math.max(0, props.item.imageAttachmentCount - images().length);
+  const more = () => Math.max(0, (props.item.imageAttachmentCount ?? images().length) - images().length);
   return (
     <Show when={images().length > 0}>
       <span class="mail-row-thumbnails" aria-hidden="true" data-mail-row-thumbnails>
@@ -108,17 +125,6 @@ export default function MailConversationRow(props: {
   const canWrite = createMemo(() => state().canWrite);
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
-  const actionLabel = (actionId: MailActionId): string => {
-    if (actionId === "mark_read") return t().markRead;
-    if (actionId === "mark_unread") return t().markUnread;
-    if (actionId === "flag") return t().flag;
-    if (actionId === "unflag") return t().unflag;
-    if (actionId === "archive") return t().archive;
-    if (actionId === "move") return t().moveToFolder;
-    if (actionId === "not_spam") return t().notSpam;
-    if (actionId === "junk") return t().junk;
-    return t().trash;
-  };
   const correspondentLabels = (item: MailListItem): string[] =>
     item.participantLabels.length > 0 ? item.participantLabels : [item.participantSummary || t().unknownSender];
   const selected = () => isMailListItemActive(props.item, state().selectedConversationId, state().selectedMessageId);
@@ -129,6 +135,17 @@ export default function MailConversationRow(props: {
   const tagLabel = () => props.item.localTags.map((tag) => tag.name).join(", ");
   const bulkSelected = () => Boolean(props.item.conversationId && state().selectedConversationIds.has(props.item.conversationId));
   const attachmentDownloadHref = () => buildMailAttachmentDownloadHref(props.requestUrl, props.item);
+  const attachmentLabel = () => t().attachmentCount({ count: props.item.attachmentCount ?? 0 });
+  const participants = createMemo(() => mailRowParticipants(props.item));
+  const participantLabel = () => mailParticipantSummary(t(), participants().people, participants().count);
+  const participantFaces = (size?: "md") => (
+    <Tooltip.Anchor content={participantLabel()}>
+      <span class="mail-row-participants" role="img" aria-label={participantLabel()} data-mail-participants>
+        <AvatarFaces people={mailParticipantFaces(participants().people)} total={participants().count} size={size} />
+      </span>
+    </Tooltip.Anchor>
+  );
+  const [menuOpen, setMenuOpen] = createSignal(false);
   let activation: "keyboard" | "pointer" = "keyboard";
   let selectRange = false;
   let link: HTMLAnchorElement | undefined;
@@ -143,98 +160,52 @@ export default function MailConversationRow(props: {
   });
 
   const cloudId = useMailCloudId();
-  const writeActions = (): DropdownItem[] => [
-    {
-      label: actionLabel(props.item.unread ? "mark_read" : "mark_unread"),
-      icon: getMailAction(props.item.unread ? "mark_read" : "mark_unread").icon,
-      action: () => props.actions.itemAction(props.item, props.item.unread ? "mark_read" : "mark_unread"),
-    },
-    {
-      label: actionLabel(props.item.flagged ? "unflag" : "flag"),
-      icon: getMailAction(props.item.flagged ? "unflag" : "flag").icon,
-      action: () => props.actions.itemAction(props.item, props.item.flagged ? "unflag" : "flag"),
-    },
-    {
-      label: t().manageTags,
-      icon: "ti ti-tags",
-      action: () => props.actions.manageTags(props.item),
-    },
-    ...(["archive", "move", spamAction(), "trash"] as const).map((actionId) => {
-      // Cloud refuses to delete a kept conversation or move it to Junk; the menu says why.
-      const blocked = props.item.kept
-        ? actionId === "trash"
-          ? t().keptCannotDelete
-          : actionId === "junk"
-            ? t().keptCannotJunk
-            : null
-        : null;
-      return blocked
-        ? { label: actionLabel(actionId), icon: getMailAction(actionId).icon, description: blocked, disabled: true as const }
-        : {
-            label: actionLabel(actionId),
-            icon: getMailAction(actionId).icon,
-            action: () => props.actions.itemAction(props.item, actionId),
-          };
-    }),
-    ...(canMerge()
-      ? [
-          {
-            label: t().mergeWithConversation,
-            icon: "ti ti-git-merge",
-            action: () => props.actions.merge?.(props.item),
-          },
-        ]
-      : []),
-  ];
-  return (
-    <div
-      ref={(element) => {
-        entry = element;
-        if (quickLook && quickLookId) quickLook.anchor(quickLookId, () => link)(element);
-      }}
-      data-leaving={props.leaving ? "true" : undefined}
-      inert={props.leaving}
-      aria-hidden={props.leaving ? "true" : undefined}
-      class="mail-list-entry k2b-progressive-row relative"
-      data-lines={props.columns ? "1" : fourthLine() ? "4" : "3"}
-      classList={{
-        "mail-list-entry-active": selected(),
-        "mail-list-entry-unread": props.item.unread,
-        "mail-list-entry-selected": bulkSelected(),
-        "mail-list-entry-selection-mode": state().selectionMode,
-        "mail-list-entry-peek": peeking(),
-      }}
-      onPointerEnter={(event) => {
-        if (event.pointerType === "mouse") {
-          quickLook?.begin();
-          quickLook?.prefetch(props.item, event.currentTarget, event);
-        }
-      }}
-      onPointerMove={(event) => {
-        if (event.pointerType === "mouse") quickLook?.prefetch(props.item, event.currentTarget, event);
-      }}
-      onPointerLeave={() => quickLook?.release(props.item)}
-      role="listitem"
-      data-conversation-id={props.item.conversationId ?? undefined}
-      data-message-id={props.item.selectionKind === "message" ? props.item.id : undefined}
-    >
-      <Show when={state().canWrite && state().selectionMode && props.item.conversationId}>
-        <input
-          type="checkbox"
-          class="mail-list-checkbox h-4 w-4"
-          checked={bulkSelected()}
-          disabled={!bulkSelected() && state().selectedConversationIds.size >= MAX_MAIL_CONVERSATION_SELECTION}
-          aria-label={(bulkSelected() ? t().deselectNamed : t().selectNamed)({ name: props.item.subject || t().conversation })}
-          onClick={(event) => {
-            event.stopPropagation();
-            selectRange = event.shiftKey;
-          }}
-          onChange={() => {
-            props.actions.toggleSelection(props.item, selectRange);
-            selectRange = false;
-          }}
-        />
-      </Show>
+  // The row's "…" and right-click menus are the reader's menu for this conversation.
+  const menuItems = (): DropdownItem[] => {
+    const item = props.item;
+    const currentUserId = state().currentUserId;
+    const assignToMe = props.actions.assignToMe;
+    return mailConversationMenuItems({
+      t: t(),
+      ...(canWrite()
+        ? {
+            respond: { replyAll: false, run: (intent, options) => props.actions.respond(item, intent, options) },
+            ...(assignToMe && currentUserId
+              ? {
+                  assignToMe: {
+                    assigned: item.assigneeUserIds.includes(currentUserId),
+                    others: props.actions.assigneeNames(item.assigneeUserIds.filter((userId) => userId !== currentUserId)),
+                    run: () => assignToMe(item),
+                  },
+                }
+              : {}),
+            ...(item.workStatus
+              ? {
+                  completion: {
+                    done: item.workStatus === "done",
+                    run: () => props.actions.setCompletion(item, item.workStatus === "done" ? "open" : "done"),
+                  },
+                }
+              : {}),
+            organize: {
+              unread: item.unread,
+              flagged: item.flagged,
+              spamAction: spamAction(),
+              kept: item.kept,
+              run: (actionId: MailActionId) => props.actions.itemAction(item, actionId),
+              manageTags: () => props.actions.manageTags(item),
+            },
+            ...(canMerge()
+              ? { conversation: [{ label: t().mergeWithConversation, icon: "ti ti-git-merge", action: () => props.actions.merge?.(item) }] }
+              : {}),
+          }
+        : {}),
+      other: cloudId.actions({ conversationId: item.conversationId }),
+    });
+  };
+  // The link and its actions; the right-click host wraps them for a conversation row.
+  const rowBody = () => (
+    <>
       <a
         ref={link}
         href={buildMailSelectionHref(props.requestUrl, props.item)}
@@ -313,12 +284,14 @@ export default function MailConversationRow(props: {
                 <span class="mail-row-subject">{props.item.subject || t().noSubject}</span>
                 <span class="mail-row-inline-preview">{props.item.preview}</span>
                 <MailRowThumbnails item={props.item} requestUrl={props.requestUrl} />
-                <Show when={props.item.hasAttachments || props.item.flagged || props.item.kept}>
+                <Show when={props.item.attachmentCount || props.item.flagged || props.item.kept}>
                   <span class="mail-row-marks">
-                    <Show when={props.item.hasAttachments}>
-                      <span class="mail-row-mark" role="img" aria-label={t().hasAttachments}>
-                        <i class="ti ti-paperclip" aria-hidden="true" />
-                      </span>
+                    <Show when={props.item.attachmentCount}>
+                      <Tooltip.Anchor content={attachmentLabel()}>
+                        <span class="mail-row-mark" role="img" aria-label={attachmentLabel()}>
+                          <i class="ti ti-paperclip" aria-hidden="true" />
+                        </span>
+                      </Tooltip.Anchor>
                     </Show>
                     <Show when={props.item.kept}>
                       <span class="mail-row-mark" role="img" aria-label={t().keptConversation} data-mail-kept-indicator>
@@ -333,8 +306,42 @@ export default function MailConversationRow(props: {
                   </span>
                 </Show>
               </span>
+              {/* Who wrote: up to three faces in a fixed-width column, then "+n"; the tooltip names them by kind. */}
+              <span class="mail-row-cell mail-row-participants-cell">
+                <Show when={props.item.selectionKind === "conversation" && participants().count > 0}>{participantFaces("md")}</Show>
+              </span>
+              {/* Who is responsible: the first face and name ("You" first), then "+n"; the tooltip names everyone. */}
               <Show when={columns().assignees}>
-                {(names) => <span class="mail-row-cell mail-row-assignee-cell">{names().length > 0 ? names().join(", ") : "—"}</span>}
+                {(assignees) => {
+                  const labels = () => mailRowAssigneeLabels(assignees(), state().currentUserId, t().you);
+                  const label = () =>
+                    t().responsibleNames({
+                      names: labels()
+                        .map((assignee) => assignee.name)
+                        .join(", "),
+                    });
+                  return (
+                    <span class="mail-row-cell mail-row-assignee-cell">
+                      <Show when={labels()[0]} fallback={<span class="mail-row-assignee-none">{t().nobodyResponsible}</span>}>
+                        {(first) => (
+                          <Tooltip.Anchor content={label()}>
+                            <span class="mail-row-assignee" role="img" aria-label={label()} data-mail-assignees>
+                              <AvatarFaces
+                                people={[{ name: first().name, src: first().src, tone: first().unknown ? "neutral" : undefined }]}
+                                max={1}
+                                size="md"
+                              />
+                              <span class="mail-row-assignee-name">{first().name}</span>
+                              <Show when={labels().length > 1}>
+                                <span class="mail-row-count">+{labels().length - 1}</span>
+                              </Show>
+                            </span>
+                          </Tooltip.Anchor>
+                        )}
+                      </Show>
+                    </span>
+                  );
+                }}
               </Show>
               <Show when={columns().assignees}>
                 <span class="mail-row-cell mail-row-status-cell" data-status={props.item.workStatus}>
@@ -389,9 +396,9 @@ export default function MailConversationRow(props: {
                 </span>
               </Show>
               <span class="mail-row-marks">
-                <Show when={props.item.hasAttachments}>
-                  <Tooltip.Anchor content={t().hasAttachments}>
-                    <span class="mail-row-mark" role="img" aria-label={t().hasAttachments}>
+                <Show when={props.item.attachmentCount}>
+                  <Tooltip.Anchor content={attachmentLabel()}>
+                    <span class="mail-row-mark" role="img" aria-label={attachmentLabel()}>
                       <i class="ti ti-paperclip" aria-hidden="true" />
                     </span>
                   </Tooltip.Anchor>
@@ -459,6 +466,12 @@ export default function MailConversationRow(props: {
                     {t().waitingShort}
                   </span>
                 </Show>
+                {/* Who wrote, at the line's end: up to three faces, then "+n". */}
+                <Show when={mailRowShowsParticipants(props.item)}>
+                  <span class="mail-row-extra-participants" data-clear-download={attachmentDownloadHref() ? "" : undefined}>
+                    {participantFaces()}
+                  </span>
+                </Show>
               </span>
             </Show>
           </span>
@@ -482,11 +495,7 @@ export default function MailConversationRow(props: {
       </Show>
       <Show when={!state().selectionMode && props.item.conversationId}>
         <div class="k2b-progressive-action absolute right-3 top-2 z-10">
-          <Dropdown.Root
-            position="bottom-left"
-            width="15rem"
-            items={[...(canWrite() ? writeActions() : []), ...cloudId.section({ conversationId: props.item.conversationId })]}
-          >
+          <Dropdown.Root lazy position="bottom-left" width="16rem" items={menuItems()}>
             <Dropdown.Trigger
               iconOnly
               size="sm"
@@ -498,6 +507,73 @@ export default function MailConversationRow(props: {
             </Dropdown.Trigger>
           </Dropdown.Root>
         </div>
+      </Show>
+    </>
+  );
+
+  return (
+    <div
+      ref={(element) => {
+        entry = element;
+        if (quickLook && quickLookId) quickLook.anchor(quickLookId, () => link)(element);
+      }}
+      data-leaving={props.leaving ? "true" : undefined}
+      inert={props.leaving}
+      aria-hidden={props.leaving ? "true" : undefined}
+      class="mail-list-entry k2b-progressive-row relative"
+      data-lines={props.columns ? "1" : fourthLine() ? "4" : "3"}
+      classList={{
+        "mail-list-entry-active": selected(),
+        "mail-list-entry-unread": props.item.unread,
+        "mail-list-entry-selected": bulkSelected(),
+        "mail-list-entry-selection-mode": state().selectionMode,
+        "mail-list-entry-peek": peeking(),
+      }}
+      onPointerEnter={(event) => {
+        if (event.pointerType === "mouse") {
+          quickLook?.begin();
+          quickLook?.prefetch(props.item, event.currentTarget, event);
+        }
+      }}
+      onPointerMove={(event) => {
+        if (event.pointerType === "mouse") quickLook?.prefetch(props.item, event.currentTarget, event);
+      }}
+      onPointerLeave={() => quickLook?.release(props.item)}
+      role="listitem"
+      data-conversation-id={props.item.conversationId ?? undefined}
+      data-message-id={props.item.selectionKind === "message" ? props.item.id : undefined}
+    >
+      <Show when={state().canWrite && state().selectionMode && props.item.conversationId}>
+        <input
+          type="checkbox"
+          class="mail-list-checkbox h-4 w-4"
+          checked={bulkSelected()}
+          disabled={!bulkSelected() && state().selectedConversationIds.size >= MAX_MAIL_CONVERSATION_SELECTION}
+          aria-label={(bulkSelected() ? t().deselectNamed : t().selectNamed)({ name: props.item.subject || t().conversation })}
+          onClick={(event) => {
+            event.stopPropagation();
+            selectRange = event.shiftKey;
+          }}
+          onChange={() => {
+            props.actions.toggleSelection(props.item, selectRange);
+            selectRange = false;
+          }}
+        />
+      </Show>
+      {/* A right-click on the row, or the context-menu key and Shift+F10 on it, opens its "…" menu. The host draws no
+          box of its own and leaves the checkbox out, so it never marks the checkbox or the link unavailable; its entries
+          are built only while it is open. */}
+      <Show when={props.item.conversationId} fallback={rowBody()}>
+        <ContextMenu
+          class="contents"
+          tabIndex={-1}
+          items={menuOpen() ? menuItems() : []}
+          label={t().actionsFor({ name: props.item.subject || t().conversation })}
+          onOpen={() => setMenuOpen(true)}
+          onClose={() => setMenuOpen(false)}
+        >
+          {rowBody()}
+        </ContextMenu>
       </Show>
     </div>
   );

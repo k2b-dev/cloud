@@ -1,9 +1,9 @@
 /**
  * The colors that stand for a person: the tint behind avatar initials, a collaborator's cursor, and the marks and
- * comments a person leaves. The palette leaves out cyan, which means AI, and yellow, which reads as a text highlight.
+ * comments a person leaves. The palette leaves out plum, which means AI, and yellow, which reads as a text highlight.
  * Several people can share a color, so a person's name always appears next to it.
  */
-export const PERSON_COLORS = ["#3b82f6", "#6366f1", "#8b5cf6", "#c026d3", "#ec4899", "#e11d48", "#f97316", "#16a34a"] as const;
+export const PERSON_COLORS = ["#3b82f6", "#6366f1", "#8b5cf6", "#0891b2", "#0d9488", "#e11d48", "#f97316", "#16a34a"] as const;
 
 /** The palette index for a name, the order of the `.k2b-avatar[data-tint]` rules. Surrounding spaces do not count. */
 export const personTint = (name: string): number => {

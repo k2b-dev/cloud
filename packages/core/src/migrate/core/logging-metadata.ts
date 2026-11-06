@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** SQL counterpart of the log reader's object/string JSON decoding.
  * Invalid diagnostic metadata must not abort an aggregate query.

@@ -1,16 +1,19 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
-import type { ConversationView, MailFocusPage, MailFocusView } from "../contracts";
+import type { ConversationView, MailActivityKind } from "../contracts";
+import { mailFolderNames } from "../folder-names";
+import { readMailEventsFilter } from "../mail-events-route";
 import { resolveMailSearchRoute } from "../search-state";
-import type { MailboxListView, MailboxPageData } from "../service/workspace";
+import type { MailActivityEvent } from "../service/collaboration";
+import type { MessageDetail } from "../service/messages";
+import type { MailboxListView, MailboxPageData, MailListItem } from "../service/workspace";
 import { logFixtureItems } from "./_components/mail-automation-log-fixtures";
 import { normalizeMailConversationToolbarActions } from "./_components/mail-conversation-toolbar";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
 import { summaryState } from "./_components/mail-summary-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
-import MailOverview from "./MailOverview.island";
 import MailWorkspace from "./MailWorkspace.island";
 
 export const MAIL_SHELL_NOW = "2026-10-14T10:00:00.000Z";
@@ -34,6 +37,23 @@ const traceFixture = (kind: string | null) => {
 };
 const summaryRule = { id: "Wf001", name: "Lange Mails zusammenfassen" };
 /** `?summary=` picks the summary state the reader shows; without it the conversation has a person's short text. */
+/** `photos=N`: the message carries an invented programme PDF and N invented photos. */
+const photosFixture = (count: string | null): MessageDetail["attachments"] => {
+  const photos = Number(count ?? 0);
+  if (!Number.isSafeInteger(photos) || photos <= 0) return [];
+  return [
+    { id: "Att000", filename: "Programme.pdf", contentType: "application/pdf", sizeBytes: 182_000, contentId: null, checksum: null },
+    ...Array.from({ length: photos }, (_, index) => ({
+      id: `Att${String(index + 1).padStart(3, "0")}`,
+      filename: `Summer_party_${index + 1}.jpg`,
+      contentType: "image/jpeg",
+      sizeBytes: 2_400_000 + index * 1000,
+      contentId: null,
+      checksum: null,
+    })),
+  ];
+};
+
 const summaryFixture = (kind: string | null) => {
   const ai = summaryState({
     summary:
@@ -77,7 +97,6 @@ const summaryFixture = (kind: string | null) => {
       return summaryState({ summary: "Invented request summary.", summaryRevision: 1, conversationRevision: 1 });
   }
 };
-export const focusCounts = { mine: 12, unassigned: 7, waiting: 4, all: 23 };
 export const viewCounts = {
   needs_action: 12,
   mine: 5,
@@ -94,10 +113,6 @@ export const fixturePermission = (url: URL): Permission => {
   const value = url.searchParams.get("permission");
   return value === "read" || value === "admin" || value === "assigned-only" ? value : "write";
 };
-export const focusView = (url: URL): MailFocusView => {
-  const view = url.searchParams.get("view");
-  return view === "waiting" || view === "unassigned" || view === "all" ? view : "mine";
-};
 const mailbox = (id: string, name: string): MailboxPageData["mailbox"] => ({
   id,
   name,
@@ -112,25 +127,33 @@ const mailbox = (id: string, name: string): MailboxPageData["mailbox"] => ({
   createdAt: MAIL_SHELL_NOW,
   updatedAt: MAIL_SHELL_NOW,
 });
-export const mailboxes: ComponentProps<typeof MailOverview>["mailboxes"] = [
+export const mailboxes = [
   ["Box001", "Example support"],
   ["Box002", "Example dispatch"],
   ["Box003", "Example correspondence with an exceptionally long mailbox name that must fade"],
   ["Box004", "Example projects"],
   ["Box005", "Example hidden"],
-].map(([id, name]) => ({ ...mailbox(id!, name!), permission: "write", receivingAddress: `${id?.toLowerCase()}@example.test` }));
+].map(([id, name]) => ({ ...mailbox(id!, name!), receivingAddress: `${id?.toLowerCase()}@example.test` as string | null }));
 export const sidebar: ComponentProps<typeof MailWorkspace>["sidebar"] = {
   mailboxes,
   pinnedMailboxIds: ["Box002", "Box001"],
   hiddenMailboxIds: ["Box005"],
 };
-const focusMailboxCounts = mailboxes.map((box, index) => ({ mailboxId: box.id, unread: index + 2, needsAction: index + 3 }));
+// Standard folders carry an Exchange-like provider's names; the sidebar shows them localized.
+const standardFolderNames: Record<string, string> = {
+  inbox: "INBOX",
+  drafts: "Drafts",
+  sent: "Sent Items",
+  archive: "Archive",
+  trash: "Deleted Items",
+  junk: "Junk Email",
+};
 const folders = [
   ...["inbox", "drafts", "sent", "archive", "trash", "junk"].map((role) =>
     mailTestFolder(`${role[0]!.toUpperCase()}${role.slice(1)}1`, {
       role,
       providerRole: role,
-      name: `${role[0]!.toUpperCase()}${role.slice(1)}`,
+      name: standardFolderNames[role]!,
       unread: role === "sent" || role === "drafts" ? 0 : 3,
     }),
   ),
@@ -164,6 +187,18 @@ const localTags: MailboxPageData["localTags"] = [
     updatedAt: MAIL_SHELL_NOW,
   },
 ];
+/** The invented team of `?team=1`; the first person is the one signed in. */
+const teamUsers = [
+  { id: "user-1", uid: "robin", displayName: "Robin Example" },
+  { id: "user-2", uid: "nora", displayName: "Nora Example" },
+].map((user) => ({ ...user, avatarHash: null, scope: "mailbox" as const, permission: "write" as const, description: "" }));
+/** Who wrote in a few rows: Conv02 the sender and the team, Conv03 three people, Conv05 seventeen (ten named). */
+const crowd = ["Lea Brandt", "Tom Keller", "Anna Roth", "Ben Fischer", "Clara Hoff", "David Lang", "Eva Pohl", "Finn Braun", "Greta Vogel"];
+const listParticipants: Record<number, Pick<MailListItem, "participants" | "participantCount">> = {
+  1: { participants: [{ name: "Sender 2" }, { name: "Robin Example", kind: "user" }] },
+  2: { participants: [{ name: "Sender 3" }, { name: "Nora Example", kind: "user" }, { name: "Invoices", kind: "workflow" }] },
+  4: { participants: [{ name: "Sender 5" }, ...crowd.map((name) => ({ name, kind: "user" as const }))], participantCount: 17 },
+};
 export const listRows = Array.from({ length: 12 }, (_, index) =>
   mailTestRow(`Conv${String(index + 1).padStart(2, "0")}`, {
     subject: `Example request ${index + 1}`,
@@ -173,24 +208,18 @@ export const listRows = Array.from({ length: 12 }, (_, index) =>
     latestMessageAt: new Date(Date.parse(MAIL_SHELL_NOW) - index * 3_600_000).toISOString(),
     unread: index % 2 === 0,
     flagged: index % 3 === 0,
-    imageAttachments: [],
-    imageAttachmentCount: 0,
-    hasAttachments: index % 4 === 0,
+    ...(index % 4 === 0 ? { attachmentCount: index / 4 + 1 } : {}),
+    ...listParticipants[index],
     activeFolderIds: ["Inbox1"],
     sourceFolderId: "Inbox1",
     unreadFolderIds: index % 2 === 0 ? ["Inbox1"] : [],
     localTags: index === 0 ? localTags.slice(0, 1) : [],
   }),
 );
-export const focusPage = (view: MailFocusView): MailFocusPage => ({
-  items: listRows
-    .slice(0, Math.min(focusCounts[view], 12))
-    .map((row) => ({ ...row, mailboxId: "Box001", mailboxName: "Example support", workStatus: row.workStatus ?? "needs_action" })),
-  nextCursor: null,
-  counts: focusCounts,
-  mailboxCounts: focusMailboxCounts,
-});
-
+/** Assigned to me (`?view=mine`): the service lists the three that need action before the two that wait. */
+const mineRows = listRows
+  .slice(0, 5)
+  .map((row, index) => ({ ...row, assigneeUserIds: ["user-1"], workStatus: index < 3 ? ("needs_action" as const) : ("waiting" as const) }));
 /** Conv02 is a long conversation: six messages, oldest first as the service sends them, so the reader folds the older ones. */
 const longThread: MailboxPageData["detailMessages"] = Array.from({ length: 6 }, (_, index) => {
   const at = new Date(Date.parse(MAIL_SHELL_NOW) - (5 - index) * 86_400_000).toISOString();
@@ -226,6 +255,140 @@ const longThread: MailboxPageData["detailMessages"] = Array.from({ length: 6 }, 
     attachments: [],
   };
 });
+
+const people = {
+  me: { id: "user-1", displayName: "Lea Brandt", avatarHash: null },
+  jonas: { id: "11111111-1111-4111-8111-000000000001", displayName: "Jonas Weber", avatarHash: null },
+  mira: { id: "11111111-1111-4111-8111-000000000002", displayName: "Mira Schulz", avatarHash: null },
+  tom: { id: "11111111-1111-4111-8111-000000000003", displayName: "Tom Keller", avatarHash: null },
+  clara: { id: "11111111-1111-4111-8111-000000000004", displayName: "Clara Hoff", avatarHash: null },
+};
+type FixtureEvent = MailActivityEvent & { kind: MailActivityKind; mine?: boolean };
+const at = (minutes: number) => new Date(Date.parse(MAIL_SHELL_NOW) - minutes * 60_000).toISOString();
+const fixtureEvent = (
+  id: number,
+  kind: MailActivityKind,
+  actor: { id: string; displayName: string; avatarHash: null } | { workflow: string },
+  minutes: number,
+  input: Partial<MailActivityEvent>,
+  mine = false,
+): FixtureEvent => ({
+  id: String(id),
+  kind,
+  mine,
+  conversationId: "Conv01",
+  conversationSubject: "Example request 1",
+  actor: "workflow" in actor ? { kind: "workflow", id: null, displayName: actor.workflow, avatarHash: null } : { kind: "user", ...actor },
+  action: "conversation.comment_created",
+  outcome: "confirmed",
+  targetType: "conversation",
+  targetId: null,
+  metadata: {},
+  createdAt: at(minutes),
+  assignees: null,
+  ...input,
+});
+/** Invented feed events after the approved mockup: today and yesterday, every kind, one failed send. */
+const fixtureEvents: FixtureEvent[] = [
+  fixtureEvent(12, "assignment", people.jonas, 16, {
+    action: "conversation.collaboration_updated",
+    metadata: { before: { assigneeUserIds: [] }, after: { assigneeUserIds: [people.jonas.id] } },
+    assignees: { before: [], after: [people.jonas] },
+  }),
+  fixtureEvent(11, "sent", people.mira, 17, { action: "message.sent", metadata: { result: "sent", intent: "reply" } }),
+  fixtureEvent(10, "automation", { workflow: "Rechnungen" }, 19, {
+    action: "conversation.local_tags_added",
+    metadata: { addedTagIds: ["Tag001"] },
+  }),
+  fixtureEvent(9, "draft", people.tom, 30, { action: "draft.created", conversationId: "Conv02", conversationSubject: "Example request 2" }),
+  fixtureEvent(8, "comment", people.mira, 40, { conversationId: "Conv02", conversationSubject: "Example request 2" }, true),
+  fixtureEvent(
+    7,
+    "assignment",
+    people.jonas,
+    47,
+    {
+      action: "conversation.collaboration_updated",
+      conversationId: "Conv02",
+      conversationSubject: "Example request 2",
+      metadata: { before: { assigneeUserIds: [people.jonas.id] }, after: { assigneeUserIds: [people.jonas.id, people.me.id] } },
+      assignees: { before: [people.jonas], after: [people.jonas, people.me] },
+    },
+    true,
+  ),
+  fixtureEvent(6, "sent", people.clara, 62, {
+    action: "message.sent",
+    outcome: "failed",
+    conversationId: "Conv04",
+    conversationSubject: "Example request 4",
+    metadata: { result: "failed", intent: "reply", code: "SMTP_REJECTED" },
+  }),
+  fixtureEvent(5, "status", people.tom, 80, {
+    action: "conversation.collaboration_updated",
+    conversationId: "Conv03",
+    conversationSubject: "Example request 3",
+    metadata: { before: { workStatus: "needs_action" }, after: { workStatus: "done" } },
+  }),
+  fixtureEvent(4, "sent", people.jonas, 17 * 60, {
+    action: "message.sent",
+    conversationId: "Conv04",
+    conversationSubject: "Example request 4",
+    metadata: { result: "sent", intent: "reply" },
+  }),
+  fixtureEvent(
+    3,
+    "assignment",
+    people.me,
+    20 * 60,
+    {
+      action: "conversation.collaboration_updated",
+      conversationId: "Conv05",
+      conversationSubject: "Example request 5",
+      metadata: { before: { assigneeUserIds: [] }, after: { assigneeUserIds: [people.mira.id] } },
+      assignees: { before: [], after: [people.mira] },
+    },
+    true,
+  ),
+  fixtureEvent(2, "draft", people.tom, 23 * 60, {
+    action: "draft.discarded",
+    conversationId: "Conv06",
+    conversationSubject: "Example request 6",
+  }),
+];
+/** Older events that "Load older events" brings, from the activity API. */
+export const olderFixtureEvents: MailActivityEvent[] = [
+  fixtureEvent(1, "status", people.mira, 30 * 60, {
+    action: "conversation.collaboration_updated",
+    conversationId: "Conv07",
+    conversationSubject: "Example request 7",
+    metadata: { before: { workStatus: "done" }, after: { workStatus: "needs_action" } },
+  }),
+];
+/** `?view=events` with `events=empty|error|more`, filtered like the server by `eventKind`, `eventActor` and `eventMine`. */
+const eventsFixture = (url: URL): Pick<MailboxPageData, "eventsMode" | "eventsPage" | "eventsError"> => {
+  if (url.searchParams.get("view") !== "events") return { eventsMode: false, eventsPage: null, eventsError: null };
+  const state = url.searchParams.get("events");
+  if (state === "error")
+    return { eventsMode: true, eventsPage: null, eventsError: "The server did not answer in time. Your mailbox is unchanged." };
+  const filter = readMailEventsFilter(url);
+  const items =
+    state === "empty"
+      ? []
+      : fixtureEvents
+          .filter((event) => (!filter.kind || event.kind === filter.kind) && (!filter.mine || event.mine))
+          .filter((event) => !filter.actorId || event.actor.id === filter.actorId)
+          .map(({ kind: _kind, mine: _mine, ...event }) => event);
+  return {
+    eventsMode: true,
+    eventsPage: {
+      items,
+      nextCursor: state === "more" ? "cursor-older" : null,
+      filter,
+      people: [people.me, people.jonas, people.mira, people.tom, people.clara],
+    },
+    eventsError: null,
+  };
+};
 
 /** URL state is resolved for every SSR request and every in-place workspace API read. */
 export function mailboxData(url: URL): MailboxPageData {
@@ -279,8 +442,11 @@ export function mailboxData(url: URL): MailboxPageData {
                 intent: "new" as const,
                 subject,
                 to: [{ name: "Ada Example", address: "ada@example.test" }],
-                cc: [],
+                // The second draft goes to two people and carries a file, so the rows show "+1" and the attachment mark.
+                cc: index === 1 ? [{ name: "Ben Sample", address: "ben@example.test" }] : [],
                 bcc: [],
+                revision: 3,
+                attachmentCount: index === 1 ? 1 : 0,
                 bodyPreview: "Invented draft text for the compact mailbox view.",
                 createdByDisplayName: "Example writer",
                 // Keep relative wording stable while the browser clock advances through hydration.
@@ -292,6 +458,7 @@ export function mailboxData(url: URL): MailboxPageData {
         }
       : null,
     draftsError: null,
+    ...eventsFixture(url),
     activeView,
     savedViewId,
     savedViews: ["Priority view", "Team view"].map((name, index) => ({
@@ -313,23 +480,44 @@ export function mailboxData(url: URL): MailboxPageData {
     selectedConversationId,
     selectedMessageId: url.searchParams.get("message"),
     listItems:
-      scheduledMode || draftsMode || url.searchParams.get("inbox") === "empty"
+      scheduledMode || draftsMode || url.searchParams.get("view") === "events" || url.searchParams.get("inbox") === "empty"
         ? []
-        : selectedMailbox.id === "Box001"
-          ? listRows
-          : listRows.map((row) => ({
-              ...row,
-              id: `${selectedMailbox.id}-${row.id}`,
-              conversationId: `${selectedMailbox.id}-${row.conversationId}`,
-              subject: `${selectedMailbox.name}: ${row.subject}`,
-            })),
+        : activeView === "mine"
+          ? mineRows
+          : selectedMailbox.id === "Box001"
+            ? // ?team=1: a shared mailbox where Nora Example already answers for the first conversation, and for the
+              // second together with you.
+              url.searchParams.has("team")
+              ? listRows.map((row, index) =>
+                  index === 0
+                    ? { ...row, assigneeUserIds: [teamUsers[1]!.id] }
+                    : index === 1
+                      ? { ...row, assigneeUserIds: [teamUsers[1]!.id, teamUsers[0]!.id] }
+                      : row,
+                )
+              : listRows
+            : listRows.map((row) => ({
+                ...row,
+                id: `${selectedMailbox.id}-${row.id}`,
+                conversationId: `${selectedMailbox.id}-${row.conversationId}`,
+                subject: `${selectedMailbox.name}: ${row.subject}`,
+              })),
     listCursor: null,
     nextListCursor: null,
     listError: null,
+    // ?hidden=1207 names done conversations the list leaves out; "more" is over the count window, "unknown" uncounted.
+    // Assigned to me: three conversations need action and two wait for a reply.
+    assignedGroups: activeView === "mine" ? { needsAction: 3, waiting: 2 } : null,
+    hiddenDone: (() => {
+      const hidden = url.searchParams.get("hidden");
+      if (!hidden) return null;
+      if (hidden === "unknown") return { count: null, more: false };
+      return hidden === "more" ? { count: 1000, more: true } : { count: Number(hidden) || 0, more: false };
+    })(),
     listTitle: searching
       ? "Search results"
       : scheduledMode
-        ? "Scheduled"
+        ? "Outbox"
         : savedViewId
           ? savedViewId === "Saved1"
             ? "Priority view"
@@ -346,7 +534,10 @@ export function mailboxData(url: URL): MailboxPageData {
                 recently_active: "Recent activity",
                 kept: "Kept",
               }[activeView]
-            : (folders.find((folder) => folder.id === folderId)?.name ?? "All mail"),
+            : (() => {
+                const folder = folders.find((folder) => folder.id === folderId);
+                return folder ? mailFolderNames(url.searchParams.get("locale") === "de" ? "de" : "en")(folder) : "All mail";
+              })(),
     conversationRowState: null,
     detailMessages: selectedConversationId
       ? selectedConversationId === "Conv02"
@@ -390,7 +581,7 @@ export function mailboxData(url: URL): MailboxPageData {
               mailingList: null,
               remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.test", domain: "example.test" },
               delivery: null,
-              attachments: [],
+              attachments: photosFixture(url.searchParams.get("photos")),
             },
           ]
       : [],
@@ -399,7 +590,14 @@ export function mailboxData(url: URL): MailboxPageData {
     automationTrace: selectedConversationId ? traceFixture(url.searchParams.get("trace")) : [],
     detailError: null,
     collaborationState: selectedConversationId
-      ? { conversationId: selectedConversationId, assignees: [], workStatus: "needs_action", snoozedUntil: null, revision: 1 }
+      ? {
+          conversationId: selectedConversationId,
+          assignees: url.searchParams.has("team") && selectedConversationId === "Conv01" ? [teamUsers[1]!] : [],
+          // ?work=done opens a conversation that is already done.
+          workStatus: url.searchParams.get("work") === "done" ? "done" : "needs_action",
+          snoozedUntil: null,
+          revision: 1,
+        }
       : null,
     localTags,
     conversationLocalTags: selectedConversationId
@@ -407,7 +605,7 @@ export function mailboxData(url: URL): MailboxPageData {
       : null,
     comments: [],
     commentsCursor: null,
-    assignableUsers: [],
+    assignableUsers: url.searchParams.has("team") ? teamUsers : [],
     activity: [],
     reminder: null,
     keep: null,
@@ -444,6 +642,9 @@ export function mailboxList(url: URL): MailboxListView {
     draftsMode,
     draftsPage,
     draftsError,
+    eventsMode,
+    eventsPage,
+    eventsError,
     activeView,
     savedViewId,
     listMode,
@@ -454,6 +655,8 @@ export function mailboxList(url: URL): MailboxListView {
     listCursor,
     nextListCursor,
     listError,
+    hiddenDone,
+    assignedGroups,
     listTitle,
   } = mailboxData(url);
   return {
@@ -467,6 +670,9 @@ export function mailboxList(url: URL): MailboxListView {
     draftsMode,
     draftsPage,
     draftsError,
+    eventsMode,
+    eventsPage,
+    eventsError,
     activeView,
     savedViewId,
     listMode,
@@ -477,6 +683,8 @@ export function mailboxList(url: URL): MailboxListView {
     listCursor,
     nextListCursor,
     listError,
+    hiddenDone,
+    assignedGroups,
     listTitle,
   };
 }
@@ -486,58 +694,38 @@ export default function MailShellFixture(props: {
   locale?: "en" | "de";
   theme: "light" | "dark";
   workspaceCookieHeader?: string | null;
+  /** `?notice=1` until the fixture server stored the person's click on "Got it". */
+  focusNoticeOpen?: boolean;
 }) {
   const url = new URL(props.source, "http://mail.example.test");
   const locale = props.locale ?? "en";
   const data = mailboxData(url);
-  const overview = {
-    pages: { mine: focusPage("mine"), unassigned: focusPage("unassigned"), waiting: focusPage("waiting"), all: focusPage("all") },
-    counts: focusCounts,
-    mailboxCounts: focusMailboxCounts,
-  };
   return (
     <LocaleProvider locale={locale}>
-      {url.pathname === "/app/mail" ? (
-        <MailOverview
-          mailboxes={mailboxes}
-          initialFocus={overview}
-          initialFocusError={null}
-          initialView={focusView(url)}
-          initialSelection={null}
-          initialDetail={null}
-          initialPinnedMailboxIds={sidebar.pinnedMailboxIds}
-          initialHiddenMailboxIds={sidebar.hiddenMailboxIds}
-          currentUserEmail="reader@example.test"
-          contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
-          cloudUrl="https://cloud.example"
-          dateConfig={{ locale, timeZone: "UTC" }}
-        />
-      ) : (
-        <MailWorkspace
-          data={data}
-          requestPath={props.source}
-          currentUserId="user-1"
-          currentUserEmail="reader@example.test"
-          contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
-          cloudUrl="https://cloud.example"
-          dateConfig={{ locale, timeZone: "UTC" }}
-          initialPreferences={{
-            ...readMailWorkspacePreferences(""),
-            detailsOpen: url.searchParams.has("persist-details")
-              ? readMailWorkspacePreferences(props.workspaceCookieHeader).detailsOpen
-              : url.searchParams.get("details") === "1",
-            listCollapsed: url.searchParams.get("list") === "hidden",
-            // A person's own toolbar (`?toolbar=reply,archive`), as the preference cookie stores it.
-            ...(url.searchParams.has("toolbar")
-              ? { toolbarActions: normalizeMailConversationToolbarActions(url.searchParams.get("toolbar")!.split(",")) }
-              : {}),
-          }}
-          initialUserPreferences={readMailUserPreferencesFromCookieHeader("", data.mailbox.id)}
-          initialTheme={props.theme}
-          calendarIntegrationAvailable={false}
-          sidebar={sidebar}
-        />
-      )}
+      <MailWorkspace
+        data={data}
+        requestPath={props.source}
+        currentUserId="user-1"
+        currentUserEmail="reader@example.test"
+        contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
+        cloudUrl="https://cloud.example"
+        dateConfig={{ locale, timeZone: "UTC" }}
+        initialPreferences={{
+          ...readMailWorkspacePreferences(""),
+          detailsOpen: url.searchParams.has("persist-details")
+            ? readMailWorkspacePreferences(props.workspaceCookieHeader).detailsOpen
+            : url.searchParams.get("details") === "1",
+          listCollapsed: url.searchParams.get("list") === "hidden",
+          // A person's own toolbar (`?toolbar=reply,archive`), as the preference cookie stores it.
+          ...(url.searchParams.has("toolbar")
+            ? { toolbarActions: normalizeMailConversationToolbarActions(url.searchParams.get("toolbar")!.split(",")) }
+            : {}),
+        }}
+        initialUserPreferences={readMailUserPreferencesFromCookieHeader("", data.mailbox.id)}
+        initialTheme={props.theme}
+        calendarIntegrationAvailable={false}
+        sidebar={{ ...sidebar, focusNoticeOpen: props.focusNoticeOpen ?? false }}
+      />
     </LocaleProvider>
   );
 }

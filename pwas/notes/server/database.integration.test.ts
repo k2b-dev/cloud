@@ -74,6 +74,18 @@ test("privacy headers cover raw responses and unexpected failures", async () => 
   }
 });
 
+test("the SPA CSP admits editor styles, inline font subsets and only the configured socket origin", () => {
+  // A live server test covers the same CSP on static HTML and binary files.
+  const app = createNotesApp(async () => true);
+  const response = app.request("/healthz");
+  return Promise.resolve(response).then((res) => {
+    const policy = res.headers.get("Content-Security-Policy")!;
+    expect(policy).toContain("style-src 'self' 'unsafe-inline'");
+    expect(policy).toContain("font-src 'self' data:");
+    expect(policy).not.toContain("script-src 'unsafe-inline'");
+  });
+});
+
 test("startup diagnostics expose only stable codes", () => {
   expect(startupCode(new Error("notes_schema_newer_than_server"))).toBe("notes_schema_newer_than_server");
   expect(startupCode(new Error("secret connection URL"))).toBe("startup_failed");

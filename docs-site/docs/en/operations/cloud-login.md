@@ -289,7 +289,22 @@ the Cloud Login server. It keeps a copy with the other encrypted connection
 data. When the Cloud cannot be reached or no longer accepts this device, the app
 shows that copy with the date it was saved. A Cloud without this feature shows
 only the device facts. The last approval is recorded on this device and appears
-after the next approval.
+after the next approval. When the card shows an error, the details start with
+its full explanation. Close them with **Close**, Escape, a tap beside them or,
+on a phone, by dragging them down.
+
+Each card has one status line below the Cloud's name: **You're all set.**, the
+waiting requests, or a short error. Waiting requests read, for example,
+**Sign-in request · 1 min. ago**, or **2 sign-in requests · oldest 1 min. ago**;
+an unusual sign-in reads **Unusual sign-in** in amber. While something waits, a
+dot and a soft glow pulse slowly on the card (with reduced motion the glow
+stands still), and the whole card opens the oldest request. The info button
+stays a separate button. Errors stay on one line: **Not reachable**,
+**Device unavailable** or **Approval not loaded**. The full explanation is in the
+card's accessible name and in its details. The reload button next to **Not
+reachable** and **Approval not loaded** checks again at once. A device that the
+Cloud refused is not checked again until the app is reopened, so it has no
+reload button. Offline, the line reads **Waiting for connection.**
 
 ## Approve and recover
 
@@ -330,19 +345,20 @@ terminal finishes, its earlier approval no longer counts; run `cld login`
 again. Upgrade **Core, then OAuth, then Cloud Login**; see
 [Approve a terminal sign-in](./app-approval.md#approve-a-terminal-sign-in).
 
-Actions appear below the sign-ins in each Cloud card, with the app's name,
-its sentence, the chat title when available, and the request time. They stay
-in the list until you choose **Review**; arriving Actions never open a sheet
-on their own. If more are waiting, the card shows how many to review in Cloud.
+Actions count as waiting requests on their Cloud card (**Approval request**).
+Arriving Actions never open a sheet on their own; tap the card. If more are
+waiting than the device lists, the card shows how many to review in Cloud.
 Older Clouds continue to show sign-ins only.
 
-**Review** loads and checks the request before the sheet opens, so the sheet
-appears complete. If loading or checking fails, the row says so in place of
-its chat title and time; review the request in Cloud.
+A tap loads and checks the request before the sheet opens, so the sheet
+appears complete. If loading or checking fails, the card says **Approval not
+loaded** with a reload button; review the request in Cloud.
 
-The review sheet identifies the app and Cloud host in Cloud Login's own frame,
-then names the requesting app. The quoted sentence, message, chat title and
-details are the application's text; they are displayed as text, without HTML
+The review sheet names the Cloud and its host in its head. The request itself
+is the headline, followed by the app's reason, then a list: **App**, the app
+that runs the Action, named from the Cloud's registry, **Requested by**, the
+requesting app and its chat, and the app's details. The sentence, reason, chat
+title and details are the application's text; they are displayed as text, without HTML
 or links. Read them before choosing **Approve** or **Deny**. Shortened requests
 carry a note to see everything under **My account → Approvals** in Cloud.
 **Asks every time** marks an Action that always needs confirmation. The sheet

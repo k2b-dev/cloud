@@ -1,7 +1,6 @@
-import { APP_READINESS_PATH } from "@k2b/cloud";
+import { APP_READINESS_PATH, redis } from "@k2b/cloud";
 import { DOMAIN_CHECK_PATH_PREFIX, domainCheckKey } from "@k2b/cloud/contracts/app-domains";
 import { publishRequestTelemetry } from "@k2b/cloud/services";
-import { redis } from "bun";
 import { type DomainSnapshot, decideHost } from "./app-domains";
 import type { ClientAddress } from "./client-address";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";

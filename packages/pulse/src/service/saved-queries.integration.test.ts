@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";

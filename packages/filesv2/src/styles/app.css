@@ -297,7 +297,7 @@
   min-height: 2.5rem;
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
-  cursor: default;
+  cursor: pointer;
 }
 /* Row fills share one specificity, so source order decides: zebra, hover, checked, then drop target. The tree relies on indentation instead of zebra. */
 :where(.filesv2-list:not([data-tree])) .filesv2-list__row:nth-child(even of :where(.filesv2-list__row)) {
@@ -1182,6 +1182,8 @@ dialog[open]:has(.filesv2-export-dialog) {
 .k2b-ui .k2b-button.filesv2-details-main {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+  /* The tint is its edge: no grey subtle-button border around it. */
+  border-color: transparent;
 }
 .k2b-ui .k2b-button.filesv2-details-main:not(:disabled, [aria-disabled="true"]):hover {
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);

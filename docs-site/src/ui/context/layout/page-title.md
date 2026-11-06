@@ -133,6 +133,15 @@ switch with CSS at 48 rem, so a page arrives in its final form. A trail
 published with `PageTrailProvider` travels as JSON in a
 `script[data-k2b-page-trail]` element; `setPageTrail()` replaces it in place.
 
+A fallback title steps back when the element around the page carries
+`data-k2b-own-title`, not by searching the document for other titles. While the
+server renders below a `PageTrailProvider`, each `PageTitle` without `fallback`
+calls its `onOwnTitle`; the host then sets the attribute on an element around
+the page inside the `k2b-ui` root. With `data-k2b-title-host` on that
+element, titles that mount or leave in the browser keep the attribute current;
+without a host, they mark the `k2b-ui` root. Cloud's `Layout` and
+`PanelLayout` do this for every page.
+
 ## Example
 
 ```tsx

@@ -34,6 +34,8 @@ type SettingCommon = {
   envBootstrap?: SettingEnvResolver;
   /** Environment name for migration diagnostics; values are never returned. */
   envVariable?: string;
+  /** Keep administrator writes on the owning API, including environment-backed settings. */
+  adminWrite?: "application";
   /** Discard these stored settings when this normalized value changes. */
   resetOnChange?: readonly string[];
   /** Additional server-side validation after kind normalization. */
@@ -125,6 +127,7 @@ export const toLegacySettingDefs = (settings: Record<string, unknown>, requested
       envFallback: d.envFallback as (() => unknown) | undefined,
       envBootstrap: d.envBootstrap as (() => unknown) | undefined,
       envVariable: d.envVariable as string | undefined,
+      adminWrite: d.adminWrite === "application" ? "application" : undefined,
       validate: d.validate as SettingDef["validate"],
       resetOnChange: d.resetOnChange as readonly string[] | undefined,
       templateVars: d.templateVars as readonly string[] | undefined,
@@ -369,7 +372,7 @@ export const validateSettingValue = (def: SettingDef, raw: unknown): SettingVali
 export const SETTINGS_MAP = new Map(SETTINGS.map((setting) => [setting.key, setting] as const));
 
 /** Fields whose divergence changes behaviour rather than just wording. */
-const CONFLICT_FIELDS = ["kind", "default", "min", "max", "resetOnChange"] as const;
+const CONFLICT_FIELDS = ["kind", "default", "min", "max", "resetOnChange", "adminWrite"] as const;
 
 export function registerSettings(defs: SettingDef[]): void {
   for (const def of defs) {

@@ -7,6 +7,7 @@ import { ConsentDecisionSchema, completeConsent } from "./consent-action";
 import devicePage from "./device";
 import { completeDeviceDecision, DeviceDecisionSchema } from "./device-action";
 import oauthErrorPage from "./error";
+import logoutPage from "./logout";
 import oauthPage from "./page";
 
 // The consent and device forms are checked by Origin, and browsers send `Origin: null` for a form
@@ -43,6 +44,7 @@ export default new Hono<AuthContext>()
     v("form", DeviceDecisionSchema),
     (c) => completeDeviceDecision(c, c.req.valid("form")),
   )
+  .get("/oauth/logout", decisionPageHeaders, auth.requireRole("*", ssr.access), ...logoutPage)
   .route("/", oauthRoutes)
   .get("/admin/oauth", auth.requireRole("admin", ssr.access), ...oauthPage)
   .get("/oauth/error", auth.requireRole("*"), ...oauthErrorPage);

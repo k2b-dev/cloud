@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-10-24
+updated: 2026-10-31
 ---
 
 # Files, Projects, Skills, and personalization
@@ -327,6 +327,23 @@ A Skill names app operations by their stable qualified capability ID, such as
 `mail.conversation.list`. Assistant can pass that ID directly to `load_tools`;
 `search_tools` remains for finding an operation the Skill does not already
 identify.
+
+The optional `load-tools` frontmatter field lists the tools a Skill needs for
+most requests: 1 to 25 unique capability IDs or built-in tool names.
+`load_skill` loads them together with the instructions, so Assistant can call
+them in its next step without a separate `load_tools` round. They pass the same
+checks as `load_tools`: a tool outside the chat's tool scope, a routine's
+grants, or the live app catalog is reported as unavailable with its reason, and
+the model's tool limit still applies. The list grants nothing; every call is
+authorized as usual. It comes from the pinned `SKILL.md`, like the
+instructions. Skills a person selects with `/` and local Skills load no tools
+this way.
+
+```yaml
+load-tools:
+  - mail.search
+  - mail.conversation.read
+```
 
 The first successful load pins one Skill revision for that turn, including
 retries, so an edit cannot change an in-progress result. A later turn sees the
@@ -662,9 +679,11 @@ Cloud composes the system prompt in this order:
    current user message when it is clear and otherwise uses that locale. It
    shows dates and times in the runtime time zone, also in drafts and Skills
    it writes, unless the user asks for another zone such as UTC. When the turn
-   offers `calculate`, every amount, sum, or other number the model derives
-   itself must come from it; numbers that a tool, file, or code result returns
-   are stated as returned. With app tools, a reference to earlier work outside
+   offers `calculate`, every amount, sum, percentage, or multi-step result the
+   model derives itself must come from it; simple relative dates such as
+   tomorrow and known facts need no call, and numbers that a tool, file, or
+   code result returns are stated as returned. The model stops as soon as the
+   request is done. With app tools, a reference to earlier work outside
    the current chat, such as "like last time", goes to `core.ai.chats.search`
    first when the turn allows it. Turns a person follows also get the
    visibility and suggestion rules below;
@@ -706,7 +725,7 @@ there either. The preview in **Assistant settings > System prompt** and
   routine offer, as described in
   [Turn recurring work into a Skill](#turn-recurring-work-into-a-skill);
   otherwise the offer is a concrete next step that saves the user real work.
-  The model makes no offer for simple facts, while asking or waiting for
+  The model makes no offer for simple requests or facts, while asking or waiting for
   approval, after a failure, after a reply that already ended with one, once
   the user declined, or when the user asked for no suggestions or only a short
   answer. A request to shorten a draft does not count as that. It never

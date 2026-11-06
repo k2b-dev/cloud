@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { decryptSecret, encryptSecret } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { z } from "zod";
 import { PULSE_INTERNAL_INGEST_BATCH_LIMIT } from "../ingest-limits";
 import { BASE_STORE_OPERATIONS, BASE_STORE_STATES, READ_PROFILE_NAMES } from "./admin-contracts";
@@ -24,6 +24,7 @@ const RowSchema = z.object({
   retention_days: z.number(),
   rollup_retention_days: z.number(),
   sensitive_retention_hours: z.number(),
+  reset_generation: z.coerce.string(),
   checkpoint_id: z.string().nullable(),
   pending_checkpoint_id: z.string().nullable(),
   write_block_reason: z.string().nullable(),

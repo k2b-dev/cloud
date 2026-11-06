@@ -4,18 +4,23 @@
  * Resolution order: DB value -> env fallback -> code default.
  *
  * Custom DB values are encrypted at rest using APP_SECRET. Value reads use
- * Redis cache-aside in `./store.ts` (5-minute TTL); stored-state reads use DB.
+ * Redis cache-aside in `./store.ts` (5-minute TTL); secret cache entries
+ * remain encrypted. Stored-state reads use DB.
  * `loadCache()` runs once at boot to normalize legacy rows and bootstrap
  * env-backed entries into Postgres. Startup never replaces an existing row;
  * env bootstrap only fills missing keys.
  */
-import { redis, sql } from "../../runtime/clients";
-
+import { setTimeout as delay } from "node:timers/promises";
+import { sql } from "../../runtime/clients";
+import { DEPENDENCY_STARTUP_BUDGET_MS } from "../../runtime/startup-budget";
+import { requestCacheRedis } from "../request-cache-redis";
 import { bindSettingValue, replaceSettingValue, unwrapSettingValue } from "./binding";
 import { decryptValue, encryptValue, getAppSecret } from "./crypto";
 import { resolveSettingPresentation, SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
+import { SECRET_CACHE_FORMAT } from "./secret-cache";
 import {
   deleteKey,
+  invalidateSettingsCache,
   lockSettingChanges,
   readKey,
   readKeyState,
@@ -136,7 +141,7 @@ const normalizeStoredEntries = async (): Promise<{
         RETURNING key
       `;
       if (updated.length > 0) {
-        await redis.del(REDIS_KEY(key));
+        await (await requestCacheRedis()).del(REDIS_KEY(key));
         stats.normalizedUpdated += 1;
       }
     }
@@ -197,29 +202,84 @@ const bootstrapEnvBackedEntries = async (config: {
       rowsByKey.set(def.key, envValue);
     }
   });
-  await Promise.all([...imported].map((key) => redis.del(REDIS_KEY(key), ...(SETTINGS_MAP.get(key)?.resetOnChange ?? []).map(REDIS_KEY))));
+  await Promise.all(
+    [...imported].map(async (key) =>
+      (await requestCacheRedis()).del(REDIS_KEY(key), ...(SETTINGS_MAP.get(key)?.resetOnChange ?? []).map(REDIS_KEY)),
+    ),
+  );
   config.stats.envBootstrapped += imported.size;
 
   return [...rowsByKey.entries()].map(([key, value]) => ({ key, value }));
 };
 
-/**
- * Boot-time normalization + env-bootstrap. Runs once at startup. Does NOT
- * populate any in-process cache — value reads use Redis cache-aside
- * (`store.ts`), and stored-state reads go directly to Postgres.
- */
-export async function loadCache(): Promise<void> {
+const CACHE_FORMAT_KEY = "settings-cache:format";
+const CACHE_FORMAT = `encrypted-${SECRET_CACHE_FORMAT}`;
+const startupRetryable = (error: unknown): boolean => {
+  if (!error || typeof error !== "object" || !("code" in error) || typeof error.code !== "string") return false;
+  return (
+    [
+      "ECONNREFUSED",
+      "ECONNRESET",
+      "ETIMEDOUT",
+      "ENOTFOUND",
+      "EAI_AGAIN",
+      "ERR_REDIS_CONNECTION_CLOSED",
+      "ERR_REDIS_CONNECTION_TIMEOUT",
+    ].includes(error.code) ||
+    (error.code === "ERR_REDIS_SERVER_ERROR" &&
+      "message" in error &&
+      typeof error.message === "string" &&
+      /^-?LOADING\b/.test(error.message))
+  );
+};
+const loadCacheOnce = async (): Promise<void> => {
   getAppSecret();
+  const redis = await requestCacheRedis();
+  // A prior startup attempt may have exhausted the native reconnect budget.
+  if (!redis.connected) await redis.connect();
+  // Mark only a completed sweep; a lost marker safely repeats the cleanup.
+  if ((await redis.get(CACHE_FORMAT_KEY)) !== CACHE_FORMAT) {
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", "settings:*", "COUNT", 1000);
+      cursor = nextCursor;
+      if (keys.length > 0) await redis.del(...keys);
+    } while (cursor !== "0");
+    await redis.set(CACHE_FORMAT_KEY, CACHE_FORMAT);
+  }
   const { rows, storedKeys, stats } = await normalizeStoredEntries();
   const bootstrappedRows = await bootstrapEnvBackedEntries({ rows, storedKeys, stats });
+  // A prior attempt may have committed its DB changes before invalidation failed.
+  // Reconcile readable registered keys again, including across process restarts.
+  await invalidateSettingsCache(bootstrappedRows.map((row) => row.key));
 
   console.log(
     `[settings] loaded ${bootstrappedRows.length} custom setting(s) (${stats.encryptedLoaded} encrypted, ${stats.normalizedUpdated} normalized, ${stats.envBootstrapped} env-bootstrapped, ${stats.undecryptable} undecryptable, ${stats.invalidSkipped} skipped)`,
   );
+};
+
+/** Always attempt startup once; only recovery retries consume the shared allowance. */
+export async function loadCache(signal = AbortSignal.timeout(DEPENDENCY_STARTUP_BUDGET_MS)): Promise<void> {
+  for (;;) {
+    try {
+      await loadCacheOnce();
+      return;
+    } catch (error) {
+      if (!startupRetryable(error)) throw error;
+      const exhausted = () => new Error("Valkey did not recover within the settings startup allowance", { cause: error });
+      if (signal.aborted) throw exhausted();
+      console.warn("[settings] Valkey is not ready; waiting before completing startup");
+      try {
+        await delay(1_000, undefined, { signal });
+      } catch {
+        throw exhausted();
+      }
+    }
+  }
 }
 
 /**
- * Read a setting via the Redis cache-aside layer (always within Redis-TTL
+ * Read a setting via Redis cache-aside (always within Redis-TTL
  * fresh). Resolution: Redis cache → Postgres → env-fallback → code default.
  */
 export async function get<T = unknown>(key: string): Promise<T> {
@@ -228,7 +288,7 @@ export async function get<T = unknown>(key: string): Promise<T> {
 
 /**
  * Write a setting. Pass `db` to run inside a caller's transaction — then the
- * caller owns geo budget pair validation before mutations and must call
+ * caller must call
  * `invalidateSettingsCache` once it commits.
  */
 export async function set(key: string, value: unknown, db?: SqlClient, options?: { replaceUnreadable?: boolean }): Promise<void> {

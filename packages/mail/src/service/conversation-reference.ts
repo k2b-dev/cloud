@@ -371,19 +371,19 @@ export const putConversationReferenceConfigurationInTransaction = async (params:
     WHERE configuration.mailbox_id = ${params.mailboxId}::uuid
     FOR UPDATE
   `;
-  if (current && params.input.expectedRevision !== Number(current.revision)) {
-    return fail(err.conflict("Reference number settings were changed"));
-  }
-  if (!current && params.input.expectedRevision !== null) {
-    return fail(err.conflict("Reference number settings do not exist yet"));
-  }
   const changed =
     !current ||
     current.pattern !== pattern ||
     current.enabled !== params.input.enabled ||
     current.include_in_reply_subjects !== params.input.includeInReplySubjects;
-  if (!changed && current) {
+  if (!changed && current && (params.input.expectedRevision === null || params.input.expectedRevision <= Number(current.revision))) {
     return ok({ configuration: mapConfiguration(current), activityId: null });
+  }
+  if (current && params.input.expectedRevision !== Number(current.revision)) {
+    return fail(err.conflict("Reference number settings were changed"));
+  }
+  if (!current && params.input.expectedRevision !== null) {
+    return fail(err.conflict("Reference number settings do not exist yet"));
   }
   const [row] = await params.db<ReferenceConfigurationRow[]>`
     INSERT INTO mail.reference_number_configurations (

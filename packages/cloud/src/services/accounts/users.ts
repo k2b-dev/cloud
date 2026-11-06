@@ -480,7 +480,7 @@ export const demoteToGuest = async (params: { id: string; actor: { userId: strin
 export const create = async (params: {
   data: CreateUserData;
   actor?: AuditActor;
-}): Promise<MutationResult<{ user: User; temporaryPassword?: string }>> => {
+}): Promise<MutationResult<{ user: User; temporaryPassword?: string; reactivated?: boolean }>> => {
   if (!(await isAccountCategoryAllowed(params.data)))
     return { ok: false, error: "This account category is disabled. Contact an administrator.", status: 403 };
   if (params.data.provider === "local" && params.data.admin && !canPersistStoredAdmin("local", params.data.profile)) {
@@ -538,6 +538,7 @@ export const create = async (params: {
     data: {
       user,
       temporaryPassword: created.data._temporaryPassword,
+      reactivated: created.data.reactivated,
     },
   };
 };

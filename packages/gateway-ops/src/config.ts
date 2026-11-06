@@ -51,7 +51,7 @@ export const app = defineApp({
   },
   // Stone rather than red: the console uses red for failures and amber for
   // warnings throughout, so a red chrome carried the same hue as its own most
-  // urgent signal. Cyan belongs to the AI accent, so a neutral stone stays clear
+  // urgent signal. Plum belongs to the AI accent, so a neutral stone stays clear
   // of both and reads as an instrument panel rather than an alarm.
   appearance: { accent: "#57534e", background: { from: "#78716c", to: "#57534e", angle: 135 } },
   basePath: "/admin/observability",
@@ -107,6 +107,7 @@ export const app = defineApp({
 
     ...natsDiagnosticsSettings,
     "gateway.health_check_schedule": {
+      adminWrite: "application",
       kind: "cron",
       label: "Health Check Schedule",
       default: "*/5 * * * *",

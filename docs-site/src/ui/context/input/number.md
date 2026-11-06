@@ -31,6 +31,7 @@ The component keeps the raw text while focused, so intermediate input is not los
 
 - `decimalPlaces` defaults to the fraction digits of `step` (`step={0.01}` accepts two decimals, the default `step={1}` accepts none). Set it explicitly when the accepted precision differs from the step grid; an explicit value always wins.
 - The visible decimal separator follows the effective locale (`locale` prop, then `LocaleProvider`, then `<html lang>`, then `"en"`); both comma and dot are accepted while typing. The controlled value stays a canonical JavaScript number and `aria-valuenow` stays numeric.
+- Committed and unfocused values show exactly `decimalPlaces` fraction digits, including trailing zeros: `321.4` with `step={0.01}` displays as `321.40` in English and `321,40` in German. Typing keeps the raw text until commit.
 - Editable text never shows grouping separators.
 - `allowNegative` defaults to `true`.
 - `min` and `max` clamp committed values.

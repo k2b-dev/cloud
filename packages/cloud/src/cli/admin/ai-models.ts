@@ -40,9 +40,10 @@ export const aiModelCommands = [
   }),
   command("ai providers add", {
     summary: "Create a provider connection",
-    flags: { input, yes },
+    flags: { input: flag.input({ required: true, description: "Provider JSON from --input-file or --stdin" }), yes },
     async run({ ctx, flags }) {
       confirm(flags.yes);
+      if (flags.input.source === "value") throw new Error("Provider configuration requires --input-file or --stdin.");
       print(
         ctx,
         await apiJson(ctx, "POST", `${base}/providers`, AiProviderInputSchema.parse(await readJsonInput<unknown>(flags.input, "provider"))),
@@ -52,9 +53,10 @@ export const aiModelCommands = [
   command("ai providers update", {
     summary: "Update a provider with optimistic concurrency",
     args: id,
-    flags: { input, yes },
+    flags: { input: flag.input({ required: true, description: "Provider JSON from --input-file or --stdin" }), yes },
     async run({ ctx, args, flags }) {
       confirm(flags.yes);
+      if (flags.input.source === "value") throw new Error("Provider configuration requires --input-file or --stdin.");
       const patch = AiProviderPatchSchema.parse(await readJsonInput<unknown>(flags.input, "provider patch"));
       const current = await apiGet<{ revision: number }>(ctx, endpoint("providers", args.id));
       print(ctx, await apiJson(ctx, "PATCH", endpoint("providers", args.id), { ...patch, revision: current.revision }));
@@ -73,6 +75,7 @@ export const aiModelCommands = [
     flags: { key: flag.input({ required: true, description: "API key: use --key-file or --stdin" }), yes },
     async run({ ctx, args, flags }) {
       confirm(flags.yes);
+      if (flags.key.source === "value") throw new Error("Provider keys require --key-file or --stdin.");
       const apiKey = await readCliInput(flags.key, { required: true, label: "API key" });
       const current = await apiGet<{ revision: number }>(ctx, endpoint("providers", args.id));
       print(

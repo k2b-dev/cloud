@@ -133,6 +133,7 @@ describe("cloud-cli skill targets", () => {
       expect(await listFiles(written)).toEqual([
         "SKILL.md",
         "agents/openai.yaml",
+        "references/administration.md",
         "references/mail/1.0.0/deep/more.md",
         "references/mail/1.0.0/index.md",
         "references/mail/2.0.0/deep/more.md",
@@ -150,6 +151,7 @@ describe("cloud-cli skill targets", () => {
       expect(await listFiles(written)).toEqual([
         "SKILL.md",
         "agents/openai.yaml",
+        "references/administration.md",
         "references/mail/1.0.0/deep/more.md",
         "references/mail/1.0.0/index.md",
         "references/plugins.md",

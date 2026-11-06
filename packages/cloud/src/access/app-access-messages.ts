@@ -14,7 +14,7 @@ export const appAccessMessages = i18n.define({
       accessChanged: "Your app access changed. Reload to check your access.",
       whoUses: ({ name }: { name: string }) => `Who uses ${name}`,
       description: ({ name }: { name: string }) =>
-        `Only these people, groups and service accounts see ${name} in the launcher, search and Assistant.`,
+        `Only these people, groups, agents and service accounts see ${name} in the launcher, search and Assistant.`,
       useDescription: "Open the app and work with it. Permissions within the app control what each person sees.",
       manageDescription: "Use the app and change this list.",
       repairNotice: ({ name }: { name: string }) =>
@@ -46,9 +46,9 @@ export const appAccessMessages = i18n.define({
       cancel: "Cancel",
       remove: "Remove",
       change: "Change",
-      add: "Add a person, group or service account",
+      add: "Add a person, group, agent or service account",
       signedIn: "All signed-in people",
-      signedInDescription: "Everyone with an account in this Cloud",
+      signedInDescription: "Every person with an account in this Cloud, including guests",
       group: ({ count }: { count: number }) =>
         `Group · ${count === 0 ? "no people" : count === 1 ? "1 person" : `${count.toLocaleString("en")} people`}`,
       fixedSignedIn: "All signed-in people. The app sets this rule; there is nothing to configure here.",
@@ -96,7 +96,7 @@ export const appAccessMessages = i18n.define({
       accessChanged: "Dein App-Zugriff hat sich geändert. Lade die Seite neu, um deinen Zugriff zu prüfen.",
       whoUses: ({ name }: { name: string }) => `Wer ${name} nutzt`,
       description: ({ name }: { name: string }) =>
-        `Nur diese Personen, Gruppen und Dienstkonten sehen ${name} im Start-Menü, in der Suche und beim Assistenten.`,
+        `Nur diese Personen, Gruppen, Agenten und Dienstkonten sehen ${name} im Start-Menü, in der Suche und beim Assistenten.`,
       useDescription: "App öffnen und mit ihr arbeiten. Was jemand darin sieht, regeln die Rechte der App.",
       manageDescription: "Nutzen und diese Liste ändern.",
       repairNotice: ({ name }: { name: string }) =>
@@ -128,9 +128,9 @@ export const appAccessMessages = i18n.define({
       cancel: "Abbrechen",
       remove: "Entfernen",
       change: "Ändern",
-      add: "Person, Gruppe oder Dienstkonto hinzufügen",
+      add: "Person, Gruppe, Agenten oder Dienstkonto hinzufügen",
       signedIn: "Alle angemeldeten Personen",
-      signedInDescription: "Jede Person mit Konto in dieser Cloud",
+      signedInDescription: "Jede Person mit Konto in dieser Cloud, auch Gäste",
       group: ({ count }: { count: number }) =>
         `Gruppe · ${count === 0 ? "keine Personen" : count === 1 ? "1 Person" : `${count.toLocaleString("de")} Personen`}`,
       fixedSignedIn: "Alle angemeldeten Personen. Das legt die App fest; hier gibt es dazu nichts einzustellen.",

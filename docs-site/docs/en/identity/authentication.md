@@ -10,6 +10,8 @@ updated: 2026-10-19
 
 # Request identity
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Cloud turns a browser session or bearer token into a request actor.
 Applications select an auth policy. They do not parse or store credentials.
 The choice of [sign-in method](/en/docs/accounts) does not change this contract.

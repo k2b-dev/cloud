@@ -155,6 +155,17 @@ describe("AppWorkspace ordered levels SSR", () => {
       ]);
       expect(html).toContain('aria-hidden="true"');
     });
+  test("a level with its own parent shows that back step instead of the shared one", () => {
+    const html = renderToString(() =>
+      main({ level: "detail" }, [
+        { id: "list", label: "Apps", href: "/apps", children: "List" },
+        { id: "detail", label: "Keys", back: { href: "/apps?app=mail", label: "Mail" }, children: "Keys" },
+      ]),
+    );
+    expect(attributes(html, "a", "href").map((attrs) => [attrs.href, attrs["aria-label"], attrs.class?.includes("--own")])).toEqual([
+      ["/apps?app=mail", "Back to Mail", true],
+    ]);
+  });
   test("the first selection has no back step", () => {
     expect(renderToString(() => main({ level: "sections" }))).not.toContain("k2b-app-workspace__level-back");
   });
