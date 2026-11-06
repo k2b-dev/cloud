@@ -70,7 +70,10 @@ test("loading inherits the server locale", () => {
 
 test("numbers read in the reader's language, right-aligned", () => {
   type Row = { id: string; count: number; share: number; big: bigint };
-  const rows: Row[] = [{ id: "r1", count: 48210, share: 0.30000000000000004, big: 12345678901234567890n }];
+  const rows: Row[] = [
+    { id: "r1", count: 48210, share: 0.30000000000000004, big: 12345678901234567890n },
+    { id: "r2", count: -0, share: 0, big: 0n },
+  ];
   const numbers = (locale: string) =>
     renderToString(() =>
       createComponent(LocaleProvider, {
@@ -92,6 +95,8 @@ test("numbers read in the reader's language, right-aligned", () => {
   expect(de).toContain("0,3");
   expect(de).toContain("12.345.678.901.234.567.890");
   expect(de).not.toContain("0.30000000000000004");
-  expect(de.match(/<td[^>]*data-align="right"/g)?.length).toBe(3);
+  expect(de.match(/<td[^>]*data-align="right"/g)?.length).toBe(6);
+  // Negative zero reads as zero, as String(-0) did.
+  expect(de).not.toContain("-0");
   expect(numbers("en")).toContain("48,210");
 });

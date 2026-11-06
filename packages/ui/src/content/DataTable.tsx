@@ -165,7 +165,7 @@ const defaultRender = (
   if (value instanceof Date) return value.toLocaleString(locale);
   if (typeof value === "boolean") return value ? messages.yes : messages.no;
   // Numbers read in the reader's language: grouping and decimal mark follow the locale, at most three decimals.
-  if (typeof value === "number" || typeof value === "bigint") return numbers.format(value);
+  if (typeof value === "number" || typeof value === "bigint") return numbers.format(Object.is(value, -0) ? 0 : value);
   if (typeof value === "string") return value;
   return JSON.stringify(value);
 };
