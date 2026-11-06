@@ -502,7 +502,8 @@ export type AppWorkspaceSidebarItemProps = {
   /**
    * Marks the current page (`aria-current="page"`). On a page deeper than the
    * sidebar lists, pass `"ancestor"` for the item that contains it: it keeps
-   * the highlight, and the page keeps its back link.
+   * the highlight and, while the sidebar shows, is the way up, so the head
+   * drops its back link as beside the current page.
    */
   active?: boolean | "ancestor";
   activeClass?: string;
@@ -2353,7 +2354,8 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
  * host's page title with the way up (see `PageTitle`); the page's own
  * `PageTitle` takes its place. The visible title is no heading, because many
  * pages render their own `h1`. From 64 rem a sidebar that marks the current
- * page names it already: the title and the way up hide, and only on a page
+ * page, or the item a deeper page belongs to, names it already and links the
+ * way up: the title and the way up hide, and only on a page
  * without its own `h1` its heading stays for assistive technology. With an
  * `AppWorkspace.Head` slot the row is always there and also carries the
  * views, the filters, the result count, and the actions; only its title

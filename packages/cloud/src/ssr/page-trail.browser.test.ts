@@ -629,19 +629,38 @@ describe("workspace title beside exact-current navigation", () => {
       }
     });
   }
-  test("a deeper page with an active ancestor keeps its desktop back link", async () => {
-    const { context, page } = await open(laptop, "/app/accounts/teams/engineering");
-    try {
-      expect(await page.locator('.k2b-app-workspace__sidebar [aria-current="page"]').count()).toBe(0);
-      const ancestor = page.locator('.k2b-app-workspace__sidebar [aria-current="true"]');
-      expect(await ancestor.getAttribute("href")).toBe("/app/accounts/teams");
-      expect(await ancestor.evaluate((element) => element.classList.contains("is-active"))).toBe(true);
-      const back = page.locator(".k2b-app-workspace__head .k2b-page-title__up");
-      expect(await back.isVisible()).toBe(true);
-      expect(await back.getAttribute("href")).toBe("/app/accounts/teams");
-      expect((await page.locator(".k2b-app-workspace__head").boundingBox())!.height).toBe(46);
-    } finally {
-      await context.close();
-    }
-  });
+  // Beside a visible sidebar, the marked ancestor is the way up; a second "‹ Teams" row above the page only repeats it.
+  for (const device of [laptop, ipadPortrait, phone]) {
+    test(`${device.name}: a deeper page shows a back row only where the sidebar does not show its ancestor`, async () => {
+      const { context, page } = await open(device, "/app/accounts/teams/engineering");
+      try {
+        expect(await page.locator('.k2b-app-workspace__sidebar [aria-current="page"]').count()).toBe(0);
+        const ancestor = page.locator('.k2b-app-workspace__sidebar [aria-current="true"]');
+        expect(await ancestor.getAttribute("href")).toBe("/app/accounts/teams");
+        expect(await ancestor.evaluate((element) => element.classList.contains("is-active"))).toBe(true);
+        const head = page.locator(".k2b-app-workspace__head");
+        if (device.width >= 1024) {
+          expect(await ancestor.isVisible()).toBe(true);
+          const box = await head.boundingBox();
+          expect(box!.width).toBeLessThanOrEqual(1);
+          expect(box!.height).toBeLessThanOrEqual(1);
+          expect(await page.locator(".k2b-page-title__up:visible,.k2b-page-title__back:visible").count()).toBe(0);
+          // The page has no h1 of its own, so the head's heading still names it for assistive technology.
+          expect(await page.getByRole("heading", { level: 1, name: "Engineering", exact: true }).count()).toBe(1);
+        } else {
+          const back = head.locator(device.width < 768 ? ".k2b-page-title__back" : ".k2b-page-title__up");
+          expect(await back.isVisible()).toBe(true);
+          expect(await back.getAttribute("href")).toBe("/app/accounts/teams");
+        }
+        // The server already renders the final geometry: Main does not move once the browser takes over.
+        const main = () => page.locator(".k2b-app-workspace__main").evaluate((element) => element.getBoundingClientRect().toJSON());
+        const initial = await page.evaluate(() => (window as unknown as { initialMainRect: unknown }).initialMainRect);
+        expect(await main()).toEqual(initial);
+        await page.keyboard.press("Alt+ArrowUp");
+        await page.waitForURL(/\/app\/accounts\/teams$/);
+      } finally {
+        await context.close();
+      }
+    });
+  }
 });
