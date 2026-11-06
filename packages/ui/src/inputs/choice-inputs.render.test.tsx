@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
@@ -495,6 +495,27 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(trigger).toContain('<span>View</span><i class="ti ti-loader-2 k2b-spin" aria-hidden="true"');
     expect(trigger).not.toContain("ti-chevron-down");
     expect(trigger).not.toContain("k2b-button__busy");
+  });
+
+  test("a stable-width select chip reserves its longest option, so a new choice never moves its neighbours", () => {
+    const html = renderToString(() =>
+      createComponent(SelectChip, {
+        value: "offers",
+        stableWidth: true,
+        "aria-label": "Chart view",
+        options: [
+          { value: "offers", label: "Offers" },
+          { value: "price", label: "Median price" },
+        ],
+      }),
+    );
+    const trigger = html.match(/<button[^>]*class="[^"]*k2b-select-chip[^>]*>.*?<\/button>/s)![0];
+    expect(trigger).toContain(
+      'data-stable-width="true"><span>Offers</span><span aria-hidden="true">Offers</span><span aria-hidden="true">Median price</span>',
+    );
+    const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
+    expect(css).toMatch(/span\[data-stable-width="true"\] > span \{\s*grid-area: 1 \/ 1;/);
+    expect(css).toMatch(/span\[data-stable-width="true"\] > span\[aria-hidden="true"\] \{\s*visibility: hidden;/);
   });
 
   test("an icon-only loading select chip uses the button busy overlay", () => {

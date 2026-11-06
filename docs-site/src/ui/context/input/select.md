@@ -280,6 +280,11 @@ A disabled button loses keyboard focus. When a chip that had focus is
 disabled, by `disabled` or `loading`, focus returns to it once it is enabled
 again, unless focus moved somewhere else in the meantime.
 
+Set `stableWidth` when the chip sits in a row that must not move, such as a
+header beside a wrapping title. The trigger then keeps the width of its longest
+option label, so a new choice never rewraps or shifts its neighbours.
+`ChartExplorer` uses it for its view switcher.
+
 Selection popovers dismiss synchronously. Do not add a generic host-level
 `[popover]` display or overlay transition around them; `@k2b/ui` explicitly
 keeps interactive choice surfaces immediate.

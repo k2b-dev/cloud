@@ -186,7 +186,9 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
             onCopyError={() => setCopyFailed(true)}
             onCopied={() => setCopyFailed(false)}
           />
+          {/* The switcher keeps the width of its longest view, so picking one never rewraps the header. */}
           <SelectChip<string>
+            stableWidth
             value={switcherValue()}
             onValueChange={pick}
             aria-label={chartMessages().chartView}

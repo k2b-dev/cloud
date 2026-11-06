@@ -15408,6 +15408,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
 }
 
+/* `stableWidth`: every option label shares one grid cell and only the chosen one shows, so the chip keeps the
+   width of its longest option. */
+.k2b-ui .k2b-select-chip > span[data-stable-width="true"] {
+  display: grid;
+}
+
+.k2b-ui .k2b-select-chip > span[data-stable-width="true"] > span {
+  grid-area: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-select-chip > span[data-stable-width="true"] > span[aria-hidden="true"] {
+  visibility: hidden;
+}
+
 .k2b-ui .k2b-spotlight-button:hover,
 .k2b-ui .k2b-select-chip:hover {
   color: var(--k2b-text);
