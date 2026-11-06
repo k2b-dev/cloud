@@ -142,3 +142,21 @@ test("calm hover: a light band behind the column, no outline, and a tooltip that
   expect(second).toEqual({ tip: first.tip, top: first.top });
   await page.close();
 });
+
+test("calm hover: rows get a band from the baseline to the longest bar", async () => {
+  const { page } = await open(1280);
+  const bar = page.locator(".rows-bar .stdlib-chart-bar").nth(1);
+  const rect = (await bar.boundingBox())!;
+  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+  await page.waitForSelector('.rows-bar[data-inspecting="category"]');
+  const band = await page.evaluate(() => {
+    const chart = document.querySelector<HTMLElement>(".rows-bar")!;
+    return {
+      width: Number.parseFloat(chart.style.getPropertyValue("--k2b-chart-band-width")),
+      height: Number.parseFloat(chart.style.getPropertyValue("--k2b-chart-band-height")),
+    };
+  });
+  expect(band.width).toBeGreaterThan(rect.width);
+  expect(band.height).toBeGreaterThan(rect.height);
+  await page.close();
+});

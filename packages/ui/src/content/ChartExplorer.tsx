@@ -242,37 +242,35 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
           <Dynamic component={`h${props.headingLevel ?? 3}`} id={id} class="k2b-chart-explorer__title">
             {props.title}
           </Dynamic>
-          {/* With a request the subtitle is one reserved line: stale and loading replace it without moving anything. */}
-          <Show
-            when={state() === "stale" || state() === "loading" || switching()}
-            fallback={
-              <Show when={props.description || state()}>
-                <div class="k2b-chart-explorer__description">{props.description}</div>
-              </Show>
-            }
-          >
+          {/* With a request the subtitle is one reserved line and a polite live region: stale and loading replace its
+              text without moving anything, and a screen reader hears that the shown values are out of date. */}
+          <Show when={props.description || state()}>
             <div
-              class="k2b-chart-explorer__description k2b-chart-explorer__status-line"
+              class="k2b-chart-explorer__description"
+              classList={{ "k2b-chart-explorer__status-line": state() === "stale" || state() === "loading" || switching() }}
               data-tone={state() === "stale" ? "warning" : undefined}
+              role={state() ? "status" : undefined}
             >
-              <Show
-                when={state() === "stale"}
-                fallback={
+              <Show when={state() === "stale" || state() === "loading" || switching()} fallback={props.description}>
+                <Show
+                  when={state() === "stale"}
+                  fallback={
+                    <span>
+                      {switching()
+                        ? chartMessages().chartLoadingRange({ range: props.request!.requestedRange! })
+                        : chartMessages().chartLoading}
+                    </span>
+                  }
+                >
+                  <i class="ti ti-clock-exclamation" aria-hidden="true" />
                   <span>
-                    {switching()
-                      ? chartMessages().chartLoadingRange({ range: props.request!.requestedRange! })
-                      : chartMessages().chartLoading}
+                    {[props.asOf ? chartMessages().chartAsOf({ time: props.asOf }) : undefined, chartMessages().chartRefreshFailed]
+                      .filter(Boolean)
+                      .join(" · ")}
+                    {props.onRetry ? " · " : ""}
                   </span>
-                }
-              >
-                <i class="ti ti-clock-exclamation" aria-hidden="true" />
-                <span>
-                  {[props.asOf ? chartMessages().chartAsOf({ time: props.asOf }) : undefined, chartMessages().chartRefreshFailed]
-                    .filter(Boolean)
-                    .join(" · ")}
-                  {props.onRetry ? " · " : ""}
-                </span>
-                {retryButton("text")}
+                  {retryButton("text")}
+                </Show>
               </Show>
             </div>
           </Show>

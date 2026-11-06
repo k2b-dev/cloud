@@ -267,11 +267,13 @@ export function createChartInspector(options: {
     }
     const rect = container.getBoundingClientRect(),
       point = screenPoint(entry);
-    const band = categoryBands().find((candidate) => candidate.entry === entry);
+    const slot = categoryBands().find((candidate) => candidate.entry === entry);
+    // A renderer that draws its own band inside the category's mark keeps it; the overlay only fills the others.
+    const band = slot && !entry.element.querySelector(".k2b-chart-category-band") ? slot : undefined;
     const rows = Boolean(container.querySelector('svg[data-bar-layout="rows"]'));
     // A column's tooltip waits at the top of the plot, so it stays put while the pointer moves within the column.
-    anchor.style.left = `${(band && !rows ? (band.left + band.right) / 2 : point.x) - rect.left}px`;
-    anchor.style.top = `${(band && !rows ? band.top : point.y) - rect.top}px`;
+    anchor.style.left = `${(slot && !rows ? (slot.left + slot.right) / 2 : point.x) - rect.left}px`;
+    anchor.style.top = `${(slot && !rows ? slot.top : point.y) - rect.top}px`;
     updatePlotBounds();
     container.style.setProperty("--k2b-chart-inspection-x", `${point.x - rect.left}px`);
     if (band) {
@@ -305,9 +307,11 @@ export function createChartInspector(options: {
     const guides = Array.from(container.querySelectorAll(".stdlib-chart-grid, .stdlib-chart-axis")).map((node) =>
       node.getBoundingClientRect(),
     );
-    const frame = container.querySelector("svg")?.getBoundingClientRect() ?? container.getBoundingClientRect();
-    const start = guides.length ? Math.min(...guides.map((rect) => (rows ? rect.left : rect.top))) : rows ? frame.left : frame.top;
-    const end = guides.length ? Math.max(...guides.map((rect) => (rows ? rect.right : rect.bottom))) : rows ? frame.right : frame.bottom;
+    // The band spans the plot across the categories: grid lines and every mark, so rows without value ticks, whose
+    // only guide is one vertical baseline, still get a band from the baseline to the longest bar.
+    const spans = [...guides, ...slots.map((slot) => slot.rect)];
+    const start = Math.min(...spans.map((rect) => (rows ? rect.left : rect.top)));
+    const end = Math.max(...spans.map((rect) => (rows ? rect.right : rect.bottom)));
     const center = (rect: DOMRect) => (rows ? rect.top + rect.height / 2 : rect.left + rect.width / 2);
     slots.sort((a, b) => center(a.rect) - center(b.rect));
     return slots.map((slot, index) => {
@@ -369,6 +373,20 @@ export function createChartInspector(options: {
     if (hit && nodes.includes(hit)) return hit;
     const bands = categoryBands();
     if (bands.length) {
+      // Marks of their own inside a category, such as box-plot outliers, keep their forgiving hit radius.
+      const role = categoryRoles[options.kind()];
+      let loose: Entry | undefined,
+        gap = 24;
+      for (const entry of nodes) {
+        if (entry.datum.role === role) continue;
+        const point = screenPoint(entry);
+        const distance = Math.hypot(point.x - x, point.y - y);
+        if (distance <= gap) {
+          gap = distance;
+          loose = entry;
+        }
+      }
+      if (loose) return loose;
       const rows = Boolean(options.container()?.querySelector('svg[data-bar-layout="rows"]'));
       const frame = options.container()?.getBoundingClientRect();
       const inside = frame && x >= frame.left && x <= frame.right && y >= frame.top && y <= frame.bottom;

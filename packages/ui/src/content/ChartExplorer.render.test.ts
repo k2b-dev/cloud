@@ -352,6 +352,8 @@ describe("frame states", () => {
     const html = frame({ request: { status: "error" }, asOf: "09:12", onRetry: () => {} });
     expect(html).toContain('data-state="stale"');
     expect(html).toContain("As of 09:12 · Refresh failed");
+    // A polite live region tells screen readers that the shown values are out of date.
+    expect(html).toMatch(/class="k2b-chart-explorer__description k2b-chart-explorer__status-line"[^>]*role="status"/);
     expect(html).toContain("Try again");
     expect(html).toContain("k2b-chart__svg");
     expect(html).not.toContain("Share of recipients");
@@ -376,7 +378,7 @@ describe("frame states", () => {
             title: "Öffnungen",
             columns,
             data: { chart: chart(), rows },
-            request: { status: "error" },
+            request: { status: "error" as const },
             asOf: "09:12",
             onRetry: () => {},
           });

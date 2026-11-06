@@ -46,6 +46,16 @@ render(
           <Chart kind="bar" class="frame-bar" style={{ height: "100%" }} data={rows.map(({ label, value }) => ({ label, value }))} />
         </ChartExplorer>
       </div>
+      <Chart
+        kind="bar"
+        class="rows-bar"
+        style={{ height: "220px", width: "360px" }}
+        data={[
+          { label: "Northwestern coastal region", value: 184 },
+          { label: "Southern lake district", value: 142 },
+          { label: "Eastern uplands", value: 97 },
+        ]}
+      />
     </main>
   ),
   document.getElementById("root")!,
