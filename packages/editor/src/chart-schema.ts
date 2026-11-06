@@ -165,7 +165,8 @@ export const chartKinds = (limits?: ChartLimits) => {
       })
       .superRefine((bar, ctx) => {
         const issue = (message: string) => ctx.addIssue({ code: "custom", message });
-        if (limits && !bar.series && !bar.data.length) issue("A bar chart needs data or aligned series.");
+        if (limits && !bar.series && !bar.data.length)
+          ctx.addIssue({ code: "custom", path: ["data"], message: "A bar chart needs data or aligned series." });
         if (bar.series) {
           if (!bar.x || bar.series.some((s) => s.data.length !== bar.x?.length)) issue("Bar series must have the same length as x.");
           if (bar.data.length) issue("Use data or aligned series, not both.");

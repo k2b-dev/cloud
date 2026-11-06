@@ -259,6 +259,13 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
             .first()
             .evaluate((n) => getComputedStyle(n).fill),
         ).not.toBe("none");
+        expect(
+          await page
+            .locator(".k2b-chart")
+            .first()
+            .locator("[data-inspected] > rect")
+            .evaluateAll((nodes) => nodes.map((n) => getComputedStyle(n).stroke)),
+        ).toEqual(["none", "none"]);
       }
     }
   } finally {
