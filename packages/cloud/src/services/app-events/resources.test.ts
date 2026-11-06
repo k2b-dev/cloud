@@ -6,12 +6,21 @@ import { compileCapabilityManifest } from "../../capabilities/testing";
 import type { AppEventEnvelope } from "../../contracts/app-events";
 import { AppAccessDeniedError } from "../../server/middleware/app-access";
 import * as identity from "../identity/issue-invocation";
+import { nestedInvocationLeases } from "../identity/nested-invocation";
 import { type Mandate, mandates } from "../mandates";
 import { authorizeResourceEvent, type ResourceEventBinding } from "./resources";
 
 const id = "11111111-1111-4111-8111-111111111111";
 const place = { type: "fixture.collection", id: "collection-a" };
-const binding: ResourceEventBinding = { consumer: "fixture", key: "one", revision: "v1", mandateId: id, mandateRevision: 1, place };
+const binding: ResourceEventBinding = {
+  consumer: "fixture",
+  key: "one",
+  revision: "v1",
+  mandateId: id,
+  mandateRevision: 1,
+  mandateOwnerAppId: "consumer",
+  place,
+};
 const event: AppEventEnvelope = {
   id,
   type: "fixture.changed",
@@ -56,6 +65,9 @@ const manifest = compileCapabilityManifest("fixture", {
     },
   },
 });
+let consumerAccess: ReturnType<typeof spyOn<typeof identity, "requireRegisteredAppAccess">>;
+let leaseCreate: ReturnType<typeof spyOn<typeof nestedInvocationLeases, "create">>;
+let leaseRevoke: ReturnType<typeof spyOn<typeof nestedInvocationLeases, "revoke">>;
 let clock: ReturnType<typeof spyOn<typeof Date, "now">>;
 let load: ReturnType<typeof spyOn<typeof mandates, "get">>;
 let resolve: ReturnType<typeof spyOn<typeof identity, "resolveIssuanceAuthority">>;
@@ -63,6 +75,9 @@ let access: ReturnType<typeof spyOn<typeof identity, "issueInvocationToken">>;
 let lookup: ReturnType<typeof spyOn<typeof registry, "getCapability">>;
 let invoke: ReturnType<typeof spyOn<typeof globalThis, "fetch">>;
 beforeEach(() => {
+  consumerAccess = spyOn(identity, "requireRegisteredAppAccess").mockResolvedValue();
+  leaseCreate = spyOn(nestedInvocationLeases, "create").mockResolvedValue();
+  leaseRevoke = spyOn(nestedInvocationLeases, "revoke").mockResolvedValue();
   clock = spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-06T12:00:00Z"));
   load = spyOn(mandates, "get").mockResolvedValue(mandate);
   // The reader receives exactly the currently resolved authority, with no publisher identity.
@@ -101,6 +116,9 @@ beforeEach(() => {
   invoke = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ data: {} }));
 });
 afterEach(() => {
+  consumerAccess.mockRestore();
+  leaseCreate.mockRestore();
+  leaseRevoke.mockRestore();
   clock.mockRestore();
   load.mockRestore();
   resolve.mockRestore();
@@ -113,6 +131,12 @@ test("only the subscribed place is read under current mandate identity", async (
   expect(resolve.mock.calls[0]?.[0]).toMatchObject({ sub: id, principal_type: "user", credential_kind: "mandate" });
   expect(invoke.mock.calls[0]?.[0]).toBe("http://fixture/queries/collection.read");
   expect(JSON.parse(String(invoke.mock.calls[0]?.[1]?.body))).toEqual({ input: { id: "collection-a" } });
+  expect(invoke.mock.calls[0]?.[1]?.headers).toMatchObject({
+    "x-cloud-capability-schema-hash": manifest.queries[0]!.schemaHash,
+    "x-cloud-capability-origin": "app",
+  });
+  expect(leaseCreate).toHaveBeenCalledTimes(1);
+  expect(leaseRevoke).toHaveBeenCalledTimes(1);
   expect(access.mock.calls[0]?.[0]).toMatchObject({
     operation: "capability.query:collection.read",
     authority: { mandate_id: id, workload_event: id },
@@ -142,7 +166,7 @@ test("a negative reader answer cancels; an unavailable reader retries", async ()
 });
 
 test("lost app access cancels without calling the reader", async () => {
-  access.mockRejectedValue(new AppAccessDeniedError({ id: "consumer" }));
+  consumerAccess.mockRejectedValue(new AppAccessDeniedError({ id: "consumer" }));
   expect(await authorizeResourceEvent("consumer", binding, event)).toBe(false);
   expect(invoke).not.toHaveBeenCalled();
 });
