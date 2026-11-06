@@ -45,7 +45,7 @@ export default function ChartKindPlayground(props: { kind: string }) {
             ]}
           />
         </div>
-        <div class="ui-charts-control">
+        <div class="ui-charts-control" data-control="width">
           <span>Width</span>
           <SegmentedControl
             ariaLabel="Width"

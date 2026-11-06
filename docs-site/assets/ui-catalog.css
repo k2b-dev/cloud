@@ -2360,6 +2360,16 @@
   .ui-charts-stage[data-width="phone"] > .ui-charts-tiles {
     max-width: 100%;
   }
+
+  /* On a phone the frame already has phone width. */
+  .ui-charts-control[data-control="width"] {
+    display: none;
+  }
+
+  .ui-charts-stage {
+    margin-inline: -0.25rem;
+    padding: 0.75rem;
+  }
 }
 
 .k2b-ui.ui-charts-playground .ui-charts-code__head .k2b-segmented-control,
