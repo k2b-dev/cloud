@@ -8,6 +8,8 @@ import { parseMailtoIntent } from "../_components/mail-compose-intent";
 import { mailPageMessages } from "../pages-messages";
 import { projectSsrMailboxList, projectSsrPaths } from "../ssr-public-boundary";
 
+const MAILBOX_PAGE = 200;
+
 export default ssr<AuthContext>(async (c) => {
   const { t } = mailPageMessages.resolve([getLocale(c)]);
   const context: MailRequestContext = {
@@ -15,7 +17,7 @@ export default ssr<AuthContext>(async (c) => {
     accessSubject: c.get("accessSubject"),
     requestId: c.req.header("x-request-id") ?? null,
   };
-  const result = await mailboxes.listMailboxes(context, 200);
+  const result = await mailboxes.listMailboxes(context, MAILBOX_PAGE);
   const internalWritableMailboxes = result.ok
     ? result.data
         // New mail needs mailbox-wide write access; a writer of assigned conversations only replies in them.
@@ -29,9 +31,12 @@ export default ssr<AuthContext>(async (c) => {
     : [];
   const writableMailboxes = await projectSsrMailboxList(internalWritableMailboxes);
   // One sending mailbox with one verified sender leaves nothing to choose, so the page opens that composer directly.
-  // Anything else, including a sender that is not verified, keeps the choosers and their explanations.
+  // Anything else, including a sender that is not verified, keeps the choosers and their explanations. A full page may
+  // hide further writable mailboxes, so only a complete list can prove there is one.
   const onlyMailbox =
-    internalWritableMailboxes.length === 1 && parseMailtoIntent(c.req.query("mailto")).ok ? internalWritableMailboxes[0] : undefined;
+    result.ok && result.data.length < MAILBOX_PAGE && internalWritableMailboxes.length === 1 && parseMailtoIntent(c.req.query("mailto")).ok
+      ? internalWritableMailboxes[0]
+      : undefined;
   const onlyMailboxIdentities = onlyMailbox ? await senderIdentities.listSenderIdentities(context, onlyMailbox.id) : null;
   const onlyIdentity =
     onlyMailboxIdentities?.ok && onlyMailboxIdentities.data.length === 1 && onlyMailboxIdentities.data[0]!.status === "verified"

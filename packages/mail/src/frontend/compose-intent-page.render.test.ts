@@ -167,6 +167,12 @@ test("the choosers stay when the sender or the mailbox is not the only option", 
   expect(html).not.toContain("Preparing message...");
 });
 
+test("a full mailbox page keeps the choosers, because further writable mailboxes may follow it", async () => {
+  listMailboxes.mockResolvedValue(ok([mailbox(1), ...Array.from({ length: 199 }, () => mailbox(2, "read"))]));
+  expect(directIdentity(await render())).toBeNull();
+  expect(listIdentities).not.toHaveBeenCalled();
+});
+
 test("a read-only mailbox counts as no sending mailbox", async () => {
   listMailboxes.mockResolvedValue(ok([mailbox(1, "read")]));
   const html = await render();
