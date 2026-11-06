@@ -44,6 +44,8 @@ const existing = async (db: typeof sql, conversationId: string, input: ChatConte
 const send = async (input: Input & { input: unknown; replayHash?: string }): Promise<Result<Sent> | RateLimited> => {
   const parsed = parse(SendMessageSchema, input.input, input);
   if (!parsed.ok) return parsed;
+  const scopes = input.credentialScopes ?? (input.actor.kind === "service_account" ? input.actor.scopes : undefined);
+  if (scopes && !scopes.some((scope) => scope === "write" || scope === "admin")) return fail(err.forbidden(catalog(input).forbidden));
   const allowed = await requireConversation({ ...input, required: "write" });
   if (!allowed.ok) return allowed;
   const data = parsed.data;
