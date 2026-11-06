@@ -3,6 +3,8 @@ import { CodeAutomationTitleSchema, CodeCheckedVersionManifestSchema } from "@k2
 import { z } from "zod";
 import type { CodeContext } from "./access";
 import { CodeIdSchema, codeQueryContracts } from "./contracts";
+import { codeScheduleRequestKey } from "./scheduling";
+import { CODE_SCHEDULE_TICK_RETENTION_MS } from "./scheduling-contracts";
 import { codeRunScheduler, codeScheduleId } from "./scheduling-runtime";
 import { readCode } from "./store";
 
@@ -21,6 +23,8 @@ export const CodeAutomationSchema = z
     title: CodeAutomationTitleSchema.optional(),
     kind: z.enum(["schedule", "manual"]),
     cron: z.string().nullable(),
+    at: z.iso.datetime({ offset: true }).optional(),
+    timeZone: z.string().optional(),
     /** When the installation's scheduler runs it next; null when it does not or the scheduler cannot say. */
     nextRunAt: z.iso.datetime().nullable(),
     /** Its newest run that did something; skipped ticks and cancelled starts are not results. */
@@ -109,7 +113,16 @@ export async function listCodeAutomations(
     for (let start = 0; start < scheduled.length; start += NEXT_RUN_CONCURRENCY)
       await Promise.all(
         scheduled.slice(start, start + NEXT_RUN_CONCURRENCY).map(async (entry) => {
-          nextRuns.set(entry.entrypoint, await nextRun(code.id, entry.entrypoint).catch(() => null));
+          if (entry.at) {
+            const [consumed] = await sql`SELECT 1 FROM code.run_requests WHERE code_id=${code.id}
+              AND request_key=${codeScheduleRequestKey(entry.entrypoint, new Date(entry.at))}`;
+            nextRuns.set(
+              entry.entrypoint,
+              consumed || new Date(entry.at).getTime() <= Date.now() - CODE_SCHEDULE_TICK_RETENTION_MS
+                ? null
+                : new Date(entry.at).toISOString(),
+            );
+          } else nextRuns.set(entry.entrypoint, await nextRun(code.id, entry.entrypoint).catch(() => null));
         }),
       );
   }
@@ -120,6 +133,7 @@ export async function listCodeAutomations(
       ...(entry.title === undefined ? {} : { title: entry.title }),
       kind: entry.kind,
       cron: entry.cron,
+      ...(entry.at === undefined ? {} : { at: entry.at, timeZone: entry.timeZone }),
       nextRunAt: nextRuns.get(entry.entrypoint) ?? null,
       lastRun: run ? { state: run.state, createdAt: run.created_at.toISOString(), endedAt: run.ended_at?.toISOString() ?? null } : null,
       missingTargets: run && targetForRun.has(run.id) ? [targetForRun.get(run.id)!] : [],

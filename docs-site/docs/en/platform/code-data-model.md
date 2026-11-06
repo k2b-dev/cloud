@@ -94,7 +94,7 @@ check current permissions in Core's Code service.
 | `core.code.version.read` | `codeId`, `versionId`, optional `content`, `offset`, `length` | Version metadata and optional text chunk |
 | `core.code.run.list` | `codeId`, optional `cursor`, `limit` (1–50) | Run metadata and `nextCursor` |
 | `core.code.run.read` | `codeId`, `runId`, optional numeric `cursor`, `content`, `offset`, `length` | Run metadata; editor-only `contents` |
-| `core.code.automation.list` | `codeId` | The running version's automations with `kind`, `cron`, `nextRunAt`, newest `lastRun` and `missingTargets`, plus every `removedTargets` entry |
+| `core.code.automation.list` | `codeId` | The running version's automations with `kind`, `cron`, optional one-time `at` and `timeZone`, `nextRunAt`, newest `lastRun` and `missingTargets`, plus every `removedTargets` entry |
 | `core.code.run.count` | `since`, at most 7 days ago | `runs` and `failed` of the caller's own personal Code since then |
 | `core.code.summary` | Exact `owner` | For each readable Code: `automations` of the running or newest version, and an empty `access` array; Core does not inventory target rights. For settings and delete dialogs |
 | `core.code.attention` | Exact `owner` | Visible Code items with `reasons`: `run_failed`, `access_missing`, `approval_pending` |

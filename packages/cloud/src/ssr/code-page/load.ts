@@ -442,6 +442,7 @@ const loadReady = async (
       ...(entry.title === undefined ? {} : { title: entry.title }),
       kind: entry.kind,
       cron: entry.cron,
+      ...(entry.at === undefined ? {} : { at: entry.at, timeZone: entry.timeZone }),
       isNew: isNew(entry.entrypoint),
       lastRun: lastRunOf(entry.entrypoint),
       nextRunAt: isNew(entry.entrypoint) ? null : (nextRuns.get(entry.entrypoint) ?? null),

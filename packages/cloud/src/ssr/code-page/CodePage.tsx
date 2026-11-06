@@ -742,9 +742,15 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
     documentNavigate(withQuery(props.data.href, { tab: "runs", run: result.data.data.runId }));
   };
   const schedule = () =>
-    props.automation.kind === "schedule" && props.automation.cron
-      ? describeCodeSchedule(props.automation.cron, props.text.locale())
-      : t().manualStart;
+    props.automation.at
+      ? new Intl.DateTimeFormat(props.text.locale(), {
+          timeZone: props.automation.timeZone,
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(new Date(props.automation.at)) + ` (${props.automation.timeZone})`
+      : props.automation.kind === "schedule" && props.automation.cron
+        ? describeCodeSchedule(props.automation.cron, props.text.locale())
+        : t().manualStart;
   return (
     <div class="cloud-code__row cloud-code__row--automation" role="row">
       <span class="cloud-code__kind" aria-hidden="true">

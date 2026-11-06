@@ -15,7 +15,13 @@ if (Bun.argv.includes("--help")) {
     const expected = JSON.stringify(
       request.entrypoints
         .filter((e) => e.kind === "schedule")
-        .map(({ entrypoint, cron, title }) => ({ kind: "schedule", entrypoint, cron, ...(title === undefined ? {} : { title }) })),
+        .map(({ entrypoint, cron, at, timeZone, title }) => ({
+          kind: "schedule",
+          entrypoint,
+          cron,
+          ...(at === undefined ? {} : { at, timeZone }),
+          ...(title === undefined ? {} : { title }),
+        })),
     );
     const exports = request.entrypoints
       .map((entry, i) => {
