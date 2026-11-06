@@ -12,7 +12,7 @@ import { chartKinds } from "./core/registry";
 const root = mkdtempSync(resolve(tmpdir(), "cloud-chart-namespace-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Chart } = await import("../charts");
+const { default: Chart } = await import("../content/Chart");
 const { default: OldChart } = await import("../content/Chart");
 
 describe("Chart namespace", () => {

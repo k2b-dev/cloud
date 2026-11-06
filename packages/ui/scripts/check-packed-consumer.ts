@@ -155,6 +155,8 @@ try {
     }
   `;
   run([process.execPath, "--no-install", "-e", chartsSmoke], consumer);
+  // Browser conditions also run in DOM-free script/sandbox consumers.
+  run([process.execPath, "--no-install", "--conditions=browser", "-e", chartsSmoke], consumer);
   run([process.execPath, "--no-install", "--conditions=browser", "-e", inspectionSmoke], consumer);
 
   const chartCoreSmoke = `
