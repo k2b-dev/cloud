@@ -97,7 +97,7 @@ describe("@k2b/ui scaffold SSR", () => {
                       return createComponent(StatCell, {
                         label: "Requests",
                         value: "12k",
-                        tone: "info",
+                        tone: "blue",
                       });
                     },
                   });

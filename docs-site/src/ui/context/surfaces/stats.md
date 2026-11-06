@@ -1,12 +1,15 @@
 # Stats
 
-`StatGrid` presents a small group of comparable values. `StatCell` supplies each label, value, and optional supporting detail.
+`StatGrid` presents a row of comparable key figures. Each `StatCell` is a
+framed tile of its own: an optional icon and the label at the top, the figure
+with its change below, and one support line with the comparison, a note, and
+the trend.
 
 The application owns the values, their scope, and the links used to investigate them.
 
 ## Use stats
 
-Use `StatGrid` for operational summaries and compact dashboard statistics.
+Use `StatGrid` for key figures on dashboards and operational summaries.
 
 Use `DataPanel` for records. Use ordinary prose for one isolated value that does not need comparison.
 
@@ -23,6 +26,8 @@ import {
   StatCell,
   StatGrid,
   type StatCellAccent,
+  type StatCellCompare,
+  type StatCellDelta,
 } from "@k2b/ui";
 ```
 
@@ -33,54 +38,82 @@ import {
 | Property | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `children` | `JSX.Element` | required | Contains `StatCell` elements. |
-| `title` | `string` | none | Adds a compact heading above the cells. |
-| `action` | `{ label: string; href: string }` | none | Adds a header link when `title` is present. |
-| `columns` | `1 \| 2 \| 3 \| 4 \| 5 \| 6` | responsive ladder | Selects one to six responsive columns. |
-| `size` | `"md" \| "sm"` | `"md"` | Sets the density inherited by cells. |
-| `surface` | `"white" \| "muted"` | `"white"` | Matches the cell backgrounds to a page or muted parent surface. |
-| `class` | `string` | none | Adds sizing or layout classes to the outer surface. |
+| `title` | `string` | none | Adds a compact heading above the tiles and names the group. |
+| `action` | `{ label: string; href: string }` | none | Adds a link beside the title when `title` is present. |
+| `columns` | `1 \| 2 \| 3 \| 4 \| 5 \| 6` | `4` | Tiles per row on a wide container. |
+| `size` | `"lg" \| "md" \| "sm"` | `"md"` | Sets the density inherited by the tiles. |
+| `surface` | `"white" \| "muted"` | `"white"` | Gives the tiles the page or the muted surface. |
+| `class` | `string` | none | Adds sizing or layout classes to the outer element. |
 
-Pass `columns` when the cell count is known. Omitting it uses the six-column
-ladder: two columns initially, three
-from 40rem, and six from 48rem. Three cells move from one to three columns at
-40rem; four cells move from two to four at 48rem; five cells use two, then
-three, then five, and below 48rem the last cell spans two columns so no slot
-stays empty. One- and two-column grids remain fixed.
+The grid is a container, so the row follows the space it gets, not the
+viewport: `columns` tiles per row, five or six take three per row at 900 px or
+less, and every grid with two or more columns shows two tiles per row at 600 px
+or less (one at 280 px or less). Tiles in a row share one height. Tiles keep
+16 px apart, 10 px at 600 px or less.
 
 ### StatCell
 
 | Property | Type | Purpose |
 | --- | --- | --- |
 | `label` | `string` | Names the measurement. |
-| `value` | `string \| number \| JSX.Element` | Displays the primary value. |
+| `value` | `string \| number \| JSX.Element \| null` | Displays the figure. `null` shows a dash; say why in `sub`. |
+| `icon` | `string` | Shows a Tabler icon in a chip before the label. |
+| `tone` | `"zinc" \| "blue" \| "emerald" \| "amber" \| "red"` | Colors the icon chip. Defaults to zinc. |
+| `delta` | `StatCellDelta` | Shows the change as a badge beside the figure. |
+| `compare` | `StatCellCompare` | Names the comparison value in the support line, such as "Last month 44,560". |
 | `sub` | `string` | Qualifies the value with scope, unit, or time range. |
-| `href` | `string` | Makes the complete cell a link. |
-| `accent` | `StatCellAccent` | Adds a semantic icon or short status pill. |
+| `href` | `string` | Makes the complete tile a link. |
+| `accent` | `StatCellAccent` | Adds a semantic icon or short status pill to the support line. |
 | `valueClass` | `string` | Overrides the value color. |
 | `title` | `string` | Adds a native title to a truncated value. |
-| `trend` | `readonly number[]` | Adds a compact sparkline from oldest to newest, with tooltips and keyboard inspection. |
+| `trend` | `readonly number[]` | Adds a sparkline at the end of the support line, from oldest to newest, with tooltips and keyboard inspection. |
 | `trendTooltip` | `ChartTooltipFormatter` | Customizes the trend tooltip, for example with a period title or a unit. |
-| `size` | `"md" \| "sm"` | Overrides the inherited size for one cell. |
-| `wrap` | `boolean` | Wraps label, value, `sub` and accent instead of truncating them; the accent moves below `sub` when both do not fit. |
+| `size` | `"lg" \| "md" \| "sm"` | Overrides the inherited size for one tile. |
+| `wrap` | `boolean` | Wraps label, value, `sub` and accent instead of truncating them. |
+| `status` | `"loading" \| "error"` | Shows placeholders, or "Not loaded", in the tile's place. |
+| `onRetry` | `() => void` | Offers "Try again" after an error and "Reload" beside `stale`. |
+| `stale` | `string` | Replaces the support line with a warning such as "As of 09:12 · not current". |
 
-Cells in a row keep one line each and truncate, so comparable cells keep one
-height. Use `wrap` only for a cell whose height nothing else reserves, such as
-one figure on its own.
+`size="lg"` is the dashboard tile: a 28 px figure in a tile of 136 px, and
+164 px when the grid is 600 px wide or less. There the change badge moves
+under the figure and the figure shrinks to 22 px, so it stays whole on a phone;
+the trend steps back below 200 px of tile width. `md` and `sm` tiles take the
+height of their content.
 
-An accent has a `tone`, Tabler `icon`, and optional `text`. Text creates a pill. Without text, only the icon is shown. Use the cell `href` when the measurement needs a link.
+### Change and comparison
 
-A trend sparkline uses the cell's label as its accessible name. Its tooltip
-names each value after the cell label and formats it in the inherited locale.
-`trendTooltip` replaces that tooltip and runs in browser code;
-`selection.datum.index` is the source index into `trend`. Keep `href` and
-`trend` on separate cells: a linked cell should not contain an inspectable
-sparkline, which would nest interactive content. That combination is not yet
-supported.
+```ts
+type StatCellDelta = { value: number; unit?: "ratio" | "points"; better?: "up" | "down" };
+type StatCellCompare = { label: string; value: string | number };
+```
+
+- `unit: "ratio"` (default) reads `0.082` as `+8.2 %`. `"points"` is the
+  difference of two shares in ratio units: `0.031` reads `+3.1 pts`.
+- The badge shows an arrow and the signed change. Only with `better` does it
+  carry a tone: green when the change goes the better way, red otherwise.
+  Without `better`, or for no change, it stays grey and unrated.
+- Its spoken label names the change, the comparison, and, with `better`, the
+  rating: "+8.2 % compared with Last month, better".
+- A number in `compare.value` is formatted in the inherited locale; pass a
+  string for currencies and percentages.
+
+## States
+
+Every tile keeps its three rows in every state, so nothing moves when data
+arrives or fails:
+
+- **Loading** (`status="loading"`): placeholders for the figure and the
+  support line; the tile is `aria-busy` and not a link.
+- **Error** (`status="error"`): "Not loaded" in place of the figure, and
+  "Try again" when `onRetry` is set.
+- **Empty** (`value={null}`): a dash and the reason in `sub`.
+- **Stale** (`stale`): the figure stays; the support line shows the warning
+  and "Reload" when `onRetry` is set.
 
 ## Composition
 
-- Keep cells in one comparable scope and time range.
-- Put related cells in one `StatGrid` instead of wrapping each cell in its own `Paper`.
+- Keep tiles in one comparable scope and time range.
+- Put related figures in one `StatGrid`; do not wrap the grid or a tile in another `Paper` or frame.
 - Write labels in sentence case. The label is shown as written, and the value stays the visual anchor.
 - Put a unit in the label, value, or `sub` when it is not obvious.
 - Use `sub` to qualify the value, not repeat the label.
@@ -89,47 +122,58 @@ supported.
 - Do not use a sparkline as the only representation of a change.
 
 `StatCellAccent` is `{ tone: "zinc" | "blue" | "emerald" | "amber" | "red"; icon: string; text?: string }`.
-The icon uses a complete Tabler class. `StatCell.label` and `value` are required;
-other cell props are optional.
+The icon uses a complete Tabler class. Text creates a pill; without text, only
+the icon is shown. `StatCell.label` and `value` are required; other props are
+optional.
 
 ## Accessibility
 
-Every value needs a visible label. A linked cell is a native, independently
+Every value needs a visible label. A linked tile is a native, independently
 focusable link. Keep its combined text useful at the destination.
 
-Accent icons and sparklines supplement the text; they do not replace a status
-label or numeric value. Truncated values can expose their complete wording
-through `title`.
+Icons, the change arrow, and sparklines supplement the text; they do not
+replace a status label or numeric value. The change badge has its own spoken
+label. Truncated values can expose their complete wording through `title`.
+
+A trend sparkline uses the tile's label as its accessible name. Its tooltip
+names each value after the tile label and formats it in the inherited locale.
+`trendTooltip` replaces that tooltip and runs in browser code;
+`selection.datum.index` is the source index into `trend`. Keep `href` and
+`trend` on separate tiles: a linked tile should not contain an inspectable
+sparkline, which would nest interactive content.
 
 ## Runtime
 
-`StatGrid` and `StatCell` render on the server. Static links work without browser code. Trend sparklines are rendered by the shared `Chart` component within the cell. Render a cell with `trend` inside an island.
+`StatGrid` and `StatCell` render on the server. Static links work without browser code. Trend sparklines are rendered by the shared `Chart` component within the tile. Render a tile with `trend` or `onRetry` inside an island.
 
 ## Example
 
 ```tsx
-<StatGrid
-  title="Requests"
-  action={{ label: "View telemetry", href: "/admin/observability/telemetry" }}
->
+<StatGrid size="lg" columns={4}>
   <StatCell
-    label="Server errors"
-    value="4,913"
-    sub="5xx · 24h"
-    valueClass="app-stat-critical"
-    accent={{
-      tone: "red",
-      icon: "ti ti-alert-circle",
-      text: "Inspect",
-    }}
-    href="/admin/observability/telemetry?range=24h&errors=1"
+    label="Subscribers"
+    icon="ti ti-users"
+    tone="blue"
+    value="48,210"
+    delta={{ value: 0.082, better: "up" }}
+    compare={{ label: "Last month", value: 44560 }}
+    trend={[38900, 40500, 42200, 43300, 44000, 44560, 48210]}
   />
   <StatCell
-    label="Rate limited"
-    value="6,071"
-    sub="429 · 24h"
-    href="/admin/observability/telemetry?range=24h&status=429"
+    label="Open rate"
+    icon="ti ti-mail-opened"
+    tone="emerald"
+    value="49.2 %"
+    delta={{ value: 0.031, unit: "points", better: "up" }}
+    compare={{ label: "Last month", value: "46.1 %" }}
   />
-  <StatCell label="All requests" value="273,911" sub="24h" />
+  <StatCell
+    label="Unsubscribes"
+    icon="ti ti-user-minus"
+    value={182}
+    delta={{ value: -0.125, better: "down" }}
+    compare={{ label: "Last month", value: 208 }}
+  />
+  <StatCell label="Bounces" icon="ti ti-mail-off" value={null} sub="Nothing counted in this period" />
 </StatGrid>
 ```

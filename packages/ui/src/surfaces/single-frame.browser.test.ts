@@ -160,9 +160,11 @@ const measure = () => {
     statLabel: { transform: style(".k2b-stat-cell__label").textTransform, tracking: style(".k2b-stat-cell__label").letterSpacing },
     statHeader: {
       rule: style(".k2b-stat-grid__header").borderBottomStyle,
-      // The header and the first cell meet directly, so their surfaces alone draw the edge.
+      // The title is a heading above the row, not a frame: each key figure is its own tile.
       gap: box(".k2b-stat-cell").top - box(".k2b-stat-grid__header").bottom,
-      surfaceStep: style(".k2b-stat-grid__header").backgroundColor !== style(".k2b-stat-cell").backgroundColor,
+      background: style(".k2b-stat-grid__header").backgroundColor,
+      grid: frame(".k2b-stat-grid"),
+      tile: style(".k2b-stat-cell").borderTopStyle,
     },
   };
 };
@@ -170,13 +172,13 @@ const measure = () => {
 const transparent = "rgba(0, 0, 0, 0)";
 
 describe("@k2b/ui one frame per surface", () => {
-  test("forced colours keep a line under the StatGrid header, where both surfaces become Canvas", async () => {
+  test("forced colours keep the frame of every key figure tile, where surfaces become Canvas", async () => {
     const page = await browser.newPage({ viewport: viewports.desktop });
     try {
       await page.emulateMedia({ forcedColors: "active" });
       await page.setContent(`<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui">${markup()}</body></html>`);
       await settled(page);
-      expect(await page.locator(".k2b-stat-grid__header").evaluate((header) => getComputedStyle(header).borderBottomStyle)).toBe("solid");
+      expect(await page.locator(".k2b-stat-cell").evaluate((tile) => getComputedStyle(tile).borderTopStyle)).toBe("solid");
     } finally {
       await page.close();
     }
@@ -210,7 +212,7 @@ describe("@k2b/ui one frame per surface", () => {
           expect(result.groupGap).toBe(0);
 
           expect(result.statLabel).toEqual({ transform: "none", tracking: "normal" });
-          expect(result.statHeader).toEqual({ rule: "none", gap: 0, surfaceStep: true });
+          expect(result.statHeader).toEqual({ rule: "none", gap: 12, background: transparent, grid: { border: "none", background: transparent }, tile: "solid" });
           expect(result.sectionGap).toBe(24);
 
           // A desktop puts the heading and its actions in a column beside the fields; a phone keeps them above.
