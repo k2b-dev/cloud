@@ -12,6 +12,7 @@ const LIBRARIES = new Set(["ui", "cloud", "ssr", "editor"]);
 /** The browser entries @k2b/ssr discovers (`**\/*.{island,client}.tsx`). */
 const BROWSER_ENTRY = /\.(?:island|client)\.tsx$/;
 const ALLOWED_RENDERERS = new Map([
+  ["packages/ui/src/charts/core/registry.ts", "Pure renderer registry; Chart adds shared inspection and snapshots retain inert metadata."],
   ["packages/ui/src/content/Chart.tsx", "The shared Chart wrapper renders with inspect: true and attaches createChartInspection."],
   [
     "packages/ui/src/content/chart-bar.ts",
