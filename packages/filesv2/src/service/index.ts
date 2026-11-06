@@ -102,6 +102,7 @@ import {
   principalMetadata,
   readTransferTicket,
   revokeStorage,
+  type StorageGrantAccounts,
   storageBaseId,
   storageCandidates,
   storageGrants,
@@ -1670,9 +1671,9 @@ export function createFilesService(
         state: "active",
       };
     },
-    async storageGrants(call: UserFilesCall, baseId: string, after?: string) {
+    async storageGrants(call: UserFilesCall, baseId: string, after?: string, accounts?: StorageGrantAccounts) {
       await requireAdmin(call.actor);
-      return storageGrants(baseId, after, undefined, "admin");
+      return storageGrants(baseId, after, undefined, "admin", accounts);
     },
     async grantStorage(
       call: UserFilesCall,

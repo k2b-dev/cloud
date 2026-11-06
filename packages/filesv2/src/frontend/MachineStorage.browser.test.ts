@@ -5,7 +5,7 @@ import type { Browser, BrowserContextOptions, Route } from "playwright";
 type Fixture = (route: Route) => Promise<void>;
 
 import { appHostCss } from "../../../ui/test/app-host-fixture";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 
 const ui = new URL("../../../ui/", import.meta.url).pathname;
 const hostCss = await appHostCss(new URL("../styles/app.css", import.meta.url).pathname);
@@ -83,6 +83,12 @@ const owner = { id: "10000000-0000-4000-8000-000000000001", name: "Atlas documen
 const storage = { id: "20000000-0000-4000-8000-000000000001", baseId: `cloud:users:${owner.id}`, owner, area: "cloud", state: "active" };
 const json = (route: Route, body: unknown, status = 200) =>
   route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+/** One grants page as the server answers it: `accounts=code` lists Code accounts alone, `other` everyone else. */
+const grantPage = <T extends { serviceAccountKind?: string }>(route: Route, items: readonly T[]) => {
+  const accounts = new URL(route.request().url()).searchParams.get("accounts");
+  expect(accounts === "code" || accounts === "other").toBe(true);
+  return json(route, { items: items.filter((item) => (accounts === "code") === (item.serviceAccountKind === "code")), next: null });
+};
 const entities = { items: [{ kind: "service_account", serviceAccount: { ...owner, appId: null, resourceType: null, resourceId: null } }] };
 describe("Machine storage settings", () => {
   for (const mode of ["picker", "button"] as const) {
@@ -123,7 +129,7 @@ describe("Machine storage settings", () => {
               granted = true;
               return json(route, entry);
             }
-            return json(route, { items: granted ? [entry] : [], next: null });
+            return grantPage(route, granted ? [entry] : []);
           }
           return json(route, { items: [storage], next: null });
         },
@@ -156,7 +162,13 @@ describe("Machine storage settings", () => {
           await tab.getByRole("combobox").last().fill(handle);
           await tab.getByRole("option").filter({ hasText: entry.displayName }).click();
         }
-        await tab.getByRole("button", { name: mode === "button" ? "Entziehen" : "Revoke", exact: true }).waitFor();
+        // The added Code account lands in its own section, not among the folder grants.
+        const accounts = tab.locator("section.k2b-panel-dialog__section", {
+          has: tab.locator("h3", { hasText: mode === "button" ? "Dienstkonten" : "Service accounts" }),
+        });
+        await accounts.locator("li[data-access-key]", { hasText: entry.displayName }).waitFor();
+        expect(await accounts.locator("h3").textContent()).toBe(mode === "button" ? "Dienstkonten 1" : "Service accounts 1");
+        expect(await tab.getByRole("button", { name: mode === "button" ? "Entziehen" : "Revoke", exact: true }).count()).toBe(0);
         expect(requests).toHaveLength(1);
         expect(requests[0]!.searchParams.get("target_type")).toBe("filesv2.storage");
         expect(requests[0]!.searchParams.get("target_id")).toBe(storage.id);
@@ -192,7 +204,7 @@ describe("Machine storage settings", () => {
               },
             ],
           });
-        if (url.pathname.endsWith("/grants")) return json(route, { items: [], next: null });
+        if (url.pathname.endsWith("/grants")) return grantPage(route, []);
         return json(route, { items: [storage], next: null });
       });
       try {
@@ -220,6 +232,276 @@ describe("Machine storage settings", () => {
       }
     });
   }
+  // Mockup v31 `editor · A`, the section Dienstkonten as in every share dialog (concept v28 9.1, 9.4, 14 W14).
+  const accountsSection = (tab: import("playwright").Page) =>
+    tab.locator("section.k2b-panel-dialog__section", { has: tab.locator("h3", { hasText: "Dienstkonten" }) });
+  const mailboxCode = {
+    id: "60000000-0000-4000-8000-000000000001",
+    principal: { type: "service_account", serviceAccountId: "40000000-0000-4000-8000-000000000011" },
+    permission: "write",
+    path: "berichte",
+    displayName: "Code von einkauf@beispiel.de",
+    serviceAccountKind: "code",
+    serviceAccountDescription: "Dienstkonto eines Postfachs",
+    serviceAccountHref: "/app/mail/Mb4kd2/code",
+  };
+  const appCode = {
+    id: "60000000-0000-4000-8000-000000000002",
+    principal: { type: "service_account", serviceAccountId: "40000000-0000-4000-8000-000000000012" },
+    permission: "read",
+    path: "",
+    displayName: "Code von Werkstatt",
+    serviceAccountKind: "code",
+    serviceAccountDescription: "Dienstkonto einer App",
+  };
+  const agentGrant = {
+    id: "30000000-0000-4000-8000-000000000001",
+    principal: { type: "service_account", serviceAccountId: owner.id },
+    permission: "write",
+    path: "reports",
+    displayName: owner.name,
+    serviceAccountKind: "agent",
+  };
+  /** Row tops within the page, so scrolling a control into view does not count as a move. */
+  const rowTops = (tab: import("playwright").Page, names: string[]) =>
+    tab.evaluate(
+      (texts) =>
+        texts.map((text) => {
+          const page = document.querySelector(".k2b-settings-section")!.getBoundingClientRect().top;
+          const row = Array.from(document.querySelectorAll("li, .rounded.border")).find((item) => item.textContent?.includes(text));
+          return row ? Math.round(row.getBoundingClientRect().top - page) : -1;
+        }),
+      names,
+    );
+  for (const [width, options] of [
+    [1280, { viewport: { width: 1280, height: 800 } }],
+    [390, phone],
+  ] as const) {
+    test(`de ${width}px normal: Code accounts have their own section with count, rows as the server says, and the note`, async () => {
+      let grants: Record<string, unknown>[] = [agentGrant, mailboxCode, appCode];
+      const saving = Promise.withResolvers<void>();
+      const posts: unknown[] = [];
+      const { context, tab } = await open(options, "light", "de", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname.endsWith("/grants") && route.request().method() === "POST") {
+          const input = route.request().postDataJSON();
+          posts.push(input);
+          await saving.promise;
+          grants = grants.map((grant) => (grant.id === appCode.id ? { ...grant, permission: input.permission } : grant));
+          return json(
+            route,
+            grants.find((grant) => grant.id === appCode.id),
+          );
+        }
+        if (url.pathname.endsWith("/grants")) return grantPage(route, grants);
+        return json(route, { items: [storage], next: null });
+      });
+      try {
+        await tab.locator("summary").filter({ hasText: owner.name }).click();
+        const section = accountsSection(tab);
+        await section.locator("li[data-access-key]", { hasText: mailboxCode.displayName }).waitFor();
+        expect(await section.locator("h3").textContent()).toBe("Dienstkonten 2");
+        // The button stands beside the title, as in the dialog.
+        expect(await section.locator("header button").innerText()).toBe("Dienstkonto hinzufügen");
+        const mailbox = section.locator("li[data-access-key]", { hasText: mailboxCode.displayName });
+        // The dialog's line from the server's description, then the path the grant covers.
+        expect(await mailbox.getByText("Dienstkonto eines Postfachs · darf bearbeiten · berichte", { exact: true }).count()).toBe(1);
+        expect(
+          await mailbox
+            .getByText("Dienstkonto eines Postfachs", { exact: false })
+            .evaluate((line) => line.scrollWidth <= line.clientWidth + 1),
+        ).toBe(true);
+        expect(await mailbox.getByRole("link", { name: mailboxCode.displayName }).getAttribute("href")).toBe(
+          mailboxCode.serviceAccountHref,
+        );
+        expect(await section.locator("li[data-access-key]", { hasText: appCode.displayName }).textContent()).toContain(
+          "Dienstkonto einer App · darf ansehen · /",
+        );
+        expect(await section.locator("li[data-access-key]", { hasText: appCode.displayName }).getByRole("link").count()).toBe(0);
+        // The whole level word fits its slot at every width, as in the dialog.
+        for (const trigger of await section.locator("li[data-access-key] button[aria-haspopup]").all())
+          expect(await trigger.locator(".k2b-choice-trigger__value").evaluate((value) => value.scrollWidth <= value.clientWidth)).toBe(
+            true,
+          );
+        await section
+          .getByText(
+            `Code läuft als Dienstkonto seines Objekts. Wer „Ablage von ${owner.name}“ verwaltet, gibt ihm hier Zugriff wie einer Person. Wer den Code bearbeitet, handelt mit diesem Recht.`,
+            { exact: true },
+          )
+          .waitFor();
+        // The folder grants keep people, groups and agents only, without a Dienstkonto mark.
+        expect(await tab.getByRole("button", { name: "Entziehen", exact: true }).count()).toBe(1);
+        expect(await tab.locator(".k2b-status-badge", { hasText: "Dienstkonto" }).count()).toBe(0);
+        if (process.env.SHOTS) {
+          await section.scrollIntoViewIfNeeded();
+          await tab.screenshot({ path: `${process.env.SHOTS}/files-machine-dienst-normal-${width}.png` });
+        }
+
+        // The level menu offers View and Edit in the dialog's words, never Manage, and saving moves no row.
+        const names = [owner.name, mailboxCode.displayName, appCode.displayName];
+        await settled(tab);
+        const before = await rowTops(tab, names);
+        const trigger = section
+          .locator("li[data-access-key]", { hasText: appCode.displayName })
+          .getByRole("button", { name: `Stufe für ${appCode.displayName}` });
+        await trigger.click();
+        const choices = tab.locator('[role="dialog"] [role="radio"]');
+        await choices.first().waitFor();
+        expect(await choices.allInnerTexts()).toEqual([expect.stringContaining("Ansehen"), expect.stringContaining("Bearbeiten")]);
+        expect(await tab.locator('[role="dialog"]').textContent()).not.toContain("Verwalten");
+        await choices.filter({ hasText: "Bearbeiten" }).click();
+        await tab.locator("[role=status]", { hasText: "Maschinenablagen werden geladen…" }).waitFor();
+        await settled(tab);
+        expect(await rowTops(tab, names)).toEqual(before);
+        saving.resolve();
+        await section
+          .locator("li[data-access-key]", { hasText: appCode.displayName })
+          .getByText("darf bearbeiten", { exact: false })
+          .waitFor();
+        await tab.locator("[role=status]", { hasText: "Maschinenablagen werden geladen…" }).waitFor({ state: "detached" });
+        await settled(tab);
+        expect(await rowTops(tab, names)).toEqual(before);
+        expect(posts).toEqual([{ principal: appCode.principal, path: "", permission: "write" }]);
+        // The row keeps its controls across the save, and focus returns to its level.
+        await tab.waitForFunction(
+          (label) => document.activeElement?.getAttribute("aria-label") === label,
+          `Stufe für ${appCode.displayName}`,
+        );
+        expect(await tab.evaluate(() => Math.max(0, document.documentElement.scrollWidth - innerWidth))).toBe(0);
+      } finally {
+        saving.resolve();
+        await context.close();
+      }
+    });
+
+    test(`de ${width}px leer, dienst-neu: the empty text, then a handle adds the account under Dienstkonten`, async () => {
+      const handle = "code-7k2q9m4xwt";
+      const added = {
+        id: "60000000-0000-4000-8000-000000000003",
+        principal: { type: "service_account", serviceAccountId: "40000000-0000-4000-8000-000000000013" },
+        permission: "write",
+        path: "",
+        displayName: "Code von info@beispiel.de",
+        serviceAccountKind: "code",
+        serviceAccountDescription: "Dienstkonto eines Postfachs",
+      };
+      let grants: Record<string, unknown>[] = [agentGrant];
+      const posts: unknown[] = [];
+      const { context, tab } = await open(options, "light", "de", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname === "/api/accounts/entities")
+          return json(route, {
+            items: [
+              {
+                kind: "service_account",
+                serviceAccount: {
+                  id: added.principal.serviceAccountId,
+                  name: added.displayName,
+                  kind: "code",
+                  handle,
+                  description: "Dienstkonto eines Postfachs",
+                },
+              },
+            ],
+          });
+        if (url.pathname.endsWith("/grants") && route.request().method() === "POST") {
+          posts.push(route.request().postDataJSON());
+          grants = [...grants, added];
+          return json(route, added);
+        }
+        if (route.request().method() === "DELETE") {
+          grants = grants.filter((grant) => !url.pathname.endsWith(`/${grant.id}`));
+          return json(route, { deleted: true });
+        }
+        if (url.pathname.endsWith("/grants")) return grantPage(route, grants);
+        return json(route, { items: [storage], next: null });
+      });
+      try {
+        await tab.locator("summary").filter({ hasText: owner.name }).click();
+        const section = accountsSection(tab);
+        await section.waitFor();
+        expect(await section.locator("h3").textContent()).toBe("Dienstkonten 0");
+        await section
+          .getByText("Noch kein Dienstkonto. Code eines Postfachs oder einer Base bekommt hier Zugriff wie eine Person.", { exact: true })
+          .waitFor();
+        expect(await section.locator("li[data-access-key]").count()).toBe(0);
+        if (process.env.SHOTS) {
+          await section.scrollIntoViewIfNeeded();
+          await tab.screenshot({ path: `${process.env.SHOTS}/files-machine-dienst-leer-${width}.png` });
+        }
+        // Share chosen above stops at write for a service account, which never manages.
+        await tab.getByRole("combobox", { name: "Berechtigung" }).click();
+        await tab.getByRole("option", { name: "Lesen, schreiben und freigeben" }).click();
+        await settled(tab);
+        const before = await rowTops(tab, [owner.name]);
+        await section.getByRole("button", { name: "Dienstkonto hinzufügen" }).click();
+        await section.getByRole("textbox", { name: "Kennung des Dienstkontos", exact: true }).fill(handle);
+        const hit = section.locator("li button", { hasText: added.displayName });
+        await hit.waitFor();
+        // Opening the field moves no row above it.
+        await settled(tab);
+        expect(await rowTops(tab, [owner.name])).toEqual(before);
+        if (process.env.SHOTS) await tab.screenshot({ path: `${process.env.SHOTS}/files-machine-dienst-hinzu-feld-${width}.png` });
+        await hit.click();
+        const row = section.locator("li[data-access-key]", { hasText: added.displayName });
+        await row.getByText("Dienstkonto eines Postfachs · darf bearbeiten · /", { exact: true }).waitFor();
+        expect(await section.locator("h3").textContent()).toBe("Dienstkonten 1");
+        expect(await section.getByRole("textbox", { name: "Kennung des Dienstkontos" }).count()).toBe(0);
+        await section.getByText("Code läuft als Dienstkonto seines Objekts.", { exact: false }).waitFor();
+        await settled(tab);
+        expect(await rowTops(tab, [owner.name])).toEqual(before);
+        expect(posts).toEqual([{ principal: added.principal, path: "", permission: "write" }]);
+        expect(await tab.evaluate(() => Math.max(0, document.documentElement.scrollWidth - innerWidth))).toBe(0);
+        if (process.env.SHOTS) {
+          await section.scrollIntoViewIfNeeded();
+          await tab.screenshot({ path: `${process.env.SHOTS}/files-machine-dienst-neu-${width}.png` });
+        }
+
+        // Remove takes the grant away at once, as Revoke does. With the field open, focus goes to the field.
+        await section.getByRole("button", { name: "Dienstkonto hinzufügen" }).click();
+        await row.getByRole("button", { name: `${added.displayName} entfernen` }).click();
+        await row.waitFor({ state: "detached" });
+        expect(await section.locator("h3").textContent()).toBe("Dienstkonten 0");
+        await tab.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Kennung des Dienstkontos");
+      } finally {
+        await context.close();
+      }
+    });
+  }
+  test("de: a failed read after a removal offers Try again instead of rows that may be stale", async () => {
+    let grants: Record<string, unknown>[] = [mailboxCode];
+    let failing = false;
+    const { context, tab } = await open(desktop, "light", "de", async (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().method() === "DELETE") {
+        grants = [];
+        failing = true;
+        return json(route, { deleted: true });
+      }
+      if (url.pathname.endsWith("/grants") && url.searchParams.get("accounts") === "code" && failing)
+        return json(route, { code: "unavailable", message: "Fixture unavailable" }, 503);
+      if (url.pathname.endsWith("/grants")) return grantPage(route, grants);
+      return json(route, { items: [storage], next: null });
+    });
+    try {
+      await tab.locator("summary").filter({ hasText: owner.name }).click();
+      const section = accountsSection(tab);
+      await section
+        .locator("li[data-access-key]", { hasText: mailboxCode.displayName })
+        .getByRole("button", { name: `${mailboxCode.displayName} entfernen` })
+        .click();
+      const retry = tab.getByRole("button", { name: "Erneut versuchen", exact: true });
+      await retry.waitFor();
+      expect(await section.count()).toBe(0);
+      expect(await tab.locator("button[data-access-remove]").count()).toBe(0);
+      failing = false;
+      await retry.click();
+      await section.waitFor();
+      expect(await section.locator("h3").textContent()).toBe("Dienstkonten 0");
+    } finally {
+      await context.close();
+    }
+  });
   test("loading, failure and retry preserve a working recovery path", async () => {
     const waiting = Promise.withResolvers<void>();
     let failed = true;
@@ -288,7 +570,7 @@ describe("Machine storage settings", () => {
           grants = [];
           return json(route, { deleted: true });
         }
-        if (path.endsWith("/grants")) return json(route, { items: grants, next: null });
+        if (path.endsWith("/grants")) return grantPage(route, grants);
         if (method === "POST") {
           if (++createAttempts === 1) {
             await creating.promise;
@@ -345,38 +627,32 @@ describe("Machine storage settings", () => {
     ] as const) {
       for (const theme of ["light", "dark"] as const) {
         const { context, tab } = await open(options, theme, "en", async (route) =>
-          json(
-            route,
-            new URL(route.request().url()).pathname.endsWith("/grants")
-              ? {
-                  items: [
-                    {
-                      id: "30000000-0000-4000-8000-000000000001",
-                      principal: { type: "service_account", serviceAccountId: owner.id },
-                      displayName: owner.name,
-                      serviceAccountKind: "agent",
-                      permission: "write",
-                      path: "reports/monthly/2026",
-                    },
-                  ],
-                  next: null,
-                }
-              : {
-                  items: [
-                    storage,
-                    {
-                      ...storage,
-                      id: "20000000-0000-4000-8000-000000000002",
-                      owner: {
-                        id: "10000000-0000-4000-8000-000000000002",
-                        name: "Meridian scheduled export service account",
-                        kind: "standalone",
-                      },
-                    },
-                  ],
-                  next: null,
+          new URL(route.request().url()).pathname.endsWith("/grants")
+            ? grantPage(route, [
+                {
+                  id: "30000000-0000-4000-8000-000000000001",
+                  principal: { type: "service_account", serviceAccountId: owner.id },
+                  displayName: owner.name,
+                  serviceAccountKind: "agent",
+                  permission: "write",
+                  path: "reports/monthly/2026",
                 },
-          ),
+              ])
+            : json(route, {
+                items: [
+                  storage,
+                  {
+                    ...storage,
+                    id: "20000000-0000-4000-8000-000000000002",
+                    owner: {
+                      id: "10000000-0000-4000-8000-000000000002",
+                      name: "Meridian scheduled export service account",
+                      kind: "standalone",
+                    },
+                  },
+                ],
+                next: null,
+              }),
         );
         try {
           await tab.locator("summary").filter({ hasText: owner.name }).click();

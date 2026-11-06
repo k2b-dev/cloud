@@ -268,6 +268,11 @@ suite("Files machine storage through actual API tokens", () => {
         expect(JSON.stringify(entry)).not.toContain(ownerId);
         expect(JSON.stringify(entry)).not.toContain("code:demo.item:");
       }
+      // The Service accounts section lists Code accounts alone; the path grants list everyone else.
+      const listed = async (accounts: "code" | "other") =>
+        (await service.storageGrants(call(), storage.id, undefined, accounts)).items.map((row) => row.serviceAccountKind);
+      expect(await listed("code")).toEqual(["code"]);
+      expect(await listed("other")).not.toContain("code");
       expect(await service.machineStorageById(call(), storage.id)).toMatchObject({ id: storage.id });
       await expect(service.machineStorageById(call(), crypto.randomUUID())).rejects.toMatchObject({ status: 404 });
       const unprivileged = await token(owner.data.id, ["admin"]);

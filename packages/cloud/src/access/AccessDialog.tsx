@@ -1,12 +1,9 @@
 import {
-  AnchoredPopover,
   Button,
   ChangeList,
   type ChangeListItem,
-  ChoiceList,
   CopyButton,
   dialogCore,
-  IconButton,
   NoticeCard,
   PanelDialog,
   prompts,
@@ -20,6 +17,7 @@ import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, Show 
 import type { CloudResourceRef } from "../contracts/capabilities";
 import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
 import { readShellData } from "../ssr/shell-data";
+import { AccessLevelMenu, AccessRowControls, AccessRowFrame } from "./AccessRow";
 import { accessDialogMessages } from "./access-dialog-messages";
 import {
   type AccessDraft,
@@ -42,11 +40,10 @@ import {
 } from "./access-draft";
 import { accessMessages } from "./messages";
 import { type AllowedLevel, type GrantableLevel, levelKey, type ResolvedLevel, resolveAllowedLevels } from "./PermissionEditor";
-import PrincipalAvatar from "./PrincipalAvatar";
 import PrincipalPicker, { type FoundServiceAccount } from "./PrincipalPicker";
 import { principalKey } from "./principal-key";
 import { principalLabel } from "./principal-label";
-import { ServiceAccountHandleField } from "./ServiceAccountHandleField";
+import { ServiceAccountSection, serviceAccountLine } from "./ServiceAccountSection";
 import { serviceAccountKindDisplay } from "./service-account-kind";
 import { findTargetServiceAccount } from "./service-account-lookup";
 
@@ -468,11 +465,12 @@ export function AccessDialog(
    * mailbox · may edit". Read-only, the level stands there alone instead of beside the row.
    */
   const accountLine = (row: DraftRow) => {
-    const description = row.display.serviceAccountDescription || t().serviceAccount;
     const level = row.next ?? row.previous;
-    if (!level || level.permission === "none") return description;
-    const label = levelLabel(row.principal, level);
-    return canEdit() ? `${description} · ${t().accountMay({ level: label })}` : t().accountMayAlone({ level: label });
+    return serviceAccountLine(locale(), {
+      description: row.display.serviceAccountDescription,
+      level: level && level.permission !== "none" ? levelLabel(row.principal, level) : undefined,
+      readOnly: !canEdit(),
+    });
   };
   /** The signed-in person, marked "You": every Cloud page names them in its shell data, so no app passes them. */
   const viewerUserId = readShellData()?.profile?.userId;
@@ -491,100 +489,39 @@ export function AccessDialog(
       );
     return null;
   };
-  /** What a level means when the resource gives no sentence of its own. */
-  const defaultDescription = (level: GrantableLevel) =>
-    level === "read" ? t().levelReadDescription : level === "write" ? t().levelWriteDescription : t().levelAdminDescription;
   /**
    * The level of one row as a menu of choices, each with what it means, as in the approved mockup. `onRemove` adds
    * "Remove" at its foot; the last manager keeps Manage and cannot be removed there either.
    */
   const LevelMenu = (menuProps: { row: DraftRow; onRemove?: (trigger: HTMLElement) => void }) => {
-    const [open, setOpen] = createSignal(false);
-    let trigger: HTMLButtonElement | undefined;
-    let menu: HTMLDivElement | undefined;
     const row = () => menuProps.row;
     const protectedRow = () => lastManagers().has(row().key);
-    const current = () => (row().next ? levelKey(row().next!.permission, row().next!.scope) : "");
-    const options = () =>
-      rowLevels(row()).map((option) => {
-        const locked = protectedRow() && (option.level !== "admin" || option.scope !== undefined);
-        return {
-          value: option.key,
-          label: option.label,
-          icon: option.icon ? `ti ${option.icon.replace(/^ti\s+/, "")}` : undefined,
-          disabled: locked,
-          description: locked
-            ? t().lastManagerOption({ level: manageLabel(row().principal) })
-            : (option.description ?? defaultDescription(option.level)),
-        };
-      });
     return (
-      <>
-        <button
-          ref={trigger}
-          type="button"
-          class="k2b-choice-trigger w-full"
-          aria-label={t().levelFor({ name: nameOf(row()) })}
-          aria-haspopup="dialog"
-          aria-expanded={open()}
-          disabled={!canEdit() || saving()}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <span class="k2b-choice-trigger__value">{levelLabel(row().principal, row().next)}</span>
-          {/* On a phone the chevron moves closer, so the whole level fits beside a mark like "vorher Bearbeiten". */}
-          <i class="ti ti-chevron-down max-sm:-ml-1.5" aria-hidden="true" />
-        </button>
-        {/* Mounted only while open, so a long list carries no menu per row. */}
-        <Show when={open()}>
-          <AnchoredPopover
-            anchor={open() ? trigger : null}
-            onClose={() => setOpen(false)}
-            label={t().levelFor({ name: nameOf(row()) })}
-            width="21rem"
-            initialFocus={() =>
-              menu?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]:not(:disabled)') ??
-              menu?.querySelector<HTMLElement>('[role="radio"]:not(:disabled)')
-            }
-          >
-            <div ref={menu} class="flex flex-col gap-2 p-2">
-              <ChoiceList
-                aria-label={t().levelFor({ name: nameOf(row()) })}
-                value={current}
-                options={options()}
-                onValueChange={(key) => {
-                  const option = rowLevels(row()).find((candidate) => candidate.key === key);
-                  if (option)
-                    edit((draftNow) =>
-                      setLevel(draftNow, row(), { permission: option.level, ...(option.scope ? { scope: option.scope } : {}) }),
-                    );
-                  setOpen(false);
-                }}
-              />
-              <Show when={menuProps.onRemove}>
-                {(remove) => (
-                  <div class="flex flex-wrap items-center gap-2 px-1 pt-1">
-                    <Button
-                      variant="text"
-                      data-danger="true"
-                      disabled={protectedRow() || saving()}
-                      onClick={() => {
-                        setOpen(false);
-                        if (trigger) remove()(trigger);
-                      }}
-                    >
-                      <i class="ti ti-user-minus" aria-hidden="true" />
-                      {t().removeEntry}
-                    </Button>
-                    <Show when={protectedRow()}>
-                      <span class="text-[13px] text-dimmed">{t().lastManagerHint({ level: manageLabel(row().principal) })}</span>
-                    </Show>
-                  </div>
-                )}
-              </Show>
-            </div>
-          </AnchoredPopover>
-        </Show>
-      </>
+      <AccessLevelMenu
+        name={nameOf(row())}
+        value={row().next ? levelKey(row().next!.permission, row().next!.scope) : ""}
+        valueLabel={levelLabel(row().principal, row().next)}
+        options={rowLevels(row()).map((option) => {
+          const locked = protectedRow() && (option.level !== "admin" || option.scope !== undefined);
+          return {
+            value: option.key,
+            label: option.label,
+            level: option.level,
+            icon: option.icon,
+            disabled: locked,
+            description: locked ? t().lastManagerOption({ level: manageLabel(row().principal) }) : option.description,
+          };
+        })}
+        onChange={(key) => {
+          const option = rowLevels(row()).find((candidate) => candidate.key === key);
+          if (option)
+            edit((draftNow) => setLevel(draftNow, row(), { permission: option.level, ...(option.scope ? { scope: option.scope } : {}) }));
+        }}
+        disabled={!canEdit() || saving()}
+        onRemove={menuProps.onRemove}
+        removeDisabled={protectedRow() || saving()}
+        removeHint={protectedRow() ? t().lastManagerHint({ level: manageLabel(row().principal) }) : undefined}
+      />
     );
   };
   /** Undo may not leave the resource without a manager, for example by bringing back a denial. */
@@ -606,53 +543,22 @@ export function AccessDialog(
       );
     };
     return (
-      <li
-        class="flex items-center py-2 max-sm:gap-2 sm:gap-3"
-        classList={{ "[&>:first-child]:opacity-50": !row().next }}
-        data-access-key={row().key}
-      >
-        <PrincipalAvatar
-          entry={{ principal: row().principal, avatarHash: row().display.avatarHash, serviceAccountKind: row().display.serviceAccountKind }}
-          label={nameOf(row())}
-        />
-        <span class="min-w-0 flex-[1_1_10rem]">
-          <span class="flex min-w-0 items-center gap-2 max-sm:text-sm sm:text-[15px] font-medium text-primary">
-            {/* The server offers a link only to whom it may lead: the owner's Code page, or Administration › Code. */}
-            <Show
-              when={row().display.serviceAccountHref}
-              fallback={
-                <span data-access-name="" class="min-w-0 break-words">
-                  {nameOf(row())}
-                </span>
-              }
-            >
-              {(href) => (
-                // A new tab keeps the draft: nothing here is saved yet.
-                <a data-access-name="" class="min-w-0 break-words hover:underline" href={href()} target="_blank" rel="noopener">
-                  {nameOf(row())}
-                </a>
-              )}
+      <AccessRowFrame
+        rowKey={row().key}
+        dimmed={!row().next}
+        avatar={{ principal: row().principal, avatarHash: row().display.avatarHash, serviceAccountKind: row().display.serviceAccountKind }}
+        name={nameOf(row())}
+        href={row().display.serviceAccountHref}
+        nameAside={
+          <>
+            <Show when={isViewer(row())}>
+              <span class="shrink-0 text-[13px] font-normal text-dimmed">{t().you}</span>
             </Show>
-            {/* Only breakpoint-scoped display classes: an app stylesheet that repeats `contents` or `inline-flex` comes later and would show both marks. */}
-            <span class="max-sm:hidden sm:contents">
-              <Show when={isViewer(row())}>
-                <span class="shrink-0 text-[13px] font-normal text-dimmed">{t().you}</span>
-              </Show>
-              {mark(row())}
-            </span>
-          </span>
-          {/*
-            A service account's line carries its level, so it wraps on a phone instead of cutting it off. On a phone the
-            mark sits here too: one line height fits it, and it takes a slot of that height at the top of the line, so
-            staging a change never makes the row taller and no row below moves.
-          */}
-          <span
-            class="block text-[13px] leading-5 text-dimmed"
-            classList={{
-              truncate: !isCodeAccount(row().display.serviceAccountKind),
-              "break-words": isCodeAccount(row().display.serviceAccountKind),
-            }}
-          >
+            {mark(row())}
+          </>
+        }
+        lineLead={
+          <>
             <Show when={mark(row())}>
               {(badge) => <span class="mr-1.5 h-5 items-center align-top max-sm:inline-flex sm:hidden">{badge()}</span>}
             </Show>
@@ -660,66 +566,63 @@ export function AccessDialog(
             <Show when={isViewer(row())}>
               <span class="max-sm:inline sm:hidden">{`${t().you} · `}</span>
             </Show>
-            {kindLine(row())}
-          </span>
-        </span>
-        <Show
-          when={row().next && canEdit()}
-          fallback={
-            <Show
-              when={!row().next && canEdit()}
-              fallback={
-                // A service account names its level in the line under its name.
-                <Show when={!isCodeAccount(row().display.serviceAccountKind)}>
-                  <span class="shrink-0 text-sm text-secondary">{levelLabel(row().principal, row().next)}</span>
+          </>
+        }
+        line={kindLine(row())}
+        wrapLine={isCodeAccount(row().display.serviceAccountKind)}
+        end={
+          <Show
+            when={row().next && canEdit()}
+            fallback={
+              <Show
+                when={!row().next && canEdit()}
+                fallback={
+                  // A service account names its level in the line under its name.
+                  <Show when={!isCodeAccount(row().display.serviceAccountKind)}>
+                    <span class="shrink-0 text-sm text-secondary">{levelLabel(row().principal, row().next)}</span>
+                  </Show>
+                }
+              >
+                {/* Undo takes the place of level and remove, so the row keeps its size and nothing below moves. */}
+                <span class="ml-auto flex shrink-0 items-center justify-end sm:gap-1">
+                  <span class="flex justify-end max-sm:w-[6.875rem] sm:w-40">
+                    <Button
+                      variant="text"
+                      data-access-undo=""
+                      disabled={saving() || !canRestore(row())}
+                      onClick={(event) => {
+                        const item = event.currentTarget.closest("li");
+                        edit((current) => restoreRow(current, row()));
+                        // The row stays; focus goes back to its remove button, which takes Undo's place.
+                        queueMicrotask(() => item?.querySelector<HTMLButtonElement>("button[data-access-remove]")?.focus());
+                      }}
+                    >
+                      {t().undo}
+                    </Button>
+                  </span>
+                  <span class="h-9 w-6" aria-hidden="true" />
+                </span>
+              </Show>
+            }
+          >
+            <AccessRowControls
+              menu={
+                // A stored denial is shown, never offered: it can only be removed.
+                <Show
+                  when={row().next?.permission !== "none"}
+                  fallback={<span class="text-sm text-secondary">{levelLabel(row().principal, row().next)}</span>}
+                >
+                  <LevelMenu row={row()} onRemove={removeFrom} />
                 </Show>
               }
-            >
-              {/* Undo takes the place of level and remove, so the row keeps its size and nothing below moves. */}
-              <span class="ml-auto flex shrink-0 items-center justify-end sm:gap-1">
-                <span class="flex justify-end max-sm:w-[6.875rem] sm:w-40">
-                  <Button
-                    variant="text"
-                    data-access-undo=""
-                    disabled={saving() || !canRestore(row())}
-                    onClick={(event) => {
-                      const item = event.currentTarget.closest("li");
-                      edit((current) => restoreRow(current, row()));
-                      // The row stays; focus goes back to its remove button, which takes Undo's place.
-                      queueMicrotask(() => item?.querySelector<HTMLButtonElement>("button[data-access-remove]")?.focus());
-                    }}
-                  >
-                    {t().undo}
-                  </Button>
-                </span>
-                <span class="h-9 w-6" aria-hidden="true" />
-              </span>
-            </Show>
-          }
-        >
-          <span class="ml-auto flex shrink-0 items-center sm:gap-1">
-            <span class="max-sm:w-[6.875rem] sm:w-40">
-              {/* A stored denial is shown, never offered: it can only be removed. */}
-              <Show
-                when={row().next?.permission !== "none"}
-                fallback={<span class="text-sm text-secondary">{levelLabel(row().principal, row().next)}</span>}
-              >
-                <LevelMenu row={row()} onRemove={removeFrom} />
-              </Show>
-            </span>
-            <IconButton
-              label={protectedRow() ? t().lastManagerRemove({ level: manageLabel(row().principal) }) : t().remove({ name: nameOf(row()) })}
-              variant="ghost"
-              size="xs"
-              disabled={saving() || protectedRow()}
-              data-access-remove=""
-              onClick={(event) => removeFrom(event.currentTarget)}
-            >
-              <i class="ti ti-x" aria-hidden="true" />
-            </IconButton>
-          </span>
-        </Show>
-      </li>
+              name={nameOf(row())}
+              removeLabel={protectedRow() ? t().lastManagerRemove({ level: manageLabel(row().principal) }) : undefined}
+              removeDisabled={saving() || protectedRow()}
+              onRemove={removeFrom}
+            />
+          </Show>
+        }
+      />
     );
   };
 
@@ -815,14 +718,6 @@ export function AccessDialog(
   };
 
   // ── Service accounts by handle ────────────────────────────────────
-  const [handleOpen, setHandleOpen] = createSignal(false);
-  let addingArea: HTMLLIElement | undefined;
-  const openAdding = () => {
-    setHandleOpen(true);
-    // On a phone the sheet brings the field and its hit into view itself.
-    queueMicrotask(() => addingArea?.scrollIntoView?.({ block: "nearest" }));
-  };
-  const closeAdding = () => setHandleOpen(false);
   let body: HTMLDivElement | undefined;
   const revealRow = (principal: Principal) => {
     const key = rows().find((row) => row.next && principalKey(row.principal) === principalKey(principal))?.key;
@@ -845,7 +740,6 @@ export function AccessDialog(
         firstLevel(account.principal, account.display.serviceAccountKind),
       ),
     );
-    closeAdding();
   };
 
   return (
@@ -1001,45 +895,19 @@ export function AccessDialog(
           </Show>
 
           <Show when={!loading() && showObjectAccounts()}>
-            <PanelDialog.Section
-              title={
-                <>
-                  {t().serviceAccounts} <span class="font-normal text-dimmed">{objectAccountRows().filter((row) => row.next).length}</span>
-                </>
-              }
-              actions={
-                // Beside the title at every width, as in the approved mockup; gone while the field is open.
-                <Show when={canAddObjectAccounts() && !handleOpen()}>
-                  {/* The full label at every width, as in the approved mockup; it fits beside the title on a phone. */}
-                  <Button variant="secondary" size="sm" disabled={saving()} onClick={openAdding}>
-                    <i class="ti ti-plus" aria-hidden="true" />
-                    {t().addServiceAccount}
-                  </Button>
-                </Show>
-              }
+            <ServiceAccountSection
+              find={findServiceAccount()}
+              resourceName={props.resourceName}
+              count={objectAccountRows().filter((row) => row.next).length}
+              hasRows={objectAccountRows().length > 0}
+              readOnly={!canEdit()}
+              disabled={saving()}
+              add={addFound}
             >
-              {/* Only rows or the open field make a list, so nothing stands empty before the text below. */}
-              <Show when={objectAccountRows().length > 0 || handleOpen()}>
-                <ul class="flex flex-col">
-                  <For each={objectAccountRows().map((row) => row.key)}>
-                    {(key) => <Show when={rows().find((row) => row.key === key)}>{(row) => <AccessRow row={row()} />}</Show>}
-                  </For>
-                  <Show when={handleOpen() && findServiceAccount()}>
-                    {(find) => (
-                      <li ref={addingArea} class="py-2">
-                        <ServiceAccountHandleField find={find()} add={addFound} cancel={closeAdding} disabled={saving()} />
-                      </li>
-                    )}
-                  </Show>
-                </ul>
-              </Show>
-              {/* As in the approved mockup: one note under the rows, or the empty text; neither while adding. */}
-              <Show when={!handleOpen()}>
-                <p class="text-[13px] text-dimmed">
-                  {objectAccountRows().length > 0 ? t().serviceAccountNote({ name: props.resourceName }) : t().serviceAccountsEmpty}
-                </p>
-              </Show>
-            </PanelDialog.Section>
+              <For each={objectAccountRows().map((row) => row.key)}>
+                {(key) => <Show when={rows().find((row) => row.key === key)}>{(row) => <AccessRow row={row()} />}</Show>}
+              </For>
+            </ServiceAccountSection>
           </Show>
 
           {/* An object's API keys: each has its own account and level, as in the approved mockup. */}
