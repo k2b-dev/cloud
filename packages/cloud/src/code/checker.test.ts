@@ -1,9 +1,12 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
+import { CODE_INITIAL_SOURCE } from "../../../core/src/code/authoring-contracts";
+import { readCodeCheckLimits } from "../../../core/src/code/runner-jobs";
+import { CODE_SETTINGS, codeSettings } from "../../../core/src/code/settings";
 import { capabilityHash } from "../_internal/capability-schemas";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import { type CodeCheckHost, checkCode } from "./checker";
@@ -87,6 +90,19 @@ const check = (source: string, extra: Partial<CodeCheckRequest> = {}) =>
   checkCode({ ...base, entry: "code.ts", files: { "code.ts": source }, ...extra }, host);
 const schedule = (body: string) =>
   `import { app, owner, work_shop } from "@sdk";\napp.schedule("0 8 * * 1", async () => {\n${body}\n}, { name: "weekly" });\nexport default app;`;
+
+test("the unchanged init template passes the real checker with default Core job limits", async () => {
+  const settings = spyOn(codeSettings, "get").mockImplementation(async (key) => CODE_SETTINGS[key].default);
+  try {
+    const limits = await readCodeCheckLimits();
+    expect(await check(CODE_INITIAL_SOURCE, { sdk: generateCodeSdk([], { mode: "code_run" }), limits })).toMatchObject({
+      ok: true,
+      manifest: { entrypoints: [expect.objectContaining({ entrypoint: "monday" })] },
+    });
+  } finally {
+    settings.mockRestore();
+  }
+});
 
 test("core.ai.decide is AI in the generated SDK and mail triage checks category before urgency", async () => {
   const manifests = [compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } })];

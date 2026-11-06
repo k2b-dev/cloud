@@ -152,6 +152,17 @@ async function submitJob(input: CodeRunnerJobInput, context: CodeContext): Promi
     await sql`UPDATE code.jobs SET state='cancelled',input=NULL,lease_key_hash=NULL WHERE id=${job.id}::uuid AND state IN('queued','running')`;
   }
 }
+/** Core-owned authoring budgets sent unchanged to the runner checker role.
+ * Compiler RSS keeps CODE_CHECK_LIMITS.memoryBytes; the workerd process budget applies only to execution. */
+export async function readCodeCheckLimits() {
+  return {
+    ...CODE_CHECK_LIMITS,
+    sourceBytes: Math.min(CODE_CHECK_LIMITS.sourceBytes, await codeSettings.get("core.code.source_bytes")),
+    bundleBytes: Math.min(CODE_CHECK_LIMITS.bundleBytes, await codeSettings.get("core.code.bundle_bytes")),
+    files: Math.min(CODE_CHECK_LIMITS.files, await codeSettings.get("core.code.source_files")),
+    checkMs: Math.min(CODE_CHECK_LIMITS.checkMs, await codeSettings.get("core.code.wall_clock_ms")),
+  };
+}
 /** Production remote checker for C8/C18a/C19. The caller supplies platform-generated SDK/grant metadata. */
 export function createRunnerCodeCheckHost(context: CodeContext): Extract<CodeCheckHost, { check: unknown }> {
   return {
@@ -160,14 +171,7 @@ export function createRunnerCodeCheckHost(context: CodeContext): Extract<CodeChe
         ...context,
         signal: signal ? AbortSignal.any([signal, ...(context.signal ? [context.signal] : [])]) : context.signal,
       };
-      const limits = {
-        ...CODE_CHECK_LIMITS,
-        sourceBytes: Math.min(CODE_CHECK_LIMITS.sourceBytes, await codeSettings.get("core.code.source_bytes")),
-        bundleBytes: Math.min(CODE_CHECK_LIMITS.bundleBytes, await codeSettings.get("core.code.bundle_bytes")),
-        files: Math.min(CODE_CHECK_LIMITS.files, await codeSettings.get("core.code.source_files")),
-        checkMs: Math.min(CODE_CHECK_LIMITS.checkMs, await codeSettings.get("core.code.wall_clock_ms")),
-        memoryBytes: Math.min(CODE_CHECK_LIMITS.memoryBytes, await codeSettings.get("core.code.runner_process_memory_bytes")),
-      };
+      const limits = await readCodeCheckLimits();
       const result = await submitJob({ kind: "check", request: { ...request, limits } }, effective);
       if (result.kind !== "check") throw new CodeJobError("code_job_failed");
       return CodeCheckResultSchema.parse(result.result);

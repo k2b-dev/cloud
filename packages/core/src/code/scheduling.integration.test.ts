@@ -3,7 +3,7 @@ import * as cloud from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
 import * as catalogProvider from "@k2b/cloud/capabilities/server";
 import { assertCapabilityReview, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import { CODE_CHECK_LIMITS, type CodeCheckResult, generateCodeSdk } from "@k2b/cloud/code";
+import { CODE_CHECK_LIMITS, type CodeCheckResult, type CodeTestCase, generateCodeSdk } from "@k2b/cloud/code";
 import { type CodeRunTokenClaims, signCodeRunToken, verifyCodeRunToken } from "@k2b/cloud/code/run-token";
 import type { RunnerFetchResponse, RunnerLease } from "@k2b/cloud/code/runner";
 import { RunnerLeaseLostError } from "@k2b/cloud/code/runner";
@@ -25,6 +25,7 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
 import { settleCodeAiBudget } from "./ai-budget";
+import { codeAuthoringServices } from "./authoring";
 import { verifyCodeSubmission } from "./authoring-check";
 import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
 import { claimCodeWork } from "./dispatch";
@@ -56,6 +57,7 @@ import {
 } from "./scheduling-runtime";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { appendCodeCall, codeBundleHash, codeSourceHash, finishCodeCall, insertCodeRun, listCodeRuns, readCodeRun } from "./store";
+import { simulateCode, testCode } from "./testing";
 
 const owner = "11111111-1111-4111-8111-111111111111";
 const other = "22222222-2222-4222-8222-222222222222";
@@ -512,6 +514,49 @@ suiteFor(
       registry.mockRestore();
     }
   });
+  test.each(["check", "test", "simulate"] as const)(
+    "the init template keeps the checker memory budget through the real %s job path",
+    async (mode) => {
+      const initial = await codeAuthoringServices.init({ title: "Fresh installation" }, context());
+      const cancel = new AbortController();
+      const scoped = { ...context(), signal: cancel.signal };
+      const request = { ...checkRequest(), files: initial.files, entry: initial.config.entry };
+      const fixture: CodeTestCase = {
+        version: 1,
+        name: "init",
+        now: Date.UTC(2030, 0, 2),
+        seed: 42,
+        mocks: [],
+        runs: [{ entrypoint: "monday", input: null }],
+      };
+      const pending =
+        mode === "check"
+          ? createRunnerCodeCheckHost(scoped).check(request)
+          : mode === "test"
+            ? testCode(
+                { code: request, tests: { "test/init.json": JSON.stringify(fixture) } },
+                await createRunnerCodeTestingHost(scoped),
+                cancel.signal,
+              )
+            : simulateCode({ code: request, fixture }, await createRunnerCodeTestingHost(scoped), cancel.signal);
+      const settled = pending.catch((error: unknown) => error);
+      try {
+        await pendingJob();
+        const job = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+        const input = JSON.parse(await readCodeJobInput(job));
+        expect(input.kind).toBe("check");
+        expect(input.request.files).toEqual(initial.files);
+        expect(input.request.limits.memoryBytes).toBe(CODE_CHECK_LIMITS.memoryBytes);
+        expect(CODE_SETTINGS["core.code.runner_process_memory_bytes"].default).toBe(134217728);
+        await completeCodeJob(job, { kind: "check", result: { ok: false, diagnostics: [] } });
+        if (mode === "check") expect(await pending).toEqual({ ok: false, diagnostics: [] });
+        else expect(await pending).toMatchObject({ mode, error: "code_test_check_failed" });
+      } finally {
+        cancel.abort();
+        await settled;
+      }
+    },
+  );
   test("C13b check round-trip preserves permissions and source lines without a bridge token", async () => {
     const expected: CodeCheckResult = {
       ok: true,

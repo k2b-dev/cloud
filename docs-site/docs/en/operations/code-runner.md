@@ -5,7 +5,7 @@ section: Operations
 order: 1155
 description: Configure, scale, and stop the stateless workerd runner for Code.
 tags: [code, runner, scaling, shutdown]
-updated: 2026-11-04
+updated: 2026-11-06
 ---
 
 # Scaling runners
@@ -477,9 +477,14 @@ Administration defaults to one simultaneous authoring role per runner,
 within its four shared slots. Increase the authoring-slot setting only with
 a corresponding container memory/process allocation. Each role has a
 32-thread/process limit per Linux identity; compiler children use two Go
-execution threads. Checker memory also respects the runner process-memory
-setting. Retain headroom for the supervisor, cache and production workerd
-groups when budgeting a replica. These controls bound authoring load;
+execution threads. Each checker child has its own 512 MiB RSS limit
+(`CODE_CHECK_LIMITS.memoryBytes`), including the source check before a test
+or simulation. `core.code.runner_process_memory_bytes` defaults to 128 MiB
+and limits workerd processes by organization and trust tier, including
+fake test and simulation execution. It does not cap the checker. The init
+template can be checked with these defaults; no memory setting change is
+required. Retain headroom for the supervisor, cache and workerd groups
+when budgeting a replica. These controls bound authoring load;
 container-wide exhaustion can still interrupt active work.
 
 `RunnerFetchResponse.jobs` contains `RunnerJobLease` values. The signed
