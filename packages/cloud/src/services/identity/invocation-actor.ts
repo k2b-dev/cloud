@@ -107,7 +107,8 @@ export const resolveInvocationAuthority = async (
       JOIN auth.mandates mandate ON mandate.id=${claims.mandate_id}::uuid
       WHERE delivery.event_id=${claims.workload_event}::uuid AND delivery.state IN ('pending','retrying')
         AND delivery.claimed_until>clock_timestamp() AND subscription.state='active'
-        AND (${claims.act.sub}='app:core' OR subscription.app_id=substring(${claims.act.sub} from 5))
+        AND (${claims.act.sub}='app:core' OR subscription.app_id=substring(${claims.act.sub} from 5)
+          OR ${claims.parent_invocation_id ?? null}::text IS NOT NULL)
         AND subscription.resource_binding->>'mandateId'=mandate.id::text
         AND (subscription.resource_binding->>'mandateRevision')::int=mandate.revision
         AND mandate.revision=${claims.mandate_revision} AND mandate.owner_app_id=subscription.resource_binding->>'mandateOwnerAppId'
