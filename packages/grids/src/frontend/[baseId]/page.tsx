@@ -1,10 +1,12 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { Layout } from "@k2b/cloud/ssr";
-import { NotFoundState } from "@k2b/ui";
+import { Layout, loadCodeAttention, loadCodePage } from "@k2b/cloud/ssr";
+import { AppWorkspace, NotFoundState } from "@k2b/ui";
 import { currentActorUser } from "../../api/permissions";
 import { withInitialGqlResults } from "../../api/workspace-query-preview";
 import { ssr } from "../../config";
 import { parseDocumentViewMode, parseNavigationExpansion } from "../_components/sidebar/GridsSettingsStore";
+import BaseCode from "../_components/workspace/BaseCode.island";
+import GridsSidebar from "../_components/workspace/GridsSidebar";
 import GridsWorkspace from "../_components/workspace/GridsWorkspace";
 import { projectPublicWorkspaceState } from "../_components/workspace/workspace-public-state";
 import { loadGridsWorkspaceState } from "../_components/workspace/workspace-state";
@@ -25,6 +27,8 @@ export default ssr<AuthContext>(async (c) => {
     );
   }
   const baseShortId = c.req.param("baseId")!;
+  const codeRequested = c.req.path.endsWith("/code");
+  const codeAttention = loadCodeAttention(c, { type: "grids.base", id: baseShortId });
   const loaded = await serializeWorkspaceState(
     baseShortId,
     async () => {
@@ -75,8 +79,32 @@ export default ssr<AuthContext>(async (c) => {
 
   const state = loaded.state;
   if (!state) throw new Error("Workspace state projection is missing");
+  const attention = await codeAttention;
+  state.code = {
+    visible: state.canManageBase || attention?.visible === true,
+    attention: attention?.attention ?? false,
+    active: codeRequested,
+  };
   state.initialNavigationExpansion = parseNavigationExpansion(c.req.header("Cookie"), state.base.id);
 
+  if (codeRequested) {
+    const ref = { type: "grids.base", id: state.base.id };
+    const code = await loadCodePage(c, {
+      owner: { ref, title: state.base.name },
+      href: `/app/grids/${state.base.id}/code`,
+      canManageOwner: state.canManageBase,
+    });
+    return () => (
+      <Layout c={c} fullWidth title={[...state.title, { title: "Code" }]} context={{ scope: ref }}>
+        <AppWorkspace mobileSurface="flush">
+          <GridsSidebar userId={user.id} state={state} />
+          <AppWorkspace.Content>
+            <BaseCode code={code} />
+          </AppWorkspace.Content>
+        </AppWorkspace>
+      </Layout>
+    );
+  }
   return () => (
     <Layout c={c} fullWidth title={state.title}>
       <GridsWorkspace userId={user.id} state={state} />

@@ -208,6 +208,7 @@ type PublicWorkspaceState =
       kind: "ok";
       base: PublicBase;
       navigation?: BaseNavigation;
+      code?: { visible: boolean; attention: boolean; active: boolean };
       initialNavigationExpansion?: string[];
       title: Array<{ title: string; href?: string }>;
       rememberPath: string;

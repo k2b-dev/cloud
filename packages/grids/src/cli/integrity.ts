@@ -1,4 +1,5 @@
 import { command, flag } from "@k2b/cloud/cli";
+import { z } from "zod";
 import { JSON_BODY_INPUT, jsonRequest, printCliStructured, readJsonInput } from "./runtime";
 
 const operations = [
@@ -22,9 +23,17 @@ export const integrityCommands = operations.map(([name, action, summary]) =>
     async run({ ctx, flags }) {
       const key = flags["idempotency-key"];
       if (!key) throw new Error("Missing idempotency key.");
-      const input = await readJsonInput<unknown>(flags.input, "capability input");
+      const body = await readJsonInput<unknown>(flags.input, "capability input");
+      const targetType = action === "record.close" || action === "record.correction-draft" ? "table" : "base";
+      const parsed = z.object({ baseId: z.string().optional(), tableId: z.string().optional() }).passthrough().parse(body);
+      const targetId = targetType === "base" ? parsed.baseId : parsed.tableId;
+      if (!targetId) throw new Error(`Missing ${targetType}Id.`);
+      const input = Object.fromEntries(Object.entries(parsed).filter(([key]) => key !== `${targetType}Id`));
       const result = await ctx.readJson<unknown>(
-        await ctx.fetch(`/api/capabilities/v1/actions/grids/${action}`, jsonRequest("POST", { input }, { "idempotency-key": key })),
+        await ctx.fetch(
+          `/api/capabilities/v1/actions/grids/${action}`,
+          jsonRequest("POST", { input, target: { type: `grids.${targetType}`, id: targetId } }, { "idempotency-key": key }),
+        ),
       );
       if (!printCliStructured(ctx, result)) ctx.json(result);
     },

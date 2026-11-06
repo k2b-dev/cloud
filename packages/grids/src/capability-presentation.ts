@@ -8,6 +8,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         document: { title: "Grids-Dokument", description: "Ein gespeichertes unveränderliches Dokument mit Artefakt-Metadaten." },
         "workflow-run": { title: "Grids-Workflow-Lauf", description: "Status einer angenommenen Workflow-Ausführung." },
         base: {
+          codeAccount: { name: "Code einer Base", description: "Dienstkonto einer Grids-Base" },
           title: "Grids-Base",
           description: "Ein Grids-Arbeitsbereich mit Berechtigungsbereich.",
         },

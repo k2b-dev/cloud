@@ -1,3 +1,4 @@
+import { CodeNavStatus } from "@k2b/cloud/ssr/code-nav-status";
 import { AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
 import { navigationMessages } from "../../../navigation-messages";
 import BaseSettingsButton from "../sidebar/BaseSettingsButton.island";
@@ -77,7 +78,10 @@ export default function GridsSidebar(props: { userId?: string; state: PublicOkWo
     ) : null;
 
   const overviewLink = () => (
-    <SidebarLink href={keepEdit(`/app/grids/${state.base.id}`, state.adminModeRequested)} active={route.kind === "overview"}>
+    <SidebarLink
+      href={keepEdit(`/app/grids/${state.base.id}`, state.adminModeRequested)}
+      active={route.kind === "overview" && !state.code?.active}
+    >
       <AppWorkspace.SidebarItemIcon icon="ti ti-layout-dashboard" />
       <AppWorkspace.SidebarItemLabel>{navText.overview}</AppWorkspace.SidebarItemLabel>
     </SidebarLink>
@@ -240,6 +244,16 @@ export default function GridsSidebar(props: { userId?: string; state: PublicOkWo
           <AppWorkspace.SidebarSection>
             {renderQueryItem()}
             {overviewLink()}
+            {state.code?.visible && (
+              <SidebarLink
+                href={`/app/grids/${state.base.id}/code`}
+                active={state.code.active}
+                icon="ti ti-code"
+                meta={<CodeNavStatus attention={state.code.attention} />}
+              >
+                Code
+              </SidebarLink>
+            )}
             {createButton()}
           </AppWorkspace.SidebarSection>
           <AppWorkspace.SidebarBody scrollPreserveKey="grids-sidebar">{navigation()}</AppWorkspace.SidebarBody>

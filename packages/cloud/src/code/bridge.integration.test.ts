@@ -144,6 +144,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   let targetAccess: string;
   let fetched = 0;
   let currentEntry = baseEntry;
+  let gridsCompiled: ReturnType<typeof compileCapabilities> | null = null;
   let targetFailure: CapabilityError | null = null;
   let providerRequestsConfirmation = false;
   let callLimit = 200;
@@ -186,6 +187,30 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
           { issuer, key, now },
         );
         const authority = verified ? await resolveInvocationAuthority(verified, sql, []) : null;
+        if (currentEntry.appId === "grids" && gridsCompiled) {
+          if (!authority) throw new Error("Expected verified Grids Code authority");
+          const outcome = await invokeCompiledCapability({
+            compiled: gridsCompiled,
+            kind: "action",
+            localId: operation.localId,
+            expectedSchemaHash: operation.schemaHash,
+            input: invocationBody.input,
+            target: invocationBody.target,
+            context: {
+              authority,
+              actor: authority.actor,
+              accessSubject: authority.accessSubject,
+              user: null,
+              locale: "en",
+              requestId: crypto.randomUUID(),
+              origin: "app",
+              idempotencyKey: headers.get("idempotency-key") ?? undefined,
+              signal: new AbortController().signal,
+            },
+          });
+          const wire = serializeCapabilityProviderResult(outcome);
+          return new Response(wire.body, { status: wire.status, headers: { "content-type": "application/json" } });
+        }
         if (currentEntry.appId === "core") {
           if (!authority) throw new Error("Expected verified Code authority");
           const outcome = await invokeCompiledCapability({
@@ -446,6 +471,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   }
   beforeEach(async () => {
     targetFailure = null;
+    gridsCompiled = null;
     providerRequestsConfirmation = false;
     await resetFixture();
   });
@@ -468,6 +494,71 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       body: text,
     });
   }
+  test("a Base Code writes through an ordinary Base share and cannot issue ask-only documents", async () => {
+    await resetFixture({ entry: true });
+    const { gridsCapabilities } = await import("../../../grids/src/capabilities");
+    const { migrate: migrateGrids } = await import("../../../grids/src/migrate");
+    const { gridsService } = await import("../../../grids/src/service");
+    await migrateGrids();
+    gridsCompiled = compileCapabilities("grids", gridsCapabilities);
+    const baseId = crypto.randomUUID(),
+      tableId = crypto.randomUUID();
+    const base = "Code01",
+      table = "Code02";
+    await sql`INSERT INTO grids.bases(id,short_id,name) VALUES(${baseId}::uuid,${base},'Code owner')`;
+    await sql`INSERT INTO grids.tables(id,short_id,base_id,name) VALUES(${tableId}::uuid,${table},${baseId}::uuid,'Items')`;
+    const field = await gridsService.field.create({ tableId, name: "Name", type: "text", presentable: true }, userId);
+    if (!field.ok) throw field.error;
+    await sql`UPDATE code.codes SET owner_type='grids.base',owner_id=${base} WHERE id=${claims.codeId}`;
+    await sql`UPDATE auth.service_accounts SET name=${`code:grids.base:${base}`} WHERE id=(SELECT service_account_id FROM code.codes WHERE id=${claims.codeId})`;
+    const entry = { ...baseEntry, appId: "grids", manifest: gridsCompiled.manifest };
+    const write = () =>
+      send({
+        entry,
+        operation: "grids.record.create",
+        input: {
+          call: {
+            capability: "grids.record.create",
+            target: { type: "grids.table", id: table },
+            refs: {},
+            input: { values: { [field.data.shortId]: "By Code" } },
+          },
+          metadata: { idempotencyKey: crypto.randomUUID() },
+        },
+      });
+    // Ownership itself grants no data access.
+    expect(await (await write()).json()).toMatchObject({ ok: false });
+    await sql`INSERT INTO grids.base_access(base_id,access_id) VALUES(${baseId}::uuid,${targetAccess}::uuid)`;
+    const result = await (await write()).json();
+    expect(result).toMatchObject({ ok: true });
+    const [record] = await sql<
+      Array<{ value: string }>
+    >`SELECT data->>${field.data.id} AS value FROM grids.records WHERE table_id=${tableId}::uuid`;
+    expect(record?.value).toBe("By Code");
+    const before = fetched;
+    const refused = await send({
+      entry,
+      operation: "grids.document.issue",
+      input: {
+        call: {
+          capability: "grids.document.issue",
+          target: { type: "grids.base", id: base },
+          refs: {},
+          input: {
+            data: { id: "Capt01", sha256: "a".repeat(64), rowCount: 1, capturedAt: "2026-11-06T00:00:00.000Z" },
+            output: { kind: "json" },
+          },
+        },
+        metadata: { idempotencyKey: crypto.randomUUID() },
+      },
+    });
+    expect(await refused.json()).toEqual({ ok: false, error: { code: "code_unattended_forbidden" } });
+    expect(fetched).toBe(before);
+    const [observed] = await sql`SELECT refusal_kind FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal DESC LIMIT 1`;
+    expect(observed?.refusal_kind).toBe("policy");
+    await sql`DELETE FROM grids.base_access WHERE base_id=${baseId}::uuid`;
+    expect(await (await write()).json()).toMatchObject({ ok: false });
+  });
   test("the actual decision call applies the KI policy even without checker AI evidence", async () => {
     await resetFixture({ entry: true, policyRows: ["read"] });
     await sql`UPDATE code.policy_rules SET value='never' WHERE row='ai' AND group_id IS NULL`;

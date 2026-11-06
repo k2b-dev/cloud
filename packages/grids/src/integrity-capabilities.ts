@@ -79,7 +79,6 @@ const authorizer = (baseId: string, context: CapabilityExecutionContext) => asyn
 };
 const captureInput = z
   .object({
-    baseId: ShortIdSchema.describe("Writable Base public ID."),
     query: DslQueryExecuteBodySchema.shape.query.describe(
       "GQL query; captures its complete result, at most 10,000 rows within the document data budget.",
     ),
@@ -87,7 +86,6 @@ const captureInput = z
   .strict();
 const issueInput = z
   .object({
-    baseId: ShortIdSchema.describe("Writable Base public ID."),
     data: DocumentCaptureDataSchema.describe("Immutable capture from document.capture."),
     output: DocumentQueryOutputSchema.describe("Versioned output definition: PDF, CSV, JSON, XML, ZIP, DATEV or SEPA."),
     sourceVersions: DocumentSourceVersionsInputSchema.optional().describe(
@@ -99,7 +97,6 @@ const issueInput = z
   .strict();
 const confirmationInput = z
   .object({
-    baseId: ShortIdSchema.describe("Writable Base public ID."),
     receiptId: ShortIdSchema.describe("Pending receipt from document.issue."),
     sha256: z
       .string()
@@ -113,7 +110,7 @@ const issueData = z.discriminatedUnion("state", [
 ]);
 const reviewed = (context: CapabilityExecutionContext, en: string, de: string, input: unknown) =>
   ok(gridsActionReview(context, text(context, en, de), input));
-const finalizeReview = (input: z.infer<typeof FinalizeRecordInputSchema>, context: CapabilityExecutionContext) =>
+const finalizeReview = (input: unknown, context: CapabilityExecutionContext) =>
   reviewed(
     context,
     "Close the current Record under its pinned finalization policy. Four-eyes approval remains required.",
@@ -121,7 +118,7 @@ const finalizeReview = (input: z.infer<typeof FinalizeRecordInputSchema>, contex
     input,
   );
 const confirmationRequest = async (input: z.infer<typeof confirmationInput>, context: CapabilityExecutionContext) => {
-  const baseId = await base(input.baseId, context);
+  const baseId = await base(context.target?.id ?? "", context);
   return {
     baseId,
     runId: null,
@@ -138,12 +135,13 @@ export const integrityCapabilities = defineCapabilities({
     "record.finalization.read": {
       title: "Read Record finalization readiness",
       description: "Read current requirements, Four-eyes request and policy revision before closing or finalizing a Record.",
-      input: RecordTargetSchema,
+      target: "table",
+      input: RecordTargetSchema.omit({ tableId: true }),
       data: PublicRecordFinalizationReadinessSchema,
       openWorld: false,
       run: (input, context) =>
         integrityAttempt(async () => {
-          const tableId = await resolvePublicId("table", input.tableId);
+          const tableId = await resolvePublicId("table", context.target?.id ?? "");
           const recordId = await resolvePublicId("record", input.recordId);
           if (!tableId || !recordId) return fail(err.notFound("Record"));
           const [table] = await sql<
@@ -162,7 +160,8 @@ export const integrityCapabilities = defineCapabilities({
       title: "Change Records atomically",
       description:
         "Create/update up to 50 Records in one Base transaction after current-state checks; at most 100 locked Records. Any failure rolls back every change. Requires ordinary Base write access.",
-      input: AtomicRecordsInputSchema,
+      target: "base",
+      input: AtomicRecordsInputSchema.omit({ baseId: true }),
       data: AtomicRecordsDataSchema,
       destructive: false,
       openWorld: false,
@@ -171,7 +170,7 @@ export const integrityCapabilities = defineCapabilities({
       review: (input, context) => reviewed(context, "Change these Records atomically", "Diese Datensätze atomar ändern", input),
       run: (input, context) =>
         withCapabilityAudit(context, async () => {
-          const result = await changeRecordsAtomically(input, await integrityContext(context));
+          const result = await changeRecordsAtomically({ ...input, baseId: context.target?.id ?? "" }, await integrityContext(context));
           return result.ok
             ? ok({ data: result.data, refs: result.data.records.map((row) => ({ type: "grids.record", id: row.id })) })
             : result;
@@ -181,7 +180,8 @@ export const integrityCapabilities = defineCapabilities({
       title: "Close Record",
       description:
         "Finalize under Direct policy or create a Four-eyes request. Requires current Record version and finalization policy revision. Always asks.",
-      input: FinalizeRecordInputSchema,
+      target: "table",
+      input: FinalizeRecordInputSchema.omit({ tableId: true }),
       data: IntegrityRecordDataSchema.extend({ state: z.enum(["requested", "finalized"]) }),
       destructive: true,
       openWorld: false,
@@ -190,7 +190,7 @@ export const integrityCapabilities = defineCapabilities({
       review: finalizeReview,
       run: (input, context) =>
         withCapabilityAudit(context, async () => {
-          const result = await finalizeRecord(input, await integrityContext(context), true);
+          const result = await finalizeRecord({ ...input, tableId: context.target?.id ?? "" }, await integrityContext(context), true);
           return result.ok ? ok({ data: result.data }) : result;
         }),
     },
@@ -198,7 +198,8 @@ export const integrityCapabilities = defineCapabilities({
       title: "Finalize Record",
       description:
         "Finalize one version-checked Record without changing the original Four-eyes rules. An independent eligible person must approve an existing request. Always asks.",
-      input: FinalizeRecordInputSchema,
+      target: "table",
+      input: FinalizeRecordInputSchema.omit({ tableId: true }),
       data: IntegrityRecordDataSchema.extend({ state: z.enum(["requested", "finalized"]) }),
       destructive: true,
       openWorld: false,
@@ -207,7 +208,7 @@ export const integrityCapabilities = defineCapabilities({
       review: finalizeReview,
       run: (input, context) =>
         withCapabilityAudit(context, async () => {
-          const result = await finalizeRecord(input, await integrityContext(context));
+          const result = await finalizeRecord({ ...input, tableId: context.target?.id ?? "" }, await integrityContext(context));
           return result.ok ? ok({ data: result.data }) : result;
         }),
     },
@@ -215,7 +216,8 @@ export const integrityCapabilities = defineCapabilities({
       title: "Create correction draft",
       description:
         "Create an editable correction or cancellation draft linked to a finalized original; never changes or reissues the original. Requires Base write access and current original version.",
-      input: CorrectionDraftInputSchema,
+      target: "table",
+      input: CorrectionDraftInputSchema.omit({ tableId: true }),
       data: IntegrityRecordDataSchema,
       destructive: false,
       openWorld: false,
@@ -224,7 +226,7 @@ export const integrityCapabilities = defineCapabilities({
       review: (input, context) => reviewed(context, "Create this correction draft", "Diesen Korrekturentwurf erstellen", input),
       run: (input, context) =>
         withCapabilityAudit(context, async () => {
-          const result = await createCorrectionDraft(input, await integrityContext(context));
+          const result = await createCorrectionDraft({ ...input, tableId: context.target?.id ?? "" }, await integrityContext(context));
           return result.ok ? ok({ data: result.data, refs: [{ type: "grids.record", id: result.data.id }] }) : result;
         }),
     },
@@ -232,6 +234,7 @@ export const integrityCapabilities = defineCapabilities({
       title: "Capture document data",
       description:
         "Freeze a complete permission-checked GQL result in Grids, independent of any workflow. The immutable handle pins the values for document.issue. Truncated results are rejected.",
+      target: "base",
       input: captureInput,
       data: DocumentCaptureDataSchema,
       destructive: false,
@@ -242,7 +245,7 @@ export const integrityCapabilities = defineCapabilities({
       run: (input, context) =>
         withCapabilityAudit(context, () =>
           integrityAttempt(async () => {
-            const baseId = await base(input.baseId, context);
+            const baseId = await base(context.target?.id ?? "", context);
             const dates = (await integrityContext(context)).dateConfig;
             const parsed = parseGridsQueryDsl(input.query);
             if (!parsed.ok) return fail(err.badInput("Invalid GQL."));
@@ -289,6 +292,7 @@ export const integrityCapabilities = defineCapabilities({
       title: "Issue captured document",
       description:
         "Issue an immutable PDF, CSV, JSON, XML or ZIP from frozen data. DATEV/SEPA reserve a versioned preview and require document.confirm before issuance. Financial exports require pinned source versions and retain duplicate-export claims. Always asks.",
+      target: "base",
       input: issueInput,
       data: issueData,
       destructive: true,
@@ -306,7 +310,7 @@ export const integrityCapabilities = defineCapabilities({
         withCapabilityAudit(context, () =>
           integrityAttempt<{ data: z.infer<typeof issueData>; refs?: Array<{ type: string; id: string }> }>(async () => {
             if (!context.idempotencyKey) return fail(err.badInput("Idempotency key required."));
-            const baseId = await base(input.baseId, context);
+            const baseId = await base(context.target?.id ?? "", context);
             if ((input.output.kind === "datev-csv" || input.output.kind === "sepa-xml") && !input.sourceVersions)
               return fail(
                 err.badInput(text(context, "Financial exports require source versions.", "Finanzexporte benötigen Quellversionen.")),
@@ -359,6 +363,7 @@ export const integrityCapabilities = defineCapabilities({
       title: "Confirm financial document",
       description:
         "Confirm the exact frozen DATEV/SEPA preview as its original actor after current permission and source-version checks. Completes issuance from that exact reserved request. Never submits a bank payment. Always asks.",
+      target: "base",
       input: confirmationInput,
       data: DocumentCapabilityDataSchema,
       destructive: true,

@@ -39,8 +39,14 @@ export const AtomicRecordsInputSchema = z
     changes: z
       .array(
         z.discriminatedUnion("kind", [
-          RecordCreateInputSchema.extend({ kind: z.literal("create").describe("Create one new Record.") }),
-          RecordUpdateInputSchema.extend({ kind: z.literal("update").describe("Update one existing Record.") }),
+          RecordCreateInputSchema.extend({
+            tableId: ShortIdSchema.describe("Public target Table ID in this Base."),
+            kind: z.literal("create").describe("Create one new Record."),
+          }),
+          RecordUpdateInputSchema.extend({
+            tableId: ShortIdSchema.describe("Public target Table ID in this Base."),
+            kind: z.literal("update").describe("Update one existing Record."),
+          }),
         ]),
       )
       .min(1)

@@ -6,6 +6,12 @@ import { gridsActionReview } from "./integrity-review";
 
 const target = { tableId: "Table1", recordId: "Record", ifVersion: 1 };
 describe("Grids integrity capability contract", () => {
+  test("declares Base ownership and its canonical shared Code page", () => {
+    const manifest = compileCapabilityManifest("grids", gridsCapabilities);
+    expect(manifest.code).toEqual({ owners: ["base"], pages: { base: "/app/grids/{id}/code" } });
+    expect(gridsCapabilities.queries["base.read"].codeResourceTitle).toBeFunction();
+    expect(gridsCapabilities.types.base.codeAccount.name).toBe("Code of a base");
+  });
   test("ordinary row and draft writes have silent shared policy; issuing and finalizing always ask", () => {
     const manifest = compileCapabilityManifest("grids", gridsCapabilities);
     for (const id of [

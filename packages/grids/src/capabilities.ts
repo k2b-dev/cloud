@@ -1504,10 +1504,12 @@ const prepareViewCreate = async (input: z.infer<typeof ViewCreateInputSchema>, c
 
 export const gridsCapabilities = defineCapabilities({
   protocolVersion: 2,
+  code: { owners: ["base"], pages: { base: "/app/grids/{id}/code" } },
   presentation: gridsCapabilityPresentation,
   types: {
     ...dailyCapabilities.types,
     base: {
+      codeAccount: { name: "Code of a base", description: "Service account of a Grids base" },
       title: "Grids base",
       description: "A permission-scoped Grids workspace.",
       icon: "ti ti-table",
@@ -1567,6 +1569,11 @@ export const gridsCapabilities = defineCapabilities({
       input: BaseReadInputSchema,
       data: BaseCapabilityDataSchema.extend({ view: CloudResourceReaderViewSchema }),
       openWorld: false,
+      codeResourceTitle: async (tx, id) => {
+        if (!ShortIdSchema.safeParse(id).success) return null;
+        const [base] = await tx<Array<{ name: string }>>`SELECT name FROM grids.bases WHERE short_id = ${id} AND deleted_at IS NULL`;
+        return base?.name ?? null;
+      },
       run: runBaseRead,
     },
     "table.read": {
@@ -1575,6 +1582,13 @@ export const gridsCapabilities = defineCapabilities({
       input: TableReadInputSchema,
       data: TableCapabilityDataSchema,
       openWorld: false,
+      codeResourceTitle: async (tx, id) => {
+        if (!ShortIdSchema.safeParse(id).success) return null;
+        const [table] = await tx<
+          Array<{ name: string }>
+        >`SELECT t.name FROM grids.tables t JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL WHERE t.short_id = ${id} AND t.deleted_at IS NULL`;
+        return table?.name ?? null;
+      },
       run: runTableRead,
     },
     "view.read": {
@@ -1711,7 +1725,6 @@ export const gridsCapabilities = defineCapabilities({
             details: [{ label: t.table, value: table.data.name }, ...recordValuesReview(input.values, values.data.fields, context.locale)],
           }),
         );
-
       },
       run: runRecordCreate,
     },
@@ -1750,7 +1763,6 @@ export const gridsCapabilities = defineCapabilities({
             ],
           }),
         );
-
       },
       run: runRecordExternalUpsert,
     },
@@ -1796,7 +1808,6 @@ export const gridsCapabilities = defineCapabilities({
             ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data, record.shortId) }] } : {}),
           }),
         );
-
       },
       run: runRecordUpdate,
     },

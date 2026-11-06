@@ -974,8 +974,9 @@ additive changes; the shared compatibility check remains enabled.
 - `record.create` requires an idempotency key and a review through Cloud's
   capability dispatcher. Reuse a key only for retries of the same request.
 - Record updates and external upserts retain review and permission checks but
-  are no longer classified as destructive operations. They can remember an
-  approval scoped to one table; document issuance still needs individual approval.
+  are no longer classified as destructive operations. Their silent shared policy
+  permits unattended writes with ordinary base access; document issuance still
+  needs individual approval.
 - Timestamps use ISO 8601 with an explicit UTC offset; consumers must accept
   offsets as well as `Z`.
 
@@ -998,7 +999,7 @@ for the supported formats and limits.
 
 Use `grids.record.atomic` to create or update several records together. Supply
 one base, at least one existing coordination record in `locks`, optional
-current-version and field-value `checks`, and ordered `changes`. The operation
+current-version, field-value or GQL `checks`, and ordered `changes`. The operation
 allows 100 distinct locked records, 50 checks and 50 changes. Every check runs
 after the locks; any failure rolls back all changes. Choose a coordination
 record shared by competing writers when asserting a business condition.
@@ -1047,3 +1048,21 @@ Each takes `--body-file request.json` (or `--body`/`--stdin`) and a stable
 `--idempotency-key`. Use `cld capabilities review grids <action> --input-file
 request.json` to inspect a complete proposal. The generic capability commands
 also expose `record.finalization.read` and `record.finalize`.
+
+### Code of a base
+
+Base administrators open **Code** from the base navigation to manage its Code
+on Cloud's shared Code page. People with an explicit Code share also see this
+entry. The page keeps the selected run, version or secret in its URL.
+
+The Code account receives ordinary base shares through the access editor; owning
+the base's Code grants no data access. A write share permits unattended row
+creation, updates, atomic changes and correction drafts. Document issuance,
+finalization and financial exports retain their asking policies and are refused
+for unattended Code calls. Removing the base share stops later writes. Renaming
+the base updates its Code account title; deleting it reports owner deletion.
+
+Capabilities use normalized targets: select `grids.base` for
+atomic changes and document actions, or `grids.table` for record finalization
+and correction drafts. The owner ID is outside the action's domain input. CLI
+JSON still accepts `baseId` or `tableId` and converts it to that target.

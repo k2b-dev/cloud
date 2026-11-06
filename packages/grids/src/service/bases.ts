@@ -1,4 +1,4 @@
-import { sql } from "@k2b/cloud";
+import { codeOwnerDeleted, codeOwnerTitleChanged, sql } from "@k2b/cloud";
 import { type AccessSubject, buildAccessPrincipalTierConditions } from "@k2b/cloud/server";
 import { logger, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
@@ -303,6 +303,7 @@ export const update = async (id: string, input: UpdateBaseInput, actorId: string
     if (Object.keys(diff).length > 0) {
       await logAudit({ baseId: id, userId: actorId, action: "updated", diff }, tx);
       await publishMetadataChange(tx, id, "base.updated");
+      if (next.name !== existing.name) await codeOwnerTitleChanged(tx, { type: "grids.base", id: existing.shortId }, next.name);
     }
     return mapRow(row);
   });
@@ -333,13 +334,14 @@ export const remove = async (id: string, actorId: string | null, locale?: string
   const messages = getGridsCrudMessages(locale);
   const removed = await sql.begin(async (tx): Promise<Result<void>> => {
     await degradeForSourceBaseChange(id, actorId, tx);
-    const result = await tx`
+    const [removedBase] = await tx<Array<{ short_id: string }>>`
       UPDATE grids.bases SET deleted_at = now()
-      WHERE id = ${id}::uuid AND deleted_at IS NULL
+      WHERE id = ${id}::uuid AND deleted_at IS NULL RETURNING short_id
     `;
-    if (result.count === 0) return fail(err.notFound(messages.base));
+    if (!removedBase) return fail(err.notFound(messages.base));
     await logAudit({ baseId: id, userId: actorId, action: "deleted" }, tx);
     await publishMetadataChange(tx, id, "base.deleted");
+    await codeOwnerDeleted(tx, { type: "grids.base", id: removedBase.short_id });
     return ok();
   });
   if (!removed.ok) return removed;
