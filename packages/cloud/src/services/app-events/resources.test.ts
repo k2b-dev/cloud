@@ -69,6 +69,7 @@ beforeEach(() => {
   resolve = spyOn(identity, "resolveIssuanceAuthority").mockResolvedValue(adminAuthority());
   access = spyOn(identity, "issueInvocationToken").mockResolvedValue({
     token: "fixture",
+    kid: id,
     claims: {
       iss: "https://cloud.example",
       aud: "app:fixture",
@@ -97,7 +98,7 @@ beforeEach(() => {
     endpoint: "http://fixture",
     manifest,
   });
-  invoke = spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ data: {} }));
+  invoke = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ data: {} }));
 });
 afterEach(() => {
   clock.mockRestore();
@@ -132,9 +133,9 @@ test("changed revision, unconfirmed, expired or foreign mandate prevents deliver
   expect(invoke).not.toHaveBeenCalled();
 });
 test("a negative reader answer cancels; an unavailable reader retries", async () => {
-  invoke.mockImplementation(async () => Response.json({ code: "FORBIDDEN", message: "Denied" }, { status: 403 }));
+  invoke.mockResolvedValue(Response.json({ code: "FORBIDDEN", message: "Denied" }, { status: 403 }));
   expect(await authorizeResourceEvent("consumer", binding, event)).toBe(false);
-  invoke.mockImplementation(async () => Response.json({ code: "APP_UNAVAILABLE", message: "Unavailable" }, { status: 503 }));
+  invoke.mockResolvedValue(Response.json({ code: "APP_UNAVAILABLE", message: "Unavailable" }, { status: 503 }));
   await expect(authorizeResourceEvent("consumer", binding, event)).rejects.toThrow("APP_UNAVAILABLE");
   resolve.mockResolvedValue(null);
   expect(await authorizeResourceEvent("consumer", binding, event)).toBe(false);
