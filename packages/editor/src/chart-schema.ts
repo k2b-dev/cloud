@@ -184,7 +184,8 @@ export const chartKinds = (limits?: ChartLimits) => {
       })
       .superRefine((bar, ctx) => {
         const issue = (message: string) => ctx.addIssue({ code: "custom", message });
-        if (limits && !bar.series && !bar.data.length) issue("A bar chart needs data or aligned series.");
+        if (limits && !bar.series && !bar.data.length)
+          ctx.addIssue({ code: "custom", path: ["data"], message: "A bar chart needs data or aligned series." });
         if ((bar.share !== undefined || bar.limit !== undefined || bar.tone !== undefined) && bar.layout !== "rows")
           issue("Share, limit and tone require rows layout.");
         if (bar.layout === "rows" && bar.data.some((d) => Number.isFinite(d.value) && d.value < 0))
