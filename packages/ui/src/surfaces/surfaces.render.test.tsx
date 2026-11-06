@@ -529,7 +529,9 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
 
     expect(cell(true)).toContain('class="k2b-stat-cell" data-size="md" data-surface="white" data-wrap="true"');
     expect(cell()).not.toContain("data-wrap");
-    expect(parityCss).toContain(".k2b-ui .k2b-stat-cell[data-wrap] :is(.k2b-stat-cell__main, .k2b-stat-cell__support) { height: auto; flex-wrap: wrap; }");
+    expect(parityCss).toContain(
+      ".k2b-ui .k2b-stat-cell[data-wrap] :is(.k2b-stat-cell__main, .k2b-stat-cell__support) { height: auto; flex-wrap: wrap; }",
+    );
   });
 
   test("a change badge carries arrow, sign and a spoken rating only when better is known", () => {
@@ -561,7 +563,9 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
 
   test("a tile keeps its three rows in every state", () => {
     const cell = (props: Record<string, unknown>) =>
-      renderToString(() => createComponent(StatCell, { label: "Orders", value: "1,204", size: "lg", icon: "ti ti-box", tone: "blue", ...props } as never));
+      renderToString(() =>
+        createComponent(StatCell, { label: "Orders", value: "1,204", size: "lg", icon: "ti ti-box", tone: "blue", ...props } as never),
+      );
     for (const html of [
       cell({}),
       cell({ status: "loading" }),

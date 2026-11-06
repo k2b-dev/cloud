@@ -93,7 +93,11 @@ describe("@k2b/ui key figure tiles", () => {
         const rows = await page.evaluate(measure);
         expect(rows.map((row) => row.state)).toEqual(Object.keys(states));
         for (const row of rows) {
-          expect({ state: row.state, columns: row.columns, heights: row.heights }).toEqual({ state: row.state, columns, heights: [height] });
+          expect({ state: row.state, columns: row.columns, heights: row.heights }).toEqual({
+            state: row.state,
+            columns,
+            heights: [height],
+          });
         }
         // The head, figure and support rows start at the same place in every state: nothing jumps when data arrives.
         for (const part of ["head", "main", "support"] as const) expect(new Set(rows.map((row) => row[part])).size).toBe(1);
@@ -107,4 +111,32 @@ describe("@k2b/ui key figure tiles", () => {
       }
     });
   }
+
+  test("a row that breaks leaves no empty slot: the last tile reaches the grid's end", async () => {
+    const grids = renderToString(() =>
+      [3, 5, 6].map((count) =>
+        createComponent(StatGrid, {
+          columns: count as 3 | 5 | 6,
+          get children() {
+            return Array.from({ length: count }, (_, index) => createComponent(StatCell, { label: `Figure ${index + 1}`, value: index }));
+          },
+        }),
+      ),
+    );
+    for (const width of [1440, 800, 390]) {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      try {
+        await page.setContent(`<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;padding:12px">${grids}</body></html>`);
+        await settled(page);
+        const gaps = await page.evaluate(() =>
+          Array.from(document.querySelectorAll(".k2b-stat-grid__body")).map((body) =>
+            Math.round(Math.abs(body.lastElementChild!.getBoundingClientRect().right - body.getBoundingClientRect().right)),
+          ),
+        );
+        expect({ width, gaps }).toEqual({ width, gaps: [0, 0, 0] });
+      } finally {
+        await page.close();
+      }
+    }
+  });
 });

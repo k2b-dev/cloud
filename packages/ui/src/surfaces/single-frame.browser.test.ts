@@ -212,7 +212,13 @@ describe("@k2b/ui one frame per surface", () => {
           expect(result.groupGap).toBe(0);
 
           expect(result.statLabel).toEqual({ transform: "none", tracking: "normal" });
-          expect(result.statHeader).toEqual({ rule: "none", gap: 12, background: transparent, grid: { border: "none", background: transparent }, tile: "solid" });
+          expect(result.statHeader).toEqual({
+            rule: "none",
+            gap: 12,
+            background: transparent,
+            grid: { border: "none", background: transparent },
+            tile: "solid",
+          });
           expect(result.sectionGap).toBe(24);
 
           // A desktop puts the heading and its actions in a column beside the fields; a phone keeps them above.

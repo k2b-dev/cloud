@@ -75,9 +75,12 @@ const deltaTone = (delta: StatCellDelta): "good" | "bad" | "neutral" =>
 const deltaText = (delta: StatCellDelta, locale: string, t: StatCellMessages): string =>
   (delta.unit === "points"
     ? `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: "exceptZero" }).format(delta.value * 100)} ${t.points}`
-    : new Intl.NumberFormat(locale, { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: "exceptZero" }).format(
-        delta.value,
-      )
+    : new Intl.NumberFormat(locale, {
+        style: "percent",
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+        signDisplay: "exceptZero",
+      }).format(delta.value)
   ).replace("-", "\u2212");
 
 /** A change badge: arrow, signed text, and a spoken label that names the comparison and, with `better`, the rating. */
