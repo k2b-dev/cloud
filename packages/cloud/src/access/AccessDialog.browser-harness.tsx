@@ -68,7 +68,6 @@ void openAccessDialog({
   ...(harness.accessDialogState === "loading"
     ? { loadEntries: async () => (await loadGate.promise, entries) }
     : { initialEntries: entries }),
-  viewerUserId: "10000000-0000-4000-8000-000000000001",
   allowPublic: true,
   publicLink: "https://cloud.example.test/s/einkauf-2027",
   entryDetail: (entry) => (entry.principal.type === "group" ? "Group · 14 people" : undefined),

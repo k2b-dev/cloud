@@ -18,6 +18,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
+import { readShellData } from "../ssr/shell-data";
 import { accessDialogMessages } from "./access-dialog-messages";
 import {
   type AccessDraft,
@@ -80,8 +81,6 @@ export type AccessDialogProps = {
   publicWarning?: string;
   /** Offer agents in the search. Defaults to true. */
   allowAgents?: boolean;
-  /** The signed-in person, marked "You" in the list. */
-  viewerUserId?: string;
   /** A row's second line instead of its kind, such as a group's member count. */
   entryDetail?: (entry: AccessEntry) => string | undefined;
   /**
@@ -439,7 +438,9 @@ export function AccessDialog(
         : ((row.display.serviceAccountKind && serviceAccountKindDisplay(row.display.serviceAccountKind, access()).label) ?? t().agent);
     return "";
   };
-  const isViewer = (row: DraftRow) => row.principal.type === "user" && row.principal.userId === props.viewerUserId;
+  /** The signed-in person, marked "You": every Cloud page names them in its shell data, so no app passes them. */
+  const viewerUserId = readShellData()?.profile?.userId;
+  const isViewer = (row: DraftRow) => row.principal.type === "user" && row.principal.userId === viewerUserId;
   const mark = (row: DraftRow) => {
     if (!row.previous) return <StatusBadge class="shrink-0" tone="ok" icon={null} label={t().markNew} />;
     if (!row.next) return <StatusBadge class="shrink-0" tone="error" icon={null} label={t().markRemoved} />;
@@ -886,12 +887,15 @@ export function AccessDialog(
                   <GeneralRow type="public" />
                   <Show when={(generalRow("public")?.next?.permission ?? "none") !== "none"}>
                     <li class="flex flex-col gap-2 pb-2 sm:pl-11">
-                      <NoticeCard tone="warning">{props.publicWarning ?? t().publicWarning}</NoticeCard>
+                      <NoticeCard tone="warning" icon>
+                        {props.publicWarning ?? t().publicWarning}
+                      </NoticeCard>
                       <Show when={props.publicLink}>
                         {(link) => (
-                          <div class="flex items-center gap-2 [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1">
+                          // As in the approved mockup, Copy stands as high as the link beside it.
+                          <div class="flex items-stretch gap-2 [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1">
                             <TextInput aria-label={access().anyoneWithLink} value={() => link()} readOnly />
-                            <CopyButton text={link()} />
+                            <CopyButton text={link()} iconOnly={false} variant="secondary" size="md" />
                           </div>
                         )}
                       </Show>
