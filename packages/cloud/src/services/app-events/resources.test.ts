@@ -2,7 +2,6 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { z } from "zod";
 import { adminAuthority } from "../../../../../scripts/fixtures/app-status";
 import * as registry from "../../_internal/registry";
-import * as invocation from "../../capabilities/server-invoke";
 import { compileCapabilityManifest } from "../../capabilities/testing";
 import type { AppEventEnvelope } from "../../contracts/app-events";
 import { AppAccessDeniedError } from "../../server/middleware/app-access";
@@ -60,15 +59,36 @@ const manifest = compileCapabilityManifest("fixture", {
 let clock: ReturnType<typeof spyOn<typeof Date, "now">>;
 let load: ReturnType<typeof spyOn<typeof mandates, "get">>;
 let resolve: ReturnType<typeof spyOn<typeof identity, "resolveIssuanceAuthority">>;
-let access: ReturnType<typeof spyOn<typeof identity, "requireRegisteredAppAccess">>;
+let access: ReturnType<typeof spyOn<typeof identity, "issueInvocationToken">>;
 let lookup: ReturnType<typeof spyOn<typeof registry, "getCapability">>;
-let invoke: ReturnType<typeof spyOn<typeof invocation, "invokeCapabilityWithDataSchema">>;
+let invoke: ReturnType<typeof spyOn<typeof globalThis, "fetch">>;
 beforeEach(() => {
   clock = spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-06T12:00:00Z"));
   load = spyOn(mandates, "get").mockResolvedValue(mandate);
   // The reader receives exactly the currently resolved authority, with no publisher identity.
   resolve = spyOn(identity, "resolveIssuanceAuthority").mockResolvedValue(adminAuthority());
-  access = spyOn(identity, "requireRegisteredAppAccess").mockResolvedValue();
+  access = spyOn(identity, "issueInvocationToken").mockResolvedValue({
+    token: "fixture",
+    claims: {
+      iss: "https://cloud.example",
+      aud: "app:fixture",
+      token_use: "invocation",
+      sub: id,
+      principal_type: "user",
+      access_subject_type: "user",
+      access_subject_id: id,
+      act: { sub: "app:consumer" },
+      credential_kind: "session",
+      scopes: [],
+      op: "capability.query:collection.read",
+      schema_hash: null,
+      ver: 1,
+      jti: id,
+      iat: 0,
+      nbf: 0,
+      exp: 30,
+    },
+  });
   lookup = spyOn(registry, "getCapability").mockResolvedValue({
     appId: "fixture",
     appName: "Fixture",
@@ -77,7 +97,7 @@ beforeEach(() => {
     endpoint: "http://fixture",
     manifest,
   });
-  invoke = spyOn(invocation, "invokeCapabilityWithDataSchema").mockResolvedValue({ ok: true, data: { data: {} } });
+  invoke = spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ data: {} }));
 });
 afterEach(() => {
   clock.mockRestore();
@@ -90,11 +110,11 @@ afterEach(() => {
 test("only the subscribed place is read under current mandate identity", async () => {
   expect(await authorizeResourceEvent("consumer", binding, event)).toBe(true);
   expect(resolve.mock.calls[0]?.[0]).toMatchObject({ sub: id, principal_type: "user", credential_kind: "mandate" });
-  expect(invoke.mock.calls[0]?.[0]).toEqual({
-    appId: "fixture",
-    capabilityId: "collection.read",
-    kind: "query",
-    input: { id: "collection-a" },
+  expect(invoke.mock.calls[0]?.[0]).toBe("http://fixture/queries/collection.read");
+  expect(JSON.parse(String(invoke.mock.calls[0]?.[1]?.body))).toEqual({ input: { id: "collection-a" } });
+  expect(access.mock.calls[0]?.[0]).toMatchObject({
+    operation: "capability.query:collection.read",
+    authority: { mandate_id: id, workload_event: id },
   });
   expect(await authorizeResourceEvent("consumer", binding, { ...event, place: { ...place, id: "other" } })).toBe(false);
   expect(invoke).toHaveBeenCalledTimes(1);
@@ -112,9 +132,9 @@ test("changed revision, unconfirmed, expired or foreign mandate prevents deliver
   expect(invoke).not.toHaveBeenCalled();
 });
 test("a negative reader answer cancels; an unavailable reader retries", async () => {
-  invoke.mockResolvedValue({ ok: false, error: { code: "FORBIDDEN", message: "Denied", status: 403 } });
+  invoke.mockImplementation(async () => Response.json({ code: "FORBIDDEN", message: "Denied" }, { status: 403 }));
   expect(await authorizeResourceEvent("consumer", binding, event)).toBe(false);
-  invoke.mockResolvedValue({ ok: false, error: { code: "APP_UNAVAILABLE", message: "Unavailable", status: 503 } });
+  invoke.mockImplementation(async () => Response.json({ code: "APP_UNAVAILABLE", message: "Unavailable" }, { status: 503 }));
   await expect(authorizeResourceEvent("consumer", binding, event)).rejects.toThrow("APP_UNAVAILABLE");
   resolve.mockResolvedValue(null);
   expect(await authorizeResourceEvent("consumer", binding, event)).toBe(false);

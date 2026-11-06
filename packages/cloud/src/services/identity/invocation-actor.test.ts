@@ -137,3 +137,25 @@ test("the exact access subject is retained for users and Code accounts", async (
     expect(queries).toBe(2);
   }
 });
+
+test("an event visibility proof must still have a current claimed delivery before resolving the principal", async () => {
+  const proof = {
+    ...claims("service_account"),
+    credential_kind: "mandate" as const,
+    mandate_id: claims("user").sub,
+    mandate_revision: 1,
+    workload_type: "fixture",
+    workload_id: "one",
+    workload_event: claims("user").jti,
+  };
+  let count = 0;
+  const query = (() => {
+    count++;
+    return Promise.resolve([]);
+  }) as unknown as typeof sql;
+  expect(await resolveInvocationAuthority(proof, query, [])).toBeNull();
+  expect(count).toBe(1);
+  count = 0;
+  expect(await resolveInvocationAuthority({ ...proof, mandate_id: undefined }, query, [])).toBeNull();
+  expect(count).toBe(0);
+});
