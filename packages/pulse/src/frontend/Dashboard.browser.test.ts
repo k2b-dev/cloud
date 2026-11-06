@@ -221,9 +221,15 @@ test("approved 3-column layout, stat tiles, linked keyboard tooltips, phone/tabl
       const server = tab.getByRole("region", { name: "Server", exact: true });
       expect(await traefik.locator(".ti-router").count()).toBe(1);
       expect(await server.locator(".ti-server-2").count()).toBe(1);
-      expect(await traefik.locator(".k2b-avatar").evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(
-        await server.locator(".k2b-avatar").evaluate((el) => getComputedStyle(el).backgroundColor),
-      );
+      // Section icons are plain glyphs in their section colour, never a tinted tile.
+      const sectionIcon = (section: typeof traefik) =>
+        section.locator(".pulse-dashboard__section-icon").evaluate((el) => {
+          const style = getComputedStyle(el);
+          return { color: style.color, background: style.backgroundColor };
+        });
+      const [traefikIcon, serverIcon] = await Promise.all([sectionIcon(traefik), sectionIcon(server)]);
+      expect(traefikIcon.color).not.toBe(serverIcon.color);
+      expect([traefikIcon.background, serverIcon.background]).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
       expect(await traefik.getByText("Quelle Traefik · Raster 5 Min.", { exact: true }).isVisible()).toBe(width !== 390);
       expect(await server.getByText("2 Quellen · Raster 5 Min.", { exact: true }).isVisible()).toBe(width !== 390);
       expect(await tab.locator("[data-panel]").count()).toBe(10);
@@ -234,7 +240,9 @@ test("approved 3-column layout, stat tiles, linked keyboard tooltips, phone/tabl
         expect(panels[1]!.y).toBe(panels[2]!.y);
         expect(Math.abs(panels[1]!.x - panels[0]!.x - panels[0]!.width - 32)).toBeLessThan(1);
       } else if (width === 390) expect(panels[0]!.y).toBeLessThan(panels[1]!.y);
-      expect(await tab.locator('[data-panel="req"] .k2b-chart').evaluate((el) => el.getBoundingClientRect().height)).toBe(198);
+      expect(
+        await tab.locator('[data-panel="req"] .k2b-chart-explorer__viewport').evaluate((el) => el.getBoundingClientRect().height),
+      ).toBe(216);
       expect(await tab.getByRole("table").getByText("demo-web").count()).toBe(1);
       expect(await tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
       const chart = tab.locator('[data-panel="req"] .k2b-chart');
@@ -266,6 +274,68 @@ test("approved 3-column layout, stat tiles, linked keyboard tooltips, phone/tabl
     }
   }
 }, 60_000);
+
+test("dashboard entries, section icons and tables follow the shared frame: plain icons, even insets, framed tables", async () => {
+  for (const width of [1440, 390]) {
+    const { tab } = await open({ width });
+    try {
+      await ready(tab);
+      if (width === 1440) {
+        // The selected dashboard row shows its glyph without a tile, inset as far from the row's start as from its top.
+        const row = tab.locator(".k2b-app-workspace__sidebar-item.is-active", { hasText: "Server & Traefik" });
+        const icon = await row.evaluate((element) => {
+          const outer = element.getBoundingClientRect();
+          const box = element.querySelector(".k2b-app-workspace__sidebar-item-icon")!;
+          // The glyph is square: its box is as tall as it is wide and sits centred in the row.
+          const glyph = box.getBoundingClientRect();
+          return {
+            tiles: element.querySelectorAll(".k2b-icon-tile").length,
+            background: getComputedStyle(box).backgroundColor,
+            start: glyph.left - outer.left,
+            block: (outer.height - glyph.width) / 2,
+          };
+        });
+        expect({ tiles: icon.tiles, background: icon.background }).toEqual({ tiles: 0, background: "rgba(0, 0, 0, 0)" });
+        expect(Math.abs(icon.start - icon.block)).toBeLessThanOrEqual(1);
+      }
+      // A table panel is one framed table: the frame draws the edge, and the last row ends on it.
+      const frame = await tab.locator('[data-panel="hosts"] .k2b-table-shell').evaluate((shell) => {
+        const style = getComputedStyle(shell);
+        const lastRow = shell.querySelector("tbody tr:last-child")!.getBoundingClientRect();
+        const box = shell.getBoundingClientRect();
+        return {
+          surface: shell.getAttribute("data-surface"),
+          border: style.borderTopWidth !== "0px" && style.borderTopStyle !== "none",
+          gap: box.bottom - lastRow.bottom,
+        };
+      });
+      expect({ surface: frame.surface, border: frame.border }).toEqual({ surface: "paper", border: true });
+      expect(frame.gap).toBeGreaterThanOrEqual(0);
+      expect(frame.gap).toBeLessThanOrEqual(2);
+    } finally {
+      await tab.close();
+    }
+  }
+}, 30_000);
+
+test("a line panel is a chart explorer with exact values, units and a table of every point", async () => {
+  const { tab } = await open();
+  try {
+    await ready(tab);
+    const panel = tab.locator('[data-panel="req"]');
+    expect(await panel.locator(".k2b-chart-explorer h3").textContent()).toBe("Anfragen je Dienst");
+    expect(await panel.getByRole("button", { name: "So gerechnet: Anfragen je Dienst", exact: true }).count()).toBe(1);
+    expect(await panel.locator(".k2b-chart-legend li").allTextContents()).toEqual(["demo-site", "demo-shop", "demo-cloud"]);
+    await panel.getByRole("button", { name: "Diagrammansicht", exact: true }).click();
+    await tab.getByRole("menuitemradio", { name: "Tabelle", exact: true }).click();
+    const table = panel.getByRole("table");
+    expect(await table.locator("thead th").allTextContents()).toEqual(["Zeit (UTC)", "Reihe", "Wert (/s)"]);
+    expect(await table.locator("tbody tr").count()).toBeGreaterThan(0);
+    expect(await panel.locator(".k2b-chart-explorer__viewport").evaluate((el) => el.getBoundingClientRect().height)).toBe(216);
+  } finally {
+    await tab.close();
+  }
+}, 30_000);
 
 test("all five kinds render complete values and two-column sections without page overflow", async () => {
   for (const width of [1440, 390]) {
@@ -379,12 +449,8 @@ test("loading retains panel slots, per-panel failures retry, outages retain last
     release!();
     await ready(tab);
     expect(await tab.locator('[data-panel="p95"] [role="alert"]').textContent()).toContain("zu lange");
-    expect(
-      await tab
-        .locator('[data-panel="req"]')
-        .boundingBox()
-        .then((box) => box!.width),
-    ).toBe(before!.width);
+    const after = await tab.locator('[data-panel="req"]').boundingBox();
+    expect({ width: after!.width, height: after!.height }).toEqual({ width: before!.width, height: before!.height });
     panels.delete("p95");
     await tab.locator('[data-panel="p95"]').getByRole("button", { name: "Erneut versuchen", exact: true }).click();
     await tab.locator('[data-panel="p95"] .k2b-chart').waitFor();

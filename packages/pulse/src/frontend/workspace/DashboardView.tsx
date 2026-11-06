@@ -1,5 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { Avatar, Button, createChartCursor, DateTimePicker, NoticeCard, PanelHeader, RangePicker, useLocale } from "@k2b/ui";
+import { Button, createChartCursor, DateTimePicker, NoticeCard, PanelHeader, RangePicker, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, ErrorBoundary, For, Show } from "solid-js";
 import type { Dashboard, DashboardPanel, DashboardRange } from "../../dashboard-contracts";
 import type { Overview } from "../../overview-contracts";
@@ -258,25 +258,12 @@ export default function DashboardView(props: DashboardViewProps) {
                 <Show when={section.name}>
                   <div class="pulse-dashboard__section-heading">
                     <Show when={section.icon}>
-                      <span aria-hidden="true">
-                        <Avatar
-                          name={section.name}
-                          icon={section.icon}
-                          size="xs"
-                          shape="square"
-                          style={{
-                            width: "26px",
-                            height: "26px",
-                            "border-radius": "8px",
-                            ...(section.color
-                              ? {
-                                  color: `color-mix(in srgb, ${section.color} 72%, var(--k2b-text))`,
-                                  background: `color-mix(in srgb, ${section.color} 16%, var(--k2b-surface))`,
-                                }
-                              : {}),
-                          }}
-                        />
-                      </span>
+                      {/* A plain glyph in the section colour; the heading is not a tile. */}
+                      <i
+                        class={`pulse-dashboard__section-icon ${section.icon}`}
+                        style={section.color ? { color: `color-mix(in srgb, ${section.color} 72%, var(--k2b-text))` } : undefined}
+                        aria-hidden="true"
+                      />
                     </Show>
                     <h2>{section.name}</h2>
                     <Show when={section.description}>

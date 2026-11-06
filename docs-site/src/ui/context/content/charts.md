@@ -729,6 +729,7 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | `sort`, `onSortChange` | Optional controlled `DataTableSort \| null`. Otherwise `defaultSort` initializes local sort; default `null`. |
 | `renderDetails` | Optional row renderer replacing the DescriptionList inside the selection Paper. `false` hides the whole local detail area, for a parent-owned shared Paper. |
 | `description`, `class` | Optional JSX below the heading and extra root class. |
+| `actions` | Optional owner actions in the header before Copy data, such as a button that shows the query behind the chart. Keep them icon-sized. The title and description wrap beside the actions; the actions move below them only when the title would get narrower than 8rem, so explorers side by side keep one header layout. |
 | `headingLevel` | Level of the title heading, `2`–`6`; default `3`. Use one level below the surrounding heading, for example `4` for charts under a group's `h3`. |
 | `cursor` | Optional shared `ChartCursor` for a line snapshot. Same matching and lifecycle as `Chart.cursor`; table mode does not participate. |
 | `height` | CSS viewport height; default `"18rem"`, shared by chart and scrollable table. |

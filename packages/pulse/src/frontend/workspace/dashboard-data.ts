@@ -1,5 +1,5 @@
 import { niceStep } from "@k2b/stdlib";
-import type { ChartProps } from "@k2b/ui";
+import { type ChartLegendEntry, type ChartProps, prepareChartSnapshot } from "@k2b/ui";
 import type { DashboardRange } from "../../dashboard-contracts";
 import type { DashboardPanelData } from "../../dashboard-result";
 import { sqlTimestamp } from "../../sql-result-values";
@@ -48,7 +48,7 @@ export const dashboardLine = (
   data: DashboardPanelData,
   locale: string,
   window?: { from: string; to: string },
-): Extract<ChartProps, { kind: "line" }> => {
+) => {
   const x = data.columns.findIndex((column) => column.name === panel.x);
   const group = data.columns.findIndex((column) => column.name === panel.series);
   const series = new Map<string, { label: string; data: { x: number; y: number }[] }>();
@@ -93,9 +93,8 @@ export const dashboardLine = (
     kind: "line",
     series: [...series.values()],
     smooth: false,
-    legend: true,
-    legendPlacement: "top-start",
-    interactive: true,
+    // ChartExplorer lists the series below the plot, where long names wrap.
+    legend: false,
     maxGap: spacing.length ? Math.min(...spacing) * 1.5 : undefined,
     xAxis: {
       domain,
@@ -122,6 +121,33 @@ export const dashboardLine = (
           : [],
       ),
     }),
+  } satisfies Extract<ChartProps, { kind: "line" }>;
+};
+/** One table row per drawn point; the key matches the mark the renderer draws for it. */
+export type DashboardLineRow = { key: string; at: number; series: string; value: number };
+/**
+ * The line panel as ChartExplorer data: the same axis, references, and tooltips as `dashboardLine`, one row per
+ * point for the table and Copy data, and the series names for the explorer's wrapping legend.
+ */
+export const dashboardLineExplorer = (
+  panel: PublicDashboardPanel,
+  data: DashboardPanelData,
+  locale: string,
+  window?: { from: string; to: string },
+) => {
+  const { tooltip, ...line } = dashboardLine(panel, data, locale, window);
+  const key = (seriesIndex: number | undefined, index: number) => `${seriesIndex ?? 0}:${index}`;
+  const rows: DashboardLineRow[] = line.series.flatMap((series, seriesIndex) =>
+    series.data.map((point, index) => ({ key: key(seriesIndex, index), at: point.x, series: series.label, value: point.y })),
+  );
+  const legend: ChartLegendEntry[] =
+    line.series.length > 1 ? line.series.map((series, index) => ({ label: series.label, color: index })) : [];
+  return {
+    data: {
+      rows,
+      chart: prepareChartSnapshot(line, { key: ({ datum }) => key(datum.seriesIndex, datum.index), tooltip }),
+    },
+    legend,
   };
 };
 export const dashboardCategories = (panel: PublicDashboardPanel, data: DashboardPanelData, locale: string) => {

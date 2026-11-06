@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { charts } from "@k2b/stdlib";
 import { dashboardRangeSearch } from "./dashboard-client";
-import { dashboardCategories, dashboardLine, dashboardSections, readDashboardRange } from "./dashboard-data";
+import { dashboardCategories, dashboardLine, dashboardLineExplorer, dashboardSections, readDashboardRange } from "./dashboard-data";
 import { dashboardTestDashboard, dashboardTestKinds, dashboardTestPanelResult } from "./dashboard-test-fixtures";
 
 test("custom ranges require both valid ordered endpoints and serialize without changing instants", () => {
@@ -117,4 +117,36 @@ test("alarm references retain their threshold and localized numeric caption", ()
   const result = dashboardTestPanelResult(panel);
   expect(dashboardLine(panel, result.lastGood!.data, "de").references).toEqual([{ value: 2.5, label: "Alarm 2,5 %" }]);
   expect(dashboardLine({ ...panel, threshold: undefined }, result.lastGood!.data, "en").references).toEqual([]);
+});
+
+test("a line panel becomes explorer data: one row per drawn point, the series legend, and the widened window", () => {
+  const panel = dashboardTestDashboard.definition.panels.find((item) => item.id === "req")!;
+  const result = dashboardTestPanelResult(panel);
+  const explorer = dashboardLineExplorer(panel, result.lastGood!.data, "de", result.lastGood!);
+  // ChartExplorer rejects marks without a row, so every drawn point needs exactly one.
+  const keys = explorer.data.rows.map((row) => row.key);
+  expect(new Set(keys).size).toBe(keys.length);
+  expect(explorer.data.chart.marks.map((mark) => mark.rowKey).sort()).toEqual([...keys].sort());
+  expect(explorer.legend.map((entry) => entry.label)).toEqual(["demo-site", "demo-shop", "demo-cloud"]);
+  expect(explorer.data.chart.marks[0]!.tooltip.rows[0]!.value).toMatch(/\/s$/);
+  const single = dashboardTestDashboard.definition.panels.find((item) => item.id === "e5")!;
+  expect(dashboardLineExplorer(single, dashboardTestPanelResult(single).lastGood!.data, "de").legend).toEqual([]);
+  // The day bucket before :from from the #2714 case still renders and keeps every point.
+  const bucket = { ...panel, series: undefined, columns: ["tag", "besucher"], x: "tag" };
+  const day = dashboardLineExplorer(
+    bucket,
+    {
+      columns: [
+        { name: "tag", type: "DateTime('Europe/Berlin')" },
+        { name: "besucher", type: "UInt64" },
+      ],
+      rows: [
+        ["2026-11-05 00:00:00", "12"],
+        ["2026-11-06 00:00:00", "7"],
+      ],
+    },
+    "de",
+    { from: "2026-11-05T14:30:00.000Z", to: "2026-11-06T14:30:00.000Z" },
+  );
+  expect(day.data.rows.map((row) => row.value)).toEqual([12, 7]);
 });

@@ -40,6 +40,8 @@ export type ChartExplorerProps<T extends ChartExplorerRow> = {
   /** Level of the title heading. Defaults to 3; a chart inside a titled group of charts sits one level below it. */
   headingLevel?: 2 | 3 | 4 | 5 | 6;
   description?: JSX.Element;
+  /** Owner actions in the header before Copy data, such as showing the query behind the chart. */
+  actions?: JSX.Element;
   data: ChartExplorerData<T>;
   columns: readonly ChartExplorerColumn<T>[];
   view?: "chart" | "table";
@@ -173,6 +175,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
           </Show>
         </div>
         <div class="k2b-chart-explorer__actions">
+          {props.actions}
           <CopyButton
             text={copyText()}
             label={chartMessages().chartCopyData}
