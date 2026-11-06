@@ -11,6 +11,7 @@ import {
   chartTable,
   chartTooltip,
   checkChartLabels,
+  drawChart,
 } from "./charts";
 
 // Preserve the renderer fixtures' bounded data shape; AI policy assertions remain in Cloud.
@@ -115,8 +116,7 @@ describe("chart table", () => {
       ],
     });
     const rows = chartRows(input, "de");
-    const { kind, ...options } = chartRenderOptions(input, "de");
-    const svg = (charts[kind] as (value: object) => string)({ ...options, width: 480, height: 280, inspect: true });
+    const svg = drawChart(chartRenderOptions(input, "de"));
     for (const match of svg.matchAll(/data-chart-datum="([^"]*)"/g)) rows.add(JSON.parse(match[1]!.replaceAll("&quot;", '"')));
     expect(rows.table()).toEqual(chartTable(input, "de"));
     expect(rows.table().rows.map((row) => row.key)).toEqual([chartMarkKey({ index: 0 }), chartMarkKey({ index: 1 })]);
@@ -227,8 +227,7 @@ describe("chart render options", () => {
 
 describe("chart axes", () => {
   const ticks = (input: unknown, anchor: "end" | "middle") => {
-    const { kind, ...options } = chartRenderOptions(parse(input), "en");
-    const svg = (charts[kind] as (value: object) => string)({ ...options, width: 480, height: 280 });
+    const svg = drawChart(chartRenderOptions(parse(input), "en"));
     return [...svg.matchAll(new RegExp(`stdlib-chart-tick-label"[^>]*text-anchor="${anchor}">([^<]*)<`, "g"))].map((match) => match[1]);
   };
 
@@ -379,7 +378,7 @@ describe("shared chart tooltip", () => {
       const comparable = (options: typeof before) =>
         JSON.parse(JSON.stringify(options, (_key, value) => (typeof value === "function" ? [0, 1.5, 1200].map(value) : value)));
       expect(comparable(after)).toEqual(comparable(before));
-      if (before.kind === "bar" && after.kind === "bar") expect(charts.bar(after)).toEqual(charts.bar(before));
+      if (before.kind === "bar" && after.kind === "bar") expect(drawChart(after)).toEqual(drawChart(before));
       else if (before.kind === "line" && after.kind === "line") expect(charts.line(after)).toEqual(charts.line(before));
       else throw new Error("Expected matching chart kinds");
     }

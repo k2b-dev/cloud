@@ -2,7 +2,7 @@ import type { ChartDatum, charts } from "@k2b/stdlib";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartCursor, ChartCursorState } from "./chart-cursor";
 
-export type ChartKind = keyof typeof charts;
+export type ChartKind = keyof typeof charts | "hbar";
 
 export type ChartDatumRef = Pick<ChartDatum, "role" | "index" | "seriesIndex">;
 export const sameChartDatum = (a: ChartDatumRef, b: ChartDatumRef) =>
@@ -158,6 +158,8 @@ export function createChartInspector(options: {
       if (!entry.element.getAttribute("style")) entry.element.removeAttribute("style");
     }
     highlighted = [];
+    for (const value of options.container()?.querySelectorAll<SVGTextElement>("[data-bar-legend]") ?? [])
+      value.textContent = value.getAttribute("data-bar-total");
   };
   const close = (broadcast = true, cancelPending = true) => {
     const state = linkedCursor?.read();
@@ -207,6 +209,10 @@ export function createChartInspector(options: {
     for (const item of highlighted) {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
       item.element.setAttribute("data-inspected", "true");
+    }
+    for (const value of container.querySelectorAll<SVGTextElement>("[data-bar-legend]")) {
+      const field = entry.datum.values.find((f) => f.key === value.getAttribute("data-bar-legend"));
+      value.textContent = field?.formatted ?? (field ? String(field.value) : "–");
     }
     const document = tooltip.ownerDocument;
     const contents = highlighted.map((item) => ({
@@ -376,7 +382,7 @@ export function createChartInspector(options: {
   };
   const move = (event: PointerEvent) => {
     if (event.target instanceof Node && options.tooltip()?.contains(event.target)) return;
-    if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 6) moved = true;
+    if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 8) moved = true;
     if (!options.enabled() || pinned || event.pointerType === "touch" || event.buttons) return;
     pending = { x: event.clientX, y: event.clientY, target: event.target instanceof Element ? event.target : null };
     if (frame !== undefined) return;
