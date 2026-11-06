@@ -6,6 +6,7 @@ import type { AppEventEnvelope } from "@k2b/cloud/contracts/app-events";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
 import { accounts } from "@k2b/cloud/services";
 import { cancelResourceEventSubscriptions, createAppEventBroker, type ResourceEventBinding } from "@k2b/cloud/services/app-events";
+import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
 import { resolveInvocationAuthority } from "@k2b/cloud/services/identity/invocation-actor";
 import { z } from "zod";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
@@ -254,6 +255,37 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     expect(await runs()).toHaveLength(1);
     expect(await sql`SELECT run_id FROM code.run_outbox`).toHaveLength(1);
     expect(await sql`SELECT run_id FROM code.run_requests`).toHaveLength(1);
+  });
+  test("a claimed event's nested reader dependency retains its proof and requires the matching parent lease", async () => {
+    const envelope = await publish(29);
+    await broker.claim();
+    const proof = {
+      sub: principal,
+      principal_type: "service_account" as const,
+      access_subject_type: "service_account" as const,
+      access_subject_id: principal,
+      act: { sub: "app:fixture" as const },
+      credential_kind: "mandate" as const,
+      scopes: [],
+      exp: 0,
+      jti: id(999),
+      mandate_id: mandateId,
+      mandate_revision: binding.mandateRevision,
+      workload_type: "code.version",
+      workload_id: versionId,
+      workload_event: envelope.id,
+      parent_invocation_id: id(998),
+    };
+    const lease = spyOn(nestedInvocationLeases, "read").mockResolvedValue({ appId: "fixture", deadline: 1, origin: "app" });
+    try {
+      expect(await resolveInvocationAuthority(proof, sql, [])).not.toBeNull();
+      lease.mockResolvedValue(null);
+      expect(await resolveInvocationAuthority(proof, sql, [])).toBeNull();
+      lease.mockResolvedValue({ appId: "foreign", deadline: 1, origin: "app" });
+      expect(await resolveInvocationAuthority(proof, sql, [])).toBeNull();
+    } finally {
+      lease.mockRestore();
+    }
   });
   test("disabling the Code account after the read check still fences admission", async () => {
     const envelope = await publish(25);
