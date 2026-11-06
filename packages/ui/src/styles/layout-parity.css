@@ -2558,8 +2558,11 @@ html {
   padding: 0.25rem;
 }
 
-.k2b-ui .k2b-app-workspace__head-filters {
-  scroll-padding-inline: 0.25rem;
+/* A chip-row fade reaches past the focus padding into the cut chip, and a
+   chip focused by keyboard scrolls clear of it. */
+.k2b-ui .k2b-app-workspace__head-filters[data-scroll-fade-mode] {
+  --scroll-fade-size: 1.5rem;
+  scroll-padding-inline: var(--scroll-fade-size);
 }
 
 .k2b-ui .k2b-app-workspace__head-filters::-webkit-scrollbar {

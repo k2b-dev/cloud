@@ -454,7 +454,8 @@ test("chips that scroll on their own row fade at the edge that hides them", asyn
     const overflow = await filters.evaluate((element) => element.scrollWidth - element.clientWidth);
     expect(overflow).toBeGreaterThan(1);
     expect(await filters.getAttribute("data-scroll-fade")).toBe("bottom");
-    expect(await filters.evaluate((element) => getComputedStyle(element).maskImage)).toContain("linear-gradient");
+    // The fade reaches 24 px into the row, past its 4 px focus padding, so the cut chip itself fades.
+    expect(await filters.evaluate((element) => getComputedStyle(element).maskImage)).toContain("calc(100% - 24px)");
     await filters.evaluate((element) => {
       element.scrollLeft = element.scrollWidth;
     });
