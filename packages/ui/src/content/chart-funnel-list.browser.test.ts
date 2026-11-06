@@ -225,6 +225,18 @@ test("funnels and ranked lists keep safe fills in standalone and base-only hosts
         "none",
       ]);
       expect(
+        await page
+          .locator(".k2b-chart-funnel text")
+          .first()
+          .evaluate((n) => getComputedStyle(n).fontSize),
+      ).toBe("12.5px");
+      expect(
+        await page
+          .locator(".k2b-chart-ranked text")
+          .first()
+          .evaluate((n) => getComputedStyle(n).fontSize),
+      ).toBe("13px");
+      expect(
         await page.locator(".k2b-chart-funnel .stdlib-chart-bar").evaluateAll((nodes) => nodes.map((n) => getComputedStyle(n).fill)),
       ).toEqual(["rgb(59, 130, 246)", "rgb(59, 130, 246)"]);
       expect(

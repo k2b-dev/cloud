@@ -842,8 +842,7 @@ const renderRankedBars = (opts: BarChartOptions & { width: number; height: numbe
   }
   if (g.rest.length)
     parts.push(text(10 * g.unit, g.top + g.rows.length * 36 + 16, `${labels.more({ n: g.rest.length })} · ${g.format(g.restValue)}`));
-  return svgRoot(
-    { ...opts, height: g.height, className: [opts.className, "k2b-chart-ranked"].filter(Boolean).join(" ") },
-    parts.join(""),
-  ).replace("<svg ", '<svg data-bar-layout="rows" ');
+  return svgRoot({ ...opts, height: g.height, className: [opts.className, "k2b-chart-ranked"].filter(Boolean).join(" ") }, parts.join(""))
+    .replace("</style>", ".k2b-chart-ranked :is(.stdlib-chart-tick-label,.stdlib-chart-bar-value){font-size:13px}</style>")
+    .replace("<svg ", '<svg data-bar-layout="rows" ');
 };

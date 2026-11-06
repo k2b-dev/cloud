@@ -86,8 +86,7 @@ export function renderFunnelSvg(spec: FunnelOptions & { width: number; height: n
     parts.push(text(g.width, step.y + g.barHeight / 2 + (step.index ? -2 : 4), fields[0]!.formatted, "end", "stdlib-chart-bar-value"));
     if (step.index) parts.push(text(g.width, step.y + g.barHeight / 2 + 12, `${fields[1]!.formatted} ${g.labels.start}`, "end"));
   }
-  return svgRoot({ ...spec, className: [spec.className, "k2b-chart-funnel"].filter(Boolean).join(" ") }, parts.join("")).replace(
-    "<svg ",
-    '<svg data-bar-layout="rows" ',
-  );
+  return svgRoot({ ...spec, className: [spec.className, "k2b-chart-funnel"].filter(Boolean).join(" ") }, parts.join(""))
+    .replace("</style>", ".k2b-chart-funnel :is(.stdlib-chart-tick-label,.stdlib-chart-bar-value){font-size:12.5px}</style>")
+    .replace("<svg ", '<svg data-bar-layout="rows" ');
 }
