@@ -47,7 +47,7 @@ TypeScript narrows the remaining properties from `kind`. `width` and `height` ar
 
 ## Typed components and portable core
 
-Import `Chart` from `@k2b/ui/charts` or `@k2b/ui`. `Chart.Line`, `Chart.Bar`,
+Import `Chart` from `@k2b/ui`. The drawing-only `@k2b/ui/charts` entry also works without a DOM. `Chart.Line`, `Chart.Bar`,
 `Chart.Pie`, `Chart.Donut`, `Chart.Scatter`, `Chart.Sparkline`, `Chart.Histogram`,
 `Chart.Boxplot`, `Chart.Gauge`, `Chart.BarGauge`, `Chart.Stat`, `Chart.Heatmap`,
 `Chart.Map`, and `Chart.StateTimeline` accept only their kind's options.
@@ -55,7 +55,7 @@ They render exactly the same markup as `<Chart kind="…" … />`.
 Keep the discriminator form for saved JSON and dynamic chart selection.
 
 ```tsx
-import { Chart } from "@k2b/ui/charts";
+import { Chart } from "@k2b/ui";
 
 <Chart.Pie data={[{ label: "Imports", value: 42 }, { label: "Exports", value: 28 }]} />
 <Chart kind="pie" data={[{ label: "Imports", value: 42 }, { label: "Exports", value: 28 }]} />

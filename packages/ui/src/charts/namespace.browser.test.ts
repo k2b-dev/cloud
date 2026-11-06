@@ -21,7 +21,7 @@ test("named charts preserve browser output and reactive data at desktop and phon
             contents: `
             import { createComponent, createSignal } from "solid-js";
             import { render } from "solid-js/web";
-            import { Chart } from ${JSON.stringify(resolve(import.meta.dir, "../../dist/browser/charts.js"))};
+            import Chart from ${JSON.stringify(resolve(import.meta.dir, "../../dist/browser/content/Chart.js"))};
             import { chartKinds } from ${JSON.stringify(resolve(import.meta.dir, "core/registry.ts"))};
             const fixtures = ${JSON.stringify(chartFixtures)};
             for (const [name, kind] of Object.entries(chartKinds)) {
