@@ -363,6 +363,8 @@ for an active complete binding. Reusing a cancelled binding fails; resuming
 creates a fresh registration revision. Mandate revision changes also require
 cancelling and registering again. Events published before registration are excluded, including
 older events still in the publisher outbox. Registration and event acceptance serialize the activation boundary. No implicit catch-up occurs.
+Publication timestamps come from the transaction's PostgreSQL clock with
+microsecond precision, matching subscription cutoffs regardless of the publisher process clock.
 
 The consumer receives the binding, original reference envelope and standard
 delivery context. It must recheck its current workload revision and enabled
