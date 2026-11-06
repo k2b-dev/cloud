@@ -171,14 +171,17 @@ suiteFor("database")("Core app event broker", () => {
       await broker.work();
     }
     expect(received).toEqual(Array(8).fill(id(60)));
-    expect((await broker.deliveries()).items.find((row) => row.eventId === id(63))).toMatchObject({ state: "pending", attempts: 0 });
-    const failed = (await broker.deliveries()).items.find((row) => row.eventId === id(60))!;
+    expect((await broker.deliveries()).items.find((row: Record<string, unknown>) => row.eventId === id(63))).toMatchObject({
+      state: "pending",
+      attempts: 0,
+    });
+    const failed = (await broker.deliveries()).items.find((row: Record<string, unknown>) => row.eventId === id(60))!;
     expect(failed.state).toBe("failed");
     resourceFails = false;
     await broker.redeliver(String(failed.id), { uid: "operator" });
     await broker.work();
     expect(received.slice(-2)).toEqual([id(60), id(63)]);
-    expect((await broker.deliveries()).items.every((row) => row.state === "done")).toBe(true);
+    expect((await broker.deliveries()).items.every((row: Record<string, unknown>) => row.state === "done")).toBe(true);
   });
   test("revoked access and cancelled workloads never reach resource handlers", async () => {
     entries[0]!.manifest.events![0]!.place = "item";
@@ -197,7 +200,7 @@ suiteFor("database")("Core app event broker", () => {
     await cancelResourceEventSubscriptions(sql, "fixture", "workload");
     for (const row of claimed) await broker.deliver(row);
     expect(received).toEqual([]);
-    expect((await broker.deliveries()).items.every((row) => row.state === "cancelled")).toBe(true);
+    expect((await broker.deliveries()).items.every((row: Record<string, unknown>) => row.state === "cancelled")).toBe(true);
   });
   test("bounded retry ends failed, audits it, redelivers the same ID and preserves subject order", async () => {
     entries = entries.filter((entry) => entry.appId !== "receiverb");
