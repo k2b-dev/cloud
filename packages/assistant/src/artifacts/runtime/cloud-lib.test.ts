@@ -697,3 +697,25 @@ test("cloud.chart renders horizontal grouped rows and their title in app frames"
   expect(markup).not.toContain("<style>");
   expect(markup).not.toMatch(/NaN|Infinity/);
 });
+
+test("cloud.chart renders funnels with start and previous shares in app frames", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "funnel",
+        title: "Checkout",
+        data: [
+          { label: "Opened", value: 100 },
+          { label: "Paid", value: 120 },
+        ],
+      },
+      "de-DE",
+    ),
+  );
+  expect(markup).toContain('data-chart-kind="funnel"');
+  expect(markup).toContain(">Checkout</text>");
+  expect(markup).toContain("120");
+  expect(markup).toContain("Anteil am vorigen Schritt");
+  expect(markup).not.toContain("<style>");
+  expect(markup).not.toMatch(/NaN|Infinity/);
+});

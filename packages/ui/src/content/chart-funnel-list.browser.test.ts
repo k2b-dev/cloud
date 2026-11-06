@@ -5,6 +5,8 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { funnelListFixtures } from "../../test/chart-funnel-list-fixtures";
+import { renderFunnelSvg } from "../charts/core/funnel";
+import { renderBarChartSvg } from "./chart-bar";
 
 const { plugin } = createConfig({ dev: true, rootDir: import.meta.dir });
 Bun.plugin(plugin());
@@ -84,9 +86,17 @@ for (const width of [1440, 390])
         await chart.locator('[role="tooltip"]:popover-open').waitFor();
         const first = await chart.locator('[role="tooltip"]').textContent();
         expect(first).not.toContain("series:");
-        const rects = await marks
+        const rects = await marks.evaluateAll((nodes) =>
+          nodes.flatMap((g) => [g, ...g.querySelectorAll("rect:not(.k2b-chart-category-band)")].map((e) => getComputedStyle(e).opacity)),
+        );
+        const tipBox = await chart.locator('[role="tooltip"]').boundingBox();
+        await marks
           .first()
-          .evaluate((g) => [...g.querySelectorAll(".stdlib-chart-bar")].map((e) => getComputedStyle(e).opacity));
+          .locator(".k2b-chart-category-band")
+          .hover({ position: { x: 6, y: 10 } });
+        await settled(page);
+        expect(await chart.locator('[role="tooltip"]').textContent()).toBe(first);
+        expect(await chart.locator('[role="tooltip"]').boundingBox()).toEqual(tipBox);
         expect(rects.every((v) => v === "1")).toBe(true);
         expect(await sample.boundingBox()).toEqual(before);
         await chart.focus();
@@ -182,9 +192,48 @@ for (const width of [1440, 390])
           .locator(".k2b-chart-category-band")
           .first()
           .evaluate((e) => getComputedStyle(e).fill),
-      ).toBe("rgba(0, 0, 0, 0)");
+      ).toBe("none");
       expect(errors).toEqual([]);
     } finally {
       await page.close();
     }
   }, 30_000);
+
+test("funnels and ranked lists keep safe fills in standalone and base-only hosts", async () => {
+  const page = await browser.newPage();
+  try {
+    const base = await Bun.file(resolve(import.meta.dir, "../base/base.css")).text();
+    const svgs = [
+      renderFunnelSvg({
+        data: [
+          { label: "Opened", value: 100 },
+          { label: "Paid", value: 80 },
+        ],
+        width: 480,
+        height: 280,
+      }),
+      renderBarChartSvg({ layout: "rows", data: [{ label: "A", value: 100 }], width: 480, height: 280 }),
+    ];
+    for (const strip of [false, true]) {
+      await page.setContent(
+        `<style>${strip ? base : ""}</style>${svgs.map((svg) => `<div class="k2b-chart">${strip ? svg.replace(/<style>[\s\S]*?<\/style>/g, "") : svg}</div>`).join("")}`,
+      );
+      await settled(page);
+      expect(await page.locator(".k2b-chart-category-band").evaluateAll((nodes) => nodes.map((n) => getComputedStyle(n).fill))).toEqual([
+        "none",
+        "none",
+        "none",
+      ]);
+      expect(
+        await page.locator(".k2b-chart-funnel .stdlib-chart-bar").evaluateAll((nodes) => nodes.map((n) => getComputedStyle(n).fill)),
+      ).toEqual(["rgb(59, 130, 246)", "rgb(59, 130, 246)"]);
+      expect(
+        await page
+          .locator(".k2b-chart-ranked [data-chart-datum] > rect:not(.k2b-chart-category-band)")
+          .evaluate((n) => getComputedStyle(n).fill),
+      ).toBe("rgb(59, 130, 246)");
+    }
+  } finally {
+    await page.close();
+  }
+});

@@ -4,9 +4,8 @@ import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
-import { type FunnelOptions, renderFunnelSvg } from "../charts/core/funnel";
-
 import { categoryLabels } from "../charts/core/category-labels";
+import { type FunnelOptions, renderFunnelSvg } from "../charts/core/funnel";
 import { type HorizontalBarOptions, hbarLayout, renderHbarSvg } from "../charts/core/hbar";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
@@ -222,7 +221,16 @@ export const renderChartSvg = (
     return responsiveChartSvg(
       renderFunnelSvg({ ...(opts as FunnelOptions), locale: (opts as FunnelOptions).locale ?? locale, width, height, inspect: true }),
     );
-  if (kind === "hbar") return responsiveChartSvg(renderHbarSvg({ ...(opts as HorizontalBarOptions), width, height, inspect: true }));
+  if (kind === "hbar")
+    return responsiveChartSvg(
+      renderHbarSvg({
+        ...(opts as HorizontalBarOptions),
+        locale: (opts as HorizontalBarOptions).locale ?? locale,
+        width,
+        height,
+        inspect: true,
+      }),
+    );
   if (kind === "bar")
     return responsiveChartSvg(
       renderBarChartSvg({ ...(opts as BarChartOptions), locale: (opts as BarChartOptions).locale ?? locale, width, height, inspect: true }),

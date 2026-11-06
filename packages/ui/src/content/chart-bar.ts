@@ -810,7 +810,7 @@ const renderRankedBars = (opts: BarChartOptions & { width: number; height: numbe
   const g = rankedBarLayout(opts, opts),
     labels = barLabels(opts.locale);
   const parts = [renderHeader(opts, opts.width)];
-  const color = "var(--stdlib-chart-c1)";
+  const color = opts.tone ? `var(--k2b-flow-${opts.tone},var(--stdlib-chart-c1,#3b82f6))` : "var(--stdlib-chart-c1,#3b82f6)";
   const text = (x: number, y: number, value: string, anchor = "start", cls = "stdlib-chart-tick-label") =>
     `<text class="${cls}" x="${x}" y="${y}" text-anchor="${anchor}">${escapeXml(value)}</text>`;
   for (const row of g.rows) {
@@ -818,7 +818,7 @@ const renderRankedBars = (opts: BarChartOptions & { width: number; height: numbe
       written = value === null ? "–" : g.format(value);
     const share = row.share === null ? "–" : g.percent.format(row.share);
     const label = wrapLabel(row.label, (g.labelWidth * 11) / 13, 1).lines[0] ?? row.label;
-    const marks = `<rect class="k2b-chart-category-band" x="0" y="${row.y}" width="${g.width}" height="32" rx="6"/><rect x="0" y="${row.y}" width="${row.width}" height="32" rx="6" style="fill:color-mix(in srgb,${color} 16%,transparent);pointer-events:none"/>${text(10 * g.unit, row.y + 20, label)}${text(g.width - 10 * g.unit - g.shareWidth, row.y + 20, written, "end", "stdlib-chart-bar-value")}${opts.share ? text(g.width - 10 * g.unit, row.y + 20, share, "end") : ""}`;
+    const marks = `<rect class="k2b-chart-category-band" fill="none" pointer-events="all" x="0" y="${row.y}" width="${g.width}" height="32" rx="6"/><rect x="0" y="${row.y}" width="${row.width}" height="32" rx="6" style="fill:${color};fill-opacity:.16;pointer-events:none"/>${text(10 * g.unit, row.y + 20, label)}${text(g.width - 10 * g.unit - g.shareWidth, row.y + 20, written, "end", "stdlib-chart-bar-value")}${opts.share ? text(g.width - 10 * g.unit, row.y + 20, share, "end") : ""}`;
     parts.push(
       chartDatumSvg(
         marks,
@@ -845,5 +845,5 @@ const renderRankedBars = (opts: BarChartOptions & { width: number; height: numbe
   return svgRoot(
     { ...opts, height: g.height, className: [opts.className, "k2b-chart-ranked"].filter(Boolean).join(" ") },
     parts.join(""),
-  ).replace("<svg ", '<svg data-bar-layout="rows" data-category-inspection="true" ');
+  ).replace("<svg ", '<svg data-bar-layout="rows" ');
 };

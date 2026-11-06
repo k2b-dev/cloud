@@ -1,11 +1,13 @@
 import { chartDatumSvg, escapeXml, svgRoot } from "@k2b/stdlib";
-import { chartTextWidth, wrapLabel } from "../../content/chart-bar";
+import { chartTextWidth, headerHeight, renderHeader, wrapLabel } from "../../content/chart-bar";
 import { barLabels, barPercent } from "./bar-labels";
 
 export type FunnelOptions = {
   data: { label: string; value: number | null }[];
   valueFormat?: (value: number) => string;
   locale?: string;
+  title?: string;
+  subtitle?: string;
   className?: string;
 };
 
@@ -24,31 +26,32 @@ export function funnelLayout(spec: FunnelOptions, size = { width: 480, height: 2
   const right = Math.max(104 * unit, ...spec.data.map((d) => (d.value === null ? 0 : (chartTextWidth(format(d.value)) + 8) * unit)));
   const plot = Math.max(0, size.width - left - right - 8);
   const center = left + plot / 2;
-  const pitch = size.height / Math.max(1, spec.data.length);
+  const top = headerHeight(spec);
+  const pitch = (size.height - top) / Math.max(1, spec.data.length);
   const height = Math.min(pitch * 0.6, 34);
   const max = Math.max(0, ...spec.data.map((d) => d.value ?? 0));
   const steps = spec.data.map((d, index) => ({
     ...d,
     index,
     center,
-    y: index * pitch + (pitch - height) / 2,
+    y: top + index * pitch + (pitch - height) / 2,
     width: d.value === null || max === 0 ? 0 : (d.value / max) * plot,
     startShare: share(d.value, spec.data[0]?.value),
     previousShare: index ? share(d.value, spec.data[index - 1]?.value) : null,
   }));
-  return { ...size, unit, format, labels, percent, left, right, center, pitch, barHeight: height, steps };
+  return { ...size, unit, format, labels, percent, left, right, center, top, pitch, barHeight: height, steps };
 }
 
 export function renderFunnelSvg(spec: FunnelOptions & { width: number; height: number; inspect?: boolean }) {
   const g = funnelLayout(spec, spec);
   const text = (x: number, y: number, value: string, anchor = "start", cls = "stdlib-chart-tick-label") =>
     `<text class="${cls}" x="${x}" y="${y}" text-anchor="${anchor}">${escapeXml(value)}</text>`;
-  const parts: string[] = [];
+  const parts: string[] = [renderHeader(spec, spec.width)];
   for (const step of g.steps) {
     const next = g.steps[step.index + 1];
     if (next && step.value !== null && next.value !== null)
       parts.push(
-        `<polygon points="${g.center - step.width / 2},${step.y + g.barHeight} ${g.center + step.width / 2},${step.y + g.barHeight} ${g.center + next.width / 2},${next.y} ${g.center - next.width / 2},${next.y}" style="fill:color-mix(in srgb,var(--stdlib-chart-c1) 9%,transparent)"/>`,
+        `<polygon points="${g.center - step.width / 2},${step.y + g.barHeight} ${g.center + step.width / 2},${step.y + g.barHeight} ${g.center + next.width / 2},${next.y} ${g.center - next.width / 2},${next.y}" style="fill:var(--stdlib-chart-c1,#3b82f6);fill-opacity:.09"/>`,
       );
     const fields = [
       { key: "value", value: step.value ?? "–", formatted: step.value === null ? "–" : g.format(step.value) },
@@ -67,7 +70,7 @@ export function renderFunnelSvg(spec: FunnelOptions & { width: number; height: n
           ]
         : []),
     ];
-    const marks = `<rect class="k2b-chart-category-band" x="0" y="${step.index * g.pitch}" width="${g.width}" height="${g.pitch}" rx="6"/>${step.value === null ? "" : `<rect class="stdlib-chart-bar" x="${g.center - step.width / 2}" y="${step.y}" width="${step.width}" height="${g.barHeight}" rx="4" style="fill:color-mix(in srgb,var(--stdlib-chart-c1) ${Math.max(30, 100 - step.index * 14)}%,var(--k2b-surface));stroke:none"/>`}`;
+    const marks = `<rect class="k2b-chart-category-band" fill="none" pointer-events="all" x="0" y="${g.top + step.index * g.pitch}" width="${g.width}" height="${g.pitch}" rx="6"/>${step.value === null ? "" : `<rect class="stdlib-chart-bar" x="${g.center - step.width / 2}" y="${step.y}" width="${step.width}" height="${g.barHeight}" rx="3" style="fill:var(--stdlib-chart-c1,#3b82f6);fill-opacity:${Math.max(0.3, 1 - step.index * 0.14)};stroke:none"/>`}`;
     parts.push(
       chartDatumSvg(
         marks,
@@ -85,6 +88,6 @@ export function renderFunnelSvg(spec: FunnelOptions & { width: number; height: n
   }
   return svgRoot({ ...spec, className: [spec.className, "k2b-chart-funnel"].filter(Boolean).join(" ") }, parts.join("")).replace(
     "<svg ",
-    '<svg data-bar-layout="rows" data-category-inspection="true" ',
+    '<svg data-bar-layout="rows" ',
   );
 }
