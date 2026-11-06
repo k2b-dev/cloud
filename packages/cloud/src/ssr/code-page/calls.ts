@@ -12,6 +12,8 @@ export const summarizeCallResult = (result: unknown, locale = "en"): string | nu
     const record = result as Record<string, unknown>;
     const error = record.error && typeof record.error === "object" ? (record.error as Record<string, unknown>) : null;
     if (error?.code === "code_ai_budget_reserved") return codePageMessages.resolve([locale]).t.aiBudgetReserved;
+    if (error?.code === "code_ai_daily_budget_limit") return codePageMessages.resolve([locale]).t.aiDailyBudgetRefused;
+    if (error?.code === "code_ai_owner_daily_budget_limit") return codePageMessages.resolve([locale]).t.aiOwnerDailyBudgetRefused;
     if (error?.code === "code_ai_budget_limit") return codePageMessages.resolve([locale]).t.aiBudgetRefused;
     const message = typeof error?.message === "string" ? error.message : typeof record.message === "string" ? record.message : null;
     if (message) return message.slice(0, 240);
@@ -62,6 +64,11 @@ export const loadCodeRunCalls = async (
     if (!page.ok || !page.data.data.contents) break;
     const call = page.data.data.contents.calls[0];
     if (!call) break;
+    const budgetRefusal = z
+      .object({
+        error: z.object({ code: z.enum(["code_ai_budget_limit", "code_ai_daily_budget_limit", "code_ai_owner_daily_budget_limit"]) }),
+      })
+      .safeParse(call.result);
     calls.push({
       ordinal: call.ordinal,
       kind: call.kind,
@@ -70,10 +77,8 @@ export const loadCodeRunCalls = async (
       refs: callRefs(call.call),
       // Only the bridge's classification counts; the page never guesses from a result.
       refusal: call.state === "failed" ? (call.refusalKind ?? null) : null,
-      ...(call.state === "failed" &&
-      call.refusalKind === "policy" &&
-      z.object({ error: z.object({ code: z.literal("code_ai_budget_limit") }) }).safeParse(call.result).success
-        ? { refusalCode: "code_ai_budget_limit" as const }
+      ...(call.state === "failed" && call.refusalKind === "policy" && budgetRefusal.success
+        ? { refusalCode: budgetRefusal.data.error.code }
         : {}),
       state: call.state,
       summary: summarizeCallResult(call.result, locale),

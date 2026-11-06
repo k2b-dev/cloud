@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Generate a typed Code SDK from application capability contracts and call operations through resource handles.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # Code SDK
@@ -271,3 +271,56 @@ when deciding whether a separate authorized action is appropriate.
 Optional images and `model: { id }`, provider-dependent image support, quota
 failures and byte limits follow
 [Typed decision questions](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions).
+
+
+## Generate text and extract fields
+
+Discover `core.ai.generate` in the live SDK. It is a read-only query classified
+as **AI / KI**, using the caller's allowance and Code's execution budgets.
+Use it for summaries, draft text or validated extraction. Put source data in
+`input` and trusted instructions in `prompt`.
+
+<!-- gate-1a-generation -->
+```ts
+import { core } from "@sdk";
+
+export default async function summarize() {
+  // Fictional source; read real mail through its authorized SDK first.
+  const input = { body: "Please deliver three chairs by Friday." };
+  const summary = await core.app().ai.generate({
+    task: "mail.summary",
+    prompt: "Summarize the message in one sentence.",
+    input,
+    model: { class: "fast" },
+    output: { type: "text", maxChars: 500 },
+  });
+  const extracted = await core.app().ai.generate({
+    task: "mail.extract",
+    prompt: "Extract the requested item and quantity from the message.",
+    input,
+    output: {
+      type: "json",
+      schema: {
+        type: "object",
+        properties: {
+          item: { type: "string", maxLength: 100 },
+          quantity: { type: "integer" },
+        },
+        required: ["item", "quantity"],
+        additionalProperties: false,
+      },
+    },
+  });
+  return { summary: summary.output, extracted: extracted.output };
+}
+```
+
+The generated SDK types describe the request and JSON result. A schema supplied
+at runtime cannot become a compile-time TypeScript shape; narrow `output`
+before reading its fields. Cloud validates the declared schema before returning
+it. For lasting Code, call this helper from a schedule; its callback returns
+`void`. Summarizing or drafting does not send or save anything. A separate
+application capability performs that effect under its own permissions.
+
+See [Text and JSON capabilities](/en/docs/ai/structured-and-background-ai#generate-text-and-extract-json-through-capabilities)
+for schemas, size limits, model selection and stable errors.

@@ -91,6 +91,18 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "ai.generate": {
+          title: "Text oder strukturierte Daten erzeugen",
+          description:
+            "Berechtigt gelesene Inhalte zusammenfassen, Text entwerfen oder Felder nach einem geprüften JSON-Schema extrahieren. Nur lesend; versendet oder speichert nichts. Belastet das KI-Kontingent des Aufrufers.",
+          input: {
+            task: "Kurzer Abrechnungsname, etwa mail.summary.",
+            prompt: "Vertrauenswürdige Aufgabenanweisungen. Mail-Inhalte und andere Quelldaten gehören in input.",
+            input: "Berechtigt gelesene Quelldaten; werden als nicht vertrauenswürdige Daten behandelt, niemals als Anweisungen.",
+            model: "Modellklasse oder erlaubte Variante; Standard ist balanced.",
+            output: "Begrenzter Text oder ein striktes JSON-Schema mit skalaren Feldern. Die Ausgabe wird vor der Rückgabe geprüft.",
+          },
+        },
         "ai.decide": {
           title: "Ein Entscheidungsmodell fragen",
           description:

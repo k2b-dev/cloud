@@ -14,7 +14,7 @@ import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
 import { RunnerCallResponseSchema } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { ratelimit } from "@k2b/cloud/server";
-import { mandates } from "@k2b/cloud/services";
+import { coreSettings, mandates } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { CodeDataError } from "./access";
@@ -195,7 +195,11 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
           aiReservation = await sql.begin(async (tx) => {
             // Resolve current group policy before reserving; issuance rechecks it before the model is called.
             await authorizeCall(call, tx);
-            const reservation = await reserveCodeAiBudget(call.claims, ordinal, await codeSettings.get("core.code.ai_budget_usd"), tx);
+            const reservation = await reserveCodeAiBudget(call.claims, ordinal, await codeSettings.get("core.code.ai_budget_usd"), tx, {
+              code: await codeSettings.get("core.code.ai_daily_budget_usd"),
+              owner: await codeSettings.get("core.code.ai_owner_daily_budget_usd"),
+              timeZone: (await coreSettings.get<string>("app.timezone")) || "UTC",
+            });
             if (!reservation.ok) denied(reservation.code);
             return reservation.reserved;
           });

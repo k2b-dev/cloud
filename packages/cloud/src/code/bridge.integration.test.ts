@@ -7,6 +7,8 @@ import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures"
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
 import { decisionInputFixture, decisionResultFixture } from "../../../core/src/ai-decision-capability.test-fixture";
+import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
+import { reserveCodeAiBudget, settleCodeAiBudget } from "../../../core/src/code/ai-budget";
 import { createCodeBridgeHost, readCodeOwnOrigins } from "../../../core/src/code/bridge";
 import { createCodeRunnerRoutes } from "../../../core/src/code/runner-routes";
 import { CODE_SETTINGS, codeSettings } from "../../../core/src/code/settings";
@@ -120,7 +122,7 @@ const confirmationCompiled = compileCapabilities("example", {
 });
 const decisionCompiled = compileCapabilities("core", {
   protocolVersion: 2,
-  queries: { "ai.decide": aiDecisionQuery, "ai.skills.list": op },
+  queries: { "ai.decide": aiDecisionQuery, "ai.generate": aiGenerationQuery, "ai.skills.list": op },
 });
 const baseEntry: CapabilityRegistryEntry = {
   appId: "example",
@@ -445,6 +447,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     targetAccess = access!.id;
   }
   beforeEach(async () => {
+    await sql`TRUNCATE code.ai_daily_budget`;
     targetFailure = null;
     providerRequestsConfirmation = false;
     await resetFixture();
@@ -505,6 +508,109 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       run.mockRestore();
     }
   });
+  test.each([false, true])("Code generation preserves workload accounting and policy KI (personal=%s)", async (personal) => {
+    await resetFixture({ personal, entry: true, policyRows: ["ai"] });
+    if (personal)
+      await sql`UPDATE auth.mandates SET subject_kind='user',subject_user_id=${userId}::uuid,subject_service_account_id=NULL WHERE id=${claims.mandateId}::uuid`;
+    const run = spyOn(decision, "runAiStructured").mockResolvedValue({
+      output: { text: "Summary" },
+      model: decisionResultFixture.model,
+      usage: decisionResultFixture.usage,
+      structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
+    });
+    try {
+      const response = await send({
+        entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },
+        operation: "core.ai.generate",
+        input: {
+          call: {
+            capability: "core.ai.generate",
+            target: null,
+            refs: {},
+            input: { task: "mail.summary", prompt: "Summarize.", input: { body: "Message" }, output: { type: "text", maxChars: 500 } },
+          },
+          metadata: {},
+        },
+      });
+      expect(await response.json()).toMatchObject({ ok: true, data: { output: "Summary" } });
+      const [code] = await sql<
+        { service_account_id: string | null }[]
+      >`SELECT service_account_id FROM code.codes WHERE id=${claims.codeId}`;
+      expect(run).toHaveBeenCalledWith(
+        expect.objectContaining({
+          usageSubject: personal ? { type: "user", userId } : { type: "service_account", serviceAccountId: code!.service_account_id },
+        }),
+      );
+      const counters = await sql<
+        { scope_kind: string; cost: string }[]
+      >`SELECT scope_kind,reference_cost::text AS cost FROM code.ai_daily_budget
+        WHERE scope_key=${claims.codeId} OR scope_key=json_build_array('person',${userId}::text)::text ORDER BY scope_kind`;
+      expect(counters.find((counter) => counter.scope_kind === "code")?.cost).toBe("0.000046000000");
+    } finally {
+      run.mockRestore();
+    }
+  });
+
+  test("daily Code and exact-owner counters reserve together and a stale generation cannot release them", async () => {
+    await resetFixture({ personal: true, entry: true, policyRows: ["ai"] });
+    const daily = { code: 0.5, owner: 0.75, timeZone: "UTC" };
+    const reserve = (ordinal: number) => sql.begin((db) => reserveCodeAiBudget(claims, ordinal, 1, db, daily));
+    expect(await reserve(1)).toEqual({ ok: true, reserved: "0.500000000000" });
+    expect(await reserve(2)).toEqual({ ok: false, code: "code_ai_budget_reserved" });
+    await sql.begin((db) => settleCodeAiBudget({ ...claims, generation: claims.generation + 1 }, 1, "0", db));
+    expect(await reserve(3)).toEqual({ ok: false, code: "code_ai_budget_reserved" });
+    await sql.begin((db) => settleCodeAiBudget(claims, 1, "0.5", db));
+    expect(await reserve(4)).toEqual({ ok: false, code: "code_ai_daily_budget_limit" });
+    // A new personal Code under the same owner cannot evade the aggregate owner allowance.
+    const previous = { ...claims };
+    await resetFixture({ personal: true, entry: true, policyRows: ["ai"] });
+    const second = await reserve(1);
+    expect(second).toEqual({ ok: true, reserved: "0.250000000000" });
+    const attempts = await Promise.all([reserve(2), reserve(3)]);
+    expect(attempts.every((result) => !result.ok)).toBe(true);
+    await sql.begin((db) => settleCodeAiBudget(claims, 1, "0.25", db));
+    expect(await reserve(4)).toEqual({ ok: false, code: "code_ai_owner_daily_budget_limit" });
+    // The old Code's recorded spend is independent of the new Code's run.
+    const [spent] = await sql<{ cost: string }[]>`SELECT ai_reference_cost::text AS cost FROM code.runs WHERE id=${previous.runId}::uuid`;
+    expect(spent?.cost).toBe("0.5");
+  });
+
+  test("concurrent runs of different Code cannot spend one owner's reserved daily allowance", async () => {
+    await resetFixture({ personal: true, entry: true, policyRows: ["ai"] });
+    const first = { ...claims };
+    await resetFixture({ personal: true, entry: true, policyRows: ["ai"] });
+    const second = { ...claims };
+    const daily = { code: 1, owner: 0.5, timeZone: "UTC" };
+    const outcomes = await Promise.all([first, second].map((run) => sql.begin((db) => reserveCodeAiBudget(run, 1, 0.5, db, daily))));
+    expect(outcomes.filter((result) => result.ok)).toHaveLength(1);
+    expect(outcomes.find((result) => !result.ok)).toEqual({ ok: false, code: "code_ai_owner_daily_budget_limit" });
+    const admitted = outcomes[0]!.ok ? first : second;
+    await sql.begin((db) => settleCodeAiBudget(admitted, 1, "0", db));
+    const refused = outcomes[0]!.ok ? second : first;
+    expect(await sql.begin((db) => reserveCodeAiBudget(refused, 2, 0.5, db, daily))).toEqual({ ok: true, reserved: "0.500000000000" });
+  });
+
+  test("settlement retains the admission day across midnight and releases only its own reservation", async () => {
+    await resetFixture({ entry: true, policyRows: ["ai"] });
+    const reserve = await sql.begin((db) => reserveCodeAiBudget(claims, 1, 1, db, { code: 1, owner: 1, timeZone: "UTC" }));
+    expect(reserve.ok).toBe(true);
+    const [period] = await sql<
+      { day: string; owner_key: string }[]
+    >`SELECT ai_budget_day::text AS day,ai_budget_owner_key AS owner_key FROM code.runs WHERE id=${claims.runId}::uuid`;
+    // Move the reservation and counters into a fixed prior day to model an in-flight midnight crossing.
+    await sql`UPDATE code.ai_daily_budget SET day='2000-01-01' WHERE day=${period!.day}::date
+      AND (scope_key=${claims.codeId} OR scope_key=${period!.owner_key})`;
+    await sql`UPDATE code.runs SET ai_budget_day='2000-01-01' WHERE id=${claims.runId}::uuid`;
+    await sql.begin((db) => settleCodeAiBudget(claims, 1, "0.1", db));
+    const prior = await sql<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget WHERE day='2000-01-01'
+      AND (scope_key=${claims.codeId} OR scope_key=${period!.owner_key})`;
+    expect(prior.map((row) => row.cost)).toEqual(["0.100000000000", "0.100000000000"]);
+    expect(await sql.begin((db) => reserveCodeAiBudget(claims, 2, 1, db, { code: 1, owner: 1, timeZone: "UTC" }))).toEqual({
+      ok: true,
+      reserved: "0.900000000000",
+    });
+  });
+
   const sendDecision = () =>
     send({
       entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },

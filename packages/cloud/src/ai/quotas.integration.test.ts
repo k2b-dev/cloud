@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import * as publicAi from "@k2b/cloud/ai";
+import type { Provider } from "@k2b/nessi";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { aiGenerationInput, aiGenerationQuery } from "../../../core/src/ai-generation-capability";
 import { sql } from "../runtime/clients";
+import { geoTestContext } from "../services/geo/geo.test-fixture";
+import { type TraceContext, trace } from "../services/logging";
 import type { AiQuotaRule } from "../shared/ai-quotas";
+import { streamAnswer } from "./answer-stream.test-fixture";
 import { backgroundCostState, beginAiCall, finishAiCall, releaseBackgroundCostStop } from "./inference-calls";
 import { drainQueuedMessages } from "./message-queue";
 import { aiPeopleAtLimit } from "./quota-limits";
@@ -10,6 +16,7 @@ import { aiQuotas, quotaWindow } from "./quotas";
 import { migrateAiQuotas } from "./quotas-migrate";
 import * as modelSettings from "./settings";
 import { aiConversations } from "./store";
+import * as structuredRuns from "./structured-runs";
 import type { AiModelProfile } from "./types";
 
 const suite = databaseSuite();
@@ -307,6 +314,77 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     expect((await aiQuotas.snapshot(subject, "a")).balances[0]).toMatchObject({ limit: 100, used: 50 });
     for (const account of [agent, code]) {
       expect((await aiQuotas.snapshot(account, "a")).balances[0]).toMatchObject({ limit: 100, used: 100 });
+    }
+  });
+  test("Core text AI books the caller's ledger exactly once and refuses that caller's next call at quota", async () => {
+    const account = { type: "service_account" as const, serviceAccountId: codeService };
+    const allowance = rule("*", 1000);
+    allowance.grants.push({ principal: account, limit: 1000 });
+    await save([allowance]);
+    let providerCalls = 0;
+    const provider: Provider = {
+      name: "fixture",
+      family: "openai-compatible",
+      model: "a",
+      capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: true },
+      async *stream() {
+        providerCalls++;
+        yield* streamAnswer({
+          message: { role: "assistant", content: [{ type: "text", text: '{"text":"Summary"}' }] },
+          finishReason: "stop",
+          usage: { input: 900, output: 100, total: 1000 },
+        });
+      },
+    };
+    const selected = spyOn(publicAi, "selectAssistantAiModel").mockResolvedValue({ id: "a" });
+    const resolved = spyOn(publicAi, "resolveAiModel").mockResolvedValue({
+      profile: pricedModel("a"),
+      provider,
+      model: { id: "a", class: "balanced", requestedClass: "balanced" },
+    });
+    const traceContext: TraceContext = { traceId: "generation-accounting", spanId: "span", traceparent: "parent" };
+    const span = spyOn(trace, "withSpan").mockImplementation(
+      async <T>(_params: Parameters<typeof trace.withSpan>[0], run: (ctx: TraceContext) => Promise<T> | T) => run(traceContext),
+    );
+    const record = spyOn(trace, "record").mockResolvedValue(traceContext);
+    const metadata = spyOn(structuredRuns, "safelyRecordStructuredRun").mockResolvedValue(undefined);
+    try {
+      const input = aiGenerationInput.parse({
+        task: "mail.summary",
+        prompt: "Summarize.",
+        input: "Message",
+        output: { type: "text", maxChars: 500 },
+      });
+      for (const accessSubject of [subject, account]) {
+        const context = {
+          ...geoTestContext,
+          actor: geoTestContext.actor!,
+          accessSubject,
+          user: null,
+          locale: "en",
+          requestId: "accounting",
+          origin: "http" as const,
+          signal: new AbortController().signal,
+        };
+        expect(await aiGenerationQuery.run(input, context)).toMatchObject({ ok: true, data: { data: { output: "Summary" } } });
+        expect((await aiQuotas.snapshot(accessSubject, "a")).balances[0]).toMatchObject({ used: 1000 });
+        expect(await aiGenerationQuery.run(input, context)).toMatchObject({ ok: false, error: { code: "quota_exhausted" } });
+      }
+      expect(providerCalls).toBe(2);
+      const calls = await sql<
+        { user_id: string | null; service_account_id: string | null; kind: string; task: string; app_id: string; cost: string }[]
+      >`
+        SELECT user_id,service_account_id,kind,task,app_id,cost::text FROM ai.inference_calls ORDER BY service_account_id NULLS FIRST`;
+      expect(calls).toEqual([
+        { user_id: user, service_account_id: null, kind: "chat", task: "mail.summary", app_id: "core", cost: "1000.000000000000" },
+        { user_id: null, service_account_id: codeService, kind: "chat", task: "mail.summary", app_id: "core", cost: "1000.000000000000" },
+      ]);
+    } finally {
+      selected.mockRestore();
+      resolved.mockRestore();
+      span.mockRestore();
+      record.mockRestore();
+      metadata.mockRestore();
     }
   });
   test("user quota checks preserve nested groups without machine membership tables", async () => {

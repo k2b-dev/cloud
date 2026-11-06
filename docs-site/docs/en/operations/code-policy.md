@@ -5,7 +5,7 @@ section: Operations
 order: 1253
 description: Configure Code execution budgets and inspect durable policy pause work.
 tags: [operations, code, policy, settings]
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # Code policy operations
@@ -36,10 +36,12 @@ environment fallback. They complement the
 | `core.code.calls_per_second` | 60 per Code | 1–1,000 |
 | `core.code.database_bytes` | 100 MiB per Code | 1 byte–1 GiB |
 | `core.code.ai_budget_usd` | USD 1 reference cost per attempt | 0–100; zero disables AI |
+| `core.code.ai_daily_budget_usd` | USD 1 reference cost per Code per day | 0–100; zero disables AI |
+| `core.code.ai_owner_daily_budget_usd` | USD 1 reference cost per owner per day | 0–100; zero disables AI |
 | `core.code.concurrency_per_code` | 1 active attempt | 1–100 |
 | `core.code.concurrency_per_owner` | 10 active attempts | 1–1,000 |
 
-All values except the AI budget are whole numbers. The wall-clock maximum
+All values except the AI budgets are whole numbers. The wall-clock maximum
 matches the Phase 1 runner budget. The call maximum preserves the existing run
 storage boundary. Database, AI and concurrency defaults and ranges are initial
 operational budgets; administrators can lower them for their installation.
@@ -49,8 +51,8 @@ an author does not create another owner allowance.
 Code enforces the per-attempt AI reference budget on `core.ai.*` capability calls,
 alongside the effective group policy for **AI**. Zero refuses before model
 invocation with `code_ai_budget_limit`. The run detail names the exhausted AI
-budget in its notice instead of the general policy message. Each admitted call reserves the attempt's
-remaining budget atomically; parallel calls cannot spend that reservation again.
+budget in its notice instead of the general policy message. Each admitted call reserves the smallest remaining allowance across the attempt,
+Code day and owner day atomically; parallel calls cannot spend it again.
 While it is reserved, another AI call is refused with `code_ai_budget_reserved`; wait for the first call before retrying. After the
 call, Core accounts the returned model's reference prices and input/output usage,
 and releases the unused reservation. Measured cost can exceed the remainder of
@@ -62,8 +64,29 @@ Known refusals before model execution release the reservation; unknown outcomes
 keep it spent, including an interrupted attempt whose call cannot be settled.
 Models without reference prices do not add cost, like explicitly free models.
 Successful catalog/history reads add no model cost. Zero still blocks all
-`core.ai.*` calls from Code. A new attempt starts its own budget, so automatic
-retries can use this allowance again, up to `core.code.automatic_attempts` times.
+`core.ai.*` calls from Code. A new attempt starts its own attempt budget; the daily aggregates remain spent,
+including across automatic retries, new versions and manual reruns. Text and
+structured generation (`core.ai.generate`) use the same reservation path as
+`core.ai.decide`. Missing usage keeps the reservation spent. Generation quota
+failures also retain it: a structured-output repair may have spent tokens
+before reaching the quota, so a terminal refusal cannot prove zero usage.
+
+Days follow the installation's `app.timezone` (UTC when unset). Settlement
+always uses the admission day, including when a call finishes after midnight.
+The owner aggregate covers all Code of the exact person, resource or
+application; another author or a recreated Code does not reset that owner's
+budget. Deleting run history does not release daily spend. Daily counters are
+kept for the same 30-day history window as finished Code runs and belong in the
+Core database backup.
+
+`code_ai_daily_budget_limit` means the Code's daily allowance is spent or
+reserved; `code_ai_owner_daily_budget_limit` means the same for its owner.
+The run detail names the limit in DE/EN. Wait for running calls to settle or
+the next installation calendar day, or review the configured limit. Do not
+rerun repeatedly: a new attempt cannot reset these counters. As with the
+existing attempt budget, this is reference-cost admission, not a hard provider
+billing cap: measured cost of already admitted inference can exceed its
+reservation. Unpriced models add no reference cost.
 Person/service-account AI allowance still applies.
 Gustav chat and direct `cld` capability calls do not use the Code run budget.
 
