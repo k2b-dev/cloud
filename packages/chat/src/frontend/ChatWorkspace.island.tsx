@@ -2045,7 +2045,6 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setLiveStore(live);
     const sync = () => {
       const focused = document.activeElement;
-      prune();
       // The reader's own message moves its chat to the top: that is the reader's action, not a move under the pointer.
       const top = live.sidebar.find((row) => row.pinnedRank === null);
       const firstUnpinned = order().find((id) => live.sidebar.some((row) => row.id === id && row.pinnedRank === null));
@@ -2056,7 +2055,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       setRows(live.sidebar);
       if (ownTop) sortRows();
       setHasMore(live.hasMoreSidebar);
-      setChat(live.openConversation);
+      // A send its stored message replaces leaves in the same step as the message arrives, so its row never goes missing.
+      batch(() => {
+        prune();
+        setChat(live.openConversation);
+      });
       if (live.openConversation?.status === "no-access") setPanel(null);
       setLiveStopped(live.liveStatus === "stopped");
       // Moving a keyed pin with insertBefore can blur its handle or menu trigger in the browser.

@@ -127,15 +127,29 @@ describe("Shared Cloud elements", () => {
       await page.getByRole("dialog").getByRole("button", { name: "Add", exact: true }).click();
       await page.locator(".k2b-chat-composer").getByText("Inventory hall 3").waitFor();
       // The stored message arrives live before the send's answer (#2699).
-      const release = harness.holdSendAnswers();
-      await page.keyboard.press("Enter");
-      await until(() => harness.posted.some((post) => post.refs?.length === 1));
-      expect(harness.posted.at(-1)).toMatchObject({ body: "", refs: [{ type: "spaces.task", id: "inventory" }] });
-      // The sent message shows the card at once; the stored message takes the send's place, so it never shows twice.
-      await page.locator('.k2b-message-row[data-own][data-status="sent"]').waitFor();
-      expect(await page.locator(".k2b-message-row[data-own]").count()).toBe(1);
-      await page.locator(".k2b-message-row[data-own] .k2b-resource-card").getByText("Inventory hall 3", { exact: true }).waitFor();
-      release();
+      const send = harness.holdSends();
+      try {
+        await page.keyboard.press("Enter");
+        await until(() => harness.posted.some((post) => post.refs?.length === 1));
+        expect(harness.posted.at(-1)).toMatchObject({ body: "", refs: [{ type: "spaces.task", id: "inventory" }] });
+        // The sent message shows the card at once.
+        const card = page.locator('.k2b-message-row[data-own][data-status="pending"] .k2b-resource-card');
+        await card.getByText("Inventory hall 3", { exact: true }).waitFor();
+        await card.focus();
+        send.store();
+        // The stored message takes the send's place in one step: it never shows twice, and focus stays on it.
+        await page.locator('.k2b-message-row[data-own][data-status="sent"]').waitFor();
+        expect(await page.locator(".k2b-message-row[data-own]").count()).toBe(1);
+        // A replaced row takes focus back on its feed item; only a row that went missing loses it to the scroll area.
+        expect(
+          await page.evaluate(() =>
+            Boolean(document.activeElement?.closest(".k2b-virtual-feed__item")?.querySelector(".k2b-message-row[data-own]")),
+          ),
+        ).toBe(true);
+        await page.locator(".k2b-message-row[data-own] .k2b-resource-card").getByText("Inventory hall 3", { exact: true }).waitFor();
+      } finally {
+        send.answer();
+      }
       expect(await page.locator(".k2b-chat-composer").getByText("Inventory hall 3").count()).toBe(0);
       expect(errors).toEqual([]);
     } finally {

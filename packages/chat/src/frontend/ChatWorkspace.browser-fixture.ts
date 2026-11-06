@@ -222,8 +222,8 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
   let nextAccess = 0;
   let nextPerson = 0;
   let failing = 0;
-  // While set, a stored send is delivered live at once, but its answer waits until the test releases it.
-  let heldAnswers: Promise<void> | null = null;
+  // While set, a send waits to be stored and delivered live, then waits again before the server answers it.
+  let heldSends: { stored: Promise<void>; answered: Promise<void> } | null = null;
   let failingReactions = 0;
   let failingMutations = 0;
   const reactionRequests: { method: string; messageId: string; emoji?: string }[] = [];
@@ -1783,6 +1783,8 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           if (input.thread && !thread) return Response.json({ code: "NOT_FOUND", message: "Thread not found." }, { status: 404 });
           if (thread?.archived)
             return Response.json({ code: "THREAD_ARCHIVED", message: "Restore this thread before sending a message." }, { status: 409 });
+          const held = heldSends;
+          await held?.stored;
           const message = append(id!, viewer, input.body, now(), "text", {
             clientId: input.clientId,
             thread: input.thread ?? null,
@@ -1794,7 +1796,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
             }),
           });
           publish(message);
-          await heldAnswers;
+          await held?.answered;
           return Response.json(message, { status: 201 });
         }
       }
@@ -2083,7 +2085,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
       failingReactions = 0;
       discoveryUpdates.length = 0;
       failing = 0;
-      heldAnswers = null;
+      heldSends = null;
       failingUnread = 0;
       failingThreads = 0;
       failingShared = 0;
@@ -2111,13 +2113,21 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     failSends: (count = 1) => {
       failing = count;
     },
-    /** Holds the answers to sends, which are stored and delivered live, until the returned function releases them. */
-    holdSendAnswers: () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      heldAnswers = promise;
-      return () => {
-        heldAnswers = null;
-        resolve();
+    /**
+     * Holds the next sends: `store` lets the server store them and deliver them live, `answer` lets it answer them, so
+     * a test decides whether the live message or the answer comes first.
+     */
+    holdSends: () => {
+      const stored = Promise.withResolvers<void>();
+      const answered = Promise.withResolvers<void>();
+      heldSends = { stored: stored.promise, answered: answered.promise };
+      return {
+        store: () => stored.resolve(),
+        answer: () => {
+          heldSends = null;
+          stored.resolve();
+          answered.resolve();
+        },
       };
     },
     /** Makes the next `count` thread creations or changes fail with 503. */
