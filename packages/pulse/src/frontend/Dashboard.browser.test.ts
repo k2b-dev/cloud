@@ -413,6 +413,31 @@ test("loading retains panel slots, per-panel failures retry, outages retain last
   }
 }, 30_000);
 
+test("a panel that cannot render its result fails alone and recovers on retry", async () => {
+  let release: (() => void) | undefined;
+  const deferred = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { tab, panels } = await open({ deferred });
+  try {
+    // Any render-time throw used to reach the island boundary and blank every panel.
+    const result = dashboardTestPanelResult(dashboardTestDashboard.definition.panels.find((panel) => panel.id === "p95")!);
+    panels.set("p95", { json: { ...result, lastGood: { ...result.lastGood!, data: { ...result.lastGood!.data, rows: null } } } });
+    release!();
+    await ready(tab);
+    const failed = tab.locator('[data-panel="p95"]');
+    expect(await failed.locator('[role="alert"]').textContent()).toContain("Diese Abfrage ist gescheitert");
+    expect(await tab.locator('[data-panel="req"] .k2b-chart').count()).toBe(1);
+    expect(await tab.locator("[data-panel] .k2b-skeleton").count()).toBe(0);
+    panels.delete("p95");
+    await failed.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+    await tab.locator('[data-panel="p95"] .k2b-chart').waitFor();
+  } finally {
+    release?.();
+    await tab.close();
+  }
+}, 30_000);
+
 test("a map panel shades countries, names them, and answers a tap on a phone in both themes", async () => {
   for (const options of [{ width: 1440 }, { width: 390, dark: true }]) {
     const { tab } = await open({ dashboard: dashboardTestKinds, ...options });

@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { Avatar, Button, createChartCursor, DateTimePicker, NoticeCard, PanelHeader, RangePicker, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, ErrorBoundary, For, Show } from "solid-js";
 import type { Dashboard, DashboardPanel, DashboardRange } from "../../dashboard-contracts";
 import type { Overview } from "../../overview-contracts";
 import { usePulseMessages } from "../use-messages";
@@ -69,16 +69,43 @@ export default function DashboardView(props: DashboardViewProps) {
       ? new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(lastGood()!)) +
         " UTC"
       : "";
+  // A panel that cannot render its result fails alone; the island boundary would blank the whole dashboard.
   const renderPanel = (panel: PublicDashboardPanel | DashboardPanel) => (
-    <DashboardPanelView
-      panel={panel}
-      result={c.results()[panel.id]}
-      pending={c.pending().includes(panel.id)}
-      retryDisabled={c.pending().length > 0}
-      cursor={cursor}
-      retry={() => void c.refresh(panel.id)}
-      private={!!props.private}
-    />
+    <ErrorBoundary
+      fallback={(error: unknown, reset) => {
+        globalThis.reportError(error);
+        return (
+          <article
+            class="pulse-dashboard__panel"
+            data-panel={panel.id}
+            data-kind={panel.kind}
+            data-width={panel.width}
+            aria-label={panel.title}
+          >
+            <div class="pulse-dashboard__panel-head">
+              <h3>{panel.title}</h3>
+            </div>
+            <div class="pulse-dashboard__feedback" role="alert">
+              <strong>{t().dashboardPanelFailed}</strong>
+              <p class="text-sm text-secondary">{t().dashboardInvalidResult}</p>
+              <Button variant="secondary" size="sm" disabled={c.pending().length > 0} onClick={() => void c.refresh(panel.id).then(reset)}>
+                {t().retry}
+              </Button>
+            </div>
+          </article>
+        );
+      }}
+    >
+      <DashboardPanelView
+        panel={panel}
+        result={c.results()[panel.id]}
+        pending={c.pending().includes(panel.id)}
+        retryDisabled={c.pending().length > 0}
+        cursor={cursor}
+        retry={() => void c.refresh(panel.id)}
+        private={!!props.private}
+      />
+    </ErrorBoundary>
   );
   return (
     <div class="pulse-dashboard" data-print-region>
