@@ -217,3 +217,11 @@ test("a date bucket from toDate(ts, :base_tz) starts at midnight in the base zon
   expect(newYork.data.chart.marks[0]!.tooltip.title).toBe("Oct 25, 12:00 AM");
   expect(new Date(dashboardLineExplorer(panel, data, berlin).data.rows[0]!.at).toISOString()).toBe("2026-10-24T22:00:00.000Z");
 });
+test("a dashboard line axis labels round times in the base zone, never decimal steps such as 03:33", () => {
+  const panel = dashboardTestDashboard.definition.panels.find((item) => item.id === "req")!;
+  const result = dashboardTestPanelResult(panel);
+  const svg = dashboardLineExplorer(panel, result.lastGood!.data, berlin, result.lastGood!).data.chart.svg;
+  const labels = [...svg.matchAll(/class="stdlib-chart-tick-label"[^>]*text-anchor="middle"[^>]*>([^<]*)</g)].map((match) => match[1]);
+  // The fixture window runs 19 Oct 16:32 to 20 Oct 16:32 in Berlin: six-hour ticks and the day at midnight.
+  expect(labels).toEqual(["18:00", "20. Okt.", "06:00", "12:00"]);
+});

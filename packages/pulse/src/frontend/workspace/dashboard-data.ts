@@ -1,4 +1,3 @@
-import { niceStep } from "@k2b/stdlib";
 import { type ChartLegendEntry, type ChartProps, prepareChartSnapshot } from "@k2b/ui";
 import type { DashboardRange } from "../../dashboard-contracts";
 import type { DashboardPanelData } from "../../dashboard-result";
@@ -85,16 +84,6 @@ export const dashboardLine = (
     : times.length > 1
       ? [times[0]!, times.at(-1)!]
       : undefined;
-  const span = domain ? domain[1] - domain[0] : 0;
-  const tickStep = niceStep(span, 3);
-  const tickDate = new Intl.DateTimeFormat(locale, {
-    ...(span <= 2 * 86400000
-      ? { hour: "2-digit", minute: "2-digit" }
-      : span <= 8 * 86400000
-        ? { weekday: "short" }
-        : { month: "2-digit", day: "2-digit" }),
-    timeZone,
-  });
   return {
     kind: "line",
     series: [...series.values()],
@@ -102,13 +91,9 @@ export const dashboardLine = (
     // ChartExplorer lists the series below the plot, where long names wrap.
     legend: false,
     maxGap: spacing.length ? Math.min(...spacing) * 1.5 : undefined,
-    xAxis: {
-      domain,
-      ticks: 3,
-      // The renderer adds exact endpoints beside its regular ticks. Label only
-      // the regular lattice when endpoints would add a second adjacent label.
-      format: (x) => (domain && (x === domain[0] || x === domain[1]) && x % tickStep !== 0 ? "" : tickDate.format(x)),
-    },
+    // Ticks land on round times in the base zone (full hours, days, weeks), labelled in the reader's locale.
+    xAxis: { domain, ticks: 3 },
+    timeAxis: { timeZone, locale },
     yAxis: { ticks: 3, format: (y) => dashboardCell(y, locale) },
     references:
       panel.threshold === undefined
