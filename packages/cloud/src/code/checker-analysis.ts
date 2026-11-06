@@ -1,6 +1,7 @@
 import { posix } from "node:path";
 import ts from "@typescript/typescript6";
 import { CodeInternetOriginSchema } from "../contracts/code-internet";
+import { CodeRouteSchema } from "../contracts/code-routes";
 import { CodeAutomationTitleSchema } from "../contracts/code-version";
 import { MANDATE_POLICY_MAX_IDENTIFIERS } from "../services/mandates/policy";
 import { normalizeWorkflowSchedule } from "../workflows/runtime/schedule";
@@ -311,6 +312,52 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                   events.add(key);
                 }
           }
+          if (["get", "post", "put", "delete", "all"].includes(method) && collecting) {
+            if (request.sdk.manifest.mode !== "resource")
+              report(node, "code_route_account_required", "Routen benötigen ein Code-Konto: verwende ressourcen- oder app-eigenen Code.");
+            const paths = node.arguments[0] && literals(node.arguments[0]);
+            const opts = node.arguments[2];
+            // Public exposure must be an explicit literal, never a computed flag or spread.
+            let isPublic = false;
+            let validOptions = !opts;
+            if (opts && ts.isObjectLiteralExpression(opts) && opts.properties.length === 1) {
+              const prop = opts.properties[0]!;
+              if (
+                ts.isPropertyAssignment(prop) &&
+                prop.name.getText() === "public" &&
+                (prop.initializer.kind === ts.SyntaxKind.TrueKeyword || prop.initializer.kind === ts.SyntaxKind.FalseKeyword)
+              ) {
+                isPublic = prop.initializer.kind === ts.SyntaxKind.TrueKeyword;
+                validOptions = true;
+              }
+            }
+            const route = CodeRouteSchema.safeParse({
+              method: method.toUpperCase(),
+              path: paths?.length === 1 ? paths[0] : null,
+              public: isPublic,
+            });
+            if (!route.success || !validOptions || !ts.isExpressionStatement(node.parent) || !ts.isSourceFile(node.parent.parent))
+              report(
+                node,
+                "code_static_route",
+                "Deklariere Routen auf Modulebene mit konstantem Pfad und optional { public: true | false }.",
+              );
+            else {
+              const name = "route:" + route.data.method + ":" + route.data.path;
+              if (entryNames.has(name)) report(node, "code_duplicate_route", "Diese Route ist bereits registriert.");
+              entryNames.add(name);
+              if (node.arguments[1]) handlers.push({ handler: node.arguments[1], name });
+              const sf = node.getSourceFile();
+              result.entrypoints.push({
+                kind: "route",
+                entrypoint: name,
+                route: route.data,
+                cron: null,
+                file: sf.fileName.slice(root.length),
+                line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
+              });
+            }
+          }
           if (method === "schedule" && collecting) {
             const cron = node.arguments[0] && literals(node.arguments[0]);
             const options = node.arguments[2];
@@ -321,7 +368,11 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                 : undefined;
             const nameValue = nameProperty && ts.isPropertyAssignment(nameProperty) ? nameProperty.initializer : undefined;
             const names = nameValue && ts.isStringLiteralLike(nameValue) ? [nameValue.text] : nameType && strings(nameType);
-            const name = options ? (names?.length === 1 ? names[0] : undefined) : `schedule:${result.entrypoints.length}`;
+            const name = options
+              ? names?.length === 1
+                ? names[0]
+                : undefined
+              : `schedule:${result.entrypoints.filter((e) => e.kind === "schedule").length}`;
             const titleType = options && propertyType(checker.getTypeAtLocation(options), "title", options);
             const titleProperty =
               options && ts.isObjectLiteralExpression(options)
@@ -366,7 +417,14 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               });
             }
           }
-        } else if (!http) {
+        } else if (
+          !http &&
+          !(
+            declarationOwner &&
+            ts.isTypeAliasDeclaration(declarationOwner) &&
+            ["CodeContext", "CodeRequest"].includes(declarationOwner.name.text)
+          )
+        ) {
           // Recognized factory calls need no permission; detached methods lose their target and are rejected.
           const factory = request.sdk.manifest.handles.some((spec) => path.join(".") === spec.factoryPath.join("."));
           if (!factory) report(node, "code_unresolved_call", "Rufe SDK-Methoden direkt am Objekt oder an app auf.");
@@ -423,7 +481,11 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     result.entrypoints.push({ kind: "manual", entrypoint: "run", cron: null, file: request.entry, line: 1 });
   }
   if (!result.entrypoints.length && !result.diagnostics.length)
-    report(program.getSourceFile(root + request.entry)!, "code_no_entrypoint", "Lege mindestens einen Zeitplan auf Modulebene an.");
+    report(
+      program.getSourceFile(root + request.entry)!,
+      "code_no_entrypoint",
+      "Lege mindestens einen Zeitplan oder eine Route auf Modulebene an.",
+    );
   return result;
 }
 

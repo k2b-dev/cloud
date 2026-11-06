@@ -7,7 +7,7 @@ import { getApp, sql } from "@k2b/cloud";
 import type { CapabilityDispatchDependencies } from "@k2b/cloud/api";
 import type { AppKey } from "@k2b/cloud/app-key";
 import { signAppProof } from "@k2b/cloud/app-proof";
-import { type CodeCheckHost, checkCode } from "@k2b/cloud/code";
+import { type CodeCheckHost, CodeRouteResponseSchema, checkCode } from "@k2b/cloud/code";
 import { type signCodeRunToken, verifyCodeRunToken } from "@k2b/cloud/code/run-token";
 import { RUNNER_PATHS, type RunnerBridge, RunnerCallResponseSchema, type RunnerLease } from "@k2b/cloud/code/runner";
 import {
@@ -38,7 +38,7 @@ import { codeBundleHash } from "./store";
  * Each attempt imports a fresh checked bundle; the production Runner still owns cache, polling,
  * heartbeat, completion and drain. No injected callback substitutes for the author's source.
  */
-class FixtureEngine implements RunnerEngine {
+export class FixtureEngine implements RunnerEngine {
   readonly loaded = new Map<string, { source: string; call: SandboxCall }>();
   readonly executed: string[] = [];
   constructor(readonly enter: (signal: AbortSignal) => Promise<void>) {}
@@ -61,8 +61,10 @@ class FixtureEngine implements RunnerEngine {
     if (typeof entrypoint !== "function") throw new Error("Missing acceptance entrypoint");
     this.executed.push(lease.runId);
     try {
-      await entrypoint(lease.input, { call: loaded.call });
-      return "succeeded" as const;
+      const response = await entrypoint(lease.input, { call: loaded.call });
+      return lease.kind === "request"
+        ? { outcome: "succeeded" as const, response: CodeRouteResponseSchema.parse(response) }
+        : ("succeeded" as const);
     } finally {
       this.loaded.delete(lease.runId);
     }
@@ -229,7 +231,7 @@ export async function acceptanceRunners(input: {
       }),
     heartbeat: async (proof) => heartbeatCodeRun(await claims(proof)),
     complete: async (proof) => {
-      await completeCodeRun(await claims(proof), proof.outcome);
+      await completeCodeRun(await claims(proof), proof.outcome, proof.response);
     },
     call: async (request, signal) => {
       const foreign = foreignRuns.get(request.runId);

@@ -38,7 +38,7 @@ export default {
           export default class extends WorkerEntrypoint {
             async run(name, input) {
               if (typeof bundle[name] !== 'function') throw new Error('missing_entrypoint');
-              await bundle[name](input, this.env.cloud);
+              return await bundle[name](input, this.env.cloud);
             }
           }`,
       },
@@ -46,8 +46,8 @@ export default {
       globalOutbound: null,
     });
     try {
-      await worker.getEntrypoint().run(entrypoint, input);
-      return new Response("{}", { headers: { "Content-Type": "application/json" } });
+      const result = await worker.getEntrypoint().run(entrypoint, input);
+      return Response.json(result ?? null);
     } catch {
       return new Response("{}", { status: 500 });
     }

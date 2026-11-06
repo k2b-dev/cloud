@@ -156,7 +156,11 @@ export async function previewCodeActivation(
   const base = {
     codeId: code.id,
     automations: manifest.success
-      ? manifest.data.entrypoints.map(({ entrypoint, title }) => ({ entrypoint, ...(title === undefined ? {} : { title }) }))
+      ? manifest.data.entrypoints.map(({ entrypoint, title, route }) => ({
+          entrypoint,
+          ...(title === undefined ? {} : { title }),
+          ...(route ? { route } : {}),
+        }))
       : [],
     title: code.title,
     ownerKind: code.owner.kind,

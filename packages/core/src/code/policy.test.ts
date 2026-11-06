@@ -244,3 +244,14 @@ test("operators can recognize and recover the asking-action migration pause", as
   expect(docs).toContain("Replace asking Actions with silent Actions");
   expect(docs).toContain("activate the replacement version");
 });
+
+test("public routes require a deliberate policy choice, including historical tables", () => {
+  for (const preset of ["admin", "open"] as const) {
+    const definition = codePolicyPreset(preset);
+    expect(effective("public_routes", { kind: "app", appId: "example" }, definition, { groups: [], ancestors: [] }).value).toBe(
+      preset === "open" ? "automatic" : "admin",
+    );
+    definition.rules = definition.rules.filter((rule) => rule.row !== "public_routes");
+    expect(effective("public_routes", { kind: "app", appId: "example" }, definition, { groups: [], ancestors: [] }).value).toBe("never");
+  }
+});

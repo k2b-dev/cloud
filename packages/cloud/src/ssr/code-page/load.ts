@@ -441,19 +441,26 @@ const loadReady = async (
       entrypoint: entry.entrypoint,
       ...(entry.title === undefined ? {} : { title: entry.title }),
       kind: entry.kind,
+      ...(entry.route ? { route: entry.route } : {}),
       cron: entry.cron,
       isNew: isNew(entry.entrypoint),
       lastRun: lastRunOf(entry.entrypoint),
       nextRunAt: isNew(entry.entrypoint) ? null : (nextRuns.get(entry.entrypoint) ?? null),
     }));
-  const activeEntrypoints = new Set(activeManifest?.entrypoints.map((entry) => entry.entrypoint) ?? []);
+  const activeEntrypoints = new Map(activeManifest?.entrypoints.map((entry) => [entry.entrypoint, JSON.stringify(entry.route)]) ?? []);
   const automations =
     (code.activeVersionId && !activeManifest) || (waitingReceipt && !waitingManifest)
       ? null
       : [
           ...(activeManifest ? automationsFrom(activeManifest, () => false) : []),
           ...(waitingManifest
-            ? automationsFrom(waitingManifest, (entrypoint) => !activeEntrypoints.has(entrypoint)).filter((item) => item.isNew)
+            ? automationsFrom(
+                waitingManifest,
+                (entrypoint) =>
+                  !activeEntrypoints.has(entrypoint) ||
+                  activeEntrypoints.get(entrypoint) !==
+                    JSON.stringify(waitingManifest.entrypoints.find((entry) => entry.entrypoint === entrypoint)?.route),
+              ).filter((item) => item.isNew)
             : []),
         ];
 

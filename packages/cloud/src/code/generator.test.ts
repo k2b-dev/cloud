@@ -151,7 +151,7 @@ describe("Code SDK generation", () => {
   test("returned phase metadata cannot mutate later SDK generations", () => {
     const sdk = generated();
     Reflect.set(sdk.manifest.appMethods, "get", 3);
-    expect(generated().manifest.appMethods.get).toBe(2);
+    expect(generated().manifest.appMethods.get).toBe(1);
   });
   test("offers only operations for the fixed target type and hides forbidden entries", () => {
     const { manifest, declarations } = generated();
@@ -305,8 +305,8 @@ describe("generated runtime through the canonical call seam", () => {
     expect(() => sdk.app.schedule("0 9 * * 1", () => {}, { name: "bad name" })).toThrow("invalid_schedule_name");
     expect(() => sdk.app.schedule("0 9 * * 1", () => {}, { name: "invalid-title", title: "<b>Bad</b>" })).toThrow("invalid_schedule_title");
     await expect(sdk.__codeSdk.run("missing")).rejects.toThrow("missing_entrypoint");
-    expect(() => sdk.app.get("/", () => new Response("ok"))).toThrow("kommt in Phase 2");
-    expect(sdk.__codeSdk.diagnostics()).toMatchObject([{ message: "app.get kommt in Phase 2" }]);
+    sdk.app.get("/", () => new Response("ok"));
+    expect(sdk.__codeSdk.diagnostics()).toEqual([]);
     expect(codeSdkPhaseDiagnostic("on")?.message).toBe("app.on kommt in Phase 3");
     expect(codeSdkPhaseDiagnostic("schedule")).toBeNull();
     expect(codeSdkPhaseDiagnostic("typo")).toBeNull();
@@ -391,9 +391,9 @@ personal.workshop(dynamic);
 once.workshop(dynamic);
 app.schedule("0 8 * * 1", async () => { await owner.item.create({ title: "Hi", idempotencyKey: "fixed" }); });
 app.on("work-shop.changed", async event => { const title: string = event.title; });
-app.get("/", c => c.json({ groups: c.user.groups }));
+app.get("/", c => c.json({ groups: c.user?.groups }));
 app.post("/", c => c.text(c.req.param("id")));
-app.put("/", c => c.html("ok"));
+app.put("/", c => c.text("ok"));
 app.delete("/", c => c.redirect("/"));
 app.all("/", c => c.text("ok"));
 app.nav(user => [{ title: user.id, path: "/" }]);

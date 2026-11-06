@@ -419,3 +419,26 @@ for (const cooperative of [true, false])
       await work;
     }
   }, 10000);
+
+test("request leases return the checked response through completion; background runs carry no response", async () => {
+  jest.setSystemTime(NOW);
+  const mock = mockBridge([lease({ runId: "request", kind: "request" }), lease({ runId: "background" })]);
+  const response = { kind: "json" as const, status: 201, body: '{"created":true}' };
+  const engine: RunnerEngine = {
+    load: async () => {},
+    run: async () => ({ outcome: "succeeded", response }),
+    kill: async () => {},
+    close: async () => {},
+  };
+  const runner = new Runner(mock.bridge, engine);
+  const running = runner.start();
+  try {
+    await waitFor(() => mock.completions.length === 2);
+    expect(mock.completions.find((value) => value.runId === "request")).toMatchObject({ outcome: "succeeded", response });
+    expect(mock.completions.find((value) => value.runId === "background")).not.toHaveProperty("response");
+  } finally {
+    runner.stop();
+    await running;
+    jest.useRealTimers();
+  }
+});

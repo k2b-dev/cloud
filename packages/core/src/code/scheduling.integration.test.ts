@@ -5,7 +5,7 @@ import * as catalogProvider from "@k2b/cloud/capabilities/server";
 import { assertCapabilityReview, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { CODE_CHECK_LIMITS, type CodeCheckResult, type CodeTestCase, generateCodeSdk } from "@k2b/cloud/code";
 import { type CodeRunTokenClaims, signCodeRunToken, verifyCodeRunToken } from "@k2b/cloud/code/run-token";
-import type { RunnerFetchResponse, RunnerLease } from "@k2b/cloud/code/runner";
+import type { RunnerBridge, RunnerFetchResponse, RunnerLease } from "@k2b/cloud/code/runner";
 import { RunnerLeaseLostError } from "@k2b/cloud/code/runner";
 import type { CapabilityExecutionContext, CodeCheckedVersionManifest, User } from "@k2b/cloud/contracts";
 import { coreSettings } from "@k2b/cloud/services";
@@ -13,6 +13,7 @@ import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { createSync, type Queue, type Sync, type Worker } from "@k2b/sync";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { Runner } from "../../../runner/src/runner";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAudit } from "../migrate/core/audit";
@@ -23,6 +24,7 @@ import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
+import { FixtureEngine } from "./acceptance.test-fixture";
 import type { CodeContext } from "./access";
 import { settleCodeAiBudget } from "./ai-budget";
 import { codeAuthoringServices } from "./authoring";
@@ -30,6 +32,7 @@ import { verifyCodeSubmission } from "./authoring-check";
 import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
 import { claimCodeWork } from "./dispatch";
 import * as ownerTransport from "./owner-transport";
+import { requestCodeRoute } from "./requests";
 import {
   completeCodeJob,
   createRunnerCodeCheckHost,
@@ -118,15 +121,28 @@ suiteFor(
     if (!value) throw new Error("Invalid fixture token");
     return value;
   }
-  async function fixture(userId = owner, resource = false) {
+  async function fixture(userId = owner, resource = false, route = false) {
     const codeId = `c_c13${String(++ordinal).padStart(5, "0")}`;
     const files = { "code.ts": "fixture" },
-      bundle = "export async function weekly() {}";
+      bundle = route
+        ? `async function page(input) { return {kind: "json", status: 200, body: JSON.stringify({visitor: input.user?.id ?? null})}; } export {page as "route:GET:/"};`
+        : "export async function weekly() {}";
     const manifest: CodeCheckedVersionManifest = {
       version: 1,
       entry: "code.ts",
       hashes: { source: codeSourceHash(files, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
-      entrypoints: [{ kind: "schedule", entrypoint: "weekly", cron: distantCron, file: "code.ts", line: 1 }],
+      entrypoints: route
+        ? [
+            {
+              kind: "route",
+              entrypoint: "route:GET:/",
+              route: { method: "GET", path: "/", public: false },
+              cron: null,
+              file: "code.ts",
+              line: 1,
+            },
+          ]
+        : [{ kind: "schedule", entrypoint: "weekly", cron: distantCron, file: "code.ts", line: 1 }],
       permissions: [],
       ai: false,
       policyRows: ["read"],
@@ -159,7 +175,7 @@ suiteFor(
     await sql`INSERT INTO code.version_submissions(version_id,code_id,binding) VALUES(${version.id}::uuid,${codeId},${JSON.stringify(binding)}::text::jsonb)`;
     await sql`INSERT INTO auth.mandates(subject_kind,subject_user_id,subject_service_account_id,owner_app_id,workload_type,workload_id,policy)
       VALUES(${resource ? "service_account" : "user"},${resource ? null : userId}::uuid,${principal}::uuid,'core','code.version',${version.id},'{"version":1}'::jsonb)`;
-    return { codeId, versionId: version.id, entrypoint: "weekly" };
+    return { codeId, versionId: version.id, entrypoint: route ? "route:GET:/" : "weekly" };
   }
   async function enqueueMany(code: Awaited<ReturnType<typeof fixture>>, count: number, trigger: "manual" | "schedule" = "manual") {
     const ids: string[] = [];
@@ -232,6 +248,95 @@ suiteFor(
     setSystemTime();
   });
 
+  test("HTTP request reaches the real runner loop and its bounded response returns through Core", async () => {
+    const code = await fixture(owner, true, true);
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockResolvedValue("Fixture");
+    const bridge: RunnerBridge = {
+      configure: async () => ({
+        slots: 1,
+        pollMs: 1000,
+        retryMs: 1,
+        transportMs: 1000,
+        bundleBytes: 1024 * 1024,
+        cacheBytes: 1024 * 1024,
+        bridgeBytes: 1024 * 1024,
+        bridgeConcurrency: 1,
+        processMemoryBytes: 128 * 1024 * 1024,
+      }),
+      fetch: (request, signal) => fetchCodeRuns(request, signal, { queue, sign }),
+      bundle: async (proof) => {
+        const token = (await verifyCodeRunToken(proof.token, { issuer, key, now: slot }))!;
+        const [row] = await sql<{ bundle: string }[]>`SELECT bundle FROM code.versions WHERE id=${token.versionId}::uuid`;
+        return row!.bundle;
+      },
+      heartbeat: async (proof) => heartbeatCodeRun((await verifyCodeRunToken(proof.token, { issuer, key, now: slot }))!),
+      complete: async (proof) =>
+        completeCodeRun((await verifyCodeRunToken(proof.token, { issuer, key, now: slot }))!, proof.outcome, proof.response),
+      call: async () => ({ ok: false, error: { code: "fixture_no_data_calls" } }),
+    };
+    const publisher = createCodeRunOutbox(() => queue);
+    const runner = new Runner(bridge, new FixtureEngine(async () => {}));
+    publisher.start();
+    const running = runner.start();
+    try {
+      const response = await requestCodeRoute({
+        ...code,
+        signal: AbortSignal.timeout(10_000),
+        request: {
+          codeId: code.codeId,
+          method: "GET",
+          path: "/",
+          query: "",
+          contentType: "text/plain",
+          body: "",
+          params: {},
+          user: { id: other, groups: [] },
+        },
+      });
+      expect(response).toEqual({ kind: "json", status: 200, body: JSON.stringify({ visitor: other }) });
+      const [run] = await sql<
+        { trigger: string; state: string; input: unknown; output: unknown; generation: number }[]
+      >`SELECT * FROM code.runs WHERE code_id=${code.codeId}`;
+      expect(run).toMatchObject({ trigger: "path", state: "succeeded", input: null, output: null, generation: 1 });
+      await expect(startCodeRun({ ...code, idempotencyKey: "not-a-manual-start" }, context())).rejects.toThrow("Unknown Code entrypoint");
+    } finally {
+      runner.stop();
+      await running;
+      await publisher.stop();
+      registry.mockRestore();
+      title.mockRestore();
+    }
+  }, 15_000);
+  test("HTTP failure never requeues even before the first effect", async () => {
+    const code = await fixture(owner, true, true);
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockResolvedValue("Fixture");
+    const runId = await insertCodeRun({ ...code, trigger: "path", input: null });
+    await sql`UPDATE code.runs SET deadline_at=clock_timestamp()+interval '8 seconds' WHERE id=${runId}::uuid`;
+    const lease = await take();
+    expect(lease.kind).toBe("request");
+    await completeCodeRun(await claims(lease), "failed");
+    expect(await state(runId)).toMatchObject({ state: "failed", generation: 1, outcome: "failed" });
+    registry.mockRestore();
+    title.mockRestore();
+  });
   test("checks resource owner after claim commit, pauses missing owners and never signs", async () => {
     const code = await fixture(owner, true);
     const [runId] = await enqueueMany(code, 1);

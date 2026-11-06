@@ -101,7 +101,7 @@ export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependenc
         if (path === RUNNER_PATHS.complete) {
           const parsed = RunnerCompleteRequestSchema.safeParse(body);
           if (!parsed.success) return c.json({ code: "code_invalid_call" }, 400);
-          await completeCodeRun(claims, parsed.data.outcome);
+          await completeCodeRun(claims, parsed.data.outcome, parsed.data.response);
           return c.body(null, 204);
         }
         const parsed = RunnerBundleRequestSchema.safeParse(body);
