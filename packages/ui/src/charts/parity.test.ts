@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 import { charts as legacyCharts } from "@k2b/stdlib";
 import { renderLegacyChartSvg } from "../../test/charts/legacy-render";
 import { chartRenderHeight, charts, layout, prepareChartSnapshot, renderChartSvg, toSvg } from "./core";
-import { chartKinds } from "./core/registry";
 import { chartParity, chartParityMarkdown } from "./parity";
 
 const root = resolve(import.meta.dir, "../../../..");
@@ -20,7 +19,7 @@ test("every parity row names an existing test or live demo", () => {
     expect(proof.includes(row.proof.test), `${row.id}: missing named proof ${row.proof.file}: ${row.proof.test}`).toBe(true);
     if (row.proof.kind !== "demo") expect(row.proof.file).toMatch(/\.test\.tsx?$/);
   }
-  for (const kind of Object.values(chartKinds)) expect(ids.has(`kind-${kind}`)).toBe(true);
+  for (const kind of Object.keys(legacyCharts)) expect(ids.has(`kind-${kind}`)).toBe(true);
 });
 
 test("every parity spec preserves legacy SVG output", () => {

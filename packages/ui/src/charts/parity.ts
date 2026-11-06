@@ -1,9 +1,13 @@
 import type { ChartDrawingOptions } from "./core/render";
+import type { charts } from "./core/svg";
+
+/** Fixed migration baseline: newly registered kinds have their own tests, without a stdlib predecessor. */
+type PortedChartOptions = Extract<ChartDrawingOptions, { kind: keyof typeof charts }>;
 
 export type ChartParityRow = {
   id: string;
   feature: string;
-  spec: ChartDrawingOptions;
+  spec: PortedChartOptions;
   proof: { file: string; test: string; kind?: "demo" };
   gap?: string;
 };
