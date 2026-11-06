@@ -112,9 +112,9 @@ export async function replayResourceEventDelivery(db: SQL, deliveryId: string, c
       AND resource_binding->'place'=${JSON.stringify(source.resource_binding.place)}::text::jsonb
       AND event_type=${source.event_type} AND version=${source.version} FOR SHARE`;
   if (!current) return null;
-  const [delivery] = await db<{ id: string }[]>`INSERT INTO events.app_deliveries(id,subscription_id,event_id,subject_key)
-    VALUES(gen_random_uuid(),${current.id},${source.event_id}::uuid,${source.subject_key})
-    ON CONFLICT(subscription_id,event_id) DO UPDATE SET state='pending',code=NULL,last_error=NULL,
+  const [delivery] = await db<{ id: string }[]>`INSERT INTO events.app_deliveries(id,subscription_id,event_id,subject_key,code)
+    VALUES(gen_random_uuid(),${current.id},${source.event_id}::uuid,${source.subject_key},'workload_replay')
+    ON CONFLICT(subscription_id,event_id) DO UPDATE SET state='pending',code='workload_replay',last_error=NULL,
       attempts=0,unreachable_count=0,claimed_until=NULL,claim_token=NULL,next_attempt_at=now(),retained_from=now(),updated_at=now()
     WHERE events.app_deliveries.state IN ('failed','cancelled','done') RETURNING id`;
   if (!delivery) return null;
