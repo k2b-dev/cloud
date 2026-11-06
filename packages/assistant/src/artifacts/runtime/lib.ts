@@ -13,10 +13,23 @@ import {
 } from "@k2b/cloud/ai/app-frame";
 // Named renderers, not the `charts` namespace, so app frames leave out the map and state timeline renderers.
 import { money } from "@k2b/stdlib";
-import { escapeXml } from "@k2b/ui/charts/core";
-import { barGauge, boxplot, donut, gauge, heatmap, histogram, line, pie, scatter, sparkline, stat } from "@k2b/ui/charts/core";
-import { isChartDatum } from "@k2b/ui/charts/core";
-import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts/core";
+import {
+  barChartLayout,
+  barGauge,
+  boxplot,
+  donut,
+  escapeXml,
+  gauge,
+  heatmap,
+  histogram,
+  isChartDatum,
+  line,
+  pie,
+  renderBarChartSvg,
+  scatter,
+  sparkline,
+  stat,
+} from "@k2b/ui/charts/core";
 import { CloudError } from "./errors";
 import { normalizeChartDates } from "./views";
 

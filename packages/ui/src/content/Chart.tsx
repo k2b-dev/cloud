@@ -60,15 +60,15 @@ import { useViewportMessages } from "./viewport-messages";
  * from the row count and legend via `stateTimelineHeight()`.
  *
  * **Why so thin.** The props are a discriminated union over each
- * stdlib chart function — `kind: "line"` brings in exactly the params
+ * registered core chart renderer — `kind: "line"` brings in exactly the params
  * `charts.line` expects, `kind: "bar"` brings in `charts.bar`'s, etc.
- * Options stay aligned with stdlib without renaming. Every chart provides
+ * Options stay aligned with the core renderer without renaming. Every chart provides
  * renderer-owned inspection, tooltips and optional selection by default.
  * `interactive` adds bounded pan / zoom and reset controls to maps and state timelines.
- * If stdlib gains a new option, it's automatically available at every
+ * When a core renderer gains an option, it is automatically available at every
  * callsite.
  *
- * **Theming.** stdlib charts use `currentColor` for axes / ticks /
+ * **Theming.** The core renderers use `currentColor` for axes / ticks /
  * tick labels — set the wrapping element's `color` and everything
  * inherits. Series colors come from `--stdlib-chart-c1..c8` CSS
  * custom properties; override on the parent for per-chart palettes.
@@ -86,7 +86,7 @@ import { useViewportMessages } from "./viewport-messages";
  * ```
  */
 
-/** All chart kinds shipped by `stdlib.charts`. */
+/** All registered chart kinds. */
 export type { ChartKind } from "./chart-inspection-core";
 
 export type ChartLabels = Partial<{
@@ -114,20 +114,27 @@ export type ChartProps = {
     class?: string;
     style?: JSX.CSSProperties | string;
     labels?: ChartLabels;
-    /** Pan/zoom controls for maps and timelines; Alt+arrows inspect while navigation is enabled. */
+    /**
+     * Navigation for maps and state timelines: pan, zoom and reset controls.
+     * Arrows pan; Alt+arrows inspect. Every chart shows tooltips and keyboard
+     * inspection without this prop.
+     */
     interactive?: boolean;
     onSelect?: (selection: ChartSelection) => void;
+    /** Controlled highlight; indices belong to this exact input snapshot. */
     selected?: ChartDatumRef | null;
+    /** Customize the always-on tooltip with a title and labeled text rows. */
     tooltip?: ChartTooltipFormatter;
+    /** Optional shared X cursor for line charts. */
     cursor?: ChartCursor;
   };
 }[ChartKind];
 export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../charts/core/render";
 
-/** Empty-data short-circuit. Kept per-kind because stdlib's payload
+/** Empty-data short-circuit. Kept per-kind because each renderer's payload
  *  key differs (series vs data vs groups). We're conservative: only
  *  block on truly empty inputs; partially-filled series get rendered
- *  as-is and stdlib handles the gaps. */
+ *  as-is and the core handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);

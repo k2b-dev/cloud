@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { charts } from "../charts/core";
 import type axeCore from "axe-core";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser } from "../../test/browser";
+import { charts } from "../charts/core";
 import { responsiveChartSvg } from "../content/chart-svg";
 
 declare global {

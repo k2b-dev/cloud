@@ -1,5 +1,5 @@
-import type { ChartNumberFormat, ChartDateFormat, ChartFormat } from "@k2b/ui/charts/core";
-export type { ChartNumberFormat, ChartDateFormat, ChartFormat } from "@k2b/ui/charts/core";
+export type { ChartDateFormat, ChartFormat, ChartNumberFormat } from "@k2b/ui/charts/core";
+
 import { z } from "zod";
 
 /** Optional caller policy. Rendering itself has no AI input budget. */

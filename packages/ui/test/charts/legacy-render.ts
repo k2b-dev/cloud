@@ -1,17 +1,22 @@
 // Frozen pre-port dispatcher: stdlib SVG plus the existing UI adaptations. Test-only.
-import type { ChartKind } from "../../src/charts/core/types";
-import type { MapViewport } from "../../src/charts/core/svg";
+
 import { charts as chartRenderers } from "@k2b/stdlib";
+import type { MapViewport } from "../../src/charts/core/svg";
+import type { ChartKind } from "../../src/charts/core/types";
 import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "../../src/content/chart-bar";
 import { lineGapsSvg } from "../../src/content/chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport } from "../../src/content/chart-map-viewport";
-import { renderStateTimelineSvg, type StateTimelineChartOptions, type StateTimelineDomain, stateTimelineHeight } from "../../src/content/chart-state-timeline";
+import {
+  renderStateTimelineSvg,
+  type StateTimelineChartOptions,
+  type StateTimelineDomain,
+  stateTimelineHeight,
+} from "../../src/content/chart-state-timeline";
 import { responsiveChartSvg, responsiveMapSvg } from "../../src/content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../src/content/chart-time-axis";
 
 export type ChartDrawingOptions = {
-  [K in ChartKind]: { kind: K } &
-    (K extends "map" ? { zoomFocus?: Pick<MapViewport, "latitude" | "longitude"> } : {}) &
+  [K in ChartKind]: { kind: K } & (K extends "map" ? { zoomFocus?: Pick<MapViewport, "latitude" | "longitude"> } : {}) &
     (K extends "line" ? { maxGap?: number; legendPlacement?: "top-start"; timeAxis?: ChartTimeAxis } : {}) &
     Omit<Parameters<(typeof chartRenderers)[K]>[0], "width" | "height" | "inspect">;
 }[ChartKind];
@@ -35,7 +40,13 @@ export const renderLegacyChartSvg = (
   mapViewport?: MapViewport,
   timelineViewport?: StateTimelineDomain,
 ): string => {
-  const { kind, zoomFocus: _zoomFocus, legendPlacement: _legendPlacement, timeAxis: _timeAxis, ...opts } = props as ChartDrawingOptions & {
+  const {
+    kind,
+    zoomFocus: _zoomFocus,
+    legendPlacement: _legendPlacement,
+    timeAxis: _timeAxis,
+    ...opts
+  } = props as ChartDrawingOptions & {
     zoomFocus?: Pick<MapViewport, "latitude" | "longitude">;
     legendPlacement?: "top-start";
     timeAxis?: ChartTimeAxis;
@@ -85,4 +96,3 @@ const lineTimeDomain = (props: Extract<ChartDrawingOptions, { kind: "line" }>): 
 };
 
 export const preservesAspectRatio = (kind: ChartKind) => kind === "map" || kind === "pie" || kind === "donut" || kind === "gauge";
-

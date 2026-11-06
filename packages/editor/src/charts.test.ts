@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { type ChartDatum, charts } from "@k2b/ui/charts/core";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
+import { type ChartDatum, charts } from "@k2b/ui/charts/core";
 import {
   type ChartInput,
   chartKinds,
@@ -289,6 +289,7 @@ describe("shared chart tooltip", () => {
     for (const input of [
       { kind: "bar", title: "B", data: [{ label: "Jan", value: 1200 }], yAxis: { label: "Axis", format: { decimals: 0 } } },
       { kind: "pie", title: "P", data: [{ label: "Jan", value: 1200 }] },
+      { kind: "donut", title: "D", data: [{ label: "Jan", value: 1200 }] },
       { kind: "stat", title: "S", value: 1200, sparkline: [1200, 1500] },
       ...["line", "scatter"].map((kind) => ({
         kind,

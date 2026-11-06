@@ -1053,10 +1053,10 @@ The table tracks existing tests and demos for the port. Covered means the named 
 | Bar: references | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
 | pie: innerRadius | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
 | pie: showLabels | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
-| Pie: tooltip/table format | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Pie: tooltip/table format | packages/editor/src/charts.test.ts: names value and y columns before axis labels, including stat sparklines | Covered |
 | donut: innerRadius | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
 | donut: showLabels | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
-| Donut: tooltip/table format | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Donut: tooltip/table format | packages/editor/src/charts.test.ts: names value and y columns before axis labels, including stat sparklines | Covered |
 | Histogram bins: 3 | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
 | Histogram bins: [0,2,4,6] | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
 | Boxplot: quartiles, whiskers, outliers | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |

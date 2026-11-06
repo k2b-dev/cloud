@@ -14,8 +14,22 @@ import type { MapViewport } from "./svg";
 import type { ChartKind } from "./types";
 
 export type ChartDrawingOptions = {
-  [K in ChartKind]: { kind: K } & (K extends "map" ? { zoomFocus?: Pick<MapViewport, "latitude" | "longitude"> } : {}) &
-    (K extends "line" ? { maxGap?: number; legendPlacement?: "top-start"; timeAxis?: ChartTimeAxis } : {}) &
+  [K in ChartKind]: { kind: K } & (K extends "map"
+    ? {
+        /** Target when zooming in from the world view. Defaults to Europe (50, 10). */
+        zoomFocus?: Pick<MapViewport, "latitude" | "longitude">;
+      }
+    : {}) &
+    (K extends "line"
+      ? {
+          /** Largest connected X distance; positive, finite, without area/errorBand fills. */
+          maxGap?: number;
+          /** Wrap the legend above the plot inside the caller's total chart height. Requires legend=true. */
+          legendPlacement?: "top-start";
+          /** Round ticks for instant X values (Unix ms), in the supplied zone. xAxis.format labels them. */
+          timeAxis?: ChartTimeAxis;
+        }
+      : {}) &
     Omit<Parameters<(typeof chartRenderers)[K]>[0], "width" | "height" | "inspect" | "interactive">;
 }[ChartKind];
 export type ChartRenderOptions = {

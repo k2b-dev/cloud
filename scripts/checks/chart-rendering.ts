@@ -6,7 +6,17 @@ import { packageIds } from "../workspace";
 import { isTestFile, listFiles, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
-const RENDERERS = new Set(["charts", ...Object.keys(charts)]);
+const RENDERERS = new Set([
+  "charts",
+  ...Object.keys(charts),
+  "renderChartSvg",
+  "renderBarChartSvg",
+  "renderStateTimelineSvg",
+  "layout",
+  "toSvg",
+]);
+const rawChartModule = (name: string | undefined): boolean =>
+  name === "@k2b/stdlib" || name === "@k2b/ui/charts/core" || name === "@k2b/ui/charts";
 const CHART_COMPONENTS = new Set(["Chart", "ChartExplorer", "ChartSnapshotView", "StatCell"]);
 const LIBRARIES = new Set(["ui", "cloud", "ssr", "editor"]);
 /** The browser entries @k2b/ssr discovers (`**\/*.{island,client}.tsx`). */
@@ -57,7 +67,7 @@ const propertyName = (node: ts.Node): string | undefined => (ts.isIdentifier(nod
 const rawRenderers = (source: ts.SourceFile, report: (node: ts.Node, name: string) => void): void => {
   const namespaces = new Set<string>();
   const collect = (node: ts.Node): void => {
-    if (ts.isImportDeclaration(node) && moduleName(node.moduleSpecifier) === "@k2b/stdlib" && !node.importClause?.isTypeOnly) {
+    if (ts.isImportDeclaration(node) && rawChartModule(moduleName(node.moduleSpecifier)) && !node.importClause?.isTypeOnly) {
       const bindings = node.importClause?.namedBindings;
       if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
       if (bindings && ts.isNamedImports(bindings)) {
@@ -67,7 +77,7 @@ const rawRenderers = (source: ts.SourceFile, report: (node: ts.Node, name: strin
         }
       }
     }
-    if (ts.isExportDeclaration(node) && moduleName(node.moduleSpecifier) === "@k2b/stdlib" && !node.isTypeOnly) {
+    if (ts.isExportDeclaration(node) && rawChartModule(moduleName(node.moduleSpecifier)) && !node.isTypeOnly) {
       if (node.exportClause && ts.isNamedExports(node.exportClause)) {
         for (const element of node.exportClause.elements) {
           const name = (element.propertyName ?? element.name).text;
@@ -76,7 +86,7 @@ const rawRenderers = (source: ts.SourceFile, report: (node: ts.Node, name: strin
       } else report(node, "charts");
     }
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-      if (dynamicModule(unwrap(node.initializer)) === "@k2b/stdlib") namespaces.add(node.name.text);
+      if (rawChartModule(dynamicModule(unwrap(node.initializer)))) namespaces.add(node.name.text);
     }
     ts.forEachChild(node, collect);
   };
@@ -84,7 +94,7 @@ const rawRenderers = (source: ts.SourceFile, report: (node: ts.Node, name: strin
 
   const isNamespace = (expression: ts.Expression): boolean => {
     const node = unwrap(expression);
-    return (ts.isIdentifier(node) && namespaces.has(node.text)) || dynamicModule(node) === "@k2b/stdlib";
+    return (ts.isIdentifier(node) && namespaces.has(node.text)) || rawChartModule(dynamicModule(node));
   };
   const destructured = (pattern: ts.BindingName): void => {
     if (!ts.isObjectBindingPattern(pattern)) return;
@@ -106,7 +116,7 @@ const rawRenderers = (source: ts.SourceFile, report: (node: ts.Node, name: strin
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === "then" &&
-      dynamicModule(unwrap(node.expression.expression)) === "@k2b/stdlib"
+      rawChartModule(dynamicModule(unwrap(node.expression.expression)))
     ) {
       const callback = node.arguments[0];
       if (callback && (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) && callback.parameters[0]) {
@@ -280,13 +290,13 @@ export const rule: Rule = {
       if (skipped(path) || (!pkg && !path.startsWith("docs-site/src/"))) continue;
       const text = readFileSync(file, "utf8");
       if (pkg) apps.get(pkg)?.set(file, text);
-      if (ALLOWED_RENDERERS.has(path) || !text.includes("@k2b/stdlib")) continue;
+      if (ALLOWED_RENDERERS.has(path) || (!text.includes("@k2b/stdlib") && !text.includes("@k2b/ui/charts"))) continue;
       const source = parse(file, text);
       rawRenderers(source, (node, name) => {
         findings.push({
           file,
           line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
-          message: `Raw stdlib chart renderer \`${name}\`: render charts with @k2b/ui Chart, ChartExplorer or ChartSnapshotView, or enhance stdlib SVG with inspectChart and add this file to the chart-rendering allow-list with a reason.`,
+          message: `Raw chart renderer \`${name}\`: render charts with @k2b/ui Chart, ChartExplorer or ChartSnapshotView, or enhance raw SVG with inspectChart and add this file to the chart-rendering allow-list with a reason.`,
         });
       });
     }

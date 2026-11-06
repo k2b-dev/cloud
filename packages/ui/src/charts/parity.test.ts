@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { charts as legacyCharts } from "@k2b/stdlib";
 import { renderLegacyChartSvg } from "../../test/charts/legacy-render";
-import { chartKinds, chartRenderHeight, charts, layout, prepareChartSnapshot, renderChartSvg, toSvg } from "./core";
+import { chartRenderHeight, charts, layout, prepareChartSnapshot, renderChartSvg, toSvg } from "./core";
+import { chartKinds } from "./core/registry";
 import { chartParity, chartParityMarkdown } from "./parity";
 
 const root = resolve(import.meta.dir, "../../../..");

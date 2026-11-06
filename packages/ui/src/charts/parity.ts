@@ -310,7 +310,7 @@ export const chartParity: readonly ChartParityRow[] = [
   {
     id: "pie-format",
     feature: "Pie: tooltip/table format",
-    proof: { file: "packages/ui/src/charts/parity.test.ts", test: "every parity spec preserves legacy SVG output" },
+    proof: { file: "packages/editor/src/charts.test.ts", test: "names value and y columns before axis labels, including stat sparklines" },
     spec: { ...pie, kind: "pie" },
   },
   {
@@ -328,7 +328,7 @@ export const chartParity: readonly ChartParityRow[] = [
   {
     id: "donut-format",
     feature: "Donut: tooltip/table format",
-    proof: { file: "packages/ui/src/charts/parity.test.ts", test: "every parity spec preserves legacy SVG output" },
+    proof: { file: "packages/editor/src/charts.test.ts", test: "names value and y columns before axis labels, including stat sparklines" },
     spec: { ...pie, kind: "donut" },
   },
   {
