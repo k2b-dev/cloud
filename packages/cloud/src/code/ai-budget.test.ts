@@ -52,3 +52,14 @@ test("attempt and daily admission use exact picounits and clamp overspend at zer
   expect(codeAiBudgetRemainder(1, "1")).toBe(0n);
   expect(codeAiBudgetRemainder(1, "2")).toBe(0n);
 });
+
+test("failed generation settles measured repairs and known zero but keeps unknown outcomes spent", () => {
+  const failed = (usage: unknown) => ({
+    ok: false,
+    error: { code: "quota_exhausted", details: { aiUsage: { model: { id: "clef" }, usage } } },
+  });
+  expect(codeAiReferenceCost("core.ai.generate", failed({ input: 40, output: 3 }), profiles, "1")).toBe("0.000046000000");
+  expect(codeAiReferenceCost("core.ai.generate", failed({ input: 0, output: 0 }), profiles, "1")).toBe("0.000000000000");
+  for (const usage of [null, { input: -1, output: 0 }, { input: 2 }])
+    expect(codeAiReferenceCost("core.ai.generate", failed(usage), profiles, "1")).toBe("1");
+});

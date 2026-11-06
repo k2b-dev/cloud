@@ -12,6 +12,7 @@ import {
 import { aiCapabilities } from "../../../core/src/capabilities";
 import { compileCapabilities, invokeCompiledCapability } from "../_internal/capabilities";
 import { buildAiCapabilityCatalog, createLoadedAiCapabilityTools } from "./capabilities";
+import { aiModelFixture } from "./model-fixture";
 
 const context: CapabilityExecutionContext = {
   ...geoTestContext,
@@ -219,4 +220,71 @@ test.each([
 ])("shared runtime %s maps to stable generation error %s", async (runtimeCode, code) => {
   run = spyOn(ai, "runAiStructured").mockRejectedValue(Object.assign(new Error("private provider failure"), { code: runtimeCode }));
   expect(await aiGenerationQuery.run(input, context)).toMatchObject({ ok: false, error: { code } });
+});
+
+test.each(["invalid_output", "quota_exhausted", "provider_error"])(
+  "%s preserves all failed attempt usage for Code settlement",
+  async (code) => {
+    run = spyOn(ai, "runAiStructured").mockImplementation(async (request) => {
+      request.onUsage?.({ model: result.model, usage: { input: 30, output: 2 } });
+      request.onUsage?.({ model: result.model, usage: { input: 10, output: 1, estimated: true } });
+      throw Object.assign(new Error("private failure"), { code });
+    });
+    expect(await aiGenerationQuery.run(input, context)).toMatchObject({
+      ok: false,
+      error: { details: { aiUsage: { model: result.model, usage: { input: 40, output: 3 } } } },
+    });
+  },
+);
+
+test("an unknown provider attempt keeps failure usage unknown even after measured attempts", async () => {
+  run = spyOn(ai, "runAiStructured").mockImplementation(async (request) => {
+    request.onUsage?.({ model: result.model, usage: { input: 30, output: 2 } });
+    request.onUsage?.({ model: result.model, usage: undefined });
+    throw Object.assign(new Error("private failure"), { code: "quota_exhausted" });
+  });
+  const response = await aiGenerationQuery.run(input, context);
+  expect(response).toMatchObject({ ok: false, error: { code: "quota_exhausted" } });
+  if (response.ok) throw new Error("Expected refusal");
+  expect(response.error).not.toHaveProperty("details");
+});
+
+test("a successful repair includes previous attempt usage instead of only the last answer", async () => {
+  run = spyOn(ai, "runAiStructured").mockImplementation(async (request) => {
+    request.onUsage?.({ model: result.model, usage: { input: 30, output: 2 } });
+    request.onUsage?.({ model: result.model, usage: { input: 10, output: 1 } });
+    return { ...result, output: request.output.parse(result.output), usage: { input: 10, output: 1, total: 11 } };
+  });
+  expect(await aiGenerationQuery.run(input, context)).toMatchObject({
+    ok: true,
+    data: { data: { usage: { input: 40, output: 3, total: 43 } } },
+  });
+});
+
+test("quota admission before the first provider attempt reports known zero usage", async () => {
+  const selected = spyOn(ai, "selectAssistantAiModel").mockResolvedValue({ id: "balanced" });
+  const resolved = spyOn(ai, "resolveAiModel").mockResolvedValue({
+    model: result.model,
+    profile: aiModelFixture({ id: "balanced" }),
+    provider: {
+      name: "fixture",
+      family: "openai-compatible",
+      model: "fixture",
+      capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: true },
+      async *stream() {},
+    },
+  });
+  run = spyOn(ai, "runAiStructured").mockImplementation(async (request) => {
+    await request.resolveModel?.(request.model);
+    throw Object.assign(new Error("Allowance exhausted"), { code: "quota_exhausted" });
+  });
+  try {
+    expect(await aiGenerationQuery.run(input, context)).toMatchObject({
+      ok: false,
+      error: { code: "quota_exhausted", details: { aiUsage: { model: result.model, usage: { input: 0, output: 0 } } } },
+    });
+  } finally {
+    selected.mockRestore();
+    resolved.mockRestore();
+  }
 });

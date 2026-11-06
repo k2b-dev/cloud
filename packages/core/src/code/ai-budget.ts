@@ -36,6 +36,12 @@ const beforeModelCodes = new Set([
 ]);
 /** Unknown outcomes or model identities keep the reservation spent; known pre-model refusals release it. */
 export function codeAiReferenceCost(capability: string, result: unknown, profiles: readonly AiModelProfile[], reserved: string): string {
+  const failureUsage =
+    capability === "core.ai.generate"
+      ? z.object({ ok: z.literal(false), error: z.object({ details: z.object({ aiUsage: usageResult.shape.data }) }) }).safeParse(result)
+      : null;
+  if (failureUsage?.success)
+    return codeAiReferenceCost(capability, { ok: true, data: failureUsage.data.error.details.aiUsage }, profiles, reserved);
   const refusal = unstartedCode.safeParse(result);
   // Structured output may spend one attempt before a repair hits quota. Its terminal
   // quota refusal cannot prove that no inference ran, so retain that reservation.

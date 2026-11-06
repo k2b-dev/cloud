@@ -27,7 +27,7 @@ const callLifecycle = {
 export function inferenceProvider(
   provider: Provider,
   profile: AiModelProfile,
-  context: AiCallContext,
+  context: AiCallContext & { onUsage?: (usage: { input: number; output: number; estimated?: boolean } | undefined) => void },
   lifecycle = callLifecycle,
 ): Provider {
   // createAiProvider normalizes adapter diagnostics before trusted dispatch guards wrap it.
@@ -195,6 +195,12 @@ export function inferenceProvider(
             });
           } catch {
             log.warn("Chat usage booking failed", { code: "quota_booking_failed", turnId: context.turnId, callId: id });
+          }
+          // Observe the same canonical usage even if its ledger write fails. Never retry inference for an observer.
+          try {
+            context.onUsage?.(usage);
+          } catch {
+            log.warn("AI usage observer failed", { callId: id });
           }
         }
       }

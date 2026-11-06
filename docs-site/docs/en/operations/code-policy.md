@@ -53,7 +53,7 @@ alongside the effective group policy for **AI**. Zero refuses before model
 invocation with `code_ai_budget_limit`. The run detail names the exhausted AI
 budget in its notice instead of the general policy message. Each admitted call reserves the smallest remaining allowance across the attempt,
 Code day and owner day atomically; parallel calls cannot spend it again.
-While it is reserved, another AI call is refused with `code_ai_budget_reserved`; wait for the first call before retrying. After the
+Within an attempt, another AI call is refused with `code_ai_budget_reserved`; wait for the first call before retrying. With the default limits, the full-remainder reservation also allows only one AI call at a time across an owner's Code: concurrent attempts receive a daily-limit refusal until it settles. Calls are not queued. After the
 call, Core accounts the returned model's reference prices and input/output usage,
 and releases the unused reservation. Measured cost can exceed the remainder of
 an already started call; further AI calls are refused once the budget is reached.
@@ -67,9 +67,7 @@ Successful catalog/history reads add no model cost. Zero still blocks all
 `core.ai.*` calls from Code. A new attempt starts its own attempt budget; the daily aggregates remain spent,
 including across automatic retries, new versions and manual reruns. Text and
 structured generation (`core.ai.generate`) use the same reservation path as
-`core.ai.decide`. Missing usage keeps the reservation spent. Generation quota
-failures also retain it: a structured-output repair may have spent tokens
-before reaching the quota, so a terminal refusal cannot prove zero usage.
+`core.ai.decide`. Generation accounts measured or estimated usage from every provider attempt, including failed structured-output repairs. A quota refusal before any provider attempt costs zero. Missing usage keeps the reservation spent; a terminal failure alone does not prove zero usage.
 
 Days follow the installation's `app.timezone` (UTC when unset). Settlement
 always uses the admission day, including when a call finishes after midnight.

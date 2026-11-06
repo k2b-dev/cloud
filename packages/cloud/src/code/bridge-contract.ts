@@ -60,6 +60,8 @@ export const codeBridgeDispatchRefusalKind = (code: string, targetStatus?: numbe
 export type CodeBridgeAuthority = {
   /** Internal observation only. Core persists this reason with the call result; never grants authority. */
   onRefusal?: (kind: CodeBridgeRefusalKind) => void;
+  /** Original capability error for Core accounting, before the runner's payload-free error projection. */
+  onFailure?: (error: unknown) => void;
   mandateId: string;
   mandateRevision: number;
   ownerAppId: "core";

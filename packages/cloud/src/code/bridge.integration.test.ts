@@ -551,6 +551,45 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     }
   });
 
+  test.each([false, true])("generation failures settle known usage before payload-free runner projection (unknown=%s)", async (unknown) => {
+    await resetFixture({ personal: true, entry: true, policyRows: ["ai"] });
+    const run = spyOn(decision, "runAiStructured").mockImplementation(async (request) => {
+      request.onUsage?.({ model: decisionResultFixture.model, usage: { input: 30, output: 2 } });
+      request.onUsage?.({ model: decisionResultFixture.model, usage: unknown ? undefined : { input: 10, output: 1, estimated: true } });
+      throw Object.assign(new Error("private provider failure"), { code: "quota_exhausted" });
+    });
+    try {
+      const response = await send({
+        entry: { ...baseEntry, appId: "core", manifest: decisionCompiled.manifest },
+        operation: "core.ai.generate",
+        input: {
+          call: {
+            capability: "core.ai.generate",
+            target: null,
+            refs: {},
+            input: {
+              task: "mail.summary",
+              prompt: "Summarize.",
+              input: { body: "Message" },
+              output: { type: "text", maxChars: 500 },
+            },
+          },
+          metadata: {},
+        },
+      });
+      expect(await response.json()).toEqual({ ok: false, error: { code: "quota_exhausted", status: 429 } });
+      const [budget] = await sql`SELECT ai_reference_cost::text AS cost,ai_reserved_cost::text AS reserved,ai_budget_call
+        FROM code.runs WHERE id=${claims.runId}::uuid`;
+      expect(budget).toEqual({ cost: unknown ? "1.000000000000" : "0.000046000000", reserved: "0", ai_budget_call: null });
+      const counters = await sql<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget
+        WHERE scope_key=${claims.codeId} OR scope_key=json_build_array('person',${userId}::text)::text`;
+      expect(counters).toHaveLength(2);
+      expect(counters.every((counter) => counter.cost === budget!.cost)).toBe(true);
+    } finally {
+      run.mockRestore();
+    }
+  });
+
   test("daily Code and exact-owner counters reserve together and a stale generation cannot release them", async () => {
     await resetFixture({ personal: true, entry: true, policyRows: ["ai"] });
     const daily = { code: 0.5, owner: 0.75, timeZone: "UTC" };

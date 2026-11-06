@@ -368,7 +368,10 @@ suite("Assistant quota PostgreSQL boundaries", () => {
         };
         expect(await aiGenerationQuery.run(input, context)).toMatchObject({ ok: true, data: { data: { output: "Summary" } } });
         expect((await aiQuotas.snapshot(accessSubject, "a")).balances[0]).toMatchObject({ used: 1000 });
-        expect(await aiGenerationQuery.run(input, context)).toMatchObject({ ok: false, error: { code: "quota_exhausted" } });
+        expect(await aiGenerationQuery.run(input, context)).toMatchObject({
+          ok: false,
+          error: { code: "quota_exhausted", details: { aiUsage: { model: { id: "a" }, usage: { input: 0, output: 0 } } } },
+        });
       }
       expect(providerCalls).toBe(2);
       const calls = await sql<

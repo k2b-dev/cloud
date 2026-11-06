@@ -87,6 +87,7 @@ model defaults. The profile thinking level does not apply. Profile
 | `traceParent` | Parent span for existing background work |
 | `appId` | Application attribution |
 | `attribution` | Optional authorized user, conversation, turn, and workflow-run identifiers for usage analysis |
+| `onUsage` | Optional server observer of each provider attempt's resolved model and canonical measured or estimated input/output usage, including failed repairs; undefined usage means unknown. Observing adds no charge. |
 
 The function resolves the model, requests structured output, validates the
 result, and records a trace span.

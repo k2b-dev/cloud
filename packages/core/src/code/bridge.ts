@@ -184,6 +184,7 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
       let issuanceRefusal: CodeBridgeRefusal | undefined;
       let aiReservation: string | null = null;
       let aiProfiles: AiModelProfile[] = [];
+      let aiFailure: unknown;
       try {
         const rate = await (
           options.checkRate ??
@@ -221,6 +222,9 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
           onRefusal: (kind) => {
             refusalKind = kind;
           },
+          onFailure: (error) => {
+            aiFailure = error;
+          },
           mandateId: call.claims.mandateId,
           mandateRevision: call.claims.mandateRevision,
           ownerAppId: "core",
@@ -242,7 +246,9 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
           await settleCodeAiBudget(
             call.claims,
             ordinal,
-            issuanceRefusal ? "0" : codeAiReferenceCost(call.call.capability, result, aiProfiles, aiReservation),
+            issuanceRefusal
+              ? "0"
+              : codeAiReferenceCost(call.call.capability, aiFailure ? { ok: false, error: aiFailure } : result, aiProfiles, aiReservation),
             tx,
           );
         await finishCodeCall(
