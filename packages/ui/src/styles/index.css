@@ -39,12 +39,14 @@
   --k2b-danger-500: #ef4444;
   --k2b-danger-600: #dc2626;
 
-  --k2b-ai-accent: #0891b2;
-  --k2b-ai-accent-hover: #0e7490;
-  --k2b-ai-border: #06b6d4;
-  --k2b-ai-surface: #ecfeff;
-  --k2b-ai-solid: #0e7490;
-  --k2b-ai-solid-hover: #155e75;
+  /* Plum means AI. Text contrast (WCAG): accent 8.3:1 on the surface and 7.6:1 on the AI surface, on-solid 8.3:1;
+     the border keeps 4.2:1 on the surface. */
+  --k2b-ai-accent: #8e1b6f;
+  --k2b-ai-accent-hover: #701556;
+  --k2b-ai-border: #c4519f;
+  --k2b-ai-surface: #fcf3f8;
+  --k2b-ai-solid: #8e1b6f;
+  --k2b-ai-solid-hover: #701556;
   --k2b-ai-on-solid: #ffffff;
 
   --k2b-surface-canvas: var(--k2b-neutral-50);
@@ -328,13 +330,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-warning-text: #fcd34d;
   --k2b-danger-surface: #450a0a;
   --k2b-danger-text: #fca5a5;
-  --k2b-ai-accent: #22d3ee;
-  --k2b-ai-accent-hover: #67e8f9;
-  --k2b-ai-border: #22d3ee;
-  --k2b-ai-surface: #083344;
-  --k2b-ai-solid: #22d3ee;
-  --k2b-ai-solid-hover: #67e8f9;
-  --k2b-ai-on-solid: #083344;
+  /* Accent 10.1:1 on the surface and 9.0:1 on the AI surface, on-solid 9.0:1, border 7.9:1. */
+  --k2b-ai-accent: #f0abdc;
+  --k2b-ai-accent-hover: #f7cdea;
+  --k2b-ai-border: #e98bcd;
+  --k2b-ai-surface: #3a0f2e;
+  --k2b-ai-solid: #f0abdc;
+  --k2b-ai-solid-hover: #f7cdea;
+  --k2b-ai-on-solid: #3a0f2e;
   --k2b-shadow-surface: none;
   --k2b-shadow-frame:
     0 -3px 10px -8px rgb(0 0 0 / 0.32), 0 0 16px -9px rgb(0 0 0 / 0.56), 0 16px 40px -30px rgb(0 0 0 / 0.48), 0 1px 7px rgb(0 0 0 / 0.14);

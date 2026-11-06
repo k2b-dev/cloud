@@ -97,7 +97,7 @@ export default function MailAutomationTrace(props: {
     <section
       class="mx-auto my-3 flex w-full max-w-4xl gap-3 rounded-[0.875rem] px-4 py-3 text-sm"
       classList={{
-        "bg-[var(--k2b-ai-surface)] text-cyan-950 dark:text-cyan-50": item.outcome === "uncertain",
+        "bg-[var(--k2b-ai-surface)] text-primary": item.outcome === "uncertain",
         "bg-[var(--ui-surface-subtle)] text-primary": item.outcome !== "uncertain",
       }}
       data-mail-automation-note={item.outcome}

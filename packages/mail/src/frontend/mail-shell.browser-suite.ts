@@ -522,7 +522,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       const summaryHeights = new Map<number, Record<string, number>>();
       for (const width of [1440, 390]) {
         for (const state of ["ai", "stale", "writing", "failed", "limited", "person"] as const)
-          test(`automation: AI summary ${state} at ${width}: one place, cyan only for AI`, async () => {
+          test(`automation: AI summary ${state} at ${width}: one place, plum only for AI`, async () => {
             const heights = summaryHeights.get(width) ?? {};
             summaryHeights.set(width, heights);
             const page = await open(`${boxPath}?conversation=Conv01&locale=de&summary=${state}`, width, width === 390 ? 844 : 900);
@@ -534,8 +534,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               const ai = (await card.getAttribute("data-mail-summary-ai")) !== null;
               expect(ai, `${state}: AI surface only for AI`).toBe(state !== "person");
               const background = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
-              if (state === "person") expect(background).not.toBe("rgb(236, 254, 255)");
-              else expect(background).toBe("rgb(236, 254, 255)");
+              if (state === "person") expect(background).not.toBe("rgb(252, 243, 248)");
+              else expect(background).toBe("rgb(252, 243, 248)");
               if (state === "writing") expect(await card.getAttribute("aria-busy")).toBe("true");
               if (state === "stale") await page.getByText("1 neue Nachricht seit dieser Fassung").waitFor();
               if (state === "failed") await card.getByRole("button", { name: "Erneut versuchen" }).waitFor();
