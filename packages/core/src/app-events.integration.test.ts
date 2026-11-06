@@ -163,6 +163,7 @@ suiteFor("database")("Core app event broker", () => {
     await broker.accept({ ...event(62), time: "1998-01-01T00:00:00Z", place }, 3);
     await broker.accept({ ...event(63), place }, 4);
     expect((await broker.deliveries()).items).toHaveLength(2);
+    expect((await broker.catalog()).events[0]?.subscribers).toHaveLength(2);
     // Declaration reconciliation must never cancel a workload subscription absent from the app manifest.
     await makeBroker().reconcileSubscriptions();
     resourceFails = true;
@@ -198,6 +199,9 @@ suiteFor("database")("Core app event broker", () => {
     await broker.accept({ ...event(65), place }, 2);
     const claimed = await broker.claim();
     await cancelResourceEventSubscriptions(sql, "fixture", "workload");
+    await expect(subscribeResourceEvent(sql, { appId: "receivera", type: "eventsource.changed", version: 1, binding })).rejects.toThrow(
+      "fresh revision",
+    );
     for (const row of claimed) await broker.deliver(row);
     expect(received).toEqual([]);
     expect((await broker.deliveries()).items.every((row: Record<string, unknown>) => row.state === "cancelled")).toBe(true);

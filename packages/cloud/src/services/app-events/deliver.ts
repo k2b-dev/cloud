@@ -148,10 +148,6 @@ export function createEventDelivery(
           await postpone(row);
           return;
         }
-        if (!(await (dependencies.authorizeResource ?? authorizeResourceEvent)(row.app_id, binding, row.envelope))) {
-          await finish(row, "cancelled", "resource_access_revoked");
-          return;
-        }
         const signal = AbortSignal.timeout(DELIVERY_TIMEOUT_MS);
         let onAbort = () => {};
         const aborted = new Promise<never>((_, reject) => {
@@ -160,12 +156,20 @@ export function createEventDelivery(
         });
         try {
           await Promise.race([
-            consumer(binding, row.envelope, {
-              subscriptionId: row.subscription_id,
-              eventId: row.event_id,
-              attempt: row.attempts,
-              signal,
-            }),
+            (async () => {
+              if (!(await (dependencies.authorizeResource ?? authorizeResourceEvent)(row.app_id, binding, row.envelope, signal))) {
+                signal.throwIfAborted();
+                await finish(row, "cancelled", "resource_access_revoked");
+                return;
+              }
+              signal.throwIfAborted();
+              await consumer(binding, row.envelope, {
+                subscriptionId: row.subscription_id,
+                eventId: row.event_id,
+                attempt: row.attempts,
+                signal,
+              });
+            })(),
             aborted,
           ]);
         } finally {

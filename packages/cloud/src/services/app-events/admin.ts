@@ -30,7 +30,7 @@ export function createEventAdministration(db: () => SQL, dependencies: Dependenc
         }[]
       >`
         SELECT app_id AS "appId", id AS "subscriptionId", event_type, version, state, reason, first_seen_at AS "firstSeenAt"
-        FROM events.app_subscriptions ORDER BY id
+        FROM events.app_subscriptions WHERE resource_binding IS NULL ORDER BY id
       `,
     ]);
     return {
@@ -70,7 +70,7 @@ export function createEventAdministration(db: () => SQL, dependencies: Dependenc
             WHERE subscription_id = subscription.id GROUP BY state
           ) counts) AS counts
         FROM events.app_subscriptions subscription
-        WHERE (${app ?? null}::text IS NULL OR subscription.app_id = ${app ?? null}) ORDER BY subscription.id
+        WHERE subscription.resource_binding IS NULL AND (${app ?? null}::text IS NULL OR subscription.app_id = ${app ?? null}) ORDER BY subscription.id
       `,
     };
   };
@@ -238,6 +238,11 @@ export function createEventAdministration(db: () => SQL, dependencies: Dependenc
           WHERE state IN ('done', 'cancelled') AND updated_at < now() - interval '7 days' LIMIT 1000
         )
       `;
+      await tx`DELETE FROM events.app_subscriptions subscription WHERE id IN (
+        SELECT id FROM events.app_subscriptions subscription WHERE resource_binding IS NOT NULL AND state='cancelled'
+          AND updated_at < now() - interval '7 days'
+          AND NOT EXISTS(SELECT FROM events.app_deliveries delivery WHERE delivery.subscription_id=subscription.id) LIMIT 1000
+      )`;
       await tx`
         DELETE FROM events.app_events WHERE id IN (
           SELECT event.id FROM events.app_events event

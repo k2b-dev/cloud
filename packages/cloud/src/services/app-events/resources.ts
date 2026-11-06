@@ -5,6 +5,7 @@ import { getCapability } from "../../_internal/registry";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/server-invoke";
 import type { AppEventDeliveryContext, AppEventEnvelope } from "../../contracts/app-events";
 import { CapabilityAppIdSchema, CapabilityQualifiedIdSchema, CloudResourceRefSchema } from "../../contracts/capabilities";
+import { AppAccessDeniedError } from "../../server/middleware/app-access";
 import { requireRegisteredAppAccess, resolveIssuanceAuthority } from "../identity/issue-invocation";
 import { mandates } from "../mandates";
 
@@ -56,9 +57,12 @@ export async function subscribeResourceEvent(
   const version = z.number().int().positive().parse(input.version);
   const binding = ResourceEventBindingSchema.parse(input.binding);
   const id = `resource:${appId}:${capabilityHash({ type, version, binding })}`;
-  await db`INSERT INTO events.app_subscriptions(id,app_id,event_type,version,state,reason,resource_binding)
-    VALUES(${id},${appId},${type},${version},'active',NULL,${JSON.stringify(binding)}::text::jsonb)
+  await db`SELECT pg_advisory_xact_lock(hashtextextended(${`cloud.resource-event:${type}@${version}`},0))`;
+  await db`INSERT INTO events.app_subscriptions(id,app_id,event_type,version,state,reason,resource_binding,first_seen_at)
+    VALUES(${id},${appId},${type},${version},'active',NULL,${JSON.stringify(binding)}::text::jsonb,clock_timestamp())
     ON CONFLICT(id) DO NOTHING`;
+  const [stored] = await db`SELECT state FROM events.app_subscriptions WHERE id=${id} FOR SHARE`;
+  if (stored?.state !== "active") throw new Error("Resource subscription is cancelled; resume with a fresh revision");
   return id;
 }
 
@@ -74,7 +78,13 @@ export async function cancelResourceEventSubscriptions(db: SQL, consumer: string
 }
 
 /** Permission checks use the place's ordinary Type reader. They grant no permission to the handler. */
-export async function authorizeResourceEvent(appId: string, binding: ResourceEventBinding, envelope: AppEventEnvelope): Promise<boolean> {
+export async function authorizeResourceEvent(
+  appId: string,
+  binding: ResourceEventBinding,
+  envelope: AppEventEnvelope,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  signal?.throwIfAborted();
   if (envelope.place?.type !== binding.place.type || envelope.place.id !== binding.place.id) return false;
   const mandate = await mandates.get(binding.mandateId);
   if (
@@ -98,7 +108,13 @@ export async function authorizeResourceEvent(appId: string, binding: ResourceEve
     appId,
   );
   if (!authority) return false;
-  await requireRegisteredAppAccess(authority, appId);
+  try {
+    await requireRegisteredAppAccess(authority, appId, { signal });
+  } catch (error) {
+    if (error instanceof AppAccessDeniedError) return false;
+    throw error;
+  }
+  signal?.throwIfAborted();
   const separator = binding.place.type.indexOf(".");
   const source = binding.place.type.slice(0, separator);
   const localType = binding.place.type.slice(separator + 1);
@@ -109,7 +125,7 @@ export async function authorizeResourceEvent(appId: string, binding: ResourceEve
   const result = await invokeCapabilityWithDataSchema(
     { appId: source, capabilityId: reader, kind: "query", input: { id: binding.place.id } },
     z.unknown(),
-    { authority, signal: AbortSignal.timeout(30_000) },
+    { authority, signal: signal ?? AbortSignal.timeout(30_000) },
   );
   if (result.ok) return true;
   if (["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"].includes(result.error.code)) return false;
