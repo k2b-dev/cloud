@@ -221,11 +221,11 @@ All kinds accept these wrapper props:
 | `tooltip` | Synchronous `(selection: ChartSelection) => ChartTooltip`. Customizes the always-on tooltip. Omit for the built-in tooltip. Does not accept JSX, HTML, or a promise. |
 | `onSelect` | Optional synchronous `(selection: ChartSelection) => void`. Click, tap, and Enter emit selection; hover and focus do not. Use `selected` for a controlled highlight. |
 
-Do not pass `width`, `height`, or stdlib's `inspect`: the wrapper owns them.
+Do not pass `width`, `height`, or `inspect`: the wrapper owns them.
 Do not invent `dataKey`, `xKey`, `yKey`, `onClick`, or `renderTooltip` props.
 Convert application records into the payload for the selected kind.
 
-Except for `sparkline` and `stateTimeline`, stdlib options also include
+Except for `sparkline` and `stateTimeline`, core renderer options also include
 `className?: string` (on the SVG, distinct from wrapper `class`),
 `title?: string`, `subtitle?: string`, and
 `padding?: number | { top?: number; right?: number; bottom?: number; left?: number }`.
@@ -234,7 +234,7 @@ bottom 32, left 40. Support for header/padding layout varies with the renderer;
 use surrounding HTML for a consistent card title.
 `sparkline` supports `className` but has no title, axes, or padding prop.
 The UI-owned `stateTimeline` contract supports only its options below plus the
-wrapper props; it does not inherit the raw stdlib timeline options.
+wrapper props; it does not inherit the raw core timeline options.
 
 ### Data and options by kind
 
@@ -388,8 +388,9 @@ type ChartTooltip = {
 type ChartTooltipFormatter = (selection: ChartSelection) => ChartTooltip;
 ```
 
-`ChartDatum` is exported by `@k2b/stdlib`; `ChartSelection` and the tooltip
-types are exported by `@k2b/ui`. Its shape is:
+`ChartDatum`, `ChartSelection`, and the tooltip types are exported by
+`@k2b/ui/charts/core`; the component types remain available from `@k2b/ui`.
+The datum shape is:
 
 ```ts
 type ChartDatum = {
@@ -516,9 +517,9 @@ Tooltips, keyboard inspection and navigation require browser code. Render charts
 
 ## Inspection without Solid
 
-Use `@k2b/ui/chart-inspection` when your host renders stdlib chart SVG itself,
+Use `@k2b/ui/chart-inspection` when your host renders core chart SVG itself,
 for example in a sandboxed HTML document that cannot load a framework.
-Raw stdlib renderers are allowed only with `inspectChart`; the `chart-rendering` check enforces this with a file allow-list.
+Raw SVG renderers are allowed only with `inspectChart`; the `chart-rendering` check enforces this with a file allow-list.
 The module contains no Solid. The base stylesheet styles chart tooltips in HTML apps.
 It keeps `<table class="k2b-chart__table" hidden>` after a chart hidden on screen
 and prints it below the chart, breaking between rows with the header repeated.
@@ -536,7 +537,7 @@ Optional `select(selection)` receives click, tap, or Enter selections.
 Optional `cursor` links line charts; import `createChartCursor` from the same module.
 
 ```ts
-import { charts } from "@k2b/stdlib";
+import { charts } from "@k2b/ui/charts/core";
 import { inspectChart } from "@k2b/ui/chart-inspection";
 
 const data = [{ label: "Jobs", value: 42 }];
@@ -558,7 +559,7 @@ inspection.invalidate();
 inspection.destroy();
 ```
 
-The markup must come from the stdlib renderer with `inspect: true`.
+The markup must come from a core renderer with `inspect: true`.
 Only valid `data-chart-datum` metadata participates. Tooltip content is inserted
 as text. Inspection uses the same keyboard, pointer, pin, and close behavior as
 `Chart`; see [Accessibility](#accessibility). The host gives the container its
