@@ -83,6 +83,12 @@ const owner = { id: "10000000-0000-4000-8000-000000000001", name: "Atlas documen
 const storage = { id: "20000000-0000-4000-8000-000000000001", baseId: `cloud:users:${owner.id}`, owner, area: "cloud", state: "active" };
 const json = (route: Route, body: unknown, status = 200) =>
   route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+/** One grants page as the server answers it: `accounts=code` lists Code accounts alone, `other` everyone else. */
+const grantPage = <T extends { serviceAccountKind?: string }>(route: Route, items: readonly T[]) => {
+  const accounts = new URL(route.request().url()).searchParams.get("accounts");
+  expect(accounts === "code" || accounts === "other").toBe(true);
+  return json(route, { items: items.filter((item) => (accounts === "code") === (item.serviceAccountKind === "code")), next: null });
+};
 const entities = { items: [{ kind: "service_account", serviceAccount: { ...owner, appId: null, resourceType: null, resourceId: null } }] };
 describe("Machine storage settings", () => {
   for (const mode of ["picker", "button"] as const) {
@@ -123,7 +129,7 @@ describe("Machine storage settings", () => {
               granted = true;
               return json(route, entry);
             }
-            return json(route, { items: granted ? [entry] : [], next: null });
+            return grantPage(route, granted ? [entry] : []);
           }
           return json(route, { items: [storage], next: null });
         },
@@ -198,7 +204,7 @@ describe("Machine storage settings", () => {
               },
             ],
           });
-        if (url.pathname.endsWith("/grants")) return json(route, { items: [], next: null });
+        if (url.pathname.endsWith("/grants")) return grantPage(route, []);
         return json(route, { items: [storage], next: null });
       });
       try {
@@ -287,7 +293,7 @@ describe("Machine storage settings", () => {
             grants.find((grant) => grant.id === appCode.id),
           );
         }
-        if (url.pathname.endsWith("/grants")) return json(route, { items: grants, next: null });
+        if (url.pathname.endsWith("/grants")) return grantPage(route, grants);
         return json(route, { items: [storage], next: null });
       });
       try {
@@ -407,7 +413,7 @@ describe("Machine storage settings", () => {
           grants = grants.filter((grant) => !url.pathname.endsWith(`/${grant.id}`));
           return json(route, { deleted: true });
         }
-        if (url.pathname.endsWith("/grants")) return json(route, { items: grants, next: null });
+        if (url.pathname.endsWith("/grants")) return grantPage(route, grants);
         return json(route, { items: [storage], next: null });
       });
       try {
@@ -451,16 +457,51 @@ describe("Machine storage settings", () => {
           await tab.screenshot({ path: `${process.env.SHOTS}/files-machine-dienst-neu-${width}.png` });
         }
 
-        // Remove takes the grant away at once, as Revoke does; the section is empty again and focus stays in it.
+        // Remove takes the grant away at once, as Revoke does. With the field open, focus goes to the field.
+        await section.getByRole("button", { name: "Dienstkonto hinzufügen" }).click();
         await row.getByRole("button", { name: `${added.displayName} entfernen` }).click();
         await row.waitFor({ state: "detached" });
         expect(await section.locator("h3").textContent()).toBe("Dienstkonten 0");
-        await tab.waitForFunction(() => document.activeElement?.textContent?.includes("Dienstkonto hinzufügen"));
+        await tab.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Kennung des Dienstkontos");
       } finally {
         await context.close();
       }
     });
   }
+  test("de: a failed read after a removal offers Try again instead of rows that may be stale", async () => {
+    let grants: Record<string, unknown>[] = [mailboxCode];
+    let failing = false;
+    const { context, tab } = await open(desktop, "light", "de", async (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().method() === "DELETE") {
+        grants = [];
+        failing = true;
+        return json(route, { deleted: true });
+      }
+      if (url.pathname.endsWith("/grants") && url.searchParams.get("accounts") === "code" && failing)
+        return json(route, { code: "unavailable", message: "Fixture unavailable" }, 503);
+      if (url.pathname.endsWith("/grants")) return grantPage(route, grants);
+      return json(route, { items: [storage], next: null });
+    });
+    try {
+      await tab.locator("summary").filter({ hasText: owner.name }).click();
+      const section = accountsSection(tab);
+      await section
+        .locator("li[data-access-key]", { hasText: mailboxCode.displayName })
+        .getByRole("button", { name: `${mailboxCode.displayName} entfernen` })
+        .click();
+      const retry = tab.getByRole("button", { name: "Erneut versuchen", exact: true });
+      await retry.waitFor();
+      expect(await section.count()).toBe(0);
+      expect(await tab.locator("button[data-access-remove]").count()).toBe(0);
+      failing = false;
+      await retry.click();
+      await section.waitFor();
+      expect(await section.locator("h3").textContent()).toBe("Dienstkonten 0");
+    } finally {
+      await context.close();
+    }
+  });
   test("loading, failure and retry preserve a working recovery path", async () => {
     const waiting = Promise.withResolvers<void>();
     let failed = true;
@@ -529,7 +570,7 @@ describe("Machine storage settings", () => {
           grants = [];
           return json(route, { deleted: true });
         }
-        if (path.endsWith("/grants")) return json(route, { items: grants, next: null });
+        if (path.endsWith("/grants")) return grantPage(route, grants);
         if (method === "POST") {
           if (++createAttempts === 1) {
             await creating.promise;
@@ -586,38 +627,32 @@ describe("Machine storage settings", () => {
     ] as const) {
       for (const theme of ["light", "dark"] as const) {
         const { context, tab } = await open(options, theme, "en", async (route) =>
-          json(
-            route,
-            new URL(route.request().url()).pathname.endsWith("/grants")
-              ? {
-                  items: [
-                    {
-                      id: "30000000-0000-4000-8000-000000000001",
-                      principal: { type: "service_account", serviceAccountId: owner.id },
-                      displayName: owner.name,
-                      serviceAccountKind: "agent",
-                      permission: "write",
-                      path: "reports/monthly/2026",
-                    },
-                  ],
-                  next: null,
-                }
-              : {
-                  items: [
-                    storage,
-                    {
-                      ...storage,
-                      id: "20000000-0000-4000-8000-000000000002",
-                      owner: {
-                        id: "10000000-0000-4000-8000-000000000002",
-                        name: "Meridian scheduled export service account",
-                        kind: "standalone",
-                      },
-                    },
-                  ],
-                  next: null,
+          new URL(route.request().url()).pathname.endsWith("/grants")
+            ? grantPage(route, [
+                {
+                  id: "30000000-0000-4000-8000-000000000001",
+                  principal: { type: "service_account", serviceAccountId: owner.id },
+                  displayName: owner.name,
+                  serviceAccountKind: "agent",
+                  permission: "write",
+                  path: "reports/monthly/2026",
                 },
-          ),
+              ])
+            : json(route, {
+                items: [
+                  storage,
+                  {
+                    ...storage,
+                    id: "20000000-0000-4000-8000-000000000002",
+                    owner: {
+                      id: "10000000-0000-4000-8000-000000000002",
+                      name: "Meridian scheduled export service account",
+                      kind: "standalone",
+                    },
+                  },
+                ],
+                next: null,
+              }),
         );
         try {
           await tab.locator("summary").filter({ hasText: owner.name }).click();

@@ -56,6 +56,8 @@ The administration API lives under `/api/filesv2/admin/machine-storage`:
 - `GET /` lists a page; pass the returned `next` as `after`.
 - `POST /` accepts `ownerId` and `area: "cloud"`, and creates no grant.
 - `GET /:id/grants` lists a page of the binding's named path grants; pass `next` as `after` to continue.
+  `accounts=code` lists only Code service accounts and `accounts=other` everyone
+  else, so each list pages on its own.
 - `POST /:id/grants` accepts `principal`, `path` and `permission` (`read`,
   `write` or `admin`).
 - `DELETE /:id/grants/:accessId` revokes that exact grant.
@@ -109,7 +111,16 @@ Files records the acting machine, storage binding and request ID for changes.
 Authorization audit entries use a path hash and depth. File contents and transfer
 bearer URLs do not belong in audit metadata.
 
-The storage share surface offers **Add service account**, and its picker also
+Code service accounts have their own **Service accounts** section, as in every
+share dialog: the title with its count, one row per grant with the account's
+description, its level and the path (for example "Service account of a mailbox ·
+may edit · reports"), the level menu with View and Edit, and Remove. View grants
+`read` and Edit grants `write`; a Code account never gets `admin`, so the
+permission chosen above stops at Edit when it adds one. People, groups, and
+agents stay in the path grants above. Level changes and removal apply at once,
+like every storage grant.
+
+The section offers **Add service account**, and the picker also
 accepts an exact Code handle. Both use the shared platform lookup with
 the `filesv2.storage` resource and its `storage.read` reader, which requires the
 same live Cloud-administrator authority as the storage share editor. The reader

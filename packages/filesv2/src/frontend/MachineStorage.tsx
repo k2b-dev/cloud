@@ -185,23 +185,40 @@ function StorageGrants(props: { storage: Storage }) {
     [permission, setPermission] = createSignal<"read" | "write" | "admin">("read");
   const [busy, setBusy] = createSignal(false),
     [error, setError] = createSignal<string>();
-  const [after, setAfter] = createSignal<string>();
-  const grants = query.create({
-    source: () => ({ id: props.storage.id, after: after() }),
-    load: async ({ id, after }, { abortSignal }) =>
-      read(await endpoint[":id"].grants.$get({ param: { id }, query: { after } }, { init: { signal: abortSignal } }), t().failed),
-  });
+  const [after, setAfter] = createSignal<string>(),
+    [accountsAfter, setAccountsAfter] = createSignal<string>();
+  const list = (accounts: "code" | "other", page: () => string | undefined) =>
+    query.create({
+      source: () => ({ id: props.storage.id, after: page() }),
+      load: async ({ id, after }, { abortSignal }) =>
+        read(
+          await endpoint[":id"].grants.$get({ param: { id }, query: { after, accounts } }, { init: { signal: abortSignal } }),
+          t().failed,
+        ),
+    });
+  // Code accounts list in Service accounts, as in every share dialog; everyone else stays with the path grants. Each
+  // list pages on its own, so a count never covers only part of a mixed page.
+  const grants = list("other", after),
+    accounts = list("code", accountsAfter);
+  const refresh = () => Promise.all([grants.refresh(), accounts.refresh()]);
+  // A retry keeps the failure in place until the list arrives, so rows from before the failure never return meanwhile.
+  const [retrying, setRetrying] = createSignal(false);
+  const retryAccounts = async () => {
+    setRetrying(true);
+    await accounts.refresh().catch(() => undefined);
+    setRetrying(false);
+  };
   const run = async (work: () => Promise<unknown>) => {
     if (busy()) return false;
     setBusy(true);
     setError(undefined);
     try {
       await work();
-      await grants.refresh();
+      await refresh();
       return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t().actionFailed);
-      await grants.refresh().catch(() => undefined);
+      await refresh().catch(() => undefined);
       return false;
     } finally {
       setBusy(false);
@@ -217,10 +234,8 @@ function StorageGrants(props: { storage: Storage }) {
     run(async () =>
       read(await endpoint[":id"].grants[":accessId"].$delete({ param: { id: props.storage.id, accessId } }), t().actionFailed),
     );
-  type Grant = NonNullable<ReturnType<typeof grants.data>>["items"][number];
-  /** Code accounts list in Service accounts, as in every share dialog; everyone else stays with the folder grants. */
-  const accountGrants = () => grants.data()?.items.filter((entry) => entry.serviceAccountKind === "code") ?? [];
-  const folderGrants = () => grants.data()?.items.filter((entry) => entry.serviceAccountKind !== "code") ?? [];
+  type Grant = NonNullable<ReturnType<typeof accounts.data>>["items"][number];
+  const accountGrants = () => accounts.data()?.items ?? [];
   /** A service account's levels in the words of every share dialog: View and Edit. */
   const accountLevels = () => serviceAccountLevels(locale());
   const levelLabel = (level: string) => accountLevels().find((option) => option.level === level)?.label ?? level;
@@ -230,8 +245,8 @@ function StorageGrants(props: { storage: Storage }) {
     const remove = (control: HTMLElement) => {
       const section = control.closest("section");
       void revoke(entry().id).then((removed) => {
-        // The row leaves; focus goes to "Add service account" instead of the page.
-        if (removed) queueMicrotask(() => section?.querySelector<HTMLButtonElement>("header button")?.focus());
+        // The row leaves; focus goes to the open handle field or "Add service account" instead of the page.
+        if (removed) queueMicrotask(() => section?.querySelector<HTMLElement>("li input, header button")?.focus());
       });
     };
     return (
@@ -293,8 +308,16 @@ function StorageGrants(props: { storage: Storage }) {
             />
           }
         >
-          <Show when={grants.data()?.items.length} fallback={<Placeholder title={t().noGrants} description={t().noGrantsDetail} />}>
-            <For each={folderGrants()}>
+          <Show
+            when={grants.data()?.items.length}
+            fallback={
+              // Only when nobody has access: a service account below has a grant too.
+              <Show when={!accountGrants().length}>
+                <Placeholder title={t().noGrants} description={t().noGrantsDetail} />
+              </Show>
+            }
+          >
+            <For each={grants.data()?.items}>
               {(entry) => (
                 <div class="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded border border-subtle p-3">
                   <div class="min-w-0">
@@ -368,21 +391,53 @@ function StorageGrants(props: { storage: Storage }) {
           void grant(principal, display.serviceAccountKind === "code" && permission() === "admin" ? "write" : permission())
         }
       />
-      {/* As in every share dialog: service accounts have their own section, added by handle, with their own rows. */}
-      <ServiceAccountSection
-        target={{ type: "filesv2.storage", id: props.storage.id }}
-        resourceName={t().storageName({ owner: props.storage.owner.name })}
-        count={accountGrants().length}
-        hasRows={accountGrants().length > 0}
-        disabled={busy()}
-        // Manage is never offered to a service account, so the level chosen above stops at write.
-        add={(account) => grant(account.principal, permission() === "admin" ? "write" : permission())}
-      >
-        {/* Rows are keyed by grant, so a saved change keeps the row, its controls and the focus. */}
-        <For each={accountGrants().map((entry) => entry.id)}>
-          {(id) => <Show when={accountGrants().find((entry) => entry.id === id)}>{(entry) => <AccountRow entry={entry()} />}</Show>}
-        </For>
-      </ServiceAccountSection>
+      {/* The section waits for its list; a failed read offers Try again instead of rows that may be stale. */}
+      <Show when={!accounts.loading()} fallback={<Placeholder state="loading" title={t().loading} />}>
+        <Show
+          when={!accounts.error() && !retrying()}
+          fallback={
+            <Placeholder
+              state="error"
+              title={t().failed}
+              action={
+                <Button type="button" loading={retrying()} onClick={() => void retryAccounts()}>
+                  {t().retry}
+                </Button>
+              }
+            />
+          }
+        >
+          {/* As in every share dialog: service accounts have their own section, added by handle, with their own rows. */}
+          <ServiceAccountSection
+            target={{ type: "filesv2.storage", id: props.storage.id }}
+            resourceName={t().storageName({ owner: props.storage.owner.name })}
+            count={accountGrants().length}
+            hasRows={accountGrants().length > 0}
+            disabled={busy()}
+            // Manage is never offered to a service account, so the level chosen above stops at write.
+            add={(account) => grant(account.principal, permission() === "admin" ? "write" : permission())}
+          >
+            {/* Rows are keyed by grant, so a saved change keeps the row, its controls and the focus. */}
+            <For each={accountGrants().map((entry) => entry.id)}>
+              {(id) => <Show when={accountGrants().find((entry) => entry.id === id)}>{(entry) => <AccountRow entry={entry()} />}</Show>}
+            </For>
+          </ServiceAccountSection>
+          <div class="flex flex-wrap gap-2">
+            <Show when={accountsAfter()}>
+              <Button type="button" variant="secondary" onClick={() => setAccountsAfter(undefined)}>
+                {t().first}
+              </Button>
+            </Show>
+            <Show when={accounts.data()?.next}>
+              {(next) => (
+                <Button type="button" variant="secondary" onClick={() => setAccountsAfter(next())}>
+                  {t().more}
+                </Button>
+              )}
+            </Show>
+          </div>
+        </Show>
+      </Show>
       <Show when={busy()}>
         <InlineGuidance role="status">{t().loading}</InlineGuidance>
       </Show>

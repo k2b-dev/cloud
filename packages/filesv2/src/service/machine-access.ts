@@ -195,7 +195,15 @@ export async function listMachineStorage(after?: string): Promise<{ items: Machi
     next: rows.length > 50 ? rows[49]!.id : null,
   };
 }
-export async function storageGrants(baseId: string, after?: string, accessId?: string, permission: PermissionLevel = "none") {
+/** Which grants to list: Code accounts alone, as the Service accounts section shows them, or everyone else. */
+export type StorageGrantAccounts = "code" | "other";
+export async function storageGrants(
+  baseId: string,
+  after?: string,
+  accessId?: string,
+  permission: PermissionLevel = "none",
+  accounts?: StorageGrantAccounts,
+) {
   const rows = await sql<
     {
       id: string;
@@ -207,7 +215,9 @@ export async function storageGrants(baseId: string, after?: string, accessId?: s
       created_at: Date;
     }[]
   >`
-    SELECT a.*,s.path FROM filesv2.storage_access s JOIN auth.access a ON a.id=s.access_id WHERE s.base_id=${baseId}::uuid AND (${after ?? null}::uuid IS NULL OR a.id>${after ?? null}::uuid) AND (${accessId ?? null}::uuid IS NULL OR a.id=${accessId ?? null}::uuid) ORDER BY a.id LIMIT 51`;
+    SELECT a.*,s.path FROM filesv2.storage_access s JOIN auth.access a ON a.id=s.access_id WHERE s.base_id=${baseId}::uuid AND (${after ?? null}::uuid IS NULL OR a.id>${after ?? null}::uuid) AND (${accessId ?? null}::uuid IS NULL OR a.id=${accessId ?? null}::uuid)
+      AND (${accounts ?? null}::text IS NULL OR (${accounts ?? null}::text='code')=EXISTS(SELECT 1 FROM auth.service_accounts sa WHERE sa.id=a.service_account_id AND sa.kind='code'))
+    ORDER BY a.id LIMIT 51`;
   const items = await resolveDisplayNames(
     rows.slice(0, 50).map((row) => ({
       id: row.id,
