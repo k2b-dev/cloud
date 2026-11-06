@@ -69,9 +69,11 @@ import { gridsCapabilityPresentation } from "./capability-presentation";
 import { type DslQueryPreviewResponse, ShortIdSchema } from "./contracts";
 import { isRecordWritableFieldType } from "./field-types";
 import { ObjectListConfigSchema } from "./field-types/object-list";
+import { integrityCapabilities } from "./integrity-capabilities";
+import { gridsActionReview } from "./integrity-review";
 import { queryCapabilityHref } from "./query-capability-link";
 import { gridsService } from "./service";
-import { withAuditRequest } from "./service/audit";
+import { withCapabilityAudit } from "./service/audit";
 import { MAX_DOCUMENT_ARTIFACT_BYTES } from "./service/document-artifact-drafts";
 import { decodeDocumentCursor } from "./service/document-values";
 import { toPublicGqlResponse } from "./service/gql-public-result";
@@ -374,6 +376,7 @@ export const dailyCapabilities = defineCapabilities({
   },
   actions: {
     "document.create": {
+      policy: { ask: "cannot_undo" },
       title: "Issue an immutable document",
       description:
         "Issue one document from document.templates and a Record. This may assign an irreversible invoice/document number. Review every issuance; reuse the capability idempotency key only for retries of the same request. No compliance guarantee or external delivery.",
@@ -385,16 +388,19 @@ export const dailyCapabilities = defineCapabilities({
       async review(input, context) {
         const loaded = await loadIssuance(input, context);
         if (!loaded.ok) return loaded;
-        return ok({
-          message: capabilityMessagesFor(context.locale).issueDocumentReview,
-          details: [
-            { label: capabilityMessagesFor(context.locale).template, value: loaded.data.template.name },
-            { label: capabilityMessagesFor(context.locale).record, value: input.recordId },
-          ],
-        });
+        return ok(
+          gridsActionReview(context, capabilityMessagesFor(context.locale).issueDocumentReview, {
+            input,
+            message: capabilityMessagesFor(context.locale).issueDocumentReview,
+            details: [
+              { label: capabilityMessagesFor(context.locale).template, value: loaded.data.template.name },
+              { label: capabilityMessagesFor(context.locale).record, value: input.recordId },
+            ],
+          }),
+        );
       },
       async run(input, context) {
-        return withAuditRequest(context.requestId, async () => {
+        return withCapabilityAudit(context, async () => {
           if (!context.idempotencyKey) return fail(err.badInput(capabilityMessagesFor(context.locale).idempotencyRequired));
           const loaded = await loadIssuance(input, context, true);
           if (!loaded.ok) return loaded;
@@ -412,6 +418,7 @@ export const dailyCapabilities = defineCapabilities({
       },
     },
     "workflow.record-action": {
+      policy: { ask: "app_asks" },
       title: "Run a record workflow action",
       description:
         "Create one linked correction/cancellation Draft through an action from workflow.record-actions at its exact revision. The original must be finalized and remains unchanged. No issuance or external delivery. Obtain explicit approval; no arbitrary workflow source or extra inputs. Follow the run ref for status.",
@@ -423,17 +430,20 @@ export const dailyCapabilities = defineCapabilities({
       async review(input, context) {
         const loaded = await loadRecordAction(input, context);
         if (!loaded.ok) return loaded;
-        return ok({
-          message: capabilityMessagesFor(context.locale).recordActionReview,
-          details: [
-            { label: capabilityMessagesFor(context.locale).action, value: loaded.data.launcher.name },
-            { label: capabilityMessagesFor(context.locale).record, value: input.recordId },
-            { label: capabilityMessagesFor(context.locale).revision, value: String(input.expectedRevision) },
-          ],
-        });
+        return ok(
+          gridsActionReview(context, capabilityMessagesFor(context.locale).recordActionReview, {
+            input,
+            message: capabilityMessagesFor(context.locale).recordActionReview,
+            details: [
+              { label: capabilityMessagesFor(context.locale).action, value: loaded.data.launcher.name },
+              { label: capabilityMessagesFor(context.locale).record, value: input.recordId },
+              { label: capabilityMessagesFor(context.locale).revision, value: String(input.expectedRevision) },
+            ],
+          }),
+        );
       },
       async run(input, context) {
-        return withAuditRequest(context.requestId, async () => {
+        return withCapabilityAudit(context, async () => {
           if (!context.idempotencyKey) return fail(err.badInput(capabilityMessagesFor(context.locale).idempotencyRequired));
           const loaded = await loadRecordAction(input, context);
           if (!loaded.ok) return loaded;
@@ -1327,7 +1337,7 @@ const resolveRecordValues = async (tableId: string, values: Record<string, unkno
 };
 
 const runRecordCreate = async (input: z.infer<typeof RecordCreateInputSchema>, context: CapabilityExecutionContext) => {
-  return withAuditRequest(context.requestId, async () => {
+  return withCapabilityAudit(context, async () => {
     const t = capabilityMessagesFor(context.locale);
     const access = accessContext(context);
     const table = await requireTable(input.tableId, access, "write", context.locale);
@@ -1345,7 +1355,7 @@ const runRecordCreate = async (input: z.infer<typeof RecordCreateInputSchema>, c
 };
 
 const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpsertInputSchema>, context: CapabilityExecutionContext) => {
-  return withAuditRequest(context.requestId, async () => {
+  return withCapabilityAudit(context, async () => {
     const t = capabilityMessagesFor(context.locale);
     if (!context.idempotencyKey) return fail(err.badInput(t.idempotencyRequired));
     const access = accessContext(context);
@@ -1418,7 +1428,7 @@ const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpser
 };
 
 const runRecordUpdate = async (input: z.infer<typeof RecordUpdateInputSchema>, context: CapabilityExecutionContext) => {
-  return withAuditRequest(context.requestId, async () => {
+  return withCapabilityAudit(context, async () => {
     const t = capabilityMessagesFor(context.locale);
     if (Object.keys(input.values).length === 0) return fail(err.badInput(t.valuesRequired));
     const access = accessContext(context);
@@ -1510,6 +1520,7 @@ export const gridsCapabilities = defineCapabilities({
     },
   },
   queries: {
+    ...integrityCapabilities.queries,
     ...dailyCapabilities.queries,
     "base.search": {
       title: "Search Grids bases",
@@ -1601,8 +1612,10 @@ export const gridsCapabilities = defineCapabilities({
     },
   },
   actions: {
+    ...integrityCapabilities.actions,
     ...dailyCapabilities.actions,
     "view.create": {
+      policy: { ask: "app_asks" },
       title: "Save Grids query as View",
       description:
         "Save a reviewed GQL query as a new personal or shared View. Requires base admin access. Does not change tables or records. Never retry an uncertain result; inspect existing Views first.",
@@ -1611,24 +1624,26 @@ export const gridsCapabilities = defineCapabilities({
       openWorld: false,
       destructive: false,
       idempotency: "required",
-      approval: "rememberable",
       review: async (input, context) => {
         const prepared = await prepareViewCreate(input, context);
         if (!prepared.ok) return prepared;
         const t = capabilityMessagesFor(context.locale);
-        return ok({
-          message: t.saveViewReview({ name: input.name }),
-          // A personal View changes only the person's own list; a shared one shows to everyone in the Base and asks each time.
-          ...(input.shared ? {} : { approvalScope: `personal-views:${prepared.data.compiled.tableId}` }),
-          details: [
-            { label: t.viewVisibility, value: input.shared ? t.sharedView : t.personalView },
-            { label: "GQL", value: input.query.slice(0, 10000), display: "block" as const },
-            ...(input.query.length > 10000 ? [{ label: "GQL (2)", value: input.query.slice(10000), display: "block" as const }] : []),
-          ],
-        });
+        return ok(
+          gridsActionReview(context, t.saveViewReview({ name: input.name }), {
+            input,
+            message: t.saveViewReview({ name: input.name }),
+            // A personal View changes only the person's own list; a shared one shows to everyone in the Base and asks each time.
+            ...(input.shared ? {} : { approvalScope: `personal-views:${prepared.data.compiled.tableId}` }),
+            details: [
+              { label: t.viewVisibility, value: input.shared ? t.sharedView : t.personalView },
+              { label: "GQL", value: input.query.slice(0, 10000), display: "block" as const },
+              ...(input.query.length > 10000 ? [{ label: "GQL (2)", value: input.query.slice(10000), display: "block" as const }] : []),
+            ],
+          }),
+        );
       },
       run: async (input, context) => {
-        return withAuditRequest(context.requestId, async () => {
+        return withCapabilityAudit(context, async () => {
           const prepared = await prepareViewCreate(input, context);
           if (!prepared.ok) return prepared;
           const { compiled, user } = prepared.data;
@@ -1646,6 +1661,7 @@ export const gridsCapabilities = defineCapabilities({
       },
     },
     "record.create": {
+      policy: { silent: "shared" },
       title: "Create Grids Record",
       description:
         "Call gql.context kind fields with includeWriteContext true first, then create once with values keyed by writable Field public ID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. Reuse the idempotency key only to retry the same create.",
@@ -1654,22 +1670,25 @@ export const gridsCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
-      approval: "rememberable",
       async review(input, context) {
         const table = await requireTable(input.tableId, accessContext(context), "write", context.locale);
         if (!table.ok) return table;
         const values = await resolveRecordValues(table.data.id, input.values, context.locale);
         if (!values.ok) return values;
         const t = capabilityMessagesFor(context.locale);
-        return ok({
-          message: t.reviewCreateRecord({ table: table.data.name }),
-          approvalScope: `table:${input.tableId}`,
-          details: [{ label: t.table, value: table.data.name }, ...recordValuesReview(input.values, values.data.fields, context.locale)],
-        });
+        return ok(
+          gridsActionReview(context, t.reviewCreateRecord({ table: table.data.name }), {
+            input,
+            message: t.reviewCreateRecord({ table: table.data.name }),
+            approvalScope: `table:${input.tableId}`,
+            details: [{ label: t.table, value: table.data.name }, ...recordValuesReview(input.values, values.data.fields, context.locale)],
+          }),
+        );
       },
       run: runRecordCreate,
     },
     "record.upsert-external": {
+      policy: { silent: "shared" },
       title: "Upsert external Grids Record",
       description:
         "Load gql.context kind fields with includeWriteContext true. Retry-safely bind provider + providerAccount + resourceKind + externalId to one Record. " +
@@ -1679,7 +1698,6 @@ export const gridsCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
-      approval: "rememberable",
       review: async (input, context) => {
         const t = capabilityMessagesFor(context.locale);
         const access = accessContext(context);
@@ -1687,23 +1705,27 @@ export const gridsCapabilities = defineCapabilities({
         if (!table.ok) return table;
         const values = await resolveRecordValues(table.data.id, input.values, context.locale);
         if (!values.ok) return values;
-        return ok({
-          message: t.reviewExternalRecord({ table: table.data.name }),
-          approvalScope: `table:${input.tableId}`,
-          details: [
-            { label: t.table, value: table.data.name },
-            { label: t.provider, value: input.externalRef.provider },
-            { label: t.providerAccount, value: input.externalRef.providerAccount },
-            { label: t.resourceKind, value: input.externalRef.resourceKind },
-            { label: t.externalId, value: input.externalRef.externalId },
-            ...(input.ifVersion === undefined ? [] : [{ label: t.expectedVersion, value: String(input.ifVersion) }]),
-            ...recordValuesReview(input.values, values.data.fields, context.locale, 14),
-          ],
-        });
+        return ok(
+          gridsActionReview(context, t.reviewExternalRecord({ table: table.data.name }), {
+            input,
+            message: t.reviewExternalRecord({ table: table.data.name }),
+            approvalScope: `table:${input.tableId}`,
+            details: [
+              { label: t.table, value: table.data.name },
+              { label: t.provider, value: input.externalRef.provider },
+              { label: t.providerAccount, value: input.externalRef.providerAccount },
+              { label: t.resourceKind, value: input.externalRef.resourceKind },
+              { label: t.externalId, value: input.externalRef.externalId },
+              ...(input.ifVersion === undefined ? [] : [{ label: t.expectedVersion, value: String(input.ifVersion) }]),
+              ...recordValuesReview(input.values, values.data.fields, context.locale, 14),
+            ],
+          }),
+        );
       },
       run: runRecordExternalUpsert,
     },
     "record.update": {
+      policy: { silent: "shared" },
       title: "Update Grids Record",
       description:
         "Load gql.context kind fields with includeWriteContext true for value and audit requirements, then record.read for ifVersion. Only supplied Field public IDs change; stale versions are rejected. Returns bounded metadata; read values with targeted GQL.",
@@ -1712,7 +1734,6 @@ export const gridsCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
-      approval: "rememberable",
       review: async (input, context) => {
         const t = capabilityMessagesFor(context.locale);
         if (Object.keys(input.values).length === 0) return fail(err.badInput(t.valuesRequired));
@@ -1730,17 +1751,20 @@ export const gridsCapabilities = defineCapabilities({
         });
         if (!record) return fail(notFoundError(t.recordNotFound));
         const base = await gridsService.base.get(table.data.baseId);
-        return ok({
-          message: t.reviewUpdateRecord({ table: table.data.name }),
-          approvalScope: `table:${input.tableId}`,
-          details: [
-            { label: t.table, value: table.data.name },
-            { label: t.record, value: record.shortId },
-            { label: t.currentVersion, value: String(record.version) },
-            ...recordValuesReview(input.values, values.data.fields, context.locale),
-          ],
-          ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data, record.shortId) }] } : {}),
-        });
+        return ok(
+          gridsActionReview(context, t.reviewUpdateRecord({ table: table.data.name }), {
+            input,
+            message: t.reviewUpdateRecord({ table: table.data.name }),
+            approvalScope: `table:${input.tableId}`,
+            details: [
+              { label: t.table, value: table.data.name },
+              { label: t.record, value: record.shortId },
+              { label: t.currentVersion, value: String(record.version) },
+              ...recordValuesReview(input.values, values.data.fields, context.locale),
+            ],
+            ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data, record.shortId) }] } : {}),
+          }),
+        );
       },
       run: runRecordUpdate,
     },

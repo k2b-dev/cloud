@@ -3,6 +3,7 @@ import { sql } from "@k2b/cloud";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
+  CapabilityActionCallReviewSchema,
   type CapabilityActionDefinition,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
@@ -31,12 +32,12 @@ const postgresTest = testFor("database");
 if (testInfra.database) setDefaultTimeout(60_000);
 const uuid = () => Bun.randomUUIDv7();
 
-test("only exposes remembered approval for record changes and personal views", () => {
+test("uses explicit policies instead of remembered approvals", () => {
   const rememberable = (Object.entries(gridsCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
     .filter(([, action]) => action.approval === "rememberable")
     .map(([localId]) => localId)
     .sort();
-  expect(rememberable).toEqual(["record.create", "record.update", "record.upsert-external", "view.create"]);
+  expect(rememberable).toEqual([]);
 });
 
 const testUser = (id: string): User => ({
@@ -93,12 +94,10 @@ const review = (localId: string, input: unknown, context: CapabilityExecutionCon
   if (!parsed.success) throw new Error(`Invalid test review input for ${localId}: ${parsed.error.message}`);
   return Promise.resolve(operation.review(parsed.data, context)).then((result) => {
     if (result.ok) {
-      const validated = CapabilityActionReviewSchema.safeParse(result.data);
-      if (!validated.success) throw new Error(`Invalid test review for ${localId}: ${validated.error.message}`);
-      // Only a rememberable Action returns a scope; it may omit it for arguments that ask every time, such as a shared View.
-      if (operation.approval !== "rememberable") expect(validated.data.approvalScope).toBeUndefined();
-      else if (localId !== "view.create" || !(parsed.data as { shared?: boolean }).shared)
-        expect(validated.data.approvalScope).toBeString();
+      const policyReview = CapabilityActionCallReviewSchema.parse(result.data);
+      expect(policyReview.content?.kind).toBe("page");
+      const validated = CapabilityActionReviewSchema.safeParse(JSON.parse(policyReview.content!.body));
+      if (!validated.success) throw new Error(`Invalid complete proposal for ${localId}: ${validated.error.message}`);
       return { ...result, data: validated.data };
     }
     return result;
@@ -347,6 +346,7 @@ describe("Grids capabilities", () => {
       "gql.execute",
       "gql.preview",
       "gql.view.execute",
+      "record.finalization.read",
       "record.read",
       "table.read",
       "view.read",
@@ -354,8 +354,15 @@ describe("Grids capabilities", () => {
       "workflow.run.read",
     ]);
     expect(Object.keys(gridsCapabilities.actions ?? {}).sort()).toEqual([
+      "document.capture",
+      "document.confirm",
       "document.create",
+      "document.issue",
+      "record.atomic",
+      "record.close",
+      "record.correction-draft",
       "record.create",
+      "record.finalize",
       "record.update",
       "record.upsert-external",
       "view.create",
@@ -365,7 +372,7 @@ describe("Grids capabilities", () => {
       Object.entries(gridsCapabilities.actions ?? {})
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id),
-    ).toEqual(["document.create", "workflow.record-action", "view.create", "record.create", "record.upsert-external", "record.update"]);
+    ).toEqual(Object.keys(gridsCapabilities.actions));
     expect(gridsCapabilities.queries?.["base.list"]?.description).toContain("Normal entry for base-scoped Grids work");
     expect(gridsCapabilities.queries?.["gql.context"]?.description).toContain("request tables first");
     expect(gridsCapabilities.queries?.["gql.execute"]?.description).toContain("normally gql.preview");
