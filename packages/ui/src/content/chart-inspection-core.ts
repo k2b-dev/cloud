@@ -49,6 +49,10 @@ const describe = (container: HTMLElement, id: string, on: boolean) => {
   else container.removeAttribute("aria-describedby");
 };
 
+/** Mark roles that stand for a whole category: hovering anywhere in its column (or row) inspects it. */
+const categoryRoles: Partial<Record<ChartKind, string>> = { bar: "item", histogram: "bin", boxplot: "box" };
+type CategoryBand = { entry: Entry; left: number; right: number; top: number; bottom: number };
+
 /** Enhances existing SVG nodes. Pointer/focus changes never rebuild the chart. */
 export function createChartInspector(options: {
   container: () => HTMLElement | undefined;
@@ -263,11 +267,20 @@ export function createChartInspector(options: {
     }
     const rect = container.getBoundingClientRect(),
       point = screenPoint(entry);
-    anchor.style.left = `${point.x - rect.left}px`;
-    anchor.style.top = `${point.y - rect.top}px`;
+    const band = categoryBands().find((candidate) => candidate.entry === entry);
+    const rows = Boolean(container.querySelector('svg[data-bar-layout="rows"]'));
+    // A column's tooltip waits at the top of the plot, so it stays put while the pointer moves within the column.
+    anchor.style.left = `${(band && !rows ? (band.left + band.right) / 2 : point.x) - rect.left}px`;
+    anchor.style.top = `${(band && !rows ? band.top : point.y) - rect.top}px`;
     updatePlotBounds();
     container.style.setProperty("--k2b-chart-inspection-x", `${point.x - rect.left}px`);
-    container.setAttribute("data-inspecting", seriesChart() ? "series" : "datum");
+    if (band) {
+      container.style.setProperty("--k2b-chart-band-left", `${band.left - rect.left}px`);
+      container.style.setProperty("--k2b-chart-band-top", `${band.top - rect.top}px`);
+      container.style.setProperty("--k2b-chart-band-width", `${band.right - band.left}px`);
+      container.style.setProperty("--k2b-chart-band-height", `${band.bottom - band.top}px`);
+    }
+    container.setAttribute("data-inspecting", seriesChart() ? "series" : band ? "category" : "datum");
     describe(container, tooltip.id, true);
     try {
       if (!tooltip.matches(":popover-open")) tooltip.showPopover();
@@ -275,6 +288,40 @@ export function createChartInspector(options: {
     } catch {
       /* SVG titles remain available without the Popover API. */
     }
+  };
+  /**
+   * The screen slot of every category, halfway to its neighbours. A light band fills the inspected slot instead of
+   * dimming other marks or outlining a bar, and the pointer anywhere in a slot keeps the same category.
+   */
+  const categoryBands = (): CategoryBand[] => {
+    const role = categoryRoles[options.kind()];
+    const container = options.container();
+    if (!role || !container) return [];
+    const rows = Boolean(container.querySelector('svg[data-bar-layout="rows"]'));
+    const slots = records()
+      .filter((entry) => entry.datum.role === role)
+      .map((entry) => ({ entry, rect: entry.element.getBoundingClientRect() }));
+    if (!slots.length) return [];
+    const guides = Array.from(container.querySelectorAll(".stdlib-chart-grid, .stdlib-chart-axis")).map((node) =>
+      node.getBoundingClientRect(),
+    );
+    const frame = container.querySelector("svg")?.getBoundingClientRect() ?? container.getBoundingClientRect();
+    const start = guides.length ? Math.min(...guides.map((rect) => (rows ? rect.left : rect.top))) : rows ? frame.left : frame.top;
+    const end = guides.length ? Math.max(...guides.map((rect) => (rows ? rect.right : rect.bottom))) : rows ? frame.right : frame.bottom;
+    const center = (rect: DOMRect) => (rows ? rect.top + rect.height / 2 : rect.left + rect.width / 2);
+    slots.sort((a, b) => center(a.rect) - center(b.rect));
+    return slots.map((slot, index) => {
+      const middle = center(slot.rect);
+      const previous = slots[index - 1],
+        next = slots[index + 1];
+      const half =
+        previous || next ? Math.abs(center((next ?? previous)!.rect) - middle) / 2 : (rows ? slot.rect.height : slot.rect.width) * 0.75;
+      const low = previous ? (center(previous.rect) + middle) / 2 : middle - half;
+      const high = next ? (center(next.rect) + middle) / 2 : middle + half;
+      return rows
+        ? { entry: slot.entry, left: start, right: end, top: low, bottom: high }
+        : { entry: slot.entry, left: low, right: high, top: start, bottom: end };
+    });
   };
   const updatePlotBounds = () => {
     const container = options.container();
@@ -320,6 +367,15 @@ export function createChartInspector(options: {
     const direct = target?.closest("[data-chart-datum]");
     const hit = direct ? byElement.get(direct) : undefined;
     if (hit && nodes.includes(hit)) return hit;
+    const bands = categoryBands();
+    if (bands.length) {
+      const rows = Boolean(options.container()?.querySelector('svg[data-bar-layout="rows"]'));
+      const frame = options.container()?.getBoundingClientRect();
+      const inside = frame && x >= frame.left && x <= frame.right && y >= frame.top && y <= frame.bottom;
+      return inside
+        ? bands.find((band) => (rows ? y >= band.top && y <= band.bottom : x >= band.left && x <= band.right))?.entry
+        : undefined;
+    }
     if (seriesChart()) {
       const plot = updatePlotBounds();
       // SVG transforms and DOM rectangles can round the same painted edge

@@ -23,7 +23,7 @@ export { default as Calendar } from "./Calendar";
 
 export type { ChartKind, ChartLabels, ChartProps, ChartRenderOptions } from "./Chart";
 export { default as Chart } from "./Chart";
-export type { ChartExplorerColumn, ChartExplorerProps, ChartLegendEntry } from "./ChartExplorer";
+export type { ChartExplorerColumn, ChartExplorerProps, ChartFrameRequest, ChartLegendEntry } from "./ChartExplorer";
 export { ChartExplorer } from "./ChartExplorer";
 export type { ChartExplorerControlsProps } from "./ChartExplorerControls";
 export { ChartExplorerControls } from "./ChartExplorerControls";
