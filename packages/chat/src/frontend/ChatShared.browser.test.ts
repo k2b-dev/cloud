@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions } from "playwright";
 import { launchBrowser, pageErrors } from "../../../ui/test/browser";
-import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
+import { chatTestNow, nora, pinPageClock, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
 let browser: Browser;
@@ -30,6 +30,8 @@ const load = async (options: BrowserContextOptions, address: { chat: string; pan
   const page = await context.newPage();
   page.setDefaultTimeout(5_000);
   const errors = pageErrors(page);
+  // The page tells time like the harness, so its sends and the stored messages share one clock at any hour.
+  await page.addInitScript(pinPageClock, chatTestNow.getTime());
   await page.goto(new URL(`/app/chat/c/${address.chat}${address.panel ? "?panel=info" : ""}`, harness.url).href);
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(({ props }) => window.mountChat(props, "en"), { props: harness.props(address) });
@@ -124,11 +126,16 @@ describe("Shared Cloud elements", () => {
       await page.getByRole("option", { name: /Inventory hall 3/ }).click();
       await page.getByRole("dialog").getByRole("button", { name: "Add", exact: true }).click();
       await page.locator(".k2b-chat-composer").getByText("Inventory hall 3").waitFor();
+      // The stored message arrives live before the send's answer (#2699).
+      const release = harness.holdSendAnswers();
       await page.keyboard.press("Enter");
       await until(() => harness.posted.some((post) => post.refs?.length === 1));
       expect(harness.posted.at(-1)).toMatchObject({ body: "", refs: [{ type: "spaces.task", id: "inventory" }] });
-      // The sent message shows the card at once and keeps it once stored.
+      // The sent message shows the card at once; the stored message takes the send's place, so it never shows twice.
+      await page.locator('.k2b-message-row[data-own][data-status="sent"]').waitFor();
+      expect(await page.locator(".k2b-message-row[data-own]").count()).toBe(1);
       await page.locator(".k2b-message-row[data-own] .k2b-resource-card").getByText("Inventory hall 3", { exact: true }).waitFor();
+      release();
       expect(await page.locator(".k2b-chat-composer").getByText("Inventory hall 3").count()).toBe(0);
       expect(errors).toEqual([]);
     } finally {

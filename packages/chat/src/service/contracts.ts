@@ -590,6 +590,8 @@ export const MessageSchema = z.object({
   editedAt: z.iso.datetime().nullable().optional(),
   deletedAt: z.iso.datetime().nullable().optional(),
   via: z.enum(["assistant", "mcp"]).nullable().optional(),
+  /** The `clientId` the author sent the message with, so their client replaces its send whether the message or the send's answer comes first. */
+  clientId: z.string().nullable().optional(),
 });
 export const MessageViewSchema = MessageSchema.extend({ systemText: z.string().nullable() });
 // Shared by the API and the composer, which must keep rejected text out of the send queue.

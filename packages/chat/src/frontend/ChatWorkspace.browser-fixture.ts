@@ -222,6 +222,8 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
   let nextAccess = 0;
   let nextPerson = 0;
   let failing = 0;
+  // While set, a stored send is delivered live at once, but its answer waits until the test releases it.
+  let heldAnswers: Promise<void> | null = null;
   let failingReactions = 0;
   let failingMutations = 0;
   const reactionRequests: { method: string; messageId: string; emoji?: string }[] = [];
@@ -497,7 +499,13 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     body: string,
     at: Date,
     kind: "text" | "system" = "text",
-    target: { thread?: string | null; replyTo?: string; refs?: CloudResourceRef[]; attachments?: AttachmentView[] } = {},
+    target: {
+      thread?: string | null;
+      replyTo?: string;
+      refs?: CloudResourceRef[];
+      attachments?: AttachmentView[];
+      clientId?: string;
+    } = {},
   ) => {
     const entry = chats.get(chat)!;
     const seq = entry.messages.length + 1;
@@ -506,6 +514,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     const thread = original ? original.thread : (target.thread ?? null);
     const message: Message = {
       via: null,
+      clientId: target.clientId ?? null,
       reactions: [],
       mentions: [],
       refs: target.refs ?? [],
@@ -1775,6 +1784,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           if (thread?.archived)
             return Response.json({ code: "THREAD_ARCHIVED", message: "Restore this thread before sending a message." }, { status: 409 });
           const message = append(id!, viewer, input.body, now(), "text", {
+            clientId: input.clientId,
             thread: input.thread ?? null,
             replyTo: input.replyTo,
             refs: input.refs ?? [],
@@ -1784,6 +1794,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
             }),
           });
           publish(message);
+          await heldAnswers;
           return Response.json(message, { status: 201 });
         }
       }
@@ -2072,6 +2083,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
       failingReactions = 0;
       discoveryUpdates.length = 0;
       failing = 0;
+      heldAnswers = null;
       failingUnread = 0;
       failingThreads = 0;
       failingShared = 0;
@@ -2098,6 +2110,15 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     /** Makes the next `count` sends fail with 503. */
     failSends: (count = 1) => {
       failing = count;
+    },
+    /** Holds the answers to sends, which are stored and delivered live, until the returned function releases them. */
+    holdSendAnswers: () => {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      heldAnswers = promise;
+      return () => {
+        heldAnswers = null;
+        resolve();
+      };
     },
     /** Makes the next `count` thread creations or changes fail with 503. */
     failThreads: (count = 1) => {
