@@ -179,7 +179,7 @@ type Plan = {
 };
 
 const finiteItems = (data: BarItem[]) => data.flatMap((item, index) => (Number.isFinite(item.value) ? [{ item, index }] : []));
-export const headerHeight = (opts: BarChartOptions) =>
+export const headerHeight = (opts: Pick<BarChartOptions, "title" | "subtitle">) =>
   opts.title || opts.subtitle ? (opts.title ? 14 : 0) + (opts.subtitle ? 6 : 0) + 16 : 0;
 const valueFormat = (opts: BarChartOptions) => opts.valueFormat ?? opts.yAxis?.format ?? ((value: number) => String(value));
 const tickFormat = (opts: BarChartOptions) => opts.yAxis?.format ?? ((value: number) => String(value));
@@ -293,7 +293,7 @@ const colorIndex = (item: BarItem, fallback: number) => {
   return index % 8;
 };
 
-export const renderHeader = (opts: BarChartOptions, width: number) => {
+export const renderHeader = (opts: Pick<BarChartOptions, "title" | "subtitle">, width: number) => {
   const parts: string[] = [];
   let y = 16;
   if (opts.title) {

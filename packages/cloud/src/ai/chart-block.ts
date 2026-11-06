@@ -105,7 +105,7 @@ export function chartDataIssue(input: CloudAiChartInput): string | undefined {
   return undefined;
 }
 
-import { seriesBarLayout } from "@k2b/ui/charts";
+import { funnelLayout, seriesBarLayout } from "@k2b/ui/charts";
 
 /** Why chart options that pass the data checks still would not draw well; draws them once. */
 export function chartDrawingIssue(input: CloudAiChartInput): string | undefined {
@@ -113,6 +113,8 @@ export function chartDrawingIssue(input: CloudAiChartInput): string | undefined 
     const options = cloudAiChartRenderOptions(input, "en");
     if (options.kind === "bar" && options.series && seriesBarLayout(options).barWidthPx < 0.5)
       return "The bars are narrower than half a pixel on a phone; aggregate categories or use fewer series.";
+    if (options.kind === "funnel" && funnelLayout(options).pitch < 30)
+      return "The funnel steps leave less than 30 pixels for their two value lines; combine steps or use fewer steps.";
     const svg = draw(options);
     if (marks(svg).length === 0) return "None of the values can be drawn.";
     if ((input.kind === "pie" || input.kind === "donut") && pieRadius(svg) < MIN_PIE_RADIUS)
