@@ -2803,11 +2803,11 @@ html {
     .k2b-app-workspace:not([data-sidebar-collapsed="true"])
     > :is(
       .k2b-app-workspace__head:has(
-          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
-          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
+          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
+          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
         ),
-      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
-      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
+      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
+      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
     )[data-trail="up"] {
     position: absolute;
     width: 1px;
@@ -2824,11 +2824,11 @@ html {
     .k2b-app-workspace:not([data-sidebar-collapsed="true"])
     > :is(
       .k2b-app-workspace__head:has(
-          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
-          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
+          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
+          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
         ),
-      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
-      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
+      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
+      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
     )
     > .k2b-app-workspace__head-lead
     > .k2b-page-title {
@@ -2839,11 +2839,11 @@ html {
     .k2b-app-workspace:not([data-sidebar-collapsed="true"])
     > :is(
       .k2b-app-workspace__head:has(
-          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
-          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
+          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
+          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
         ),
-      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
-      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
+      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
+      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
     ):not(:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__main h1))
     > .k2b-app-workspace__head-lead
     > .k2b-app-workspace__head-heading {

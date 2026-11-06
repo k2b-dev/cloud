@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 
 // The way up is real layout and real navigation: which row shows where, what
 // collapses when space runs out, and where a click on "‹ Users" lands after
@@ -634,6 +634,7 @@ describe("workspace title beside exact-current navigation", () => {
     test(`${device.name}: a deeper page shows a back row only where the sidebar does not show its ancestor`, async () => {
       const { context, page } = await open(device, "/app/accounts/teams/engineering");
       try {
+        await settled(page);
         expect(await page.locator('.k2b-app-workspace__sidebar [aria-current="page"]').count()).toBe(0);
         const ancestor = page.locator('.k2b-app-workspace__sidebar [aria-current="true"]');
         expect(await ancestor.getAttribute("href")).toBe("/app/accounts/teams");
