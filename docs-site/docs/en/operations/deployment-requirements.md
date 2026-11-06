@@ -2427,3 +2427,13 @@ durable Code account cleanup. Cleanup waits for the activation worker and
 owner reports to drain, then deletes the account and its normal shares through
 existing foreign keys. Failed deletion remains visible in the administrator
 cleanup read model. Do not erase pending jobs manually. See [Code lifecycle](/en/docs/platform/code-lifecycle).
+
+### Grids document captures
+
+Grids migrates independent immutable document captures on startup. Include
+`grids.document_data` with the existing document, issuance, artifact and export
+claim tables in the same database backup. These captures and their issued
+artifacts remain domain evidence even when an automation is retired. Existing
+workflow documents keep their original bindings; this upgrade does not rewrite
+or remove their provenance.
+

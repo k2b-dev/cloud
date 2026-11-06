@@ -3,7 +3,7 @@ import type { AiPeopleModels } from "@k2b/cloud/shared";
 import { ButtonLink, LocaleProvider, MobileShell, Placeholder, TabBar, type TabBarItem } from "@k2b/ui";
 import { render } from "solid-js/web";
 import AssistantPwa, { type AssistantPwaProps } from "./AssistantPwa.island";
-import type { PwaAddress } from "./paths";
+import { type PwaAddress, pwaAddress } from "./paths";
 
 /**
  * Test fixture, not product code: the Assistant part in the Cloud app's frame as `PwaLayout` composes it, with
@@ -295,7 +295,7 @@ const detailOf = (id: string): Detail | null => {
 
 // ---------------------------------------------------------------- the screen's starting point
 const allQuery = params.get("q") ?? "";
-const address: PwaAddress =
+const screenAddress: PwaAddress =
   screen.startsWith("chat-") || screen === "noai-chat" || screen.startsWith("menu")
     ? { level: "chat", id: params.get("chat") ?? (screen === "chat-noaccess" ? "fremd" : "pflege") }
     : screen === "new"
@@ -303,6 +303,8 @@ const address: PwaAddress =
       : screen.startsWith("all")
         ? { level: "all", archived: screen === "all-archive", query: allQuery }
         : { level: "start" };
+// A reload uses the real address, as the server does; explicit screens still select invented fixture states.
+const address = params.has("screen") ? screenAddress : (pwaAddress(new URL(location.href)) ?? screenAddress);
 const noAi = has("noai", "noai-admin", "noai-chat");
 // `mic=blocked`: the device refuses the microphone, as after a person said no.
 if (params.get("mic") === "blocked")

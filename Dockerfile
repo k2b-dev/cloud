@@ -99,9 +99,7 @@ ENV NODE_ENV=production \
     CLOUD_RELEASE=${CLOUD_RELEASE} \
     CLOUD_CLI_CHROMIUM=/usr/bin/chromium
 COPY --from=build --chown=bun:bun /app/dist ./
-# Bun.mmap opens files read-write, so the runtime user owns them like dist;
-# Core maps them privately and never writes.
-COPY --from=geoip --chown=bun:bun /geoip /app/geoip
+COPY --from=geoip /geoip /app/geoip
 USER bun
 
 EXPOSE 3000

@@ -33,8 +33,9 @@ export const dashboardStyles = `
 .pulse-dashboard__number-sql{position:absolute;top:0;right:0}
 .pulse-dashboard__stats .k2b-stat-cell__value{font-size:28px;line-height:1.2;letter-spacing:-.02em}
 .pulse-dashboard__section{margin-top:30px;min-width:0}
-.pulse-dashboard__section-heading{display:flex;align-items:center;gap:10px;margin-bottom:14px}
-.pulse-dashboard__section-heading h2{min-width:0;overflow-wrap:anywhere;font-size:16px;font-weight:600}
+.pulse-dashboard__section-heading{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.pulse-dashboard__section-icon{flex:none;font-size:18px;line-height:1}
+.pulse-dashboard__section-heading h2{min-width:0;overflow-wrap:anywhere;font-size:18px;font-weight:600}
 .pulse-dashboard__section-description{min-width:0;overflow-wrap:anywhere;margin-left:auto;color:var(--k2b-text-muted);font-size:12.5px}
 @container k2b-app-area (min-width:1024px){.pulse-dashboard__heading{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}
 @container k2b-app-area (max-width:767px){.pulse-dashboard__heading h1{font-size:30px;letter-spacing:-.025em}}
@@ -44,14 +45,16 @@ export const dashboardStyles = `
 .pulse-dashboard__panel[data-width=half]{grid-column:span 3}
 .pulse-dashboard__panel[data-width=full]{grid-column:span 6}
 .pulse-dashboard__panel-head{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:28px;font-weight:600}
-.pulse-dashboard__panel-head h3{min-width:0;overflow-wrap:anywhere}
+.pulse-dashboard__panel-head h3{min-width:0;overflow-wrap:anywhere;font-size:16px}
 .pulse-dashboard__description{overflow-wrap:anywhere;color:var(--k2b-text-muted);font-size:12.5px;min-height:18px}
 .pulse-dashboard__plot{height:198px;min-width:0;margin-top:6px}
 .pulse-dashboard__plot .k2b-chart{height:100%}
-.pulse-dashboard__panels>[data-panel]:nth-child(3n+2) .pulse-dashboard__plot[data-single-series=true] .stdlib-chart{--stdlib-chart-c1:var(--stdlib-chart-c2)}
-.pulse-dashboard__panels>[data-panel]:nth-child(3n+3) .pulse-dashboard__plot[data-single-series=true] .stdlib-chart{--stdlib-chart-c1:var(--stdlib-chart-c3)}
-.pulse-dashboard__plot .stdlib-chart-reference{stroke:var(--k2b-danger-text);opacity:1}
-.pulse-dashboard__plot .stdlib-chart-reference-label{fill:var(--k2b-danger-text);opacity:1}
+.pulse-dashboard__panels>[data-panel]:nth-child(3n+2) .pulse-dashboard__explorer[data-single-series=true] .stdlib-chart{--stdlib-chart-c1:var(--stdlib-chart-c2)}
+.pulse-dashboard__panels>[data-panel]:nth-child(3n+3) .pulse-dashboard__explorer[data-single-series=true] .stdlib-chart{--stdlib-chart-c1:var(--stdlib-chart-c3)}
+.pulse-dashboard__explorer .stdlib-chart-reference{stroke:var(--k2b-danger-text);opacity:1}
+.pulse-dashboard__explorer .stdlib-chart-reference-label{fill:var(--k2b-danger-text);opacity:1}
+.pulse-dashboard__explorer .pulse-dashboard__description{min-height:0}
+.pulse-dashboard__explorer .pulse-dashboard__feedback{width:100%;min-height:13.5rem;margin-top:0}
 .pulse-dashboard__feedback{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:8px;min-height:198px;margin-top:6px}
 .pulse-dashboard__empty{display:flex;flex-direction:column;align-items:flex-start;gap:10px;max-width:520px;padding:40px 0 20px}
 .pulse-dashboard__empty h2{font-size:20px;font-weight:600}
@@ -60,7 +63,10 @@ export const dashboardStyles = `
 .pulse-dashboard__sql{margin-top:10px;font-weight:400}
 .pulse-dashboard__sql pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
 .pulse-dashboard__map{min-width:0;margin-top:6px}
-.pulse-dashboard__table{min-width:0;margin-top:6px;max-height:360px;overflow:auto}
+.pulse-dashboard__source{margin-top:6px;font-size:12px;line-height:16px;color:var(--k2b-text-muted)}
+.pulse-dashboard__source a{text-decoration:underline;text-underline-offset:2px}
+.pulse-dashboard__source a:hover{color:var(--k2b-text)}
+.pulse-dashboard__table{min-width:0;margin-top:6px;max-height:360px}
 .pulse-dashboard__public{width:100%;max-width:1600px;margin:0 auto;padding:24px}
 @container(max-width:1000px){.pulse-dashboard__panel{grid-column:span 3}.pulse-dashboard__panel[data-width=full]{grid-column:span 6}}
 @container(max-width:600px){.pulse-dashboard__stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 20px}.pulse-dashboard__stats .k2b-stat-cell__value{font-size:24px}.pulse-dashboard__panels{grid-template-columns:minmax(0,1fr);gap:26px}.pulse-dashboard__panel,.pulse-dashboard__panel[data-width=half],.pulse-dashboard__panel[data-width=full]{grid-column:span 1}.pulse-dashboard__toolbar{align-items:flex-start}.pulse-dashboard__public{padding:16px}}

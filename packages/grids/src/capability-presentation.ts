@@ -25,6 +25,10 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "record.finalization.read": {
+          title: "Abschlussbereitschaft lesen",
+          description: "Aktuelle Pflichtfelder, Vier-Augen-Anfrage und Regelrevision vor dem Abschließen eines Datensatzes lesen.",
+        },
         "document.templates": {
           title: "Dokumentvorlagen finden",
           description:
@@ -198,6 +202,40 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "record.atomic": {
+          title: "Datensätze atomar ändern",
+          description:
+            "Bis zu 50 Datensätze nach aktuellen Bedingungen in einer Transaktion erstellen oder ändern; höchstens 100 gesperrte Datensätze. Bei einem Fehler wird alles zurückgerollt.",
+        },
+        "record.close": {
+          title: "Datensatz abschließen",
+          description:
+            "Nach der direkten Abschlussregel abschließen oder eine Vier-Augen-Anfrage erstellen. Benötigt aktuelle Datensatzversion und Regelrevision; fragt immer nach.",
+        },
+        "record.finalize": {
+          title: "Datensatz finalisieren",
+          description: "Einen versionsgeprüften Datensatz nach den bestehenden Vier-Augen-Regeln finalisieren. Fragt immer nach.",
+        },
+        "record.correction-draft": {
+          title: "Korrekturentwurf erstellen",
+          description:
+            "Einen bearbeitbaren Korrektur- oder Stornoentwurf mit Verknüpfung zum abgeschlossenen Original erstellen. Das Original bleibt unverändert.",
+        },
+        "document.capture": {
+          title: "Dokumentdaten festhalten",
+          description:
+            "Ein vollständiges berechtigungsgeprüftes GQL-Ergebnis unabhängig von Workflows unveränderlich speichern. Abgeschnittene Ergebnisse werden abgelehnt.",
+        },
+        "document.issue": {
+          title: "Dokument ausgeben",
+          description:
+            "PDF, CSV, JSON, XML oder ZIP aus festgehaltenen Daten ausgeben. DATEV und SEPA benötigen Quellversionen und eine separate Bestätigung der genauen Vorschau; fragt immer nach.",
+        },
+        "document.confirm": {
+          title: "Finanzdokument bestätigen",
+          description:
+            "Die genaue DATEV- oder SEPA-Vorschau als ursprünglicher Auftraggeber bestätigen und die Ausgabe nach erneuter Berechtigungs- und Versionsprüfung abschließen. Übermittelt keine Bankzahlung; fragt immer nach.",
+        },
         "view.create": {
           title: "Abfrage als Grids-Ansicht speichern",
           description:

@@ -73,6 +73,10 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(source).toMatch(
       /@container k2b-app-area \(min-width: 64rem\) \{[^}]*\[aria-current="page"\][^}]*~ \.k2b-app-workspace__head\s*\)\[data-trail="up"\] \{[^}]*clip-path: inset\(50%\)/,
     );
+    // A sidebar item marked `active="ancestor"` is the way up as well, so the head hides beside it too.
+    expect(source).toMatch(
+      /@container k2b-app-area \(min-width: 64rem\) \{[^}]*\.k2b-app-workspace__sidebar-item-main\)\[aria-current="true"\][^}]*~ \.k2b-app-workspace__head\s*\)\[data-trail="up"\] \{[^}]*clip-path: inset\(50%\)/,
+    );
   });
 
   test("a flat workspace marks itself and its stylesheet drops the frame", () => {

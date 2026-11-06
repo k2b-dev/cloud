@@ -264,7 +264,8 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     if (!view || address().level !== "all") return;
     const next: PwaAddress = { level: "all", archived: view.archived, query };
     setAddress(next);
-    navigate(addressHref(next), { replace: true, scroll: "manual", state: history.state });
+    // Commit before results load: reload or opening a result must keep this search.
+    navigate(addressHref(next), { replace: true, scroll: "manual", state: history.state, viewTransition: false });
   };
 
   // ---- the field: one draft per chat and one for a new chat, kept on the device until it is sent

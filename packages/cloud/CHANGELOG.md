@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.60.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.59.0...npm-cloud-v0.60.0) (2026-11-06)
+
+
+### Features
+
+* **cloud:** allow anonymous internal geo autocomplete with global limits ([#2693](https://github.com/k2b-dev/cloud/issues/2693)) ([1b79561](https://github.com/k2b-dev/cloud/commit/1b79561a0d0055dcc3944813e0e0f59b439a0bb8))
+* **cloud:** the phone web shell opens the panel full height with a draggable handle and drops the bottom dock ([#2678](https://github.com/k2b-dev/cloud/issues/2678)) ([aa0aecc](https://github.com/k2b-dev/cloud/commit/aa0aecc68f4c1eb9ba5aca35fe5e689064c77906))
+
+
+### Bug Fixes
+
+* **accounts:** reactivate returning FreeIPA guests without changing file ownership ([#2689](https://github.com/k2b-dev/cloud/issues/2689)) ([09c19c5](https://github.com/k2b-dev/cloud/commit/09c19c5ea1c389f2bb03c78aee9decd4787ace5d))
+* **cloud:** the access dialog marks you in every app and the public link warns and copies as in the mockup ([#2696](https://github.com/k2b-dev/cloud/issues/2696)) ([07b86b1](https://github.com/k2b-dev/cloud/commit/07b86b147996216b59a1edf676409e6025585f5e))
+* **cloud:** the access dialog shows every state of the approved mockup and Remove is red ([#2681](https://github.com/k2b-dev/cloud/issues/2681)) ([9b92493](https://github.com/k2b-dev/cloud/commit/9b92493a958e8ca727d25a4e314b0b1a4b667f58))
+* **ui:** detail pages drop the back row beside a sidebar that marks their ancestor ([#2710](https://github.com/k2b-dev/cloud/issues/2710)) ([3e34b52](https://github.com/k2b-dev/cloud/commit/3e34b524c7480df735a207f95cc1789797a7d641))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.48.0 to 0.49.0
+    * @k2b/editor bumped from 0.6.4 to 0.6.5
+
 ## [0.59.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.58.0...npm-cloud-v0.59.0) (2026-11-05)
 
 

@@ -11,6 +11,7 @@ export default function PublicDashboardPage(props: { dashboard: PublicDashboard;
         target={{ token: props.token }}
         range={props.range}
         path={props.path}
+        timeZone={props.dashboard.timeZone}
       />
     </main>
   );

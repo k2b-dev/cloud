@@ -701,6 +701,7 @@ export const finalizeInTransaction = async (
     actorId: string | null;
     origin: MutationOrigin;
     approvalRequestId?: string;
+    approvalComment?: string | null;
     expectedPolicyRevision?: number;
     dateConfig?: DateContext;
     locale?: string;
@@ -861,6 +862,24 @@ export const finalizeInTransaction = async (
     eventType: "record.finalized",
   });
   await logAudit({ tableId: params.tableId, recordId: params.recordId, userId: params.actorId, action: "finalized" }, client);
+  if (params.approvalRequestId) {
+    await client`
+      UPDATE grids.record_finalization_requests
+      SET status = 'approved', resolved_by = ${params.actorId}::uuid, resolved_at = now(),
+          resolution_comment = ${params.approvalComment ?? null}
+      WHERE id = ${params.approvalRequestId}::uuid AND status = 'pending'
+    `;
+    await logAudit(
+      {
+        tableId: params.tableId,
+        recordId: params.recordId,
+        userId: params.actorId,
+        action: "finalization.request.approved",
+        diff: { finalizationRequest: { old: "pending", new: "approved" } },
+      },
+      client,
+    );
+  }
   await client`RELEASE SAVEPOINT grids_finalization_values`;
   return ok({
     record: mapRecordRow(finalized),
@@ -911,27 +930,12 @@ export const approveFinalization = async (params: {
       actorId: params.actorId,
       origin: "direct",
       approvalRequestId: params.requestId,
+      approvalComment: params.comment,
       dateConfig: params.dateConfig,
       locale: params.locale,
     });
     if (!finalized.ok) return finalized;
     if (finalized.data.approvalReplay) return finalized;
-    await tx`
-      UPDATE grids.record_finalization_requests
-      SET status = 'approved', resolved_by = ${params.actorId}::uuid, resolved_at = now(),
-          resolution_comment = ${params.comment ?? null}
-      WHERE id = ${finalized.data.approvalRequestInternalId}::uuid AND status = 'pending'
-    `;
-    await logAudit(
-      {
-        tableId: params.tableId,
-        recordId: params.recordId,
-        userId: params.actorId,
-        action: "finalization.request.approved",
-        diff: { finalizationRequest: { old: "pending", new: "approved" } },
-      },
-      tx,
-    );
     return finalized;
   });
   if (!result.ok) return result;
