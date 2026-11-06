@@ -245,6 +245,7 @@ export const integrityCapabilities = defineCapabilities({
       run: (input, context) =>
         withCapabilityAudit(context, () =>
           integrityAttempt(async () => {
+            if (!context.idempotencyKey) return fail(err.badInput("Idempotency key required."));
             const baseId = await base(context.target?.id ?? "", context);
             const dates = (await integrityContext(context)).dateConfig;
             const parsed = parseGridsQueryDsl(input.query);
@@ -271,7 +272,7 @@ export const integrityCapabilities = defineCapabilities({
                 capture: captured.data,
                 actor: documentActor(context.actor),
                 requestId: context.requestId,
-                operationKey: context.requestId,
+                operationKey: `capability:${context.idempotencyKey}`,
               },
               sql,
             );

@@ -12,6 +12,7 @@ export const lockAtomicRecords = async (
   records: AtomicRecordRef[],
   requireAccess: (record: AtomicRecordRef) => Promise<void>,
   additionalTableIds: readonly string[] = [],
+  lockError: (code: string, message: string) => unknown = atomicLockError,
 ): Promise<void> => {
   const requiredByRecord = new Map<string, AtomicRecordRef>();
   for (const record of records) {
@@ -32,20 +33,20 @@ export const lockAtomicRecords = async (
     const [table] = await client<Array<{ base_id: string }>>`
       SELECT base_id::text FROM grids.tables WHERE id = ${tableId}::uuid AND deleted_at IS NULL
     `;
-    if (!table) throw atomicLockError("ATOMIC_LOCK_UNAVAILABLE", "A table required by the atomic change is no longer available");
+    if (!table) throw lockError("ATOMIC_LOCK_UNAVAILABLE", "A table required by the atomic change is no longer available");
     baseIds.add(table.base_id);
   }
   for (const baseId of [...baseIds].sort()) {
     const [base] = await client<Array<{ id: string }>>`
       SELECT id::text FROM grids.bases WHERE id = ${baseId}::uuid AND deleted_at IS NULL FOR SHARE
     `;
-    if (!base) throw atomicLockError("ATOMIC_LOCK_UNAVAILABLE", "The base required by the atomic change is no longer available");
+    if (!base) throw lockError("ATOMIC_LOCK_UNAVAILABLE", "The base required by the atomic change is no longer available");
   }
   for (const tableId of tableIds) {
     const [table] = await client<Array<{ id: string }>>`
       SELECT id::text FROM grids.tables WHERE id = ${tableId}::uuid AND deleted_at IS NULL FOR SHARE
     `;
-    if (!table) throw atomicLockError("ATOMIC_LOCK_UNAVAILABLE", "A table required by the atomic change is no longer available");
+    if (!table) throw lockError("ATOMIC_LOCK_UNAVAILABLE", "A table required by the atomic change is no longer available");
   }
   for (const record of ordered) {
     const [locked] = await client<Array<{ id: string }>>`
@@ -56,6 +57,6 @@ export const lockAtomicRecords = async (
         AND r.deleted_at IS NULL
       FOR UPDATE OF r
     `;
-    if (!locked) throw atomicLockError("ATOMIC_LOCK_UNAVAILABLE", "A record required by the atomic change is no longer available");
+    if (!locked) throw lockError("ATOMIC_LOCK_UNAVAILABLE", "A record required by the atomic change is no longer available");
   }
 };
