@@ -19,6 +19,7 @@ export const DashboardPanelResultSchema = z.object({
   nextRefreshAt: z.string(),
   lastGood: DashboardSnapshotSchema.nullable(),
   variant: z.string(),
+  attribution: z.object({ text: z.string(), url: z.string(), license: z.string(), licenseUrl: z.string() }).nullable(),
 });
 export const PublicDashboardSchema = z.object({
   id: z.string(),

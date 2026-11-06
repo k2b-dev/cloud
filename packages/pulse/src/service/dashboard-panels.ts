@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { sql } from "@k2b/cloud";
-import { err, fail, ok } from "@k2b/cloud/server";
+import { type DBIP_ATTRIBUTION, err, fail, ipCountry, ok } from "@k2b/cloud/server";
 import {
   DASHBOARD_REFRESH_MS,
   DashboardDefinitionSchema,
@@ -27,6 +27,18 @@ export type DashboardPanelResult = {
   lastGood: DashboardSnapshot | null;
   /** Changes with revision, cleared data, timezone and range; a retained result is valid only for the same variant. */
   variant: string;
+  /** The credit DB-IP Lite (CC BY 4.0) requires next to its results, while the active City database is DB-IP. */
+  attribution: typeof DBIP_ATTRIBUTION | null;
+};
+/** Maps show countries; other panels may group or count saved `ipCountry()` results. Over-crediting costs nothing. */
+export const panelShowsCountries = (panel: Pick<DashboardPanel, "kind" | "sql">) => panel.kind === "map" || /country/i.test(panel.sql);
+let countryAttribution: { until: number; value: Promise<typeof DBIP_ATTRIBUTION | null> } | null = null;
+/** Core switches databases about once a minute, so one empty lookup per minute keeps the credit current. */
+const activeCountryAttribution = () => {
+  const now = Date.now();
+  if (!countryAttribution || countryAttribution.until <= now)
+    countryAttribution = { until: now + 60_000, value: ipCountry("").then((result) => result.attribution) };
+  return countryAttribution.value;
 };
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const load = async (target: Target) => {
@@ -72,6 +84,7 @@ export const createDashboardPanels = (
     runs?: typeof dashboardRuns;
     privateRun?: typeof runBaseSql;
     publicRun?: typeof runPublishedDashboardSql;
+    attribution?: typeof activeCountryAttribution;
     now?: () => Date;
   } = {},
 ) => {
@@ -194,6 +207,7 @@ export const createDashboardPanels = (
       nextRefreshAt,
       lastGood: snapshot,
       variant,
+      attribution: panelShowsCountries(panel) ? await (dependencies.attribution ?? activeCountryAttribution)() : null,
     };
     return ok(result);
   };
