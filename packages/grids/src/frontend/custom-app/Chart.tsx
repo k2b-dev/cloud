@@ -1,4 +1,5 @@
-import { computeDomain, type DateContext, extendDomainToNice, niceStep } from "@k2b/stdlib";
+import { type DateContext } from "@k2b/stdlib";
+import { computeDomain, extendDomainToNice, niceStep } from "@k2b/ui/charts/core";
 import { Chart, Placeholder } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import type { CustomAppValueFormat } from "../../custom-apps/contracts";

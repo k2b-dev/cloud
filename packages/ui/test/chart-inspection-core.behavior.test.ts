@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
+import { charts } from "../src/charts/core";
 import { isServer } from "solid-js/web";
 import { type ChartSelection, createChartCursor, inspectChart } from "../src/chart-inspection";
 import { createDomTestHarness } from "./dom";

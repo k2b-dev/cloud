@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
+import { charts } from "@k2b/ui/charts/core";
 import type { ChartSelection } from "@k2b/ui";
 import { venueMessages } from "../../../messages";
 import { formatDateKey } from "../../../time-format";

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
+import { charts } from "../charts/core";
 import { responsiveChartSvg, responsiveMapSvg, selectedChartSvg } from "./chart-svg";
 
 describe("responsive SVG presentation", () => {

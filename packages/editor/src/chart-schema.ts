@@ -1,3 +1,5 @@
+import type { ChartNumberFormat, ChartDateFormat, ChartFormat } from "@k2b/ui/charts/core";
+export type { ChartNumberFormat, ChartDateFormat, ChartFormat } from "@k2b/ui/charts/core";
 import { z } from "zod";
 
 /** Optional caller policy. Rendering itself has no AI input budget. */
@@ -25,9 +27,6 @@ export const chartNumberFormatSchema = () =>
     });
 const dateFormatSchema = () => z.strictObject({ date: z.enum(["day", "minute", "second"]) });
 export const chartFormatSchema = () => z.union([chartNumberFormatSchema(), dateFormatSchema()]);
-export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSchema>>;
-export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
-export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
 export const chartKindSchema = () =>
   z.enum(["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);

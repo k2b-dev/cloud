@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
+import { charts } from "@k2b/ui/charts/core";
 import { dashboardRangeSearch } from "./dashboard-client";
 import { dashboardCategories, dashboardLine, dashboardLineExplorer, dashboardSections, readDashboardRange } from "./dashboard-data";
 import { dashboardTestDashboard, dashboardTestKinds, dashboardTestPanelResult } from "./dashboard-test-fixtures";

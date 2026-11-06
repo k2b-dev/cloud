@@ -61,12 +61,39 @@ import { Chart } from "@k2b/ui/charts";
 <Chart kind="pie" data={[{ label: "Imports", value: 42 }, { label: "Exports", value: 28 }]} />
 ```
 
-`@k2b/ui/charts/core` exposes the UI-owned `ChartKind`, `ChartDatum`,
-`ChartDatumRole`, `ChartNumberFormat`, `ChartDateFormat`, and `ChartFormat`
-contracts without Solid or DOM dependencies. Number formats are serializable:
-`style` is `number`, `percent`, or `currency`, with optional `currency`, `unit`,
-`decimals`, and `compact`. Date formats use `{ date: "day" | "minute" | "second" }`.
-The editor validates these descriptions before turning them into formatters.
+`@k2b/ui/charts/core` works on the server and in browser code without Solid or
+DOM dependencies. Use `layout(spec, { width, height })` and `toSvg(scene)` for
+a fixed logical scene, or `renderChartSvg(spec, width, height)` for the same SVG
+that `Chart` displays. `chartRenderHeight(spec)` calculates the standard height.
+`prepareChartSnapshot` prepares that drawing and its keyed inspection data for
+`ChartSnapshotView` and `ChartExplorer`. Existing root imports remain supported.
+
+```ts
+import { layout, toSvg } from "@k2b/ui/charts/core";
+
+const scene = layout({ kind: "bar", data: [{ label: "Imports", value: 42 }] },
+  { width: 480, height: 280 });
+const svg = toSvg(scene);
+```
+
+The core owns `ChartKind`, `ChartDatum`, `ChartDatumRole`, `ChartDrawingOptions`,
+`ChartRenderOptions`, `ChartSelection`, and the tooltip types. `isChartDatum`,
+`sameChartDatum`, and `chartDatumRoles` expose the inert inspection protocol.
+The renderer registry and namespace map stay internal.
+
+For code migrating directly from stdlib, the core also exports `charts` and the
+14 named SVG functions, plus their numeric/layout helpers such as `computeDomain`,
+`niceStep`, `autoBin`, and `computeBoxStats`. Those raw functions retain their
+previous signatures and markup; use `renderChartSvg` or scenes for the UI bar
+and timeline layouts. `renderBarChartSvg` and `barChartLayout` remain available
+from `@k2b/ui/charts` too. Raw SVG in a browser needs `inspectChart` from
+`@k2b/ui/chart-inspection`; prefer `Chart` inside an island for an interactive UI.
+
+`ChartNumberFormat`, `ChartDateFormat`, and `ChartFormat` describe portable
+presentation. Number formats use `style: "number" | "percent" | "currency"`,
+with optional `currency`, `unit`, `decimals`, and `compact`. Date formats use
+`{ date: "day" | "minute" | "second" }`. The editor validates these descriptions
+before turning them into formatter callbacks; callbacks are not saved JSON.
 
 To add a chart kind, register its pure renderer in `charts/core/registry.ts`. Its key defines the
 discriminator and capitalized namespace member, including the narrowed props.
@@ -984,3 +1011,110 @@ every number readable without a pointer. Countries too small for a shape appear
 as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
+
+## Renderer parity
+
+The table tracks existing tests and demos for the port. Covered means the named proof exists and its SVG spec matches the old renderer; it does not mean every browser/consumer proof ran locally. Gaps block removal of the old path. Regenerate with `bun scripts/render-chart-parity.ts`.
+
+<!-- chart-parity:start -->
+| Feature | Proof | Status |
+| --- | --- | --- |
+| line | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| bar | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| pie | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| donut | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| scatter | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| sparkline | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| histogram | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| boxplot | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| gauge | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| barGauge | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| stat | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| heatmap | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| map | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| stateTimeline | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Line: smooth | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Line: area | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Line: autoVariant | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Line: legend | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Line: step | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Line: errorBand | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Line: references | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Line: per-reference style | packages/ui/src/charts/parity.test.ts: documents the per-reference styling gap without claiming parity | Gap: No existing stdlib/UI ReferenceLine style option; additive styling needs a separate implementation before removal. |
+| Line: legendPlacement | packages/ui/src/content/Chart.render.test.ts: keeps every original index and escapes names, without the bottom legend | Covered |
+| Line: maxGap | packages/ui/src/content/chart-line-gaps.test.ts: splits adjacent runs while preserving inspection metadata and isolated zero | Covered |
+| Line: round ticks and time zone (#2723) | packages/ui/src/content/chart-time-axis.render.test.ts: ticks land on round wall times in the zone, not on decimal millisecond steps | Covered |
+| Line: shared cursor | packages/ui/test/chart-runtime.behavior.test.ts: shares exact X without redrawing SVG, preserves selection and clears only the active source | Covered |
+| Bar: columns | packages/ui/src/content/chart-bar.test.ts: few short labels stand below columns, each with its value | Covered |
+| Bar: rows | packages/ui/src/content/chart-bar.test.ts: labels that do not fit below columns become rows: every category keeps its label and value | Covered |
+| Bar: long label wrap | packages/ui/src/content/chart-bar.test.ts: long labels wrap to two lines and keep their full text when shortened | Covered |
+| Bar: colorByBar | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Bar: showValues | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Bar: references | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| pie: innerRadius | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| pie: showLabels | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Pie: tooltip/table format | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| donut: innerRadius | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| donut: showLabels | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Donut: tooltip/table format | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Histogram bins: 3 | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Histogram bins: [0,2,4,6] | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Boxplot: quartiles, whiskers, outliers | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| gauge: thresholds | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| gauge: unit | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| gauge: min-max | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| barGauge: thresholds | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| barGauge: unit | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| barGauge: min-max | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Stat: delta | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Stat: better mapping to trend | packages/cloud/src/ai/view-block.test.ts: formats signed deltas and determines improvement without model colors | Covered |
+| Stat: sparkline | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Sparkline: area and extrema | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Heatmap: showValues | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Heatmap: min/max | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Map: zoomFocus | packages/ui/src/content/Chart.render.test.ts: renders interactive controls and the initial viewport on the server | Covered |
+| Map: pan/zoom keys with Alt inspection | packages/ui/test/chart-runtime.behavior.test.ts: synchronizes controlled map viewports and resets to the current prop | Covered |
+| State timeline: states | packages/ui/src/content/chart-state-timeline.test.ts: renders safe links, tooltips, semantic colors and the full label in a title | Covered |
+| State timeline: intervals | packages/ui/src/content/chart-state-timeline.test.ts: renders safe links, tooltips, semantic colors and the full label in a title | Covered |
+| State timeline: links | packages/ui/src/content/chart-state-timeline.test.ts: renders safe links, tooltips, semantic colors and the full label in a title | Covered |
+| State timeline: tooltips | packages/ui/src/content/chart-state-timeline.test.ts: renders safe links, tooltips, semantic colors and the full label in a title | Covered |
+| State timeline: pan/zoom keys with Alt inspection | packages/ui/test/chart-runtime.behavior.test.ts: follows a growing timeline until local interaction and resumes after reset | Covered |
+| Axes: label | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Axes: domain | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Axes: ticks | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Axes: scale | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Axis format: number | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Axis format: percent | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Axis format: currency | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Axis format: compact | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Axis format: date | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
+| Tooltip formatter | packages/ui/src/content/chart-tooltips.browser.test.ts: a plain bar chart shows label and value on hover without shifting layout | Covered |
+| onSelect and controlled selected | packages/ui/test/chart-runtime.behavior.test.ts: all fourteen kinds inspect and select renderer-owned data without rebuilding SVG | Covered |
+| Arrows, Home, End, Enter, Escape | packages/ui/src/content/chart-tooltips.browser.test.ts: one chart tab stop supports ArrowRight, End, Home and Escape | Covered |
+| Tap and swipe threshold | packages/ui/src/content/chart-tooltips.browser.test.ts: phone taps pin inspection; outside pointerdown and scrolling dismiss it | Covered |
+| inspectChart export | packages/ui/test/chart-inspection-core.behavior.test.ts: inspects plain SVG with pointer and keyboard, pins selections, and tears down completely | Covered |
+| Empty: No data | packages/ui/src/content/Chart.render.test.ts: empty charts have no inspection or accessible group | Covered |
+| Explorer: chart/table | packages/ui/test/chart-explorer.behavior.test.ts: without charts the switcher still offers Diagram and Table | Covered |
+| Explorer: copy with formula guard | packages/ui/test/chart-explorer.behavior.test.ts: Copy data guards formula text and headers while preserving numeric cells and TSV quoting | Covered |
+| Explorer: step slider | packages/ui/src/content/ChartExplorer.render.test.ts: renders the complete SVG, named slider and controls on the server | Covered |
+| Explorer: series filter | packages/ui/test/chart-controller.behavior.test.ts: pinning captures displayed time, series filters apply to both periods and empty differs from omitted | Covered |
+| Explorer: pin comparison | packages/ui/test/chart-explorer.behavior.test.ts: shared filter controls pin the requested step and clear it without losing filters | Covered |
+| Explorer: retry | packages/ui/test/chart-controller.behavior.test.ts: errors retain their cause and every chart; retry is a forced fresh request | Covered |
+| ChartSnapshotView | packages/ui/src/content/ChartExplorer.render.test.ts: prepares escaped metadata, stable keys and formatted text without browser APIs | Covered |
+| prepareChartSnapshot on server | packages/ui/src/charts/parity.test.ts: snapshots and scenes use the same pure SVG renderer | Covered |
+| Chat chart tool | packages/cloud/src/ai/view-block.test.ts: accepts the chart tool contract and summaries contain no values | Covered |
+| Chat view files | packages/cloud/src/ai/view-block.test.ts: Phase S view files retain their original canonical shape | Covered |
+| Chat groups with linkX | packages/cloud/src/ai/view-block.test.ts: linkX only links line charts with the same kind of x | Covered |
+| Notebooks: print SVG and table | packages/notebooks/src/frontend/lib/notebook-charts.browser.test.ts: printing a chart switched to its table prints every row without overlap | Covered |
+| cloud.chart() | packages/assistant/src/artifacts/runtime/cloud-lib.test.ts: chart function formats survive validation and measured redraws | Covered |
+| Pulse saved chart JSON | packages/pulse/src/frontend/workspace/sql-result-chart.test.ts: adapts the first time column and numeric/Nullable series to Chart line props | Covered |
+| gateway-ops snapshots | packages/gateway-ops/src/frontend/operational-charts.test.ts: snapshots preserve units, missing samples, zero and exact counts | Covered |
+| gateway-ops timelines | packages/gateway-ops/src/observability/jobs/timeline.test.ts: gives a millisecond run a visible width without moving its start | Covered |
+| Grids custom apps | packages/grids/src/service/custom-app-insights.test.ts: date-typed chart categories use the request locale without reinterpreting text or timestamps | Covered |
+| Venue | packages/venue/src/frontend/_components/venue-workspace/feedback-chart-tooltips.test.ts: ratings per day name the day and count the ratings as a whole number | Covered |
+| Tools | packages/tools/src/frontend/tools/speed-test-format.test.ts: a sparkline sample names its metric and shows the reading with its unit | Covered |
+| Core AI usage | packages/core/src/pages/admin/settings/_components/AiUsageCharts.tsx: AiUsageCharts | Covered |
+| Core AI quota | packages/core/src/pages/admin/settings/_components/AiQuotaCharts.tsx: AiQuotaCharts | Covered |
+| Fibel chart demos | docs-site/src/ui/demo-sections/charts.tsx: ChartDemo | Covered |
+| Fibel explorer demos | docs-site/src/ui/ChartExplorerShowcases.tsx: ChartExplorerShowcases | Covered |
+<!-- chart-parity:end -->

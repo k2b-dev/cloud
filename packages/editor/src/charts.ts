@@ -1,26 +1,7 @@
 // Named renderers, not the `charts` namespace, so bundles leave out the map and state timeline renderers.
-import {
-  autoBin,
-  barGauge,
-  boxplot,
-  type ChartDatum,
-  type charts,
-  computeDomain,
-  donut,
-  extendDomainToNice,
-  gauge,
-  heatmap,
-  histogram,
-  i18n,
-  line,
-  niceLogTicks,
-  niceStep,
-  pie,
-  scatter,
-  sparkline,
-  stat,
-} from "@k2b/stdlib";
-import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
+import { i18n,  } from "@k2b/stdlib";
+import { autoBin, barGauge, boxplot, type ChartDatum, type charts, computeDomain, donut, extendDomainToNice, gauge, heatmap, histogram, line, niceLogTicks, niceStep, pie, scatter, sparkline, stat } from "@k2b/ui/charts/core";
+import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTime, chartKinds } from "./chart-schema";
 

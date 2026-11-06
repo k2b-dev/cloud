@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type ChartDatum, charts } from "@k2b/stdlib";
+import { type ChartDatum, charts } from "@k2b/ui/charts/core";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
 import {
