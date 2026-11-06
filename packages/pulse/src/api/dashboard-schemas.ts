@@ -25,5 +25,6 @@ export const PublicDashboardSchema = z.object({
   id: z.string(),
   name: z.string(),
   revision: z.number().int(),
+  timeZone: z.string().describe("IANA time zone of the base; dashboard times read in it."),
   panels: z.array(PublicDashboardPanelSchema),
 });
