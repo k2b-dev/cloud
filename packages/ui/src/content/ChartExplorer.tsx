@@ -171,7 +171,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
             {props.title}
           </Dynamic>
           <Show when={props.description}>
-            <div>{props.description}</div>
+            <div class="k2b-chart-explorer__description">{props.description}</div>
           </Show>
         </div>
         <div class="k2b-chart-explorer__actions">

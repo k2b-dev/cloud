@@ -16398,11 +16398,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__legend,
 .k2b-ui .k2b-chart-explorer__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .k2b-ui .k2b-chart-explorer__header { justify-content: space-between; }
-/* The title wraps beside the actions; they move below it only when the title would get narrower than 8rem,
-   not whenever its description is long, so explorers side by side keep one header layout. */
-.k2b-ui .k2b-chart-explorer > .k2b-chart-explorer__header { align-items: flex-start; }
-.k2b-ui .k2b-chart-explorer > .k2b-chart-explorer__header > :first-child { flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; }
-.k2b-ui .k2b-chart-explorer > .k2b-chart-explorer__header > .k2b-chart-explorer__actions { flex: none; }
+/* The actions move below the title only when the title itself does not fit beside them. A long description
+   adds no width of its own: it wraps in the space the title leaves, so explorers side by side keep one layout. */
+.k2b-ui .k2b-chart-explorer > .k2b-chart-explorer__header > :first-child { flex: 1 1 auto; min-width: 0; }
+.k2b-ui .k2b-chart-explorer__description { contain: inline-size; }
 .k2b-ui .k2b-chart-explorer__title { margin: 0; font-size: 1rem; font-weight: 600; }
 .k2b-ui .k2b-chart-explorer__legend:has(> .k2b-chart-explorer__pin) { flex-wrap: nowrap; }
 /* Labels come from data: the series filter keeps one line and truncates, and next to the pin it takes at most half
