@@ -54,6 +54,7 @@ export type {
   StateTimelineRow,
   StateTimelineState,
 } from "./chart-state-timeline";
+export type { ChartTimeAxis } from "./chart-time-axis";
 export { highlightSql } from "./code-highlight";
 export { type CollectionSelection, createCollectionSelection, type SelectionModifiers } from "./collection-selection";
 export type {

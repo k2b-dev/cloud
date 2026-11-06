@@ -93,7 +93,7 @@ import type { DateContext } from "@k2b/stdlib";
 
 `DatePicker` reads and emits a date key such as `2026-07-27`.
 
-`DateTimePicker` emits a local date-time string when no time zone is configured. With `dateConfig.timeZone`, it displays wall-clock time in that zone and emits an instant.
+`DateTimePicker` emits a local date-time string when no time zone is configured. With `dateConfig.timeZone`, it displays wall-clock time in that zone and emits an instant. Applying a draft whose date and time are unchanged commits the current value as it is, so a wall time that a daylight-saving change repeats, or a value with seconds, keeps its exact instant. Range pickers with times do the same for each end.
 
 With `optionalTime`, `DateTimePicker` emits a date key such as `2026-10-24`
 until a time is added, and the date-time form above with a time.

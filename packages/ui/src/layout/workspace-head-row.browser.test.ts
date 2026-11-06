@@ -444,6 +444,28 @@ test("the quiet filtered count disappears before the chips wrap", async () => {
   }
 });
 
+test("chips that scroll on their own row fade at the edge that hides them", async () => {
+  const page = await load({}, 1440, 1440, true);
+  try {
+    const filters = page.locator(".k2b-app-workspace__head-filters");
+    expect(await filters.getAttribute("data-scroll-fade-mode")).toBe("both");
+    expect(await filters.getAttribute("data-scroll-fade")).toBeNull();
+    await resizeHost(page, 300);
+    const overflow = await filters.evaluate((element) => element.scrollWidth - element.clientWidth);
+    expect(overflow).toBeGreaterThan(1);
+    expect(await filters.getAttribute("data-scroll-fade")).toBe("bottom");
+    // The fade reaches 24 px into the row, past its 4 px focus padding, so the cut chip itself fades.
+    expect(await filters.evaluate((element) => getComputedStyle(element).maskImage)).toContain("calc(100% - 24px)");
+    await filters.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+    await settled(page);
+    expect(await filters.getAttribute("data-scroll-fade")).toBe("top");
+  } finally {
+    await page.close();
+  }
+});
+
 test("active values are named and Reset works as a document link or hydrated callback", async () => {
   const page = await load();
   const callback = await load({ head: { reset: "callback" } }, 1440, 1440, true);

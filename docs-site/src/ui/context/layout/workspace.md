@@ -44,7 +44,7 @@ views and filters in the head, the detail beside the content.
 | --- | --- |
 | R1 Objects, not views | The sidebar shows objects: things you open and go to, such as Spaces, tables, books, and mailboxes. Actions on an object (settings, iCal, share) sit in its head or under "…". An app with only one object has no sidebar. |
 | R2 Views as tabs | Views are tabs in the head, right beside the title. From about five views, "More +n" appears and the selected view stays visible. On the phone they are tabs at the top of the card, in every app. A tab keeps its full label and count; a strip too narrow for its views scrolls sideways, cut at the card edge, starts with the selected view in view, and fades the edges where more views wait. The selected view stays in the URL (`?view=`). |
-| R3 Filters as chips | Filters are chips in the same row as the tabs when there is room; otherwise they wrap to a second row. The workspace's width decides, not the window's. An active filter is tinted and names its value ("Tags: Customer"; set `showValue`, which toolbars outside the head row do not use yet); while filters are active, "Reset" appears. The count on a tab is enough; a quiet result count appears only while a filter is active and is the first thing to go when space is short. A single on/off filter is a `FilterToggle`. |
+| R3 Filters as chips | Filters are chips in the same row as the tabs when there is room; otherwise they wrap to a second row, where chips that still do not fit scroll sideways and fade at the edge that hides them. The workspace's width decides, not the window's. An active filter is tinted and names its value ("Tags: Customer"; set `showValue`, which toolbars outside the head row do not use yet); while filters are active, "Reset" appears. The count on a tab is enough; a quiet result count appears only while a filter is active and is the first thing to go when space is short. A single on/off filter is a `FilterToggle`. |
 | R4 One surface | Head, filters, and content lie on the same white surface: no gray column trays, no `Paper` box, no line under the head. Space and a clear group heading (dot, name, count) separate groups. |
 | R5 Color from content | Status dots, tag colors, places, and stock carry color. The accent carries only the selection; controls stay platform blue, and only the one main action is filled. See [Colors and selection](/en/ui/surfaces/color). |
 | R6 Space, not lines | Rows and tables have no dividers and no grid; rows are 40–44 px high with a hover fill. |
@@ -67,9 +67,9 @@ The head follows these rules as well:
   and on tablet and phone. An app's root page shows its title only beside
   the overlay sidebar's button. A page without its own `h1` keeps a visually
   hidden one.
-- The back link goes with the title. Beside a visible sidebar it remains
-  only for pages deeper than the sidebar lists: the sidebar marks their
-  container with `active="ancestor"`, not the page itself.
+- The back link goes with the title. Beside a visible sidebar that marks the
+  page, or its container with `active="ancestor"` on a page deeper than the
+  sidebar lists, neither shows: the marked item is the way up.
 - Tabs, chips, and actions share one row while they fit. As the head narrows,
   the quiet count goes first, filters wrap, and views become compact with
   “More +n” before scrolling sideways. The primary action then keeps only its
@@ -724,12 +724,12 @@ It draws no line; only its place separates it from the content. The default head
   It then holds a [PageTitle](/en/ui/layout/page-title) with the way up: from
   48 rem `‹ Parent` or a path above the title, below 48 rem a back arrow left
   of it. The title is the page's `h1`. From a 64 rem host, a visible, non-collapsed
-  column sidebar with `[aria-current="page"]` hides the repeated title and its back link;
-  the `h1` remains visually hidden for assistive technology. Mark the exact
-  current page with `SidebarItem active`; on a page deeper than the sidebar
-  lists, mark the containing item with `active="ancestor"` so it stays
-  highlighted and the page keeps its back link. Compact layouts keep the way
-  up. A host's Alt+Up shortcut still reads the trail.
+  column sidebar that marks the current page or its container hides the
+  repeated title and its back link; the `h1` remains visually hidden for
+  assistive technology. Mark the exact current page with `SidebarItem active`;
+  on a page deeper than the sidebar lists, mark the containing item with
+  `active="ancestor"` so it stays highlighted and stands for the way up.
+  Compact layouts keep the way up. A host's Alt+Up shortcut still reads the trail.
 
 The title comes from the host's page trail: a host renders
 `PageTrailProvider` around the page during server rendering and calls
@@ -884,8 +884,8 @@ Keyboard focus keeps the shared focus ring. See [Colors and selection](/en/ui/su
 for standalone defaults and Cloud mappings.
 
 Mark the exact current page with `active`; on a page deeper than the sidebar
-lists, use `active="ancestor"` on the containing item to keep its highlight and
-the page's back link.
+lists, use `active="ancestor"` on the containing item to keep its highlight; it
+then stands for the way up, and the head drops its back link beside it.
 
 ```tsx
 <AppWorkspace.SidebarSection
@@ -1734,8 +1734,11 @@ title. It appears when the row is hovered, keyboard-focused, current, or has
 its menu open. Touch-only screens always show the actions. The counts stay in
 the accessibility tree while hidden. Omit the leading icon when every object would show the same
 one. A plain object-row icon sits in a soft chip of the accent ink
-`--k2b-app-workspace-active`; custom
+`--k2b-app-workspace-active`, as far from the row's start as from its top and
+bottom; custom
 icon content, such as an avatar, keeps its own treatment in the same 2rem box.
+Entries inside one resource, such as the dashboards of a Pulse base, are not
+object rows: they use the default row with a plain glyph and no chip.
 Object rows keep their title on one line that fades out.
 
 ```tsx

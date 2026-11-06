@@ -23,6 +23,7 @@ import {
   type DateRangeValue,
   dateKey,
   displayDate,
+  draftDateTimeValue,
   filterTimeInput,
   formatDateOnlyRangeDuration,
   formatDateTimeValue,
@@ -1604,7 +1605,8 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
     setVisibleMonth(parseDateValue(openingDay(next.date, { min: props.min, max: props.max }, dateConfig()), dateConfig()));
   };
   const canApply = () => Boolean(draftDate()) && (!withTime() || isCompleteTime(draftTime()));
-  const draftValue = () => (withTime() ? toDateTimeValue(draftDate(), draftTime(), dateConfig()) : draftDate() || null);
+  const draftValue = () =>
+    withTime() ? draftDateTimeValue(valueHasTime() ? value() : null, draftDate(), draftTime(), dateConfig()) : draftDate() || null;
   const addTime = () => {
     setWithTime(true);
     queueMicrotask(() => timeField?.querySelector("input")?.focus());
@@ -1790,9 +1792,10 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
       return;
     }
     if ((current.start || current.end) && (!isCompleteTime(startTime()) || !isCompleteTime(endTime()))) return;
+    const committed = resolveMaybeAccessor(props.value);
     const value = {
-      start: current.start ? toDateTimeValue(current.start, startTime(), dateConfig()) : null,
-      end: current.end ? toDateTimeValue(current.end, endTime(), dateConfig()) : null,
+      start: current.start ? draftDateTimeValue(committed.start, current.start, startTime(), dateConfig()) : null,
+      end: current.end ? draftDateTimeValue(committed.end, current.end, endTime(), dateConfig()) : null,
     };
     close();
     commitFieldValue(props, value);
