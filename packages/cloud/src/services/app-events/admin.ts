@@ -234,8 +234,10 @@ export function createEventAdministration(db: () => SQL, dependencies: Dependenc
       `;
       await tx`
         DELETE FROM events.app_deliveries WHERE id IN (
-          SELECT id FROM events.app_deliveries
-          WHERE state IN ('done', 'cancelled') AND updated_at < now() - interval '7 days' LIMIT 1000
+          SELECT delivery.id FROM events.app_deliveries delivery
+          JOIN events.app_subscriptions subscription ON subscription.id=delivery.subscription_id
+          WHERE delivery.state IN ('done', 'cancelled') AND delivery.updated_at < now() -
+            CASE WHEN subscription.resource_binding IS NULL THEN interval '7 days' ELSE interval '30 days' END LIMIT 1000
         )
       `;
       await tx`DELETE FROM events.app_subscriptions subscription WHERE id IN (
