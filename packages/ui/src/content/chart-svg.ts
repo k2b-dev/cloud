@@ -45,7 +45,10 @@ export function responsiveChartSvg(svg: string): string {
     const rotation = tag.match(/\btransform="rotate\((-?[\d.]+) [^\"]+\)"/)?.[1];
     // Individual CSS scale precedes rotation. Use the same text anchor as
     // transform-origin, and avoid applying the SVG rotation pivot twice.
-    return tag.replace(">", ` style="transform-origin:${x}px ${y}px${rotation ? `;transform:rotate(${rotation}deg)` : ""}">`);
+    const origin = `transform-origin:${x}px ${y}px${rotation ? `;transform:rotate(${rotation}deg)` : ""}`;
+    return tag.includes('style="')
+      ? tag.replace(/style="([^"]*)"/, (_match, style: string) => `style="${style};${origin}"`)
+      : tag.replace(">", ` style="${origin}">`);
   });
 }
 

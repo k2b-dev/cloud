@@ -225,6 +225,29 @@ describe("chart render options", () => {
   });
 });
 
+test("saved references preserve their individual style and tone through schema and rendering", () => {
+  const spec = {
+    kind: "line",
+    title: "Flow",
+    series: [
+      {
+        data: [
+          { x: 1, y: 1 },
+          { x: 2, y: 5 },
+        ],
+      },
+    ],
+    references: [{ value: 3, label: "Target", style: "dotted", tone: "success" }],
+  } satisfies ChartInput;
+  const input = parse(spec);
+  const options = chartRenderOptions(input, "en");
+  if (options.kind !== "line") throw new Error("Expected line");
+  expect(options.references).toEqual(spec.references);
+  expect(charts.line(options)).toContain('style="stroke-dasharray:1 3;stroke-linecap:round;color:var(--k2b-success-text,#047857)"');
+  expect(schema.safeParse({ ...spec, references: [{ value: 3, style: "unknown" }] }).success).toBe(false);
+  expect(schema.safeParse({ ...spec, references: [{ value: 3, tone: "unknown" }] }).success).toBe(false);
+});
+
 describe("chart axes", () => {
   const ticks = (input: unknown, anchor: "end" | "middle") => {
     const { kind, ...options } = chartRenderOptions(parse(input), "en");

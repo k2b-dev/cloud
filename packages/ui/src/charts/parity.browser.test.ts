@@ -25,7 +25,10 @@ const buildFixture = async (contents: string, legacy = false, hydratable = false
           builder.onResolve({ filter: /^chart-parity-fixture$/ }, () => ({ path: "fixture", namespace: "chart-parity" }));
           builder.onLoad({ filter: /.*/, namespace: "chart-parity" }, () => ({ contents, loader: "ts", resolveDir: repoRoot }));
           if (legacy)
-            builder.onLoad({ filter: /\/charts\/core\/svg\.js$/ }, () => ({ contents: 'export * from "@k2b/stdlib";', loader: "js" }));
+            builder.onLoad({ filter: /\/charts\/core\/svg\.js$/ }, () => ({
+              contents: 'export * from "@k2b/stdlib"; export const referenceLineAttributes = () => "";',
+              loader: "js",
+            }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -57,7 +60,7 @@ test("all fourteen kinds match server SVG and geometry on the first client rende
     `
     import { createComponent } from "solid-js";
     import { render } from "solid-js/web";
-    import { Chart } from ${JSON.stringify(resolve(uiRoot, "dist/browser/charts.js"))};
+    import Chart from ${JSON.stringify(resolve(uiRoot, "dist/browser/content/Chart.js"))};
     const specs = ${JSON.stringify(specs)};
     for (let index=0; index<specs.length; index++) render(() => createComponent(Chart, specs[index]), document.querySelector("#chart-"+index));
     document.body.dataset.mounted="true";
@@ -99,7 +102,8 @@ test("all fourteen kinds match server SVG and geometry on the first client rende
   }
 }, 30_000);
 
-test("existing chart and explorer demos remain pixel-identical at desktop and phone widths", async () => {
+// Compare the demo previews, omitting their long TSX source listings from screenshots.
+const demoFixture = async () => {
   const contents = `
     import {createComponent} from "solid-js";
     import {render} from "solid-js/web";
@@ -113,10 +117,17 @@ test("existing chart and explorer demos remain pixel-identical at desktop and ph
   const afterBundle = await buildFixture(contents);
   const css = await Bun.file(resolve(uiRoot, "dist/styles.css")).text();
   const docsCss = await Bun.file(resolve(repoRoot, "docs-site/src/ui/cloud-components.css")).text();
-  const browser = await launchBrowser();
-  try {
-    for (const width of [1440, 390]) {
-      for (const theme of ["light", "dark"] as const) {
+  return { beforeBundle, afterBundle, css, docsCss };
+};
+let demos: ReturnType<typeof demoFixture> | undefined;
+
+for (const width of [1440, 390]) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`existing chart and explorer demos remain pixel-identical: ${theme} ${width}px`, async () => {
+      demos ??= demoFixture();
+      const { beforeBundle, afterBundle, css, docsCss } = await demos;
+      const browser = await launchBrowser();
+      try {
         const screenshots: Buffer[] = [];
         for (const [stage, bundle] of [
           ["before", beforeBundle],
@@ -126,7 +137,7 @@ test("existing chart and explorer demos remain pixel-identical at desktop and ph
           try {
             const errors = pageErrors(page);
             await page.setContent(
-              `<html lang="en" data-theme="${theme}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\n${docsCss}\nbody{margin:0;padding:24px}main{max-width:1200px;margin:auto}.ui-demo-card{margin-bottom:24px}.ui-demo-card__preview{padding:16px}.ui-chart-demo{display:grid;gap:24px;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))}.ui-chart-demo .k2b-chart{height:240px}</style></head><body class="k2b-ui"><main><div id="charts"></div><div id="bars"></div><div id="explorers"></div></main></body></html>`,
+              `<html lang="en" data-theme="${theme}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\n${docsCss}\nbody{margin:0;padding:24px}main{max-width:1200px;margin:auto}.k2b-content-doc-code{display:none}.ui-demo-card{margin-bottom:24px}.ui-demo-card__preview{padding:16px}.ui-chart-demo{display:grid;gap:24px;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))}.ui-chart-demo .k2b-chart{height:240px}</style></head><body class="k2b-ui"><main><div id="charts"></div><div id="bars"></div><div id="explorers"></div></main></body></html>`,
             );
             await page.addScriptTag({ content: bundle });
             await page.locator("#chart-static .k2b-chart").first().waitFor();
@@ -144,12 +155,12 @@ test("existing chart and explorer demos remain pixel-identical at desktop and ph
           }
         }
         expect(screenshots[1]!.equals(screenshots[0]!), `${theme} ${width}px`).toBe(true);
+      } finally {
+        await browser.close();
       }
-    }
-  } finally {
-    await browser.close();
+    }, 30_000);
   }
-}, 60_000);
+}
 
 test("reference styles and tones remain distinct at desktop and phone widths", async () => {
   const bundle = await buildFixture(`
@@ -166,7 +177,7 @@ test("reference styles and tones remain distinct at desktop and phone widths", a
       try {
         const errors = pageErrors(page);
         await page.setContent(
-          `<html lang="en" data-theme="light"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\nbody{margin:0;padding:24px}main{max-width:960px;margin:auto}pre{display:none}</style></head><body class="k2b-ui"><main></main></body></html>`,
+          `<html lang="en" data-theme="light"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\nbody{margin:0;padding:24px}main{max-width:960px;margin:auto}.k2b-content-doc-code{display:none}</style></head><body class="k2b-ui"><main></main></body></html>`,
         );
         await page.addScriptTag({ content: bundle });
         const lines = page.locator(".stdlib-chart-reference");
@@ -176,9 +187,21 @@ test("reference styles and tones remain distinct at desktop and phone widths", a
           "4px, 4px",
           "1px, 3px",
         ]);
-        expect(await page.locator(".stdlib-chart-reference-label").allTextContents()).toEqual(["Target", "Forecast", "Limit"]);
         const colors = await lines.evaluateAll((marks) => marks.map((mark) => getComputedStyle(mark).color));
         expect(new Set(colors).size).toBe(3);
+        const labels = page.locator(".stdlib-chart-reference-label");
+        expect(await labels.allTextContents()).toEqual(["Target", "Forecast", "Limit"]);
+        expect(
+          await labels.evaluateAll((nodes) =>
+            nodes.every((node) => {
+              const box = node.getBoundingClientRect();
+              const chart = node.closest("svg")!.getBoundingClientRect();
+              return (
+                box.width > 0 && box.left >= chart.left && box.right <= chart.right && box.top >= chart.top && box.bottom <= chart.bottom
+              );
+            }),
+          ),
+        ).toBe(true);
         expect(errors).toEqual([]);
         if (process.env.CHART_SCREENSHOTS) {
           const output = resolve(process.env.CHART_SCREENSHOTS, "reference-styles");

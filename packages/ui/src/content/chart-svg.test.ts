@@ -29,6 +29,25 @@ describe("responsive SVG presentation", () => {
   });
 });
 
+test("responsive reference labels retain their color and anchor in one style attribute", () => {
+  const svg = responsiveChartSvg(
+    charts.line({
+      series: [
+        {
+          data: [
+            { x: 1, y: 1 },
+            { x: 2, y: 5 },
+          ],
+        },
+      ],
+      references: [{ value: 3, label: "Target", tone: "success" }],
+    }),
+  );
+  const label = svg.match(/<text class="stdlib-chart-reference-label"[^>]*>/)![0];
+  expect(label.match(/style=/g)).toHaveLength(1);
+  expect(label).toContain("color:var(--k2b-success-text,#047857);transform-origin:");
+});
+
 test("SSR selects every mark of an entity without duplicating reference style attributes", () => {
   const svg =
     '<svg><g data-chart-datum="{&quot;role&quot;:&quot;bar&quot;,&quot;index&quot;:0}"><rect /></g><g style="--reference:green" data-chart-datum="{&quot;role&quot;:&quot;bar&quot;,&quot;index&quot;:1}"><rect /></g></svg>';

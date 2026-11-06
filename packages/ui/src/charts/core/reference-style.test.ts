@@ -21,10 +21,10 @@ test("reference lines have independent solid, dashed and dotted styles and seman
   const svg = line({ series, references });
   const marks = [...svg.matchAll(/<line class="stdlib-chart-reference"([^>]+)>/g)].map((match) => match[1]);
   expect(marks).toHaveLength(3);
-  expect(marks[0]).toContain('style="stroke-dasharray:none;color:var(--k2b-success-600,#059669)"');
-  expect(marks[1]).toContain('style="stroke-dasharray:4 4;color:var(--k2b-action,#2563eb)"');
-  expect(marks[2]).toContain('style="stroke-dasharray:1 3;stroke-linecap:round;color:var(--k2b-danger-600,#dc2626)"');
-  expect(svg).toContain('class="stdlib-chart-reference-label" style="color:var(--k2b-success-600,#059669)"');
+  expect(marks[0]).toContain('style="stroke-dasharray:none;color:var(--k2b-success-text,#047857)"');
+  expect(marks[1]).toContain('style="stroke-dasharray:4 4;color:var(--k2b-info-text,#1d4ed8)"');
+  expect(marks[2]).toContain('style="stroke-dasharray:1 3;stroke-linecap:round;color:var(--k2b-danger-text,#b91c1c)"');
+  expect(svg).toContain('class="stdlib-chart-reference-label" style="color:var(--k2b-success-text,#047857)"');
   expect(svg).toContain("Target &amp; &lt;minimum&gt;");
   expect(referenceLineAttributes({ value: 2 })).toBe("");
   expect(line({ series, references: [{ value: 2, style: undefined, tone: undefined }] })).toBe(
@@ -43,14 +43,16 @@ test("reference styles reach all cartesian renderers and both UI bar layouts", (
   ];
   for (const spec of specs)
     expect(renderChartSvg(spec, 480, 280), spec.kind).toContain(
-      'style="stroke-dasharray:1 3;stroke-linecap:round;color:var(--k2b-warning-500,#f59e0b)"',
+      'style="stroke-dasharray:1 3;stroke-linecap:round;color:var(--k2b-warning-text,#92400e)"',
     );
   const svg = renderBarChartSvg({
+    width: 480,
+    height: 640,
     data: Array.from({ length: 16 }, (_, index) => ({ label: `Long category ${index}`, value: 5 })),
     references,
   });
   expect(svg).toContain('data-bar-layout="rows"');
-  expect(svg).toContain('style="stroke-dasharray:1 3;stroke-linecap:round;color:var(--k2b-warning-500,#f59e0b)"');
+  expect(svg).toContain('style="stroke-dasharray:1 3;stroke-linecap:round;color:var(--k2b-warning-text,#92400e)"');
 });
 
 test("reference style attributes reject unknown runtime tokens", () => {

@@ -208,10 +208,10 @@ export const referenceLineAttributes = (ref: ReferenceLine, label = false): stri
   if (ref.tone !== undefined) {
     const tones: Record<IntentTone, string> = {
       neutral: "currentColor",
-      info: "var(--k2b-action,#2563eb)",
-      success: "var(--k2b-success-600,#059669)",
-      warning: "var(--k2b-warning-500,#f59e0b)",
-      danger: "var(--k2b-danger-600,#dc2626)",
+      info: "var(--k2b-info-text,#1d4ed8)",
+      success: "var(--k2b-success-text,#047857)",
+      warning: "var(--k2b-warning-text,#92400e)",
+      danger: "var(--k2b-danger-text,#b91c1c)",
     };
     const color = tones[ref.tone];
     if (typeof color !== "string") throw new RangeError("Invalid reference line tone");
