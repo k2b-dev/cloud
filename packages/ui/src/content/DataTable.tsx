@@ -155,11 +155,17 @@ type DataTablePanelContextValue = {
 
 const DataTablePanelContext = createContext<DataTablePanelContextValue>();
 
-const defaultRender = (value: unknown, locale: string, messages: ReturnType<ReturnType<typeof useUiMessages>>): JSX.Element => {
+const defaultRender = (
+  value: unknown,
+  locale: string,
+  numbers: Intl.NumberFormat,
+  messages: ReturnType<ReturnType<typeof useUiMessages>>,
+): JSX.Element => {
   if (value === null || value === undefined || value === "") return "—";
   if (value instanceof Date) return value.toLocaleString(locale);
   if (typeof value === "boolean") return value ? messages.yes : messages.no;
-  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  // Numbers read in the reader's language: grouping and decimal mark follow the locale, at most three decimals.
+  if (typeof value === "number" || typeof value === "bigint") return numbers.format(Object.is(value, -0) ? 0 : value);
   if (typeof value === "string") return value;
   return JSON.stringify(value);
 };
@@ -441,7 +447,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     );
   };
 
-  const renderValueDefault = (value: unknown) => defaultRender(value, locale(), messages());
+  const numberFormat = createMemo(() => new Intl.NumberFormat(locale()));
+  const renderValueDefault = (value: unknown) => defaultRender(value, locale(), numberFormat(), messages());
   const renderCellDefault = (row: T, col: DataTableColumn<T>) => renderValueDefault(valueOf(row, col));
 
   const onRowKeyDown = (event: KeyboardEvent, row: T) => {
