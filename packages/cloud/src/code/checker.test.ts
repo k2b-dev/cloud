@@ -95,9 +95,15 @@ test("the unchanged init template passes the real checker with default Core job 
   const settings = spyOn(codeSettings, "get").mockImplementation(async (key) => CODE_SETTINGS[key].default);
   try {
     const limits = await readCodeCheckLimits();
-    expect(await check(CODE_INITIAL_SOURCE, { sdk: generateCodeSdk([], { mode: "code_run" }), limits })).toMatchObject({
+    // init without an owner creates personal Code. Both SDK pull and check use
+    // createCodeCheckRequest's personal SDK, including its generated app typings.
+    const initSdk = generateCodeSdk([], { mode: "personal" });
+    expect(await check(CODE_INITIAL_SOURCE, { sdk: initSdk, limits })).toMatchObject({
       ok: true,
-      manifest: { entrypoints: [expect.objectContaining({ entrypoint: "monday" })] },
+      diagnostics: [],
+      manifest: {
+        entrypoints: [{ kind: "schedule", entrypoint: "monday", cron: "0 8 * * 1", file: "code.ts", line: 3 }],
+      },
     });
   } finally {
     settings.mockRestore();
