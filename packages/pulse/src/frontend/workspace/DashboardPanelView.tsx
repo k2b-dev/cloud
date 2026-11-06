@@ -138,8 +138,19 @@ export default function DashboardPanelView(props: {
     {
       id: "at",
       label: t().dashboardTime,
+      // Seconds always, milliseconds when the sample has them: two samples never share a shown or copied time.
       value: (row: DashboardLineRow) =>
-        new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(row.at),
+        new Intl.DateTimeFormat(locale(), {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          ...(row.at % 1000 ? { fractionalSecondDigits: 3 as const } : {}),
+          hourCycle: "h23",
+          timeZone: "UTC",
+        }).format(row.at),
       sortValue: (row: DashboardLineRow) => row.at,
     },
     ...((line()?.legend.length ?? 0) > 1

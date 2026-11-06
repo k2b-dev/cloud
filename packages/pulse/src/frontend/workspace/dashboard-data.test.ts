@@ -150,3 +150,23 @@ test("a line panel becomes explorer data: one row per drawn point, the series le
   );
   expect(day.data.rows.map((row) => row.value)).toEqual([12, 7]);
 });
+test("a line point keeps its row key when a refresh drops older points, and a repeated time stays unique", () => {
+  const panel = { ...dashboardTestDashboard.definition.panels[4]!, series: "host", columns: ["time", "host", "value"] };
+  const columns = [
+    { name: "time", type: "DateTime('UTC')" },
+    { name: "host", type: "String" },
+    { name: "value", type: "Float64" },
+  ];
+  const keyAt = (rows: unknown[][], at: string) =>
+    dashboardLineExplorer(panel, { columns, rows }, "de").data.rows.find((row) => row.at === Date.parse(at) && row.series === "demo-web")
+      ?.key;
+  const earlier = [
+    ["2026-10-20T10:00:00Z", "demo-web", 1],
+    ["2026-10-20T11:00:00Z", "demo-web", 2],
+  ];
+  expect(keyAt(earlier, "2026-10-20T11:00:00Z")).toBe(keyAt(earlier.slice(1), "2026-10-20T11:00:00Z"));
+  const repeated = dashboardLineExplorer(panel, { columns, rows: [...earlier, ["2026-10-20T11:00:00Z", "demo-web", 3]] }, "de");
+  const keys = repeated.data.rows.map((row) => row.key);
+  expect(new Set(keys).size).toBe(3);
+  expect(repeated.data.chart.marks.map((mark) => mark.rowKey).sort()).toEqual([...keys].sort());
+});
