@@ -21,8 +21,6 @@ export const accessDialogMessages = i18n.define({
       serviceAccountNote: ({ name }: { name: string }) =>
         `Code runs as the service account of its object. Whoever manages “${name}” gives it access here, like a person. Whoever edits the code acts with this right.`,
       serviceAccountsEmpty: "No service account yet. Code of a mailbox or a base gets access here like a person.",
-      serviceAccountCount: ({ count }: { count: number }) =>
-        i18n.plural(count, "en", { one: "1 service account", other: `${count} service accounts` }),
       serviceAccountSearching: "Looking up the handle …",
       accountMay: ({ level }: { level: string }) => `may ${level.toLowerCase()}`,
       accountMayAlone: ({ level }: { level: string }) => `May ${level.toLowerCase()}`,
@@ -132,7 +130,6 @@ export const accessDialogMessages = i18n.define({
       serviceAccountNote: ({ name }) =>
         `Code läuft als Dienstkonto seines Objekts. Wer „${name}“ verwaltet, gibt ihm hier Zugriff wie einer Person. Wer den Code bearbeitet, handelt mit diesem Recht.`,
       serviceAccountsEmpty: "Noch kein Dienstkonto. Code eines Postfachs oder einer Base bekommt hier Zugriff wie eine Person.",
-      serviceAccountCount: ({ count }) => i18n.plural(count, "de", { one: "1 Dienstkonto", other: `${count} Dienstkonten` }),
       serviceAccountSearching: "Kennung wird gesucht …",
       accountMay: ({ level }) => `darf ${level.toLowerCase()}`,
       accountMayAlone: ({ level }) => `Darf ${level.toLowerCase()}`,
