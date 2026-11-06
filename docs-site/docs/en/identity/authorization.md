@@ -820,13 +820,24 @@ ordinary grant, failure, and retry behavior. Read-only editors offer no lookup.
 Neither editor requires a Code declaration in the application.
 
 For a share surface with additional grant fields, such as a relative path,
-compose `ServiceAccountLookup` from `@k2b/cloud/access/ui` with those fields.
-Pass `target`, `disabled`, `empty`, and an async `add(account)` callback that
-returns whether the grant was saved. It supplies the same **Add service account**
-button and handle field as the access dialog: a complete handle is looked up as it
-is typed or pasted, and the hit shows the Code icon, its description and the
-**Service account** mark. Selecting the hit saves the grant; a failed save keeps
-the handle and the hit for retry.
+compose `ServiceAccountSection` from `@k2b/cloud/access/ui` with those fields.
+It is the access dialog's own **Service accounts** section: the title with its
+count, **Add service account** beside it, the rows you pass as children, the
+handle field, and the note under the rows or the empty text. Pass `target`,
+`resourceName` for the note, `count`, `hasRows`, `disabled`, and
+`add(account)`, which saves the grant and resolves `false` when it failed so
+the field keeps the handle and the hit for retry. A complete handle is looked
+up as it is typed or pasted, and the hit shows the Code icon, its description
+and the **Service account** mark.
+
+Render each row with `AccessRowFrame`, `AccessRowControls` and
+`AccessLevelMenu`, the dialog's row parts. `serviceAccountLine(locale, ...)`
+gives the second line from the server's description, such as "Service account of
+a mailbox · may edit", and `serviceAccountLevels(locale)` the levels View and
+Edit; never offer Manage. Files machine storage keeps Code accounts in this
+section, each row with its path after the line, while people, groups, and agents
+stay in its path grants. `ServiceAccountLookup` remains for an inline editor
+that only needs the button and the field.
 
 `PrincipalPicker` accepts a Code account supplied in a result. It does not add a
 name-search path; the general directory excludes Code accounts. Pass

@@ -7,7 +7,8 @@ import type { Finding, Rule } from "./rule";
 /** Resource editors supply identity, never their own account-search transport. */
 export const checkSource = (file: string, source: string): Finding[] => {
   if (isTestFile(file) || file.endsWith(".browser-harness.tsx")) return [];
-  if (!/\b(?:openAccessDialog|PermissionEditor|AccessDialog|PrincipalPicker|ServiceAccountLookup)\b/.test(source)) return [];
+  if (!/\b(?:openAccessDialog|PermissionEditor|AccessDialog|PrincipalPicker|ServiceAccountLookup|ServiceAccountSection)\b/.test(source))
+    return [];
   // #2630: only this app-entry editor intentionally has no Code-handle lookup or resource reader.
   const appEntryEditor = "packages/cloud/src/access/AppAccessEditor.tsx";
   if (file === appEntryEditor || file === resolve(import.meta.dir, "../..", appEntryEditor)) return [];
@@ -97,7 +98,7 @@ export const checkSource = (file: string, source: string): Finding[] => {
     if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
       const tag = node.tagName.getText(tree);
       if (
-        ["PermissionEditor", "AccessDialog", "PrincipalPicker", "ServiceAccountLookup"].includes(tag) &&
+        ["PermissionEditor", "AccessDialog", "PrincipalPicker", "ServiceAccountLookup", "ServiceAccountSection"].includes(tag) &&
         !sharedEditor &&
         !tree.statements.some((statement) => ts.isFunctionDeclaration(statement) && statement.name?.text === tag)
       ) {

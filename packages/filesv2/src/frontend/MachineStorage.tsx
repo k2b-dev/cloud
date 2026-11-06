@@ -1,4 +1,13 @@
-import { PrincipalPicker, principalLabel, ServiceAccountLookup } from "@k2b/cloud/access/ui";
+import {
+  AccessLevelMenu,
+  AccessRowControls,
+  AccessRowFrame,
+  PrincipalPicker,
+  principalLabel,
+  ServiceAccountSection,
+  serviceAccountLevels,
+  serviceAccountLine,
+} from "@k2b/cloud/access/ui";
 import type { Principal } from "@k2b/cloud/server";
 import { query } from "@k2b/stdlib/solid";
 import {
@@ -198,11 +207,74 @@ function StorageGrants(props: { storage: Storage }) {
       setBusy(false);
     }
   };
-  const grant = (principal: Principal) => run(async () => read(await endpointResponse(principal), t().actionFailed));
-  async function endpointResponse(principal: Principal) {
+  const grant = (principal: Principal, level = permission(), at = path()) =>
+    run(async () => read(await endpointResponse(principal, level, at), t().actionFailed));
+  async function endpointResponse(principal: Principal, level: "read" | "write" | "admin", at: string) {
     if (principal.type !== "user" && principal.type !== "group" && principal.type !== "service_account") throw new Error(t().actionFailed);
-    return endpoint[":id"].grants.$post({ param: { id: props.storage.id }, json: { principal, path: path(), permission: permission() } });
+    return endpoint[":id"].grants.$post({ param: { id: props.storage.id }, json: { principal, path: at, permission: level } });
   }
+  const revoke = (accessId: string) =>
+    run(async () =>
+      read(await endpoint[":id"].grants[":accessId"].$delete({ param: { id: props.storage.id, accessId } }), t().actionFailed),
+    );
+  type Grant = NonNullable<ReturnType<typeof grants.data>>["items"][number];
+  /** Code accounts list in Service accounts, as in every share dialog; everyone else stays with the folder grants. */
+  const accountGrants = () => grants.data()?.items.filter((entry) => entry.serviceAccountKind === "code") ?? [];
+  const folderGrants = () => grants.data()?.items.filter((entry) => entry.serviceAccountKind !== "code") ?? [];
+  /** A service account's levels in the words of every share dialog: View and Edit. */
+  const accountLevels = () => serviceAccountLevels(locale());
+  const levelLabel = (level: string) => accountLevels().find((option) => option.level === level)?.label ?? level;
+  const AccountRow = (rowProps: { entry: Grant }) => {
+    const entry = () => rowProps.entry;
+    const name = () => principalLabel(entry(), locale());
+    const remove = (control: HTMLElement) => {
+      const section = control.closest("section");
+      void revoke(entry().id).then((removed) => {
+        // The row leaves; focus goes to "Add service account" instead of the page.
+        if (removed) queueMicrotask(() => section?.querySelector<HTMLButtonElement>("header button")?.focus());
+      });
+    };
+    return (
+      <AccessRowFrame
+        rowKey={entry().id}
+        avatar={{ principal: entry().principal, avatarHash: entry().avatarHash, serviceAccountKind: entry().serviceAccountKind }}
+        name={name()}
+        href={entry().serviceAccountHref}
+        // The line the dialog shows, then the path this grant covers.
+        line={`${serviceAccountLine(locale(), { description: entry().serviceAccountDescription, level: levelLabel(entry().permission) })} · ${entry().path || "/"}`}
+        wrapLine
+        end={
+          <AccessRowControls
+            name={name()}
+            menu={
+              <AccessLevelMenu
+                name={name()}
+                value={entry().permission}
+                valueLabel={levelLabel(entry().permission)}
+                options={accountLevels()}
+                onChange={(value) => {
+                  if ((value !== "read" && value !== "write") || value === entry().permission) return;
+                  const id = entry().id;
+                  void grant(entry().principal, value, entry().path).then(() =>
+                    // Saving disabled the level; focus returns there unless the person moved on.
+                    queueMicrotask(() => {
+                      if (document.activeElement && document.activeElement !== document.body) return;
+                      document.querySelector<HTMLButtonElement>(`li[data-access-key="${id}"] button[aria-haspopup]`)?.focus();
+                    }),
+                  );
+                }}
+                disabled={busy()}
+                onRemove={remove}
+                removeDisabled={busy()}
+              />
+            }
+            removeDisabled={busy()}
+            onRemove={remove}
+          />
+        }
+      />
+    );
+  };
   return (
     <div class="flex min-w-0 flex-col gap-3">
       <span class="font-medium">{t().grants}</span>
@@ -222,7 +294,7 @@ function StorageGrants(props: { storage: Storage }) {
           }
         >
           <Show when={grants.data()?.items.length} fallback={<Placeholder title={t().noGrants} description={t().noGrantsDetail} />}>
-            <For each={grants.data()?.items}>
+            <For each={folderGrants()}>
               {(entry) => (
                 <div class="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded border border-subtle p-3">
                   <div class="min-w-0">
@@ -231,12 +303,7 @@ function StorageGrants(props: { storage: Storage }) {
                       {entry.path || "/"} · {t()[entry.permission === "admin" ? "admin" : entry.permission === "write" ? "write" : "read"]}
                     </div>
                     <Show when={entry.serviceAccountKind}>
-                      <StatusBadge
-                        tone="neutral"
-                        label={
-                          entry.serviceAccountKind === "code" ? t().code : entry.serviceAccountKind === "agent" ? t().agent : t().standalone
-                        }
-                      />
+                      <StatusBadge tone="neutral" label={entry.serviceAccountKind === "agent" ? t().agent : t().standalone} />
                     </Show>
                   </div>
                   <Button
@@ -296,14 +363,26 @@ function StorageGrants(props: { storage: Storage }) {
         allowAuthenticated={false}
         allowServiceAccounts={true}
         disabled={busy()}
-        onSelect={grant}
+        onSelect={(principal, display) =>
+          // A handle typed into the search finds the service account too; it joins its own section below.
+          void grant(principal, display.serviceAccountKind === "code" && permission() === "admin" ? "write" : permission())
+        }
       />
-      <ServiceAccountLookup
+      {/* As in every share dialog: service accounts have their own section, added by handle, with their own rows. */}
+      <ServiceAccountSection
         target={{ type: "filesv2.storage", id: props.storage.id }}
-        empty={false}
+        resourceName={t().storageName({ owner: props.storage.owner.name })}
+        count={accountGrants().length}
+        hasRows={accountGrants().length > 0}
         disabled={busy()}
-        add={(account) => grant(account.principal)}
-      />
+        // Manage is never offered to a service account, so the level chosen above stops at write.
+        add={(account) => grant(account.principal, permission() === "admin" ? "write" : permission())}
+      >
+        {/* Rows are keyed by grant, so a saved change keeps the row, its controls and the focus. */}
+        <For each={accountGrants().map((entry) => entry.id)}>
+          {(id) => <Show when={accountGrants().find((entry) => entry.id === id)}>{(entry) => <AccountRow entry={entry()} />}</Show>}
+        </For>
+      </ServiceAccountSection>
       <Show when={busy()}>
         <InlineGuidance role="status">{t().loading}</InlineGuidance>
       </Show>

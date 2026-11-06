@@ -7,6 +7,7 @@ for (const source of [
   "<PermissionEditor canEdit={canManage()} />",
   "<PrincipalPicker onSelect={grant} />",
   "<ServiceAccountLookup add={grant} />",
+  "<ServiceAccountSection add={grant} />",
   "<AccessDialog close={close} />",
   "openAccessDialog(options)",
   "openAccessDialog({...options})",
@@ -22,7 +23,8 @@ test("allows targeted editors, read-only views, and documented user-only audienc
     checkSource(
       "app.tsx",
       `openAccessDialog({target: ref}); <PermissionEditor target={ref} />;
-    <PermissionEditor canEdit={false} />; <PermissionEditor allowServiceAccounts={false} />;`,
+    <PermissionEditor canEdit={false} />; <PermissionEditor allowServiceAccounts={false} />;
+    <ServiceAccountSection target={ref} add={grant} />; <ServiceAccountSection readOnly add={grant} />;`,
     ),
   ).toEqual([]);
 });
