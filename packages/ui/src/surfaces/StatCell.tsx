@@ -68,19 +68,24 @@ export type StatCellProps = {
   stale?: string;
 };
 
-const deltaTone = (delta: StatCellDelta): "good" | "bad" | "neutral" =>
-  !delta.better || delta.value === 0 ? "neutral" : delta.value > 0 === (delta.better === "up") ? "good" : "bad";
+/** The change as shown: one decimal of a percent or point, so text, arrow and rating never disagree. */
+const shownDelta = (delta: StatCellDelta): number => Math.round(delta.value * 1000) / 1000 || 0;
+
+const deltaTone = (delta: StatCellDelta): "good" | "bad" | "neutral" => {
+  const value = shownDelta(delta);
+  return !delta.better || value === 0 ? "neutral" : value > 0 === (delta.better === "up") ? "good" : "bad";
+};
 
 /** Signed with a true minus sign (U+2212), as figures are typeset. */
 const deltaText = (delta: StatCellDelta, locale: string, t: StatCellMessages): string =>
   (delta.unit === "points"
-    ? `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: "exceptZero" }).format(delta.value * 100)} ${t.points}`
+    ? `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: "exceptZero" }).format(shownDelta(delta) * 100)} ${t.points}`
     : new Intl.NumberFormat(locale, {
         style: "percent",
         minimumFractionDigits: 1,
         maximumFractionDigits: 1,
         signDisplay: "exceptZero",
-      }).format(delta.value)
+      }).format(shownDelta(delta))
   ).replace("-", "\u2212");
 
 /** A change badge: arrow, signed text, and a spoken label that names the comparison and, with `better`, the rating. */
@@ -92,7 +97,7 @@ function DeltaBadge(props: { delta: StatCellDelta; compare?: StatCellCompare }):
   const label = () =>
     [text(), props.compare ? t().comparedWith({ label: props.compare.label }) : ""].filter(Boolean).join(" ") +
     (tone() === "good" ? `, ${t().better}` : tone() === "bad" ? `, ${t().worse}` : "");
-  const icon = () => (props.delta.value > 0 ? "ti-trending-up" : props.delta.value < 0 ? "ti-trending-down" : "ti-minus");
+  const icon = () => (shownDelta(props.delta) > 0 ? "ti-trending-up" : shownDelta(props.delta) < 0 ? "ti-trending-down" : "ti-minus");
   return (
     <span class="k2b-stat-cell__delta" data-tone={tone()} role="img" aria-label={label()}>
       <i class={`ti ${icon()}`} aria-hidden="true" />
@@ -251,7 +256,8 @@ export function StatCell(props: StatCellProps): JSX.Element {
   const surface = useStatGridSurface();
   return (
     <Show
-      when={props.href && !props.status}
+      // A tile that offers a retry is no link: the button must not sit inside it.
+      when={props.href && !props.status && !(props.stale && props.onRetry)}
       fallback={
         <div
           class="k2b-stat-cell"

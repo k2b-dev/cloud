@@ -556,6 +556,10 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     const unrated = cell({ delta: { value: 0.031 } }, "en");
     expect(unrated).toMatch(/data-tone="neutral" role="img" aria-label="\+3\.1%"/);
     expect(unrated).not.toMatch(/better|worse/);
+    // A change that rounds to zero is shown, pointed and rated as no change.
+    const tiny = cell({ delta: { value: -0.00001, unit: "points", better: "up" } });
+    expect(tiny).toMatch(/data-tone="neutral" role="img" aria-label="0,0 Pkt\."/);
+    expect(tiny).toContain("ti-minus");
     const flat = cell({ delta: { value: 0, better: "up" } });
     expect(flat).toContain('data-tone="neutral"');
     expect(flat).toContain("ti-minus");
@@ -586,6 +590,9 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(cell({ value: null, sub: "Nothing counted in this period" })).toMatch(/data-empty="true"[^>]*>–</);
     // A link tile is no link while it loads or failed.
     expect(cell({ href: "/orders", status: "loading" })).not.toContain('href="/orders"');
+    // A stale tile with "Reload" is no link, so the button never sits inside an anchor.
+    expect(cell({ href: "/orders", stale: "As of 09:12", onRetry: () => undefined })).not.toContain('href="/orders"');
+    expect(cell({ href: "/orders", stale: "As of 09:12" })).toContain('href="/orders"');
     expect(parityCss).toContain('.k2b-ui .k2b-stat-cell[data-size="lg"]:not([data-wrap]) { height: 8.5rem; }');
   });
 

@@ -74,11 +74,12 @@ or less (one at 280 px or less). Tiles in a row share one height. Tiles keep
 | `onRetry` | `() => void` | Offers "Try again" after an error and "Reload" beside `stale`. |
 | `stale` | `string` | Replaces the support line with a warning such as "As of 09:12 · not current". |
 
-`size="lg"` is the dashboard tile: a 28 px figure in a tile of 136 px, and
-164 px when the grid is 600 px wide or less. There the change badge moves
-under the figure and the figure shrinks to 22 px, so it stays whole on a phone;
-the trend steps back below 200 px of tile width. `md` and `sm` tiles take the
-height of their content.
+`size="lg"` is the dashboard tile: a 28 px figure in a tile of 136 px. When
+the grid is 600 px wide or less, the tile grows to 164 px and the change badge
+moves under the figure. A tile narrower than 230 px shrinks the figure to
+22 px, and below 200 px the trend steps back, so the figure stays whole on a
+phone. These adjustments follow the grid; a `StatCell` on its own keeps one
+layout. `md` and `sm` tiles take the height of their content.
 
 ### Change and comparison
 

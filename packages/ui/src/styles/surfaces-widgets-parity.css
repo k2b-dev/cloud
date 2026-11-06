@@ -683,29 +683,30 @@
 .k2b-ui .k2b-stat-grid__body {
   display: grid;
   gap: 1rem;
-  grid-template-columns: repeat(var(--k2b-stat-grid-columns, 4), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--k2b-stat-grid-columns), minmax(0, 1fr));
 }
-.k2b-ui .k2b-stat-grid[data-size="sm"] .k2b-stat-grid__body { gap: 0.625rem; }
-.k2b-ui .k2b-stat-grid[data-columns="1"] { --k2b-stat-grid-columns: 1; }
-.k2b-ui .k2b-stat-grid[data-columns="2"] { --k2b-stat-grid-columns: 2; }
-.k2b-ui .k2b-stat-grid[data-columns="3"] { --k2b-stat-grid-columns: 3; }
-.k2b-ui .k2b-stat-grid[data-columns="4"] { --k2b-stat-grid-columns: 4; }
-.k2b-ui .k2b-stat-grid[data-columns="5"] { --k2b-stat-grid-columns: 5; }
-.k2b-ui .k2b-stat-grid[data-columns="6"] { --k2b-stat-grid-columns: 6; }
+/* Every rule names the grid's own body (`>`), so a grid inside another grid keeps its own columns. */
+.k2b-ui .k2b-stat-grid > .k2b-stat-grid__body { --k2b-stat-grid-columns: 4; }
+.k2b-ui .k2b-stat-grid[data-size="sm"] > .k2b-stat-grid__body { gap: 0.625rem; }
+.k2b-ui .k2b-stat-grid[data-columns="1"] > .k2b-stat-grid__body { --k2b-stat-grid-columns: 1; }
+.k2b-ui .k2b-stat-grid[data-columns="2"] > .k2b-stat-grid__body { --k2b-stat-grid-columns: 2; }
+.k2b-ui .k2b-stat-grid[data-columns="3"] > .k2b-stat-grid__body { --k2b-stat-grid-columns: 3; }
+.k2b-ui .k2b-stat-grid[data-columns="5"] > .k2b-stat-grid__body { --k2b-stat-grid-columns: 5; }
+.k2b-ui .k2b-stat-grid[data-columns="6"] > .k2b-stat-grid__body { --k2b-stat-grid-columns: 6; }
 /* No empty slot when a row breaks: five tiles in three columns end with a tile over two slots, and an odd last tile
    in two columns takes the whole row. */
 @container k2b-stat-grid (max-width: 900px) {
-  .k2b-ui .k2b-stat-grid:is([data-columns="5"], [data-columns="6"]) .k2b-stat-grid__body { --k2b-stat-grid-columns: 3; }
-  .k2b-ui .k2b-stat-grid[data-columns="5"] .k2b-stat-grid__body > :last-child { grid-column: span 2; }
+  .k2b-ui .k2b-stat-grid:is([data-columns="5"], [data-columns="6"]) > .k2b-stat-grid__body { --k2b-stat-grid-columns: 3; }
+  .k2b-ui .k2b-stat-grid[data-columns="5"] > .k2b-stat-grid__body > :last-child { grid-column: span 2; }
 }
 @container k2b-stat-grid (max-width: 600px) {
-  .k2b-ui .k2b-stat-grid__body { gap: 0.625rem; }
-  .k2b-ui .k2b-stat-grid:not([data-columns="1"]) .k2b-stat-grid__body { --k2b-stat-grid-columns: 2; }
-  .k2b-ui .k2b-stat-grid:not([data-columns="1"]) .k2b-stat-grid__body > :last-child:nth-child(odd) { grid-column: span 2; }
+  .k2b-ui .k2b-stat-grid > .k2b-stat-grid__body { gap: 0.625rem; }
+  .k2b-ui .k2b-stat-grid:not([data-columns="1"]) > .k2b-stat-grid__body { --k2b-stat-grid-columns: 2; }
+  .k2b-ui .k2b-stat-grid:not([data-columns="1"]) > .k2b-stat-grid__body > :last-child:nth-child(odd) { grid-column: span 2; }
 }
 @container k2b-stat-grid (max-width: 280px) {
-  .k2b-ui .k2b-stat-grid .k2b-stat-grid__body { --k2b-stat-grid-columns: 1; }
-  .k2b-ui .k2b-stat-grid .k2b-stat-grid__body > :last-child { grid-column: auto; }
+  .k2b-ui .k2b-stat-grid:not([data-columns="1"]) > .k2b-stat-grid__body { --k2b-stat-grid-columns: 1; }
+  .k2b-ui .k2b-stat-grid:not([data-columns="1"]) > .k2b-stat-grid__body > :last-child:nth-child(odd) { grid-column: auto; }
 }
 
 /* -------------------------------------------------------------- StatCell --
@@ -732,8 +733,16 @@
 .k2b-ui .k2b-stat-cell[data-size="sm"] { gap: 0.125rem; padding: 0.625rem 0.75rem; }
 .k2b-ui .k2b-stat-cell[data-size="lg"]:not([data-wrap]) { height: 8.5rem; }
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell { container: k2b-stat-cell / inline-size; }
+/* At 600 px or less the dashboard tile grows, and its change badge moves under the figure. */
 @container k2b-stat-grid (max-width: 600px) {
-  .k2b-ui .k2b-stat-cell[data-size="lg"]:not([data-wrap]) { height: 10.25rem; }
+  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="lg"]:not([data-wrap]) { height: 10.25rem; }
+  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="lg"]:not([data-wrap]) .k2b-stat-cell__main {
+    height: 3.875rem;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: 0.25rem;
+  }
 }
 .k2b-ui .k2b-stat-cell--link { padding-right: 1.75rem; transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out); }
 .k2b-ui .k2b-stat-cell--link:hover { background: var(--k2b-hover); }

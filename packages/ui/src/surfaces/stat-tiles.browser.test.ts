@@ -78,9 +78,10 @@ const measure = () =>
   });
 
 describe("@k2b/ui key figure tiles", () => {
-  for (const [name, width, columns, height] of [
-    ["desktop", 1440, 4, 136],
-    ["phone", 390, 2, 164],
+  for (const [name, width, columns, height, valueSize] of [
+    ["desktop", 1440, 4, 136, "28px"],
+    ["600 px grid", 620, 2, 164, "28px"],
+    ["phone", 390, 2, 164, "22px"],
   ] as const) {
     test(`on a ${name} every state keeps the tile's size and rows (${columns} columns, ${height}px)`, async () => {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
@@ -102,9 +103,9 @@ describe("@k2b/ui key figure tiles", () => {
         // The head, figure and support rows start at the same place in every state: nothing jumps when data arrives.
         for (const part of ["head", "main", "support"] as const) expect(new Set(rows.map((row) => row[part])).size).toBe(1);
         const data = rows.find((row) => row.state === "data")!;
-        // A phone tile is too narrow for figure and badge side by side, so the badge moves under the figure.
-        expect(data.badgeBelow).toBe(name === "phone");
-        expect(data.valueSize).toBe(name === "phone" ? "22px" : "28px");
+        // In a grid of 600 px or less the taller tile puts the badge under the figure; a phone tile also shrinks it.
+        expect(data.badgeBelow).toBe(name !== "desktop");
+        expect(data.valueSize).toBe(valueSize);
         expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
       } finally {
         await page.close();
@@ -123,10 +124,13 @@ describe("@k2b/ui key figure tiles", () => {
         }),
       ),
     );
-    for (const width of [1440, 800, 390]) {
+    // 300 px leaves a 276 px grid: one tile per row.
+    for (const width of [1440, 800, 390, 300]) {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
       try {
-        await page.setContent(`<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;padding:12px">${grids}</body></html>`);
+        await page.setContent(
+          `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;padding:12px">${grids}</body></html>`,
+        );
         await settled(page);
         const gaps = await page.evaluate(() =>
           Array.from(document.querySelectorAll(".k2b-stat-grid__body")).map((body) =>
