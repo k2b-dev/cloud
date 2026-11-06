@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { cloudAiChartTable } from "./chart-block";
-import { CloudAiChartInputSchema, cloudAiAppChartSchema, parseCloudAiChartInput } from "./default-tool-contracts";
+import { chartDrawingIssue, cloudAiChartTable } from "./chart-block";
+import { CloudAiChartInputSchema, cloudAiAppChartSchema, cloudAiChartSchema, parseCloudAiChartInput } from "./default-tool-contracts";
 
 const bar = {
   kind: "bar",
@@ -28,4 +28,10 @@ test("Chat accepts horizontal group headings, segment series and gaps", () => {
     rows: [{ group: "Store", label: "Furniture", values: [35, null] }],
   };
   expect(parseCloudAiChartInput(CloudAiChartInputSchema.parse(horizontal))).toMatchObject(horizontal);
+});
+
+test("drawing rejects bars that are narrower than half a phone pixel", () => {
+  const x = Array.from({ length: 480 }, (_, i) => `Category ${i}`);
+  const input = cloudAiChartSchema().parse({ kind: "bar", title: "Dense", x, series: [{ label: "A", data: x.map(() => 1) }] });
+  expect(chartDrawingIssue(input)).toContain("half a pixel");
 });

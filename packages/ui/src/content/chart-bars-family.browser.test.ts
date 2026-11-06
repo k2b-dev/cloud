@@ -5,6 +5,8 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { barFamilyFixtures } from "../../test/chart-bars-family-fixtures";
+import { renderHbarSvg } from "../charts/core/hbar";
+import { renderBarChartSvg } from "./chart-bar";
 
 const { plugin } = createConfig({ dev: true, rootDir: import.meta.dir });
 Bun.plugin(plugin());
@@ -86,9 +88,17 @@ for (const width of [1440, 390])
         expect(first).not.toContain("series:");
         const legendValue = chart.locator("[data-bar-legend]").first();
         expect(await legendValue.textContent()).not.toBe(await legendValue.getAttribute("data-bar-total"));
-        const rects = await marks
+        const rects = await marks.evaluateAll((nodes) =>
+          nodes.flatMap((g) => [g, ...g.querySelectorAll(".stdlib-chart-bar")].map((e) => getComputedStyle(e).opacity)),
+        );
+        const tipBox = await chart.locator('[role="tooltip"]').boundingBox();
+        await marks
           .first()
-          .evaluate((g) => [...g.querySelectorAll(".stdlib-chart-bar")].map((e) => getComputedStyle(e).opacity));
+          .locator(".k2b-chart-category-band")
+          .hover({ position: { x: 5, y: 12 } });
+        await settled(page);
+        expect(await chart.locator('[role="tooltip"]').textContent()).toBe(first);
+        expect(await chart.locator('[role="tooltip"]').boundingBox()).toEqual(tipBox);
         expect(rects.every((v) => v === "1")).toBe(true);
         expect(await sample.boundingBox()).toEqual(before);
         await chart.focus();
@@ -98,6 +108,15 @@ for (const width of [1440, 390])
         await chart.press("Home");
         await chart.press("Escape");
         expect(await chart.locator('[role="tooltip"]:popover-open').count()).toBe(0);
+        await marks.first().evaluate((g) => g.setAttribute("data-selected", ""));
+        await settled(page);
+        expect(
+          await marks
+            .first()
+            .locator(".k2b-chart-category-band")
+            .evaluate((n) => getComputedStyle(n).stroke),
+        ).toBe("none");
+        await marks.first().evaluate((g) => g.removeAttribute("data-selected"));
         await marks
           .first()
           .locator(".k2b-chart-category-band")
@@ -184,9 +203,65 @@ for (const width of [1440, 390])
           .locator(".k2b-chart-category-band")
           .first()
           .evaluate((e) => getComputedStyle(e).fill),
-      ).toBe("rgba(0, 0, 0, 0)");
+      ).toBe("none");
       expect(errors).toEqual([]);
     } finally {
       await page.close();
     }
   }, 30_000);
+
+test("standalone and base-only hosts paint transparent bands and distinct previous bars", async () => {
+  const page = await browser.newPage();
+  try {
+    const base = await Bun.file(resolve(import.meta.dir, "../base/base.css")).text();
+    const specs = [
+      renderBarChartSvg({ data: [{ label: "Old", value: 10 }], width: 480, height: 280 }),
+      renderBarChartSvg({
+        x: ["A"],
+        series: [{ label: "Now", data: [15] }],
+        compare: { label: "Prior", data: [10] },
+        width: 480,
+        height: 280,
+      }),
+      renderHbarSvg({ series: ["A"], rows: [{ label: "Row", values: [15] }], width: 480, height: 280 }),
+    ];
+    for (const strip of [false, true]) {
+      await page.setContent(
+        `<style>${strip ? base : ""}</style><main>${specs.map((svg) => `<div class="k2b-chart">${strip ? svg.replace(/<style>[\s\S]*?<\/style>/g, "") : svg}</div>`).join("")}</main>`,
+      );
+      await settled(page);
+      expect(await page.locator(".k2b-chart-category-band").evaluateAll((nodes) => nodes.map((n) => getComputedStyle(n).fill))).toEqual([
+        "none",
+        "none",
+        "none",
+      ]);
+      const current = page.locator(".k2b-chart").nth(1).locator(".stdlib-chart-bar").last();
+      const prior = page.locator(".k2b-chart-previous rect");
+      expect(await prior.evaluate((n) => getComputedStyle(n).fill)).toBe(await current.evaluate((n) => getComputedStyle(n).fill));
+      expect(await prior.evaluate((n) => getComputedStyle(n).fillOpacity)).toBe("0.14");
+      expect(await current.evaluate((n) => getComputedStyle(n).fillOpacity)).toBe("1");
+      expect(
+        await page
+          .locator(".k2b-chart")
+          .last()
+          .locator(".stdlib-chart-bar")
+          .evaluate((n) => getComputedStyle(n).fill),
+      ).not.toBe("rgb(0, 0, 0)");
+      if (strip) {
+        await page
+          .locator(".k2b-chart-category-band")
+          .first()
+          .evaluate((n) => n.parentElement!.setAttribute("data-inspected", ""));
+        await settled(page);
+        expect(
+          await page
+            .locator(".k2b-chart-category-band")
+            .first()
+            .evaluate((n) => getComputedStyle(n).fill),
+        ).not.toBe("none");
+      }
+    }
+  } finally {
+    await page.close();
+  }
+});

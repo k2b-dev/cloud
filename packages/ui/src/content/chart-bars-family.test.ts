@@ -61,3 +61,59 @@ describe("category bars", () => {
     expect(() => hbarLayout({ ...spec, rows: [{ label: "bad", values: [-1, 2] }] })).toThrow("nonnegative");
   });
 });
+
+test("dense grouped bars retain positive widths and whole labels inside the frame", () => {
+  for (const [count, length] of [
+    [3, 60],
+    [8, 31],
+  ]) {
+    const x = Array.from({ length: length! }, (_, i) => `January ${i}`);
+    const series = Array.from({ length: count! }, (_, i) => ({ label: `Series ${i}`, data: x.map(() => i + 1) }));
+    const svg = renderBarChartSvg({ x, series, width: 480, height: 280, xAxis: { ordered: true } });
+    const widths = [...svg.matchAll(/class="stdlib-chart-bar [^"]*"[^>]*width="([^"]*)"/g)].map((m) => Number(m[1]));
+    expect(widths).toHaveLength(count! * length!);
+    expect(widths.every((w) => w > 0)).toBe(true);
+    expect(svg).not.toContain(">Ja</text>");
+    expect(svg).not.toContain(">n</text>");
+    const ys = [...svg.matchAll(/class="stdlib-chart-tick-label stdlib-chart-category-label"[^>]*y="([^"]*)"/g)].map((m) => Number(m[1]));
+    expect(ys.every((y) => y + 16 < 280)).toBe(true);
+    expect(ys.length).toBeGreaterThan(0);
+  }
+});
+test("legends are bounded and horizontal bars retain headers and missing totals", () => {
+  const spec = { x: ["A"], series: Array.from({ length: 20 }, (_, i) => ({ label: `A very long series name ${i}`, data: [null] })) };
+  const g = seriesBarLayout(spec);
+  expect(g.top).toBeLessThan(g.bottom);
+  expect(g.legendLayout.height).toBeLessThanOrEqual(70);
+  expect(g.legendLayout.hidden).toBeGreaterThan(0);
+  expect(g.totals).toEqual([null]);
+  expect(g.legendLayout.items.every((e) => e.total === null)).toBe(true);
+  const svg = renderHbarSvg({
+    series: ["A very long series name that must be truncated"],
+    rows: [{ label: "Gap", values: [null] }],
+    title: "Header",
+    subtitle: "Details",
+    width: 480,
+    height: 280,
+    locale: "de",
+    inspect: true,
+  });
+  expect(svg).toContain(">Header</text>");
+  expect(svg).toContain(">Details</text>");
+  expect(svg).toContain("Gesamt: –");
+  expect(svg).not.toContain(">A very long series name that must be truncated</text>");
+});
+test("comparison gaps and German percent changes retain their semantics", () => {
+  const svg = renderBarChartSvg({
+    x: ["A", "B", "C"],
+    series: [{ label: "Jetzt", data: [9, null, 8] }],
+    compare: { label: "Vorher", data: [8, 4, null] },
+    width: 480,
+    height: 280,
+    locale: "de-DE",
+    inspect: true,
+  });
+  expect(svg).toContain("Änderung: +12,5");
+  expect(svg).toContain("&quot;key&quot;:&quot;delta&quot;,&quot;value&quot;:&quot;–&quot;");
+  expect(svg).not.toMatch(/NaN|Infinity/);
+});

@@ -673,3 +673,27 @@ test("a titled bar chart with many rows reserves the height of its title and eve
   expect(baselines).toHaveLength(20);
   expect(Math.max(...baselines)).toBeLessThan(height);
 });
+
+test("cloud.chart renders horizontal grouped rows and their title in app frames", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "hbar",
+        title: "Orders",
+        subtitle: "By shop",
+        series: ["Current", "Prior"],
+        rows: [
+          { group: "Store", label: "Desks", values: [10, 20] },
+          { label: "Missing", values: [null, null] },
+        ],
+      },
+      "de-DE",
+    ),
+  );
+  expect(markup).toContain('data-chart-kind="hbar"');
+  expect(markup).toContain(">Orders</text>");
+  expect(markup).toContain(">By shop</text>");
+  expect(markup).toContain("Gesamt");
+  expect(markup).not.toContain("<style>");
+  expect(markup).not.toMatch(/NaN|Infinity/);
+});

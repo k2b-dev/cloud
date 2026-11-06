@@ -168,14 +168,14 @@ export const chartKinds = (limits?: ChartLimits) => {
           1,
           limits?.maxSeries,
         ).optional(),
-        layout: z.enum(["columns", "rows", "grouped", "stacked", "nested"]).optional(),
+        layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional(),
         normalize: z.boolean().optional(),
         share: z.boolean().optional(),
         limit: z.number().int().positive().optional(),
         tone: z.enum(["in", "out"]).optional(),
         format: numberFormat.optional(),
         compare: z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }).optional(),
-        xAxis: ChartAxis.pick({ label: true }).strict().optional(),
+        xAxis: ChartAxis.pick({ label: true }).extend({ ordered: z.boolean().optional() }).strict().optional(),
         yAxis: ChartAxis.optional(),
         colorByBar: z.boolean().optional(),
         showValues: z.boolean().optional(),
@@ -193,11 +193,10 @@ export const chartKinds = (limits?: ChartLimits) => {
           if (!bar.x || bar.series.some((s) => s.data.length !== bar.x?.length)) issue("Bar series must have the same length as x.");
           if (bar.data.length) issue("Use data or aligned series, not both.");
           if (bar.layout === "rows" || bar.layout === "columns") issue("Series bars use grouped or stacked layout.");
-        } else if (bar.x || bar.compare || bar.layout === "grouped" || bar.layout === "stacked" || bar.layout === "nested")
+        } else if (bar.x || bar.compare || bar.layout === "grouped" || bar.layout === "stacked")
           issue("This layout needs aligned x and series.");
         if (bar.layout === "stacked" && bar.yAxis?.scale === "log") issue("Stacked bars need a linear axis.");
         if (bar.normalize && bar.layout !== "stacked") issue("Normalized bars must be stacked.");
-        if (bar.layout === "nested") issue("Nested bars require dot marks.");
         if (bar.layout === "stacked" && bar.series?.some((s) => s.data.some((v) => v !== null && v < 0)))
           issue("Stacked bars require nonnegative values.");
         if (bar.compare && (bar.series?.length !== 1 || bar.compare.data.length !== bar.x?.length || bar.layout === "stacked"))

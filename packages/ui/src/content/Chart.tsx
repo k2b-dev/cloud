@@ -5,6 +5,8 @@ import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup,
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import { type FunnelOptions, renderFunnelSvg } from "../charts/core/funnel";
+
+import { categoryLabels } from "../charts/core/category-labels";
 import { type HorizontalBarOptions, hbarLayout, renderHbarSvg } from "../charts/core/hbar";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
@@ -588,7 +590,9 @@ const Chart = (props: ChartProps): JSX.Element => {
                   fields({ key: field.key }))
                 : props.kind === "bar" && field.key === "previous"
                   ? (props.compare?.label ?? fields({ key: field.key }))
-                  : fields({ key: field.key }),
+                  : (props.kind === "bar" || props.kind === "hbar") && (field.key === "total" || field.key === "delta")
+                    ? categoryLabels(locale())[field.key === "total" ? "total" : "change"]
+                    : fields({ key: field.key }),
           value:
             field.formatted ??
             (field.key === "upperInclusive"
@@ -605,7 +609,7 @@ const Chart = (props: ChartProps): JSX.Element => {
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
     renderChartSvg(
-      drawingProps,
+      { ...drawingProps, ...(props.kind === "bar" || props.kind === "hbar" ? { locale: locale() } : {}) },
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,
