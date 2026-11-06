@@ -1,5 +1,4 @@
-import type { ChartDatum } from "./types";
-// Ported from @k2b/stdlib 0.30.0; retain SVG and numeric algorithms until parity proves changes.
+// Ported from @k2b/stdlib 0.30.0 (ISC); retain SVG and numeric algorithms until parity proves changes.
 // ==========================
 // SVG Chart Generation
 // ==========================
@@ -14,7 +13,9 @@ import type { ChartDatum } from "./types";
 // `--stdlib-chart-c8`). Axes and labels use `currentColor` so parent `color`
 // drives theming (dark mode "just works").
 
+import type { IntentTone } from "../../semantics";
 import { WORLD_LAND_PATH, WORLD_MAP_HEIGHT, WORLD_MAP_WIDTH } from "./chart-map-data";
+import type { ChartDatum } from "./types";
 
 // ==========================
 // PUBLIC TYPES
@@ -188,6 +189,35 @@ export type ReferenceLine = {
   axis?: "x" | "y";
   /** Optional inline label rendered at the end of the line. */
   label?: string;
+  /** Omit to retain the existing dashed line. */
+  style?: "solid" | "dashed" | "dotted";
+  /** Semantic color shared by the line and its label, with standalone SVG fallbacks. */
+  tone?: IntentTone;
+};
+
+/** Internal shared attributes for raw cartesian charts and UI bar layouts. */
+export const referenceLineAttributes = (ref: ReferenceLine, label = false): string => {
+  const declarations: string[] = [];
+  if (!label && ref.style !== undefined) {
+    const styles = { solid: "none", dashed: "4 4", dotted: "1 3" };
+    const dash = styles[ref.style];
+    if (typeof dash !== "string") throw new RangeError("Invalid reference line style");
+    declarations.push(`stroke-dasharray:${dash}`);
+    if (ref.style === "dotted") declarations.push("stroke-linecap:round");
+  }
+  if (ref.tone !== undefined) {
+    const tones: Record<IntentTone, string> = {
+      neutral: "currentColor",
+      info: "var(--k2b-action,#2563eb)",
+      success: "var(--k2b-success-600,#059669)",
+      warning: "var(--k2b-warning-500,#f59e0b)",
+      danger: "var(--k2b-danger-600,#dc2626)",
+    };
+    const color = tones[ref.tone];
+    if (typeof color !== "string") throw new RangeError("Invalid reference line tone");
+    declarations.push(`color:${color}`);
+  }
+  return declarations.length ? ` style="${declarations.join(";")}"` : "";
 };
 
 // ==========================
@@ -640,18 +670,24 @@ const renderReferenceLines = (
     if (axis === "y") {
       if (ref.value < yAxis.domain[0] || ref.value > yAxis.domain[1]) continue;
       const y = yMap(ref.value, yAxis.domain, [area.y1, area.y0]);
-      parts.push(`<line class="stdlib-chart-reference" x1="${fmt(area.x0)}" y1="${fmt(y)}" x2="${fmt(area.x1)}" y2="${fmt(y)}"/>`);
+      parts.push(
+        `<line class="stdlib-chart-reference"${referenceLineAttributes(ref)} x1="${fmt(area.x0)}" y1="${fmt(y)}" x2="${fmt(area.x1)}" y2="${fmt(y)}"/>`,
+      );
       if (ref.label) {
         parts.push(
-          `<text class="stdlib-chart-reference-label" x="${fmt(area.x1 - 4)}" y="${fmt(y - 4)}" text-anchor="end">${escapeXml(ref.label)}</text>`,
+          `<text class="stdlib-chart-reference-label"${referenceLineAttributes(ref, true)} x="${fmt(area.x1 - 4)}" y="${fmt(y - 4)}" text-anchor="end">${escapeXml(ref.label)}</text>`,
         );
       }
     } else {
       if (ref.value < xAxis.domain[0] || ref.value > xAxis.domain[1]) continue;
       const x = xMap(ref.value, xAxis.domain, [area.x0, area.x1]);
-      parts.push(`<line class="stdlib-chart-reference" x1="${fmt(x)}" y1="${fmt(area.y0)}" x2="${fmt(x)}" y2="${fmt(area.y1)}"/>`);
+      parts.push(
+        `<line class="stdlib-chart-reference"${referenceLineAttributes(ref)} x1="${fmt(x)}" y1="${fmt(area.y0)}" x2="${fmt(x)}" y2="${fmt(area.y1)}"/>`,
+      );
       if (ref.label) {
-        parts.push(`<text class="stdlib-chart-reference-label" x="${fmt(x + 4)}" y="${fmt(area.y0 + 12)}">${escapeXml(ref.label)}</text>`);
+        parts.push(
+          `<text class="stdlib-chart-reference-label"${referenceLineAttributes(ref, true)} x="${fmt(x + 4)}" y="${fmt(area.y0 + 12)}">${escapeXml(ref.label)}</text>`,
+        );
       }
     }
   }

@@ -8,6 +8,8 @@ export type ChartParityRow = {
   id: string;
   feature: string;
   spec: PortedChartOptions;
+  /** Compatibility input for an additive option with no predecessor in stdlib. */
+  legacySpec?: PortedChartOptions;
   proof: { file: string; test: string; kind?: "demo" };
   gap?: string;
 };
@@ -200,9 +202,12 @@ export const chartParity: readonly ChartParityRow[] = [
   {
     id: "line-reference-style",
     feature: "Line: per-reference style",
-    proof: { file: "packages/ui/src/charts/parity.test.ts", test: "documents the per-reference styling gap without claiming parity" },
-    gap: "No existing stdlib/UI ReferenceLine style option; additive styling needs a separate implementation before removal.",
-    spec: { ...line, references: [{ value: 3, label: "Target" }] },
+    proof: {
+      file: "packages/ui/src/charts/core/reference-style.test.ts",
+      test: "reference lines have independent solid, dashed and dotted styles and semantic tones",
+    },
+    legacySpec: { ...line, references: [{ value: 3, label: "Target" }] },
+    spec: { ...line, references: [{ value: 3, label: "Target", style: "solid", tone: "success" }] },
   },
   {
     id: "line-legend-placement",
@@ -780,6 +785,15 @@ export const chartParity: readonly ChartParityRow[] = [
     id: "docs-demos",
     feature: "Fibel chart demos",
     proof: { file: "docs-site/src/ui/demo-sections/charts.tsx", test: "ChartDemo", kind: "demo" },
+    spec: line,
+  },
+  {
+    id: "explorer-reference-series-style",
+    feature: "Explorer: reference series legend style",
+    proof: {
+      file: "packages/ui/src/content/ChartExplorer.render.test.ts",
+      test: "a legend wraps below the chart inside the fixed viewport and leaves with the table",
+    },
     spec: line,
   },
   {

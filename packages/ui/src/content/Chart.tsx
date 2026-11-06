@@ -155,7 +155,7 @@ const isEmpty = (props: ChartProps): boolean => {
 };
 
 const ChartRoot = (props: ChartProps): JSX.Element => {
-  const [, drawingProps] = splitProps(props, ["selected", "onSelect", "tooltip", "cursor"]);
+  const [, drawingProps] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
   const viewportMessages = useViewportMessages();

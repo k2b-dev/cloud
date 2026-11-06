@@ -150,3 +150,46 @@ test("existing chart and explorer demos remain pixel-identical at desktop and ph
     await browser.close();
   }
 }, 60_000);
+
+test("reference styles and tones remain distinct at desktop and phone widths", async () => {
+  const bundle = await buildFixture(`
+    import {createComponent} from "solid-js";
+    import {render} from "solid-js/web";
+    import {ReferenceLineStylesDemo} from ${JSON.stringify(resolve(repoRoot, "docs-site/src/ui/demo-sections/charts.tsx"))};
+    render(() => createComponent(ReferenceLineStylesDemo,{}), document.querySelector("main"));
+  `);
+  const css = await Bun.file(resolve(uiRoot, "dist/styles.css")).text();
+  const browser = await launchBrowser();
+  try {
+    for (const width of [1440, 390]) {
+      const page = await browser.newPage({ viewport: { width, height: 600 } });
+      try {
+        const errors = pageErrors(page);
+        await page.setContent(
+          `<html lang="en" data-theme="light"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\nbody{margin:0;padding:24px}main{max-width:960px;margin:auto}pre{display:none}</style></head><body class="k2b-ui"><main></main></body></html>`,
+        );
+        await page.addScriptTag({ content: bundle });
+        const lines = page.locator(".stdlib-chart-reference");
+        expect(await lines.count()).toBe(3);
+        expect(await lines.evaluateAll((marks) => marks.map((mark) => getComputedStyle(mark).strokeDasharray))).toEqual([
+          "none",
+          "4px, 4px",
+          "1px, 3px",
+        ]);
+        expect(await page.locator(".stdlib-chart-reference-label").allTextContents()).toEqual(["Target", "Forecast", "Limit"]);
+        const colors = await lines.evaluateAll((marks) => marks.map((mark) => getComputedStyle(mark).color));
+        expect(new Set(colors).size).toBe(3);
+        expect(errors).toEqual([]);
+        if (process.env.CHART_SCREENSHOTS) {
+          const output = resolve(process.env.CHART_SCREENSHOTS, "reference-styles");
+          mkdirSync(output, { recursive: true });
+          await page.screenshot({ path: resolve(output, `chart-references-light-${width}.png`), fullPage: true });
+        }
+      } finally {
+        await page.close();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+}, 30_000);

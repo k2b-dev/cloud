@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { charts as legacyCharts } from "@k2b/stdlib";
-import { renderLegacyChartSvg } from "../../test/charts/legacy-render";
+import legacySvg from "../../test/charts/legacy-svg.json";
 import { chartRenderHeight, charts, layout, prepareChartSnapshot, renderChartSvg, toSvg } from "./core";
 import { chartParity, chartParityMarkdown } from "./parity";
 
 const root = resolve(import.meta.dir, "../../../..");
+// Immutable output captured before changing UI adapters. No production rendering module computes the oracle.
+const legacy: { cases: Record<string, { ui: string; raw: string; height: number }>; drawings: Record<string, string> } = legacySvg;
 /** Only renderer-generated IDs and their references vary between otherwise identical renders. */
 const stableIds = (svg: string) => svg.replace(/stdlib-spark-grad-\d+/g, "stdlib-spark-grad-ID");
 
@@ -19,21 +20,19 @@ test("every parity row names an existing test or live demo", () => {
     expect(proof.includes(row.proof.test), `${row.id}: missing named proof ${row.proof.file}: ${row.proof.test}`).toBe(true);
     if (row.proof.kind !== "demo") expect(row.proof.file).toMatch(/\.test\.tsx?$/);
   }
-  for (const kind of Object.keys(legacyCharts)) expect(ids.has(`kind-${kind}`)).toBe(true);
+  for (const kind of Object.keys(charts)) expect(ids.has(`kind-${kind}`)).toBe(true);
 });
 
 test("every parity spec preserves legacy SVG output", () => {
   for (const row of chartParity) {
-    const height = chartRenderHeight(row.spec);
-    const oldSvg = renderLegacyChartSvg(row.spec, 480, height);
-    const newSvg = renderChartSvg(row.spec, 480, height);
-    expect(stableIds(newSvg), row.id).toBe(stableIds(oldSvg));
-    // Also compare the unadapted renderer: custom bars/timelines otherwise share numeric helpers with UI.
-    const rawOld = legacyCharts[row.spec.kind] as (spec: unknown) => string;
-    const rawNew = charts[row.spec.kind] as (spec: unknown) => string;
-    expect(stableIds(rawNew({ ...row.spec, width: 480, height, inspect: true })), `${row.id}: raw renderer`).toBe(
-      stableIds(rawOld({ ...row.spec, width: 480, height, inspect: true })),
-    );
+    const spec = row.legacySpec ?? row.spec;
+    const expected = legacy.cases[row.id];
+    if (!expected) throw new Error(`Missing frozen pre-port SVG: ${row.id}`);
+    const height = chartRenderHeight(spec);
+    expect(height, row.id).toBe(expected.height);
+    expect(stableIds(renderChartSvg(spec, 480, height)), row.id).toBe(legacy.drawings[expected.ui]!);
+    const raw = charts[spec.kind] as (spec: unknown) => string;
+    expect(stableIds(raw({ ...spec, width: 480, height, inspect: true })), `${row.id}: raw renderer`).toBe(legacy.drawings[expected.raw]!);
   }
 });
 
@@ -50,13 +49,11 @@ test("snapshots and scenes use the same pure SVG renderer", () => {
   }
 });
 
-test("documents the per-reference styling gap without claiming parity", () => {
-  const gaps = chartParity.filter((row) => row.gap);
-  expect(gaps.map((row) => row.id)).toEqual(["line-reference-style"]);
-  expect(gaps[0]!.gap).toContain("No existing stdlib/UI ReferenceLine style option");
+test("the parity catalog has no open rows", () => {
+  expect(chartParity.filter((row) => row.gap)).toEqual([]);
 });
 
 test("published parity table is generated from the registry", () => {
-  const doc = readFileSync(resolve(root, "docs-site/src/ui/context/content/charts.md"), "utf8");
+  const doc = readFileSync(resolve(root, "docs-site/docs/en/contributing/chart-renderer-parity.md"), "utf8");
   expect(doc).toContain(chartParityMarkdown());
 });

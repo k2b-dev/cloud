@@ -1,4 +1,4 @@
-import type { MapViewport } from "@k2b/stdlib";
+import type { MapViewport } from "../charts/core/svg";
 
 /** Give maps a CSS-sized viewport while retaining the renderer's projection.
  * The outer SVG uses pixels for headers/legend; the nested geographic viewport

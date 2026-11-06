@@ -1,9 +1,9 @@
 import { chartParityMarkdown } from "../packages/ui/src/charts/parity";
 
 if (Bun.argv.includes("--help")) {
-  console.log("Usage: bun scripts/render-chart-parity.ts\nRegenerate the chart parity table in the canonical UI context page.");
+  console.log("Usage: bun scripts/render-chart-parity.ts\nRegenerate the chart parity table in the maintainer parity page.");
 } else {
-  const file = Bun.file(new URL("../docs-site/src/ui/context/content/charts.md", import.meta.url));
+  const file = Bun.file(new URL("../docs-site/docs/en/contributing/chart-renderer-parity.md", import.meta.url));
   const start = "<!-- chart-parity:start -->";
   const end = "<!-- chart-parity:end -->";
   const source = await file.text();

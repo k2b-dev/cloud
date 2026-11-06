@@ -41,6 +41,9 @@ try {
   const extractedPackage = join(unpackDir, "package");
   const forbiddenPackedFiles = [
     "src/index.ts",
+    "dist/browser/charts/parity.js",
+    "dist/ssr/charts/parity.js",
+    "dist/types/charts/parity.d.ts",
     "src/styles/css-contract-test-helpers.ts",
     "dist/types/styles/css-contract-test-helpers.d.ts",
   ];
