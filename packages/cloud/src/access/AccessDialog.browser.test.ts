@@ -86,6 +86,9 @@ const settledAtRest = async (page: Page) => {
   await settled(page);
 };
 
+/** The shell data of a Spaces page signed in as Mia Hoffmann; no app passes the viewer to the dialog. */
+const shellData = JSON.stringify({ appId: "spaces", profile: { userId: "10000000-0000-4000-8000-000000000001", name: "Mia Hoffmann" } });
+
 /** A scene (mockup v31 service accounts) or a pending state (`loading`, `saving`) the harness holds. */
 const open = async (width: number, locale: string, variant?: "normal" | "lesen" | "loading" | "saving") => {
   const scene = variant === "normal" || variant === "lesen" ? variant : null;
@@ -98,7 +101,10 @@ const open = async (width: number, locale: string, variant?: "normal" | "lesen" 
   );
   await page.setContent(
     `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${plex.css}</style><style>${icons.css}</style><style>${css}</style><style>${appSheet}</style></head>` +
-      `<body class="k2b-ui"><script>window.accessDialogScene = ${JSON.stringify(scene)}; window.accessDialogState = ${JSON.stringify(state)};</script><script>${harness}</script></body></html>`,
+      // As on every Cloud page, the shell data names the signed-in person; the clipboard records what is copied.
+      `<body class="k2b-ui"><script id="cloud-shell-data" type="application/json">${shellData}</script>` +
+      `<script>Object.defineProperty(navigator, "clipboard", { value: { writeText: async (text) => { window.copiedText = text; } } })</script>` +
+      `<script>window.accessDialogScene = ${JSON.stringify(scene)}; window.accessDialogState = ${JSON.stringify(state)};</script><script>${harness}</script></body></html>`,
   );
   await page.waitForSelector("dialog[open]");
   await page.evaluate(async () => {
@@ -287,7 +293,7 @@ describe("AccessDialog in a browser", () => {
         await settled(page);
         expect((await dialog.boundingBox())?.width).toBe(before?.width);
         const mia = dialog.locator("li", { hasText: "Mia Hoffmann" });
-        // "Du" stands once: beside the name on a wide screen, before the e-mail on a phone.
+        // "Du" stands once, read from the page's shell data: beside the name on a wide screen, before the e-mail on a phone.
         expect(
           await mia.evaluate(
             (row) =>
@@ -305,6 +311,47 @@ describe("AccessDialog in a browser", () => {
         await settled(page);
         expect(await dialog.textContent()).toContain("214 Personen dürfen ansehen, auch Gäste.");
         await shot(page, `de-${width}-oeffentlich`);
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`de ${width}px: public with link warns in the warning tone and copies the link with a label that keeps its size`, async () => {
+      const page = await open(width, "de");
+      try {
+        const dialog = page.locator("dialog");
+        await dialog.locator("input[type=checkbox]").nth(1).check();
+        await settled(page);
+        const notice = dialog.locator(".k2b-notice-card", { hasText: "Jeder mit dem Link sieht das" });
+        expect(await notice.getAttribute("data-tone")).toBe("warning");
+        expect(await notice.locator("i.ti-alert-triangle").count()).toBe(1);
+        expect(await notice.locator(".k2b-sr-only").textContent()).toBe("Warnung: ");
+        const [color, warning] = await notice.evaluate((card) => {
+          const probe = document.createElement("span");
+          probe.style.color = "var(--k2b-warning-text)";
+          card.append(probe);
+          const expected = getComputedStyle(probe).color;
+          probe.remove();
+          return [getComputedStyle(card).color, expected];
+        });
+        expect(color).toBe(warning);
+        const copy = dialog.locator(".k2b-copy-button");
+        const link = dialog.locator(".k2b-input-shell", { has: page.locator("input[readonly]") });
+        expect(await copy.innerText()).toBe("Kopieren");
+        // Clicking scrolls the dialog to the button; scroll first so the boxes compare the layout alone.
+        await copy.scrollIntoViewIfNeeded();
+        const before = { copy: await copy.boundingBox(), link: await link.boundingBox() };
+        expect(before.copy?.height).toBe(before.link?.height);
+        await shot(page, `de-${width}-oeffentlich-link`);
+        await copy.click();
+        await page.waitForFunction(() => document.querySelector(".k2b-copy-button")?.textContent?.startsWith("Kopiert"));
+        await settled(page);
+        expect(await copy.innerText()).toBe("Kopiert");
+        expect(await page.evaluate(() => (window as unknown as { copiedText?: string }).copiedText)).toBe(
+          "https://cloud.example.test/s/einkauf-2027",
+        );
+        expect(await dialog.locator("[aria-live=polite]", { hasText: "Kopiert" }).count()).toBe(1);
+        expect({ copy: await copy.boundingBox(), link: await link.boundingBox() }).toEqual(before);
       } finally {
         await page.close();
       }

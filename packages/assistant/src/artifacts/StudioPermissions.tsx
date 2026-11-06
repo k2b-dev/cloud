@@ -16,7 +16,6 @@ export type StudioAccessOptions = {
   published: boolean;
   /** Operator administration: grants run with the administrator's recovery authority. */
   administrative?: boolean;
-  viewerUserId?: string;
   locale: string;
   entries: AccessEntry[];
   /** Projects whose members can use the app; loaded inside the dialog, so a failure never blocks sharing. */
@@ -38,7 +37,6 @@ export const studioAccessDialogProps = (options: StudioAccessOptions): AccessDia
     target: { type: "assistant.app", id: options.artifactId },
     subtitle: t.studioApp,
     initialEntries: options.entries,
-    viewerUserId: options.viewerUserId,
     signal: options.signal,
     allowPublic: PUBLIC_APP_SHARING,
     publicWarning: t.publicAccessHelp,

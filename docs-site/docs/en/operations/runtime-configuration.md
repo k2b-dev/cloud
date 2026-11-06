@@ -19,6 +19,28 @@ For the services and optional integrations needed by each app, start with
 Cloud validates settings when it reads them. Values stored in Postgres are
 encrypted with `APP_SECRET`.
 
+## Anonymous internal Geo autocomplete
+
+Deploy Core and the gateway behind the private application network. Core's
+listener must not be exposed directly; the gateway blocks the reserved
+`/api/_internal/geo/v1/autocomplete` route on every public host. Set
+`CLOUD_CORE_INTERNAL_ORIGIN` to Core's private origin for Core and its calling
+apps. Core checks the configured internal host without trusting forwarding headers.
+This Host check is not authentication: private network placement and the
+gateway path block enforce the boundary. TLS termination may change the scheme
+but must preserve the internal host.
+
+After upgrading Core, app servers can use `geoClient.autocomplete(input)`
+without a session or enrolled app key. Other capability operations retain
+their authentication requirements. All Geo callers share the monthly budget
+and provider-plan rate. Review `geo.monthly_budget_credits` and `geo.plan`
+(`geo.custom_rps` for Custom) before rollout; the former
+`geo.person_daily_credits` setting no longer limits anyone. Stored values are
+ignored, so no data migration or secret rotation is required. Daily usage
+continues to appear in administration. Anonymous executions have no actor or
+access subject. Budget exhaustion returns 429 `GEO_BUDGET_EXHAUSTED` with
+`Retry-After` until the next calendar month in `app.timezone`.
+
 ## Upgrade settings and short-lived links
 
 Update every application, including independently deployed third-party apps,

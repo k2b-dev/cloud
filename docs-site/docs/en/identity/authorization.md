@@ -713,6 +713,8 @@ The last entry that manages the resource keeps Manage: its lower levels and its
 removal are disabled, counted on the result after saving (`effectiveEntries`
 applies as in the editor). "All signed-in people" and "Public with link" are
 switches under **General** (`allowAuthenticated`, `allowPublic`, `publicLink`).
+The signed-in person is marked "You" in the list; the dialog reads them from the
+page's shell data, so no app passes them.
 Turning on public access warns that nobody changes anything without signing in;
 pass `publicWarning` when visitors can do more, for example send a published
 form. Each stored entry is its own row, so a principal with a grant and a denial

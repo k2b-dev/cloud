@@ -626,3 +626,31 @@ test.each(["cloud.test", "cloud-gateway-cloud.test", "internal.test"])("assignme
   expect((await response.json()).path).toBe("/_cloud/app-access");
   expect(f.rates).toEqual([]);
 });
+
+test("anonymous Geo autocomplete never crosses Cloud or assigned-domain ingress", async () => {
+  const f = fixture();
+  for (const host of ["cloud.test", "site.test"]) {
+    for (const path of [
+      "/api/_internal/geo/v1/autocomplete",
+      "/api/%5finternal/geo/v1/autocomplete",
+      "/api//_internal/geo/v1/autocomplete",
+    ]) {
+      const response = await f.request(
+        path,
+        {
+          method: "POST",
+          headers: {
+            "x-forwarded-host": "core.internal",
+            "x-forwarded-proto": "http",
+            "x-forwarded-for": "127.0.0.1",
+            forwarded: "host=core.internal;proto=http",
+          },
+          body: JSON.stringify({ text: "Orle" }),
+        },
+        host,
+      );
+      expect(response.status).toBe(404);
+    }
+  }
+  expect(f.requests).toHaveLength(0);
+});

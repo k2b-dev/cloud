@@ -15,9 +15,9 @@ const fields = [
     options: [{ value: "free", label: "Free" }],
   },
   {
-    key: "geo.person_daily_credits",
-    label: "Daily credits per person",
-    description: "Applies to people and service accounts.",
+    key: "geo.monthly_budget_credits",
+    label: "Monthly geo credits",
+    description: "Applies across the installation.",
     kind: "number",
     value: 300,
     min: 0,
@@ -45,11 +45,14 @@ describe("generic core setting field semantics", () => {
     const dom = createDomTestHarness();
     const { default: Form } = await import("./CoreSettingsForm.island");
     const { dialogCore } = await import("@k2b/ui");
-    const message = "The daily limit must not exceed the monthly budget.";
+    const message = "The budget must be a whole number.";
     const fetch = spyOn(globalThis, "fetch").mockImplementation(
-      Object.assign(async () => Response.json({ message: "Not saved", errors: { "geo.person_daily_credits": message } }, { status: 400 }), {
-        preconnect: globalThis.fetch.preconnect,
-      }),
+      Object.assign(
+        async () => Response.json({ message: "Not saved", errors: { "geo.monthly_budget_credits": message } }, { status: 400 }),
+        {
+          preconnect: globalThis.fetch.preconnect,
+        },
+      ),
     );
     const dispose = render(
       () => createComponent(Form, { title: "Places and addresses", subtitle: "", icon: "ti ti-map-pin", entries }),
@@ -67,7 +70,7 @@ describe("generic core setting field semantics", () => {
         expect(descriptions(control!)).toContain(entry.description);
       }
 
-      const input = dom.root.querySelector<HTMLInputElement>('input[aria-label="Daily credits per person"]')!;
+      const input = dom.root.querySelector<HTMLInputElement>('input[aria-label="Monthly geo credits"]')!;
       input.value = "95000";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       const save = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find(

@@ -5,10 +5,22 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
 # Deprecations and migrations
+
+## Geo uses a global budget
+
+`geo.person_daily_credits` and the admin budget field `personDailyCredits`
+have been removed. Stored daily values are ignored. Use
+`geo.monthly_budget_credits` for the installation-wide credit budget and
+`geo.plan` (or `geo.custom_rps` for Custom) for the shared request rate.
+The retained capability result field `person.exhausted` is always `false`.
+
+App servers may call `geoClient.autocomplete(input)` without an app key or
+session through the private Core origin. Existing caller arguments remain
+supported. See [Geo rollout](/en/docs/operations/runtime-configuration#anonymous-internal-geo-autocomplete).
 
 ## AI providers use their OpenAI-compatible endpoints
 

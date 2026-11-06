@@ -28,6 +28,7 @@ window.openVariant = {
   panel: (tone) => void dialogCore.open((close) => createComponent(PanelDialog, { tone, get children() { return content(tone, () => close()); } }), panelDialogOptions),
   sheet: (tone) => void dialogCore.open((close, context) => createComponent(BottomSheet, { tone, onDismiss: () => context.requestDismiss(), get children() { return content(tone, () => close()); } }), bottomSheetAdaptiveOptions),
   confirm: (tone) => void prompts.confirm("The invoice becomes void.", { title: "Cancel invoice?", icon: "ti ti-receipt-off", variant: tone ? "danger" : "primary", confirmText: "Cancel invoice" }),
+  warning: (tone) => void prompts.confirm("This to-do isn't due for another 2 days. Complete it anyway?", { title: "Complete early?", icon: "ti ti-checkbox", variant: tone ? "warning" : "primary", confirmText: "Complete" }),
   success: (tone) => void (tone ? prompts.success("Saved.", { title: "Done" }) : prompts.alert("Saved.", { title: "Done", icon: "ti ti-info-circle" })),
   error: (tone) => void (tone ? prompts.error("Saving failed.", { title: "Not saved" }) : prompts.alert("Saving failed.", { title: "Not saved", icon: "ti ti-info-circle", confirmText: "Close" })),
 };
@@ -37,8 +38,15 @@ const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture 
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the dialog tone fixture.");
 const script = await build.outputs[0]!.text();
 
-type Variant = "panel" | "sheet" | "confirm" | "success" | "error";
-const tones: Record<Variant, string> = { panel: "success", sheet: "warning", confirm: "danger", success: "success", error: "danger" };
+type Variant = "panel" | "sheet" | "confirm" | "warning" | "success" | "error";
+const tones: Record<Variant, string> = {
+  panel: "success",
+  sheet: "warning",
+  confirm: "danger",
+  warning: "warning",
+  success: "success",
+  error: "danger",
+};
 
 let browser: Browser;
 beforeAll(async () => {
@@ -126,6 +134,8 @@ describe("@k2b/ui dialog tones", () => {
     ["sheet", 1280],
     ["sheet", 390],
     ["confirm", 1280],
+    ["warning", 1280],
+    ["warning", 390],
     ["success", 1280],
     ["error", 1280],
   ];
@@ -165,6 +175,14 @@ describe("@k2b/ui dialog tones", () => {
                   .join(" "),
               ),
             ).toMatch(/^(Success|Warning|Caution)$/);
+
+            // A warning asks for care, not for a destructive act: its confirm button stays primary.
+            if (variant === "warning") {
+              expect(await header.locator("i.ti-alert-triangle").count()).toBe(1);
+              expect(await toned.locator("dialog[open] .k2b-dialog__actions button:last-child").getAttribute("data-variant")).toBe(
+                "primary",
+              );
+            }
 
             // A focused frame keeps its edge.
             await toned.locator("dialog[open]").evaluate((dialog: HTMLDialogElement) => {

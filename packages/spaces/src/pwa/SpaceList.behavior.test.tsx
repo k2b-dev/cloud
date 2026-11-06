@@ -2,6 +2,7 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import { createComponent, createSignal } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
+import type { Outgoing } from "./create";
 import type { SpaceListFilter } from "./paths";
 import type { PwaGroup, PwaRow, PwaSpace } from "./space";
 
@@ -48,6 +49,7 @@ const space = (groups: PwaGroup[], extra: Partial<PwaSpace> = {}): PwaSpace => (
     { id: "Col003", name: "Done", color: "#16a34a", done: true },
   ],
   tags: [{ id: "Tag001", name: "Supplier", color: "#0e7490" }],
+  templates: [],
   filter: { mine: false, tagIds: [], search: "" },
   groups,
   ...extra,
@@ -114,7 +116,16 @@ afterEach(() => {
   subscriptions = 0;
 });
 
-const mount = (initial: PwaSpace | null | undefined, options: { online?: boolean; searching?: boolean; locale?: string } = {}) => {
+const mount = (
+  initial: PwaSpace | null | undefined,
+  options: {
+    online?: boolean;
+    searching?: boolean;
+    locale?: string;
+    outgoing?: () => Outgoing[];
+    onSettle?: (key: string, hidden: boolean) => void;
+  } = {},
+) => {
   const { ui, SpaceList } = modules!;
   dom = createDomTestHarness();
   delegateEvents(["click", "input"]);
@@ -142,6 +153,10 @@ const mount = (initial: PwaSpace | null | undefined, options: { online?: boolean
               setFilter(next);
             },
             onSearchClose: () => {},
+            get outgoing() {
+              return options.outgoing?.();
+            },
+            onSettle: options.onSettle,
             taskHref: (entry: PwaRow) => `/pwa/spaces/Space1/${entry.shortId}?list=space`,
             onOpen: () => {},
           });
@@ -349,6 +364,47 @@ else {
     root.querySelectorAll<HTMLButtonElement>(".spaces-pwa-space__group-head")[1]!.click();
     await waitFor(() => root.textContent?.includes("More could not be loaded.") ?? false, "the failed first page");
     expect(button(root, "Try again")).toBeDefined();
+  });
+
+  test("a new task stands at the end of its status while it saves; a filter that hides it keeps its row and says so", async () => {
+    const [outgoing, setOutgoing] = createSignal<Outgoing[]>([
+      {
+        key: "key-1",
+        spaceShortId: "Space1",
+        statusId: "Col001",
+        title: "Fix the armrest",
+        body: { title: "Fix the armrest", columnId: "Col001", requestKey: "key-1" },
+        state: "saving",
+      },
+    ]);
+    const settled: [string, boolean][] = [];
+    const { root } = mount(space([inbox([row("Item01", "Order the tents")]), done()], { filter: { mine: true, tagIds: [], search: "" } }), {
+      outgoing,
+      onSettle: (key, hidden) => settled.push([key, hidden]),
+    });
+    expect(titles(root)).toEqual(["Order the tents", "Fix the armrest"]);
+    expect(root.textContent).toContain("Adding …");
+    setOutgoing((current) =>
+      current.map((entry) => ({
+        ...entry,
+        state: "created" as const,
+        created: {
+          id: "Item07",
+          title: "Fix the armrest",
+          columnId: "Col001",
+          deadline: null,
+          deadlineAllDay: true,
+          assignees: [],
+        } as never,
+      })),
+    );
+    route = () =>
+      Response.json(space([inbox([row("Item01", "Order the tents")]), done()], { filter: { mine: true, tagIds: [], search: "" } }));
+    await waitFor(() => liveApply !== undefined, "the subscription");
+    await liveApply!();
+    await waitFor(() => settled.length > 0, "the settled create");
+    expect(settled).toEqual([["key-1", true]]);
+    expect(titles(root)).toEqual(["Order the tents", "Fix the armrest"]);
   });
 
   test("an empty Space says so, and the German list names its parts in German", async () => {

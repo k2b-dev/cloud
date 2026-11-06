@@ -55,6 +55,23 @@ const MODAL_ATTRIBUTE = "data-k2b-mobile-shell-modal";
 const FOOTER_HEIGHT = "--k2b-mobile-shell-footer-height";
 /** How much of the scroll area a persistent toast covers; local to the shell. */
 const TOAST_INSET = "--k2b-mobile-shell-toast-inset";
+/** How far the on-screen keyboard reaches into the shell from the bottom edge; local to the shell. */
+const KEYBOARD_INSET = "--k2b-mobile-shell-keyboard";
+/** On the shell while the on-screen keyboard is up. */
+const KEYBOARD_ATTRIBUTE = "data-k2b-keyboard";
+/** Below this height a change of the visual viewport is browser chrome, such as a hiding address bar, not a keyboard. */
+const KEYBOARD_MIN = 120;
+
+/**
+ * The height the on-screen keyboard covers at the bottom of the layout viewport, from the visual viewport; zero
+ * without a keyboard or without `visualViewport`.
+ */
+export const keyboardInset = (view: Pick<Window, "innerHeight" | "visualViewport">): number => {
+  const visual = view.visualViewport;
+  if (!visual) return 0;
+  const covered = Math.round(view.innerHeight - visual.height - visual.offsetTop);
+  return covered >= KEYBOARD_MIN ? covered : 0;
+};
 
 /**
  * The visible part of the toast rail when it holds a toast without a timer (`duration: 0`, running progress, or a
@@ -228,6 +245,10 @@ export function observeMobileShell(root: HTMLElement): () => void {
     const footer = Math.max(0, rootBottom - main.getBoundingClientRect().bottom, owned);
     document.body.style.setProperty(FOOTER_HEIGHT, `${footer}px`);
     root.style.setProperty(TOAST_INSET, `${persistentToastInset(body ?? main)}px`);
+    // Content that owns the bottom edge stands above the keyboard, and the footer under it steps aside.
+    const keyboard = keyboardInset(window);
+    root.style.setProperty(KEYBOARD_INSET, `${keyboard}px`);
+    root.toggleAttribute(KEYBOARD_ATTRIBUTE, keyboard > 0);
     // A modal dialog takes the bottom edge back for its footer; the toast rules read this, not `html:has(dialog:modal)`.
     documentRoot.toggleAttribute(MODAL_ATTRIBUTE, document.querySelector("dialog:modal") !== null);
   };
@@ -249,7 +270,12 @@ export function observeMobileShell(root: HTMLElement): () => void {
     attributeFilter: ["data-state", "data-closing", "data-persistent", "open"],
   });
   document.addEventListener("transitionend", schedule, true);
+  window.visualViewport?.addEventListener("resize", schedule);
+  window.visualViewport?.addEventListener("scroll", schedule);
   return () => {
+    window.visualViewport?.removeEventListener("resize", schedule);
+    window.visualViewport?.removeEventListener("scroll", schedule);
+    root.removeAttribute(KEYBOARD_ATTRIBUTE);
     if (frame) cancelAnimationFrame(frame);
     resize.disconnect();
     mutations.disconnect();

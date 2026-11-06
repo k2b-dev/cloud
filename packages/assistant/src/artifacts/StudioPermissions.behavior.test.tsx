@@ -84,7 +84,6 @@ describe("Studio sharing in the shared access dialog", () => {
       title: "Angebotsrechner",
       published: true,
       locale: overrides.lang ?? "de",
-      viewerUserId: owner.principal.type === "user" ? owner.principal.userId : undefined,
       entries: [owner, mailboxCode],
       loadProjects: async () => [],
       grant: async (principal, level) => {

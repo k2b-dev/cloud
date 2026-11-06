@@ -13,9 +13,12 @@ export type PromptContent = string | HTMLElement | JSX.Element;
 
 const PHRASE_SLOT = "\u0000";
 
-/** A prompt's `variant` is its tone too: a success or danger prompt carries the dialog tone of that name. */
-export const promptTone = (variant: DialogOptions["variant"]): DialogTone | undefined =>
-  variant === "success" || variant === "danger" ? variant : undefined;
+/** A prompt's `variant` is its tone too: a success, warning or danger prompt carries the dialog tone of that name. */
+export const promptTone = (variant: DialogOptions["variant"]): DialogTone | undefined => (variant === "primary" ? undefined : variant);
+
+/** A warning asks for care, not for a destructive act: its confirm button stays primary. */
+export const promptButtonVariant = (variant: DialogOptions["variant"]): "danger" | "primary" | "success" =>
+  variant === undefined || variant === "warning" ? "primary" : variant;
 
 export const DialogHeader = (props: { close: () => void; title?: string; icon?: string; tone?: DialogTone }): JSX.Element => (
   <header class="k2b-dialog__header">
@@ -65,7 +68,7 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
               <button type="button" class="k2b-button" data-variant="secondary" onClick={() => close(false)}>
                 {options?.cancelText || resolveUiMessages().cancel}
               </button>
-              <button type="button" class="k2b-button" data-variant={options?.variant ?? "primary"} onClick={() => close(true)}>
+              <button type="button" class="k2b-button" data-variant={promptButtonVariant(options?.variant)} onClick={() => close(true)}>
                 {options?.confirmText || resolvePromptMessages().confirm}
               </button>
             </footer>
@@ -111,7 +114,7 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
             <button type="button" class="k2b-button" data-variant="secondary" onClick={() => close(false)}>
               {options?.cancelText || resolveUiMessages().cancel}
             </button>
-            <button type="submit" class="k2b-button" data-variant={options?.variant ?? "primary"} disabled={!canConfirm()}>
+            <button type="submit" class="k2b-button" data-variant={promptButtonVariant(options?.variant)} disabled={!canConfirm()}>
               {options?.confirmText || resolvePromptMessages().confirm}
             </button>
           </footer>

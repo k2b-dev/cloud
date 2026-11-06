@@ -2230,15 +2230,32 @@ capabilities, using the existing `security.rate_limit_per_second` operational
 limit. Signature ingress and per-key admission remain in force. Limit
 exhaustion returns 429 `RATE_LIMITED` with `Retry-After`; unavailable admission
 fails closed with 503. Paid providers also enforce their existing durable cost
-budgets. Geo uses a separate `app:<appId>` daily subject charged against
-`geo.person_daily_credits`, plus the Cloud monthly budget and provider-plan
-rate limits. All keys for one app share that allowance; cache hits remain
-free. `GEO_BUDGET_EXHAUSTED` and `GEO_BUSY` return 429 with `Retry-After` and
+budgets. All Geo callers share `geo.monthly_budget_credits` and the
+installation-wide provider-plan request rate (`geo.custom_rps` for Custom).
+There is no daily allowance per person, service account or app.
+`GEO_BUDGET_EXHAUSTED` and `GEO_BUSY` return 429 with `Retry-After` and
 structured recovery details.
 
-For a public form, visitors spend the application's allowance. Apply
-`rateLimit({ keyBy: "ip" })` and app-owned controls using `clientIp(c)` before
-calling a paid provider; see [Public site](/en/docs/build/public-surface#call-platform-capabilities-without-a-person).
+Address autocomplete also has a narrowly scoped anonymous server entry:
+`geoClient.autocomplete(input)` needs no caller, session, app key or
+`geo:query` declaration. It requires `CLOUD_CORE_INTERNAL_ORIGIN` and calls
+`POST /api/_internal/geo/v1/autocomplete` on Core. The body is the autocomplete
+input; the result uses the same capability envelope. That route accepts only
+the configured internal host and never trusts forwarding headers.
+The gateway refuses the route before proxying, on Cloud and assigned domains.
+Keep Core's listener private; the origin check is not network authentication.
+No other Geo operation or public capability route becomes anonymous.
+Execution history records `origin: "app"` with null actor and access subject;
+monthly-budget audit transitions carry `caller: "anonymous", internal: true`.
+Anonymous executions cannot identify the calling application.
+
+Omitting the caller argument selects anonymous access. Supplying a caller keeps
+the authenticated capability path, even when its credentials are missing.
+Existing authenticated and app callers remain supported. They use their
+normal authority paths and admission checks, plus the same global Geo limits.
+For public forms, apply `rateLimit({ keyBy: "ip" })` and app-owned controls
+using `clientIp(c)` before calling Core; see
+[Public site](/en/docs/build/public-surface#call-platform-capabilities-without-a-person).
 
 A durable worker uses the same server helper with an app workload credential
 and its persisted mandate ID/revision. The helper sends both only to Core;
