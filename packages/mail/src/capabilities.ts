@@ -27,6 +27,7 @@ import { mailReviewCopy, mailReviewLocale } from "./capability-review-messages";
 import {
   assignmentReviewMessage,
   batchReceipt,
+  buildMailReview,
   commentPreview,
   draftPreview,
   draftReviewContent,
@@ -56,6 +57,7 @@ import {
   conversationAssignments,
   conversationContext,
   conversationKeeps,
+  conversationReferences,
   conversationSummaries,
   drafts,
   draftUploads,
@@ -2345,6 +2347,33 @@ const requireConversationForReview = async (
   });
 };
 
+const triageTargetSlot = (target: { conversationId: string; messageId?: string }, subject: string) =>
+  target.messageId
+    ? reviewObject(subject, { type: "mail.message", id: target.messageId })
+    : conversationSlot(target.conversationId, subject);
+const markStates = (input: { read?: boolean; flagged?: boolean; answered?: boolean; draft?: boolean }, locale: string | undefined) => {
+  const t = mailCapabilityMessages(locale);
+  return i18n.formatList(
+    [
+      ...(input.read === undefined ? [] : [input.read ? t.read : t.unread]),
+      ...(input.flagged === undefined ? [] : [input.flagged ? t.flagged : t.unflagged]),
+      ...(input.answered === undefined ? [] : [input.answered ? t.answered : t.unanswered]),
+      ...(input.draft === undefined ? [] : [input.draft ? t.draftFlag : t.notDraft]),
+    ],
+    locale,
+  );
+};
+const messageMoveReview: (typeof mailActionReviews)["conversation.move"] = (locale, slots, options) =>
+  buildMailReview("message.move", locale, slots, options);
+
+const requireTriageMessageTarget = async (mailboxId: string, conversationId: string, messageId: string | undefined) => {
+  if (!messageId) return ok(undefined);
+  const resolved = await resolveMailboxResource("messages", mailboxId, messageId);
+  if (!resolved.ok) return resolved;
+  const owner = await resourceParents.messageConversation(resolved.data, mailboxId);
+  return owner === conversationId ? ok(resolved.data) : fail(err.notFound("Message in conversation"));
+};
+
 const requireKeepReleaseForReview = async (mailboxId: string, conversationId: string, context: CapabilityExecutionContext) => {
   if (!(await conversationKeeps.canLiftConversationKeeps(requestContext(context))))
     return fail(err.forbidden(conversationKeeps.LIFT_KEEP_FORBIDDEN));
@@ -3158,7 +3187,8 @@ const actionDefinitions = {
   },
   "conversation.mark": {
     title: "Mark email conversation",
-    description: "Mark one email conversation read, unread, flagged, or unflagged in its current source folder.",
+    description:
+      "Mark one email conversation read, unread, flagged, or unflagged in its current source folder. Set target.messageId to affect only that message.",
     input: c.ConversationMarkInputSchema,
     data: c.ConversationMutationDataSchema,
     destructive: false,
@@ -3168,14 +3198,26 @@ const actionDefinitions = {
     review: async (input: z.output<typeof c.ConversationMarkInputSchema>, context: CapabilityExecutionContext) => {
       const conversation = await requireConversationForReview(input.mailboxId, input.target.conversationId, context);
       if (!conversation.ok) return conversation;
+      const messageTarget = await requireTriageMessageTarget(
+        conversation.data.mailboxInternalId,
+        conversation.data.conversationInternalId,
+        input.target.messageId,
+      );
+      if (!messageTarget.ok) return messageTarget;
+      const slots = { conversation: triageTargetSlot(input.target, conversation.data.subject) };
+      const options = { scope: `mailbox:${input.mailboxId}`, links: [openLink(conversation.data.href)] };
       return ok(
-        mailActionReviews["conversation.mark"](
-          input.read,
-          input.flagged,
-          context.locale,
-          { conversation: conversationSlot(input.target.conversationId, conversation.data.subject) },
-          { scope: `mailbox:${input.mailboxId}`, links: [openLink(conversation.data.href)] },
-        ),
+        input.target.messageId
+          ? buildMailReview(
+              "message.mark",
+              context.locale,
+              {
+                ...slots,
+                states: { kind: "text", value: markStates(input, context.locale) },
+              },
+              options,
+            )
+          : mailActionReviews["conversation.mark"](input.read, input.flagged, context.locale, slots, options),
       );
     },
     run: async (input: z.output<typeof c.ConversationMarkInputSchema>, context: CapabilityExecutionContext) => {
@@ -3184,41 +3226,49 @@ const actionDefinitions = {
       if (!key.ok) return key;
       const conversation = await requireConversationForReview(input.mailboxId, input.target.conversationId, context);
       if (!conversation.ok) return conversation;
+      const messageTarget = await requireTriageMessageTarget(
+        conversation.data.mailboxInternalId,
+        conversation.data.conversationInternalId,
+        input.target.messageId,
+      );
+      if (!messageTarget.ok) return messageTarget;
       const scope = await resolveConversationScope(input.mailboxId, input.target.conversationId);
       if (!scope.ok) return scope;
       const sourceFolder = await resolveMailboxResource("folders", scope.data.mailbox.id, input.target.sourceFolderId);
       if (!sourceFolder.ok) return sourceFolder;
-      const addFlags: Array<"seen" | "flagged"> = [];
-      const removeFlags: Array<"seen" | "flagged"> = [];
+      const addFlags: Array<"seen" | "flagged" | "answered" | "draft"> = [];
+      const removeFlags: Array<"seen" | "flagged" | "answered" | "draft"> = [];
       if (input.read !== undefined) (input.read ? addFlags : removeFlags).push("seen");
       if (input.flagged !== undefined) (input.flagged ? addFlags : removeFlags).push("flagged");
+      if (input.answered !== undefined) (input.answered ? addFlags : removeFlags).push("answered");
+      if (input.draft !== undefined) (input.draft ? addFlags : removeFlags).push("draft");
       const result = await triage.createConversationTriageCommands({
         context: requestContext(context),
         mailboxId: scope.data.mailbox.id,
         conversationId: scope.data.conversationId,
         input: {
           kind: "change_state",
+          ...(messageTarget.data ? { messageIds: [messageTarget.data] } : {}),
           sourceFolderId: sourceFolder.data,
           change: { addFlags, removeFlags, addKeywords: [], removeKeywords: [] },
           idempotencyKey: key.data,
         },
       });
       if (!result.ok) return result;
-      const states = [
-        ...(input.read === undefined ? [] : [input.read ? t.read : t.unread]),
-        ...(input.flagged === undefined ? [] : [input.flagged ? t.flagged : t.unflagged]),
-      ];
+      const states = markStates(input, context.locale);
       return ok({
         data: {
           conversationId: input.target.conversationId,
+          ...(input.target.messageId ? { messageId: input.target.messageId } : {}),
           correlationId: result.data.correlationId,
           commands: result.data.commands.map((command) => ({ id: command.id, state: command.state })),
         },
-        receipt: mailReceipt(markReviewMessage(input.read, input.flagged), context.locale, {
-          conversation: conversationSlot(input.target.conversationId, conversation.data.subject),
+        receipt: mailReceipt(input.target.messageId ? "message.mark" : markReviewMessage(input.read, input.flagged), context.locale, {
+          conversation: triageTargetSlot(input.target, conversation.data.subject),
+          ...(input.target.messageId ? { states: { kind: "text" as const, value: states } } : {}),
         }),
         summary: capabilitySummary(
-          t.markedConversation({ subject: conversation.data.subject, states: i18n.formatList(states, context.locale) }),
+          (input.target.messageId ? t.markedMessage : t.markedConversation)({ subject: conversation.data.subject, states }),
         ),
         ...conversationMetadata(input.mailboxId, input.target.conversationId, conversation.data.subject),
       });
@@ -3226,7 +3276,7 @@ const actionDefinitions = {
   },
   "conversation.move": {
     title: "Move email conversation",
-    description: "Move one email conversation to a standard role or an explicit folder.",
+    description: "Move one email conversation to a standard role or an explicit folder. Set target.messageId to move only that message.",
     input: c.ConversationMoveInputSchema,
     data: c.ConversationMutationDataSchema,
     destructive: false,
@@ -3236,6 +3286,12 @@ const actionDefinitions = {
     review: async (input: z.output<typeof c.ConversationMoveInputSchema>, context: CapabilityExecutionContext) => {
       const conversation = await requireConversationForReview(input.mailboxId, input.target.conversationId, context);
       if (!conversation.ok) return conversation;
+      const messageTarget = await requireTriageMessageTarget(
+        conversation.data.mailboxInternalId,
+        conversation.data.conversationInternalId,
+        input.target.messageId,
+      );
+      if (!messageTarget.ok) return messageTarget;
       const keep = await conversationKeeps.getConversationKeep({
         context: requestContext(context),
         mailboxId: conversation.data.mailboxInternalId,
@@ -3259,10 +3315,10 @@ const actionDefinitions = {
       if (keep.data && destinationRoles.some((role) => ["trash", "junk", "drafts"].includes(role)))
         return fail(keepError("CONVERSATION_KEPT"));
       return ok(
-        mailActionReviews["conversation.move"](
+        (input.target.messageId ? messageMoveReview : mailActionReviews["conversation.move"])(
           context.locale,
           {
-            conversation: conversationSlot(input.target.conversationId, conversation.data.subject),
+            conversation: triageTargetSlot(input.target, conversation.data.subject),
             folder: reviewPlace(
               destination,
               input.destination.kind === "folder" ? { type: "mail.folder", id: input.destination.folderId } : undefined,
@@ -3279,6 +3335,12 @@ const actionDefinitions = {
       if (!key.ok) return key;
       const conversation = await requireConversationForReview(input.mailboxId, input.target.conversationId, context);
       if (!conversation.ok) return conversation;
+      const messageTarget = await requireTriageMessageTarget(
+        conversation.data.mailboxInternalId,
+        conversation.data.conversationInternalId,
+        input.target.messageId,
+      );
+      if (!messageTarget.ok) return messageTarget;
       const scope = await resolveConversationScope(input.mailboxId, input.target.conversationId);
       if (!scope.ok) return scope;
       const sourceFolder = await resolveMailboxResource("folders", scope.data.mailbox.id, input.target.sourceFolderId);
@@ -3306,17 +3368,18 @@ const actionDefinitions = {
         context: requestContext(context),
         mailboxId: scope.data.mailbox.id,
         conversationId: scope.data.conversationId,
-        input: { ...move, idempotencyKey: key.data },
+        input: { ...move, ...(messageTarget.data ? { messageIds: [messageTarget.data] } : {}), idempotencyKey: key.data },
       });
       if (!result.ok) return result;
       return ok({
         data: {
           conversationId: input.target.conversationId,
+          ...(input.target.messageId ? { messageId: input.target.messageId } : {}),
           correlationId: result.data.correlationId,
           commands: result.data.commands.map((command) => ({ id: command.id, state: command.state })),
         },
-        receipt: mailReceipt("conversation.move", context.locale, {
-          conversation: conversationSlot(input.target.conversationId, conversation.data.subject),
+        receipt: mailReceipt(input.target.messageId ? "message.move" : "conversation.move", context.locale, {
+          conversation: triageTargetSlot(input.target, conversation.data.subject),
           folder: reviewPlace(
             destination,
             input.destination.kind === "folder" ? { type: "mail.folder", id: input.destination.folderId } : undefined,
@@ -3423,7 +3486,8 @@ const actionDefinitions = {
   },
   "conversation.assign": {
     title: "Assign conversation",
-    description: "Add, remove, or replace the assignees of one conversation.",
+    description:
+      "Add, remove, or replace the assignees of one conversation. onlyIfUnassigned atomically refuses existing assignees and requires expectedRevision.",
     input: c.ConversationAssignInputSchema,
     data: c.CollaborationDataSchema,
     destructive: false,
@@ -3482,6 +3546,8 @@ const actionDefinitions = {
           conversationId: input.conversationId,
           assigneeUserIds: input.assigneeUserIds,
           mode: input.mode,
+          onlyIfUnassigned: input.onlyIfUnassigned,
+          expectedRevision: input.expectedRevision,
           locale: context.locale,
         }),
         (item) => ({ ...item, conversationId: input.conversationId }),
@@ -3613,7 +3679,8 @@ const actionDefinitions = {
   },
   "conversation.status.update.batch": {
     title: "Update the status of conversations",
-    description: "Mark up to 50 conversations of one mailbox done or reopen them. Reports ok or not_found for each conversation.",
+    description:
+      "Set needs_action, waiting, or done on up to 50 conversations, or reopen them from their latest message direction. Optional expectedRevisions fences every item. Reports ok or not_found for each conversation.",
     input: c.ConversationStatusUpdateBatchInputSchema,
     data: c.ConversationStatusUpdateBatchDataSchema,
     destructive: false,
@@ -3644,6 +3711,7 @@ const actionDefinitions = {
           mailboxId: scope.data.id,
           conversationIds: input.conversationIds,
           completion: input.status,
+          expectedRevisions: input.expectedRevisions,
         }),
         (result) => result,
         (result) => {
@@ -3653,14 +3721,11 @@ const actionDefinitions = {
               .filter((item) => item.status === "ok")
               .map((item) => conversationRef(item.conversationId, undefined, undefined, context.locale)),
             links: [openLink(mailboxHref(input.mailboxId))],
-            receipt: batchReceipt(
-              input.status === "done" ? "conversation.status.update.batch.done" : "conversation.status.update.batch.open",
-              count,
-              result.results.length,
-              context.locale,
-            ),
+            receipt: batchReceipt(`conversation.status.update.batch.${input.status}`, count, result.results.length, context.locale),
             summary: capabilitySummary(
-              t.statusBatchSummary({ count, missing: result.results.length - count, done: input.status === "done" }),
+              input.status === "done" || input.status === "open"
+                ? t.statusBatchSummary({ count, missing: result.results.length - count, done: input.status === "done" })
+                : t.workStatusBatchSummary({ count, missing: result.results.length - count, status: input.status }),
             ),
           };
         },
@@ -3669,7 +3734,7 @@ const actionDefinitions = {
   },
   "conversation.status.update": {
     title: "Update conversation status",
-    description: "Mark one conversation done or reopen it.",
+    description: "Set needs_action, waiting, or done with a revision fence, or reopen using the latest message direction.",
     input: c.ConversationStatusUpdateInputSchema,
     data: c.CollaborationDataSchema,
     destructive: false,
@@ -3704,19 +3769,128 @@ const actionDefinitions = {
         }),
         (item) => ({ ...item, conversationId: input.conversationId }),
         () => ({
-          receipt: mailReceipt(
-            input.status === "done" ? "conversation.status.update.done" : "conversation.status.update.open",
-            context.locale,
-            { conversation: conversationSlot(input.conversationId, conversation.data.subject) },
-          ),
+          receipt: mailReceipt(`conversation.status.update.${input.status}`, context.locale, {
+            conversation: conversationSlot(input.conversationId, conversation.data.subject),
+          }),
           summary: capabilitySummary(
             input.status === "done"
               ? t.completedConversation({ subject: conversation.data.subject })
-              : t.reopenedConversation({ subject: conversation.data.subject }),
+              : input.status === "open"
+                ? t.reopenedConversation({ subject: conversation.data.subject })
+                : t.workStatusSummary({ subject: conversation.data.subject, status: input.status }),
           ),
           ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
         }),
       );
+    },
+  },
+  "conversation.summary.write": {
+    title: "Write automated conversation summary",
+    description:
+      "Save prepared text with conversation and summary revision fences. Never replace a person's text, even after they cleared it; returns skipped=edited_by_person. Does not generate text.",
+    input: c.ConversationSummaryWriteInputSchema,
+    data: c.ConversationSummaryWriteDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "required",
+    policy: { silent: "shared" },
+    review: async (input: z.output<typeof c.ConversationSummaryWriteInputSchema>, context: CapabilityExecutionContext) => {
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
+      if (!conversation.ok) return conversation;
+      return ok(
+        mailActionReviews["conversation.summary.write"](
+          context.locale,
+          { conversation: conversationSlot(input.conversationId, conversation.data.subject) },
+          {
+            scope: `mailbox:${input.mailboxId}`,
+            links: [openLink(conversation.data.href)],
+            content: {
+              kind: "page",
+              title: conversation.data.subject,
+              body: input.summary,
+              format: "plain",
+              baseRevision: input.expectedSummaryRevision,
+            },
+          },
+        ),
+      );
+    },
+    run: async (input: z.output<typeof c.ConversationSummaryWriteInputSchema>, context: CapabilityExecutionContext) => {
+      const key = requireIdempotencyKey(context, "conversation.summary.write");
+      if (!key.ok) return key;
+      const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
+      if (!scope.ok) return scope;
+      const result = await conversationSummaries.writeAutomatedConversationSummary({
+        context: requestContext(context),
+        mailboxId: scope.data.mailbox.id,
+        conversationId: scope.data.conversationId,
+        input: { expectedRevision: input.expectedRevision, expectedSummaryRevision: input.expectedSummaryRevision, summary: input.summary },
+      });
+      if (!result.ok) return result;
+      const { value, skipped } = result.data;
+      const t = mailCapabilityMessages(context.locale);
+      return ok({
+        data: {
+          conversationId: input.conversationId,
+          summaryRevision: value.summaryRevision,
+          conversationRevision: value.conversationRevision,
+          skipped,
+        },
+        receipt: mailReceipt(skipped ? "conversation.summary.preserved" : "conversation.summary.write", context.locale, {
+          conversation: conversationSlot(input.conversationId, mailCapabilityMessages(context.locale).conversationNoun),
+        }),
+        summary: skipped ? t.summaryPreserved : t.summaryWritten,
+        ...conversationMetadata(input.mailboxId, input.conversationId),
+      });
+    },
+  },
+  "conversation.reference.ensure": {
+    title: "Ensure conversation reference",
+    description:
+      "With reference numbering enabled, return the existing immutable reference or allocate one using the mailbox settings. Repeated calls do not allocate another number.",
+    input: c.ConversationReferenceEnsureInputSchema,
+    data: c.ConversationReferenceEnsureDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "required",
+    policy: { silent: "shared" },
+    review: async (input: z.output<typeof c.ConversationReferenceEnsureInputSchema>, context: CapabilityExecutionContext) => {
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
+      if (!conversation.ok) return conversation;
+      return ok(
+        mailActionReviews["conversation.reference.ensure"](
+          context.locale,
+          { conversation: conversationSlot(input.conversationId, conversation.data.subject) },
+          { scope: `mailbox:${input.mailboxId}`, links: [openLink(conversation.data.href)] },
+        ),
+      );
+    },
+    run: async (input: z.output<typeof c.ConversationReferenceEnsureInputSchema>, context: CapabilityExecutionContext) => {
+      const key = requireIdempotencyKey(context, "conversation.reference.ensure");
+      if (!key.ok) return key;
+      const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
+      if (!scope.ok) return scope;
+      const result = await conversationReferences.ensureConversationReference({
+        context: requestContext(context),
+        mailboxId: scope.data.mailbox.id,
+        conversationId: scope.data.conversationId,
+        input: { idempotencyKey: key.data },
+      });
+      if (!result.ok) return result;
+      return ok({
+        data: {
+          conversationId: input.conversationId,
+          value: result.data.reference.value,
+          role: result.data.reference.role,
+          conversationRevision: result.data.conversationRevision,
+          created: result.data.created,
+        },
+        receipt: mailReceipt("conversation.reference.ensure", context.locale, {
+          conversation: conversationSlot(input.conversationId, mailCapabilityMessages(context.locale).conversationNoun),
+        }),
+        summary: mailCapabilityMessages(context.locale).referenceEnsured({ value: result.data.reference.value }),
+        ...conversationMetadata(input.mailboxId, input.conversationId),
+      });
     },
   },
   "conversation.keep": {
