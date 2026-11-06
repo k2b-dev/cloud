@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, settled, viewTransitionEnded } from "../../../ui/test/browser";
 import { pinAssistantPwaClock, startAssistantPwaHarness } from "./AssistantPwa.browser-fixture";
 
 // Attachments, every chat with its search, and a chat's "…" in the Cloud app, in a real engine with invented data.
@@ -102,28 +102,38 @@ describe("Every chat in the Cloud app", () => {
       expect(await page.evaluate(() => getComputedStyle(document.querySelector(".k2b-tab-bar")!).display)).not.toBe("none");
       await page.fill("input[type=search]", "Gardinen");
       await page.getByText("Kein Chat enthält „Gardinen“.").waitFor();
-      expect(page.url()).toContain("/pwa/assistant/chats?q=Gardinen");
+      // Results can render before navigate() commits history through its view transition.
+      await page.waitForURL(/\/pwa\/assistant\/chats\?q=Gardinen$/);
+      await viewTransitionEnded(page);
       await page.getByRole("button", { name: "Suche leeren" }).click();
       await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").first().waitFor();
-      expect(page.url()).toMatch(/\/pwa\/assistant\/chats$/);
+      await page.waitForURL(/\/pwa\/assistant\/chats$/);
     } finally {
       await page.context().close();
     }
   }, 30_000);
 
-  test("Back from a search result returns to the same search", async () => {
+  test("Reload and Back from a search result keep the same search", async () => {
     const page = await open("screen=start");
     try {
       await page.click("a[href='/pwa/assistant/chats']");
       await page.fill("input[type=search]", "samt");
       await page.waitForURL(/\/pwa\/assistant\/chats\?q=samt$/);
       await page.locator(".assistant-pwa-all-chats h2", { hasText: "Treffer" }).waitFor();
+      const results = await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").allTextContents();
+      await page.reload();
+      await page.waitForSelector("body[data-ready]", { state: "attached" });
+      await page.waitForFunction(() => document.querySelector<HTMLInputElement>("input[type=search]")?.value === "samt");
+      await page.locator(".assistant-pwa-all-chats h2", { hasText: "Treffer" }).waitFor();
+      expect(await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").allTextContents()).toEqual(results);
       await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").first().click();
       await page.waitForURL(/\/pwa\/assistant\/c\//);
+      await viewTransitionEnded(page);
       await page.goBack();
       await page.waitForURL(/\/pwa\/assistant\/chats\?q=samt$/);
       await page.waitForFunction(() => document.querySelector<HTMLInputElement>("input[type=search]")?.value === "samt");
       await page.locator(".assistant-pwa-all-chats h2", { hasText: "Treffer" }).waitFor();
+      expect(await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").allTextContents()).toEqual(results);
     } finally {
       await page.context().close();
     }
