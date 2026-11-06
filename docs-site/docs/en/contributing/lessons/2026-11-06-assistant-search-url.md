@@ -1,6 +1,6 @@
-### Search results appeared before their URL committed
+### Reloading a rendered search lost its query
 
-- **What happened:** The Assistant chat search browser test intermittently failed in WebKit because the result appeared while the address still lacked `q=Gardinen` (#2701).
-- **Root cause:** `AllChats` starts loading results after calling `onQueryChange`. That callback uses `navigate()`, whose history commit runs in a view-transition callback. Rendering a result does not guarantee that history has committed.
-- **Error class:** Observing one asynchronous effect as proof that another has completed.
-- **Guard:** `AssistantPwa.more.browser.test.ts` waits for the promised URL with `page.waitForURL()` after searching and clearing. Its result test also verifies that reload and Back preserve the query and result rows. No fixed wait or timeout increase is needed.
+- **What happened:** Assistant search results could appear before their query reached the URL, causing a flaky WebKit assertion (#2701). Reloading at that point lost the search.
+- **Root cause:** `AllChats` starts loading results after calling `onQueryChange`. That callback used `navigate()` with a deferred view-transition history commit. Results could render first. The query replacement now sets `viewTransition: false`, committing history before loading results.
+- **Error class:** Rendering reloadable state before committing its address.
+- **Guard:** `AssistantPwa.more.browser.test.ts` uses a `MutationObserver` to reload as soon as search results appear, then verifies the query and identical rows after reload and Back. The test fails on the old product code with an empty query. Search and clear also wait for the promised URL. No fixed wait or timeout increase is needed.

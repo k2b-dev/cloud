@@ -102,9 +102,7 @@ describe("Every chat in the Cloud app", () => {
       expect(await page.evaluate(() => getComputedStyle(document.querySelector(".k2b-tab-bar")!).display)).not.toBe("none");
       await page.fill("input[type=search]", "Gardinen");
       await page.getByText("Kein Chat enthält „Gardinen“.").waitFor();
-      // Results can render before navigate() commits history through its view transition.
       await page.waitForURL(/\/pwa\/assistant\/chats\?q=Gardinen$/);
-      await viewTransitionEnded(page);
       await page.getByRole("button", { name: "Suche leeren" }).click();
       await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").first().waitFor();
       await page.waitForURL(/\/pwa\/assistant\/chats$/);
@@ -113,19 +111,32 @@ describe("Every chat in the Cloud app", () => {
     }
   }, 30_000);
 
-  test("Reload and Back from a search result keep the same search", async () => {
+  test("Reload when search results appear and Back keep the same search", async () => {
     const page = await open("screen=start");
     try {
       await page.click("a[href='/pwa/assistant/chats']");
-      await page.fill("input[type=search]", "samt");
-      await page.waitForURL(/\/pwa\/assistant\/chats\?q=samt$/);
-      await page.locator(".assistant-pwa-all-chats h2", { hasText: "Treffer" }).waitFor();
-      const results = await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").allTextContents();
-      await page.reload();
+      await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").first().waitFor();
+      // Reload at the observable result, before another task can commit a deferred history update.
+      await page.evaluate(() => {
+        const list = document.querySelector(".assistant-pwa-all-chats")!;
+        const observer = new MutationObserver(() => {
+          if (!list.querySelector("h2")?.textContent?.includes("Treffer")) return;
+          observer.disconnect();
+          sessionStorage.setItem(
+            "search-result-rows",
+            JSON.stringify([...list.querySelectorAll(".assistant-pwa-row")].map((row) => row.textContent)),
+          );
+          location.reload();
+        });
+        observer.observe(list, { childList: true, subtree: true, characterData: true });
+      });
+      await Promise.all([page.waitForEvent("load"), page.fill("input[type=search]", "samt")]);
       await page.waitForSelector("body[data-ready]", { state: "attached" });
-      await page.waitForFunction(() => document.querySelector<HTMLInputElement>("input[type=search]")?.value === "samt");
+      expect(await page.locator("input[type=search]").inputValue()).toBe("samt");
+      expect(page.url()).toMatch(/\/pwa\/assistant\/chats\?q=samt$/);
       await page.locator(".assistant-pwa-all-chats h2", { hasText: "Treffer" }).waitFor();
-      expect(await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").allTextContents()).toEqual(results);
+      const results = await page.evaluate(() => sessionStorage.getItem("search-result-rows"));
+      expect(results).toBe(JSON.stringify(await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").allTextContents()));
       await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").first().click();
       await page.waitForURL(/\/pwa\/assistant\/c\//);
       await viewTransitionEnded(page);
@@ -133,7 +144,7 @@ describe("Every chat in the Cloud app", () => {
       await page.waitForURL(/\/pwa\/assistant\/chats\?q=samt$/);
       await page.waitForFunction(() => document.querySelector<HTMLInputElement>("input[type=search]")?.value === "samt");
       await page.locator(".assistant-pwa-all-chats h2", { hasText: "Treffer" }).waitFor();
-      expect(await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").allTextContents()).toEqual(results);
+      expect(results).toBe(JSON.stringify(await page.locator(".assistant-pwa-all-chats .assistant-pwa-row").allTextContents()));
     } finally {
       await page.context().close();
     }
