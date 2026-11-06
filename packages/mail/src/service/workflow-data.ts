@@ -1,8 +1,9 @@
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
-import { sql } from "bun";
 import { mailKeywordSchema } from "../contracts";
 import { normalizeEmailAddress } from "./address-normalization";
+import { automatedMailReasons, autoReplyFactsFromProtocol } from "./auto-reply-policy";
 import { sha256Json } from "./canonical";
 import type { ConnectorProtocolFacts } from "./connectors";
 import { parseMessageProtocolFacts } from "./message-protocol";
@@ -30,6 +31,7 @@ export type FrozenMailMessage = {
   subject: string;
   body: string;
   bodyText: string;
+  textLength: number | null;
   bodyHtml: string;
   bodyAvailable: boolean;
   attachmentsAvailable: boolean;
@@ -39,6 +41,8 @@ export type FrozenMailMessage = {
   recipients: FrozenMailAddress[];
   attachments: FrozenMailAttachment[];
   hasAttachments: boolean;
+  attachmentCount: number;
+  isBulk: boolean;
   folderId: string;
   flags: string[];
   keywords: string[];
@@ -54,6 +58,9 @@ export type FrozenMailConversation = {
   subject: string;
   summary: string | null;
   summaryRevision: number;
+  /** Internal projection metadata; not a workflow-language field. */
+  summarySource?: "person" | "workflow" | "manual_ai" | null;
+  messageCount: number;
   assigneeUserIds: string[];
   workStatus: "needs_action" | "waiting" | "done";
   revision: number;
@@ -120,6 +127,8 @@ type WorkflowSnapshotRow = {
   conversation_subject: string | null;
   conversation_summary: string | null;
   summary_revision: string | number | null;
+  summary_source?: "person" | "workflow" | "manual_ai" | null;
+  message_count: number;
   collaboration_revision: string | number | null;
   link_snapshot: string;
   link_xid: string | null;
@@ -150,7 +159,7 @@ export const normalizeWorkflowKeywords = (keywords: readonly string[]): string[]
     })
     .sort();
 
-const snapshotColumns = sql`
+const snapshotColumns = () => sql`
   rmr.id AS remote_message_ref_id,
   mc.id AS message_id,
   mc.short_id AS message_short_id,
@@ -181,16 +190,18 @@ const snapshotColumns = sql`
   conversation.subject AS conversation_subject,
   conversation.summary AS conversation_summary,
   conversation.summary_revision,
+  conversation.summary_metadata->>'source' AS summary_source,
+  (SELECT COUNT(*)::int FROM mail.conversation_messages count_cm WHERE count_cm.conversation_id = conversation.id) AS message_count,
   conversation.revision AS collaboration_revision,
   pg_current_snapshot()::text AS link_snapshot,
   pg_current_xact_id_if_assigned()::text AS link_xid,
   COALESCE(pg_sequence_last_value('mail.conversation_link_seq'), 0)::text AS link_seq,
-  COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = conversation.id), ARRAY[]::text[]) AS assignee_user_ids,
+  COALESCE((SELECT array_agg(a.principal_id::text ORDER BY a.assigned_at, a.principal_id) FROM mail.conversation_assignees a WHERE a.conversation_id = conversation.id), ARRAY[]::text[]) AS assignee_user_ids,
   conversation.work_status,
   conversation.latest_message_at
 `;
 
-const snapshotJoins = sql`
+const snapshotJoins = () => sql`
   JOIN mail.message_placements mp
     ON mp.remote_message_ref_id = rmr.id
    AND mp.folder_id = rmr.folder_id
@@ -237,6 +248,7 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
   const flags = normalizeWorkflowFlags(row.flags ?? []);
   const keywords = [...(row.keywords ?? [])].sort();
   const attachments = parseJson(row.attachments);
+  const protocolFacts = parseMessageProtocolFacts(parseJson(row.protocol_facts));
   const sender = parseJson<FrozenMailAddress[]>(row.sender);
   const rawFromAddress = sender.find((address) => address.role === "from")?.email ?? "";
   const fromAddress = normalizeEmailAddress(rawFromAddress) ?? rawFromAddress.trim().toLowerCase();
@@ -248,6 +260,8 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
           subject: row.conversation_subject ?? "",
           summary: row.conversation_summary,
           summaryRevision: Number(row.summary_revision ?? 1),
+          summarySource: row.summary_source ?? null,
+          messageCount: row.message_count,
           assigneeUserIds: row.assignee_user_ids,
           workStatus: row.work_status,
           revision: Number(row.collaboration_revision),
@@ -261,6 +275,7 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
       subject: row.subject,
       body: "",
       bodyText: "",
+      textLength: null,
       bodyHtml: "",
       bodyAvailable: false,
       attachmentsAvailable: row.hydration_status === "complete",
@@ -270,6 +285,8 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
       recipients: parseJson(row.recipients),
       attachments,
       hasAttachments: attachments.length > 0,
+      attachmentCount: attachments.length,
+      isBulk: automatedMailReasons(autoReplyFactsFromProtocol(protocolFacts)).length > 0,
       folderId: row.folder_short_id,
       flags,
       keywords,
@@ -277,7 +294,7 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
       internalDate,
       receivedAt: internalDate,
       sentAt: row.sent_at ? toIso(row.sent_at) : null,
-      protocolFacts: parseMessageProtocolFacts(parseJson(row.protocol_facts)),
+      protocolFacts,
     },
     conversation,
   };
@@ -317,9 +334,9 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
  * per-row aggregates for each, and JIT-compile this point lookup on every call.
  */
 export const workflowSnapshotQuery = (params: { mailboxId: string; remoteMessageRefId: string }) => sql`
-    SELECT ${snapshotColumns}
+    SELECT ${snapshotColumns()}
     FROM mail.remote_message_refs rmr
-    ${snapshotJoins}
+    ${snapshotJoins()}
     WHERE resource.mailbox_id = ${params.mailboxId}::uuid
       AND rmr.id = ${params.remoteMessageRefId}::uuid
       AND rmr.stale_at IS NULL
@@ -346,9 +363,9 @@ export const getWorkflowSnapshots = async (params: {
   if (params.remoteMessageRefIds.length === 0) return new Map();
   const db = params.db ?? sql;
   const rows = await db<WorkflowSnapshotRow[]>`
-    SELECT ${snapshotColumns}
+    SELECT ${snapshotColumns()}
     FROM mail.remote_message_refs rmr
-    ${snapshotJoins}
+    ${snapshotJoins()}
     WHERE resource.mailbox_id = ${params.mailboxId}::uuid
       AND rmr.id = ANY(${toPgUuidArray([...params.remoteMessageRefIds])}::uuid[])
       AND rmr.stale_at IS NULL

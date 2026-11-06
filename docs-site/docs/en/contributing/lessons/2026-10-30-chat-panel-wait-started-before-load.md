@@ -1,0 +1,6 @@
+### A Chat panel test's wait for an early request started its clock before the page loaded
+
+- **What happened:** `catalog and resource recovery in real panel at 1440px` in `packages/chat/src/frontend/ChatPanel.browser.test.ts` failed in WebKit on #2123 because the resource dialog did not appear after the Notes click (#2140). While trying to reproduce it with WebKit limited to 1 CPU, the test failed earlier, in a wait added by #2090.
+- **Root cause:** #2090 waits for the panel document's own first catalog read with `page.waitForRequest`, created before `goto` so that it cannot miss the request. Its 8 s timeout ran from that moment, so a slow load and panel opening used it up before the read came. Why the dialog was missing in CI is not known yet: the report showed only the URL and the frames.
+- **Error class:** A wait starts its deadline before the precondition of the event it waits for.
+- **Guard:** A listener records the read from the start, and the test waits for it, bounded, only once the panel is ready. The failure report now lists, per frame, the dialogs, whether the command menu is open, the composer's state and the focused element, so #2140 can be placed on its next occurrence. With WebKit limited to 1 CPU, the case passed 8 of 8 runs.

@@ -95,7 +95,7 @@ export const buildInitialValues = (
  * - relation → RelationPicker (requires `baseId` prop). Picker disabled
  *   without baseId — used by the default-value editor where deep-link
  *   chips don't apply.
- * - principal → caller-scoped Cloud user/group search
+ * - principal → caller-scoped Cloud user/group/service-account search
  *
  * Optional `error` getter (function form, so the platform components
  * react to signal updates) renders the inline error string. Mirrors

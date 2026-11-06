@@ -64,6 +64,9 @@ describe("Assistant chat sidebar, server render", () => {
     expect(html).not.toContain(">für Umsatzbericht Q1-Q3.pdf");
     expect(html).not.toContain("Umsatzstatistik im Handel");
     expect(html).toContain("1 Skill · 1 Erinnerung");
+    // The outline's sections start on the text edge: no section icons; Context says what it holds in its summary.
+    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).toMatch(/k2b-detail-panel__section-preview[^>]*>1 Skill · 1 Erinnerung/);
     expect(html).not.toContain("Umsätze immer netto");
   });
 

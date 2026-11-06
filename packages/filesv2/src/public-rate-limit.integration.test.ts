@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, mock, setSystemTime, test } from "bun:test";
+import { redis } from "@k2b/cloud";
 import * as cloudServer from "@k2b/cloud/server";
 import { clientIpBucket } from "@k2b/cloud/server";
-import { redis } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { valkeySuite } from "../../../scripts/fixtures/test-infra";
 import { FilesError } from "./service/errors";

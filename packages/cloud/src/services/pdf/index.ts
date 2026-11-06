@@ -1,3 +1,5 @@
+export type { GeoMapSnapshotAsset, GeoMapSnapshotAssetErrorCode } from "./geo-snapshot";
+export { GeoMapSnapshotAssetError, prepareGeoMapSnapshotAssets } from "./geo-snapshot";
 export type {
   AttachPdfFilesInput,
   GotenbergConfig,

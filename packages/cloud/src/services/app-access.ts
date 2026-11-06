@@ -1,9 +1,18 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { Context } from "hono";
+import {
+  RESOURCE_ACCESS_ENTRY_TIMEOUT_MS,
+  RESOURCE_ACCESS_PROBE_TIMEOUT_MS,
+  RESOURCE_ACCESS_TIMEOUT_MS,
+  resourceAccessSignal,
+  resourceAppAccess,
+} from "../_internal/app-access-resources";
+import { startBounded } from "../api/fanout";
 import type { AppMeta } from "../contracts/app";
 import { AppAccessRuleSchema, type FixedAppAccessRule } from "../contracts/app-access";
+import { sql } from "../runtime/clients";
 import { userFromActor } from "../server/actor";
-import type { AuthContext, RequestAuthority } from "../server/middleware/auth";
+import { type AuthContext, auth, type RequestAuthority } from "../server/middleware/auth";
 import { buildAccessPrincipalCondition } from "../server/services/access";
 import { logger } from "./logging";
 import { toPgTextArray } from "./postgres";
@@ -17,10 +26,11 @@ export const appAccessAuthority = <E extends AuthContext>(c: Context<E>): Reques
   const accessSubject = c.get("accessSubject");
   const credentialKind = c.get("credentialKind");
   if (!actor || !accessSubject || !credentialKind) return null;
-  return { actor, accessSubject, credentialKind, scopes: c.get("credentialScopes") ?? [] };
+  return auth.getAuthority(c);
 };
 
-const credentialAllows = (authority: RequestAuthority, appId: string): boolean => {
+/** Credential ceilings alone: status, binding, expiry and scopes. Pure, so a batch can recheck it per target. */
+export const credentialAllows = (authority: RequestAuthority, appId: string): boolean => {
   const actor = authority.actor;
   if (actor.kind === "service_account") {
     if (actor.serviceAccount.status !== "active") return false;
@@ -65,6 +75,7 @@ export const evaluateAppAccess = (authority: RequestAuthority | null, app: Acces
   const parsed = AppAccessRuleSchema.safeParse(app.access);
   if (!parsed.success) return false;
   const rule = parsed.data;
+  if (rule.kind === "resources") return false; // Asynchronous adapter decision only.
   if (rule.kind !== "grants") return fixedAllows(authority, rule);
   if (!state?.configured) return !!rule.until && fixedAllows(authority, rule.until);
   return state.permission === "read" || state.permission === "admin";
@@ -74,21 +85,65 @@ let lastFailureLog = -Infinity;
 const reportFailure = () => {
   if (Date.now() - lastFailureLog < 60_000) return;
   lastFailureLog = Date.now();
-  logger("app-access").error("Application access could not be resolved; configurable applications are unavailable");
+  logger("app-access").error("Application access could not be resolved; affected applications are unavailable");
+};
+
+const resourceFailures = new Map<string, { at: number; count: number }>();
+const reportResourceFailure = (appId: string) => {
+  const previous = resourceFailures.get(appId);
+  const count = (previous?.count ?? 0) + 1;
+  if (previous && Date.now() - previous.at < 60_000) {
+    previous.count = count;
+    return;
+  }
+  resourceFailures.set(appId, { at: Date.now(), count: 0 });
+  logger("app-access").error("Application resource access could not be resolved; application is unavailable", {
+    appId,
+    failureCount: count,
+  });
 };
 
 /**
- * One authoritative SQL read for all configurable apps. No grant cache: revocation applies on the next request.
+ * One authoritative SQL read for all configurable lists; resource rules query the owning adapters.
+ * No cross-request grant cache: revocation applies on the next request.
  * Pass the reserved transaction as `db` when checking access inside a guarded operation.
+ * A supplied `signal` replaces the overall default budget; the caller must bound it.
+ * Discovery still gives every app its own short probe limit.
  */
 export const usableAppIds = async (
   authority: RequestAuthority | null,
   apps: readonly AccessApp[],
-  options: { db?: SQL } = {},
+  options: { db?: SQL; signal?: AbortSignal } = {},
 ): Promise<Set<string>> => {
   const db = options.db ?? sql;
   const allowed = new Set(apps.filter((app) => app.access?.kind !== "grants" && evaluateAppAccess(authority, app)).map((app) => app.id));
   if (!authority) return allowed;
+  const resources = apps.filter((app) => app.access?.kind === "resources" && credentialAllows(authority, app.id));
+  if (resources.length) {
+    const signal = resourceAccessSignal(authority, RESOURCE_ACCESS_TIMEOUT_MS, options.signal);
+    // Operational budget: at most eight HTTP requests in flight per decision
+    // (source -> Core -> owner), so four existence probes. Never enumerate resources.
+    const pending = startBounded(
+      resources,
+      4,
+      async (app) => {
+        const probeSignal = AbortSignal.any([signal, AbortSignal.timeout(RESOURCE_ACCESS_PROBE_TIMEOUT_MS)]);
+        return resourceAppAccess(authority, app, { ...options, signal: probeSignal });
+      },
+      signal,
+    );
+    const decisions = await Promise.all(pending);
+    for (const [index, decision] of decisions.entries()) {
+      const app = resources[index];
+      if (!app) continue;
+      if (decision.status === "fulfilled") {
+        if (decision.value) allowed.add(app.id);
+      } else if (!options.signal?.aborted) {
+        // No authority, credential, resource IDs or upstream errors in this log.
+        reportResourceFailure(app.id);
+      }
+    }
+  }
   const configurable = apps.filter((app) => app.access?.kind === "grants" && credentialAllows(authority, app.id));
   if (configurable.length === 0) return allowed;
   try {
@@ -119,5 +174,26 @@ export const usableAppIds = async (
   return allowed;
 };
 
-export const canUseApp = async (authority: RequestAuthority | null, app: AccessApp, options: { db?: SQL } = {}): Promise<boolean> =>
-  (await usableAppIds(authority, [app], options)).has(app.id);
+export class AppAccessUnavailableError extends Error {
+  readonly code = "app_access_unavailable";
+  constructor(readonly app: AccessApp) {
+    super("Application access is temporarily unavailable. Please try again.");
+  }
+}
+
+export const canUseApp = async (
+  authority: RequestAuthority | null,
+  app: AccessApp,
+  options: { db?: SQL; signal?: AbortSignal } = {},
+): Promise<boolean> => {
+  if (app.access?.kind !== "resources") return (await usableAppIds(authority, [app], options)).has(app.id);
+  if (!authority || !credentialAllows(authority, app.id)) return false;
+  const signal = resourceAccessSignal(authority, RESOURCE_ACCESS_ENTRY_TIMEOUT_MS, options.signal);
+  try {
+    return await resourceAppAccess(authority, app, { ...options, signal });
+  } catch {
+    if (options.signal?.aborted) throw options.signal.reason;
+    reportResourceFailure(app.id);
+    throw new AppAccessUnavailableError(app);
+  }
+};

@@ -1,7 +1,13 @@
-import { type AccessSubject, type AccessUser, listUsersWithAccess } from "@k2b/cloud/server";
+import { sql } from "@k2b/cloud";
+import {
+  type AccessSubject,
+  type AccessUser,
+  listUsersWithAccess,
+  type RequestActor,
+  recursiveServiceAccountGroupIdsSubquery,
+} from "@k2b/cloud/server";
 import { logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import type {
   AssignedToFilter,
   CalendarItem,
@@ -22,16 +28,19 @@ import type {
   SplitRecurringItem,
   UpdateItem,
 } from "@/contracts";
-import { INACTIVE_ITEM_DAYS } from "@/contracts";
+import { INACTIVE_ITEM_DAYS, ItemRequestKeySchema, validAssigneeDelta } from "@/contracts";
+import { publishItemEvent } from "../app-events";
 import { newShortId, withShortId, withShortIdRetry } from "../lib/short-id";
 import { descriptionPreview } from "../presentation/description-preview";
 import { CompletionInputSchema, type TaskWork } from "../work-contracts";
-import { buildSpacePrincipalCondition, mayReadAcrossSpaces, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./access";
+import { buildSpacePrincipalCondition, getActorsSpacePermissions, mayReadAcrossSpaces, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
+import { assigneeChangeMetadata, itemChangeMetadata } from "./activity-metadata";
 import { publishDependentsChange } from "./item-dependencies";
 import { insertMany as insertItemResourceReferences } from "./item-resource-references";
 import { publishSpaceChange, spacesLive } from "./live";
+import { projectItems } from "./public-resources";
 import { rank } from "./rank";
 import { getReactionsByItemIds, type ReactionViewer } from "./reactions";
 import {
@@ -132,6 +141,7 @@ type DbOverlapItem = {
 };
 
 type DbItemAssignee = {
+  service_account_kind: SpaceItemAssignee["serviceAccountKind"] | null;
   kind: SpaceItemAssignee["kind"];
   item_id: string;
   id: string;
@@ -213,9 +223,15 @@ export const persistCalendarEvent = async (params: {
   }
 
   const [current] = await params.db<
-    { space_id: string; starts_at: Date | null; recurrence_rrule: string | null; recurring_event_id: string | null }[]
+    {
+      space_id: string;
+      starts_at: Date | null;
+      recurrence_rrule: string | null;
+      recurring_event_id: string | null;
+      completed_at: Date | null;
+    }[]
   >`
-    SELECT space_id, starts_at, recurrence_rrule, recurring_event_id
+    SELECT space_id, starts_at, recurrence_rrule, recurring_event_id, completed_at
     FROM spaces.items
     WHERE id = ${params.itemId}::uuid
     FOR UPDATE
@@ -299,6 +315,9 @@ export const persistCalendarEvent = async (params: {
       WHERE item.id = ${params.itemId}::uuid
     `;
   }
+  if (params.completed && current.completed_at === null) {
+    await publishItemEvent(params.db, "item.completed", params.itemId, params.spaceId);
+  }
   return { ok: true, data: { id: params.itemId, created: false } };
 };
 
@@ -346,7 +365,7 @@ const assignableUserDescription = (user: AccessUser): string => {
 
 const uniqueIds = (ids: string[] | undefined): string[] => [...new Set(ids ?? [])];
 
-/** Accounts need their own readable grant; public and authenticated access never make them assignable. */
+/** Accounts need a readable direct or local-group grant; broad audiences never make them assignable. */
 export const listServiceAccountsWithAccess = async (params: {
   spaceId: string;
   search?: string;
@@ -363,15 +382,17 @@ export const listServiceAccountsWithAccess = async (params: {
   const pattern = query ? `%${query.replace(/[\\%_]/g, "\\$&")}%` : null;
   // Match the people directory's existing query budget.
   const limit = Math.min(Math.max(params.limit ?? (ids.length || 20), 1), 500);
-  const rows = await db<{ id: string; name: string; kind: "standalone" | "agent" | "resource_bound" }[]>`
-    SELECT account.id, account.name, account.kind
+  const rows = await db<{ id: string; name: string; kind: "standalone" | "agent" | "resource_bound"; source: string }[]>`
+    SELECT account.id, account.name, account.kind,
+      CASE WHEN bool_or(access.service_account_id = account.id) THEN 'direct access'
+        ELSE 'via ' || min(COALESCE(NULLIF(g.name, ''), g.cn)) END AS source
     FROM auth.service_accounts account
-    WHERE EXISTS (
-        SELECT 1 FROM auth.access access
-        JOIN spaces.space_access space_access ON space_access.access_id = access.id
-        WHERE access.service_account_id = account.id AND space_access.space_id = ${params.spaceId}::uuid
-          AND access.permission IN ('read', 'write', 'admin')
-      )
+    JOIN auth.access access ON access.service_account_id = account.id
+      OR access.group_id IN (${recursiveServiceAccountGroupIdsSubquery(sql`account.id`)})
+    JOIN spaces.space_access space_access ON space_access.access_id = access.id
+    LEFT JOIN auth.groups g ON g.id = access.group_id
+    WHERE space_access.space_id = ${params.spaceId}::uuid
+      AND access.permission IN ('read', 'write', 'admin')
       AND account.status = 'active'
       AND (
         account.kind IN ('standalone', 'agent')
@@ -380,17 +401,20 @@ export const listServiceAccountsWithAccess = async (params: {
       )
       AND (${params.ids === undefined} OR account.id = ANY(${toPgUuidArray(ids)}::uuid[]))
       AND account.id <> ALL(${toPgUuidArray(excluded)}::uuid[])
-      AND (${pattern}::text IS NULL OR LOWER(account.name) LIKE ${pattern} ESCAPE '\\')
+    GROUP BY account.id
+    HAVING ${pattern}::text IS NULL OR LOWER(account.name) LIKE ${pattern} ESCAPE '\\'
+      OR bool_or(LOWER(COALESCE(NULLIF(g.name, ''), g.cn)) LIKE ${pattern} ESCAPE '\\')
     ORDER BY (${query ?? null}::text IS NOT NULL AND LOWER(account.name) = ${query ?? null}) DESC, account.name, account.id
     LIMIT ${limit}
   `;
   return rows.map((row) => ({
     kind: "service_account",
+    serviceAccountKind: row.kind,
     id: row.id,
     displayName: row.name,
     avatarHash: null,
     uid: row.name,
-    description: `${row.kind === "agent" ? "agent" : row.kind === "resource_bound" ? "Space API key" : "service account"} · direct access`,
+    description: `${row.kind === "agent" ? "agent" : row.kind === "resource_bound" ? "Space API key" : "service account"} · ${row.source}`,
   }));
 };
 
@@ -398,21 +422,24 @@ export const listServiceAccountsWithAccess = async (params: {
 export const listAssignableUsers = async (params: {
   spaceId: string;
   search?: string;
+  ids?: string[];
   excludeUserIds?: string[];
   limit?: number;
   kind?: SpaceAssignableUser["kind"];
 }): Promise<SpaceAssignableUser[]> => {
+  if (params.ids?.length === 0) return [];
   const limit = Math.min(Math.max(params.limit ?? 20, 1), 500);
   const [users, accounts] = await Promise.all([
     params.kind === "service_account"
       ? []
       : listSpaceAccessIds(params.spaceId).then((accessIds) =>
-          listUsersWithAccess({ accessIds, search: params.search, excludeUserIds: params.excludeUserIds, limit }),
+          listUsersWithAccess({ accessIds, search: params.search, userIds: params.ids, excludeUserIds: params.excludeUserIds, limit }),
         ),
     params.kind === "user"
       ? []
       : listServiceAccountsWithAccess({
           spaceId: params.spaceId,
+          ids: params.ids,
           search: params.search,
           excludeIds: params.excludeUserIds,
           limit,
@@ -610,10 +637,14 @@ const validateRecurrenceInput = async (
   return { ok: true, data: undefined };
 };
 
-export const validateTagIdsInSpace = async (spaceId: string, tagIds: string[] | undefined): Promise<MutationResult<void>> => {
+export const validateTagIdsInSpace = async (
+  spaceId: string,
+  tagIds: string[] | undefined,
+  db: SqlExecutor = sql,
+): Promise<MutationResult<void>> => {
   if (!tagIds || tagIds.length === 0) return { ok: true, data: undefined };
   const uniqueTagIds = [...new Set(tagIds)];
-  const [row] = await sql<{ count: number }[]>`
+  const [row] = await db<{ count: number }[]>`
     SELECT COUNT(*)::int AS count
     FROM spaces.tags
     WHERE space_id = ${spaceId} AND id = ANY(${toPgUuidArray(uniqueTagIds)}::uuid[])
@@ -657,9 +688,9 @@ const mapToItem = (row: DbItem): SpaceItem => ({
 /**
  * Get assignees for an item
  */
-const getAssignees = async (itemId: string): Promise<SpaceItemAssignee[]> => {
-  const rows = await sql<Omit<DbItemAssignee, "item_id">[]>`
-    SELECT COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, sa.name) AS display_name, u.avatar_hash,
+const getAssignees = async (itemId: string, db: SqlExecutor = sql): Promise<SpaceItemAssignee[]> => {
+  const rows = await db<Omit<DbItemAssignee, "item_id">[]>`
+    SELECT COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, u.uid, sa.name) AS display_name, u.avatar_hash, sa.kind AS service_account_kind,
       CASE WHEN ia.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind
     FROM spaces.item_assignees ia
     LEFT JOIN auth.users u ON ia.user_id = u.id
@@ -667,14 +698,20 @@ const getAssignees = async (itemId: string): Promise<SpaceItemAssignee[]> => {
     WHERE ia.item_id = ${itemId}
     ORDER BY display_name, id
   `;
-  return rows.map((r) => ({ kind: r.kind, id: r.id, displayName: r.display_name, avatarHash: r.avatar_hash }));
+  return rows.map((r) => ({
+    kind: r.kind,
+    serviceAccountKind: r.service_account_kind ?? undefined,
+    id: r.id,
+    displayName: r.display_name,
+    avatarHash: r.avatar_hash,
+  }));
 };
 
 /**
  * Get tags for an item
  */
-const getTags = async (itemId: string): Promise<SpaceTag[]> => {
-  const rows = await sql<{ id: string; space_id: string; name: string; color: string }[]>`
+const getTags = async (itemId: string, db: SqlExecutor = sql): Promise<SpaceTag[]> => {
+  const rows = await db<{ id: string; space_id: string; name: string; color: string }[]>`
     SELECT t.id, t.space_id, t.name, t.color
     FROM spaces.item_tags it
     JOIN spaces.tags t ON it.tag_id = t.id
@@ -692,7 +729,7 @@ const getTags = async (itemId: string): Promise<SpaceTag[]> => {
 const getAssigneesByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceItemAssignee[]>> => {
   if (itemIds.length === 0) return new Map();
   const rows = await sql<DbItemAssignee[]>`
-    SELECT ia.item_id, COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, sa.name) AS display_name, u.avatar_hash,
+    SELECT ia.item_id, COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, u.uid, sa.name) AS display_name, u.avatar_hash, sa.kind AS service_account_kind,
       CASE WHEN ia.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind
     FROM spaces.item_assignees ia
     LEFT JOIN auth.users u ON ia.user_id = u.id
@@ -704,7 +741,13 @@ const getAssigneesByItemIds = async (itemIds: string[]): Promise<Map<string, Spa
   for (const row of rows) {
     grouped.set(row.item_id, [
       ...(grouped.get(row.item_id) ?? []),
-      { kind: row.kind, id: row.id, displayName: row.display_name, avatarHash: row.avatar_hash },
+      {
+        kind: row.kind,
+        serviceAccountKind: row.service_account_kind ?? undefined,
+        id: row.id,
+        displayName: row.display_name,
+        avatarHash: row.avatar_hash,
+      },
     ]);
   }
   return grouped;
@@ -734,9 +777,9 @@ const getTagsByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceTag
   return grouped;
 };
 
-const getActiveBlockerCountsByItemIds = async (itemIds: string[]): Promise<Map<string, number>> => {
+const getActiveBlockerCountsByItemIds = async (itemIds: string[], db: SqlExecutor = sql): Promise<Map<string, number>> => {
   if (itemIds.length === 0) return new Map();
-  const rows = await sql<{ item_id: string; count: number }[]>`
+  const rows = await db<{ item_id: string; count: number }[]>`
     SELECT dependency.item_id, COUNT(*)::int AS count
     FROM spaces.item_dependencies dependency
     JOIN spaces.items blocker ON blocker.id = dependency.blocker_item_id
@@ -752,22 +795,30 @@ const getLastActivityByItemIds = async (itemIds: string[]): Promise<Map<string, 
   const rows = await sql<{ item_id: string; last_activity_at: Date }[]>`
     SELECT item_id, MAX(last_occurred_at) AS last_activity_at
     FROM spaces.activity_events
-    WHERE item_id = ANY(${toPgUuidArray(itemIds)}::uuid[])
+    WHERE item_id = ANY(${toPgUuidArray(itemIds)}::uuid[]) AND action NOT LIKE 'comment.%'
     GROUP BY item_id
   `;
   return new Map(rows.map((row) => [row.item_id, row.last_activity_at.toISOString()]));
 };
 
 /** Open tasks with an active work claim (`activity: "claimed"`). */
-const claimedMatch = sql`EXISTS (SELECT 1 FROM spaces.task_work tw WHERE tw.item_id = i.id AND tw.claim IS NOT NULL)`;
+const claimedMatch = () => sql`EXISTS (SELECT 1 FROM spaces.task_work tw WHERE tw.item_id = i.id AND tw.claim IS NOT NULL)`;
 
-const getClaimsByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceItemClaim>> => {
+const getClaimsByItemIds = async (itemIds: string[], db: SqlExecutor = sql): Promise<Map<string, SpaceItemClaim>> => {
   if (itemIds.length === 0) return new Map();
-  const rows = await sql<{ item_id: string; claim: TaskWork["claim"]; display_name: string; avatar_hash: string | null }[]>`
+  const rows = await db<
+    {
+      item_id: string;
+      claim: TaskWork["claim"];
+      service_account_kind: SpaceItemAssignee["serviceAccountKind"] | null;
+      display_name: string;
+      avatar_hash: string | null;
+    }[]
+  >`
     SELECT tw.item_id, tw.claim,
       COALESCE(NULLIF(u.display_name, ''), u.uid, sa.name,
         CASE tw.claim->'actor'->>'kind' WHEN 'user' THEN 'Former user' ELSE 'Former service account' END) AS display_name,
-      u.avatar_hash
+      u.avatar_hash, sa.kind AS service_account_kind
     FROM spaces.task_work tw
     LEFT JOIN auth.users u ON tw.claim->'actor'->>'kind' = 'user' AND u.id = (tw.claim->'actor'->>'id')::uuid
     LEFT JOIN auth.service_accounts sa ON tw.claim->'actor'->>'kind' = 'service_account' AND sa.id = (tw.claim->'actor'->>'id')::uuid
@@ -776,7 +827,17 @@ const getClaimsByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceI
   return new Map(
     rows.flatMap((row) =>
       row.claim
-        ? [[row.item_id, { ...row.claim, displayName: row.display_name, avatarHash: row.avatar_hash }] satisfies [string, SpaceItemClaim]]
+        ? [
+            [
+              row.item_id,
+              {
+                ...row.claim,
+                serviceAccountKind: row.service_account_kind ?? undefined,
+                displayName: row.display_name,
+                avatarHash: row.avatar_hash,
+              },
+            ] satisfies [string, SpaceItemClaim],
+          ]
         : [],
     ),
   );
@@ -1128,11 +1189,11 @@ export const listFiltered = async (params: {
       AND i.starts_at IS NULL
       AND i.ends_at IS NULL
       AND COALESCE(
-        (SELECT MAX(item_activity.last_occurred_at) FROM spaces.activity_events item_activity WHERE item_activity.item_id = i.id),
+        (SELECT MAX(item_activity.last_occurred_at) FROM spaces.activity_events item_activity WHERE item_activity.item_id = i.id AND item_activity.action NOT LIKE 'comment.%'),
         i.updated_at
       ) < now() - (${INACTIVE_ITEM_DAYS} * interval '1 day')`;
   } else if (activityFilter === "claimed") {
-    conditions = sql`${conditions} AND ${claimedMatch}`;
+    conditions = sql`${conditions} AND ${claimedMatch()}`;
   }
 
   // Priority filter - use IN with parameterized values
@@ -1489,10 +1550,10 @@ export const searchAcross = async (params: {
   const activityMatch =
     params.activity === "inactive"
       ? sql`i.completed_at IS NULL AND i.starts_at IS NULL AND i.ends_at IS NULL AND COALESCE(
-        (SELECT MAX(activity.last_occurred_at) FROM spaces.activity_events activity WHERE activity.item_id = i.id),
+        (SELECT MAX(activity.last_occurred_at) FROM spaces.activity_events activity WHERE activity.item_id = i.id AND activity.action NOT LIKE 'comment.%'),
         i.updated_at) < now() - (${INACTIVE_ITEM_DAYS} * interval '1 day')`
       : params.activity === "claimed"
-        ? claimedMatch
+        ? claimedMatch()
         : sql`true`;
   const window = deadlineWindow(params.dateConfig);
   const deadlineMatch =
@@ -1580,8 +1641,8 @@ export const findByTitle = async (params: { spaceId: string; title: string; limi
     LIMIT ${params.limit}
   `;
 
-export const get = async (params: { id: string; viewer?: ReactionViewer }): Promise<SpaceItem | null> => {
-  const [row] = await sql<DbItem[]>`
+export const get = async (params: { id: string; viewer?: ReactionViewer }, db: SqlExecutor = sql): Promise<SpaceItem | null> => {
+  const [row] = await db<DbItem[]>`
     SELECT
       i.id,
       i.space_id,
@@ -1614,10 +1675,10 @@ export const get = async (params: { id: string; viewer?: ReactionViewer }): Prom
 
   const item = mapToItem(row);
   const [assignees, tags, blockerCounts, claims, reactions] = await Promise.all([
-    getAssignees(item.id),
-    getTags(item.id),
-    getActiveBlockerCountsByItemIds([item.id]),
-    getClaimsByItemIds([item.id]),
+    getAssignees(item.id, db),
+    getTags(item.id, db),
+    getActiveBlockerCountsByItemIds([item.id], db),
+    getClaimsByItemIds([item.id], db),
     params.viewer ? getReactionsByItemIds([item.id], params.viewer) : null,
   ]);
   item.assignees = assignees;
@@ -1643,6 +1704,52 @@ export const getRecurringOverride = async (params: {
   return row ? get({ id: row.id, viewer: params.viewer }) : null;
 };
 
+type ItemWriteAccess = { actor: RequestActor; subject: AccessSubject };
+const mayWriteItem = async (spaceId: string, access?: ItemWriteAccess) => {
+  if (!access) return true; // Trusted internal callers retain their existing service contract.
+  const [permission] = await getActorsSpacePermissions(spaceId, [access]);
+  return permission === "write" || permission === "admin";
+};
+
+const createRequest = (spaceId: string, data: CreateItem) => ({ spaceId, ...data, requestKey: undefined });
+
+const readCreateReceipt = async (
+  db: SqlExecutor,
+  params: {
+    spaceId: string;
+    data: CreateItem;
+    actor: SpaceActivityIdentity;
+    publicResponse: boolean;
+  },
+): Promise<MutationResult<SpaceItem | null>> => {
+  const [receipt] = await db<{ item_id: string | null; same_request: boolean; response: SpaceItem; public_response: SpaceItem }[]>`
+    SELECT item_id, response, public_response, request = ${createRequest(params.spaceId, params.data)}::jsonb AS same_request
+    FROM spaces.item_create_requests
+    WHERE actor_kind = ${params.actor.kind} AND actor_id = ${params.actor.id}::uuid
+      AND request_key = ${params.data.requestKey?.trim()} AND expires_at > now()
+  `;
+  if (!receipt) return { ok: true, data: null };
+  if (!receipt.same_request)
+    return { ok: false, error: "Request key was already used with different input", status: 409, code: "IDEMPOTENCY_CONFLICT" };
+  if (!receipt.item_id) return { ok: false, error: "The created item no longer exists", status: 409, code: "CREATE_RESULT_GONE" };
+  const [current] = await db<{ space_id: string }[]>`SELECT space_id FROM spaces.items WHERE id = ${receipt.item_id}::uuid FOR SHARE`;
+  if (!current || current.space_id !== params.spaceId)
+    return { ok: false, error: "The created item is no longer in this Space", status: 409, code: "CREATE_RESULT_GONE" };
+  return { ok: true, data: params.publicResponse ? receipt.public_response : receipt.response };
+};
+
+/** Replay the REST result before resolving a column or tag that might no longer exist. */
+export const replayCreate = async (params: {
+  spaceId: string;
+  data: CreateItem;
+  actor: SpaceActivityIdentity;
+  access: ItemWriteAccess;
+}): Promise<MutationResult<SpaceItem | null>> => {
+  if (!(await mayWriteItem(params.spaceId, params.access))) return { ok: false, error: "Access denied", status: 403 };
+  if (!params.data.requestKey) return { ok: true, data: null };
+  return sql.begin((tx) => readCreateReceipt(tx, { ...params, publicResponse: true }));
+};
+
 /**
  * Create a new item
  */
@@ -1652,53 +1759,79 @@ export const create = async (params: {
   createdBy: string | null;
   dateConfig?: DateContext;
   actor?: SpaceActivityIdentity;
+  access?: ItemWriteAccess;
+  /** REST input before ID conversion; keyed results retain their original public IDs. */
+  publicRequest?: CreateItem;
 }): Promise<MutationResult<SpaceItem>> => {
   const { spaceId, data, createdBy } = params;
 
-  // Verify column belongs to space
-  const [column] = await sql<{ id: string }[]>`
+  if (!(await mayWriteItem(spaceId, params.access))) return { ok: false, error: "Access denied", status: 403 };
+  const requestKey = data.requestKey?.trim();
+  const actor = params.actor ?? (createdBy ? { kind: "user" as const, id: createdBy } : systemActor);
+  if (requestKey !== undefined && (!ItemRequestKeySchema.safeParse(requestKey).success || !actor.id || actor.kind === "system"))
+    return { ok: false, error: "A request key requires an identified actor and 1–200 characters", status: 400 };
+  const request = createRequest(spaceId, params.publicRequest ?? data);
+
+  const result = await withShortIdRetry(["item", "checklist"], () =>
+    sql.begin(async (tx): Promise<MutationResult<SpaceItem>> => {
+      if (requestKey !== undefined) {
+        await tx`SELECT pg_advisory_xact_lock(hashtext('spaces.item-create'), hashtext(${`${actor.kind}:${actor.id}:${requestKey}`}))`;
+        // Expiry is enforced even when a quiet installation has not created another item for a day.
+        await tx`DELETE FROM spaces.item_create_requests WHERE actor_kind = ${actor.kind} AND actor_id = ${actor.id}::uuid AND request_key = ${requestKey} AND expires_at <= now()`;
+        const replay = await readCreateReceipt(tx, {
+          spaceId,
+          data: params.publicRequest ?? data,
+          actor,
+          publicResponse: params.publicRequest !== undefined,
+        });
+        if (!replay.ok) return replay;
+        if (replay.data) return { ok: true, data: replay.data };
+      }
+      // Verify column belongs to space
+      const [column] = await tx<{ id: string }[]>`
     SELECT id FROM spaces.columns
     WHERE id = ${data.columnId} AND space_id = ${spaceId}
   `;
 
-  if (!column) {
-    return { ok: false, error: "Column not found in space", status: 400 };
-  }
+      if (!column) {
+        return { ok: false, error: "Column not found in space", status: 400 };
+      }
 
-  const recurrenceCheck = await validateRecurrenceInput({
-    spaceId,
-    startsAt: data.startsAt,
-    endsAt: data.endsAt,
-    recurrence: data.recurrence,
-    recurringEventId: data.recurringEventId,
-    recurrenceId: data.recurrenceId,
-    dateConfig: params.dateConfig,
-  });
-  if (!recurrenceCheck.ok) return recurrenceCheck;
-  if (data.estimatedDurationMinutes !== undefined && (data.startsAt || data.endsAt)) {
-    return { ok: false, error: "Estimated duration is only available for tasks", status: 400 };
-  }
-  if (data.checklist?.length && (data.startsAt || data.endsAt)) {
-    return { ok: false, error: "A checklist is only available for tasks", status: 400 };
-  }
-  const tagCheck = await validateTagIdsInSpace(spaceId, data.tagIds);
-  if (!tagCheck.ok) return tagCheck;
-  const assigneeCheck = await validateAssigneeIdsInSpace(spaceId, data.assigneeIds);
-  if (!assigneeCheck.ok) return assigneeCheck;
-  // The creator already passed the write check, so it joins without the directory lookup.
-  const assigneeIds = data.assignCreator && createdBy ? uniqueIds([...(data.assigneeIds ?? []), createdBy]) : data.assigneeIds;
+      const recurrenceCheck = await validateRecurrenceInput(
+        {
+          spaceId,
+          startsAt: data.startsAt,
+          endsAt: data.endsAt,
+          recurrence: data.recurrence,
+          recurringEventId: data.recurringEventId,
+          recurrenceId: data.recurrenceId,
+          dateConfig: params.dateConfig,
+        },
+        tx,
+      );
+      if (!recurrenceCheck.ok) return recurrenceCheck;
+      if (data.estimatedDurationMinutes !== undefined && (data.startsAt || data.endsAt)) {
+        return { ok: false, error: "Estimated duration is only available for tasks", status: 400 };
+      }
+      if (data.checklist?.length && (data.startsAt || data.endsAt)) {
+        return { ok: false, error: "A checklist is only available for tasks", status: 400 };
+      }
+      const tagCheck = await validateTagIdsInSpace(spaceId, data.tagIds, tx);
+      if (!tagCheck.ok) return tagCheck;
+      const assigneeCheck = await validateAssigneeIdsInSpace(spaceId, data.assigneeIds, tx);
+      if (!assigneeCheck.ok) return assigneeCheck;
+      // The creator already passed the write check, so it joins without the directory lookup.
+      const assigneeIds = data.assignCreator && createdBy ? uniqueIds([...(data.assigneeIds ?? []), createdBy]) : data.assigneeIds;
 
-  // Get next rank in column
-  const [maxRow] = await sql<{ max: string | null }[]>`
+      // Get next rank in column
+      const [maxRow] = await tx<{ max: string | null }[]>`
     SELECT MAX(rank)::text as max
     FROM spaces.items
     WHERE column_id = ${data.columnId}
   `;
-  const nextRank = rank.next(maxRow?.max);
-  const recurrence = recurrenceValues(data.recurrence);
+      const nextRank = rank.next(maxRow?.max);
+      const recurrence = recurrenceValues(data.recurrence);
 
-  const row = await withShortIdRetry(["item", "checklist"], () =>
-    sql.begin(async (tx): Promise<{ id: string } | null> => {
       const shortId = newShortId();
       const [created] = await tx<{ id: string }[]>`
       INSERT INTO spaces.items (
@@ -1736,7 +1869,7 @@ export const create = async (params: {
       RETURNING id
     `;
 
-      if (!created) return null;
+      if (!created) return { ok: false, error: "This occurrence already has a stored override", status: 409 };
 
       if (assigneeIds !== undefined) {
         await replaceItemAssignees(
@@ -1776,25 +1909,24 @@ export const create = async (params: {
         },
         tx,
       );
+      await publishItemEvent(tx, "item.created", created.id, spaceId);
       await publishSpaceChange(tx, { type: "item.created", spaceId, itemId: created.id });
 
-      return { id: created.id };
+      const item = await get({ id: created.id }, tx);
+      if (!item) throw new Error("Failed to load created item");
+      const publicItem = requestKey !== undefined || params.publicRequest ? (await projectItems([item], tx))[0]! : null;
+      if (requestKey !== undefined)
+        await tx`
+        INSERT INTO spaces.item_create_requests (actor_kind, actor_id, request_key, space_id, item_id, request, response, public_response)
+        VALUES (${actor.kind}, ${actor.id}::uuid, ${requestKey}, ${spaceId}::uuid, ${created.id}::uuid, ${request}::jsonb, ${item}::jsonb, ${publicItem}::jsonb)
+      `;
+      return { ok: true, data: params.publicRequest ? publicItem! : item };
     }),
   );
 
-  if (!row) {
-    if (data.recurringEventId && data.recurrenceId) {
-      return { ok: false, error: "This occurrence already has a stored override", status: 409 };
-    }
-    return { ok: false, error: "Failed to create item", status: 500 };
-  }
-  const item = await get({ id: row.id });
-  if (!item) {
-    return { ok: false, error: "Failed to load created item", status: 500 };
-  }
-
+  if (!result.ok) return result;
   spacesLive.wake();
-  return { ok: true, data: item };
+  return result;
 };
 
 /**
@@ -1805,6 +1937,8 @@ export const update = async (params: {
   data: UpdateItem;
   dateConfig?: DateContext;
   actor?: SpaceActivityIdentity;
+  access?: ItemWriteAccess;
+  expectedSpaceId?: string;
 }): Promise<MutationResult<SpaceItem>> => {
   const { id, data } = params;
 
@@ -1812,6 +1946,9 @@ export const update = async (params: {
   if (!existing) {
     return { ok: false, error: "Item not found", status: 404 };
   }
+  if (!(await mayWriteItem(existing.spaceId, params.access))) return { ok: false, error: "Access denied", status: 403 };
+  if (!validAssigneeDelta(data))
+    return { ok: false, error: "Do not mix assignee replacement with deltas or add and remove the same assignee", status: 400 };
   const tagCheck = await validateTagIdsInSpace(existing.spaceId, data.tagIds);
   if (!tagCheck.ok) return tagCheck;
 
@@ -1825,14 +1962,28 @@ export const update = async (params: {
       FOR UPDATE
     `;
     if (!locked) return { ok: false, error: "Item not found", status: 404 };
-    const currentAssignees = data.assigneeIds === undefined ? [] : await readAssigneePrincipals(id, tx);
-    const assigneeCheck = await validateAssigneeReplacementInSpace(locked.space_id, currentAssignees, data.assigneeIds, tx);
+    if (locked.space_id !== (params.expectedSpaceId ?? existing.spaceId))
+      return { ok: false, error: "Item moved to another Space", status: 409 };
+    if (data.expectedTitle !== undefined && locked.title !== data.expectedTitle)
+      return { ok: false, error: "Title changed; reload and review the current title", status: 409, code: "TITLE_CONFLICT" };
+    const changingAssignees = data.assigneeIds !== undefined || data.addAssigneeIds !== undefined || data.removeAssigneeIds !== undefined;
+    const currentAssignees = changingAssignees ? await readAssigneePrincipals(id, tx) : [];
+    const assigneeIds =
+      data.assigneeIds ??
+      (changingAssignees
+        ? uniqueIds([
+            ...currentAssignees.map((principal) => principal.id),
+            ...(data.addAssigneeIds ?? []).map((id) => id.toLowerCase()),
+          ]).filter((id) => !data.removeAssigneeIds?.some((removed) => removed.toLowerCase() === id))
+        : undefined);
+    if (assigneeIds && assigneeIds.length > 100) return { ok: false, error: "At most 100 assignees are allowed", status: 400 };
+    const assigneeCheck = await validateAssigneeReplacementInSpace(locked.space_id, currentAssignees, assigneeIds, tx);
     if (!assigneeCheck.ok) return assigneeCheck;
 
     // Claim writes also hold this row lock. Refuse stale assignee replacements before any write.
     const { claim } = await taskWork.read(id, tx);
     const nextAssignees =
-      data.assigneeIds === undefined ? undefined : await resolveAssigneePrincipals(locked.space_id, data.assigneeIds, tx, currentAssignees);
+      assigneeIds === undefined ? undefined : await resolveAssigneePrincipals(locked.space_id, assigneeIds, tx, currentAssignees);
     const dropsClaimHolder =
       claim !== null &&
       nextAssignees !== undefined &&
@@ -1882,14 +2033,16 @@ export const update = async (params: {
       return { ok: false, error: "Estimated duration is only available for tasks", status: 400 };
     }
 
+    let columnName: string | undefined;
     let targetRank: bigint | null = null;
     if (changingColumn) {
-      const [newColumn] = await tx<{ space_id: string }[]>`
-        SELECT space_id FROM spaces.columns WHERE id = ${columnId}
+      const [newColumn] = await tx<{ space_id: string; name: string }[]>`
+        SELECT space_id, name FROM spaces.columns WHERE id = ${columnId}
       `;
       if (!newColumn || newColumn.space_id !== current.spaceId) {
         return { ok: false, error: "Column not found in space", status: 400 };
       }
+      columnName = newColumn.name;
       const [minRow] = await tx<{ min: string | null }[]>`
         SELECT MIN(rank)::text AS min FROM spaces.items WHERE column_id = ${columnId} AND id <> ${id}
       `;
@@ -1998,7 +2151,27 @@ export const update = async (params: {
         itemId: id,
         actor: params.actor ?? systemActor,
         action: startsAt && endsAt ? "event.updated" : "task.updated",
-        metadata: { itemTitle: title },
+        metadata: {
+          itemTitle: title,
+          ...itemChangeMetadata(current, {
+            columnId,
+            title,
+            description,
+            location,
+            url,
+            startsAt,
+            endsAt,
+            allDay,
+            deadline,
+            estimatedDurationMinutes,
+            priority,
+            recurrence,
+            recurringEventId,
+            recurrenceId,
+          }),
+          ...(changingColumn ? { columnId, columnName } : {}),
+          ...(nextAssignees ? { assignees: assigneeChangeMetadata(currentAssignees, nextAssignees) } : {}),
+        },
         bucketStartedAt: hourBucket(),
       },
       tx,
@@ -2181,6 +2354,7 @@ export const splitRecurring = async (params: {
         AND recurrence_id >= ${recurrenceId}::timestamptz
     `;
       await publishSpaceChange(tx, { type: "item.updated", spaceId: source.space_id, itemId: source.id });
+      await publishItemEvent(tx, "item.created", created.id, source.space_id);
       await publishSpaceChange(tx, { type: "item.created", spaceId: source.space_id, itemId: created.id });
 
       return { ok: true, data: { id: created.id } };
@@ -2357,8 +2531,8 @@ export const move = async (params: {
     `;
     if (!existing) return { ok: false, error: "Item not found", status: 404 };
     const [column] = await tx<
-      { space_id: string; is_done: boolean }[]
-    >`SELECT space_id, is_done FROM spaces.columns WHERE id = ${columnId}`;
+      { space_id: string; is_done: boolean; name: string }[]
+    >`SELECT space_id, is_done, name FROM spaces.columns WHERE id = ${columnId}`;
     if (!column || column.space_id !== existing.space_id) {
       return { ok: false, error: "Column not found in space", status: 400 };
     }
@@ -2422,7 +2596,7 @@ export const move = async (params: {
         spaceId: existing.space_id,
         itemId: id,
         actor: params.actor ?? systemActor,
-        metadata: { itemTitle: existing.title },
+        metadata: { itemTitle: existing.title, columnId, columnName: column.name },
         ...(completes
           ? { action: `${activityKind}.${completed ? "completed" : "reopened"}` }
           : { action: "item.moved", bucketStartedAt: hourBucket() }),
@@ -2430,6 +2604,7 @@ export const move = async (params: {
       tx,
     );
     await publishSpaceChange(tx, { type: completes ? "item.completed" : "item.moved", spaceId: existing.space_id, itemId: id });
+    if (completes && completed) await publishItemEvent(tx, "item.completed", id, existing.space_id);
     if (completes) await publishDependentsChange(tx, { spaceId: existing.space_id, blockerItemId: id });
     return { ok: true, data: row };
   });
@@ -2562,6 +2737,7 @@ export const setCompleted = async (params: {
       tx,
     );
     await publishSpaceChange(tx, { type: "item.completed", spaceId: current.space_id, itemId: id });
+    if (completed && current.completed_at === null) await publishItemEvent(tx, "item.completed", id, current.space_id);
     if (completed !== (current.completed_at !== null)) await publishDependentsChange(tx, { spaceId: current.space_id, blockerItemId: id });
     return { ok: true, data: row };
   });
@@ -2625,7 +2801,7 @@ export const setAssignees = async (params: {
         itemId: id,
         actor: params.actor ?? systemActor,
         action: "item.assignees.updated",
-        metadata: { itemTitle: current.title },
+        metadata: { itemTitle: current.title, ...assigneeChangeMetadata(currentAssignees, nextAssignees) },
       },
       tx,
     );
@@ -2736,6 +2912,8 @@ export const listCalendar = async (
     /** Capability callers fail explicitly instead of returning an incomplete calendar. */
     sourceLimit?: number;
     sourceRootIds?: string[];
+    /** Cloud calendar source: intersect the caller selection inside the permission-aware query. */
+    sourceSpaceIds?: string[];
   },
 ): Promise<CalendarItem[]> => {
   const { from, to } = params;
@@ -2743,7 +2921,11 @@ export const listCalendar = async (
   const principalMatch = buildSpacePrincipalCondition(params.subject);
   const bindingMatch =
     params.subject.type === "service_account" && params.boundSpaceId ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
-  const requestedSpaceMatch = params.spaceId ? sql`s.id = ${params.spaceId}::uuid` : sql`true`;
+  const requestedSpaceMatch = params.spaceId
+    ? sql`s.id = ${params.spaceId}::uuid`
+    : params.sourceSpaceIds
+      ? sql`s.id = ANY(${toPgUuidArray(params.sourceSpaceIds)}::uuid[])`
+      : sql`true`;
   const typeMatch = calendarTypeMatch(params.type);
   const priorityMatch = calendarPriorityMatch(params.priorities);
   const columnMatch = calendarColumnMatch(params.columnIds);

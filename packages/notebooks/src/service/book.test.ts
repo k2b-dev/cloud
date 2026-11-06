@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import * as charts from "@k2b/editor/markdown/lib/chart-blocks";
 import { renderNotebookBook } from "../lib/book-renderer";
-import * as charts from "../lib/chart-blocks";
 import { loadBookBlockPreview, loadBookNote, resolveBookQueries } from "./book";
 import * as query from "./note-query";
 import * as notebooks from "./notebooks";
@@ -25,6 +25,7 @@ const note = {
   yjsSnapshotAt: "2026-09-03T10:00:00Z",
   contentMd: "# Saved heading\n\n:::toc\n:::\n\n## Next page",
   yjsSnapshot: "private-collaboration-state",
+  yjsRestoreRevision: "0",
   createdBy: params.userId,
   createdAt: "2026-09-03T10:00:00Z",
   updatedAt: "2026-09-03T10:00:00Z",

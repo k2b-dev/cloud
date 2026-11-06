@@ -18,6 +18,7 @@ const { defineApp } = await import("../_internal/define-app");
 const { person } = await import("../_internal/define-app.test-fixture");
 const railSnapshot = await import("../services/rail-snapshot");
 const settings = await import("../server/middleware/settings");
+const help = await import("./help");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
 const { default: Layout } = await import("./Layout");
 const { PrintWorkspace } = await import("./print.test-fixture");
@@ -72,6 +73,7 @@ beforeAll(async () => {
   spies.push(
     spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
   );
   const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
   if (!build.success) throw new AggregateError(build.logs, "Global print fixture CSS");
@@ -99,7 +101,7 @@ const hidden = async (page: Page, selector: string) => {
   expect(await page.locator(selector).count()).toBeGreaterThan(0);
   for (const element of await page.locator(selector).all()) expect(await element.boundingBox()).toBeNull();
 };
-const chrome = ".cloud-tab-bar,.layout-rail,.layout-header,.layout-page-head,.k2b-app-workspace__sidebar,.k2b-app-workspace__detail";
+const chrome = ".layout-rail,.layout-header,.layout-page-head,.k2b-app-workspace__sidebar,.k2b-app-workspace__detail";
 
 test("only regions print, with all 120 paragraphs and unclipped ancestors", async () => {
   const page = await open();
@@ -107,7 +109,6 @@ test("only regions print, with all 120 paragraphs and unclipped ancestors", asyn
     await page.emulateMedia({ media: "print" });
     for (const selector of [
       ".layout-rail",
-      ".cloud-tab-bar",
       ".layout-header",
       ".layout-page-head",
       ".k2b-app-workspace__sidebar",

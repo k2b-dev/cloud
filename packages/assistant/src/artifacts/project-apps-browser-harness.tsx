@@ -9,7 +9,7 @@ const project = {
   description: "",
   instructions: "",
   icon: "",
-  defaultModelProfileId: null,
+  defaultModel: null,
   permission: location.pathname.includes("reader") ? ("read" as const) : ("admin" as const),
   revision: 1,
   createdAt: "",

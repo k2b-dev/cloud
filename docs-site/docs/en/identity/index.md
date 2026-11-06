@@ -10,6 +10,8 @@ updated: 2026-10-10
 
 # Identity and access
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Cloud owns accounts, sessions, credentials, roles, groups, and permission
 primitives so every installed application receives the same caller model. Your
 application remains the authority for its own resources and domain operations.
@@ -36,15 +38,18 @@ on the same permission-aware application service.
 
 | Task | Page |
 | --- | --- |
+| Understand the access model | [Who may do what](/en/docs/identity/access-model) |
 | Understand the actor and access subject | [Request identity](/en/docs/identity/authentication) |
 | Assign local Linux attributes and backfill existing accounts alongside FreeIPA | [Linux identities](/en/docs/operations/linux-identities) |
 | Choose who may use an application | [App access](/en/docs/identity/app-access) |
 | Decide who may enter a route | [Route policies](/en/docs/identity/route-policies) |
 | Check access to one domain resource | [Resource authorization](/en/docs/identity/authorization) |
 | Create a credential for one resource | [Resource API keys](/en/docs/identity/resource-api-keys) |
+| Send a single-use sign-in or invitation link | [One-time links](/en/docs/identity/one-time-links) |
 | Show a person's or agent's picture, or let them change it | [Profile pictures](/en/docs/identity/profile-pictures) |
 | Integrate an OAuth client | [OAuth](/en/docs/identity/oauth) |
 | Understand how a person approves an Action | [Action approvals](/en/docs/identity/approvals) |
+| Pair a shared device and authorize a customer visit | [App-PWA sessions](/en/docs/identity/app-pwa-sessions) |
 | Allow a route without a session | [Public access](/en/docs/identity/public-and-anonymous-access) |
 
 OAuth and API keys change how Cloud establishes the actor; they do not create a

@@ -26,6 +26,10 @@ const resolveValue = (value: string, scopes: Map<string, string>[]): string =>
   });
 
 describe("@k2b/ui base stylesheet", () => {
+  test("draws without data: images, which a host's img-src policy may refuse", () => {
+    expect(read("base.css")).not.toContain('url("data:');
+  });
+
   test("carries the tokens of the .k2b-ui scope with the same values in light and dark", () => {
     const light = tokens(components, ".k2b-ui", "");
     const dark = tokens(components, '.k2b-ui[data-theme="dark"]', "");

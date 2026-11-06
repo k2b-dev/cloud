@@ -7,10 +7,11 @@ import { CapabilityActionReviewDataSchema, capabilityActionPolicy } from "../con
 import type { AccessSubject, RequestActor } from "../server";
 import { approvalAssurance, approvalScopeFromToolName, approvals } from "../services/approvals";
 import { createHelpReader } from "../services/help";
-import { logger } from "../services/logging";
+import { logger, trace } from "../services/logging";
 import { getMandate } from "../services/mandates";
 import type { MandatePolicyV1 } from "../services/mandates/policy";
 import { coreSettings } from "../services/settings/api";
+import type { AiModelRequest } from "../shared/ai-models";
 import { normalizeLocale } from "../shared/locale";
 import { type AiActionCheck, type AiStoredActionReview, storedActionReview } from "./action-review";
 import {
@@ -41,21 +42,15 @@ import { createCloudCompactFn } from "./compaction";
 import { createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
-import {
-  countMalformedToolCallRepairs,
-  createMalformedToolCallRepair,
-  isMalformedToolCallId,
-  withMalformedToolCallRepair,
-  withMalformedToolCallResults,
-} from "./malformed-tool-call-repair";
+import { isMalformedToolCallId } from "./malformed-tool-calls";
 import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { aiModelAccess } from "./model-access";
-import { answerOpenToolCalls } from "./open-tool-calls";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
+import type { AiResourceContext } from "./projects-authorization";
 import {
   AI_TURN_LEASE_MS,
   type AiTurnBlock,
@@ -99,6 +94,7 @@ import {
   AiTurnFailure,
   type AiTurnFailureInfo,
   type AiTurnFailureReason,
+  aiIssueDiagnostic,
   aiTurnFailureFromThrown,
   aiTurnReasonFromThrown,
   rememberProviderErrors,
@@ -129,12 +125,13 @@ const AI_COALESCE_MS = 25;
 const AI_COALESCE_MAX_CHARS = 512;
 const AI_ACTION_BUDGET_MS = 24 * 60 * 60_000;
 
-// Failed generation can contain calls that nessi deliberately never executes or resumes.
-// Cloud's repair calls are skipped too: the live run never counts them.
+// Failed or cut-off generation can contain calls that nessi deliberately never executes or resumes.
+// Malformed calls are skipped too: they never run.
 const isToolRound = (message: AssistantMessage): boolean =>
   message.stopReason !== "error" &&
   message.stopReason !== "interrupted" &&
   message.stopReason !== "aborted" &&
+  message.stopReason !== "max_tokens" &&
   message.content.some((block) => block.type === "tool_call" && !isMalformedToolCallId(block.id));
 
 const toolRoundState = (messages: AiStoredMessage[]): { issued: number; completed: number } => {
@@ -154,7 +151,7 @@ const lastToolRoundFailed = (messages: AiStoredMessage[], blocks: AiTurnBlock[])
   const latest = messages.findLast(({ message }) => message.role === "assistant")?.message;
   if (latest?.role !== "assistant") return false;
   const callIds = new Set(latest.content.flatMap((block) => (block.type === "tool_call" ? [block.id] : [])));
-  // A worker may have stored a malformed call but crashed before its error result; load repairs that result without an event.
+  // A worker may have stored a malformed call but crashed before its error result; nessi stores it on resume without an event.
   return (
     [...callIds].some(isMalformedToolCallId) ||
     blocks.some((block) => block.kind === "tool" && callIds.has(block.callId) && isFailedTool(block))
@@ -304,6 +301,11 @@ const accessSubjectForActor = (actor: RequestActor | undefined): AccessSubject |
   return { type: "service_account", serviceAccountId: actor.serviceAccount.id };
 };
 
+const resourceContextForActor = (actor: RequestActor | undefined): AiResourceContext | null => {
+  const accessSubject = accessSubjectForActor(actor);
+  return actor && accessSubject ? { actor, accessSubject } : null;
+};
+
 export type ExecutorConfig = {
   leaseOwner: string;
   heartbeatMs: number;
@@ -321,27 +323,15 @@ export type ExecutorConfig = {
 type ResolvedModel = Awaited<ReturnType<typeof resolveAiModel>>;
 type ValidatedTurn = { settings: Awaited<ReturnType<typeof validateAiTurnRequest>>["settings"]; resolved: ResolvedModel };
 
-// One entry per steering text returned to nessi, including repairs that have no user steer to acknowledge.
+// One entry per steering text returned to nessi.
 const createChatSteering =
-  (input: {
-    repair: ReturnType<typeof createMalformedToolCallRepair>;
-    appliedSteers: (AiTurnSteer | null)[];
-    takePendingSteers: () => Promise<AiTurnSteer[]>;
-    noteSteering: () => void;
-  }) =>
+  (input: { appliedSteers: AiTurnSteer[]; takePendingSteers: () => Promise<AiTurnSteer[]>; noteSteering: () => void }) =>
   async ({ signal }: { signal: AbortSignal }) => {
     if (signal.aborted) return undefined;
-    // Exhaustion fails before consuming any pending user input.
-    const repairText = input.repair.takeSteering();
     const steers = await input.takePendingSteers();
     input.appliedSteers.push(...steers);
     if (steers.length > 0) input.noteSteering();
-    const texts = steers.map((steer) => steer.text);
-    if (repairText) {
-      texts.push(repairText);
-      input.appliedSteers.push(null);
-    }
-    return texts.length > 0 ? texts : undefined;
+    return steers.length > 0 ? steers.map((steer) => steer.text) : undefined;
   };
 
 // ---------------------------------------------------------------------------
@@ -539,7 +529,7 @@ const createEventMapper = (
       args: "args" in patch ? patch.args : existing?.args,
       status: patch.status ?? existing?.status ?? "running",
       at: patch.at ?? existing?.at,
-      result: "result" in patch ? patch.result : existing?.result,
+      result: patch.isError && existing?.result !== undefined ? existing.result : "result" in patch ? patch.result : existing?.result,
       isError: "isError" in patch ? patch.isError : existing?.isError,
       approval: approval && !allowRememberedApprovals ? { ...approval, allowAlways: false, allowChat: false } : approval,
       review: patch.review ?? existing?.review,
@@ -702,7 +692,7 @@ type MaterializedChatConfig = {
   tools: AiRuntimeTool[];
   toolApprovalContext?: AiToolApprovalContext;
   modelPolicy: AiChatTurnRunConfig["modelPolicy"];
-  requestedModelId?: string;
+  model?: AiModelRequest;
 };
 
 const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortSignal, turnId: string): Promise<MaterializedChatConfig> => {
@@ -722,7 +712,7 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
         : [],
     toolApprovalContext: config.toolApprovalContext,
     modelPolicy: config.modelPolicy,
-    requestedModelId: config.requestedModelId,
+    model: config.model,
   };
 };
 
@@ -752,7 +742,7 @@ export class AiTurnExecutor {
     const runConfig = claim.runConfig;
     if (!runConfig) {
       pipeline.seedBaseline(claim.liveBlocks ?? []);
-      await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
+      await pipeline.emitTurnStarted(claim.turn.modelId ?? "");
       await pipeline.emitBaseline();
       await this.finalize(
         conversationId,
@@ -767,7 +757,7 @@ export class AiTurnExecutor {
 
     if (runConfig.kind === "compact") {
       pipeline.seedBaseline(claim.liveBlocks ?? []);
-      await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
+      await pipeline.emitTurnStarted(claim.turn.modelId ?? "");
       await pipeline.emitBaseline();
       await this.runCompaction(conversationId, turnId, pipeline, runConfig, signal);
       return;
@@ -778,7 +768,7 @@ export class AiTurnExecutor {
       attemptState = await loadChatAttemptState(conversationId, turnId);
     } catch (error) {
       pipeline.seedBaseline(claim.liveBlocks ?? []);
-      await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
+      await pipeline.emitTurnStarted(claim.turn.modelId ?? "");
       await pipeline.emitBaseline();
       await this.finalize(
         conversationId,
@@ -792,15 +782,15 @@ export class AiTurnExecutor {
       return;
     }
     pipeline.seedBaseline(rebuildAttemptBaseline(attemptState));
-    await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
+    await pipeline.emitTurnStarted(claim.turn.modelId ?? "");
     await pipeline.emitBaseline();
     await this.runChat(conversationId, turnId, claim, runConfig, pipeline, signal, false, attemptState);
   }
 
   /**
    * Ends the turn. A failure stores its reason twice: as a code on the turn's last message, which the chat words in
-   * the reader's language, and as text in the turn's language for readers without the chat view. The raw cause, such
-   * as a provider's own message, goes only to the log. A failed compaction left the chat as it was, so its text names
+   * the reader's language, and as text in the turn's language for readers without the chat view. The diagnostic cause,
+   * with provider and loop issues reduced to fixed text, goes only to the log. A failed compaction left the chat as it was, so its text names
    * only the reason.
    */
   private async finalize(
@@ -881,15 +871,12 @@ export class AiTurnExecutor {
       if (allowed) material.tools = material.tools.filter((tool) => allowed.has(tool.def.name));
       chatId ||= conversation?.shortId ?? "";
       if (config.project) {
-        const subject = accessSubjectForActor(material.actor);
+        const subject = resourceContextForActor(material.actor);
         const project = subject ? await aiProjects.getByShortId(config.project.id, subject, "read") : null;
         if (!project) {
           throw new AiTurnFailure("not_allowed", "Project access is no longer available.");
         }
         resolvedProjectId = project.id;
-      }
-      if (isAssistantChatTurn(config) && claim.turn.modelProfileId) {
-        await aiModelAccess.assertAllowed(claim.turn.modelProfileId, accessSubjectForActor(material.actor));
       }
       validated = await (this.config.validateTurn ?? validateAiTurnRequest)({
         input: config.input,
@@ -898,12 +885,10 @@ export class AiTurnExecutor {
           material.tools.some((tool) => tool.def.name === "view_image") &&
           (await isAiVisionModelConfigured(material.modelPolicy?.allowedDataBoundaries)),
         modelPolicy: material.modelPolicy,
-        requestedModelId: isAssistantChatTurn(config)
-          ? (claim.turn.modelProfileId ?? material.requestedModelId)
-          : material.requestedModelId,
+        model: claim.turn.modelId ? { id: claim.turn.modelId } : material.model,
       });
       if (isAssistantChatTurn(config)) {
-        await aiModelAccess.assertAllowed(validated.resolved.profile.id, accessSubjectForActor(material.actor));
+        await aiModelAccess.assertAllowed(validated.resolved.profile.modelId, accessSubjectForActor(material.actor));
       }
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
@@ -919,6 +904,11 @@ export class AiTurnExecutor {
       return;
     }
     const { settings, resolved } = validated;
+    if (config.modelResolved?.id === resolved.profile.id) resolved.model = config.modelResolved;
+    await trace.record({
+      event: "model.resolved",
+      attributes: { ...resolved.model, resolvedClass: resolved.model.class, turnId, conversationId },
+    });
 
     const defaultToolSource = config.toolSource?.kind === "default" ? config.toolSource : null;
     const toolActor =
@@ -964,11 +954,11 @@ export class AiTurnExecutor {
     const timeZone = String((await coreSettings.get<string>("app.timezone")) || "").trim() || "UTC";
     const promptLocale = normalizeLocale(config.locale ?? (await coreSettings.get<string>("app.locale")));
     const project = config.project;
-    const projectSubject = project ? accessSubjectForActor(material.actor) : null;
+    const projectSubject = project ? resourceContextForActor(material.actor) : null;
     // Skills are an Assistant/default-tool capability. Custom and structured
     // executions must not gain an implicit database dependency or extra tools.
     const skillSubject =
-      defaultToolSource && resolved.profile.capabilities.includes("tools") ? accessSubjectForActor(material.actor) : null;
+      defaultToolSource && resolved.profile.capabilities.includes("tools") ? resourceContextForActor(material.actor) : null;
     const availableSkills = skillSubject
       ? (await aiSkills.list(skillSubject, { authority: toolAuthority })).filter((skill) => skill.enabled)
       : [];
@@ -1072,6 +1062,11 @@ export class AiTurnExecutor {
     const dynamicToolRuntimeContext = {
       turnId,
       reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId, message),
+      reportToolResult: (callId: string, result: unknown) => pipeline.reportToolResult(callId, result),
+      maxToolResultChars: resolveAiToolResultMaxChars({
+        contextWindow: resolved.provider.contextWindow,
+        configuredMaxChars: settings.maxToolResultChars,
+      }),
       reportWebsiteReceipts: (callId: string, receipts: AiWebsiteReceipt[]) => pipeline.reportWebsiteReceipts(callId, receipts),
       localToolsEnabled: activeTools.some((tool) => tool.def.name === "local_upload"),
       attachedFilePaths: new Set(config.files?.attached.map((file) => file.path) ?? []),
@@ -1186,7 +1181,7 @@ export class AiTurnExecutor {
         await pipeline.emitMessage(message);
       },
       conversationId,
-      modelProfileId: resolved.profile.id,
+      modelId: resolved.profile.id,
       turnId,
       leaseOwner: this.config.leaseOwner,
       turnInput,
@@ -1215,7 +1210,7 @@ export class AiTurnExecutor {
       await pipeline.emitBaseline();
     }
 
-    const appliedSteers: (AiTurnSteer | null)[] = [];
+    const appliedSteers: AiTurnSteer[] = [];
 
     let mandatePolicy: MandatePolicyV1 | null | undefined;
     if (config.background && config.mandate) {
@@ -1567,9 +1562,8 @@ export class AiTurnExecutor {
       skillCreatorAvailable,
       recentWork: guidance.recentWork,
     });
-    // The turn policy and repair budget count the whole turn, including rounds that compaction archived.
+    // The turn policy counts the whole turn, including rounds that compaction archived.
     const turnMessages = await aiConversations.listTurnMessages({ conversationId, loopId: turnId, includeCompacted: true });
-    const malformedToolCallRepair = createMalformedToolCallRepair(countMalformedToolCallRepairs(turnMessages));
     const turnBlocks = buildBlocksFromMessages(turnMessages);
     const providerNamesByCallId = new Map(
       turnMessages.flatMap(({ message }) =>
@@ -1590,7 +1584,7 @@ export class AiTurnExecutor {
       provider: acceptCanonicalToolNames(
         retryTransientProviderErrors(
           rememberProviderErrors(
-            answerOpenToolCalls(assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId)),
+            assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId, resolved.model),
             remember,
           ),
           {
@@ -1626,11 +1620,10 @@ export class AiTurnExecutor {
       agentId: "cloud",
       loopId: turnId,
       ...(isFresh ? { input: turnInput } : {}),
-      provider: withMalformedToolCallRepair(turnPolicy.provider, malformedToolCallRepair),
+      provider: turnPolicy.provider,
       systemPrompt,
-      store: withMalformedToolCallResults(store, malformedToolCallRepair),
+      store,
       steering: createChatSteering({
-        repair: malformedToolCallRepair,
         appliedSteers,
         takePendingSteers: () =>
           aiConversations.takePendingTurnSteers({
@@ -1658,7 +1651,20 @@ export class AiTurnExecutor {
         : createCloudCompactFn({
             conversationId,
             turnId,
-            modelProfileId: resolved.profile.id,
+            modelId: resolved.profile.id,
+            providerType: resolved.profile.provider,
+            // Accounted as compaction, outside the chat turn's tool policy and retries.
+            provider: rememberProviderErrors(
+              inferenceProvider(resolved.provider, resolved.profile, {
+                subject: quotaSubject,
+                turnId,
+                conversationId,
+                modelRef: resolved.model,
+                kind: "background",
+                task: "chat-compaction",
+              }),
+              remember,
+            ),
             additionalInstructions: settings.compactionInstructions,
             maxOutputTokens: resolved.profile.maxOutputTokens,
             signal: abortController.signal,
@@ -1763,7 +1769,7 @@ export class AiTurnExecutor {
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
-    appliedSteers: (AiTurnSteer | null)[];
+    appliedSteers: AiTurnSteer[];
     noteToolRound: () => void;
     noteToolCall: (call: AiTurnPolicyToolCall) => void;
     /**
@@ -1796,7 +1802,6 @@ export class AiTurnExecutor {
     let lastResponse: AssistantMessage | undefined;
     let roundFailed = input.initialRoundFailed;
     let followedFailedRound = false;
-    const malformedCallIds = new Set<string>();
 
     try {
       for await (const event of loop) {
@@ -1876,17 +1881,13 @@ export class AiTurnExecutor {
           lastResponse = event.message;
           followedFailedRound = roundFailed;
           const calls = new Set(event.message.content.flatMap((block) => (block.type === "tool_call" ? [block.id] : [])));
-          // nessi closes a round after executing its tools. Malformed calls have stored failed blocks,
-          // but are added by Cloud's store wrapper, so they are absent from the event's message.
-          roundFailed = pipeline.blocks.some(
-            (block) => block.kind === "tool" && (calls.has(block.callId) || malformedCallIds.has(block.callId)) && isFailedTool(block),
-          );
-          malformedCallIds.clear();
+          // nessi closes a round after executing its tools; its malformed calls are part of the message, with failed blocks.
+          roundFailed = pipeline.blocks.some((block) => block.kind === "tool" && calls.has(block.callId) && isFailedTool(block));
           if (!abortController.signal.aborted && isToolRound(event.message)) noteToolRound();
         } else if (event.type === "issue") {
-          if (event.issue.kind === "malformed_tool_call" && event.issue.callId) malformedCallIds.add(event.issue.callId);
-          lastIssueMessage = event.issue.message;
-          log.warn("AI turn issue", { conversationId, turnId, kind: event.issue.kind, message: event.issue.message });
+          const diagnostic = aiIssueDiagnostic(event.issue);
+          lastIssueMessage = diagnostic.message;
+          log.warn("AI turn issue", { conversationId, turnId, ...diagnostic });
         } else if (event.type === "loop_end") {
           const stoppedAfterFailure =
             event.reason === "stop" &&
@@ -1917,9 +1918,7 @@ export class AiTurnExecutor {
               ? { error: { code: "step_limit" } }
               : event.reason === "context_overflow"
                 ? { error: { code: "context_full" } }
-                : event.reason === "no_credits"
-                  ? { error: { code: "quota_exhausted" } }
-                  : (failureReason.current ?? { error: { code: "failed" } });
+                : (failureReason.current ?? { error: { code: "failed" } });
           return { kind: "finished", status: "failed", failure: { ...reason, detail }, timing };
         }
       }
@@ -2218,7 +2217,7 @@ export class AiTurnExecutor {
       validated = await (this.config.validateTurn ?? validateAiTurnRequest)({
         input: "",
         modelPolicy: config.modelPolicy,
-        requestedModelId: config.requestedModelId,
+        model: config.model,
       });
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
@@ -2226,10 +2225,15 @@ export class AiTurnExecutor {
       return;
     }
     const { settings, resolved } = validated;
+    if (config.modelResolved?.id === resolved.profile.id) resolved.model = config.modelResolved;
+    await trace.record({
+      event: "model.resolved",
+      attributes: { ...resolved.model, resolvedClass: resolved.model.class, turnId, conversationId },
+    });
 
     const store = aiConversations.createSessionStore({
       conversationId,
-      modelProfileId: resolved.profile.id,
+      modelId: resolved.profile.id,
       turnId,
       leaseOwner: this.config.leaseOwner,
     });
@@ -2242,6 +2246,7 @@ export class AiTurnExecutor {
         inferenceProvider(resolved.provider, resolved.profile, {
           kind: "background",
           task: "chat-compaction",
+          modelRef: resolved.model,
           conversationId,
           turnId,
           appId: "core",
@@ -2255,7 +2260,8 @@ export class AiTurnExecutor {
       compact: createCloudCompactFn({
         conversationId,
         turnId,
-        modelProfileId: resolved.profile.id,
+        modelId: resolved.profile.id,
+        providerType: resolved.profile.provider,
         additionalInstructions: settings.compactionInstructions,
         maxOutputTokens: resolved.profile.maxOutputTokens,
         signal: abortController.signal,
@@ -2274,7 +2280,7 @@ export class AiTurnExecutor {
       for await (const event of loop as AsyncIterable<CompactEvent>) {
         if (event.type === "compaction_start") await pipeline.applyCompaction("running");
         else if (event.type === "compaction_end") await pipeline.applyCompaction("completed");
-        else if (event.type === "issue") issueMessage = event.issue.message;
+        else if (event.type === "issue") issueMessage = aiIssueDiagnostic(event.issue).message;
         else if (event.type === "loop_end") {
           status = event.reason === "stop" ? "completed" : event.reason === "aborted" ? "aborted" : "failed";
           await pipeline.applyCompaction(status === "failed" ? "failed" : "completed", event.result);
@@ -2428,10 +2434,10 @@ class StreamPipeline {
     await this.maybeSnapshot();
   }
 
-  async emitTurnStarted(modelProfileId: string): Promise<void> {
+  async emitTurnStarted(modelId: string): Promise<void> {
     const seq = this.nextSeq();
     await this.publish(
-      this.envelope({ type: "turn_started" as const, seq, modelProfileId, providerModel: "", blocks: this.blocks }) as AiWireEvent,
+      this.envelope({ type: "turn_started" as const, seq, modelId, providerModel: "", blocks: this.blocks }) as AiWireEvent,
     );
   }
 
@@ -2481,6 +2487,13 @@ class StreamPipeline {
 
   async setToolCheck(callId: string, check: AiActionCheck): Promise<void> {
     await this.emitOp(this.mapper.setTool(callId, { check, status: "running" }));
+    await this.maybeSnapshot();
+  }
+
+  async reportToolResult(callId: string, result: unknown): Promise<void> {
+    const block = this.blocks.find((block) => block.kind === "tool" && block.callId === callId);
+    if (!block || block.kind !== "tool" || block.status !== "running") return;
+    await this.emitOp(this.mapper.setTool(callId, { result }));
     await this.maybeSnapshot();
   }
 

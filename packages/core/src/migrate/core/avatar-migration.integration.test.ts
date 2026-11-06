@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrateBuiltAvatars } from "./auth";
 

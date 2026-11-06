@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test }
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { encryptSecret } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { testFor } from "../../../scripts/fixtures/test-infra";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
 
@@ -83,12 +83,9 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
     const server = await import("@k2b/cloud/server");
     const { oauthTokens } = await import("@k2b/cloud/services");
     spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
-    const { migrate } = await import("./migrate");
     const { newShortId } = await import("./lib/short-id");
     const { createMailbox } = await import("./service/mailboxes");
     const { default: app } = await import("./api");
-
-    await migrate();
 
     const [row] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
@@ -114,7 +111,7 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
       manages: [],
       managesGroupIds: [],
     } as User;
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     const context = {
       actor: { kind: "user" as const, user: { ...user, givenName: "Cli", memberofGroups: [] } as never },
       accessSubject: { type: "user" as const, userId: user.id },

@@ -38,6 +38,7 @@ export default function MailWorkflowsPage(props: {
       />
       <MailWorkflowSettings
         mailboxId={props.data.mailbox.id}
+        mailboxName={props.data.mailbox.name}
         initialWorkflows={workflows()}
         referenceConfiguration={referenceConfiguration()}
         onReferenceConfigurationChange={setReferenceConfiguration}

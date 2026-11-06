@@ -1,12 +1,16 @@
 import { chooseFiles, SaveFilesButton } from "@k2b/cloud/browser/files";
-import { fileIcons, text } from "@k2b/stdlib";
+import { fileIcons } from "@k2b/stdlib";
 import {
-  Button,
   canPreviewFile,
+  DetailPanel,
   dialogCore,
   FileDropTarget,
+  FileGrid,
+  FileTypeIcon,
   FileView,
   type FileViewContent,
+  fileKindLabel,
+  formatFileViewSize,
   IconButton,
   IconButtonLink,
   PanelDialog,
@@ -16,7 +20,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import type { PublicField as Field, PublicGridFile as GridFile } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
 import { createRetryToasts } from "../utils/feedback";
@@ -178,7 +182,6 @@ export default function RecordFileField(props: {
       mediaType: file.mimeType,
       size: file.sizeBytes,
     });
-  const previewableImages = () => files().filter((file) => file.mimeType.startsWith("image/") && previewable(file));
 
   const upload = async (file: File) => {
     setUploading(true);
@@ -261,9 +264,24 @@ export default function RecordFileField(props: {
   };
 
   const [root, setRoot] = createSignal<HTMLDivElement>();
+  const isImage = (file: GridFile) => file.mimeType.startsWith("image/") && previewable(file);
+  /** A click previews what the browser can show and downloads the rest. */
+  const openFile = (file: GridFile) => {
+    if (previewable(file)) {
+      void openRecordFilePreview(location(), file);
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = recordFileContentHref(location(), file);
+    link.download = file.filename;
+    link.rel = "noopener";
+    document.body.append(link);
+    link.click();
+    link.remove();
+  };
 
   return (
-    <div ref={setRoot} class="flex flex-col gap-2">
+    <div ref={setRoot} class="flex min-w-0 flex-col">
       <Show when={props.canWrite}>
         {/* While files are dragged over the window, each file field of the record shows where its files land. */}
         <FileDropTarget
@@ -275,109 +293,83 @@ export default function RecordFileField(props: {
           onDrop={(dropped) => void uploadAll(dropped)}
         />
       </Show>
-      <Show when={files().length === 0}>
-        <span class="text-dimmed">—</span>
-      </Show>
-      <Show when={files().length > 0}>
-        <Show when={previewableImages().length > 0}>
-          <div class="flex flex-wrap gap-2">
-            <For each={previewableImages()}>
-              {(file) => (
-                <button
-                  type="button"
-                  class="grids-record-file-thumbnail relative overflow-hidden rounded-[var(--ui-radius-control)] bg-[var(--k2b-surface-muted)] shadow-xs transition-colors hover:bg-[var(--k2b-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--k2b-focus-ring)]"
-                  aria-label={t().previewNamed({ name: file.filename })}
-                  onClick={() => void openRecordFilePreview(location(), file)}
+      <Show when={files().length > 0} fallback={<p class="grids-details-none">{t().noFiles}</p>}>
+        <FileGrid
+          rows={files()}
+          getRowId={(file) => file.id}
+          label={props.field.name}
+          layout="list"
+          limit={5}
+          actionVisibility="progressive"
+          groups={(rows) => [
+            { id: "files", label: t().files, rows: rows.filter((file) => !isImage(file)) },
+            { id: "images", label: t().images, rows: rows.filter(isImage), layout: "tiles" },
+          ]}
+          renderPreview={(file) =>
+            isImage(file) ? (
+              <img src={recordFileContentHref(location(), file, true)} alt="" loading="lazy" decoding="async" />
+            ) : (
+              <FileTypeIcon name={file.filename} mediaType={file.mimeType} />
+            )
+          }
+          renderLabel={(file) => file.filename}
+          renderMeta={(file) =>
+            `${fileKindLabel({ name: file.filename, mediaType: file.mimeType }, locale())} · ${formatFileViewSize(file.sizeBytes, locale())}`
+          }
+          renderActions={(file) => (
+            <>
+              <Tooltip.Anchor content={t().downloadFile}>
+                <IconButtonLink
+                  variant="ghost"
+                  size="sm"
+                  href={recordFileContentHref(location(), file)}
+                  download={file.filename}
+                  label={t().downloadNamed({ name: file.filename })}
                 >
-                  <img src={recordFileContentHref(location(), file, true)} alt="" class="h-full w-full object-cover" loading="lazy" />
-                </button>
-              )}
-            </For>
-          </div>
-        </Show>
-        <div class="flex flex-col gap-1">
-          <For each={files()}>
-            {(file) => (
-              <div class="group flex min-w-0 items-center gap-2 py-1 text-sm">
-                <i
-                  aria-hidden="true"
-                  class={`ti ${fileIcons.getFileIcon({
-                    name: file.filename,
-                    type: "file",
-                    mimeType: file.mimeType,
-                  })} shrink-0 text-base`}
-                />
-                <Tooltip.Anchor content={file.filename} class="min-w-0 flex-1">
-                  <a
-                    class="min-w-0 flex-1 truncate text-secondary transition-colors hover:text-primary"
-                    href={recordFileContentHref(location(), file)}
+                  <i class="ti ti-download" aria-hidden="true" />
+                </IconButtonLink>
+              </Tooltip.Anchor>
+              <Show when={props.canWrite}>
+                <Tooltip.Anchor content={t().replaceFile}>
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    label={t().replaceNamed({ name: file.filename })}
+                    disabled={uploading()}
+                    onClick={() => void chooseReplacement(file)}
                   >
-                    {file.filename}
-                  </a>
+                    <i class="ti ti-refresh" aria-hidden="true" />
+                  </IconButton>
                 </Tooltip.Anchor>
-                <span class="shrink-0 text-xs text-dimmed">{text.pprintBytes(file.sizeBytes)}</span>
-                <Show when={props.canWrite}>
-                  <Tooltip.Anchor content={t().replaceFile}>
-                    <IconButton
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      class="text-dimmed hover:text-primary"
-                      label={t().replaceNamed({ name: file.filename })}
-                      disabled={uploading()}
-                      onClick={() => void chooseReplacement(file)}
-                    >
-                      <i class="ti ti-refresh" aria-hidden="true" />
-                    </IconButton>
-                  </Tooltip.Anchor>
-                </Show>
-                <Show when={previewable(file)}>
-                  <Tooltip.Anchor content={t().previewFile}>
-                    <IconButton
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      class="text-dimmed hover:text-primary"
-                      label={t().previewNamed({ name: file.filename })}
-                      onClick={() => void openRecordFilePreview(location(), file)}
-                    >
-                      <i class="ti ti-eye" aria-hidden="true" />
-                    </IconButton>
-                  </Tooltip.Anchor>
-                </Show>
-                <Show when={props.canWrite}>
-                  <Tooltip.Anchor content={t().removeFromRecord}>
-                    <IconButton
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      class="text-dimmed hover:text-red-500"
-                      label={t().removeNamed({ name: file.filename })}
-                      disabled={uploading()}
-                      onClick={() => void remove(file)}
-                    >
-                      <i class="ti ti-unlink" aria-hidden="true" />
-                    </IconButton>
-                  </Tooltip.Anchor>
-                </Show>
-              </div>
-            )}
-          </For>
-        </div>
+                <Tooltip.Anchor content={t().removeFromRecord}>
+                  <IconButton
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    label={t().removeNamed({ name: file.filename })}
+                    disabled={uploading()}
+                    onClick={() => void remove(file)}
+                  >
+                    <i class="ti ti-unlink" aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+              </Show>
+            </>
+          )}
+          onOpen={openFile}
+        />
       </Show>
       <Show when={props.canWrite}>
-        <Button
-          variant="secondary"
-          size="sm"
+        <DetailPanel.Action
           type="button"
-          class="w-fit"
+          class="grids-details-add"
+          leading={<i aria-hidden="true" class={uploading() ? "ti ti-loader-2 animate-spin" : "ti ti-upload"} />}
+          title={t().upload}
           disabled={uploading()}
           aria-busy={uploading()}
           onClick={() => void chooseFile()}
-        >
-          <i aria-hidden="true" class={`ti ${uploading() ? "ti-loader-2 animate-spin" : "ti-upload"} text-sm`} />
-          {t().upload}
-        </Button>
+        />
       </Show>
     </div>
   );

@@ -32,6 +32,7 @@
 @import "./input.css";
 @import "./resource-search.css";
 @import "./file-chooser.css";
+@import "./profile-picture.css";
 @import "./panel.css";
 
 @theme {
@@ -71,7 +72,7 @@
 
 /* Full-page workspaces own their inner scrolling. Stop iframe scroll gestures
    from rubber-banding the outer viewport or triggering pull-to-refresh. */
-html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
+html:has(> body > .cloud-app-canvas[data-layout-full-page="true"]) {
   overscroll-behavior: none;
 }
 
@@ -105,12 +106,12 @@ html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
   );
 }
 
-/* The shell's own colored surfaces, the tablet rail's container and the
-   phone's bottom bar, carry the app color alone in a narrow shape. A white
-   middle, the canvas's default `via`, would make their edge vanish halfway,
-   so they mix the middle from the app's two colors and take a stronger tint:
-   34 % light and 22 % dark, with a 16 % and 12 % middle. A page without an app
-   color gets a neutral tint. The app declaration stays the same. */
+/* The shell's own colored surface, the tablet rail's container, carries the
+   app color alone in a narrow shape. A white middle, the canvas's default
+   `via`, would make its edge vanish halfway, so it mixes the middle from the
+   app's two colors and takes a stronger tint: 34 % light and 22 % dark, with
+   a 16 % and 12 % middle. A page without an app color gets a neutral tint.
+   The app declaration stays the same. */
 .cloud-app-canvas {
   --cloud-shell-strength: 34%;
   --cloud-shell-via-strength: 16%;
@@ -306,8 +307,13 @@ body {
 
 /* Pages of the mobile app paint the shell canvas, which their theme-color and
    html background repeat for the status bar. */
-html:has(.k2b-mobile-shell) body {
+html[data-k2b-mobile-shell] body {
   background-color: var(--k2b-surface-canvas);
+}
+
+/* The search bar's clear action appears once the field holds text. */
+.cloud-search:has(input:placeholder-shown) .cloud-search-clear {
+  visibility: hidden;
 }
 
 .dark {
@@ -376,7 +382,7 @@ solid-island {
      width: the document's, or the card's for signed-in people. Full-page
      surfaces, workspaces, and scroll areas own their inner scrolling, so the
      card reserves no second gutter beside theirs. */
-  html:has(.cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated])) { scrollbar-gutter: stable; }
+  html:has(> body > .cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated])) { scrollbar-gutter: stable; }
   .cloud-app-canvas[data-layout-authenticated]:not([data-layout-full-page])
     .layout-content-main:not(:has(> .k2b-scroll-area, > .k2b-app-workspace, > :is(solid-island, solid-client) > .k2b-app-workspace)) {
     scrollbar-gutter: stable;
@@ -392,16 +398,14 @@ solid-island {
   }
   /* Toasts at the top edge of a phone start below the header instead of
      covering its menu and search buttons. */
-  :root:has(.cloud-app-canvas .layout-header) {
+  :root:has(> body > .cloud-app-canvas[data-layout-header]) {
     --k2b-toast-offset-top: 2.875rem;
   }
 
   /* Signed-in phones: the app gradient is the page. The title row sits on it
      without a line, and the content is one soft card with 28 px top corners
-     that scrolls itself, so its rounded edge stays while it scrolls. The bar
-     with the person's apps floats over the card's end; the card keeps that
-     space free at its end and in its scroll padding, so the bar never covers
-     the last row or a focused control. The window never scrolls. */
+     that scrolls itself, so its rounded edge stays while it scrolls, down to
+     the screen's bottom edge. The window never scrolls. */
   .cloud-app-canvas[data-layout-authenticated] {
     /* Text sits on the gradient here, so its tint stays at most 30 % light
        and 15 % dark: then the title and controls read at 4.5:1 on any app
@@ -439,8 +443,7 @@ solid-island {
 /* Phone overviews: object navigation sits on the shell before the card.
    Only an outer flush workspace with visible stacked navigation hands the
    host's paint to its head/content tracks. The pseudo-element is the first
-   grid item, behind the existing regions, without a new stacking context:
-   the fixed primary action can still sit above the app bar. */
+   grid item, behind the existing regions, without a new stacking context. */
 /* Negated min-width queries keep the exact boundary after CSS compilation;
    fractional max-width approximations can round back up to 768 px. */
 @media not all and (min-width: 768px) {
@@ -456,32 +459,39 @@ solid-island {
       border-radius: 0;
       background: transparent;
       box-shadow: none;
+    }
 
-      & .k2b-app-workspace[data-mobile-surface="flush"]:not(.k2b-app-workspace *) {
-        --k2b-workspace-inset-bottom: var(--cloud-tab-bar-space);
+    /* The workspace asks its own children, not `main` its whole subtree: a
+       `:has()` on a large ancestor restyles it entirely on every change inside. */
+    .cloud-app-canvas[data-layout-authenticated]
+      .layout-content-main
+      .k2b-app-workspace[data-mobile-surface="flush"]:not(.k2b-app-workspace *, [hidden], [hidden] *):has(
+        > .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden])
+      ) {
+      --k2b-workspace-inset-bottom: env(safe-area-inset-bottom, 0px);
 
-        &::before {
-          content: "";
-          grid-column: 1 / -1;
-          grid-row: head-start / -1;
-          min-height: 0;
-          pointer-events: none;
-          border-top: 1px solid transparent;
-          border-radius: 1.75rem 1.75rem 0 0;
-          background: var(--k2b-surface);
-          box-shadow: 0 -10px 30px -24px rgb(15 23 19 / 0.3);
-        }
+      &::before {
+        content: "";
+        grid-column: 1 / -1;
+        grid-row: head-start / -1;
+        min-height: 0;
+        pointer-events: none;
+        border-top: 1px solid transparent;
+        border-radius: 1.75rem 1.75rem 0 0;
+        background: var(--k2b-surface);
+        box-shadow: 0 -10px 30px -24px rgb(15 23 19 / 0.3);
+      }
 
-        & > .k2b-app-workspace__head {
-          border-radius: 1.75rem 1.75rem 0 0;
-          background: transparent;
-        }
+      & > .k2b-app-workspace__head {
+        border-radius: 1.75rem 1.75rem 0 0;
+        background: transparent;
+      }
 
-        /* Cloud's page title hides the automatic head on phones. With no
-           explicit head, Content itself owns the card's rounded clip. */
-        &:not(:has(> .k2b-app-workspace__head[data-row])) > .k2b-app-workspace__content {
-          border-radius: 1.75rem 1.75rem 0 0;
-        }
+      /* Cloud's page title hides the automatic head on phones. With no
+         explicit head, Content itself owns the card's rounded clip. */
+      &:not(:has(> .k2b-app-workspace__head[data-row])) > .k2b-app-workspace__content {
+        border-radius: 1.75rem 1.75rem 0 0;
       }
     }
 
@@ -490,15 +500,6 @@ solid-island {
       border-top-color: var(--k2b-border);
     }
   }
-}
-
-/* The bar and the room it takes switch with `md`, as the header and the rail
-   do, so Home stays reachable also where a larger default font size moves
-   that switch above 768 px. */
-.cloud-app-canvas[data-layout-authenticated] {
-  --cloud-tab-bar-height: 3.875rem;
-  --cloud-tab-bar-end: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
-  --cloud-tab-bar-space: calc(var(--cloud-tab-bar-end) + var(--cloud-tab-bar-height) + 0.75rem);
 }
 
 /* A page whose app has its own navigation (a mailbox, a Space, a book) makes
@@ -532,94 +533,20 @@ solid-island {
 }
 
 @media not all and (min-width: 48rem) {
-  :root:has(script[data-cloud-workspace-navigation]) .layout-header-title {
+  /* Layout marks a page with workspace navigation on its shell. */
+  .layout-shell-content[data-workspace-navigation] .layout-header-title {
     display: none;
   }
-  :root:has(script[data-cloud-workspace-navigation]) .layout-header-title-menu {
+  .layout-shell-content[data-workspace-navigation] .layout-header-title-menu {
     display: inline-flex;
   }
+  /* The card reaches the screen's bottom edge; only its content keeps clear
+     of the home indicator. The app's one primary action stays the round
+     button at the end of the workspace head. */
   .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
-    padding-bottom: var(--cloud-tab-bar-space);
-    scroll-padding-bottom: var(--cloud-tab-bar-space);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    scroll-padding-bottom: env(safe-area-inset-bottom, 0px);
   }
-  .cloud-app-canvas[data-layout-authenticated] > .cloud-tab-bar {
-    position: fixed;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 10;
-    display: flex;
-    justify-content: center;
-    align-items: flex-end;
-    height: var(--cloud-tab-bar-space);
-    padding: 0 calc(env(safe-area-inset-right, 0px) + 0.75rem) var(--cloud-tab-bar-end) calc(env(safe-area-inset-left, 0px) + 0.75rem);
-    /* Content that scrolls past fades flat into the card above the bar and is
-       gone where the bar begins: no glass, and no text beside or under it. */
-    background: linear-gradient(to bottom, color-mix(in srgb, var(--k2b-surface) 0%, transparent), var(--k2b-surface) 0.75rem);
-    pointer-events: none;
-  }
-  /* The app's one primary action (the primary of `AppWorkspace.Head`) is the
-     round button in that free place beside the bar: the bar's height, its end
-     edge, and its shadow. The card keeps the bar's space free at its end and in
-     its scroll padding, so the button never covers the last row or a focused
-     control either. Only the outermost workspace's head offers it. */
-  .cloud-app-canvas[data-layout-authenticated]:has(> .cloud-tab-bar)
-    .k2b-app-workspace:not(.k2b-app-workspace *)
-    > .k2b-app-workspace__head
-    .k2b-app-workspace__head-primary {
-    position: fixed;
-    z-index: 11;
-    right: max(calc(env(safe-area-inset-right, 0px) + 0.75rem), calc((100vw - 33.75rem) / 2));
-    bottom: var(--cloud-tab-bar-end);
-    width: var(--cloud-tab-bar-height);
-    min-width: var(--cloud-tab-bar-height);
-    height: var(--cloud-tab-bar-height);
-    min-height: var(--cloud-tab-bar-height);
-    box-shadow:
-      0 10px 28px -14px rgb(9 9 11 / 0.34),
-      0 0 0 1px rgb(9 9 11 / 0.06);
-  }
-  .dark .cloud-app-canvas[data-layout-authenticated]:has(> .cloud-tab-bar)
-    .k2b-app-workspace:not(.k2b-app-workspace *)
-    > .k2b-app-workspace__head
-    .k2b-app-workspace__head-primary {
-    box-shadow:
-      0 12px 30px -14px rgb(0 0 0 / 0.7),
-      0 0 0 1px var(--k2b-border);
-  }
-}
-
-/* The bar exists only on signed-in phones. Its row keeps the place of the
-   app's primary action free at its end. */
-.cloud-tab-bar {
-  display: none;
-}
-
-.cloud-tab-bar__row {
-  display: flex;
-  width: 100%;
-  max-width: 33.75rem;
-  padding-inline-end: calc(var(--cloud-tab-bar-height) + 0.625rem);
-}
-
-/* The shell's live bar replaces the server's once the bar's content changes
-   in the browser. */
-.cloud-tab-bar__row:has(.cloud-tab-bar__live) > .k2b-tab-bar {
-  display: none;
-}
-
-.cloud-tab-bar__row > div:has(> .cloud-tab-bar__live) {
-  display: contents;
-}
-
-.cloud-tab-bar .k2b-tab-bar {
-  flex: 1;
-  min-width: 0;
-  pointer-events: auto;
-  --k2b-tab-bar-background: var(--cloud-shell-gradient);
-  --k2b-tab-bar-color: var(--k2b-text);
-  --k2b-tab-bar-selected-background: var(--cloud-shell-selected);
-  --k2b-tab-bar-selected-color: var(--cloud-shell-selected-text);
 }
 
 /* Card: the outermost workspace is the app card, so it gets the card's radius
@@ -733,33 +660,53 @@ solid-island {
 }
 
 /* Focus: the app bar and the outermost workspace's navigation hide together
-   (Cmd/Ctrl+\ or the sidebar buttons). The canvas carries the state from the
-   `cloud_shell_focus` cookie, so the server renders the same first frame.
-   Phones ignore it. The app area takes the app bar's place and starts at the
-   card spacing. The button that
-   shows them again floats at the app area's bottom start corner; on touch
-   screens a drag from the 18 px strip at the left edge does the same. In an
-   app host below 64 rem (a window from 768 to 1023 px, or the app beside the
-   panel column) the navigation is already an overlay behind the workspace
-   head's button, so there only the app bar hides. */
-.cloud-shell-show,
-.cloud-shell-reveal {
+   (Cmd/Ctrl+\, the profile menu's first entry, or the command). The canvas
+   carries the state from the `cloud_shell_focus` cookie, so the server renders
+   the same first frame. Phones ignore it. The app area takes the app bar's
+   place and starts at the card spacing. Of the app bar only the avatar stays:
+   it floats at the app area's bottom start corner, and its menu shows the
+   sidebar again. On touch screens a drag from the 18 px strip at the left
+   edge does the same. In an app host below 64 rem (a window from 768 to
+   1023 px, or the app beside the panel column) the navigation is already an
+   overlay behind the workspace head's button, so there only the app bar
+   hides. */
+.cloud-shell-reveal,
+.cloud-app-canvas .layout-profile-preferences [data-cloud-shell-focus-toggle="show"],
+.cloud-app-canvas[data-shell-focus] .layout-profile-preferences [data-cloud-shell-focus-toggle="hide"] {
   display: none;
+}
+
+.cloud-app-canvas[data-shell-focus] .layout-profile-preferences [data-cloud-shell-focus-toggle="show"] {
+  display: flex;
 }
 
 @media (min-width: 768px) {
   .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail {
+    width: 0;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+    background-image: none !important;
+  }
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail > .layout-rail-logo,
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-rail-navigation > :not(.layout-rail-actions),
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-rail-actions > :not(.layout-profile-preferences) {
     display: none;
   }
-  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] .cloud-shell-show {
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-profile-preferences {
     position: absolute;
     left: calc(env(safe-area-inset-left, 0px) + 0.75rem);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
     z-index: 15;
-    display: flex;
   }
-  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] .cloud-shell-show .k2b-icon-button {
-    box-shadow: var(--k2b-shadow-float);
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail
+    :is(.layout-profile-preferences__link, .layout-profile-preferences__dropdown-trigger) {
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-float);
+  }
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail
+    :is(.layout-profile-preferences__link, .layout-profile-preferences__dropdown-trigger):focus-visible {
+    box-shadow: var(--ui-focus), var(--ui-shadow-float);
   }
 }
 
@@ -778,7 +725,7 @@ solid-island {
 
 @media (min-width: 768px) {
   @media not all and (min-width: 1024px) {
-    .cloud-app-canvas[data-layout-authenticated][data-shell-focus] .cloud-shell-show {
+    .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-profile-preferences {
       left: calc(env(safe-area-inset-left, 0px) + 1.25rem);
       bottom: calc(env(safe-area-inset-bottom, 0px) + 1.25rem);
     }
@@ -789,7 +736,7 @@ solid-island {
   .cloud-app-canvas[data-layout-authenticated][data-shell-focus] {
     padding-left: max(var(--cloud-card-inset), env(safe-area-inset-left, 0px));
   }
-  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] .cloud-shell-show {
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail .layout-profile-preferences {
     left: calc(max(var(--cloud-card-inset), env(safe-area-inset-left, 0px)) + 0.75rem);
     bottom: calc(var(--cloud-card-inset) + var(--cloud-card-inset-bottom) + 0.75rem);
   }
@@ -868,3 +815,5 @@ solid-island {
 }
 .cloud-mobile-profile { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; border-top: 1px solid var(--ui-border); padding-top: 1rem; }
 .cloud-mobile-profile > :is(a, button) { min-height: 2.75rem; white-space: normal; text-align: start; justify-content: flex-start; }
+
+@import "../ai/chat/map-widget.css";

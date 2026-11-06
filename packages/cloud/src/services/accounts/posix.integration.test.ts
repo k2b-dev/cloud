@@ -1,14 +1,18 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { SQL } from "bun";
-import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { databaseSuite, initializeTestPlatform, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
+
 import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
+import { migrate as migrateEvents } from "../../../../core/src/migrate/core/events";
 import { migratePosix } from "../../../../core/src/migrate/core/posix";
 import { mirrorIpaPosix } from "../ipa/posix";
 import { providers } from "../providers";
 import { set } from "../settings";
 import { accountsAppService } from "./app";
 import * as localGroups from "./local-groups";
-import { createPosixRuntime, createPosixService, PosixError } from "./posix";
+import { createPosixRuntime, createPosixService, PosixError, posix } from "./posix";
+
+let disposable: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
 
 const localUsers = providers.local.users;
 const suite = databaseSuite();
@@ -17,7 +21,6 @@ const config = { enabled: true, rangeStart: 200000, rangeEnd: 200100, homeTempla
 
 suite("isolated Linux identity migration and provisioning", () => {
   let db: SQL;
-  let disposable: Awaited<ReturnType<typeof useFreshDatabase>>;
   let service: ReturnType<typeof createPosixService>;
   const createUser = async (uid: string, provider = "local", profile = "user") => {
     const [row] = await db<
@@ -27,7 +30,7 @@ suite("isolated Linux identity migration and provisioning", () => {
   };
   beforeAll(async () => {
     disposable = await useFreshDatabase("posix");
-    db = new SQL(disposable.url);
+    db = new SQL(disposable!.url);
     await db`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await db`CREATE SCHEMA IF NOT EXISTS settings`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.users(id UUID PRIMARY KEY DEFAULT gen_random_uuid(), uid TEXT UNIQUE NOT NULL, provider TEXT NOT NULL, profile TEXT NOT NULL, display_name TEXT NOT NULL DEFAULT '')`.simple();
@@ -39,10 +42,11 @@ suite("isolated Linux identity migration and provisioning", () => {
     await db`CREATE TABLE IF NOT EXISTS settings.entries(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())`.simple();
     await migratePosix(db);
     await migrateAudit();
+    await migrateEvents(db);
     service = createPosixService(db, async () => [{ start: 1000000, end: 1999999 }]);
   });
   beforeEach(async () => {
-    await db`TRUNCATE auth.user_posix, auth.posix_allocations, auth.user_groups_v2, auth.user_ipa_data, auth.groups, auth.users, settings.entries, audit.events CASCADE`.simple();
+    await db`TRUNCATE auth.user_posix, auth.posix_allocations, auth.user_groups_v2, auth.user_ipa_data, auth.groups, auth.users, settings.entries, audit.events, events.outbox CASCADE`.simple();
     await set("linux.identity_config", JSON.stringify(config), db);
   });
   afterAll(async () => {
@@ -62,6 +66,12 @@ suite("isolated Linux identity migration and provisioning", () => {
     expect(row!.updated_at.toISOString()).toBe("2026-01-02T03:04:05.000Z");
     await service.configure(admin, { ...config, enabled: false }, { replaceUnreadable: true });
     expect((await service.overview(admin)).config.unreadable).toBe(false);
+  });
+
+  test("the imported POSIX singleton follows a replacement platform client", async () => {
+    const previous = await posix.configuration(admin);
+    await initializeTestPlatform();
+    expect(await posix.configuration(admin)).toEqual(previous);
   });
 
   test("local creation and guest promotion assign attributes through the real provider", async () => {

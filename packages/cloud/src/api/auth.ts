@@ -1,17 +1,20 @@
-import { sql } from "bun";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { env } from "../config";
 import { ChangeExpiredPasswordSchema } from "../contracts";
+import { coreUserEventPublisher } from "../events/core-user-created";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, respond, v } from "../server";
 import { accounts, audit, authFlows, getFreeIpaConfig, logger, webauthn } from "../services";
 import { isAccountCategoryAllowed } from "../services/account-category-policy";
 import type { AuthNotificationSender } from "../services/auth-flows/notification-sender";
 import { legalConsent } from "../services/legal-consent";
-import { SessionEpochChangedError } from "../services/session";
+import { SessionAccountMismatchError, SessionEpochChangedError } from "../services/session";
 import * as categorySettings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
+
+import { accountMismatchResponse, confirmationRecoveryResponse } from "./auth/account-mismatch";
 
 const log = logger("auth");
 
@@ -33,7 +36,19 @@ const jsonError = (c: Context, message: string, status: 400 | 401 | 500 | 503) =
 /** Authentication routes: login, logout. */
 export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
   new Hono<AuthContext>()
+    .onError((error, c) => {
+      if (error instanceof SessionAccountMismatchError) return accountMismatchResponse(c);
+      throw error;
+    })
     .use(rateLimit())
+    .use(async (c, next) => {
+      if (
+        c.req.header("X-Cloud-Reauthenticate") === "1" &&
+        ["/admin-login", "/change-expired-password", "/password-reset/complete"].some((path) => c.req.path.endsWith(path))
+      )
+        return confirmationRecoveryResponse(c);
+      return next();
+    })
     .post(
       "/legal-consent",
       describeRoute({ tags: ["Auth"], summary: "Explicitly accept terms after sign-in; unlock the pending session" }),
@@ -147,13 +162,20 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         tags: ["Auth"],
         summary: "Logout",
         description:
-          "Idempotent: clears the session cookie and revokes the current credential if present. No authentication required — logout must always succeed.",
+          "Idempotent: clears the session cookie and revokes the current credential if present. No authentication required. An optional X-Cloud-Logout-User header binds revocation to that user UUID (or none) without writing the shared browser cookie; a changed account returns 409 without revocation.",
+        parameters: [{ in: "header", name: "X-Cloud-Logout-User", required: false, schema: { type: "string" } }],
         responses: {
           200: jsonResponse(MessageResponseSchema, "Session invalidated"),
+          400: jsonResponse(ErrorResponseSchema, "Invalid expected account"),
+          409: jsonResponse(ErrorResponseSchema, "Browser account changed"),
         },
       }),
       async (c) => {
-        await auth.session.delete(c);
+        const expected = c.req.header("x-cloud-logout-user");
+        if (expected !== undefined && expected !== "none" && !z.string().uuid().safeParse(expected).success)
+          return c.json({ message: "Invalid expected account" }, 400);
+        if (!(await auth.session.delete(c, expected === "none" ? null : expected)))
+          return c.json({ message: "Browser account changed; reload before signing out" }, 409);
         log.info("Logout");
         return c.json({ message: "Logged out" });
       },
@@ -301,7 +323,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         tags: ["Auth"],
         summary: "Complete password reset",
         description:
-          "Use a one-time reset token to first sign the account out everywhere, including unpairing Cloud Login and mobile app phones, then set the password, sign out everywhere again and create the new browser session. If signing out everywhere fails before the change, the password stays unchanged; if it fails after the change, no session is issued. Both answer 500, and a new reset link is required. signOutOthersFailed is false whenever a session is issued.",
+          "Use a one-time reset token to first sign the account out everywhere, including unpairing Cloud Login and mobile app devices, then set the password, sign out everywhere again and create the new browser session. If signing out everywhere fails before the change, the password stays unchanged; if it fails after the change, no session is issued. Both answer 500, and a new reset link is required. signOutOthersFailed is false whenever a session is issued.",
         responses: {
           200: jsonResponse(PasswordChangeAuthResponseSchema, "Password reset completed and session created"),
           400: jsonResponse(ErrorResponseSchema, "Password reset failed"),
@@ -399,14 +421,22 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         // prior `DO NOTHING` could log into a pre-existing `uid='admin'` row that
         // was locally demoted (non-admin local user, or even an IPA row named
         // admin), silently bypassing the intent of the emergency endpoint.
-        await sql`
+        await sql.begin(async (tx) => {
+          const [created] = await tx<{ id: string; inserted: boolean }[]>`
         INSERT INTO auth.users (uid, provider, profile, admin, given_name, sn, display_name)
         VALUES ('admin', 'local', 'user', true, 'Admin', '', 'Admin')
         ON CONFLICT (uid) DO UPDATE SET
           provider = 'local',
           profile = 'user',
           admin = true
+        RETURNING id, (xmax = 0) AS inserted
       `;
+          if (created?.inserted)
+            await coreUserEventPublisher().publish(tx, "user.created", {
+              subject: created.id,
+              data: { userId: created.id, provider: "local" },
+            });
+        });
 
         const user = await accounts.users.get({ uid: "admin" });
         if (!user) return jsonError(c, "Failed to resolve admin user.", 500);

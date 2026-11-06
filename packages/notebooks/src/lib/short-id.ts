@@ -19,8 +19,9 @@
  * notes and attachments live in a single global scope (one short-id
  * column per table, no compound uniqueness).
  */
+
+import { sql } from "@k2b/cloud";
 import { crypto } from "@k2b/stdlib";
-import { sql } from "bun";
 
 /** Length of the generated readable ID. */
 const SHORT_ID_LEN = 6;
@@ -43,7 +44,9 @@ export const SHORT_ID_REGEX = /^[0-9a-zA-Z]{6}$/;
  * interpolate identifiers — and we want to keep the call sites
  * parameterized for the candidate value.
  */
-export type ShortIdTable = "notebook" | "note" | "attachment" | "comment";
+export type ShortIdTable = "notebook" | "note" | "attachment" | "comment" | "page_template";
+/** Tables whose rows may predate their `short_id` column; page templates always had one. */
+export type BackfilledShortIdTable = Exclude<ShortIdTable, "page_template">;
 
 /**
  * Generate a short-id that doesn't collide with an existing row in the
@@ -86,6 +89,12 @@ const isShortIdTaken = async (table: ShortIdTable, candidate: string): Promise<b
       `;
       return r?.exists ?? false;
     }
+    case "page_template": {
+      const [r] = await sql<{ exists: boolean }[]>`
+        SELECT EXISTS (SELECT 1 FROM notebooks.page_templates WHERE short_id = ${candidate}) AS "exists"
+      `;
+      return r?.exists ?? false;
+    }
   }
 };
 
@@ -100,7 +109,7 @@ const isShortIdTaken = async (table: ShortIdTable, candidate: string): Promise<b
  * first deploy) it's well below 1 s and avoids the complexity of
  * generating-then-deduping a batch.
  */
-export const backfillShortIds = async (table: ShortIdTable): Promise<number> => {
+export const backfillShortIds = async (table: BackfilledShortIdTable): Promise<number> => {
   const rows = await selectNullShortIdRows(table);
   if (rows.length === 0) return 0;
 
@@ -113,7 +122,7 @@ export const backfillShortIds = async (table: ShortIdTable): Promise<number> => 
   return filled;
 };
 
-const selectNullShortIdRows = async (table: ShortIdTable): Promise<{ id: string }[]> => {
+const selectNullShortIdRows = async (table: BackfilledShortIdTable): Promise<{ id: string }[]> => {
   switch (table) {
     case "notebook":
       return sql<{ id: string }[]>`SELECT id FROM notebooks.notebooks WHERE short_id IS NULL`;
@@ -126,7 +135,7 @@ const selectNullShortIdRows = async (table: ShortIdTable): Promise<{ id: string 
   }
 };
 
-const updateShortId = async (table: ShortIdTable, id: string, shortId: string): Promise<void> => {
+const updateShortId = async (table: BackfilledShortIdTable, id: string, shortId: string): Promise<void> => {
   switch (table) {
     case "notebook":
       await sql`UPDATE notebooks.notebooks SET short_id = ${shortId} WHERE id = ${id}::uuid AND short_id IS NULL`;

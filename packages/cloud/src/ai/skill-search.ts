@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import { toPgTextArray } from "../services/postgres";
 
 const BM25_INDEX = "ai.skills_search_bm25_idx";

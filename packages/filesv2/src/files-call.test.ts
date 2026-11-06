@@ -93,7 +93,7 @@ test("Assistant, mandates, and workloads select agent", () => {
   for (const marker of [{ mandateId: "mandate" }, { workloadType: "task" }])
     expect(capabilityCall({ ...context, actor: { ...actor, delegation: { ...delegation, ...marker } } }).via).toBe("agent");
 });
-test("non-user capability actors keep the forbidden response", () => {
+test("machine capability actors preserve their own identity and subject", () => {
   const serviceActor: RequestActor = {
     kind: "service_account",
     delegatedUser: null,
@@ -111,7 +111,14 @@ test("non-user capability actors keep the forbidden response", () => {
       createdAt: "2026-01-01T00:00:00Z",
     },
   };
-  expect(() => capabilityCall({ ...context, actor: serviceActor, user: null })).toThrow();
+  const call = capabilityCall({
+    ...context,
+    actor: serviceActor,
+    user: null,
+    accessSubject: { type: "service_account", serviceAccountId: "account" },
+  });
+  expect(call.actor).toEqual(serviceActor);
+  expect(call.accessSubject).toEqual({ type: "service_account", serviceAccountId: "account" });
 });
 test("visitor and system builders preserve their explicit purpose", () => {
   expect(visitorCall("share", "request")).toEqual({ kind: "visitor", shareId: "share", requestId: "request" });

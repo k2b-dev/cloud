@@ -744,10 +744,15 @@ const BUILTIN_RENDERERS: FileViewRenderer[] = [
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export const formatFileViewSize = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+/**
+ * A file size such as "4.2 MB". With `locale`, the number follows that language ("4,2 MB") and drops a trailing
+ * zero ("64 KB"); without it, the output stays as before.
+ */
+export const formatFileViewSize = (bytes: number, locale?: string): string => {
+  const [value, unit] = bytes < 1024 ? [bytes, "B"] : bytes < 1024 * 1024 ? [bytes / 1024, "KB"] : [bytes / (1024 * 1024), "MB"];
+  if (unit === "B") return `${bytes} B`;
+  if (!locale) return `${value.toFixed(1)} ${unit}`;
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value)} ${unit}`;
 };
 
 export default function FileView(props: FileViewProps) {

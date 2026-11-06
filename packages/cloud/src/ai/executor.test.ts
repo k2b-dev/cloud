@@ -20,15 +20,7 @@ import {
   parseAiWebsiteApprovalScope,
 } from "./approvals";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
-import {
-  buildMalformedToolCallRepairText,
-  countMalformedToolCallRepairs,
-  createMalformedToolCallRepair,
-  isMalformedToolCallId,
-  malformedToolCallMessage,
-  withMalformedToolCallRepair,
-  withMalformedToolCallResults,
-} from "./malformed-tool-call-repair";
+import { isMalformedToolCallId } from "./malformed-tool-calls";
 import { type AiTurnBlock, buildBlocksFromMessages, messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 import { aiConversations } from "./store";
 import * as stream from "./stream";
@@ -41,7 +33,9 @@ const { createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } =
 
 const turn = { agentId: "cloud", loopId: "turn-1", turnId: "turn-1:turn:0", turnIndex: 0 };
 
-describe("malformed tool call steering", () => {
+describe("malformed tool calls in a chat turn", () => {
+  // nessi answers a malformed call itself; its result names what went wrong and asks for a new call.
+  const repairResult = expect.stringContaining("Invalid JSON");
   const at = "2026-10-11T00:00:00.000Z";
   const issue: ToolStreamIssue = {
     kind: "malformed_tool_call",
@@ -74,9 +68,11 @@ describe("malformed tool call steering", () => {
       validCall?: boolean;
       emptyAnswer?: boolean;
       steerAfterTextAnswer?: boolean;
+      /** Continue the stored turn without new input, as a resumed worker does. */
+      resume?: boolean;
     } = {},
   ) => {
-    const appliedSteers: (AiTurnSteer | null)[] = [];
+    const appliedSteers: AiTurnSteer[] = [];
     const shownSteers: AiTurnSteer[] = [];
     const requests: ProviderRequest[] = [];
     let steeringReads = 0;
@@ -87,21 +83,12 @@ describe("malformed tool call steering", () => {
     const store = memoryStore();
     await store.append({ role: "user", content: [{ type: "text", text: "Run" }] });
     for (const message of options.previousMessages ?? []) await store.append(message);
-    const repair = createMalformedToolCallRepair(countMalformedToolCallRepairs(await store.load()));
-    let repairAttempts = 0;
     let compactions = 0;
-    const takeSteering = repair.takeSteering;
-    repair.takeSteering = () => {
-      const text = takeSteering();
-      if (text) repairAttempts++;
-      return text;
-    };
     const steering = __aiExecutorTest.createChatSteering({
-      repair,
       appliedSteers,
       takePendingSteers: async () => {
         steeringReads++;
-        // A real steer is returned alongside the repair, then another while its events are still in flight.
+        // A real steer arrives before the second request, then another while its events are still in flight.
         const steers = withUserSteers && (steeringReads === 2 || steeringReads === 3) ? [userSteer(String(steeringReads))] : [];
         if (lateSteerPending && requests.length === malformedResponses + 1) {
           lateSteerPending = false;
@@ -119,9 +106,6 @@ describe("malformed tool call steering", () => {
       family: "openai-compatible",
       model: "fixture",
       capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-      complete: async () => {
-        throw new Error("Unexpected completion");
-      },
       async *stream(request) {
         requests.push(request);
         if (options.overflow && requests.length === 2) {
@@ -158,24 +142,21 @@ describe("malformed tool call steering", () => {
     const loop = nessi({
       loopId: "turn",
       agentId: "cloud",
-      input: "Run",
+      ...(options.resume ? {} : { input: "Run" }),
       systemPrompt: "",
-      provider: withMalformedToolCallRepair(provider, repair),
+      provider,
       // Cloud's session store persists input/real steering elsewhere and ignores nessi-appended user messages.
-      store: withMalformedToolCallResults(
-        {
-          load: store.load,
-          append: async (message, opts) => {
-            if (message.role !== "user") {
-              await store.append(message, opts);
-              for (const op of mapper.storedMessage(message, at)) {
-                if (op.type === "block_set") liveBlocks.push(op.block);
-              }
+      store: {
+        load: store.load,
+        append: async (message, opts) => {
+          if (message.role !== "user") {
+            await store.append(message, opts);
+            for (const op of mapper.storedMessage(message, at)) {
+              if (op.type === "block_set") liveBlocks.push(op.block);
             }
-          },
+          }
         },
-        repair,
-      ),
+      },
       compact: options.overflow
         ? ({ force }) => {
             if (!force) return null;
@@ -239,7 +220,6 @@ describe("malformed tool call steering", () => {
         appliedSteers,
         userPolicyResets,
         steeringReads,
-        repairAttempts,
         compactions,
         messages: (await store.load()).map((row) => ({ ...row, createdAt: at })),
         liveBlocks,
@@ -287,8 +267,9 @@ describe("malformed tool call steering", () => {
       role: "tool_result",
       callId: expect.stringMatching(/^malformed_[0-9a-f]{24}$/),
       name: "code_run",
-      result: buildMalformedToolCallRepairText(issue),
+      result: repairResult,
       isError: true,
+      reason: "malformed_tool_call",
     });
     const assistant = result.requests[1]?.messages[1];
     const toolResult = result.requests[1]?.messages[2];
@@ -307,46 +288,28 @@ describe("malformed tool call steering", () => {
     expect(result.appliedSteers).toEqual([]);
   });
 
-  test("context overflow retries with the durable repair and spends only one repair attempt", async () => {
+  test("context overflow retries with the stored repair and stores it once", async () => {
     const result = await run(1, false, { overflow: true });
     expect(result.outcome).toMatchObject({ kind: "finished", status: "completed", failure: null });
     expect(result.requests).toHaveLength(3);
     expect(result.compactions).toBe(1);
-    expect(result.repairAttempts).toBe(1);
     expect(result.requests[2]?.messages).toEqual(result.requests[1]?.messages);
-    expect(result.requests[2]?.messages[2]).toMatchObject({
-      role: "tool_result",
-      result: buildMalformedToolCallRepairText(issue),
-      isError: true,
-    });
-    expect(countMalformedToolCallRepairs(result.messages)).toBe(1);
+    expect(result.requests[2]?.messages[2]).toMatchObject({ role: "tool_result", result: repairResult, isError: true });
+    expect(result.messages.filter(({ message }) => message.role === "tool_result" && isMalformedToolCallId(message.callId))).toHaveLength(
+      1,
+    );
   });
 
-  test("resume keeps the repair budget from two stored malformed responses", async () => {
-    const previousMessages: Message[] = [
-      { role: "assistant", content: [{ type: "tool_call", id: `malformed_${"a".repeat(24)}`, name: "code_run", args: {} }] },
-      {
-        role: "tool_result",
-        callId: `malformed_${"a".repeat(24)}`,
-        name: "code_run",
-        result: buildMalformedToolCallRepairText(issue),
-        isError: true,
-      },
-      { role: "assistant", content: [{ type: "tool_call", id: "ordinary", name: "code_run", args: {} }] },
-      { role: "tool_result", callId: "ordinary", name: "code_run", result: "Done" },
-      { role: "assistant", content: [{ type: "tool_call", id: `malformed_${"b".repeat(24)}`, name: "code_run", args: {} }] },
-      {
-        role: "tool_result",
-        callId: `malformed_${"b".repeat(24)}`,
-        name: "code_run",
-        result: buildMalformedToolCallRepairText(issue),
-        isError: true,
-      },
-    ];
-    const result = await run(1, false, { previousMessages });
-    expect(countMalformedToolCallRepairs(previousMessages.map((message) => ({ message })))).toBe(2);
+  test("a resumed turn keeps the repair budget its two stored malformed responses spent", async () => {
+    const previousMessages: Message[] = ["a", "b"].flatMap((letter): Message[] => {
+      const callId = `malformed_${letter.repeat(24)}`;
+      return [
+        { role: "assistant", stopReason: "tool_use", content: [{ type: "tool_call", id: callId, name: "code_run", args: {} }] },
+        { role: "tool_result", callId, name: "code_run", result: "Invalid JSON", isError: true, reason: "malformed_tool_call" },
+      ];
+    });
+    const result = await run(1, false, { previousMessages, resume: true });
     expect(result.requests).toHaveLength(1);
-    expect(result.repairAttempts).toBe(0);
     expect(result.outcome).toMatchObject({ kind: "finished", status: "failed", failure: { error: { code: "failed" } } });
   });
 
@@ -361,29 +324,23 @@ describe("malformed tool call steering", () => {
       expect(live).toEqual(history);
       expect(live.at).toBe(at);
       expect(live.args).toEqual({});
-      expect(history.result).toBe(buildMalformedToolCallRepairText({ ...issue, name }));
+      expect(history.result).toEqual(repairResult);
       const expectedName = name === "code_run" ? "code_run" : name === "notes__action__create" ? "notes.create" : "unknown_tool";
       expect(live.name).toBe(expectedName);
       expect(history.name).toBe(expectedName);
     }
   });
 
-  test("a partial assistant response keeps malformed calls and error results on provider failure", async () => {
+  test("a partial assistant response keeps its text on provider failure, without the unusable call", async () => {
     const result = await run(1, false, { providerFailure: true });
     expect(result.outcome).toMatchObject({ kind: "finished", status: "failed" });
     expect(result.messages[1]?.message).toMatchObject({
       role: "assistant",
       stopReason: "error",
-      content: [
-        { type: "text", text: "Partial" },
-        { type: "tool_call", id: expect.stringMatching(/^malformed_[0-9a-f]{24}$/), args: {} },
-      ],
+      content: [{ type: "text", text: "Partial" }],
     });
-    expect(result.messages[2]?.message).toMatchObject({
-      role: "tool_result",
-      result: buildMalformedToolCallRepairText(issue),
-      isError: true,
-    });
+    // nessi stores a malformed call only with a completed response; this one never reaches the model again.
+    expect(result.messages.some(({ message }) => message.role === "tool_result")).toBe(false);
   });
 
   test("an ordinary provider stop completes without repair guidance", async () => {
@@ -402,11 +359,11 @@ describe("malformed tool call steering", () => {
     expect(result.outcome).toMatchObject({
       kind: "finished",
       status: "failed",
-      failure: { error: { code: "failed" }, detail: malformedToolCallMessage(issue) },
+      failure: { error: { code: "failed" }, detail: "AI execution failed." },
     });
   });
 
-  test("repair acknowledgements never consume real user steers or reset their policy", async () => {
+  test("repairs never consume real user steers", async () => {
     const result = await run(1, true);
     expect(result.outcome).toMatchObject({ kind: "finished", status: "completed" });
     expect(result.shownSteers).toEqual([userSteer("2"), userSteer("3")]);
@@ -414,10 +371,11 @@ describe("malformed tool call steering", () => {
     expect(result.appliedSteers).toEqual([]);
   });
 
-  test("real user steering does not renew the repair budget", async () => {
+  test("real user steering gives the model a new repair budget", async () => {
+    // Steers before the second and third request each start nessi's count of malformed responses again.
     const result = await run(3, true);
-    expect(result.requests).toHaveLength(3);
-    expect(result.outcome).toMatchObject({ kind: "finished", status: "failed", failure: { error: { code: "failed" } } });
+    expect(result.requests).toHaveLength(4);
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "completed" });
   });
 });
 
@@ -489,7 +447,7 @@ describe("nessi block event mapping", () => {
     const event: OutboundEvent = { ...turn, type: "issue", issue };
     expect(mapper.translate(event)).toEqual([]);
     const callId = `malformed_${"a".repeat(24)}`;
-    const result = buildMalformedToolCallRepairText(issue);
+    const result = "Invalid JSON Re-send the call with its exact tool name and complete, valid JSON arguments.";
     const at = "2026-10-11T00:00:00.000Z";
     expect(mapper.storedMessage({ role: "tool_result", callId, name: "code_run", result, isError: true }, at)).toMatchObject([
       {
@@ -1056,7 +1014,7 @@ describe("nessi block event mapping", () => {
           kind: "message",
           message: { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "danger", args: {} }] },
           loopId: "turn-1",
-          modelProfileId: null,
+          modelId: null,
           providerModel: null,
           usage: null,
           stopReason: null,
@@ -1212,7 +1170,7 @@ describe("saved live state", () => {
         kind: "message",
         message: { role: "assistant", content: [] },
         loopId: "turn",
-        modelProfileId: null,
+        modelId: null,
         providerModel: null,
         usage: null,
         stopReason: null,
@@ -1283,7 +1241,7 @@ test("turn policy ignores malformed-only rounds and counts mixed rounds by their
     kind: "message",
     message: { role: "assistant", stopReason: "stop", content: [malformed] },
     loopId: "t",
-    modelProfileId: null,
+    modelId: null,
     providerModel: null,
     usage: null,
     stopReason: "stop",
@@ -1317,7 +1275,7 @@ test("turn policy ignores malformed-only rounds and counts mixed rounds by their
   expect(__aiExecutorTest.toolRoundState([mixed, ordinaryResult])).toEqual({ issued: 1, completed: 1 });
 });
 
-for (const stopReason of ["error", "interrupted", "aborted"] as const)
+for (const stopReason of ["error", "interrupted", "aborted", "max_tokens"] as const)
   test(`a ${stopReason} answer never counts as an issued or completed tool round`, () => {
     const message = {
       role: "assistant" as const,
@@ -1332,7 +1290,7 @@ for (const stopReason of ["error", "interrupted", "aborted"] as const)
       kind: "message" as const,
       message,
       loopId: "t",
-      modelProfileId: null,
+      modelId: null,
       providerModel: null,
       usage: null,
       stopReason,
@@ -1385,7 +1343,6 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
           message: { role: "assistant", stopReason, content: [{ type: "tool_call", id: "call", name: "send", args: {} }] },
         };
       },
-      subscribe: () => () => {},
       push: () => {},
       steer: () => {},
       abort: () => {},
@@ -1474,9 +1431,6 @@ test.each(["fast", "late", "interaction", "code_open", "abort"] as const)("%s cl
       contextWindow: 8000,
       capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
       stream: async function* () {
-        throw new Error("Model must not run in this test");
-      },
-      complete: async () => {
         throw new Error("Model must not run in this test");
       },
     },

@@ -10,8 +10,8 @@ test("changing filters preserves scope but clears stale selection and pagination
   const params = new URL(href, "http://localhost").searchParams;
   expect(Object.fromEntries(params)).toEqual({ app: "core", namespace: "dev", resource: "mail:job", problems: "true", limit: "20" });
   expect(
-    syncNatsFilterHref("/admin/observability/sync", "?app=mail&storeApp=mail&kind=queue&store=job&message=x&sequence=2&cursor=3", {
+    syncNatsFilterHref("/admin/observability/nats/sync", "?app=mail&storeApp=mail&kind=queue&store=job&message=x&sequence=2&cursor=3", {
       app: "",
     }),
-  ).toBe("/admin/observability/sync");
+  ).toBe("/admin/observability/nats/sync");
 });

@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import type { LiveViewer } from "@k2b/cloud/events";
-import { sql } from "bun";
 import { z } from "zod";
 import { ShortIdSchema } from "../contracts";
 import { gridsLiveKey } from "../service/live";

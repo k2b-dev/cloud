@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { redis, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { redis, sql } from "../runtime/clients";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
 import * as settings from "../services/settings";

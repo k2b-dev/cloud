@@ -1,10 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { encryptSecret } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { app } from "../config";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { createMailNotificationService, type MailNotificationSendInput } from "../notifications";
 import { grantMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
@@ -62,7 +61,6 @@ suite("mail collaboration operations", () => {
   let readerContext: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const createUser = async (role: string): Promise<TestUser> => {
       const uid = `mail-ops-${role}-${suffix}`;
       const displayName = `${role[0]!.toUpperCase()}${role.slice(1)} Mail Operations`;

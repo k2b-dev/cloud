@@ -25,14 +25,17 @@ Available options are:
 - `title` and `placeholder` for task-specific copy;
 - `initialAppId` to start within one searchable application, shown as a removable scope chip;
 - `scope: { appId, tag?, label, icon? }` to narrow the search on the server by app and optional search tag, shown as a removable chip with its label and icon; takes precedence over `initialAppId`;
+- `scope: { ref, label, icon? }` to search within a resource context supported by its provider, such as a Space's tasks and events or a Notebook's notes; also takes precedence over `initialAppId`;
 - `query` to prefill the search text;
 - `excludeRefs` to hide resources already selected;
 - `requireReader` to show only Types with a canonical reader.
 
-An app scope starts searching at once, even with empty text. Scope filtering
+An app or resource scope starts searching at once, even with empty text. Scope filtering
 happens before the per-app result limit, so other resource kinds cannot crowd
 out matches as they can with the browser-only `resourceType` filter.
 `requireReader` still applies within the scope.
+Removing the scope chip widens the search. The consuming service still checks
+that the selected resource belongs to the intended container.
 
 ## Presentation
 

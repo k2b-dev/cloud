@@ -16,6 +16,7 @@ import {
   cloudResourceRefAppId,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
+import { ResolvedCloudResourceUrlSchema } from "../contracts/resource-resolution";
 import { saveCapabilityStream } from "./capability-streams";
 import { arg, type CliInputFlagValue, type CloudCliContext, command, defineCliCommands, flag, readCliInput } from "./index";
 import { cloudResourceUrl } from "./resource-links";
@@ -139,7 +140,7 @@ const invoke = async (config: {
     }
     throw error;
   }
-  const result = capabilityResultSchema(z.unknown()).parse(body);
+  const result = capabilityResultSchema(z.unknown(), { consumer: true }).parse(body);
   const manifests = config.manifest ? [config.manifest] : [];
   const wantedApps = new Set((result.refs ?? []).map(cloudResourceRefAppId));
   for (const manifest of manifests) wantedApps.delete(manifest.appId);
@@ -179,6 +180,22 @@ export default defineCliCommands({
   name: "capabilities",
   summary: "Discover and invoke versioned Cloud app capabilities.",
   commands: [
+    command("resolve", {
+      summary: "Recognize a Cloud link and read its resource reference",
+      args: { url: arg.required({ description: "Cloud permalink or application page URL" }) },
+      run: async ({ ctx, args }) => {
+        const response = await ctx.fetch("/api/resources/resolve", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: args.url.trim() }),
+        });
+        if (!response.ok) throw new Error("Resource not found.");
+        const body = await readBoundedJson(response, CAPABILITY_MAX_RESULT_BYTES);
+        if (!body.ok) throw new Error("Resource not found.");
+        const result = ResolvedCloudResourceUrlSchema.parse(body.data);
+        printGenericResult(ctx, { ...result, permalink: cloudResourceUrl(ctx, result.ref) });
+      },
+    }),
     ...(["read", "write", "status", "abort"] as const).map((verb) =>
       command(`stream-${verb}`, {
         summary: `${verb} an authenticated binary capability stream`,
@@ -247,6 +264,8 @@ export default defineCliCommands({
             types: app.manifest.types.length,
             queries: app.manifest.queries.length,
             actions: app.manifest.actions.length,
+            events: app.manifest.events?.length ?? 0,
+            subscribes: app.manifest.subscribes?.length ?? 0,
           })),
           [
             { key: "app", label: "APP" },
@@ -254,6 +273,8 @@ export default defineCliCommands({
             { key: "types", label: "TYPES" },
             { key: "queries", label: "QUERIES" },
             { key: "actions", label: "ACTIONS" },
+            { key: "events", label: "EVENTS" },
+            { key: "subscribes", label: "SUBSCRIBES" },
           ],
         );
         if (result.page.hasMore) ctx.error(`More apps available; continue with --cursor ${result.page.nextCursor}`);

@@ -17,7 +17,7 @@ The Assistant discovers these Queries through the capability catalog; MCP and
 CLI clients use the same [capabilities](/en/docs/platform/capabilities).
 
 An operator must enter the Geoapify key under
-**Administration → Places and maps** (`/admin/places-and-maps`). The page also
+**Administration → Base settings → Places & maps** (`/admin/base/places`). The section also
 holds the provider plan, the credit budgets, and this month's usage; see
 [Administer places and maps](#administer-places-and-maps). All provider calls use
 `https://api-eu.geoapify.com`. The endpoint cannot be changed. No provider key
@@ -33,7 +33,7 @@ never from Query input. Inputs are strict: unknown fields are refused.
 | `address.autocomplete` | `text` (3–300 characters), optional `limit` (1–5, default 5), `countryCode`, `type`, `bias` point, and `area` | `suggestions` (up to 5 addresses) and `provenance` |
 | `address.geocode` | Either `text` (1–300 characters) or `fields`; optional `countryCode` | One `address` and `provenance`; ambiguity returns candidates in error details |
 | `address.reverse` | `point` | One `address` and `provenance` |
-| `place.search` | `categories` (1–5), exactly one of `near`, `area`, or `along`; optional `limit` (1–20, default 20) | `places` and `provenance` |
+| `place.search` | `categories` (1–5), exactly one of `near`, `area`, or `along`; optional `name` (1–300 characters after trimming) and `limit` (1–20, default 20) | `places` and `provenance` |
 | `map.style` | Optional `theme` (`light` or `dark`) | Same-origin `styleUrl` and attribution links |
 | `route.calculate` | `{ plan }`: 2–26 stops, route/per-leg options, optional optimization | A self-contained `route` with resolved stops, independent legs, meters, seconds, polyline6, and provenance |
 | `route.update` | `{ route, changes }` | Proposed `route`, `before`, `after`, `delta`, and optional insertion details |
@@ -65,13 +65,25 @@ One plausible candidate is returned; several produce
 verified entrance or delivery address.
 
 Addresses carry `line1`, `postalCode`, `city`, `stateRegion`, `countryCode`,
-`point`, `formatted`, `confidence` (number or null), and `provenance`.
+`point`, `formatted`, `confidence` (number or null), `buildingConfidence`
+(number or null), and `provenance`. `buildingConfidence` is the provider's
+certainty that `point` is this building (`rank.confidence_building_level`);
+it is null when the result is not a house-number match. Store a point for a
+typed address only when this value is high; Contacts requires at least 0.9.
 Unavailable text components are empty strings.
 
 Place categories are `museum`, `cafe`, `restaurant`, `bar`, `pub`, `bakery`,
 `supermarket`, `pharmacy`, `hotel`, `accommodation`, `fuel`, `parking`,
 `charging`, `toilets`, `park`, `viewpoint`, and `attraction`.
 `GeoCategorySchema` and `GEO_CATEGORIES` export the verified mapping.
+
+Use optional `name` to ask the provider for places matching a name, such as
+`"Wasserfall"`, within the required categories and geographic controls. This
+works for both area searches and route corridors. Outer whitespace is removed;
+case and internal whitespace are preserved in requests and cache keys. Omitting
+`name` keeps category-only search. Blank or longer than 300-character names are
+refused. Cloud returns provider matches rather than filtering a cached category
+result page by name.
 
 A place carries `id`, `name`, provider `categories`, `point`, `address`, and
 `provenance`. It may include `distanceMeters`, `openingHours` (the raw OSM
@@ -238,19 +250,23 @@ With the current 20-result limit, a place search costs one credit.
 
 Core reserves address/place costs before calling the provider and settles the
 reference cost afterward. Routing reserves against the distance estimate described above. A complete result served from cache costs zero and creates no ledger write.
-The defaults are **90,000 credits per Cloud calendar month** and **300 per
-access subject per day**. Both periods use `app.timezone`, including daylight
-saving changes. Agents and service accounts count like people. Delegated
-sessions count against their resolved access subject. Concurrent reservations cannot exceed either limit. Known routing overruns
-can exceed a reservation and are recorded as spent.
+The default is **90,000 credits per Cloud calendar month** in `app.timezone`,
+including daylight saving changes. All callers share that budget. Concurrent
+reservations cannot exceed it; known routing overruns can exceed a reservation
+and are recorded as spent. There is no daily allowance per person, service
+account or app.
 
 `geo.plan` selects Free, API 10, API 25, API 50, API 100, API 250, or Custom.
 The plans provide 3,000/5, 10,000/12, 25,000/15, 50,000/20, 100,000/25, and
 250,000/30 daily credits/requests per second respectively. Custom uses
-`geo.custom_daily_credits` and `geo.custom_rps`. The provider allowance is plan
-information; Cloud enforces its monthly and per-subject daily budgets.
-Set those with `geo.monthly_budget_credits` and `geo.person_daily_credits`.
-The daily budget cannot exceed the monthly budget, including on reset.
+`geo.custom_daily_credits` and `geo.custom_rps`. The provider daily allowance
+is plan information; Cloud enforces `geo.monthly_budget_credits` and a shared
+installation-wide request rate. Autocomplete cache hits consume rate admission
+but no credits.
+
+`geo.person_daily_credits` has been removed from the settings registry and
+administration. Old stored values are ignored, including unreadable values;
+they do not constrain calls or prevent lowering the monthly budget.
 
 Calls fail immediately when the shared token bucket or per-function in-flight
 bound is full; there is no queue. The in-flight bound is the plan rate times
@@ -268,7 +284,7 @@ structured `details`:
 | --- | --- |
 | `GEO_NOT_CONFIGURED` | Ask an administrator to enter the key, or to replace an unreadable key or budget value, in Administration → Places and maps. No Valkey, budget, or provider work occurs. |
 | `GEO_FORBIDDEN` | Supply an authenticated actor and access subject. |
-| `GEO_BUDGET_EXHAUSTED` | `scope` (`person` or `cloud`) and `resetsAt`; wait for reset or ask the operator to review the limit. |
+| `GEO_BUDGET_EXHAUSTED` | `scope: "cloud"` and `resetsAt`; wait for reset or ask the operator to review the limit. |
 | `GEO_BUSY` | `retryAfterSeconds`; wait, then retry. If it persists, check Valkey and provider capacity. A provider 429 also uses this code. |
 | `GEO_LIMIT_EXCEEDED` | `limit`, `max`, `actual`; reduce that field. For a minimum bound, `max` reports the required minimum. |
 | `GEO_UNSUPPORTED_OPTION` | Correct the input shape or choose one supported search mode/address representation. |
@@ -280,23 +296,29 @@ structured `details`:
 
 Provider 429 errors also carry costs after a paid request. Provider bodies and
 transport error text are discarded. `geo.availability` is free, reads only
-the caller's counters, and makes no provider call. Missing keys or unreadable
+the global monthly counter (the retained `person.exhausted` field is always `false`), and makes no provider call. Missing keys or unreadable
 `geo.*` settings return `configured: false` without reading counters.
+
+Anonymous app-server autocomplete uses `geoClient.autocomplete(input)` with
+`CLOUD_CORE_INTERNAL_ORIGIN`, without an app key or session. Core exposes only
+this operation on `/api/_internal/geo/v1/autocomplete`; the gateway refuses
+that route. Existing person and app callers keep their identity. See
+[App capabilities](/en/docs/platform/capabilities#call-as-the-application).
 
 ## Administer places and maps
 
-Only administrators open **Administration → Places and maps**. The old link
-`/admin/settings?tab=places` leads there. Every part of the page uses the same
+Only administrators open **Administration → Base settings → Places & maps**.
+Every part of the section uses the same
 admin API, `/api/admin/core/geo`; OAuth tokens need the `read` scope to view
 and `write` to change.
 
 | Request | Effect |
 | --- | --- |
 | `GET /` | Key state (`none`, `set`, `unreadable`) with when and by whom it was set, the plan, the budgets, the plan table, and `app.timezone`. Never the key. |
-| `GET /usage` | This month and today in credits, the share per function (`tiles`, `places`, `route`, `address`), how many access subjects reached their daily limit today, and this month's `routeCostOverruns` count. |
+| `GET /usage` | This month and today in credits, the share per function (`tiles`, `places`, `route`, `address`), and this month's `routeCostOverruns` count. |
 | `PUT /key` `{ apiKey }` | Checks the key with one reverse-geocoding lookup at the EU endpoint, then stores it. A refusal (`422 geo_key_rejected`) or an unreachable provider (`502 geo_key_unverified`) stores nothing; the previous key stays active. `400 geo_key_missing` or `geo_key_malformed` stop before the provider is called. |
 | `DELETE /key` | Removes the key; maps, place search, and address suggestions turn off for everyone. |
-| `PUT /budget` | Saves `plan`, `monthlyCredits`, and `personDailyCredits` (plus `customRps` and `customDailyCredits` for the custom plan) together. Each field must be a whole number within the setting's bounds, and the daily limit at most the monthly budget. A refusal returns `400 geo_budget_invalid` with a code per field and changes nothing. |
+| `PUT /budget` | Saves `plan` and `monthlyCredits` (plus `customRps` and `customDailyCredits` for the custom plan) together. Each field must be a whole number within the setting's bounds. A refusal returns `400 geo_budget_invalid` with a code per field and changes nothing. |
 
 The verification lookup costs about one credit at Geoapify and is not counted
 in Cloud's budget. The general settings API refuses `geo.api_key`, so a key
@@ -333,9 +355,16 @@ buffer (with its default applied), sorted categories, limit, and request languag
 A cache failure skips the cache. A Valkey admission failure refuses paid calls
 with `GEO_BUSY`.
 
+Paired App-PWA devices can use the platform's closed
+[allowlisted autocomplete route](/en/docs/identity/app-pwa-sessions#offer-address-suggestions).
+It checks the live pairing and visit and records usage under the owner without
+turning the device into an employee or exposing employee credentials.
+
 ## Call from a server
 
-Import `geoClient` from `@k2b/cloud/server` and pass the same
+For anonymous address suggestions, call `geoClient.autocomplete(input)` from
+an app server with `CLOUD_CORE_INTERNAL_ORIGIN` configured. For the other
+operations, import `geoClient` from `@k2b/cloud/server` and pass the same
 `CapabilityCaller` as other server capability calls. Methods are
 `autocomplete`, `geocode`, `reverse`, `searchPlaces`, `calculateRoute`,
 `updateRoute`, `mapStyle`, and `availability`.
@@ -405,3 +434,89 @@ Tile and glyph failures retain pins with **Try again**. `CloudMap` refreshes
 free availability after a failure and shows the person/day or Cloud/month
 reset time when a budget is exhausted. Core bundles its glyph files as server
 assets; production images need no runtime UI package or external font host.
+
+
+## Export a map image for print or PDF
+
+`CloudMap` forwards the public `MapView` browser `ref` handle. Capture its
+complete fitted view with `handle.snapshot({ signal })` after it is ready.
+The PNG includes the same flat Cloud basemap, road labels, saved geometry,
+pin marks and attribution. Capture introduces no provider request chain:
+it never starts, pans, refits or retries a map. Existing tile requests remain
+authenticated in Core, attributed to the original actor/access subject and
+subject to the same budgets. All provider traffic stays on the EU endpoint;
+no key or user credential reaches a renderer.
+
+Use a fitted saved-document map rather than a panned interactive view. Reveal
+lazy maps before capture. Missing tiles or glyphs fail visibly; retry the map,
+then capture again. The [MapView guide](/en/ui/content/map-view) describes the
+complete-resource barrier, dimensions, cancellation and error codes.
+
+For offline PDF, use `geoMapSnapshotFingerprint` from
+`@k2b/cloud/contracts/geo-snapshot` to bind each PNG to the complete validated
+saved GeoDocument. Submit binary images to an application-owned, authenticated
+endpoint with the saved document revision. The shared
+[PDF preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-snapshots)
+validates membership, fingerprints, dimensions, byte budgets and real decoding.
+The application still owns resource authorization, revision checks, omission
+reporting and linked attribution. A client's image is presentation input; it
+cannot attest that the geography is truthful and must never become canonical
+saved map data.
+
+There is no server-side map renderer in this contract. Headless API or CLI PDF
+exports without browser image uploads must report unavailable map images and
+retain saved-source lists, or fail explicitly when map images are required.
+`MapViewFrame` remains a geometry fallback and does not supply a basemap PNG.
+## Use maps in Assistant
+
+Assistant's native places and route widgets use these same permission-aware
+Queries and `CloudMap`. The conversation owns saved map state and proposals;
+Core remains stateless for routes. Follow-ups update the first widget, and saving
+to a notebook uses the shared map document format through Notebook capabilities.
+See [Explore places and routes](/en/docs/ai/chat-interface#explore-places-and-routes)
+for selection, editing, recovery, and persistence behavior.
+## Suggest addresses in forms
+
+Import `AddressAutocomplete` from `@k2b/cloud/geo/ui` for a street field. It
+calls `address.autocomplete` from the browser as the signed-in person, after
+3 to 300 characters and a 250 ms pause, for at most 5 suggestions. A newer
+query waits for the open request instead of cancelling a call that Core may
+already have paid for, so one request per field is in flight.
+
+```tsx
+import { AddressAutocomplete } from "@k2b/cloud/geo/ui";
+
+<AddressAutocomplete
+  label="Street and number"
+  value={street()}
+  onValueChange={setStreet}
+  onPick={(address) => fillFields(address)}
+  onOwnEntry={() => keepTypedText()}
+  availability={ssrAvailability}
+/>
+```
+
+The field never fills other fields itself. `onPick` receives the chosen
+`GeoAddress` with `point` and `provenance`; keep both with the stored address
+and drop them when the person changes a location field later. Next to
+suggestions, the list offers the typed text as its own entry: last on wide
+screens, first on phones so the on-screen keyboard cannot hide it; without
+suggestions it says that the typed text is saved as written. Arrow keys move, Enter takes the
+active entry, and Escape closes the list and keeps the typed text. The source
+line **Geoapify · OpenStreetMap** sits under the list.
+
+Pass the SSR `geo.availability` result as `availability`. Without a configured
+key the field is a plain text input. An exhausted personal or Cloud budget,
+from the snapshot or from a refused request, shows one calm line with the reset
+time instead of suggestions and sends no further requests.
+
+## Link to a navigation app
+
+Cloud does no live navigation. `geoNavigationHref` from `@k2b/cloud/geo/ui`
+builds a link that hands a destination to the device's maps app:
+`geo:` on Android, Apple Maps on iPhone and iPad, and OpenStreetMap
+directions elsewhere. Pass a `point` when one is known, otherwise the address
+text. Choose the platform with `geoNavigationPlatform(navigator.userAgent)`
+after the first render, so server output and the first client render agree.
+The link carries only the destination and an optional name, and it leaves
+Cloud only when the person follows it.

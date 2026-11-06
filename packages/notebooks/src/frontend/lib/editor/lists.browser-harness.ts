@@ -1,16 +1,21 @@
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import {
+  fadeScrollMarginsExtension,
+  fadeScrollPadding,
+  listCommandsExtension,
+  listStateField,
+  pressMissedEditor,
+} from "@k2b/editor/markdown";
 import { ScrollArea } from "@k2b/ui";
 import { createComponent, render } from "solid-js/web";
 import { yCollab } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
-import { fadeScrollMarginsExtension, fadeScrollPadding } from "./fade-scroll-margins";
+import { notebookTableOptions } from "../../../lib/table-options";
 import { editor } from "./index";
-import { listCommandsExtension } from "./list-commands";
-import { listStateField } from "./lists";
-import { pressMissedEditor } from "./surface-press";
+import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "./notebook-options";
 
 // The note editor's rich-mode arrangement: CodeMirror grows inside a fading ScrollArea whose surface takes stray presses.
 let port: HTMLDivElement | undefined;
@@ -56,25 +61,25 @@ const view = new EditorView({
       yCollab(ytext, new Awareness(ydoc), { undoManager: new Y.UndoManager(ytext) }),
       editor.basicExtensions(),
       editor.markdownExtension(),
-      listCommandsExtension(),
+      listCommandsExtension(notebookListOptions),
       editor.searchTheme(),
       fadeScrollMarginsExtension(() => port),
       editor.customLightInit(),
       editor.noteScroller,
-      editor.tablesExtension("n1"),
-      editor.imageExtension("n1"),
-      editor.listsExtension(),
+      editor.tablesExtension(notebookTableOptions("n1")),
+      editor.imageExtension(notebookUrlOptions("n1")),
+      editor.listsExtension(notebookListOptions),
       editor.infoBlocksExtension("en"),
       editor.dataBlocksExtension(),
       editor.namedBlocksExtension(),
-      editor.linksExtension("n1"),
+      editor.linksExtension(notebookUrlOptions("n1")),
       editor.markupExtension(),
       editor.markExtension(),
       editor.subSupExtension(),
-      editor.ligaturesExtension(),
+      editor.ligaturesExtension(notebookListOptions),
       editor.initialMarkdownDecorationRefreshExtension(),
       editor.pointerSelectionMarkdownRefreshExtension(),
-      editor.mermaidExtension(),
+      editor.mermaidExtension(notebookMermaidOptions),
       editor.katexExtension(),
       editor.codeFontExtension(),
       editor.tagPillExtension("n1"),

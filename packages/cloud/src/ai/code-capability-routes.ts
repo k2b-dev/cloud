@@ -53,6 +53,7 @@ export function createCodeCapabilityRoutes(
         request: c.req.raw,
         authority: turnAuthority(c),
         origin: "assistant",
+        assistantTurn: { conversationId: c.req.param("conversationId")!, turnId: c.req.param("turnId")! },
         continuation: codeCapabilityOperation(c.req.param("conversationId")!, c.req.param("turnId")!),
         mandate: config.mandate
           ? { mandateId: config.mandate.id, mandateRevision: config.mandate.revision, ownerAppId: "core" }

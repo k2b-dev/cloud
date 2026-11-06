@@ -41,6 +41,8 @@ const MAILBOX_ID = "Box001";
 const now = "2026-10-03T10:00:00.000Z";
 
 const data: MailboxPageData = {
+  viewPreference: { large: "auto", phone: "compact" },
+  doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
   receivingAddress: null,
   mailbox: {
     id: MAILBOX_ID,
@@ -68,6 +70,9 @@ const data: MailboxPageData = {
   draftsMode: false,
   draftsPage: null,
   draftsError: null,
+  eventsMode: false,
+  eventsPage: null,
+  eventsError: null,
   activeView: "needs_action",
   savedViewId: null,
   savedViews: [],
@@ -82,11 +87,14 @@ const data: MailboxPageData = {
   listCursor: null,
   nextListCursor: null,
   listError: null,
+  hiddenDone: null,
+  assignedGroups: null,
   listTitle: "Needs action",
   conversationRowState: null,
   detailMessages: [],
   conversationSummary: null,
   conversationDrafts: [],
+  automationTrace: [],
   detailError: null,
   collaborationState: null,
   localTags: [],
@@ -186,7 +194,7 @@ describe("Mail workspace live updates", () => {
         const url = String(input instanceof Request ? input.url : input);
         if (url.includes("/workspace-route")) {
           workspaceRequests += 1;
-          return Response.json(data);
+          return Response.json({ ...data, scheduledCount: 290 - workspaceRequests });
         }
         if (url.includes("/subscriptions")) {
           listRequests += 1;
@@ -226,6 +234,7 @@ describe("Mail workspace live updates", () => {
           currentUserId: "user-1",
           currentUserEmail: "reader@example.test",
           contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+          cloudUrl: "https://cloud.example",
           dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
           initialPreferences: readMailWorkspacePreferences(""),
           initialUserPreferences: readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
@@ -273,6 +282,9 @@ describe("Mail workspace live updates", () => {
     event("1", "s6t.mail.5", "Conv01");
     await settle();
     expect(workspaceRequests).toBe(1);
+    const outbox = dom.root.querySelector('a[href$="?scheduled=1"]');
+    expect(outbox?.textContent).toContain("Outbox");
+    expect(outbox?.textContent).toContain("289");
 
     // Hidden, the tab misses one change; it arrives as a replay after the applied cursor, and nothing else loads.
     returnToTab();

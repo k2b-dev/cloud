@@ -1,19 +1,22 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { createServer, type Socket, connect as tcpConnect } from "node:net";
 import * as syncModule from "@k2b/sync";
-import { natsServers, natsSuite, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { initializeTestPlatform, natsServers, natsSuite, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { env } from "../config/env";
 import * as nats from "./nats-connection";
 import { getProcessSync, lazySync, startProcessSync, waitForNats } from "./process-sync";
 
 const suite = natsSuite();
 const originalNamespace = process.env.SYNC_NAMESPACE;
-afterEach(() => {
+const natsServersConfigured = () => Boolean(process.env.CLOUD_TEST_NATS_SERVERS);
+afterEach(async () => {
   if (originalNamespace === undefined) delete process.env.SYNC_NAMESPACE;
   else process.env.SYNC_NAMESPACE = originalNamespace;
+  if (natsServersConfigured()) await initializeTestPlatform();
 });
-const isolate = () => {
+const isolate = async () => {
   process.env.SYNC_NAMESPACE = testSyncNamespace("process");
+  await initializeTestPlatform();
 };
 
 /**
@@ -55,7 +58,7 @@ const delayedNats = async () => {
 
 suite("process Sync lifecycle", () => {
   test("binds one instance, declares lazily, pins replication and drains once", async () => {
-    isolate();
+    await isolate();
     let calls = 0;
     const primitive = lazySync((sync) => {
       calls++;
@@ -89,7 +92,7 @@ suite("process Sync lifecycle", () => {
   });
 
   test("retries a failed start with a fresh connection, fails at once on a Sync error, and starts cleanly later", async () => {
-    isolate();
+    await isolate();
     const connect = nats.connectNats;
     const connections: Array<Awaited<ReturnType<typeof connect>>> = [];
     const connectSpy = spyOn(nats, "connectNats").mockImplementation(async (input) => {
@@ -130,10 +133,11 @@ suite("process Sync lifecycle", () => {
   });
 
   test("waits for NATS that becomes reachable after the process started", async () => {
-    isolate();
+    await isolate();
     const proxy = await delayedNats();
     const servers = process.env.NATS_SERVERS;
     process.env.NATS_SERVERS = proxy.url;
+    await initializeTestPlatform();
     const delayMs = 1_500;
     const opening = setTimeout(proxy.open, delayMs);
     try {
@@ -147,8 +151,10 @@ suite("process Sync lifecycle", () => {
       }
     } finally {
       clearTimeout(opening);
-      process.env.NATS_SERVERS = servers;
+      if (servers === undefined) delete process.env.NATS_SERVERS;
+      else process.env.NATS_SERVERS = servers;
       await proxy.close();
+      await initializeTestPlatform();
     }
   }, 20_000);
 });
@@ -176,7 +182,7 @@ test("exits the process once NATS does not answer within the startup budget", as
 
 // Stopping a NATS node needs a multi-node cluster and Docker control, which the shared test infrastructure does not provide.
 test.skip("retains accepted topic events during one explicitly selected node outage", async () => {
-  isolate();
+  await isolate();
   const container = "sync-test-nats-2";
   const docker = async (action: "stop" | "start") => {
     const child = Bun.spawn(["docker", action, container], { stdout: "pipe", stderr: "pipe" });

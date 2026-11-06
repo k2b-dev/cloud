@@ -1,5 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type {
   Document,
   DocumentArtifact,

@@ -1,5 +1,5 @@
 import { CODE_CAPABILITY_TOKEN_HEADER, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
-import { type AuthContext, getLocale, getTimeZone, requireInvocation } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale, getTimeZone, requireInvocation } from "@k2b/cloud/server";
 import { appAccessAuthority } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
@@ -26,6 +26,19 @@ export const codeToolRoutes = new Hono<AuthContext>().use("*", bodyLimit({ maxSi
 function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.output<S>, context: CodeToolContext) => Promise<unknown>) {
   codeToolRoutes.post(
     `/${name}`,
+    [
+      "code_files",
+      "code_file_stat",
+      "code_manage_read",
+      "code_database_read",
+      "code_storage_list",
+      "code_versions",
+      "code_list",
+      "code_read",
+      "code_history",
+    ].includes(name)
+      ? auth.readOnly
+      : auth.requireOAuthScope("write", "admin"),
     requireInvocation(() => ({ targetAppId: "assistant", operation: `tool:${name}`, schemaHash: null })),
     async (c) => {
       const envelope = z

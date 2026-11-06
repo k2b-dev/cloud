@@ -668,8 +668,9 @@ describe(`Spaces month view in ${browserName}`, () => {
       await page.waitForFunction(() => !document.querySelector(".k2b-calendar-popover:popover-open"));
       expect(await focusedDay(page)).toBe("2026-10-13");
 
-      // New event in the toolbar creates on the same day, in the full dialog.
+      // New event in the toolbar opens its menu; Blank event creates on the same day, in the full dialog.
       await page.getByRole("button", { name: "New event" }).click();
+      await page.getByRole("menuitem", { name: "Blank event" }).click();
       const dialog = page.locator("dialog[open]");
       await dialog.waitFor();
       expect(await dialog.textContent()).toContain("Oct 13");
@@ -713,6 +714,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       await page.locator(day("2026-11-02")).waitFor();
       expect(await selectedDays(page)).toEqual([]);
       await page.getByRole("button", { name: "New event" }).click();
+      await page.getByRole("menuitem", { name: "Blank event" }).click();
       await dialog.waitFor();
       expect(await dialog.textContent()).toContain("Nov 2");
       expect(await dialog.textContent()).not.toContain("Oct 21");
@@ -1143,7 +1145,10 @@ describe(`Spaces month view in ${browserName}`, () => {
       };
       const title = await middle(".k2b-calendar-header__title");
       expect(Math.abs((await middle(".k2b-calendar-header__today")) - title)).toBeLessThanOrEqual(2);
-      expect(Math.abs((await middle(".k2b-calendar-header__actions > button")) - title)).toBeLessThanOrEqual(2);
+      // New event is the trigger of its "+" menu.
+      expect(
+        Math.abs((await middle(".k2b-calendar-header__actions > .k2b-dropdown > .k2b-dropdown__trigger")) - title),
+      ).toBeLessThanOrEqual(2);
       const overflow = await page.evaluate(() => {
         const header = document.querySelector(".k2b-calendar-header")!.getBoundingClientRect();
         return Array.from(document.querySelectorAll(".k2b-calendar-header a, .k2b-calendar-header button")).filter((element) => {

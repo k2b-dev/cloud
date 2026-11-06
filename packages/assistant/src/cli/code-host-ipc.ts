@@ -1,9 +1,11 @@
 import type { AiFrontendToolHandler } from "@k2b/cloud/ai/solid";
+import type { MachineHostInput } from "../artifacts/machine-contracts";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 
 type Call = Parameters<AiFrontendToolHandler>[0];
 export type HostRequest =
   | { operation: "start"; origin: string; token: string }
+  | { operation: "machine"; input: MachineHostInput }
   | { operation: "health" }
   | { operation: "close" }
   | { operation: "execute" | "call"; call: Call }

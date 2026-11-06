@@ -20,7 +20,7 @@ const user: AiStoredMessage = {
     content: [{ type: "text", text: "Build an inventory dashboard from these exports and mail the offer to Jana." }],
   },
   loopId: "turn1",
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,
@@ -91,7 +91,7 @@ const stored = (index: number, value: AiStoredMessage["message"], patch: Partial
   kind: "message",
   message: value,
   loopId: "turn1",
-  modelProfileId: "model",
+  modelId: "model",
   providerModel: "model",
   usage: null,
   stopReason: null,
@@ -132,7 +132,7 @@ const finish = (status: "completed" | "aborted") => {
 
 const steps: Record<string, () => void> = {
   start: () => {
-    emit({ ...next(), type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...next(), type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     emit({ ...next(), type: "block_delta", blockId: "a1-t0-0", blockKind: "text", delta: texts.first });
     for (const read of reads) emit({ ...next(), type: "block_set", block: read });
     emit({ ...next(), type: "block_set", block: csv });

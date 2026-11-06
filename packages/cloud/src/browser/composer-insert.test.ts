@@ -1,6 +1,7 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import type { ChatCommandContext } from "@k2b/ui";
 import type { CloudResourcePickerItem, CloudResourcePickerOptions } from "./resource-picker";
+import "../../../ui/test/solid-ssr-preload";
 
 const picker = mock<(options?: CloudResourcePickerOptions) => Promise<CloudResourcePickerItem | undefined>>(async () => undefined);
 mock.module("./resource-picker", () => ({ openCloudResourcePicker: picker }));

@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation, timed } from "@k2b/stdlib/solid";
-import { DetailPanel, IconButton, Placeholder, TextInput, Tooltip, useLocale } from "@k2b/ui";
+import { DescriptionList, DetailPanel, IconButton, Placeholder, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord, PublicTableQueryResult } from "../../../api/public-dto";
 import type { AggregationSpec, FilterTree, GroupBySpec, RecordQuery } from "../../../contracts";
@@ -140,10 +140,6 @@ export default function GroupDetailPanel(props: Props) {
     const name = field ? field.name : t().missingField;
     return spec.granularity ? `${name} (${spec.granularity})` : name;
   };
-  const groupIcon = (spec: GroupBySpec) => {
-    const field = fieldsById().get(spec.fieldId);
-    return field?.type === "relation" ? "ti ti-hierarchy" : "ti ti-list-tree";
-  };
   const groupValue = (spec: GroupBySpec, index: number) => {
     const field = fieldsById().get(spec.fieldId);
     const raw = props.bucket.keys[index];
@@ -174,58 +170,49 @@ export default function GroupDetailPanel(props: Props) {
     fetchMut.abort();
   });
 
+  const summaryItems = () => [
+    ...props.groupBy.map((spec, index) => ({ term: groupLabel(spec, index), description: groupValue(spec, index) })),
+    ...aggSpecsWithCount().map((agg) => ({
+      term: aggLabel(agg),
+      description: (
+        <span class="tabular-nums">
+          {formatAggregationValue({
+            value: props.bucket.values[`${agg.fieldId}__${agg.agg}`],
+            spec: agg,
+            field: agg.fieldId === "*" ? undefined : fieldsById().get(agg.fieldId),
+            dateConfig: props.dateConfig,
+            locale: locale(),
+          })}
+        </span>
+      ),
+    })),
+  ];
+
   return (
     <DetailPanel>
       <DetailPanel.Header
-        icon="ti ti-folders"
+        kind={<span>{t().group}</span>}
         title={groupTitle()}
-        subtitle={t().groupDetails}
+        subtitle={
+          props.groupBy.length > 0
+            ? t().groupedBy({ fields: props.groupBy.map((spec, index) => groupLabel(spec, index)).join(" · ") })
+            : undefined
+        }
         actions={
           <Tooltip.Anchor content={t().closeDetails}>
             <IconButton variant="ghost" size="sm" type="button" label={t().closeGroupPanel} onClick={() => props.onClose()}>
-              <i class="ti ti-x" />
+              <i class="ti ti-x" aria-hidden="true" />
             </IconButton>
           </Tooltip.Anchor>
         }
       />
 
       <DetailPanel.Body scrollPreserveKey={`grids-group-detail-${props.tableId}-${bucketKey()}`}>
-        <DetailPanel.Summary title={t().summary}>
-          <div class="mb-4 flex flex-wrap gap-1.5">
-            <For each={props.groupBy}>
-              {(spec, index) => (
-                <span class="inline-flex min-w-0 items-center gap-1 rounded-md bg-[var(--ui-surface-subtle)] px-2 py-1 text-xs text-secondary">
-                  <i class={`${groupIcon(spec)} shrink-0`} />
-                  <span class="font-medium">{groupLabel(spec, index())}</span>
-                  <span class="min-w-0 truncate">{groupValue(spec, index())}</span>
-                </span>
-              )}
-            </For>
-          </div>
-          <div class="grid grid-cols-2 gap-x-4 gap-y-3">
-            <For each={aggSpecsWithCount()}>
-              {(agg) => (
-                <div class="min-w-0">
-                  <div class="flex min-w-0 items-center gap-1.5 text-xs font-medium text-dimmed">
-                    <i class="ti ti-math-function shrink-0" />
-                    <span class="truncate">{aggLabel(agg)}</span>
-                  </div>
-                  <div class="mt-1 min-w-0 break-words text-right text-base font-semibold leading-5 tabular-nums text-primary">
-                    {formatAggregationValue({
-                      value: props.bucket.values[`${agg.fieldId}__${agg.agg}`],
-                      spec: agg,
-                      field: agg.fieldId === "*" ? undefined : fieldsById().get(agg.fieldId),
-                      dateConfig: props.dateConfig,
-                      locale: locale(),
-                    })}
-                  </div>
-                </div>
-              )}
-            </For>
-          </div>
-        </DetailPanel.Summary>
+        <DetailPanel.Section title={t().summary}>
+          <DescriptionList layout="rows" size="sm" items={summaryItems()} />
+        </DetailPanel.Section>
 
-        <DetailPanel.Section title={t().records} icon="ti ti-list">
+        <DetailPanel.Section title={t().records}>
           <div class="flex min-h-[18rem] flex-col gap-3">
             <TextInput
               aria-label={t().searchGroupRecords}
@@ -243,25 +230,36 @@ export default function GroupDetailPanel(props: Props) {
               }}
             />
 
-            <div class="flex min-h-0 flex-1 flex-col gap-1">
+            <div class="flex min-h-0 flex-1 flex-col">
               <Show
                 when={items().length > 0}
                 fallback={
-                  <Placeholder
-                    state={fetchMut.error() ? "error" : fetchMut.loading() ? "loading" : "empty"}
-                    align="left"
-                    class="py-3"
-                    title={fetchMut.error() ? t().loadRecordsFailed : fetchMut.loading() ? t().loadingRecords : t().noRecordsGroup}
-                    description={fetchMut.error()?.message}
-                  />
+                  <Show
+                    when={fetchMut.error()}
+                    fallback={
+                      <Show when={fetchMut.loading()} fallback={<p class="grids-details-none">{t().noRecordsGroup}</p>}>
+                        <Placeholder state="loading" variant="compact" align="left" title={t().loadingRecords} />
+                      </Show>
+                    }
+                  >
+                    {(error) => (
+                      <Placeholder
+                        state="error"
+                        variant="compact"
+                        align="left"
+                        title={t().loadRecordsFailed}
+                        description={error().message}
+                        onRetry={() => loadFirst()}
+                      />
+                    )}
+                  </Show>
                 }
               >
                 <For each={items()}>
                   {(record) => (
                     <DetailPanel.Action
                       title={renderRecordLine(record)}
-                      leading={<i class="ti ti-row-insert-bottom" aria-hidden="true" />}
-                      trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                      leading={<i class="ti ti-table-row" aria-hidden="true" />}
                       onClick={() => props.onOpenRecord(record)}
                     />
                   )}

@@ -6,6 +6,7 @@ import * as registry from "../../_internal/registry";
 import { appAccess } from "../../contracts/app-access";
 import { appAccessRevalidator, appPublicRouteMatcher, guardAppAccessSocket, requireAppAccess, watchAppAccess } from "./app-access";
 import type { AuthContext, RequestAuthority } from "./auth";
+import * as authMiddleware from "./auth";
 import { auth } from "./auth";
 
 const authority = (): RequestAuthority => ({
@@ -20,7 +21,7 @@ afterEach(() => {
 });
 
 const authenticate = (current: () => RequestAuthority | null) => {
-  const spy = spyOn(auth, "requireRole").mockImplementation(() => async (c, next) => {
+  const spy = spyOn(authMiddleware, "loadAuthenticatedActor").mockImplementation(async (c) => {
     const value = current();
     if (value) {
       c.set("actor", value.actor);
@@ -30,7 +31,11 @@ const authenticate = (current: () => RequestAuthority | null) => {
       c.set("sessionToken", "same-session");
       c.set("sessionKind", "web");
     }
-    await next();
+    return {
+      token: value ? "same-session" : null,
+      user: value?.actor.kind === "user" ? value.actor.user : null,
+      actor: value?.actor ?? null,
+    };
   });
   spies.push(spy);
 };
@@ -215,4 +220,56 @@ describe("bounded app access watcher", () => {
       stop();
     }
   });
+});
+
+test("resource entry allows a probe beyond the discovery budget and distinguishes unavailable from denied", async () => {
+  const { bindResourceAppAccess } = await import("../../_internal/app-access-resources");
+  const { compileAppAccess } = await import("../../contracts/app-access");
+  const access = await import("../../services/app-access");
+  authenticate(authority);
+  let state: "slow-allow" | "deny" | "timeout" = "slow-allow";
+  const declaration = appAccess.resources({
+    adapters: {
+      workspace: {
+        hasAnyRight: async () => {
+          if (state === "timeout") return new Promise<boolean>(() => {});
+          if (state === "deny") return false;
+          // fixed wait: entry must permit a healthy check beyond discovery's one-second budget.
+          await new Promise((resolve) => setTimeout(resolve, 1100));
+          return true;
+        },
+      },
+    },
+  });
+  const app = { id: "entry-budget", access: compileAppAccess(declaration) };
+  const stop = bindResourceAppAccess(app.id, declaration);
+  const actualTimeout = AbortSignal.timeout.bind(AbortSignal);
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => actualTimeout(state === "timeout" ? 25 : ms));
+  const denied = spyOn(await import("../../services/app-access-metrics"), "recordAppAccessDenied").mockImplementation(() => {});
+  const server = new Hono<AuthContext>()
+    .use(requireAppAccess(app, renderDenied, async (c) => c.text("Please try again", 503)))
+    .get("*", (c) => c.text("allowed"));
+  try {
+    expect((await server.request("/app/entry-budget")).status).toBe(200);
+    expect(timeout).toHaveBeenCalledWith(8000);
+    state = "timeout";
+    await expect(access.canUseApp(authority(), app)).rejects.toBeInstanceOf(access.AppAccessUnavailableError);
+    const page = await server.request("/app/entry-budget", { headers: { accept: "text/html" } });
+    expect(page.status).toBe(503);
+    expect(await page.text()).toContain("try again");
+    expect(page.headers.get("X-Cloud-App-Access-Denied")).toBeNull();
+    const api = await server.request("/api/entry-budget");
+    expect(api.status).toBe(503);
+    expect(await api.json()).toMatchObject({ code: "app_access_unavailable", app: app.id });
+    expect(denied).not.toHaveBeenCalled();
+    state = "deny";
+    const denial = await server.request("/api/entry-budget");
+    expect(denial.status).toBe(403);
+    expect(await denial.json()).toMatchObject({ code: "app_access_denied" });
+    expect(denied).toHaveBeenCalledTimes(1);
+  } finally {
+    stop();
+    timeout.mockRestore();
+    denied.mockRestore();
+  }
 });

@@ -87,7 +87,12 @@ export const createSpaceCommands = (options: { current?: () => SpaceDetail | und
                       SpaceBrowseDataSchema,
                     );
                     if (!result.ok) throw new Error(result.error.message);
-                    return result.data.data.map((space) => ({ value: { id: space.id }, label: space.name, icon: "ti ti-layout-kanban" }));
+                    return result.data.data.map((space) => ({
+                      id: space.id,
+                      value: { id: space.id },
+                      label: space.name,
+                      icon: "ti ti-layout-kanban",
+                    }));
                   },
                   { title: t().chooseSpace, placeholder: t().findSpace, minQueryLength: 0, noResultsText: t().noSpaces, size: "small" },
                 );
@@ -108,7 +113,7 @@ export const createSpaceCommands = (options: { current?: () => SpaceDetail | und
               const references = input.source ? [await sourceReference(input.source)] : undefined;
               if (!active) return;
               setSpace(context.space);
-              await controller.createItem({ type, references, returnTo: commandOptions.returnTo });
+              await controller.createItem({ type, references, templateId: input.templateId, returnTo: commandOptions.returnTo });
             } finally {
               pending = false;
             }

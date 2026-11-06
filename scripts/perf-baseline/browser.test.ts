@@ -4,10 +4,14 @@ import { createDomTestHarness } from "../../packages/ui/test/dom";
 import {
   assetKind,
   Browsers,
+  browserFailure,
+  departingResourceCancellation,
   installProbe,
   installPwaProbe,
+  navigationRefusal,
   pwaStartUrl,
   stepMilliseconds,
+  trackHostNetwork,
   trackHostScripts,
   transferType,
 } from "./browser";
@@ -186,6 +190,7 @@ test("host TTI tracks only main-frame scripts, while a new document resets its s
     url: () => `https://localhost/${name}`,
   });
   const scripts = trackHostScripts(source);
+  const network = trackHostNetwork(source);
   const frameScript = request(provider, "script", "provider.js");
   const hostScript = request(host, "script", "host.js");
   emit("request", frameScript);
@@ -206,8 +211,40 @@ test("host TTI tracks only main-frame scripts, while a new document resets its s
   emit("request", hostScript);
   emit("requestfailed", hostScript);
   expect(scripts.pending.size).toBe(0);
+  network.reset();
+  const departed = request(host, "fetch", "departed-stream");
+  const departedDocument = network.document();
+  const mutation = request(host, "fetch", "undo");
+  emit("request", request(provider, "fetch", "embedded-stream"));
+  expect(network.pending.size).toBe(0);
+  emit("request", departed);
+  expect(network.pending.size).toBe(1);
+  network.reset();
+  expect(network.pending.size).toBe(0);
+  expect(network.documentOf(departed)).toBe(departedDocument);
+  expect(network.document()).not.toBe(departedDocument);
+  emit("request", mutation);
+  expect(network.documentOf(mutation)).toBe(network.document());
+  emit("requestfinished", departed);
+  expect(network.pending.size).toBe(1);
+  emit("requestfinished", mutation);
+  expect(network.pending.size).toBe(0);
   scripts.stop();
+  network.stop();
   expect([...listeners.values()].every((entries) => entries.size === 0)).toBe(true);
+});
+
+test("navigation ignores only cancelled same-origin resources belonging to the departing document", () => {
+  const from = "https://localhost/pwa/spaces";
+  const resource = "https://localhost/app/spaces/chunk.js";
+  expect(departingResourceCancellation("script", resource, "Load request cancelled", from, true)).toBe(true);
+  expect(departingResourceCancellation("stylesheet", resource, "net::ERR_ABORTED", from, true)).toBe(true);
+  expect(departingResourceCancellation("script", resource, "Load request cancelled", from, false)).toBe(false);
+  expect(departingResourceCancellation("script", resource, "net::ERR_CONNECTION_RESET", from, true)).toBe(false);
+  expect(departingResourceCancellation("script", resource, undefined, from, true)).toBe(false);
+  expect(departingResourceCancellation("script", resource, "Load request cancelled", null, true)).toBe(false);
+  expect(departingResourceCancellation("document", resource, "Load request cancelled", from, true)).toBe(false);
+  expect(departingResourceCancellation("script", "https://other.test/chunk.js", "Load request cancelled", from, true)).toBe(false);
 });
 
 test("step clocks subtract the epoch origin and round without adding the quiet window", () => {
@@ -293,10 +330,30 @@ test("the PWA probe records the visible pseudo-title frame even while the origin
     for (const [tab, title] of [
       ["start", "Cloud"],
       ["spaces", "Spaces"],
+      ["start-narrow", "Cloud"],
+      ["start-wide", "Start"],
     ]) {
-      document.body.innerHTML = `<div class="k2b-mobile-shell"><h1 class="k2b-mobile-shell__title">${title}</h1><a data-tab="${tab}" aria-current="page" data-k2b-title="${title}">${title}</a></div>`;
+      const heading =
+        tab === "start-narrow"
+          ? '<span>Cloud</span><span style="display:none">Start</span>'
+          : tab === "start-wide"
+            ? '<span style="display:none">Cloud</span><span>Start</span>'
+            : title;
+      document.body.innerHTML = `<div class="k2b-mobile-shell"><h1 class="k2b-mobile-shell__title">${heading}</h1><a data-tab="${tab}" aria-current="page" data-k2b-title="${title}">${title}</a></div>`;
+      // Happy DOM has no responsive layout; provide the text the browser renders.
+      Object.defineProperty(document.querySelector("h1"), "innerText", { value: title, configurable: true });
       window.__cloudPwa.reset({ token: `relaunch-${tab}`, title: null, action: "navigation", choice: null });
       expect(window.__cloudPwa.read().titleAt).toBeNull();
+      frames.shift()?.(performance.now());
+      expect(window.__cloudPwa.read().titleAt).not.toBeNull();
+      expect(window.__cloudPwa.read().titleFrame).toBe(false);
+    }
+    for (const [title, content] of [
+      ["Chat", "<h1>Chat</h1>"],
+      ["Spaces", '<header class="k2b-app-workspace__level-head"><h2>Spaces</h2></header>'],
+    ]) {
+      document.body.innerHTML = `<div class="k2b-mobile-shell"><h1 class="k2b-mobile-shell__title" style="visibility:hidden">${title}</h1><main>${content}</main></div>`;
+      window.__cloudPwa.reset({ token: "content-head", title, action: "navigation", choice: null });
       frames.shift()?.(performance.now());
       expect(window.__cloudPwa.read().titleAt).not.toBeNull();
       expect(window.__cloudPwa.read().titleFrame).toBe(false);
@@ -409,4 +466,29 @@ test("manifest start_url is resolved within the paired app", () => {
     { start_url: "https://user:pass@cloud.example.test/pwa/" },
   ])
     expect(() => pwaStartUrl(manifest, origin)).toThrow();
+});
+
+test("browser failures retain the cause without transport call logs", () => {
+  expect(browserFailure(new Error("get: certificate rejected\nCall log:\nrequest headers\n"))).toBe("get: certificate rejected");
+  expect(browserFailure("step failed")).toBe("step failed");
+});
+
+test("only WebKit's same-origin refusal during a controlled navigation is excluded", () => {
+  const from = "https://localhost:4444/pwa/spaces";
+  for (const api of ["Fetch API", "XMLHttpRequest"]) {
+    const error = { name: `${api} cannot load https`, message: "/localhost:4444/api/catalog?limit=25 due to access control checks." };
+    expect(navigationRefusal("webkit", error, from)).toBe(true);
+    expect(navigationRefusal("chromium", error, from)).toBe(false);
+    expect(navigationRefusal("webkit", error, null)).toBe(false);
+    expect(navigationRefusal("webkit", error, "https://other.test/pwa/")).toBe(false);
+    expect(navigationRefusal("webkit", error, "not a URL")).toBe(false);
+    expect(
+      navigationRefusal(
+        "webkit",
+        { name: "Error", message: `${api} cannot load https://localhost:4444/api/catalog due to access control checks.` },
+        from,
+      ),
+    ).toBe(false);
+  }
+  expect(navigationRefusal("webkit", { name: "TypeError", message: "Unhandled failure" }, from)).toBe(false);
 });

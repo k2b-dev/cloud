@@ -1,0 +1,6 @@
+### Test shard estimates drifted away from actual runtimes
+
+- **What happened:** In CI run 40505152046, WebKit shard 2 exhausted its 20-minute test budget while other shards finished in about 11–17 minutes of test execution.
+- **Root cause:** The runner already assigned the longest measured suites first, but its checked-in weights no longer represented the expanded suites. Several browser files had no measurement, ChatWorkspace took 470 seconds against a 294-second weight, and the fixed matrices exceeded the 15-minute planning target even with balanced estimates.
+- **Error class:** Unbalanced test shards exceed the per-shard time budget.
+- **Guard:** `scripts/run-tests.test.ts` now checks the real unit, WebKit, and integration selections against their CI matrices for every suite exactly once and predicted shard loads at most 15 minutes. Synthetic cases cover deterministic assignment and sensible distribution of new unmeasured files. Weights are refreshed from three green merge-queue runs (40503698446, 40500643888, 40500643622); `scripts/test-weights.ts` reports the smallest fitting matrix beyond eight shards and detects an indivisible oversized suite. Refreshing measurements when runtimes drift remains a maintainer convention; estimates cannot detect runtime changes by themselves.

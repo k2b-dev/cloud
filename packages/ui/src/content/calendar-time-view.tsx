@@ -792,14 +792,14 @@ export const longDay = (view: TimeView, key: string) =>
     timeZone: view.dateConfig().timeZone,
   });
 
-const CHECK_PATH = "M4.6 8.3l2.3 2.3 4.6-4.9";
+const CHECK_PATH = "M5.4 8.2l1.8 1.8 3.5-3.8";
 
-/** A to-do's checkbox: it draws its check, and the title beside it strikes through. */
+/** A to-do's check: a small ring in the entry's color before its title that fills when done; the title strikes through. */
 export const TimeCheck = (props: { view: TimeView; event: CalendarEvent; tabIndex?: number }) => {
   const checked = () => props.view.checkedOf(props.event) ?? false;
   const box = (
     <svg viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="1.75" y="1.75" width="12.5" height="12.5" rx="3.5" />
+      <circle cx="8" cy="8" r="5.75" />
       <path d={CHECK_PATH} />
     </svg>
   );
@@ -874,6 +874,7 @@ export const TimeBand = (props: {
       data-past={past() ? "true" : undefined}
       data-running={running() ? "true" : undefined}
       data-checked={checked() ? "true" : undefined}
+      data-overdue={past() && checked() === false ? "true" : undefined}
       data-checkbox={checked() !== undefined ? "true" : undefined}
       data-just-checked={view.justChecked().has(event().id) ? "true" : undefined}
       data-cut-bottom={props.band.end > limit() ? "true" : undefined}
@@ -901,6 +902,8 @@ export const TimeBand = (props: {
         href={eventHref(view.props.owner, event())}
         fill
         timeline
+        faces={3}
+        linkCount
         compact={props.compact}
         timeLabel={`${view.clock(props.band.start)}–${view.clock(props.band.end)}`}
         showLocation={props.showLocation && size() === "m" && pixels() >= 64}

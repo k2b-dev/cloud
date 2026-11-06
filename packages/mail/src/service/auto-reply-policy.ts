@@ -38,6 +38,18 @@ export const parseReturnPathAddress = (value: string | null | undefined): string
   return /^[^<>\s,]+@[^<>\s,]+$/u.test(candidate) ? candidate.toLowerCase() : null;
 };
 
+/** Shared classification for workflow conditions and automatic-reply loop guards. */
+export const automatedMailReasons = (
+  facts: Pick<AutoReplyFacts, "autoSubmitted" | "precedence" | "listId">,
+): AutoReplySuppressionReason[] => {
+  const reasons: AutoReplySuppressionReason[] = [];
+  const autoSubmitted = normalizeHeader(facts.autoSubmitted);
+  if (autoSubmitted !== "" && autoSubmitted !== "no") reasons.push("automated_message");
+  if (["bulk", "list", "junk"].includes(normalizeHeader(facts.precedence))) reasons.push("bulk_message");
+  if (normalizeHeader(facts.listId) !== "") reasons.push("mailing_list");
+  return reasons;
+};
+
 /**
  * Evaluates protocol-level loop guards only. Business rules and rate limits are
  * applied separately so this decision remains deterministic and auditable.
@@ -47,8 +59,6 @@ export const evaluateAutoReplyPolicy = (facts: AutoReplyFacts): AutoReplyPolicyD
   const senders = new Set(facts.senderAddresses.map(normalizeAddress).filter(Boolean));
   const mailboxAddresses = new Set(facts.mailboxAddresses.map(normalizeAddress).filter(Boolean));
   const returnPath = normalizeHeader(facts.returnPath);
-  const autoSubmitted = normalizeHeader(facts.autoSubmitted);
-  const precedence = normalizeHeader(facts.precedence);
   const suppressTokens = new Set(
     normalizeHeader(facts.autoResponseSuppress)
       .split(/[\s,]+/)
@@ -58,9 +68,7 @@ export const evaluateAutoReplyPolicy = (facts: AutoReplyFacts): AutoReplyPolicyD
   if (senders.size === 0) reasons.push("missing_sender");
   if (returnPath === "<>" || returnPath === "") reasons.push("null_return_path");
   if ([...senders].some((address) => mailboxAddresses.has(address))) reasons.push("mailbox_sender");
-  if (autoSubmitted !== "" && autoSubmitted !== "no") reasons.push("automated_message");
-  if (["bulk", "list", "junk"].includes(precedence)) reasons.push("bulk_message");
-  if (normalizeHeader(facts.listId) !== "") reasons.push("mailing_list");
+  reasons.push(...automatedMailReasons(facts));
   if (["all", "autoreply", "oof"].some((token) => suppressTokens.has(token))) reasons.push("sender_suppressed");
   if (facts.deliveryStatus === true) reasons.push("delivery_status");
   if (facts.alreadyReplied === true) reasons.push("already_replied");

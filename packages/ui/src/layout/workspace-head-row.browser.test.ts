@@ -538,7 +538,7 @@ for (const actions of [true, false]) {
   }
 }
 
-test("keyboard order follows views, chips, Reset, secondary, primary with unclipped rings", async () => {
+test("keyboard order follows views, chips, Reset, secondary, primary with unclipped focus", async () => {
   const page = await load({ head: { items: 3 } });
   try {
     const expected = ["?view=1", "?view=2", "?view=3", "Tags: Customer", "Status", "?view=1", "Search", "?new=task"];
@@ -559,14 +559,20 @@ test("keyboard order follows views, chips, Reset, secondary, primary with unclip
           if (clip.overflowY !== "visible" && (box.top - inset < bounds.top - 0.5 || box.bottom + inset > bounds.bottom + 0.5))
             clips.push(`${ancestor.className}:y`);
         }
+        const probe = document.createElement("i");
+        probe.style.color = "var(--k2b-edge-focus)";
+        document.body.append(probe);
+        const edgeFocus = getComputedStyle(probe).color;
+        probe.remove();
         return {
           name: element.getAttribute("href") ?? element.getAttribute("aria-label") ?? element.textContent?.trim(),
           clips,
-          outline: style.outlineStyle,
+          // A ring outside, or the control's own edge turning the focus colour inside it.
+          visible: style.outlineStyle !== "none" || (style.boxShadow.includes("inset") && style.boxShadow.includes(edgeFocus)),
         };
       });
       expect(focus.name).toBe(name);
-      expect(focus.outline).not.toBe("none");
+      expect(focus.visible, `${name} shows focus`).toBe(true);
       expect(focus.clips).toEqual([]);
     }
   } finally {
@@ -596,7 +602,7 @@ for (const width of [1440, 1194, 834, 390])
   });
 
 for (const theme of ["light", "dark"])
-  test(`${theme}: tabs, chips, and segments keep the soft style contract`, async () => {
+  test(`${theme}: tabs, chips, and segments keep the edge style contract`, async () => {
     const page = await load({}, 1440);
     try {
       await page.locator("html").evaluate((element, theme) => {
@@ -630,7 +636,13 @@ for (const theme of ["light", "dark"])
               display: css.display,
             };
           });
+        const probe = document.createElement("i");
+        probe.style.background = "var(--k2b-tray)";
+        document.body.append(probe);
+        const tray = getComputedStyle(probe).backgroundColor;
+        probe.remove();
         return {
+          tray,
           lists: read(".k2b-tabs__list,.k2b-view-tabs__list"),
           tabs: read('[role="tab"],.k2b-view-tabs__item > a'),
           chips: read(".k2b-filter-chip"),
@@ -644,14 +656,17 @@ for (const theme of ["light", "dark"])
         expect(list.shadow).toBe("none");
         expect(list.borders).toEqual(["0px", "0px", "0px", "0px"]);
       }
+      // Edges are drawn inside: an inset shadow, never a drop shadow or a baseline.
+      const insetOnly = (shadow: string) => shadow === "none" || shadow.split(/,(?![^(]*\))/).every((part) => part.includes("inset"));
       for (const tab of styles.tabs) {
-        expect(tab.shadow).toBe("none");
+        expect(insetOnly(tab.shadow), tab.shadow).toBe(true);
         expect(tab.borders[2]).toBe("0px");
       }
       expect(new Set(styles.tabs.map((tab) => tab.weight)).size).toBe(1);
       for (const chip of styles.chips) expect(chip.borders).toEqual(["0px", "0px", "0px", "0px"]);
-      for (const segment of styles.segments) expect(segment.background).toBe("rgba(0, 0, 0, 0)");
-      for (const segment of styles.selectedSegment) expect(segment.shadow).toBe("none");
+      // Segments sit on the grey track; the selected thumb has an inset edge and no shadow.
+      for (const segment of styles.segments) expect(segment.background).toBe(styles.tray);
+      for (const segment of styles.selectedSegment) expect(insetOnly(segment.shadow), segment.shadow).toBe(true);
       for (const separator of styles.separators)
         expect(separator.content === "none" || separator.content === "normal" || separator.display === "none").toBe(true);
     } finally {

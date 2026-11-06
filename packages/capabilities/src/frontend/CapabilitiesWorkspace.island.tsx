@@ -4,8 +4,9 @@ import {
   Button,
   Checkbox,
   CodeDisplay,
+  DescriptionList,
   DetailPanel,
-  Disclosure,
+  Dropdown,
   IconButtonLink,
   isStructuredDataValue,
   NumberInput,
@@ -195,8 +196,6 @@ function ResponsePanel(props: {
   return (
     <DetailPanel.Section
       title={t().response}
-      icon="ti ti-arrow-back-up"
-      tone="neutral"
       description={t().responseDescription}
       meta={
         <Show when={outcome()}>
@@ -403,105 +402,133 @@ function CapabilityRunner(props: Props) {
     return submitted() && !built.ok ? built.formError : undefined;
   };
 
+  const capabilityPath = () =>
+    capabilityApiPath({ kind: props.selection.kind, appId: props.selection.app.id, capabilityId: props.selection.operation.localId });
+  const policyRows = () => {
+    const selectedAction = action();
+    if (!selectedAction) return [];
+    return [
+      {
+        term: t().effect,
+        description: selectedAction.destructive ? <StatusBadge tone="warning" label={t().destructive} variant="dot" /> : t().nonDestructive,
+      },
+      {
+        term: t().reach,
+        description: selectedAction.openWorld ? <StatusBadge tone="warning" label={t().openWorld} variant="dot" /> : t().cloudOnly,
+      },
+      { term: t().idempotency, description: selectedAction.idempotency },
+    ];
+  };
+
   return (
     <DetailPanel>
       <DetailPanel.Header
-        icon={props.selection.kind === "query" ? "ti ti-search" : "ti ti-bolt"}
+        kind={
+          <>
+            <span>{props.selection.kind === "query" ? t().query : t().action}</span>
+            <Show when={action()?.destructive}>
+              <StatusBadge tone="warning" label={t().destructive} />
+            </Show>
+          </>
+        }
         title={props.selection.operation.title}
         subtitle={props.selection.operation.description}
-        meta={
-          <div class="flex min-w-0 flex-wrap items-center gap-2">
-            <StatusBadge tone="neutral" label={props.selection.kind === "query" ? t().query : t().action} />
-            <code class="truncate text-xs text-dimmed">{`${props.selection.app.id}.${props.selection.operation.localId}`}</code>
-          </div>
+        primaryActions={
+          <>
+            <Button
+              size="sm"
+              variant="subtle"
+              class="capabilities-run"
+              loading={reviewing() || run.loading()}
+              loadingLabel={reviewing() ? t().reviewing : t().running}
+              onClick={() => void execute()}
+            >
+              <i class="ti ti-player-play" aria-hidden="true" /> {t().run}
+            </Button>
+            <Dropdown.Root items={[{ label: t().reset, icon: "ti ti-refresh", action: reset }]} align="end" label={t().moreActions}>
+              <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t().moreActions}>
+                <i class="ti ti-dots" aria-hidden="true" />
+              </Dropdown.Trigger>
+            </Dropdown.Root>
+          </>
         }
         actions={
-          <div class="flex items-center gap-1">
-            <Button size="sm" variant="secondary" onClick={reset}>
-              <i class="ti ti-refresh" aria-hidden="true" /> {t().reset}
-            </Button>
-            {/* The page renders the detail on the server, so Escape and swipes follow this link. */}
-            <IconButtonLink href={props.closeHref} size="sm" label={t().closeDetails} data-workspace-detail-close>
-              <i class="ti ti-x" aria-hidden="true" />
-            </IconButtonLink>
-          </div>
+          // The page renders the detail on the server, so Escape and swipes follow this link.
+          <IconButtonLink href={props.closeHref} size="sm" label={t().closeDetails} data-workspace-detail-close>
+            <i class="ti ti-x" aria-hidden="true" />
+          </IconButtonLink>
         }
       />
 
       <DetailPanel.Body
         scrollPreserveKey={`capability-${props.selection.app.id}-${props.selection.kind}-${props.selection.operation.localId}`}
       >
-        <Show when={action()}>
-          {(selectedAction) => (
-            <DetailPanel.Summary title={t().actionPolicy}>
-              <div class="flex flex-wrap gap-2">
-                <StatusBadge
-                  tone={selectedAction().destructive ? "warning" : "neutral"}
-                  label={selectedAction().destructive ? t().destructive : t().nonDestructive}
-                />
-                <StatusBadge
-                  tone={selectedAction().openWorld ? "warning" : "neutral"}
-                  label={selectedAction().openWorld ? t().openWorld : t().cloudOnly}
-                />
-                <StatusBadge tone="neutral" label={`${t().idempotency}: ${selectedAction().idempotency}`} />
-              </div>
-            </DetailPanel.Summary>
-          )}
-        </Show>
+        <DetailPanel.Section title={t().properties}>
+          <DescriptionList
+            layout="rows"
+            size="sm"
+            items={[
+              { term: t().app, description: props.selection.app.name },
+              {
+                term: t().capabilityId,
+                description: <code class="block truncate text-xs">{`${props.selection.app.id}.${props.selection.operation.localId}`}</code>,
+              },
+              ...policyRows(),
+            ]}
+          />
+        </DetailPanel.Section>
 
         <DetailPanel.Group label={t().runGroup}>
-          <DetailPanel.Section
-            title={t().request}
-            icon="ti ti-send"
-            tone="neutral"
-            description={t().requestDescription}
-            actions={
-              <Button
-                loading={reviewing() || run.loading()}
-                loadingLabel={reviewing() ? t().reviewing : t().running}
-                onClick={() => void execute()}
-              >
-                <i class="ti ti-player-play" aria-hidden="true" /> {t().run}
-              </Button>
-            }
-          >
+          <DetailPanel.Section title={t().request} description={t().requestDescription}>
             <RequestEditor model={model} state={editor} errors={fieldErrors} formError={formError} onStateChange={updateEditor} />
             <Show when={reviewError()}>
               {(error) => (
                 <div class="mt-4">
-                  <Placeholder state="error" align="left" title={t().reviewFailed({ code: error().code })} description={error().message} />
+                  <Placeholder
+                    state="error"
+                    variant="compact"
+                    align="left"
+                    title={t().reviewFailed({ code: error().code })}
+                    description={error().message}
+                  />
                 </div>
               )}
             </Show>
-            <div class="mt-4 flex flex-col gap-3">
-              <Disclosure summary={t().requestCurl} icon="ti ti-terminal-2" surface="plain" disabled={!curl()}>
-                <Show when={curl()}>{(value) => <CodeDisplay code={value()} language="script" lineNumbers={false} />}</Show>
-              </Disclosure>
-              <Disclosure summary={t().schemas} icon="ti ti-braces" surface="plain">
-                <div class="grid gap-3">
-                  <StructuredDataPreview
-                    title={t().inputSchema}
-                    data={
-                      isStructuredDataValue(props.selection.operation.inputSchema)
-                        ? props.selection.operation.inputSchema
-                        : { error: t().invalidInputSchema }
-                    }
-                    maxRows={10}
-                  />
-                  <StructuredDataPreview
-                    title={t().dataSchema}
-                    data={
-                      isStructuredDataValue(props.selection.operation.dataSchema)
-                        ? props.selection.operation.dataSchema
-                        : { error: t().invalidDataSchema }
-                    }
-                    maxRows={10}
-                  />
-                </div>
-              </Disclosure>
-            </div>
           </DetailPanel.Section>
           <ResponsePanel run={run} visible={resultVisible} selection={props.selection} />
+        </DetailPanel.Group>
+
+        <DetailPanel.Group title={props.selection.kind === "query" ? t().moreAboutQuery : t().moreAboutAction}>
+          <DetailPanel.Section
+            title={t().requestCurl}
+            collapsible
+            disabled={!curl()}
+            summary={curl() ? `POST ${capabilityPath()}` : t().curlNeedsValidInput}
+          >
+            <Show when={curl()}>{(value) => <CodeDisplay code={value()} language="script" lineNumbers={false} />}</Show>
+          </DetailPanel.Section>
+          <DetailPanel.Section title={t().schemas} collapsible summary={`${t().inputSchema} · ${t().dataSchema}`}>
+            <div class="grid gap-3">
+              <StructuredDataPreview
+                title={t().inputSchema}
+                data={
+                  isStructuredDataValue(props.selection.operation.inputSchema)
+                    ? props.selection.operation.inputSchema
+                    : { error: t().invalidInputSchema }
+                }
+                maxRows={10}
+              />
+              <StructuredDataPreview
+                title={t().dataSchema}
+                data={
+                  isStructuredDataValue(props.selection.operation.dataSchema)
+                    ? props.selection.operation.dataSchema
+                    : { error: t().invalidDataSchema }
+                }
+                maxRows={10}
+              />
+            </div>
+          </DetailPanel.Section>
         </DetailPanel.Group>
       </DetailPanel.Body>
     </DetailPanel>

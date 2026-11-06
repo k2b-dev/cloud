@@ -1,0 +1,1 @@
+| Export safety checked against a different value | A numeric sort key exempts formatted text such as `-1 +1` from formula escaping. | Test: `ui/test/chart-explorer.behavior.test.ts` copies real ChartExplorer cells with numeric sort keys and checks formulas, compact suffixes, units and plain numeric values (#1342). |

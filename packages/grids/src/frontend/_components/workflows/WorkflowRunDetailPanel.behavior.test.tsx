@@ -73,6 +73,7 @@ const renderPanel = async (
   dom: ReturnType<typeof createDomTestHarness>,
   runId: () => string,
   onRunUpdated = (_run: PublicWorkflowRun) => {},
+  initialDetail = detail("RUN001", "running"),
 ) => {
   const { render } = await import("solid-js/web");
   const { WorkflowRunDetailPanel } = await import("./WorkflowRunDetailPanel");
@@ -80,7 +81,7 @@ const renderPanel = async (
     () => (
       <WorkflowRunDetailPanel
         runId={runId()}
-        initialDetail={detail("RUN001", "running")}
+        initialDetail={initialDetail}
         workflows={[]}
         workflowLevels={{}}
         tables={[]}
@@ -221,6 +222,63 @@ domTest("a return to the tab reads a running run, whose update may never have be
     dom.document.dispatchEvent(new Event("visibilitychange"));
     await Bun.sleep(30);
     expect(reads.urls).toHaveLength(1);
+  } finally {
+    dispose();
+    reads.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("a document downloads once while its download runs, from the row and from its button alike", async () => {
+  const dom = createDomTestHarness();
+  const reads = detailReads();
+  const withDocument = detail("RUN001", "running");
+  const artifact = {
+    key: "pdf",
+    filename: "invoice.pdf",
+    mimeType: "application/pdf",
+    sizeBytes: 1024,
+    sha256: "a".repeat(64),
+    downloadUrl: "/api/grids/documents/DOC001/artifacts/pdf",
+  };
+  withDocument.documents = {
+    items: [
+      {
+        id: "DOC001",
+        baseId: "BASE01",
+        tableId: "TABLE1",
+        recordId: "RECORD",
+        templateId: "TMPL01",
+        workflowId: "WORK01",
+        workflowRunId: "RUN001",
+        number: "INV-2026-1",
+        filename: "invoice.pdf",
+        createdAt: "2026-09-12T10:00:00Z",
+        createdBy: "creator-uuid",
+        tags: [],
+        renderer: { kind: "html" },
+        primaryArtifactKey: "pdf",
+        downloadUrl: "/api/grids/documents/DOC001/download",
+        sourceRecordCount: null,
+        dataSnapshot: null,
+        validationStatus: "valid",
+        artifacts: [artifact],
+      },
+    ],
+    total: 1,
+    hasMore: false,
+    nextOffset: null,
+  };
+  const dispose = await renderPanel(dom, () => "RUN001", undefined, withDocument);
+  try {
+    await Bun.sleep(30);
+    const row = dom.root.querySelector<HTMLButtonElement>(".k2b-file-grid__open");
+    expect(row).not.toBeNull();
+    row!.click();
+    row!.click();
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label*="invoice.pdf"]')?.click();
+    await Bun.sleep(30);
+    expect(reads.urls.filter((url) => url.includes("/documents/DOC001/download"))).toHaveLength(1);
   } finally {
     dispose();
     reads.restore();

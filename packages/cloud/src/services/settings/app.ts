@@ -8,13 +8,14 @@
  */
 
 import { err, fail, ok, type PageParams, type Paginated } from "@k2b/stdlib";
+import { sql } from "../../runtime/clients";
 import { paginateItems } from "../../server/services";
+import { type AuditRecordParams, audit } from "../audit";
 import { ImageMetadataError } from "../image-metadata";
 import type { SettingEntry } from ".";
 import * as settingsPrimitives from ".";
 import { SETTINGS_MAP, validateSettingValue } from "./defaults";
-import { GeoBudgetSettingError } from "./geo-budget";
-import { SettingUnreadableError } from "./store";
+import { invalidateSettingsCache, SettingUnreadableError } from "./store";
 
 /**
  * Redact secret-kind setting values before they leave the server.
@@ -56,7 +57,7 @@ export const settingsService = {
 
       return paginateItems(filtered, config?.pagination);
     },
-    update: async (config: { key: string; value: unknown; replaceUnreadable?: boolean }) => {
+    update: async (config: { key: string; value: unknown; replaceUnreadable?: boolean; audit?: AuditRecordParams }) => {
       if (!SETTINGS_MAP.has(config.key)) {
         return fail(err.badInput(`Unknown setting: ${config.key}`));
       }
@@ -66,12 +67,18 @@ export const settingsService = {
         return fail(err.badInput(validated.error));
       }
       try {
-        await settingsPrimitives.set(config.key, validated.value, undefined, { replaceUnreadable: config.replaceUnreadable });
+        const auditEvent = config.audit;
+        if (auditEvent) {
+          await sql.begin(async (tx) => {
+            await settingsPrimitives.set(config.key, validated.value, tx, { replaceUnreadable: config.replaceUnreadable });
+            await audit.record(auditEvent, tx);
+          });
+          await invalidateSettingsCache([config.key]);
+        } else await settingsPrimitives.set(config.key, validated.value, undefined, { replaceUnreadable: config.replaceUnreadable });
         return ok(undefined);
       } catch (error) {
         // Preserve the typed HTTP status and recovery code through Hono.
-        if (error instanceof ImageMetadataError || error instanceof SettingUnreadableError || error instanceof GeoBudgetSettingError)
-          throw error;
+        if (error instanceof ImageMetadataError || error instanceof SettingUnreadableError) throw error;
         const message = error instanceof Error ? error.message : String(error);
         if (message.startsWith("Unknown setting:")) {
           return fail(err.badInput(message));
@@ -87,7 +94,6 @@ export const settingsService = {
         await settingsPrimitives.remove(config.key);
         return ok(undefined);
       } catch (error) {
-        if (error instanceof GeoBudgetSettingError) throw error;
         return fail(err.internal(`Failed to reset setting: ${error instanceof Error ? error.message : String(error)}`));
       }
     },

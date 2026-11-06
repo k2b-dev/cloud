@@ -31,6 +31,7 @@
  *    captured by an agent), no ANSI escapes leak into the output.
  */
 import { $ } from "bun";
+import { prepareDevAppKeys } from "./dev-app-keys";
 import { prepareDevClickhouse } from "./dev-clickhouse";
 import { prepareDevFilegate } from "./dev-filegate";
 import { prepareDevRsql } from "./dev-rsql";
@@ -40,6 +41,7 @@ export const INFRA_COMPOSE_FILE = "compose.yml";
 
 /** Prepare local credentials and start every infrastructure service in compose.yml. */
 export const ensureInfra = async (): Promise<void> => {
+  await prepareDevAppKeys();
   await prepareDevClickhouse();
   await prepareDevRsql();
   await prepareDevFilegate();
@@ -63,6 +65,7 @@ export const findStartupFailure = (logs: string): string | undefined => {
 };
 
 export const composeUpAndWait = async (args: string[], services: string[]): Promise<void> => {
+  await prepareDevAppKeys();
   try {
     await compose(["up", ...args, "-d", "--wait", "--wait-timeout", "180", ...services]);
   } catch (error) {

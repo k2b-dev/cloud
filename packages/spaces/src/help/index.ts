@@ -1,9 +1,11 @@
 import { defineHelp } from "@k2b/cloud/server";
+import calendarDe from "./documents/de/spaces-calendar.help.md" with { type: "text" };
 import sharingDe from "./documents/de/spaces-sharing.help.md" with { type: "text" };
 import startDe from "./documents/de/spaces-start.help.md" with { type: "text" };
 import troubleshootDe from "./documents/de/spaces-troubleshooting.help.md" with { type: "text" };
 import viewsDe from "./documents/de/spaces-views.help.md" with { type: "text" };
 import workflowDe from "./documents/de/spaces-workflow.help.md" with { type: "text" };
+import calendar from "./documents/en/spaces-calendar.help.md" with { type: "text" };
 import sharing from "./documents/en/spaces-sharing.help.md" with { type: "text" };
 import start from "./documents/en/spaces-start.help.md" with { type: "text" };
 import troubleshoot from "./documents/en/spaces-troubleshooting.help.md" with { type: "text" };
@@ -13,8 +15,8 @@ import workflow from "./documents/en/spaces-workflow.help.md" with { type: "text
 export const spacesHelp = defineHelp({
   baseLocale: "en",
   documents: {
-    en: [start, views, workflow, sharing, troubleshoot],
-    de: [startDe, viewsDe, workflowDe, sharingDe, troubleshootDe],
+    en: [start, views, calendar, workflow, sharing, troubleshoot],
+    de: [startDe, viewsDe, calendarDe, workflowDe, sharingDe, troubleshootDe],
   },
 });
 
@@ -22,4 +24,5 @@ export const spacesHelp = defineHelp({
 export const spacesPageHelp = {
   overview: ["spaces-start", "spaces-sharing"],
   workspace: ["spaces-workflow", "spaces-views", "spaces-sharing"],
+  calendar: ["spaces-calendar", "spaces-views"],
 } as const;

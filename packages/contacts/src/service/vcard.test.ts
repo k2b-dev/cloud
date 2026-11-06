@@ -56,6 +56,7 @@ const contact = (overrides: Partial<Contact> = {}): Contact => ({
       city: "Berlin",
       stateRegion: "BE",
       countryCode: "DE",
+      location: null,
       position: 0,
       createdAt: stamp,
       updatedAt: stamp,

@@ -71,3 +71,40 @@ export const launchPulseOverviewAssistant = (input: { base: { id: string; name: 
     },
   });
 };
+
+export const launchPulseDashboardAssistant = (input: {
+  base: { id: string; name: string };
+  dashboard: { id: string; name: string };
+  locale?: string;
+}): Promise<AssistantLaunch> => {
+  const t = pulseMessages.resolve([input.locale ?? "en"]).t;
+  return launchAssistant({
+    launchedByAppId: "pulse",
+    title: t.dashboardAssistantTitle({ dashboard: input.dashboard.name }),
+    skills: ["cloud-pulse"],
+    preloadTools: [
+      { appId: "pulse", kind: "query", id: "sql.run" },
+      { appId: "pulse", kind: "query", id: "base.read" },
+      { appId: "pulse", kind: "query", id: "dashboard.read" },
+    ],
+    draft: {
+      content: [
+        { type: "text", text: t.dashboardAssistantPrompt({ dashboard: input.dashboard.name, base: input.base.name }) },
+        {
+          type: "resource",
+          ref: { type: "pulse.base", id: input.base.id },
+          title: input.base.name,
+          icon: "ti ti-activity-heartbeat",
+          href: pulseBaseHref(input.base.id),
+        },
+        {
+          type: "resource",
+          ref: { type: "pulse.dashboard", id: input.dashboard.id },
+          title: input.dashboard.name,
+          icon: "ti ti-layout-dashboard",
+          href: `${pulseBaseHref(input.base.id)}/dashboards/${encodeURIComponent(input.dashboard.id)}`,
+        },
+      ],
+    },
+  });
+};

@@ -1,6 +1,6 @@
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { User } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { type AccountsActor, isAdminActor } from "./authz";
 
 export type DuplicateEmailUser = Pick<

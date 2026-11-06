@@ -1,7 +1,7 @@
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { tabIndentExtension } from "@k2b/editor/markdown";
 import { createSignal, createUniqueId, onCleanup } from "solid-js";
-import { tabIndentExtension } from "../../../lib/editor/tab-indent";
 import { TAB_KEY_PREFERENCE_EVENT } from "../detail/events";
 import { readTabMovesFocus } from "../settings/NotebookSettingsStore";
 

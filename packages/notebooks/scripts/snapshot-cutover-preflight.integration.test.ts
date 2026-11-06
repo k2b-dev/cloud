@@ -26,6 +26,7 @@ testFor("database", "nats")(
         env: {
           PATH: process.env.PATH,
           DATABASE_URL: target.toString(),
+          REDIS_URL: process.env.REDIS_URL,
           NATS_SERVERS: natsServers().join(","),
           NATS_CREDS_FILE: process.env.NATS_CREDS_FILE,
           SYNC_NAMESPACE: namespace,

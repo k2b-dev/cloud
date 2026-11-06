@@ -1,11 +1,13 @@
-import { beforeAll, describe, expect } from "bun:test";
+import { beforeAll, describe, expect, spyOn } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { startGridsTestSync } from "../sync-test-utils";
 import type { SqlClient } from "./audit";
+import { remove as removeBase, restore as restoreBase } from "./bases";
+import * as federatedTables from "./federated-tables";
 import {
   captureRecordEventSnapshot,
   claimRecordEventOutboxBatch,
@@ -18,7 +20,10 @@ import {
   stopRecordEventOutbox,
 } from "./record-event-outbox";
 import type { GridsRecordEvent } from "./record-events";
+import { getRecordEventActiveSince, listRecordEventBaseIds, listRecordEventWorkflows } from "./workflow-read";
 import { replayWorkflowRecordEventDeliveryFailure } from "./workflow-record-events";
+import * as workflowRuntimeEvents from "./workflow-runtime-events";
+import { deleteTestWorkflowScope, insertTestWorkflow } from "./workflow-test-fixture";
 
 type Fixture = { actorId: string; baseId: string; tableId: string; fieldId: string };
 
@@ -41,10 +46,30 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
     VALUES (${fixture.fieldId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
   `;
+  await insertTestWorkflow({
+    baseId: fixture.baseId,
+    enabled: true,
+    recordEventActiveSince: new Date("2026-01-01T00:00:00.000Z"),
+    plan: {
+      schemaVersion: 2,
+      languageId: "grids",
+      languageVersion: 1,
+      sourceHash: "a".repeat(64),
+      manifestHash: "b".repeat(64),
+      catalogHash: "c".repeat(64),
+      maxLoopItems: 10000,
+      actionPolicies: {},
+      inputs: [],
+      steps: [],
+      triggers: [{ kind: "recordEvent", config: { event: "updated" }, with: {} }],
+      bindings: { "triggers.recordEvent.table": fixture.tableId },
+    },
+  });
 };
 
 const cleanupFixture = async (fixture: Fixture): Promise<void> => {
   await sql`DELETE FROM grids.audit_log WHERE base_id = ${fixture.baseId}::uuid OR table_id = ${fixture.tableId}::uuid`;
+  await deleteTestWorkflowScope(fixture.baseId);
   await sql`DELETE FROM grids.bases WHERE id = ${fixture.baseId}::uuid`;
   await sql`DELETE FROM auth.users WHERE id = ${fixture.actorId}::uuid`;
 };
@@ -79,6 +104,115 @@ beforeAll(async () => {
 });
 
 describe("record event outbox integration", () => {
+  postgresTest(
+    "idle events retain their feed and snapshot but publish zero workflow messages; committed activation is immediate",
+    async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        await sql`UPDATE grids.workflow_profile SET enabled = FALSE, record_event_active_since = NULL WHERE base_id = ${fixture.baseId}::uuid`;
+        const idle = await insertRecordAndEvent(sql, fixture, "Idle");
+        await captureRecordEventSnapshot(sql, {
+          snapshotId: idle.outboxId,
+          tableId: fixture.tableId,
+          recordId: idle.recordId,
+          eventType: "record.created",
+        });
+        let published = 0;
+        const publish = async (): Promise<void> => {
+          published += 1;
+        };
+        expect(await dispatchRecordEventOutbox(idle.outboxId, publish)).toBe("delivered");
+        expect(published).toBe(0);
+        const [retained] = await sql<Array<{ status: string; snapshots: number }>>`
+          SELECT status, (SELECT count(*)::int FROM grids.record_event_snapshots WHERE id = ${idle.outboxId}::uuid) AS snapshots
+          FROM grids.record_event_outbox WHERE id = ${idle.outboxId}::uuid
+        `;
+        expect(retained).toEqual({ status: "delivered", snapshots: 1 });
+        // Leave a second old event pending while another connection activates.
+        const stale = await insertRecordAndEvent(sql, fixture, "Before activation");
+        const activationEntered = Promise.withResolvers<void>();
+        const allowCommit = Promise.withResolvers<void>();
+        const activation = sql.begin(async (tx) => {
+          await tx`UPDATE grids.workflow_profile SET enabled = TRUE, record_event_active_since = now() WHERE base_id = ${fixture.baseId}::uuid`;
+          activationEntered.resolve();
+          await allowCommit.promise;
+        });
+        try {
+          await activationEntered.promise;
+          const during = await insertRecordAndEvent(sql, fixture, "Concurrent activation");
+          allowCommit.resolve();
+          await activation;
+          expect(await dispatchRecordEventOutbox(stale.outboxId, publish)).toBe("delivered");
+          expect(published).toBe(0);
+          expect(await dispatchRecordEventOutbox(during.outboxId, publish)).toBe("delivered");
+          expect(published).toBe(1);
+          const first = await insertRecordAndEvent(sql, fixture, "First after commit");
+          expect(await dispatchRecordEventOutbox(first.outboxId, publish)).toBe("delivered");
+          expect(published).toBe(2);
+        } finally {
+          allowCommit.resolve();
+          await activation;
+        }
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+  );
+
+  postgresTest("trashed bases supply no workflow demand and enqueue no workflow work", async () => {
+    const fixture = createFixture();
+    const hints = spyOn(workflowRuntimeEvents, "emitWorkflowRuntimeEvent").mockResolvedValue(undefined);
+    try {
+      await insertFixture(fixture);
+      expect(await listRecordEventBaseIds()).toContain(fixture.baseId);
+      expect(await getRecordEventActiveSince()).not.toBeNull();
+      const event = await insertRecordAndEvent(sql, fixture, "Trash");
+      expect((await removeBase(fixture.baseId, fixture.actorId)).ok).toBe(true);
+      expect(hints).toHaveBeenCalledTimes(1);
+      expect(await listRecordEventBaseIds()).not.toContain(fixture.baseId);
+      expect(await getRecordEventActiveSince()).toBeNull();
+      expect(await listRecordEventWorkflows(fixture.baseId, "2026-11-02T00:00:00.000Z")).toEqual([]);
+      let published = 0;
+      await dispatchRecordEventOutbox(event.outboxId, async () => {
+        published += 1;
+      });
+      expect(published).toBe(0);
+      expect((await restoreBase(fixture.baseId, fixture.actorId)).ok).toBe(true);
+      expect(hints).toHaveBeenCalledTimes(2);
+      expect(await listRecordEventBaseIds()).toContain(fixture.baseId);
+    } finally {
+      hints.mockRestore();
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("failed post-commit workflow hints preserve trash/restore success and source refresh", async () => {
+    const fixture = createFixture();
+    const hints = spyOn(workflowRuntimeEvents, "emitWorkflowRuntimeEvent").mockRejectedValue(new Error("hint unavailable"));
+    const refresh = spyOn(federatedTables, "refreshForSourceBase");
+    try {
+      await insertFixture(fixture);
+      expect((await removeBase(fixture.baseId, fixture.actorId)).ok).toBe(true);
+      const [trashed] = await sql<Array<{ deleted: boolean }>>`
+        SELECT deleted_at IS NOT NULL AS deleted FROM grids.bases WHERE id = ${fixture.baseId}::uuid
+      `;
+      expect(trashed?.deleted).toBe(true);
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect((await restoreBase(fixture.baseId, fixture.actorId)).ok).toBe(true);
+      const [restored] = await sql<Array<{ deleted: boolean }>>`
+        SELECT deleted_at IS NOT NULL AS deleted FROM grids.bases WHERE id = ${fixture.baseId}::uuid
+      `;
+      expect(restored?.deleted).toBe(false);
+      expect(hints).toHaveBeenCalledTimes(2);
+      expect(refresh).toHaveBeenCalledTimes(2);
+    } finally {
+      hints.mockRestore();
+      refresh.mockRestore();
+      await cleanupFixture(fixture);
+    }
+  });
+
   postgresTest("commits records and events atomically, retries publishing, and deduplicates delivery", async () => {
     const fixture = createFixture();
     try {

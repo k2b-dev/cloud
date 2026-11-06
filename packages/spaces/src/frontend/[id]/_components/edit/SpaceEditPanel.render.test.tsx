@@ -53,7 +53,7 @@ const space: SpaceDetail = {
   templates: [],
 };
 
-const renderSettings = (permission: "read" | "admin", locale = "en") =>
+const renderSettings = (permission: "read" | "write" | "admin", locale = "en") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -66,7 +66,7 @@ const renderSettings = (permission: "read" | "admin", locale = "en") =>
           apiKeys: [],
           wormholes: [],
           isAdmin: permission === "admin",
-          canWrite: permission === "admin",
+          canWrite: permission !== "read",
           onClose: () => undefined,
         });
       },
@@ -133,12 +133,13 @@ describe("Spaces settings", () => {
     expect(html).not.toContain("Danger zone");
   });
 
-  test("lists task and event templates with their date rule; only admins see the tab", () => {
+  test("lists task and event templates with their date rule; everyone who writes sees the tab", () => {
     const template = {
       id: "Tpl001",
       spaceId,
       kind: "task" as const,
       name: "Weekly report",
+      icon: null,
       title: "Weekly report {{week}}",
       description: null,
       priority: null,
@@ -171,6 +172,7 @@ describe("Spaces settings", () => {
     expect(html).toContain("Noch keine Terminvorlagen.");
     expect(html).toContain('aria-label="Vorlage bearbeiten: Weekly report"');
     expect(renderSettings("read")).not.toContain("Templates");
+    expect(renderSettings("write")).toContain("Templates");
   });
 
   test("renders statuses as a semantic settings collection", () => {
@@ -248,26 +250,25 @@ describe("Spaces settings: Access", () => {
       createComponent(LocaleProvider, {
         locale: "en",
         get children() {
-          return createComponent(PermissionsSection, { spaceId, accessEntries });
+          return createComponent(PermissionsSection, { spaceId, spaceName: "Launch", accessEntries });
         },
       }),
     );
-  // The editor marks the only manager's remove button with the reason it cannot be removed.
-  const lockedRows = (html: string) => html.match(/aria-description=/g)?.length ?? 0;
-
-  test("shows an agent that manages the space, so a person managing next to it is not locked", () => {
+  test("sums up who may use the space, agents included, and edits it in the access dialog", () => {
     const html = renderAccess([person, agent, apiKey]);
 
     expect(html).toContain("Ada Lovelace");
     expect(html).toContain("Triage agent");
-    expect(html).toContain("(Agent)");
-    expect(lockedRows(html)).toBe(0);
+    // The summary counts the agent with the people; API keys keep their own section.
+    expect(html).toContain("2 people, groups and agents · All signed-in people: off");
+    expect(html).toContain("Edit access");
+    // The list only shows what is stored; changing it happens in the dialog.
+    expect(html).not.toContain("Remove Ada Lovelace");
   });
 
-  test("keeps API keys in their own section and does not count them as managers", () => {
+  test("keeps API keys in their own section, so the dialog never counts them as managers", () => {
     const html = renderAccess([person, apiKey]);
 
     expect(html).not.toContain("Launch API keys");
-    expect(lockedRows(html)).toBe(1);
   });
 });

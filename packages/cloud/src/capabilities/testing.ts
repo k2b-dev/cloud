@@ -14,11 +14,16 @@ import {
   type CapabilityResult,
   CapabilitySemanticLinkSchema,
   type CapabilitySlot,
+  CloudResourceReaderViewSchema,
+  type CloudResourceRef,
 } from "../contracts/capabilities";
 
 /** Compile and validate the public manifest an app would register at startup. */
-export const compileCapabilityManifest = (appId: string, definitions: CapabilityDefinitions): CapabilityManifest =>
-  compileCapabilities(appId, definitions).manifest;
+export const compileCapabilityManifest = (
+  appId: string,
+  definitions: CapabilityDefinitions,
+  routes?: readonly string[],
+): CapabilityManifest => compileCapabilities(appId, definitions, routes).manifest;
 
 /** Fail a provider compatibility test when a published local id changed incompatibly. */
 export const assertCapabilityManifestEvolution = (previous: CapabilityManifest, next: CapabilityManifest): void => {
@@ -31,6 +36,17 @@ export const assertResourceOpenLink = (result: Pick<CapabilityResult<unknown>, "
   const link = result.links?.find((link) => link.rel === "open");
   if (!link) throw new Error("Resource reader must return a top-level open link");
   return CapabilitySemanticLinkSchema.parse(link);
+};
+
+/** Assert the canonical reader presentation and, for contained types, its exact container. */
+export const assertResourceView = (result: Pick<CapabilityResult<unknown>, "data">, container?: CloudResourceRef) => {
+  const data = result.data;
+  const view = CloudResourceReaderViewSchema.parse(
+    data !== null && typeof data === "object" ? Object.getOwnPropertyDescriptor(data, "view")?.value : undefined,
+  );
+  if (container && (view.container?.ref.type !== container.type || view.container.ref.id !== container.id))
+    throw new Error("Resource reader view must identify the expected container");
+  return view;
 };
 
 /** Validate each localized review in application tests, with optional declaration context. */

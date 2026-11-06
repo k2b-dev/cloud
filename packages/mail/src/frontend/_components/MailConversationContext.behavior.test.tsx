@@ -253,7 +253,9 @@ if (!isServer)
       expect(dom.root.querySelector('section[aria-label="Spaces"]')).not.toBeNull();
       expect(Boolean(dom.root.querySelector('section[aria-label="Contacts"]'))).toBe(visible);
       expect(dom.root.textContent?.includes("Contacts unavailable")).toBe(failed);
-      expect(Boolean(Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Retry")))).toBe(failed);
+      expect(Boolean(Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Try again")))).toBe(
+        failed,
+      );
       expect(requests.every((url) => url.includes("/context"))).toBe(true);
     } finally {
       dispose();

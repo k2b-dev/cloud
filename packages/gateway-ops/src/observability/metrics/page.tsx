@@ -1,9 +1,9 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
 import { StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../../config";
 import { gatewayOpsMessages } from "../../messages";
+import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
 import MetricsCatalogue, { type MetricsCatalogueRow } from "./_components/MetricsCatalogue.island";
 import MetricsTokens from "./_components/MetricsTokens.island";
 import { getMetricsSnapshot, listMetricsTokens, METRICS_ENDPOINT, type MetricsSnapshot } from "./service";
@@ -69,14 +69,10 @@ export default ssr<AuthContext>(async (c) => {
     (a, b) => a.label.localeCompare(b.label),
   );
 
+  const attention = await readAttention();
   return () => (
-    <AdminLayout c={c} title={t.metrics}>
-      <div class="app-rows">
-        <div class="min-w-0" style="view-transition-name: admin-metrics-title">
-          <h1 class="text-base font-semibold text-primary">{t.metrics}</h1>
-          <p class="mt-1 text-xs text-dimmed">{t.metricsDescription}</p>
-        </div>
-
+    <ObservabilityArea c={c} locale={locale} section="metrics" attention={attention}>
+      <ObservabilityPane label={areaText(locale).metrics} description={t.metricsDescription}>
         <StatGrid columns={4}>
           <StatCell
             label={t.scrapeEndpoint}
@@ -110,7 +106,7 @@ export default ssr<AuthContext>(async (c) => {
         <MetricsTokens tokens={tokens} timeZone={dateConfig.timeZone ?? "UTC"} />
 
         <MetricsCatalogue rows={metrics} sources={sources} />
-      </div>
-    </AdminLayout>
+      </ObservabilityPane>
+    </ObservabilityArea>
   );
 });

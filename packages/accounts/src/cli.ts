@@ -15,7 +15,7 @@ import { principalLabel } from "@k2b/cloud/shared";
 
 type UserProvider = "local" | "ipa";
 type UserProfile = "user" | "guest";
-type GroupMemberType = "user" | "group";
+type GroupMemberType = "user" | "group" | "service_account";
 
 type Pagination = {
   page: number;
@@ -324,7 +324,6 @@ const groupRows = (items: BaseGroup[]) =>
     name: group.name,
     provider: group.provider,
     posix: group.gidnumber === null ? "no" : "yes",
-    personal: group.personalOwner?.uid ?? "",
     description: truncate(group.description, 70),
     id: group.id,
   }));
@@ -352,7 +351,7 @@ const entityRows = (items: EntityListItem[]) =>
       };
     }
     return {
-      kind: "service_account",
+      kind: item.serviceAccount.kind,
       name: item.serviceAccount.name,
       provider: "",
       profile: item.serviceAccount.status,
@@ -439,7 +438,7 @@ const listUsers = (ctx: CloudCliContext, query?: { search?: string; provider?: U
 
 const listGroups = (
   ctx: CloudCliContext,
-  query?: { search?: string; provider?: UserProvider; scope?: "all" | "member" | "managed"; includePersonal?: boolean; page?: number },
+  query?: { search?: string; provider?: UserProvider; scope?: "all" | "member" | "managed"; page?: number },
 ) =>
   apiGet<GroupsResponse>(
     ctx,
@@ -449,13 +448,12 @@ const listGroups = (
       search: query?.search,
       provider: query?.provider,
       scope: query?.scope,
-      include_personal: query?.includePersonal,
     })}`,
   );
 
 const listEntities = (
   ctx: CloudCliContext,
-  query: { search?: string; kinds: "user" | "group"; page?: number; perPage?: number },
+  query: { search?: string; kinds: "user" | "group" | "service_account"; service_account_ids?: string; page?: number; perPage?: number },
 ): Promise<EntitiesResponse> =>
   apiGet<EntitiesResponse>(
     ctx,
@@ -464,6 +462,7 @@ const listEntities = (
       per_page: query.perPage ?? 100,
       search: query.search,
       kinds: query.kinds,
+      service_account_ids: query.service_account_ids,
     })}`,
   );
 
@@ -521,8 +520,8 @@ const resolveGroupRef = async (ctx: CloudCliContext, ref: string): Promise<BaseG
   const seen: BaseGroup[] = [];
   const exactMatches: BaseGroup[] = [];
   for (;;) {
-    // A reference names one group exactly, so personal Linux groups resolve too.
-    const response = await listGroups(ctx, { search: isUuid(ref) ? undefined : ref, scope: "all", includePersonal: true, page });
+    // Resolve references against the same exported group set as listings.
+    const response = await listGroups(ctx, { search: isUuid(ref) ? undefined : ref, scope: "all", page });
     seen.push(...response.groups);
     const matches = response.groups.filter((group) => group.id === ref || group.name === ref);
     exactMatches.push(...matches);
@@ -539,33 +538,62 @@ const resolveGroupRef = async (ctx: CloudCliContext, ref: string): Promise<BaseG
   );
 };
 
+const resolveServiceAccountMember = async (ctx: CloudCliContext, ref: string): Promise<string> => {
+  let page = 1;
+  const matches: { id: string; name: string }[] = [];
+  for (;;) {
+    const response = await listEntities(ctx, {
+      kinds: "service_account",
+      ...(isUuid(ref) ? { service_account_ids: ref } : { search: ref }),
+      page,
+    });
+    for (const item of response.items) {
+      if (item.kind === "service_account" && (item.serviceAccount.id === ref || item.serviceAccount.name === ref)) {
+        matches.push(item.serviceAccount);
+      }
+    }
+    if (!response.pagination.has_next) break;
+    page += 1;
+  }
+  if (matches.length === 1) return matches[0]!.id;
+  if (matches.length > 1) throw new Error(`Service account "${ref}" is ambiguous. Use an id: ${matches.map((item) => item.id).join(", ")}`);
+  throw new Error(`Service account "${ref}" was not found by id or exact name.`);
+};
+
 const resolvePrincipal = async (
   ctx: CloudCliContext,
-  flags: { user?: string; group?: string },
-  options: { userViaEntities?: boolean } = {},
+  flags: { user?: string; group?: string; serviceAccount?: string },
+  options: { userViaEntities?: boolean; groupIdForRemoval?: boolean } = {},
 ): Promise<{ type: GroupMemberType; id: string }> => {
+  if (flags.serviceAccount) {
+    if (flags.user || flags.group) throw new Error("Pass only one of --user, --group, or --service-account.");
+    return { type: "service_account", id: await resolveServiceAccountMember(ctx, flags.serviceAccount) };
+  }
   if (flags.user && flags.group) throw new Error("Pass only one of --user or --group.");
-  if (!flags.user && !flags.group) throw new Error("Pass one of --user or --group.");
+  if (!flags.user && !flags.group) throw new Error("Pass one of --user, --group, or --service-account.");
   if (flags.user)
     return {
       type: "user",
       id: options.userViaEntities ? await resolveUserIdForGroupRelation(ctx, flags.user) : (await resolveUserRef(ctx, flags.user)).id,
     };
-  return { type: "group", id: (await resolveGroupRef(ctx, flags.group!)).id };
+  return {
+    type: "group",
+    id: options.groupIdForRemoval && isUuid(flags.group!) ? flags.group! : (await resolveGroupRef(ctx, flags.group!)).id,
+  };
 };
 
 const relationEntities = async (
   ctx: CloudCliContext,
   relation: "member_of_group_id" | "manager_of_group_id",
   groupId: string,
-  flags: { page?: number; perPage?: number; recursive?: boolean; search?: string; type?: "user" | "group" },
+  flags: { page?: number; perPage?: number; recursive?: boolean; search?: string; type?: GroupMemberType },
 ): Promise<EntitiesResponse> =>
   apiGet<EntitiesResponse>(
     ctx,
     `/entities${queryString({
       ...pageQuery(flags),
       search: flags.search,
-      kinds: flags.type ?? "user,group",
+      kinds: flags.type ?? (relation === "member_of_group_id" ? "user,group,service_account" : "user,group"),
       [relation]: groupId,
       recursive: flags.recursive,
     })}`,
@@ -583,7 +611,7 @@ export default defineCliCommands({
     "groups managers": "Manage group managers",
     "groups members": "Manage group membership",
     "users avatar": "Download, replace, or remove account avatars",
-    "users app-devices": "List and remove phones paired with the mobile app (preview)",
+    "users app-devices": "List and remove devices paired with the Cloud app (preview)",
     "users devices": "List and revoke paired sign-in devices",
     "users linux": "Inspect Linux identities and assign missing attributes",
   },
@@ -948,8 +976,8 @@ export default defineCliCommands({
       },
     }),
     command("users app-devices list", {
-      summary: "List the phones a user paired with the mobile app",
-      description: "Shows active phones only, with platform, pairing time and last use.",
+      summary: "List the devices a user paired with the Cloud app",
+      description: "Shows active devices only, with platform, pairing time and last use.",
       args: { user: arg.required({ valueLabel: "user" }) },
       async run({ ctx, args }) {
         const user = await resolveUserRef(ctx, args.user);
@@ -969,16 +997,16 @@ export default defineCliCommands({
       },
     }),
     command("users app-devices remove", {
-      summary: "Remove a phone from the mobile app and end its app sessions at once",
-      description: "Web sessions and sign-in devices stay as they are. Removing an already removed phone succeeds with revoked: false.",
+      summary: "Remove a device from the Cloud app and end its app sessions at once",
+      description: "Web sessions and sign-in devices stay as they are. Removing an already removed device succeeds with revoked: false.",
       args: {
         user: arg.required({ valueLabel: "user" }),
         device: arg.required({ valueLabel: "device-id" }),
       },
-      flags: { yes: confirmFlag("Confirm removing this phone from the mobile app") },
+      flags: { yes: confirmFlag("Confirm removing this device from the Cloud app") },
       async run({ ctx, args, flags }) {
         if (!flags.yes)
-          throw new Error(cliText(ctx, { en: "Refusing to remove a phone without --yes.", de: "Telefon wird ohne --yes nicht entfernt." }));
+          throw new Error(cliText(ctx, { en: "Refusing to remove a device without --yes.", de: "Gerät wird ohne --yes nicht entfernt." }));
         if (!isUuid(args.device))
           throw new Error(
             cliText(ctx, {
@@ -995,8 +1023,8 @@ export default defineCliCommands({
         if (printStructured(ctx, result)) return;
         ctx.print(
           result.revoked
-            ? cliText(ctx, { en: "Phone removed.", de: "Telefon entfernt." })
-            : cliText(ctx, { en: "The phone was already removed.", de: "Das Telefon war bereits entfernt." }),
+            ? cliText(ctx, { en: "Device removed.", de: "Gerät entfernt." })
+            : cliText(ctx, { en: "The device was already removed.", de: "Das Gerät war bereits entfernt." }),
         );
       },
     }),
@@ -1019,10 +1047,6 @@ export default defineCliCommands({
         search: flag.string({ aliases: ["q"], description: "Search group name or description" }),
         provider: flag.enum(PROVIDERS),
         scope: flag.enum(["all", "member", "managed"] as const, { default: "member" }),
-        includePersonal: flag.boolean({
-          name: "include-personal",
-          description: "Also list personal Linux groups (each user's private primary group)",
-        }),
       },
       async run({ ctx, flags }) {
         const response = await apiGet<GroupsResponse>(
@@ -1032,14 +1056,12 @@ export default defineCliCommands({
             search: flags.search,
             provider: flags.provider,
             scope: flags.scope,
-            include_personal: flags.includePersonal,
           })}`,
         );
         printJsonOrTable(ctx, response, groupRows(response.groups), [
           { key: "name" },
           { key: "provider" },
           { key: "posix" },
-          { key: "personal" },
           { key: "description" },
           { key: "id" },
         ]);
@@ -1054,7 +1076,6 @@ export default defineCliCommands({
           { key: "name" },
           { key: "provider" },
           { key: "posix" },
-          { key: "personal" },
           { key: "description" },
           { key: "id" },
         ]);
@@ -1122,7 +1143,7 @@ export default defineCliCommands({
       flags: {
         ...paginationFlags({ defaultPerPage: 50, maxPerPage: 100 }),
         search: flag.string({ aliases: ["q"] }),
-        type: flag.enum(["user", "group"] as const),
+        type: flag.enum(["user", "group", "service_account"] as const),
         recursive: flag.boolean({ description: "Include nested members" }),
       },
       async run({ ctx, args, flags }) {
@@ -1139,11 +1160,12 @@ export default defineCliCommands({
       },
     }),
     command("groups members add", {
-      summary: "Add a user or group member",
+      summary: "Add a user, group, or standalone/agent member",
       args: { group: arg.required({ valueLabel: "group" }) },
       flags: {
         user: flag.string({ description: "User id, uid, email, or exact display name" }),
         group: flag.string({ description: "Group id or exact name" }),
+        serviceAccount: flag.string({ name: "service-account", description: "Service-account id or exact name (local groups only)" }),
         yes: confirmFlag("Confirm adding this group membership"),
       },
       async run({ ctx, args, flags }) {
@@ -1155,18 +1177,19 @@ export default defineCliCommands({
       },
     }),
     command("groups members remove", {
-      summary: "Remove a user or group member",
+      summary: "Remove a user, group, or service-account member",
       args: { group: arg.required({ valueLabel: "group" }) },
       flags: {
         user: flag.string({ description: "User id, uid, email, or exact display name" }),
         group: flag.string({ description: "Group id or exact name" }),
+        serviceAccount: flag.string({ name: "service-account", description: "Service-account id or exact name (local groups only)" }),
         yes: confirmFlag("Confirm removing this group membership"),
       },
       async run({ ctx, args, flags }) {
         if (!flags.yes) throw new Error("Refusing to remove a group membership without --yes.");
-        const group = await resolveGroupRef(ctx, args.group);
-        const principal = await resolvePrincipal(ctx, flags, { userViaEntities: true });
-        const result = await apiJson<MessageResponse>(ctx, "DELETE", `/groups/${encode(group.id)}/members`, principal);
+        const groupId = isUuid(args.group) ? args.group : (await resolveGroupRef(ctx, args.group)).id;
+        const principal = await resolvePrincipal(ctx, flags, { userViaEntities: true, groupIdForRemoval: true });
+        const result = await apiJson<MessageResponse>(ctx, "DELETE", `/groups/${encode(groupId)}/members`, principal);
         printMessage(ctx, result, "Member removed.");
       },
     }),
@@ -1217,9 +1240,9 @@ export default defineCliCommands({
       },
       async run({ ctx, args, flags }) {
         if (!flags.yes) throw new Error("Refusing to remove a group manager without --yes.");
-        const group = await resolveGroupRef(ctx, args.group);
-        const principal = await resolvePrincipal(ctx, flags);
-        const result = await apiJson<MessageResponse>(ctx, "DELETE", `/groups/${encode(group.id)}/managers`, principal);
+        const groupId = isUuid(args.group) ? args.group : (await resolveGroupRef(ctx, args.group)).id;
+        const principal = await resolvePrincipal(ctx, flags, { groupIdForRemoval: true });
+        const result = await apiJson<MessageResponse>(ctx, "DELETE", `/groups/${encode(groupId)}/managers`, principal);
         printMessage(ctx, result, "Manager removed.");
       },
     }),

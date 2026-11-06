@@ -30,6 +30,14 @@ and choose the authenticator address. Use the app configured by your Cloud.
 4. When you start a sign-in, open Cloud Login or tap its notification. Compare
    the code shown in the request with the sign-in page, then approve or deny it.
 
+When pairing, check the suggested Cloud label and device name; you can change
+both. Safari can suggest **iPhone** or **iPad**, but cannot identify the exact
+model. Android browsers may report a model name or number.
+
+The pairing dialog closes through **Close** or the X. Outside taps, downward
+drags and Escape leave it open. After a connection failure, retry the pairing. If the app reloaded, choose **Add Cloud** and paste the same link to
+resume the saved pairing. If it expired, start a new pairing in Cloud.
+
 A browser sign-in can show the browser and system, approximate place, network
 operator, start time in your phone's time zone, and whether the browser signed
 in to this account before. Place and network rows appear only when your

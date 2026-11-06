@@ -31,8 +31,16 @@ export type MapViewFrameProps = {
   attribution?: JSX.Element;
   class?: string;
 };
+export type MapViewSnapshot = { data: Blob; width: number; height: number };
+export type MapViewSnapshotOptions = { signal?: AbortSignal; timeoutMs?: number };
+export type MapViewHandle = {
+  /** Capture the current complete view; never loads, pans, refits, or retries provider resources. */
+  snapshot: (options?: MapViewSnapshotOptions) => Promise<MapViewSnapshot>;
+};
 export type MapViewProps = Omit<MapViewFrameProps, "attribution"> & {
   style: MapViewStyleSource;
+  /** Browser-only handle; remains safely callable after disposal (rejects disposed). */
+  ref?: (handle: MapViewHandle) => void;
   attribution: JSX.Element;
   onSelect?: (id: string) => void;
   infoTile?: (marker: MapViewMarker) => JSX.Element;

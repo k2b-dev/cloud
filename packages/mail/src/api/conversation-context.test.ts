@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { redis } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import * as platformServices from "@k2b/cloud/services";
 import { oauthTokens } from "@k2b/cloud/services";
-import { redis } from "bun";
 import { generateSpecs } from "hono-openapi";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { requestContactDirectoryConfig, resolveMailContactDirectory } from "../contact-directory-settings";
 import { conversationContext, publicResources, recipientSuggestions } from "../service";
 import * as directoryService from "../service/contact-directory";
 import app from ".";
+
+useUnitClients();
 
 const base = "/mailboxes/{mailboxId}/conversations/{conversationId}";
 const user = {

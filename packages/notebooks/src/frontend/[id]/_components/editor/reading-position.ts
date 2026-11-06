@@ -17,7 +17,12 @@ const lineBox = (view: EditorView, from: number) => {
  * right after it, before the next paint: the text at the top of the scroll
  * port stays there, and the selection and focus are untouched.
  */
-export const keepReadingPosition = (view: EditorView, scroller: HTMLElement): (() => void) => {
+export const keepReadingPosition = (
+  view: EditorView,
+  scroller: HTMLElement,
+  /** A view switch keeps a visible selection where it is: the edge line may be a grid that changes height. */
+  options: { selection?: boolean } = {},
+): (() => void) => {
   // The editor learns about scrolling from scroll events, which arrive with
   // the next frame and are ignored until it knows it is visible. Until it
   // measures, the port's top edge may show only a placeholder gap to it, with
@@ -25,9 +30,13 @@ export const keepReadingPosition = (view: EditorView, scroller: HTMLElement): ((
   // first, so the anchor is the text that is actually there.
   view.requestMeasure();
   const portTop = scroller.getBoundingClientRect().top;
-  const pos = view.posAtCoords({ x: view.contentDOM.getBoundingClientRect().left + 1, y: portTop + 1 }, false);
-  const from = view.state.doc.lineAt(pos).from;
-  const before = lineBox(view, from);
+  const edge = view.posAtCoords({ x: view.contentDOM.getBoundingClientRect().left + 1, y: portTop + 1 }, false);
+  const selected = options.selection ? view.state.doc.lineAt(view.state.selection.main.head).from : undefined;
+  const selectedBox = selected === undefined ? undefined : lineBox(view, selected);
+  const visible =
+    selectedBox && selectedBox.top >= portTop - 1 && selectedBox.top + selectedBox.height <= scroller.getBoundingClientRect().bottom;
+  const from = visible ? selected! : view.state.doc.lineAt(edge).from;
+  const before = visible ? selectedBox : lineBox(view, from);
   // Nothing above the port's top edge can move while the note starts below it.
   const moves = view.documentTop < portTop;
   // The share of the line above the edge, or the distance of a line that

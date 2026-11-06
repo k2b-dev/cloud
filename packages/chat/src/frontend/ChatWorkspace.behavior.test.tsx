@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -22,7 +22,11 @@ const modules = isServer ? undefined : await load();
 const now = "2026-10-12T10:30:00.000Z";
 const viewerId = "11111111-1111-4111-8111-111111111111";
 const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
+  notifications: null,
+  mentionsUnread: 0,
   threads: 0,
+  channel: false,
+  member: true,
   id: "Chat01",
   name: "Secret board",
   title: "Secret board",
@@ -31,6 +35,8 @@ const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
   memberCount: 2,
   unread: 0,
   read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+  archived: false,
+  pinnedRank: null,
   withGuests: false,
   peerDeactivated: false,
   permission: "write",
@@ -50,6 +56,7 @@ class FakeWebSocket {
   onclose = null;
   onerror = null;
   conversationSubscription: string | undefined;
+  personalSubscription: string | undefined;
   constructor() {
     FakeWebSocket.instances.push(this);
   }
@@ -64,6 +71,8 @@ class FakeWebSocket {
       typeof frame.id === "string"
     )
       this.conversationSubscription = frame.id;
+    if (frame && typeof frame === "object" && "channel" in frame && frame.channel === "me" && "id" in frame && typeof frame.id === "string")
+      this.personalSubscription = frame.id;
   }
   open() {
     this.readyState = FakeWebSocket.OPEN;
@@ -79,6 +88,10 @@ class FakeWebSocket {
 const settle = () => Bun.sleep(60);
 const message = (seq: number, body = `Message ${seq}`) =>
   MessageViewSchema.parse({
+    reactions: [],
+    mentions: [],
+    refs: [],
+    attachments: [],
     thread: null,
     replyTo: null,
     id: String(seq).padStart(10, "0"),
@@ -112,6 +125,8 @@ describe("ChatWorkspace interactions", () => {
   const pendingSnapshots = new Map<string, Promise<Response>>();
   let membersRequests = 0;
   let memberName: string | null = null;
+  let aggregateUnread = 0;
+  let aggregateRequests = 0;
   let answer: (response: Response) => void;
   beforeEach(() => {
     setSystemTime(new Date(now));
@@ -124,6 +139,8 @@ describe("ChatWorkspace interactions", () => {
     pendingSnapshots.clear();
     membersRequests = 0;
     memberName = null;
+    aggregateUnread = 0;
+    aggregateRequests = 0;
     FakeWebSocket.instances = [];
     consoleErrors.length = 0;
     console.error = (...args: unknown[]) => {
@@ -136,6 +153,12 @@ describe("ChatWorkspace interactions", () => {
     const fetchChat = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (url.pathname === "/api/chat/preferences") return Response.json({ collapsed: [] });
+        if (url.pathname === "/api/chat/system-chats") return Response.json({ items: [], cursors: {}, skipped: [] });
+        if (url.pathname === "/api/chat/conversations/unread-count") {
+          aggregateRequests++;
+          return Response.json({ count: aggregateUnread });
+        }
         const snapshot = /^\/api\/chat\/conversations\/([^/]+)\/snapshot$/.exec(url.pathname);
         if (snapshot) {
           const pending = pendingSnapshots.get(snapshot[1]!);
@@ -167,15 +190,24 @@ describe("ChatWorkspace interactions", () => {
         }
         if (url.pathname === "/api/chat/conversations/Chat01/leave" && init?.method === "POST") {
           leavePosts.push(JSON.parse(String(init.body)));
-          return Response.json({ success: true, keptThroughGroup: false });
+          return Response.json({ success: true, keptThroughGroup: false, canRejoin: false });
         }
         if (url.pathname === "/api/chat/conversations") return Response.json({ items: [], nextCursor: null });
         if (url.pathname === "/api/chat/conversations/Chat01/read" && init?.method === "POST") {
           const { seq } = JSON.parse(String(init.body));
           readPosts.push(seq);
-          return Response.json({ lastReadSeq: seq, unreadFromSeq: null, joinedSeq: 0 });
+          return Response.json({
+            conversationId: conversation.id,
+            lastReadSeq: seq,
+            unreadFromSeq: null,
+            joinedSeq: 0,
+            unread: 0,
+            asOfRev: 1,
+            threads: [],
+          });
         }
-        if (url.pathname === "/api/chat/conversations/Chat01") return Response.json({ ...conversation, permission: "admin" });
+        if (url.pathname === "/api/chat/conversations/Chat01")
+          return Response.json({ ...(snapshots.get(conversation.id)?.conversation ?? conversation), permission: "admin" });
         if (url.pathname === "/api/chat/conversations/Chat01/messages" && init?.method === "POST") {
           posted.push(SendMessageSchema.parse(JSON.parse(String(init.body))));
           return new Promise<Response>((resolve) => {
@@ -207,7 +239,14 @@ describe("ChatWorkspace interactions", () => {
     panel: "info" | null = null,
     locale = "en",
     permission: typeof conversation.permission = "write",
-    initial: { url?: string; page?: NonNullable<ChatWorkspaceProps["open"]>["page"]; focus?: string | null; embedded?: boolean } = {},
+    initial: {
+      url?: string;
+      page?: NonNullable<ChatWorkspaceProps["open"]>["page"];
+      focus?: string | null;
+      embedded?: boolean;
+      app?: boolean;
+      conversation?: NonNullable<ChatWorkspaceProps["open"]>["conversation"];
+    } = {},
   ) => {
     const { ChatWorkspace, LocaleProvider } = modules!;
     dom.window.history.replaceState(null, "", initial.url ?? (open ? `/app/chat/c/Chat01${panel ? "?panel=info" : ""}` : "/app/chat"));
@@ -215,12 +254,13 @@ describe("ChatWorkspace interactions", () => {
       view: "all",
       threadsPage: false,
       embedded: initial.embedded,
+      app: initial.app,
       cursor: "c.0",
       sidebar: { items: sidebar, nextCursor: null },
       open: open
         ? {
             threads: noThreads,
-            conversation: { ...conversation, permission },
+            conversation: { ...(initial.conversation ?? conversation), permission },
             page: initial.page ?? { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
             focus: initial.focus ?? null,
           }
@@ -244,6 +284,34 @@ describe("ChatWorkspace interactions", () => {
     );
     await settle();
   };
+  test("mounting a conversation converts each message once for its time, day and accessible label", async () => {
+    const items = [1, 2, 3].map((seq) => ({ ...message(seq), createdAt: `2026-10-12T10:1${seq}:00.000Z` }));
+    const conversions = new Map(items.map((item) => [Date.parse(item.createdAt), 0]));
+    const record = (at: number | undefined) => {
+      if (at !== undefined && conversions.has(at)) conversions.set(at, conversions.get(at)! + 1);
+    };
+    const originalLocale = Date.prototype.toLocaleString;
+    const locale = spyOn(Date.prototype, "toLocaleString");
+    locale.mockImplementation(function (this: Date, ...args: Parameters<Date["toLocaleString"]>) {
+      record(this.getTime());
+      return originalLocale.apply(this, args);
+    });
+    const original = Intl.DateTimeFormat.prototype.formatToParts;
+    const format = spyOn(Intl.DateTimeFormat.prototype, "formatToParts");
+    format.mockImplementation(function (this: Intl.DateTimeFormat, value?: number | Date) {
+      record(value instanceof Date ? value.getTime() : value);
+      return original.call(this, value);
+    });
+    try {
+      await mount(true, [conversation], null, "en", "write", { page: { items, seqHead: 3, rev: 3, from: 1, to: 3 } });
+      expect(dom.root.querySelectorAll(".k2b-message-row")).toHaveLength(items.length);
+      expect([...conversions.values()]).toEqual([1, 1, 1]);
+    } finally {
+      format.mockRestore();
+      locale.mockRestore();
+    }
+  });
+
   const button = (label: string, root: ParentNode = dom.root) => {
     const found = [...root.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === label || button.getAttribute("aria-label") === label,
@@ -251,7 +319,7 @@ describe("ChatWorkspace interactions", () => {
     if (!found) throw new Error(`Missing button ${label}`);
     return found;
   };
-  const mountVisibleUnread = async (phoneWidth: boolean) => {
+  const mountVisibleUnread = async (phoneWidth: boolean, permission: typeof conversation.permission = "write", ready = true) => {
     const changes = new dom.window.EventTarget();
     const phone = {
       matches: phoneWidth,
@@ -268,9 +336,12 @@ describe("ChatWorkspace interactions", () => {
       ...message(1),
       author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Alex" },
     });
-    await mount(true, [conversation], "info", "en", "write", {
+    await mount(true, [conversation], "info", "en", permission, {
       page: { items: [unread], seqHead: 1, rev: 1, from: 1, to: 1 },
     });
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    if (ready) socket.message({ t: "ready", id: socket.conversationSubscription, cursor: "c.0" });
     const feed = dom.root.querySelector<HTMLElement>(".k2b-virtual-feed__viewport")!;
     Object.defineProperty(feed, "clientHeight", { configurable: true, value: 600 });
     feed.dispatchEvent(new Event("scroll"));
@@ -292,6 +363,44 @@ describe("ChatWorkspace interactions", () => {
       expect(consoleErrors).toEqual([]);
     });
   }
+  test("visible unread reporting waits for the conversation replay to finish", async () => {
+    await mountVisibleUnread(false, "write", false);
+    expect(readPosts).toEqual([]);
+    const socket = FakeWebSocket.instances[0]!;
+    socket.message({ t: "ready", id: socket.conversationSubscription, cursor: "c.0" });
+    await settle();
+    expect(readPosts).toEqual([1]);
+    expect(consoleErrors).toEqual([]);
+  });
+  for (const permission of ["write", "read"] as const)
+    test(`automatic read failures leave a stable visible retry and recover for ${permission}`, async () => {
+      const delegate = globalThis.fetch;
+      let fail = true;
+      globalThis.fetch = Object.assign(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (String(input).endsWith("/read") && fail) return Response.json({ message: "Unavailable" }, { status: 503 });
+          return delegate(input, init);
+        },
+        { preconnect: delegate.preconnect },
+      );
+      await mountVisibleUnread(false, permission);
+      expect(dom.root.textContent).toContain("The read state could not be changed.");
+      const region = permission === "read" ? ".chat-conversation__notice" : ".k2b-chat-composer__hint";
+      const hint = dom.root.querySelector(region);
+      const feed = dom.root.querySelector(".chat-conversation__feed");
+      const preceding = feed?.previousElementSibling;
+      expect(hint?.textContent).toContain("The read state could not be changed.");
+      expect(hint?.textContent).toContain("Try again");
+      fail = false;
+      button("Try again").click();
+      await settle();
+      expect(dom.root.textContent).not.toContain("The read state could not be changed.");
+      expect(readPosts).toEqual([1]);
+      expect(dom.root.querySelector(region)).toBe(hint);
+      expect(dom.root.querySelector(".chat-conversation__feed")).toBe(feed);
+      expect(feed?.previousElementSibling).toBe(preceding);
+    });
+
   test("desktop info keeps reporting visible unread messages", async () => {
     await mountVisibleUnread(false);
     expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
@@ -325,6 +434,257 @@ describe("ChatWorkspace interactions", () => {
     await settle();
     expect(consoleErrors).toEqual([]);
   });
+  test("in the Cloud app a draft lives in the device's storage, so it survives the app being ended", async () => {
+    await mount(true, [conversation], null, "en", "write", { url: "/pwa/chat/c/Chat01", app: true });
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    field.value = "Seals arrive on Monday";
+    field.dispatchEvent(new dom.window.Event("input", { bubbles: true }) as unknown as Event);
+    await settle();
+    const stored = Object.keys(dom.window.localStorage).filter((key) => key.startsWith("cloud.pwa.draft:"));
+    expect(stored).toHaveLength(1);
+    expect(dom.window.localStorage.getItem(stored[0]!)).toBe("Seals arrive on Monday");
+    expect(Object.keys(dom.window.sessionStorage).some((key) => key.startsWith("cloud.chat.draft:"))).toBe(false);
+    expect(consoleErrors).toEqual([]);
+  });
+  test("opening a system chat keeps the private unread total intact at Back", async () => {
+    const system = { ...conversation, kind: "system" as const, unread: 5 };
+    const privateChat = { ...conversation, id: "Chat02", unread: 10 };
+    const anotherSystem = { ...system, id: "Chat03", unread: 60 };
+    aggregateUnread = 40;
+    snapshots.set(system.id, {
+      cursor: "c.0",
+      conversation: system,
+      page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
+      threads: noThreads,
+      focus: null,
+    });
+    await mount(true, [system, privateChat, anotherSystem], null, "en", "write", {
+      url: "/pwa/chat/c/Chat01",
+      app: true,
+      conversation: system,
+    });
+    // A system chat's timeline goes back to its threads; that page carries the way back to the chat list.
+    const backToThreads = dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__back a[aria-label="Back to the threads"]');
+    expect(backToThreads?.getAttribute("href")).toBe("/pwa/chat/c/Chat01/threads");
+    const length = dom.window.history.length;
+    backToThreads!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat/c/Chat01/threads");
+    expect(dom.window.history.length).toBe(length);
+    const backToChats = dom.root.querySelector<HTMLAnchorElement>(".chat-threads-page .chat-conversation__back a");
+    expect(backToChats?.getAttribute("href")).toBe("/pwa/chat");
+    expect(backToChats?.getAttribute("aria-label")).toBe("Back to chats, 40 unread");
+    expect(backToChats?.querySelector(".chat-conversation__back-count")?.textContent).toBe("40");
+    backToChats!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat");
+    expect(dom.window.history.length).toBe(length);
+    expect(consoleErrors).toEqual([]);
+  });
+  for (const app of [true, false]) {
+    test(`the ${app ? "app" : "web"} header follows the current filter entry's marker before and after Info`, async () => {
+      const threadedChat = { ...conversation, threads: 1 };
+      snapshots.set(conversation.id, {
+        threads: noThreads,
+        cursor: "c.0",
+        conversation: threadedChat,
+        page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
+        focus: null,
+      });
+      const base = app ? "/pwa/chat" : "/app/chat";
+      await mount(false, [threadedChat], null, "en", "write", { url: base, app });
+      dom.root.querySelector<HTMLAnchorElement>(`a[href="${base}/c/Chat01"]`)!.click();
+      await settle();
+      const back = () => dom.root.querySelector<HTMLAnchorElement>(".chat-conversation__back a")!;
+      expect(back().getAttribute("href")).toBe(base);
+      button("Unread").click();
+      await settle();
+      const filtered = `${base}/c/Chat01?filter=unread`;
+      const directory = `${base}/c/Chat01/threads?filter=unread`;
+      expect(dom.window.location.pathname + dom.window.location.search).toBe(filtered);
+      expect(dom.window.history.state).toBeNull();
+      expect(back().getAttribute("href")).toBe(directory);
+      dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+      await settle();
+      dom.window.history.back();
+      await settle();
+      expect(dom.window.location.pathname + dom.window.location.search).toBe(filtered);
+      expect(back().getAttribute("href")).toBe(directory);
+      dom.window.history.back();
+      await settle();
+      expect(back().getAttribute("href")).toBe(base);
+      dom.window.history.forward();
+      await settle();
+      expect(back().getAttribute("href")).toBe(directory);
+      expect(consoleErrors).toEqual([]);
+    });
+  }
+
+  for (const app of [true, false]) {
+    for (const phone of [false, true]) {
+      for (const info of [false, true]) {
+        test(`the ${app ? "app" : "web"} traverses list and chat with header Back and Forward (${phone ? "phone" : "wide"}, ${info ? "info open" : "chat"})`, async () => {
+          Object.defineProperty(dom.window, "matchMedia", {
+            value: (query: string) => ({
+              matches: phone && query === "(max-width: 47.999rem)",
+              addEventListener() {},
+              removeEventListener() {},
+            }),
+          });
+          const threadedChat = { ...conversation, threads: 1 };
+          snapshots.set(conversation.id, {
+            threads: noThreads,
+            cursor: "c.0",
+            conversation: threadedChat,
+            page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
+            focus: null,
+          });
+          const base = app ? "/pwa/chat" : "/app/chat";
+          await mount(false, [threadedChat], null, "en", "write", { url: base, app });
+          const length = dom.window.history.length;
+          dom.root.querySelector<HTMLAnchorElement>(`a[href="${base}/c/Chat01"]`)!.click();
+          await settle();
+          const directory = `${base}/c/Chat01/threads`;
+          expect(dom.window.location.pathname).toBe(phone ? directory : `${base}/c/Chat01`);
+          if (phone) {
+            dom.root.querySelector<HTMLAnchorElement>(`.chat-threads-page__list a[href="${base}/c/Chat01"]`)!.click();
+            await settle();
+          }
+          expect(dom.window.location.pathname).toBe(`${base}/c/Chat01`);
+          if (!phone) {
+            // Selecting the open row again keeps this entry and its recorded list predecessor.
+            dom.root.querySelector<HTMLAnchorElement>(`a[href="${base}/c/Chat01"]`)!.click();
+            await settle();
+            expect(dom.window.history.state).toEqual({ chatFromList: true });
+          }
+          if (info) {
+            dom.root
+              .querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!
+              .click();
+            await settle();
+            expect(dom.window.location.search).toBe("?panel=info");
+          }
+          const depth = (phone ? 2 : 1) + Number(info);
+          expect(dom.window.history.length).toBe(length + depth);
+          const back = dom.root.querySelector<HTMLAnchorElement>(".chat-conversation__back a")!;
+          expect(back.getAttribute("href")).toBe(phone ? directory : base);
+          expect(back.getAttribute("aria-label")).toBe(phone ? "Back to the threads" : "Back to chats");
+          back.click();
+          await settle();
+          expect(dom.window.location.pathname + dom.window.location.search).toBe(phone ? directory : base);
+          expect(dom.window.history.length).toBe(length + depth);
+          if (phone) expect(dom.root.querySelector(".chat-threads-page")).not.toBeNull();
+          else expect(dom.root.querySelector(".chat-conversation__header")).toBeNull();
+          dom.window.history.forward();
+          await settle();
+          expect(dom.window.location.pathname + dom.window.location.search).toBe(`${base}/c/Chat01`);
+          expect(dom.root.querySelector(".chat-conversation__header")?.textContent).toContain("Secret board");
+          if (info) {
+            dom.window.history.forward();
+            await settle();
+            expect(dom.window.location.search).toBe("?panel=info");
+            expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
+          }
+          expect(consoleErrors).toEqual([]);
+        });
+      }
+    }
+  }
+
+  for (const phone of [false, true]) {
+    for (const info of [false, true]) {
+      test(`the app replaces a directly opened threaded chat with its directory (${phone ? "phone" : "wide"}, ${info ? "info open" : "chat"})`, async () => {
+        Object.defineProperty(dom.window, "matchMedia", {
+          value: (query: string) => ({
+            matches: phone && query === "(max-width: 47.999rem)",
+            addEventListener() {},
+            removeEventListener() {},
+          }),
+        });
+        const threadedChat = { ...conversation, threads: 1 };
+        snapshots.set(conversation.id, {
+          threads: noThreads,
+          cursor: "c.0",
+          conversation: threadedChat,
+          page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
+          focus: null,
+        });
+        await mount(true, [threadedChat], info ? "info" : null, "en", "write", {
+          url: `/pwa/chat/c/Chat01${info ? "?panel=info" : ""}`,
+          app: true,
+          conversation: threadedChat,
+        });
+        const length = dom.window.history.length;
+        const back = dom.root.querySelector<HTMLAnchorElement>(".chat-conversation__back a")!;
+        expect(back.getAttribute("href")).toBe("/pwa/chat/c/Chat01/threads");
+        expect(back.getAttribute("aria-label")).toBe("Back to the threads");
+        back.click();
+        await settle();
+        expect(dom.window.location.pathname + dom.window.location.search).toBe("/pwa/chat/c/Chat01/threads");
+        expect(dom.window.history.length).toBe(length);
+        dom.root.querySelector<HTMLAnchorElement>(".chat-threads-page .chat-conversation__back a")!.click();
+        await settle();
+        expect(dom.window.location.pathname).toBe("/pwa/chat");
+        expect(dom.window.history.length).toBe(length);
+        expect(consoleErrors).toEqual([]);
+      });
+    }
+  }
+
+  test("the app replaces a directly opened chat with its list when going Back", async () => {
+    await mount(true, [conversation], null, "en", "write", { url: "/pwa/chat/c/Chat01", app: true });
+    const length = dom.window.history.length;
+    dom.root.querySelector<HTMLAnchorElement>(".chat-conversation__back a")!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat");
+    expect(dom.window.history.length).toBe(length);
+  });
+
+  test("Back excludes an open archived chat and refreshes its total when that chat is read", async () => {
+    const archivedChat = { ...conversation, archived: true, unread: 3 };
+    const listedChat = { ...conversation, id: "Chat02", unread: 2 };
+    aggregateUnread = 10;
+    await mount(true, [listedChat], null, "en", "write", {
+      url: "/pwa/chat/c/Chat01",
+      app: true,
+      conversation: archivedChat,
+    });
+    const backCount = () => dom.root.querySelector(".chat-conversation__back-count")?.textContent;
+    expect(backCount()).toBe("7");
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    expect(socket.personalSubscription).toBeDefined();
+    socket.message({ t: "ready", id: socket.personalSubscription, cursor: "c.0" });
+    // Two successive read updates keep the second one independent of any initial mount refresh.
+    for (const [unread, revision] of [
+      [2, 1],
+      [0, 2],
+    ] as const) {
+      aggregateUnread = 7 + unread;
+      const requestsBeforeRead = aggregateRequests;
+      socket.message({
+        t: "event",
+        id: socket.personalSubscription,
+        cursor: `c.${revision}`,
+        data: {
+          type: "read",
+          conversationId: archivedChat.id,
+          lastReadSeq: revision,
+          unreadFromSeq: null,
+          joinedSeq: 0,
+          unread,
+          asOfRev: revision,
+          threads: [],
+        },
+      });
+      const deadline = performance.now() + 2_000;
+      while (aggregateRequests === requestsBeforeRead || backCount() !== "7") {
+        if (performance.now() >= deadline) throw new Error("Unread total was not refreshed after reading an archived chat");
+        await settle();
+      }
+    }
+    expect(consoleErrors).toEqual([]);
+  });
   test("failed send retries the same client ID and body, then shows one sent row", async () => {
     await mount(true);
     const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
@@ -346,6 +706,10 @@ describe("ChatWorkspace interactions", () => {
     answer(
       Response.json(
         {
+          reactions: [],
+          mentions: [],
+          refs: [],
+          attachments: [],
           thread: null,
           replyTo: null,
           id: "Chat010001",
@@ -407,6 +771,31 @@ describe("ChatWorkspace interactions", () => {
     expect(posted).toHaveLength(0);
   });
 
+  test("in the Cloud app a draft the device could not keep is stored on Retry, without a conflict with itself", async () => {
+    await mount(true, [conversation], null, "en", "write", { url: "/pwa/chat/c/Chat01", app: true });
+    const storage = dom.window.localStorage;
+    // The device's storage refuses the first keystroke, as a full or locked store does.
+    Object.defineProperty(dom.window, "localStorage", {
+      configurable: true,
+      get: () => {
+        throw new dom.window.DOMException("Quota exceeded", "QuotaExceededError");
+      },
+    });
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    field.value = "Seals arrive on Monday";
+    field.dispatchEvent(new dom.window.Event("input", { bubbles: true }) as unknown as Event);
+    await settle();
+    const t = chatMessages.resolve(["en"]).t;
+    expect(dom.root.textContent).toContain(t.draftNotSaved);
+    Object.defineProperty(dom.window, "localStorage", { configurable: true, value: storage });
+    button(t.retry).click();
+    await settle();
+    expect(dom.root.textContent).not.toContain(t.draftNotSaved);
+    const stored = Object.keys(storage).filter((key) => key.startsWith("cloud.pwa.draft:"));
+    expect(stored.map((key) => storage.getItem(key))).toEqual(["Seals arrive on Monday"]);
+    expect(field.value).toBe("Seals arrive on Monday");
+    expect(consoleErrors).toEqual([]);
+  });
   test("a failed initial storage read does not cache an empty draft; retry restores it", async () => {
     const storage = dom.window.sessionStorage;
     storage.setItem(`cloud.chat.draft:${viewerId}:Chat01`, "Saved before reopening");
@@ -434,7 +823,7 @@ describe("ChatWorkspace interactions", () => {
     await settle();
     expect(dom.window.location.pathname).toBe("/app/chat/c/Chat01");
     const area = dom.root.querySelector(".k2b-app-workspace__main")!;
-    expect(area.textContent).toContain("No access");
+    expect(area.textContent).toContain("Thread unavailable");
     expect(area.textContent).toContain("This chat does not exist, or you are not a member of it.");
     expect(area.textContent).not.toContain("Secret board");
     // The open stayed in place: no document-navigation fallback.
@@ -761,6 +1150,10 @@ describe("ChatWorkspace interactions", () => {
       const socket = FakeWebSocket.instances[0]!;
       socket.open();
       expect(socket.conversationSubscription).toBeDefined();
+      socket.message({ t: "ready", id: socket.conversationSubscription, cursor: "c.0" });
+      await settle();
+      // Catch-up alone is not a membership change and must not reload the panel.
+      expect(membersRequests).toBe(1);
       memberName = "Changed by someone else";
       socket.message({
         t: "event",
@@ -860,6 +1253,58 @@ describe("ChatWorkspace interactions", () => {
     expect(dom.window.history.length).toBe(infoLength);
     expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat01");
     expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(true);
+    expect(consoleErrors).toEqual([]);
+  });
+  test("the info link acts on the address that was clicked, even when the panel changes before its transition calls back", async () => {
+    await mount(true, [conversation]);
+    let update: (() => unknown) | undefined;
+    // A view transition that calls back only when the test lets it, as a busy browser does (#2116).
+    Object.defineProperty(dom.document, "startViewTransition", {
+      configurable: true,
+      value: (callback: () => unknown) => {
+        update = callback;
+        return { ready: Promise.resolve(), finished: Promise.resolve(), skipTransition: () => {} };
+      },
+    });
+    const infoLink = () =>
+      dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!;
+    expect(infoLink().getAttribute("aria-expanded")).toBe("false");
+    infoLink().click();
+    expect(update).toBeDefined();
+    // Before the callback, the panel opens another way, here by Forward to the info address.
+    dom.window.history.pushState(null, "", "/app/chat/c/Chat01?panel=info");
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await settle();
+    expect(infoLink().getAttribute("aria-expanded")).toBe("true");
+    await update!();
+    await settle();
+    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat01?panel=info");
+    expect(infoLink().getAttribute("aria-expanded")).toBe("true");
+    expect(consoleErrors).toEqual([]);
+  });
+  test("info chosen while the same chat is still opening opens once that open ends", async () => {
+    const linked = message(1, "Linked message");
+    await mount(true, [conversation]);
+    const pending = Promise.withResolvers<Response>();
+    pendingSnapshots.set(conversation.id, pending.promise);
+    dom.window.history.pushState(null, "", `/app/chat/c/Chat01/m/${linked.id}`);
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await settle();
+    expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("true");
+    dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+    await settle();
+    pending.resolve(
+      Response.json({
+        threads: noThreads,
+        cursor: "c.0",
+        conversation,
+        page: { items: [linked], seqHead: 1, rev: 1, from: 1, to: 1 },
+        focus: linked.id,
+      }),
+    );
+    await settle();
+    expect(dom.window.location.pathname + dom.window.location.search).toBe(`/app/chat/c/Chat01/m/${linked.id}?panel=info`);
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
     expect(consoleErrors).toEqual([]);
   });
   for (const initialPanel of [null, "info"] as const) {

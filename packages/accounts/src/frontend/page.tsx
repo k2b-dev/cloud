@@ -97,30 +97,21 @@ export default ssr<AuthContext>(async (c) => {
           {/* Groups */}
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <LinkCard
-              href={buildGroupsUrl(
-                { search: "", page: 1, provider: "", scope: "managed", personal: false },
-                { defaultScope: defaultGroupScope },
-              )}
+              href={buildGroupsUrl({ search: "", page: 1, provider: "", scope: "managed" }, { defaultScope: defaultGroupScope })}
               title={t.managedByMe}
               description={t.groupCount({ count: managedGroups.total })}
               icon="ti ti-shield"
               color="violet"
             />
             <LinkCard
-              href={buildGroupsUrl(
-                { search: "", page: 1, provider: "", scope: "member", personal: false },
-                { defaultScope: defaultGroupScope },
-              )}
+              href={buildGroupsUrl({ search: "", page: 1, provider: "", scope: "member" }, { defaultScope: defaultGroupScope })}
               title={t.myGroups}
               description={t.groupCount({ count: memberGroups.total })}
               icon="ti ti-users-group"
               color="blue"
             />
             <LinkCard
-              href={buildGroupsUrl(
-                { search: "", page: 1, provider: "", scope: "all", personal: false },
-                { defaultScope: defaultGroupScope },
-              )}
+              href={buildGroupsUrl({ search: "", page: 1, provider: "", scope: "all" }, { defaultScope: defaultGroupScope })}
               title={t.allGroups}
               description={t.groupCount({ count: allGroups.total })}
               icon="ti ti-layout-grid"
@@ -137,11 +128,11 @@ export default ssr<AuthContext>(async (c) => {
                   <p class="mt-1 text-xs text-dimmed">{t.administrationDescription}</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-1">
-                  <ButtonLink href="/admin/settings?tab=account-operations" variant="subtle" size="sm">
+                  <ButtonLink href="/admin/signin/operations" variant="subtle" size="sm">
                     <i class="ti ti-tool" aria-hidden="true" />
                     {t.operations}
                   </ButtonLink>
-                  <ButtonLink href="/admin/settings?tab=user" variant="subtle" size="sm">
+                  <ButtonLink href="/admin/signin" variant="subtle" size="sm">
                     <i class="ti ti-settings" aria-hidden="true" />
                     {t.settings}
                   </ButtonLink>
@@ -199,7 +190,7 @@ export default ssr<AuthContext>(async (c) => {
                 </Paper>
                 <StatGrid columns={2}>
                   <StatCell
-                    label={t.accounts}
+                    label={t.accountTotalLabel}
                     value={totalAccounts}
                     sub={t.sourceCounts({ freeIpa: summary.ipaAccountsTotal, local: summary.localAccountsTotal })}
                     accent={{ tone: "blue", icon: "ti ti-users" }}

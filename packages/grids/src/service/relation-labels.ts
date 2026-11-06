@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { FilterTree } from "../contracts";
 import type { DslSqlFederatedRecordSource } from "../query-dsl/sql-compiler-types";
 import { assertFederatedPublication, buildDslSqlRecordSource, buildFederatedFieldSqlMap } from "../query-dsl/sql-record-source";

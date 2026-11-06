@@ -8,6 +8,8 @@ export type ScrollAreaProps = Omit<JSX.HTMLAttributes<HTMLDivElement>, "children
   viewportSize?: "compact";
   orientation?: "vertical" | "horizontal";
   scrollPreserveKey?: string | false;
+  /** Keep 0.5 rem inside both side edges, like a workspace column; with a mouse the end one is a fixed scroll track. */
+  inset?: boolean;
   class?: string;
 };
 
@@ -19,6 +21,7 @@ export function ScrollArea(props: ScrollAreaProps): JSX.Element {
     "scrollFade",
     "orientation",
     "viewportSize",
+    "inset",
     "ref",
   ]);
   let body!: HTMLDivElement;
@@ -38,6 +41,7 @@ export function ScrollArea(props: ScrollAreaProps): JSX.Element {
       data-scroll-fade-axis={local.orientation ?? "vertical"}
       data-viewport-size={local.viewportSize}
       data-orientation={local.orientation ?? "vertical"}
+      data-inset={local.inset ? "true" : undefined}
       data-scroll-fade-mode={local.scrollFade !== false ? "both" : undefined}
       class={className() ? `k2b-scroll-area ${className()}` : "k2b-scroll-area"}
       data-scroll-preserve={local.scrollPreserveKey || undefined}

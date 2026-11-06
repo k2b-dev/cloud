@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import { sha256Json } from "../service/canonical";
@@ -102,7 +101,6 @@ suite("Mail default sender setup through the API", () => {
     request(token, "/sender-identities/default/setup", { method: "POST", body: { bindingId, savesSentAutomatically: true }, locale });
 
   beforeAll(async () => {
-    await migrate();
     const rows = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES
@@ -117,7 +115,7 @@ suite("Mail default sender setup through the API", () => {
     tokens.set("owner", owner).set("reader", reader).set("outsider", outsider);
     verifyAccessToken = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token: string) => {
       const user = tokens.get(token);
-      return user ? { kind: "user", payload: {}, user, scopes: [] } : null;
+      return user ? { kind: "user", payload: {}, user, scopes: ["read", "write"] } : null;
     });
 
     const ownerContext = contextFor(owner);

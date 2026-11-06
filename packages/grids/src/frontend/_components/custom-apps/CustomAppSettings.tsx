@@ -1,7 +1,7 @@
 import { IconInput, NoticeCard, PanelDialog, SettingsGroup, SettingsModal, TextInput } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import type { CustomAppDefinition } from "../../../custom-apps/contracts";
-import { ScopedPermissionEditor } from "../permissions/ScopedPermissionEditor";
+import { ScopedAccessSection } from "../permissions/ScopedAccessSection";
 import { type CustomAppBuilderText, useCustomAppBuilderMessages } from "./builder-messages";
 
 export function CustomAppSettings(props: {
@@ -38,9 +38,18 @@ export function CustomAppSettings(props: {
           <SaveStatus />
         </SettingsModal.Tab>
         <SettingsModal.Tab id="access" title={text("Access")} icon="ti ti-shield">
-          <SettingsGroup title={text("Who can open the published app")}>
+          <ScopedAccessSection
+            scope={{ type: "customApp", id: props.appId }}
+            resourceName={props.definition.name}
+            title={text("Who can open the published app")}
+            canEdit
+          >
             <NoticeCard tone="info">
-              <p>{text("App grants are separate from base access. Choose users, groups, all signed-in users, or public access.")}</p>
+              <p>
+                {text(
+                  "App grants are separate from base access. Choose users, groups, standalone or agent accounts, all signed-in users, or public access.",
+                )}
+              </p>
               <p class="mt-2">
                 {text("App access never opens the raw base, Record API, or GQL. Availability rules can only restrict this access further.")}
               </p>
@@ -48,8 +57,7 @@ export function CustomAppSettings(props: {
                 {text("Forms and workflow actions allow only what you publish. Workflow actions require a signed-in user.")}
               </p>
             </NoticeCard>
-            <ScopedPermissionEditor scope={{ type: "customApp", id: props.appId }} canEdit />
-          </SettingsGroup>
+          </ScopedAccessSection>
           <SaveStatus />
         </SettingsModal.Tab>
         <SettingsModal.Tab id="lifecycle" title={text("Lifecycle")} icon="ti ti-alert-triangle" tone="danger">

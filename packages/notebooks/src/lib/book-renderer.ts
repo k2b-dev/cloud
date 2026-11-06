@@ -1,4 +1,11 @@
 import { markdownCalloutSanitizeOptions } from "@k2b/cloud/shared";
+import { parseNotebookChartBlocks, renderNotebookChartFigure } from "@k2b/editor/markdown/lib/chart-blocks";
+import { anchorHash, headingAnchor, parseNoteLink } from "@k2b/editor/markdown/lib/heading-anchors";
+import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "@k2b/editor/markdown/lib/ligatures";
+import { literalMarkdownLines, notebookDirectiveLength } from "@k2b/editor/markdown/lib/markdown-context";
+import { parseSizedMarkdownImage } from "@k2b/editor/markdown/lib/markdown-image";
+import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "@k2b/editor/markdown/lib/named-blocks";
+import { renderPrettyTableHtml } from "@k2b/editor/markdown/pretty-table";
 import { dates, highlight, text } from "@k2b/stdlib";
 import {
   type MarkdownReference,
@@ -11,15 +18,11 @@ import {
 import katex from "katex";
 import { Marked, Renderer, type Tokens } from "marked";
 import sanitizeHtml from "sanitize-html";
-import { renderPrettyTableHtml } from "../frontend/lib/pretty-table";
 import type { NoteQueryResult } from "../service/note-query";
 import { bookRendererMessages, notebookBlockDiagnosticMessage } from "./book-renderer-messages";
-import { parseNotebookChartBlocks, renderNotebookChartFigure } from "./chart-blocks";
-import { anchorHash, headingAnchor, parseNoteLink } from "./heading-anchors";
-import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "./ligatures";
-import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
-import { parseSizedMarkdownImage } from "./markdown-image";
-import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "./named-blocks";
+import { notebookChartOptions } from "./chart-options";
+import { type NotebookMapImage, type NotebookMapState, parseNotebookMapBlocks, renderNotebookMapFigure } from "./map-blocks";
+import { notebookMapMessages } from "./map-messages";
 import { type NotePdfOmission, type NotePdfOmissionKind, notePdfOmissionLabel } from "./pdf-omissions";
 import {
   type NotebookBlockDiagnostic,
@@ -28,6 +31,7 @@ import {
   type QueryBlock,
   type QueryField,
 } from "./query-blocks";
+import { notebookTableOptions } from "./table-options";
 
 export type BookImagePlacement = {
   token: string;
@@ -63,6 +67,8 @@ export type NotebookBookInput = {
    * placeholders by the service; math leaves out MathML the PDF drops.
    */
   print?: boolean;
+  /** Browser print/preview keeps authorized image URLs; server PDF exports use offline slots by default. */
+  browserImages?: boolean;
   /** Installation origin for links in exported PDFs; ignored by browser rendering. */
   publicOrigin?: string;
   /** Short ID of the rendered note. In print, a link to this note stays inside the document. */
@@ -72,6 +78,9 @@ export type NotebookBookInput = {
   /** Show each query as its definition, as a version preview does: today's results would not be that version's. */
   querySource?: boolean;
   references?: BookReferences;
+  mapState?: NotebookMapState;
+  mapImages?: ReadonlyMap<number, NotebookMapImage>;
+  mapImagesPending?: boolean;
 };
 
 const escape = highlight.escape;
@@ -119,9 +128,11 @@ export const renderNotebookBook = (
   const tocResult = parseNotebookTocBlocks(markdown);
   const queries = new Map(queryResult.blocks.map((block) => [block.line, block]));
   const tocs = new Map(tocResult.blocks.map((block) => [block.line, block]));
-  const chartResult = parseNotebookChartBlocks(markdown);
+  const chartResult = parseNotebookChartBlocks(markdown, notebookChartOptions);
   const charts = new Map(chartResult.blocks.map((block) => [block.line, block.input]));
   const chartSlots: string[] = [];
+  const mapResult = parseNotebookMapBlocks(markdown);
+  const maps = new Map(mapResult.blocks.map((block) => [block.line, block.document]));
   const namedBlocks = extractNamedBlocks(markdown);
   const handles = new Map(namedBlocks.map((block) => [block.line, block]));
   const dataNames = new Map(namedBlocks.filter((block) => block.type === "data").map((block) => [block.startLine, block.name]));
@@ -222,9 +233,12 @@ export const renderNotebookBook = (
       const href = resolveUrl(item.href);
       return href ? renderMarkdownLink({ href, html: escape(item.title), reference: { kind: "note" }, locale }) : escape(item.title);
     };
+    // A paged list keeps the height of a full page on its last page, so turning pages moves nothing below it.
+    const paged = result.offset !== undefined && result.total > result.limit;
+    const fillers = paged ? Math.max(0, result.limit - result.items.length) : 0;
     const body =
       query.columns.length === 0
-        ? `<ul>${result.items.map((item) => `<li>${link(item)}</li>`).join("")}</ul>`
+        ? `<ul>${result.items.map((item) => `<li>${link(item)}</li>`).join("")}${'<li class="notebook-query-filler" aria-hidden="true">&nbsp;</li>'.repeat(fillers)}</ul>`
         : `<div class="md-table-wrap"><table class="md-table"><thead><tr>${query.columns.map((field) => `<th scope="col">${escape(columnTitle(field))}</th>`).join("")}</tr></thead><tbody>${result.items
             .map(
               (item) =>
@@ -245,11 +259,27 @@ export const renderNotebookBook = (
                   })
                   .join("")}</tr>`,
             )
-            .join("")}</tbody></table></div>`;
+            .join(
+              "",
+            )}${`<tr class="notebook-query-filler" aria-hidden="true"><td colspan="${query.columns.length}">&nbsp;</td></tr>`.repeat(fillers)}</tbody></table></div>`;
+    if (paged) {
+      const offset = result.offset!;
+      const pages = Math.ceil(result.total / result.limit);
+      const page = Math.floor(offset / result.limit) + 1;
+      const number = new Intl.NumberFormat(locale);
+      const button = (target: number, label: string, icon: string) =>
+        `<button type="button" class="notebook-query-pager__button" data-query-line="${query.line}" data-query-page="${target}" aria-label="${escape(label)}" title="${escape(label)}"${target < 1 || target > pages ? " disabled" : ""}><i class="ti ${icon}" aria-hidden="true"></i></button>`;
+      const range = t.queryRange({
+        from: number.format(offset + 1),
+        to: number.format(offset + result.items.length),
+        total: number.format(result.total),
+      });
+      return `<div class="notebook-book-query" data-query-line="${query.line}">${body}<nav class="notebook-query-pager" aria-label="${escape(t.queryPages)}">${button(page - 1, t.previousPage, "ti-chevron-left")}<span class="notebook-query-pager__range" role="status">${escape(range)}</span>${button(page + 1, t.nextPage, "ti-chevron-right")}</nav></div>`;
+    }
     const count = result.truncated
       ? `<p class="notebook-book-empty">${escape(t.queryCount({ shown: result.items.length, total: result.total }))}</p>`
       : "";
-    return `<div class="notebook-book-query">${body}${count}</div>`;
+    return `<div class="notebook-book-query" data-query-line="${query.line}">${body}${count}</div>`;
   };
 
   // Links to notes, headings and attachments are references; any other relative URL is a page or file of Cloud.
@@ -340,7 +370,7 @@ export const renderNotebookBook = (
       : img;
   renderer.image = function ({ href, title, tokens }) {
     const alt = plainText(this.parser.parseInline(tokens));
-    if (input.print) return imageSlot({ href, alt, title: title ?? null, width: null, height: null });
+    if (input.print && !input.browserImages) return imageSlot({ href, alt, title: title ?? null, width: null, height: null });
     const url = resolveUrl(href, true);
     if (!url) return escape(alt);
     return imageHtml(
@@ -375,7 +405,7 @@ export const renderNotebookBook = (
     const cells = new Map([...header, ...rows.flat()].map((cell) => [cell.text, cell.tokens]));
     const html = renderPrettyTableHtml(
       { headers: header.map((cell) => cell.text), rows: rows.map((row) => row.map((cell) => cell.text)), align },
-      { notebookId: input.notebookId, locale, renderInline: (value) => this.parser.parseInline(cells.get(value) ?? []) },
+      { ...notebookTableOptions(input.notebookId), locale, renderInline: (value) => this.parser.parseInline(cells.get(value) ?? []) },
     );
     return html.replace(
       /<span class="md-table-cell md-formula-error[^"]*"[^>]*>⚠ ([^<]*)<\/span>/g,
@@ -457,7 +487,7 @@ export const renderNotebookBook = (
         },
         renderer(token) {
           const alt = plainText(this.parser.parseInline(token.tokens ?? []));
-          if (input.print)
+          if (input.print && !input.browserImages)
             return imageSlot({
               href: String(token.href),
               alt,
@@ -499,13 +529,13 @@ export const renderNotebookBook = (
       if (handle.type !== "data")
         prepared.push(
           "",
-          slot(() => `<div class="md-block-handle" id="${anchorId(`block-${handle.name}`)}">@${escape(handle.name)}</div>`),
+          slot(() => `<div class="md-block-handle" id="${anchorId(`block-${handle.name}`)}">${escape(handle.name)}</div>`),
           "",
         );
       continue;
     }
     const notice = /^ {0,3}:::/.test(line) ? scanMarkdownInfoBlock(markdown.slice(lineOffsets[index])) : null;
-    const opener = notice ? null : /^ {0,3}:::(query|toc|data|chart)[ \t]*$/.exec(line);
+    const opener = notice ? null : /^ {0,3}:::(query|toc|data|chart|map)[ \t]*$/.exec(line);
     if (!notice && !opener) {
       // Source positions are optional for nested Markdown, but never guessed.
       // Canonical heading IDs still cover every heading in the rendered TOC.
@@ -533,9 +563,35 @@ export const renderNotebookBook = (
       "",
       slot(() => {
         const preview = (html: string) => {
-          if (kind === "query" || kind === "toc" || kind === "chart") blockHtml.set(start + 1, html);
+          if (kind === "query" || kind === "toc" || kind === "chart" || kind === "map") blockHtml.set(start + 1, html);
           return html;
         };
+        if (kind === "map") {
+          const document = maps.get(start + 1);
+          const figure = document
+            ? renderNotebookMapFigure(document, {
+                locale,
+                notebookId: input.notebookId,
+                mode: linkMode,
+                state: input.mapState,
+                print: input.print,
+                image: input.mapImages?.get(start + 1),
+                publicOrigin: input.publicOrigin,
+                noteId: input.noteId,
+              })
+            : null;
+          if (figure)
+            return preview(
+              (input.print && !input.mapImagesPending && !input.mapImages?.has(start + 1)
+                ? omission("not_rendered", "map", document!.title)
+                : "") + `${prefix}CHART${chartSlots.push(figure) - 1}END`,
+            );
+          return preview(
+            omission("invalid_block", "map", blockLabel(start + 1)) +
+              `<p class="notebook-book-diagnostic" role="status">${escape(notebookMapMessages.resolve([locale]).t.invalid)}</p>` +
+              source(blockLines.join("\n")),
+          );
+        }
         if (kind === "chart") {
           const chart = charts.get(start + 1);
           const figure = chart ? renderNotebookChartFigure(chart, locale, { print: input.print }) : null;
@@ -571,7 +627,7 @@ export const renderNotebookBook = (
           const data = parseNamedDataBlockResult(body);
           if (data.diagnostics.length) return diagnostic(start + 1, kind) + source(body);
           const name = dataNames.get(start);
-          const title = name ? `<div class="md-block-handle" id="${anchorId(`block-${name}`)}">@${escape(name)}</div>` : "";
+          const title = name ? `<div class="md-block-handle" id="${anchorId(`block-${name}`)}">${escape(name)}</div>` : "";
           return `<div class="md-data-block">${title}${data.entries.length ? `<dl class="md-data-grid">${data.entries.map((entry) => `<div class="md-data-row"><dt class="md-data-key">${escape(text.humanize(entry.key))}</dt><dd class="md-data-value">${valueHtml(entry.value)}</dd></div>`).join("")}</dl>` : `<p class="notebook-book-empty">${escape(t.emptyData)}</p>`}</div>`;
         }
         if (!notice) return "";
@@ -646,13 +702,28 @@ export const renderNotebookBook = (
   };
   html = sanitizeNotebookBookHtml(html, resolveLink);
   html = html.replace(new RegExp(`${prefix}MATH(\\d+)END`, "g"), (_raw, index: string) => mathSlots[Number(index)] ?? "");
-  const restoreCharts = (html: string) =>
-    html.replace(new RegExp(`${prefix}CHART(\\d+)END`, "g"), (_raw, index: string) => chartSlots[Number(index)] ?? "");
+  const restoreCharts = (html: string) => {
+    const restored = html.replace(new RegExp(`${prefix}CHART(\\d+)END`, "g"), (_raw, index: string) => chartSlots[Number(index)] ?? "");
+    if (!input.print) return restored;
+    // Trusted map links are restored after sanitization, once all document headings are known.
+    return restored.replace(/href="#(heading-[^" ]+)"/g, (raw, hash: string) => {
+      try {
+        return hash === "top" || headingIds.has(decodeURIComponent(hash)) ? raw : 'href="#top"';
+      } catch {
+        return 'href="#top"';
+      }
+    });
+  };
   return {
     html: restoreCharts(html),
     omissions,
     images,
-    diagnostics: [...queryResult.diagnostics, ...tocResult.diagnostics, ...chartResult.diagnostics],
+    diagnostics: [
+      ...queryResult.diagnostics,
+      ...tocResult.diagnostics,
+      ...chartResult.diagnostics,
+      ...mapResult.invalid.map((line) => ({ code: "invalid-type" as const, line, path: "map" })),
+    ],
     headings,
     blocks: [...blockHtml].map(([line, html]) => ({ line, html: restoreCharts(sanitizeNotebookBookHtml(html, resolveLink)) })),
   };
@@ -662,7 +733,7 @@ export const sanitizeNotebookBookHtml = (value: string, resolveUrl: (href: strin
   const callouts = markdownCalloutSanitizeOptions();
   return sanitizeHtml(value, {
     ...callouts,
-    allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del", ...callouts.allowedTags],
+    allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del", "button", ...callouts.allowedTags],
     allowedAttributes: {
       "*": ["class", "id", "title", "role", "aria-hidden", "aria-label", "data-tone", "data-depth", "data-block-name"],
       a: [
@@ -673,6 +744,10 @@ export const sanitizeNotebookBookHtml = (value: string, resolveUrl: (href: strin
       ],
       img: ["src", "alt", "loading", "width", "height", "style"],
       input: ["type", "disabled", "checked"],
+      // A query's page buttons; the browser checks the numbers before it asks for a page.
+      button: ["type", "disabled", "data-query-line", "data-query-page"],
+      div: ["data-query-line"],
+      td: ["colspan"],
       span: ["style"],
       th: ["scope"],
       time: ["datetime"],

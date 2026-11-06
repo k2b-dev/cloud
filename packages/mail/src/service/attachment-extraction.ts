@@ -1,4 +1,4 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import {
   createRuntimeLifecycle,
   createRuntimeTaskTracker,
@@ -13,7 +13,6 @@ import {
   extractDocumentMarkdown,
 } from "@k2b/cloud/services/document-extraction";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
 import { sha256Text } from "./canonical";
 import { createBlobReadable, getStoredBlob } from "./message-blobs";

@@ -10,12 +10,14 @@ updated: 2026-10-23
 
 # Directory shares
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 An administrator can let an agent or standalone service account find selected
 people, groups, or service accounts by name. A directory share reveals that
 entry's directory information. It grants no access to resources and does not
 reveal group membership or management relationships.
 
-Open **Accounts → Service accounts → Directory access**, select the machine
+Open **Accounts → API keys → Directory access**, select the machine
 account, then add the exact entries it needs. Each entry has a revoke control.
 The account starts with no directory entries. Adding a group shares the group's
 name and directory information, not its members. Personal-group owner details

@@ -22,16 +22,17 @@ export const chooseMailAssignee = (params: { mailboxId: string; currentUserId: s
   const quickChoices = (query: string): PromptSearchItem<MailAssigneeChoice>[] => {
     const needle = query.trim().toLocaleLowerCase();
     const items: PromptSearchItem<MailAssigneeChoice>[] = [
-      { label: t.assignToMe, icon: "ti ti-user-check", value: { mode: "add", userId: params.currentUserId, name: null } },
-      { label: t.removeMe, icon: "ti ti-user-minus", value: { mode: "remove", userId: params.currentUserId, name: null } },
-      { label: t.unassign, icon: "ti ti-user-off", value: { mode: "replace", userId: null, name: null } },
+      { id: "add-me", label: t.assignToMe, icon: "ti ti-user-check", value: { mode: "add", userId: params.currentUserId, name: null } },
+      { id: "remove-me", label: t.removeMe, icon: "ti ti-user-minus", value: { mode: "remove", userId: params.currentUserId, name: null } },
+      { id: "unassign", label: t.unassign, icon: "ti ti-user-off", value: { mode: "replace", userId: null, name: null } },
     ];
     return items.filter((item) => !needle || item.label.toLocaleLowerCase().includes(needle));
   };
   const userItem = (user: MailAssignableUser): PromptSearchItem<MailAssigneeChoice> => ({
+    id: `user:${user.id}`,
     label: user.displayName,
     desc: user.uid,
-    icon: "ti ti-user",
+    icon: user.serviceAccountKind === "agent" ? "ti ti-robot" : user.type === "service_account" ? "ti ti-key" : "ti ti-user",
     previewUrl: avatarUrl(user),
     value: { mode: "add", userId: user.id, name: user.displayName },
   });

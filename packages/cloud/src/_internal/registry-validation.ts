@@ -1,5 +1,6 @@
 import { CLOUD_CLI_MODULE_NAME } from "../cli/plugin";
 import { AppAccessRuleSchema } from "../contracts/app-access";
+import { validateInstallable } from "../contracts/installable";
 import { PlatformPermissionSchema } from "../contracts/outgoing-mail";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { isOwnAppPath, SAME_ORIGIN_PATH } from "./app-path";
@@ -15,8 +16,13 @@ const invalid = (path: string, expected: string): string => `${path} must be ${e
 
 export const validateAppRegistryEntry = (value: unknown): string | null => {
   if (!isRecord(value)) return "entry must be an object";
-  for (const field of ["id", "name", "icon", "description", "baseUrl"] as const) {
+  for (const field of ["id", "name", "icon", "baseUrl"] as const) {
     if (!isString(value[field]) || value[field].length === 0) return invalid(field, "a non-empty string");
+  }
+  if (!isString(value.description)) return invalid("description", "a string");
+  if (value.public !== undefined && value.public !== true) return invalid("public", "true when present");
+  if (value.package !== undefined && (typeof value.package !== "string" || !/^[a-z][a-z0-9-]{0,79}$/.test(value.package))) {
+    return invalid("package", "a lowercase package name of 1–80 characters");
   }
   try {
     const baseUrl = new URL(value.baseUrl as string);
@@ -28,6 +34,9 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   }
   if (!isStringArray(value.routes) || value.routes.some((route) => !route.startsWith("/"))) {
     return invalid("routes", "an array of absolute paths");
+  }
+  if (value.installable !== undefined && !validateInstallable(String(value.id), value.routes, value.installable)) {
+    return invalid("installable", "a canonical standalone surface covered by the app's own declared routes");
   }
   if (value.access !== undefined && !AppAccessRuleSchema.safeParse(value.access).success)
     return invalid("access", "a declarative app access rule");
@@ -96,7 +105,9 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
         (group) =>
           !isRecord(group) ||
           (group.id !== undefined && !isString(group.id)) ||
-          (group.section !== undefined && group.section !== "ai") ||
+          // An area this reader does not know yet is a string it ignores, not a broken entry: a newer app may name
+          // an area an older Core, gateway, or app has not learned, and must stay discoverable there.
+          (group.section !== undefined && !isString(group.section)) ||
           !isString(group.label) ||
           !Array.isArray(group.links) ||
           group.links.some((link) => !isRecord(link) || !isString(link.label) || !isString(link.href) || !isString(link.icon)),
@@ -137,6 +148,16 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
     if (value.pwa.requiresRoles !== undefined && !isStringArray(value.pwa.requiresRoles)) {
       return invalid("pwa.requiresRoles", "an array of strings");
     }
+    for (const field of ["badge", "summary"] as const) {
+      const path = value.pwa[field];
+      if (path !== undefined && (!isString(path) || !isOwnAppPath(path, value.routes))) {
+        return invalid(`pwa.${field}`, "a same-origin path below one of the app's routes");
+      }
+    }
+    const order = value.pwa.order;
+    if (order !== undefined && (typeof order !== "number" || !Number.isSafeInteger(order) || order < 1)) {
+      return invalid("pwa.order", "a positive integer");
+    }
   }
   if (value.widgets !== undefined) {
     if (
@@ -146,8 +167,8 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
       return invalid("widgets", "an array of valid widgets");
     }
   }
-  if (value.platformPermissions !== undefined && !PlatformPermissionSchema.array().safeParse(value.platformPermissions).success)
-    return invalid("platformPermissions", "an array of platform permissions");
+  if (value.platformPermissions !== undefined && !isStringArray(value.platformPermissions))
+    return invalid("platformPermissions", "an array of permission IDs");
   if (value.settingKeys !== undefined && !isStringArray(value.settingKeys)) return invalid("settingKeys", "an array of strings");
   if (
     value.cliModules !== undefined &&
@@ -184,5 +205,24 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   return null;
 };
 
-export const asAppRegistryEntry = (value: unknown): AppRegistryEntry | null =>
-  validateAppRegistryEntry(value) === null ? (value as AppRegistryEntry) : null;
+export const parseAppRegistryEntry = (value: unknown): { value: AppRegistryEntry; reason: null } | { value: null; reason: string } => {
+  const reason = validateAppRegistryEntry(value);
+  if (reason !== null) return { value: null, reason };
+  const entry = value as AppRegistryEntry;
+  return {
+    reason: null,
+    value: {
+      ...entry,
+      ...(entry.platformPermissions !== undefined
+        ? {
+            platformPermissions: entry.platformPermissions.flatMap((permission) => {
+              const parsed = PlatformPermissionSchema.safeParse(permission);
+              return parsed.success ? [parsed.data] : [];
+            }),
+          }
+        : {}),
+    },
+  };
+};
+
+export const asAppRegistryEntry = (value: unknown): AppRegistryEntry | null => parseAppRegistryEntry(value).value;

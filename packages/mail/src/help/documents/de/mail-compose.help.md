@@ -49,7 +49,7 @@ Ein Browser kann sich eine frühere Ablehnung merken und nicht erneut fragen. We
 4. Wähle erneut **E-Mail-Links einrichten**.
 :::
 
-Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausfüllen. Bevor Cloud den Entwurf erstellt, zeigt es das Postfach, in dem du Zugriff **Bearbeiten** hast, und die bestätigte Absenderidentität. Links können keine verborgene Absenderidentität wählen, keine lokalen Dateien anhängen und nicht automatisch senden. In Browsern ohne Unterstützung für Protokollhandler nutzt du **Verfassen** weiterhin normal.
+Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausfüllen. Andere Cloud-Apps öffnen dieselbe Seite, etwa um einem Kontakt zu schreiben. Hast du Zugriff **Bearbeiten** auf genau ein Postfach und hat dieses Postfach genau eine bestätigte Absenderidentität, öffnet sich der Entwurf direkt mit dieser Absenderidentität. Sonst zeigt Cloud zuerst die Postfächer, in denen du Zugriff **Bearbeiten** hast, und ihre bestätigten Absenderidentitäten und beginnt mit der zuletzt verwendeten. Ist die einzige Absenderidentität noch nicht bestätigt, nennt die Seite den Grund. Links können keine verborgene Absenderidentität wählen, keine lokalen Dateien anhängen und nicht automatisch senden. **Zurück** führt zu der Seite, auf der du den Link geöffnet hast. In Browsern ohne Unterstützung für Protokollhandler nutzt du **Verfassen** weiterhin normal.
 
 ## Markdown oder Nur Text wählen {icon="route"}
 
@@ -88,7 +88,8 @@ Ein vorübergehendes Verbindungsproblem zeigt Mail getrennt an und fordert dich 
 
 Entwürfe liegen in Cloud als gemeinsame Entwürfe.
 
-- **Ordner Entwürfe:** Der Ordner Entwürfe in der Seitenleiste listet alle gemeinsamen Entwürfe des Postfachs, die zuletzt bearbeiteten zuerst. Seine Zahl zählt sie. Wähle einen Entwurf, um ihn im Editor zu öffnen. Die Zahl steht im Kopf des Arbeitsbereichs. Jede Zeile beginnt mit dem Betreff und zeigt Empfänger, eine Vorschau, Bearbeitungszeit und erstellende Person.
+- **Ordner Entwürfe:** Der Ordner Entwürfe in der Seitenleiste listet alle gemeinsamen Entwürfe des Postfachs, die zuletzt bearbeiteten zuerst. Seine Zahl zählt sie. Wähle einen Entwurf, um ihn im Editor zu öffnen. Die Zahl steht im Kopf des Arbeitsbereichs. Jeder Entwurf sieht aus wie eine Zeile einer Unterhaltung: Die Empfänger stehen dort, wo sonst der Absender steht. Vor dem Betreff steht ein oranges Tag **Entwurf**. Die Zeile zeigt die Vorschau, ein Zeichen für Anhänge und die Bearbeitungszeit. In der Spaltenansicht zeigt die Spalte **Begonnen von**, wer den Entwurf begonnen hat.
+- **Aus der Liste löschen:** Öffne das Menü **…** des Entwurfs oder das Kontextmenü der Zeile (rechte Maustaste). Wähle dann **Entwurf löschen**. Ist die Zeile fokussiert, kannst du auch Entf oder die Rücktaste drücken. Mail fragt, bevor es den Entwurf löscht. Der Entwurf bleibt, wenn jemand ihn gerade im Editor offen hat oder ihn inzwischen geändert hat. Mail sagt dir dann, warum. Geplante Entwürfe und Entwürfe, die gerade gesendet werden, stehen nicht in diesem Ordner. Brich sie zuerst im **Postausgang** ab.
 - **Hinweis bei Antworten:** Eine Unterhaltung mit Entwürfen zeigt einen Hinweis an der Antwortaktion.
 - **CLI:** `cld mail draft list` listet diese Entwürfe, zusammen mit geplanten Entwürfen und Entwürfen, die gerade gesendet werden.
 - **Kopie beim Anbieter:** Erlaubt es der Anbieter, legt Mail von jedem Entwurf eine Kopie im Entwürfe-Ordner des Anbieters ab, sodass andere E-Mail-Programme ihn zeigen. Entwürfe, die ein anderes E-Mail-Programm dort speichert, erscheinen in Mail als gemeinsame Entwürfe.
@@ -106,7 +107,7 @@ Wurde der Entwurf schon gesendet oder verworfen, erscheint ein späteres Speiche
 Plant, sendet oder verwirft eine andere Sitzung den Entwurf, lädt jeder geöffnete Editor den aktuellen Zustand des Entwurfs neu. Er hört auf zu speichern und verlängert die Bearbeitungssperre nicht mehr. Der Editor bleibt schreibgeschützt und erlaubt kein zweites Senden und keine Übernahme. Nicht gespeicherter lokaler Text bleibt sichtbar. Du kannst ihn kopieren oder als neuen unabhängigen Entwurf speichern. Gehört die ursprüngliche Nachricht zu einer Unterhaltung, führt **Nachricht öffnen** dorthin zurück.
 
 :::warning Entwurf verwerfen entfernt den Entwurf für alle
-**Entwurf verwerfen** entfernt den gemeinsamen Entwurf für alle mit Zugriff auf das Postfach. Um den Entwurf zu behalten, kehre stattdessen zum Postfach zurück.
+**Entwurf verwerfen** im Editor und **Entwurf löschen** im Ordner Entwürfe entfernen den gemeinsamen Entwurf für alle mit Zugriff auf das Postfach. Um den Entwurf zu behalten, kehre stattdessen zum Postfach zurück.
 :::
 
 ## Signaturen und Textbausteine verwenden {icon="pencil"}
@@ -134,7 +135,7 @@ Nutze diese Liquid-Variablen in deiner Vorlage:
 
 | Variable | Wert |
 | --- | --- |
-| `actor.display_name` | Name der Person, die die Vorschau öffnet, die Nachricht sendet oder den Textbaustein einfügt. Ein benutzergebundenes Dienstkonto nutzt den Namen seines Benutzers, ein anderes Dienstkonto seinen eigenen Namen, andere Automationen „Mailbox automation“. |
+| `actor.display_name` | Name der Person, die die Vorschau öffnet, die Nachricht sendet oder den Textbaustein einfügt. Ein persönlicher API Key nutzt den Namen seiner Person, ein Agent oder Dienstkonto seinen eigenen Namen, andere Automationen „Mailbox automation“. |
 | `actor.email` | E-Mail-Adresse der Person aus `actor.display_name`. Leer, wenn es keine gibt. |
 | `sender.display_name` | Anzeigename der Absenderidentität. Ohne Namen erscheint ihre E-Mail-Adresse. |
 | `sender.email` | Von-Adresse der Absenderidentität. |
@@ -234,7 +235,7 @@ Geplante Zustellung und Senden rückgängig machen brauchen einen aktiven Postfa
 
 Eine fällige Nachricht wartet und zeigt **Wartet auf Anmeldung**, wenn eines davon zutrifft:
 
-- das Postfach braucht eine neue Anmeldung;
+- das Postfach braucht eine neue Anmeldung, auch weil sein Postausgangsserver das Passwort abgelehnt hat;
 - jemand hat sein Passwort ersetzt, und das Postfach oder die Absenderidentität ist noch nicht mit dem neuen Passwort bestätigt.
 
 Mail benachrichtigt dich einmal. Es sendet die Nachricht, sobald das Konto wieder verbunden ist, datiert auf den Versandzeitpunkt. Verbindet niemand das Konto innerhalb von sechs Tagen nach dem Fälligkeitszeitpunkt, zeigt die Nachricht **Senden fehlgeschlagen** und kehrt zu den Entwürfen zurück. Mail benachrichtigt dich dann erneut.
@@ -243,7 +244,7 @@ Mail benachrichtigt dich einmal. Es sendet die Nachricht, sobald das Konto wiede
 
 Wähle den Zustellstatus unter einer ausgehenden Nachricht. Er zeigt, was passiert ist, und den sichersten nächsten Schritt.
 
-Erreicht Mail den Mailserver nicht, bevor es die Nachricht übergibt, wurde nichts gesendet. Mail behält die Nachricht und versucht es über einige Minuten mehrmals erneut. Der Zustellstatus zeigt den nächsten Versuch. Dasselbe gilt, wenn sich das Postfach gerade neu verbindet oder Mail vor der Übergabe neu gestartet wurde. Hält das Problem an, zeigt die Nachricht **Senden fehlgeschlagen**. Eine Nachricht, deren Postfach eine neue Anmeldung braucht, wartet länger, wie oben beschrieben.
+Erreicht Mail den Mailserver nicht, bevor es die Nachricht übergibt, wurde nichts gesendet. Mail behält die Nachricht und versucht es über einige Minuten mehrmals erneut. Der Zustellstatus zeigt den nächsten Versuch. Dasselbe gilt, wenn sich das Postfach gerade neu verbindet oder Mail vor der Übergabe neu gestartet wurde. Hält das Problem an, zeigt die Nachricht **Senden fehlgeschlagen**. Eine Nachricht, deren Postfach eine neue Anmeldung braucht, wartet länger, wie oben beschrieben. Lehnt der Mailserver die Nachricht vorerst ab, zum Beispiel wegen eines Versandlimits, versucht Mail es bis zu eine Stunde lang mit wachsenden Pausen erneut. Klappt es dann noch nicht, zeigt die Nachricht **Senden fehlgeschlagen** und kehrt zu den Entwürfen zurück.
 
 - **Senden fehlgeschlagen:** Mail weiß, dass die Nachricht nicht gesendet wurde. Wähle **Prüfen und erneut senden**, um den aufbewahrten Entwurf vor einem neuen Versuch zu öffnen. Fehler bei Empfängern, Größe oder Zustelloptionen haben eine genauere Bezeichnung zum Prüfen.
 - **Teilweise gesendet:** Der empfangende Server hat einige Empfänger angenommen, andere nicht. Mail legt die Nachricht wie andere gesendete E-Mails im Ordner Gesendet ab. Klappt das nicht sofort, versucht Mail es in den nächsten Minuten erneut. Wähle **Übrige Empfänger prüfen**, um einen unabhängigen Entwurf nur mit den Adressen zu erstellen, die der Server nicht angenommen hat.
@@ -269,3 +270,11 @@ Mail hält empfangene Berichte in der Aktivität der Unterhaltung fest. Ein Zust
 ## Einen Termin über die Cloud-Suche hinzufügen {icon="calendar-event"}
 
 Wähle beim Bearbeiten eines Entwurfs in der Cloud-Suche **Kalendereinladung an diesen Entwurf anhängen**. Mail speichert den Entwurf und öffnet dieselbe Terminauswahl wie die Schaltfläche im Editor. Empfänger, Text und Anhänge bleiben in diesem Entwurf. Schlägt das Speichern fehl oder hält jemand anderes die Bearbeitungssperre, behebe das zuerst. Das Senden bleibt ein eigener Schritt.
+
+## Nicht gespeicherte Eingaben wiederherstellen {icon="history"}
+
+Mail speichert während des Schreibens. Falls das Speichern fehlschlägt, lass das Schreibfenster offen und wähle **Erneut versuchen**. Deine Eingaben bleiben sichtbar.
+
+Wurde der Entwurf in einem anderen Tab oder auf einem anderen Gerät geändert, bleiben deine Eingaben sichtbar. Wähle bei einer neuen Nachricht **Als neuen Entwurf speichern**, um beide Fassungen zu behalten. Wähle bei einer Antwort **Änderungen wiederherstellen**, um eine gesicherte Kopie in derselben Konversation wiederherzustellen. Im Wiederherstellungsdialog kannst du auch deine aktuellen Eingaben wählen. Mail behält die ersetzten Texte als Wiederherstellungskopien; lokale Kopien sind nur in diesem Browser verfügbar. Mit **Text kopieren** kannst du den sichtbaren Nachrichtentext kopieren. Nach dem Neuladen erscheinen die lokalen Eingaben dieses Tabs wieder. Unter **Änderungen wiederherstellen** findest du auch unterschiedliche, noch nicht gespeicherte Fassungen aus diesem Browser.
+
+Kann der Browser keine lokale Wiederherstellungskopie speichern, speichert Mail weiter auf dem Server. Lass das Schreibfenster offen, bis der Entwurf gespeichert ist.

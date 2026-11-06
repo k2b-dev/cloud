@@ -1,4 +1,3 @@
-import { sql } from "bun";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { describeRoute, validator } from "hono-openapi";
 import { z } from "zod";
@@ -13,6 +12,7 @@ import {
   MailRetentionSchema,
   MailStatusSchema,
 } from "../contracts/outgoing-mail";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, jsonResponse, requiresAdmin } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
 import { audit } from "../services/audit";

@@ -1,6 +1,6 @@
 import { EditorView } from "@codemirror/view";
+import { renderedHeadingLine } from "@k2b/editor/markdown/lib/heading-anchors";
 import { type Accessor, createEffect, on, onCleanup } from "solid-js";
-import { renderedHeadingLine } from "../../../../lib/heading-anchors";
 
 /** A request to open a note at one of its headings, by Book heading id. Each request is a new object. */
 export type LinkedHeading = { noteId: string; id: string };

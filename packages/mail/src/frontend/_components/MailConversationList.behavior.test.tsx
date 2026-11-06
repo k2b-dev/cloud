@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
-import { createComponent } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { createComponent, createSignal } from "solid-js";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { Mailbox } from "../../contracts";
 import { resolveMailSearchRoute } from "../../search-state";
@@ -55,6 +55,10 @@ const listProps = (requestUrl: string) => ({
   onBulkAction: () => {},
   onItemAction: () => {},
   onManageTags: () => {},
+  onRespondItem: () => {},
+  onSetItemCompletion: () => {},
+  currentUserId: null,
+  assigneeNames: () => [],
   onMergeItem: () => {},
   onOpenHref: () => {},
   onLoadMore: () => true,
@@ -108,7 +112,7 @@ test.skipIf(isServer)("search filters open one builder however often they are pr
   };
   const dispose = render(() => createComponent(MailSearchHarness, { ...listProps("/app/mail/Box001?q=sdsd"), query: "sdsd" }), dom.root);
   try {
-    const filters = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!;
+    const filters = dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!;
     filters.click();
     // The trigger shows that it is busy and stays enabled, so it keeps focus for the dialog to return it.
     expect(filters.getAttribute("aria-busy")).toBe("true");
@@ -169,7 +173,7 @@ for (const [query, expected] of [
     );
     try {
       const before = searchBuilderOpens.length;
-      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!.click();
+      dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!.click();
       const deadline = performance.now() + 2000;
       while (searchBuilderOpens.length === before && performance.now() < deadline) await Bun.sleep(1);
       expect(searchBuilderOpens.at(-1)).toMatchObject({ initialState: { expression: { query: expected } } });
@@ -261,6 +265,123 @@ test.skipIf(isServer)("a direct folder search names its actual scope and can ret
     const next = new URL(navigations[0]!, "https://cloud.test");
     expect(next.searchParams.has("search")).toBe(false);
     expect(next.searchParams.get("q")).toBe("invoice");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("an old page completion cannot mark the new A list as failed after A → B → A", async () => {
+  const dom = createDomTestHarness();
+  const { default: MailConversationList } = await import("./MailConversationList");
+  delegateEvents(["click"], dom.document);
+  const [mailboxId, setMailboxId] = createSignal("Box001");
+  let finish = (_loaded: boolean) => {};
+  const pending = new Promise<boolean>((resolve) => {
+    finish = resolve;
+  });
+  let loads = 0;
+  const dispose = render(
+    () =>
+      createComponent(MailConversationList, {
+        ...listProps("/app/mail/Box001"),
+        get mailboxId() {
+          return mailboxId();
+        },
+        get requestUrl() {
+          return `/app/mail/${mailboxId()}`;
+        },
+        nextCursor: "next",
+        onLoadMore: () => {
+          loads++;
+          return pending;
+        },
+        onRefresh: async () => {},
+      }),
+    dom.root,
+  );
+  try {
+    const more = () => dom.root.querySelector<HTMLAnchorElement>('a[href*="cursor="]')!;
+    more().click();
+    expect(loads).toBe(1);
+    setMailboxId("Box002");
+    setMailboxId("Box001");
+    expect(more().textContent).toContain("More conversations");
+    finish(false);
+    await Bun.sleep(0);
+    expect(more().textContent).toContain("More conversations");
+    expect(more().textContent).not.toContain("Retry loading");
+  } finally {
+    finish(false);
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a work list names the done conversations it leaves out at its end, with the way to them", async () => {
+  const dom = createDomTestHarness();
+  const [{ default: MailConversationList }, { LocaleProvider }] = await Promise.all([import("./MailConversationList"), import("@k2b/ui")]);
+  const [hidden, setHidden] = createSignal<{ count: number | null; more: boolean; href: string } | null>({
+    count: 1207,
+    more: false,
+    href: "/app/mail/Box001?view=done",
+  });
+  const [nextCursor, setNextCursor] = createSignal<string | null>("next");
+  const [locale, setLocale] = createSignal<"en" | "de">("en");
+  const [error, setError] = createSignal<"load_failed" | null>(null);
+  const dispose = render(
+    () =>
+      createComponent(LocaleProvider, {
+        get locale() {
+          return locale();
+        },
+        get children() {
+          return createComponent(MailConversationList, {
+            ...listProps("/app/mail/Box001"),
+            title: "All",
+            get hiddenDone() {
+              return hidden();
+            },
+            get nextCursor() {
+              return nextCursor();
+            },
+            get error() {
+              return error();
+            },
+            onNavigate: () => {},
+            onRefresh: async () => {},
+          });
+        },
+      }),
+    dom.root,
+  );
+  const footer = () => dom.root.querySelector<HTMLElement>("[data-mail-hidden-done]");
+  try {
+    // More pages follow: the footer waits for the list's end.
+    expect(footer()).toBeNull();
+    setNextCursor(null);
+    expect(footer()?.textContent).toBe("1,207 done conversations·Show done");
+    // An empty list keeps its empty state and still offers the way to done conversations.
+    expect(dom.root.querySelector(".k2b-placeholder")).not.toBeNull();
+    const link = footer()!.querySelector<HTMLAnchorElement>("[data-mail-show-done]")!;
+    expect(link.getAttribute("href")).toBe("/app/mail/Box001?view=done");
+    setLocale("de");
+    expect(footer()?.textContent).toBe("1.207 erledigte Unterhaltungen·Erledigt anzeigen");
+    setHidden({ count: 1, more: false, href: "/app/mail/Box001?view=done" });
+    expect(footer()?.textContent).toBe("1 erledigte Unterhaltung·Erledigt anzeigen");
+    setHidden({ count: 1000, more: true, href: "/app/mail/Box001?view=done" });
+    expect(footer()?.textContent).toBe("Mehr als 1.000 erledigte Unterhaltungen·Erledigt anzeigen");
+    // An uncounted list still offers the link; a list without done conversations shows no footer.
+    setHidden({ count: null, more: false, href: "/app/mail/Box001?view=done" });
+    expect(footer()?.textContent).toBe("Erledigt anzeigen");
+    setHidden({ count: 0, more: false, href: "/app/mail/Box001?view=done" });
+    expect(footer()).toBeNull();
+    // A failed list shows its error and retry, not the footer.
+    setHidden({ count: 3, more: false, href: "/app/mail/Box001?view=done" });
+    setError("load_failed");
+    expect(footer()).toBeNull();
+    setError(null);
+    expect(footer()).not.toBeNull();
   } finally {
     dispose();
     dom.cleanup();

@@ -67,7 +67,7 @@ test("trusted secret dialogs store directly, clear values, support replacement a
         return Response.json({ deleted: true });
       }
       return new Response(
-        '<!doctype html><link rel="stylesheet" href="/ui.css"><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script>',
+        '<!doctype html><link rel="stylesheet" href="/ui.css"><body class="k2b-ui"><div id="root"></div><script type="module" src="/bundle.js"></script>',
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },

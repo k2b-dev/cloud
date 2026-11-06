@@ -25,6 +25,11 @@ type GlobalRuntimeContextParams = {
 };
 
 export const loadCustomAppAuthSubjectIds = async (access: GridsAccessContext): Promise<string[]> => {
+  // This is the caller's own authenticated subject, not a directory lookup.
+  if (access.accessSubject?.type === "service_account") {
+    const serviceAccountId = access.accessSubject.serviceAccountId;
+    return [serviceAccountId, ...(await getEffectiveGroupIds({ serviceAccountId }))];
+  }
   const user = accessActorUser(access);
   if (!user) return [];
   return [user.id, ...(await getEffectiveGroupIds({ userId: user.id }))];

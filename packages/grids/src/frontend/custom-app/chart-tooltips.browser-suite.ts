@@ -195,7 +195,7 @@ for (const options of [desktop, phone]) {
       await page.evaluate(() => document.fonts.ready);
       expect(await page.locator("[data-chart-kind]").count()).toBe(3);
       const serverBoxes = await geometry(page);
-      expect(serverBoxes.length).toBe(16); // 3 chart containers + 3 SVGs + 4 gutters + 6 category labels.
+      expect(serverBoxes.length).toBe(11); // 3 chart containers + 3 SVGs + the line chart's 2 gutters and 3 category labels.
       expect(await page.locator('html[data-charts-ready="true"]').count()).toBe(0);
       await page.unroute("**/_ssr/**");
       await page.reload();

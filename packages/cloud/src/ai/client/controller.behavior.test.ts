@@ -2,6 +2,7 @@ import { afterEach, describe, expect, jest, test } from "bun:test";
 import { createRoot } from "solid-js";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import { hasAppActions } from "../../browser/app-actions";
 import { AI_TURN_LEASE_MS, type AiStreamSseEvent, type AiTurnBlock, type AiTurnSnapshot } from "../protocol";
 import type { AiConversation, AiStoredMessage } from "../types";
 import { __aiControllerTest, createAiChatController } from "./controller";
@@ -80,6 +81,42 @@ describe("AI controller draft submission", () => {
     dispose();
   });
 
+  test("tells a revision conflict, which sets no chat error, apart from another failed draft save", async () => {
+    const answers = [
+      () => Response.json({ message: "The conversation draft changed in another session." }, { status: 409 }),
+      () => new Response("Bad Gateway", { status: 502 }),
+      () => Response.json({ content: [], revision: 1, updatedAt: null }),
+    ];
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(request);
+        if (path === "/api/ai/conversations" && init?.method === "POST") return Response.json(conversation("created"), { status: 201 });
+        if (path.endsWith("/draft") && init?.method === "PUT") return answers.shift()!();
+        if (init?.headers && new Headers(init.headers).get("Accept") === "text/event-stream") return new Response(new ReadableStream());
+        return Response.json({});
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({ baseUrl: "/api/ai" });
+    });
+    await controller.createConversation();
+
+    expect(await controller.saveDraft({ conversationId: "created", message: "Mine" })).toBeNull();
+    expect(controller.draftSaveFailure("created")).toBe("conflict");
+    expect(controller.error()).toBeNull();
+
+    expect(await controller.saveDraft({ conversationId: "created", message: "Mine" })).toBeNull();
+    expect(controller.draftSaveFailure("created")).toBe("failed");
+    expect(controller.error()).toBe("Failed to save conversation draft");
+
+    expect(await controller.saveDraft({ conversationId: "created", message: "Mine" })).not.toBeNull();
+    expect(controller.draftSaveFailure("created")).toBeNull();
+    dispose();
+  });
+
   test("keeps the submitted draft and turn POST ahead of a queued empty autosave", async () => {
     const requests: string[] = [];
     let revision = 0;
@@ -133,7 +170,7 @@ describe("AI controller draft submission", () => {
           conversationId: current.id,
           status: "running",
           attempt: 0,
-          modelProfileId: null,
+          modelId: null,
           createdAt: "2026-07-11T00:00:00.000Z",
           completedAt: null,
           error: null,
@@ -146,7 +183,7 @@ describe("AI controller draft submission", () => {
           kind: "message",
           message: { role: "user", content: [{ type: "text", text: "Sent" }] },
           loopId: null,
-          modelProfileId: null,
+          modelId: null,
           providerModel: null,
           usage: null,
           stopReason: null,
@@ -224,7 +261,7 @@ describe("AI controller draft submission", () => {
           status: "completed",
           error: null,
         });
-      finishTurn(Response.json({ message: saved, turn: { id: "turn-1", modelProfileId: null } }));
+      finishTurn(Response.json({ message: saved, turn: { id: "turn-1", modelId: null } }));
       expect(await sending).toBe(true);
       expect(controller.activeTurn()?.status ?? null).toBe(finishBeforeAck ? null : "running");
       emit({ type: "state", conversation: current, messages: finishBeforeAck ? [saved] : [], activeTurn: null });
@@ -346,11 +383,11 @@ describe("AI controller draft submission", () => {
       });
     });
     try {
-      expect(await controller.send({ message: "Only once", modelProfileId: "chosen", expectedDraftRevision: 0 })).toBe(false);
+      expect(await controller.send({ message: "Only once", model: { id: "chosen" }, expectedDraftRevision: 0 })).toBe(false);
       expect(await controller.retrySubmission(current.id)).toBe("accepted");
       expect(bodies).toHaveLength(2);
       expect(bodies[1]).toBe(bodies[0]);
-      expect(JSON.parse(bodies[1]!)).toEqual({ draftRevision: 9, modelProfileId: "chosen" });
+      expect(JSON.parse(bodies[1]!)).toEqual({ draftRevision: 9, model: { id: "chosen" } });
       expect(saves).toBe(1);
       expect(controller.uncertainSubmissions()).toEqual({});
     } finally {
@@ -379,7 +416,7 @@ describe("AI controller draft submission", () => {
               conversationId: "resource-chat",
               status: "running",
               attempt: 0,
-              modelProfileId: null,
+              modelId: null,
               createdAt: "2026-07-11T00:00:00.000Z",
               completedAt: null,
               error: null,
@@ -392,7 +429,7 @@ describe("AI controller draft submission", () => {
               kind: "message",
               message: { role: "user", content: [{ type: "text", text: "Resource attached" }] },
               loopId: null,
-              modelProfileId: null,
+              modelId: null,
               providerModel: null,
               usage: null,
               stopReason: null,
@@ -496,7 +533,7 @@ describe("AI controller conversation transitions", () => {
               seq: 1,
               status: "running",
               blocks: [],
-              modelProfileId: null,
+              modelId: null,
               createdAt: "2026-09-14T00:00:00.000Z",
             },
           });
@@ -520,7 +557,7 @@ describe("AI controller conversation transitions", () => {
             seq: 1,
             status: "running",
             blocks: [],
-            modelProfileId: null,
+            modelId: null,
             createdAt: "2026-09-14T00:00:00.000Z",
           },
         },
@@ -624,7 +661,7 @@ describe("AI controller conversation transitions", () => {
               conversationId: "waiting",
               status: "queued",
               attempt: 0,
-              modelProfileId: null,
+              modelId: null,
               createdAt: "2026-07-11T00:00:00.000Z",
               completedAt: null,
               error: null,
@@ -637,7 +674,7 @@ describe("AI controller conversation transitions", () => {
               kind: "message",
               message: { role: "user", content: [{ type: "text", text: "ja" }] },
               loopId: "turn-retry",
-              modelProfileId: null,
+              modelId: null,
               providerModel: null,
               usage: null,
               stopReason: null,
@@ -671,7 +708,7 @@ describe("AI controller conversation transitions", () => {
             status: "waiting_for_action",
             seq: 1,
             blocks: [],
-            modelProfileId: null,
+            modelId: null,
             createdAt: "2026-07-11T00:00:00.000Z",
           },
         },
@@ -723,7 +760,7 @@ describe("AI controller message feedback", () => {
               kind: "message",
               message: { role: "assistant", content: [{ type: "text", text: "It happened on Tuesday." }] },
               loopId: "turn-1",
-              modelProfileId: "fast",
+              modelId: "fast",
               providerModel: "model-fast",
               usage: null,
               stopReason: "stop",
@@ -756,6 +793,68 @@ describe("AI controller message feedback", () => {
 });
 
 describe("AI controller stream sessions", () => {
+  test.skipIf(isServer)("only an active AI answer protects app updates, not the idle GET subscription", () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", "/pwa/assistant");
+    const current = conversation("Chat01");
+    let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
+    let dispose = () => {};
+    try {
+      createRoot((cleanup) => {
+        dispose = cleanup;
+        createAiChatController({
+          baseUrl: "/api/ai",
+          initialConversationId: current.id,
+          initialDetail: { conversation: current, messages: [], activeTurn: null },
+          streamTransport: {
+            subscribe: (input) => {
+              emit = input.onEvent;
+              return { close() {} };
+            },
+          },
+        });
+      });
+      expect(hasAppActions()).toBe(false);
+      emit({
+        type: "state",
+        conversation: current,
+        messages: [],
+        activeTurn: {
+          turnId: "running",
+          attempt: 1,
+          seq: 1,
+          status: "running",
+          blocks: [],
+          modelId: null,
+          createdAt: "2026-11-04T00:00:00.000Z",
+        },
+      });
+      expect(hasAppActions()).toBe(true);
+      emit({ type: "state", conversation: current, messages: [], activeTurn: null });
+      expect(hasAppActions()).toBe(false);
+      emit({
+        type: "state",
+        conversation: current,
+        messages: [],
+        activeTurn: {
+          turnId: "again",
+          attempt: 1,
+          seq: 1,
+          status: "running",
+          blocks: [],
+          modelId: null,
+          createdAt: "2026-11-04T00:00:00.000Z",
+        },
+      });
+      expect(hasAppActions()).toBe(true);
+      dispose();
+      expect(hasAppActions()).toBe(false);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("uses an injected stream transport and closes it with the controller owner", () => {
     const calls: string[] = [];
     const transport: AiConversationStreamTransport = {
@@ -842,7 +941,7 @@ describe("AI controller stream sessions", () => {
           status: "awaiting_client" as const,
         },
       ],
-      modelProfileId: null,
+      modelId: null,
       createdAt: "2026-10-05T10:00:00.000Z",
     };
     const sse = (event: unknown, end: boolean) =>
@@ -1131,7 +1230,7 @@ describe("AI controller turn failures", () => {
       kind: "message",
       message: { role: "user", content: [{ type: "text", text: "Hi" }] },
       loopId: "turn-1",
-      modelProfileId: null,
+      modelId: null,
       providerModel: null,
       usage: null,
       stopReason: null,
@@ -1286,7 +1385,7 @@ for (const recovery of ["snapshot", "refresh"] as const)
       seq: 1,
       status: "waiting_for_action",
       blocks: [],
-      modelProfileId: null,
+      modelId: null,
       createdAt: "2026-09-20T00:00:00Z",
     };
     let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
@@ -1330,7 +1429,7 @@ describe("AI controller silence", () => {
     seq: 3,
     status,
     blocks,
-    modelProfileId: null,
+    modelId: null,
     createdAt: "2026-10-07T00:00:00Z",
   });
   const delta = (seq: number): AiStreamSseEvent => ({

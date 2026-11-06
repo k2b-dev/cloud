@@ -46,7 +46,7 @@ const project = {
   description: "",
   icon: "ti ti-folders",
   instructions: "",
-  defaultModelProfileId: null,
+  defaultModel: null,
   permission: "read",
   revision: 1,
   createdAt: "2026-09-04T00:00:00.000Z",
@@ -64,22 +64,26 @@ beforeEach(() => {
     spyOn(ai, "assistantAiSettingsState").mockResolvedValue({
       ok: true,
       enabled: false,
-      defaultModelId: "",
+      status: "ok",
+      selection: null,
+      effectiveDefault: { class: "balanced" },
+      classes: [],
       visionModelConfigured: false,
       audioModelConfigured: false,
       error: null,
       firecrawlConfigured: false,
-      models: [],
+      options: [],
     }),
   );
   spies.push(spyOn(ai, "listAssistantAiModels").mockResolvedValue([]));
+  spies.push(spyOn(ai, "getLiveDictationStatus").mockResolvedValue({ available: false, reason: "not_configured" }));
   spies.push(spyOn(server, "loadPendingApprovals").mockResolvedValue({ items: [], nextCursor: null, count: 0, elsewhere: 0 }));
   spies.push(
     spyOn(ai.aiUserPrefs, "get").mockResolvedValue({
       userId: user.id,
       memoryEnabled: true,
       memoryLearningEnabled: false,
-      lastModelId: "",
+      selection: null,
       updatedAt: project.updatedAt,
     }),
   );
@@ -162,7 +166,10 @@ test("authorized project omitted by sidebar cap remains in the rendered workspac
   );
   const response = await request();
   expect(response.status).toBe(200);
-  expect(lookup).toHaveBeenCalledWith(project.shortId, { type: "user", userId: user.id });
+  expect(lookup).toHaveBeenCalledWith(project.shortId, {
+    actor: { kind: "user", user, sessionKind: "app" },
+    accessSubject: { type: "user", userId: user.id },
+  });
   expect(chats).toHaveBeenCalledWith({ ownerUserId: user.id, projectId: project.id, page: 1, perPage: 20 });
   const html = await response.text();
   expect(html).toContain(project.name);
@@ -257,7 +264,12 @@ test("the panel starts without selecting an unrelated recent chat and renders no
   expect(html).toContain("cloud-panel-page");
   expect(html).not.toContain('id="cloud-shell-data"');
   expect(html).toContain('href="/app/assistant/panel?conversation=chat1"');
-  expect(html).toContain("Open full view");
+  // No head row and no suggestions: "All chats" under the composer opens the application in the host window.
+  expect(html).not.toContain("Open full view");
+  expect(html).not.toContain("assistant-starters");
+  const allChats = /<a[^>]*assistant-panel-link[^>]*>/.exec(html)?.[0] ?? "";
+  expect(allChats).toContain('href="/app/assistant"');
+  expect(allChats).toContain('target="_top"');
 });
 
 test("a panel conversation selector does not bypass ownership or fall back to another chat", async () => {
@@ -275,4 +287,21 @@ test("a panel conversation selector does not bypass ownership or fall back to an
   expect(response.status).toBe(404);
   expect(lookup).toHaveBeenCalledWith({ shortId: "foreign", ownerUserId: user.id });
   expect(await response.text()).not.toContain(chat.title);
+});
+
+test("live dictation availability reaches the composer only when the platform allows it for this person", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [],
+    }),
+  );
+  const status = spyOn(ai, "getLiveDictationStatus").mockResolvedValue({ available: true });
+  spies.push(status);
+  const html = await (await request("https://cloud.example.test/app/assistant")).text();
+  expect(status).toHaveBeenCalledWith({ type: "user", userId: user.id });
+  // The island props carry the flag; the status asks for this person's own access subject.
+  expect(html).toContain("liveDictationAvailable&quot;");
 });

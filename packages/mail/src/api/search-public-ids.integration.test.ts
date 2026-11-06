@@ -1,13 +1,12 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { MailSearchExpression } from "../contracts";
 import { projectMailboxPageData } from "../frontend/ssr-public-boundary";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { MAIL_SEARCH_MATCHES_NOTHING, type ResolvedMailSearchRoute, resolveMailSearchRoute } from "../search-state";
 import type { MailRequestContext } from "../service/auth";
 import { createMailbox } from "../service/mailboxes";
@@ -75,7 +74,6 @@ suite("Mail search by public folder and tag IDs", () => {
   const inFolder = (): MailSearchExpression => ({ type: "folder_id", folderId: folderShortId });
 
   beforeAll(async () => {
-    await migrate();
     const [row] = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-search-ids-${suffix}`}, 'local', 'user', 'Search owner', false)
@@ -84,7 +82,7 @@ suite("Mail search by public folder and tag IDs", () => {
     owner = userFor(row!);
     context = { actor: { kind: "user", user: owner }, accessSubject: { type: "user", userId: owner.id }, requestId: null };
     verifyAccessToken = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token: string) =>
-      token === "owner" ? { kind: "user", payload: {}, user: owner, scopes: [] } : null,
+      token === "owner" ? { kind: "user", payload: {}, user: owner, scopes: ["read", "write"] } : null,
     );
 
     const mailbox = await createMailbox(context, { name: `Search IDs ${suffix}` });
@@ -251,9 +249,21 @@ suite("Mail search by public folder and tag IDs", () => {
     expect(await titleFor(searchHref(tagged()), "de")).toBe("Gefilterte Suche");
     expect(await titleFor(`${mailboxHref}?q=order`, "de")).toBe("Ergebnisse für „order“");
     expect(await titleFor(`${mailboxHref}?view=needs_action`, "de")).toBe("Handlungsbedarf");
-    expect(await titleFor(`${mailboxHref}?scheduled=1`, "de")).toBe("Geplant");
+    expect(await titleFor(`${mailboxHref}?scheduled=1`, "de")).toBe("Postausgang");
     expect(await titleFor(`${mailboxHref}?search=${encodeURIComponent("{not json")}`, "de")).toBe("Suche");
     expect(await titleFor(mailboxHref, "de")).toBe("Alle E-Mails");
+    // A standard folder's title is its localized name; its server name stays "Inbox".
+    expect(await titleFor(`${mailboxHref}?folder=${folderShortId}`, "de")).toBe("Eingang");
+    expect(await titleFor(`${mailboxHref}?folder=${folderShortId}`, "en")).toBe("Inbox");
+  });
+
+  test("a folder text search finds a standard folder by its server name and by its localized names", async () => {
+    for (const query of ["Inbox", "Eingang"]) {
+      const route = await workspaceRoute(searchHref({ type: "text", field: "folder", query, match: "contains" }));
+      expect(route.listItems.map((item) => item.conversationId)).toEqual([conversationShortId]);
+    }
+    const otherFolder = await workspaceRoute(searchHref({ type: "text", field: "folder", query: "Papierkorb", match: "contains" }));
+    expect(otherFolder.listItems).toEqual([]);
   });
 
   test("a failing list reports a stable code instead of raw service text", async () => {

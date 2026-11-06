@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createSync, type Sync, type Topic } from "@k2b/sync";
-import { sql } from "bun";
 import { z } from "zod";
 import { connectTestNats, suiteFor, testInfra, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
+import { sql } from "../runtime/clients";
 import { createPgOutbox } from "../services/outbox";
 import { defineLive, liveOutbox, liveTopicConfig, startLiveOutbox } from "./live";
 

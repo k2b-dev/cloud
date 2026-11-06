@@ -1,0 +1,1 @@
+| Unreadable treated as missing | Startup replaces an unreadable or invalid stored value with an environment value. | Test: `packages/cloud/src/services/settings/bootstrap.integration.test.ts` preserves ciphertext and timestamps for undecryptable and invalid rows while reads use the environment fallback ([#1295](https://github.com/k2b-dev/cloud/issues/1295)). |

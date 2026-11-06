@@ -76,14 +76,28 @@ describe("Tools detail panels", () => {
     expect(html).toContain('class="k2b-detail-panel"');
     expect(html).toContain("<h2>Stripe test</h2>");
     expect(html).toContain('data-scroll-preserve="webhook-request-detail-request-1"');
-    expect(html).toContain('class="k2b-detail-panel__summary"');
+    // K1 outline: kind line with the response state, properties, the bodies, then headers under "More about this request".
+    const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"));
+    expect(kind).toContain("Incoming request");
+    expect(kind).toContain("202");
+    expect(html).not.toContain('class="k2b-detail-panel__summary"');
+    expect(html).not.toContain("k2b-detail-panel__header-icon");
+    expect(html).not.toContain("k2b-detail-panel__section-icon");
     expect(html).toContain('data-layout="rows"');
     expect(html).toContain('data-size="sm"');
-    expect(html).toContain('aria-label="Request data"');
-    expect(html).toContain('aria-label="Response data"');
-    expect(html).toContain("Request headers");
-    expect(html).toContain("Response body");
-    expect(html).toContain("<span>Copy JSON</span>");
+    const properties = html.indexOf(">Properties<");
+    const requestBody = html.indexOf("Request body");
+    const responseBody = html.indexOf("Response body");
+    const more = html.indexOf("More about this request");
+    expect(properties).toBeGreaterThan(-1);
+    expect(properties).toBeLessThan(requestBody);
+    expect(requestBody).toBeLessThan(responseBody);
+    expect(responseBody).toBeLessThan(more);
+    expect(html.slice(more)).toContain("Request headers");
+    expect(html.slice(more)).toContain("Response headers");
+    // Closed header sections name their header keys.
+    expect(html.slice(more)).toContain('class="k2b-detail-panel__section-preview k2b-truncate-fade">content-type</span>');
+    expect(html.slice(html.indexOf('class="k2b-detail-panel__primary-actions"'))).toContain("<span>Copy JSON</span>");
     expect(html).toContain('aria-label="Close request details"');
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
     expect(html.match(/>Raw<\/span>/g)).toHaveLength(4);
@@ -95,6 +109,8 @@ describe("Tools detail panels", () => {
 
     expect(html).toContain('class="k2b-detail-panel"');
     expect(html).toContain("<h2>Image controls</h2>");
+    expect(html).not.toContain('class="k2b-detail-panel__kind"');
+    expect(html).not.toContain("k2b-detail-panel__header-icon");
     expect(html).toContain("No image selected");
     expect(html).toContain("Add images");
     expect(html).toContain('aria-label="Show image canvas"');
@@ -107,6 +123,10 @@ describe("Tools detail panels", () => {
     const html = renderImageProcessorView({ initialImages: [image] });
 
     expect(html).toContain("<h2>invoice.png</h2>");
+    expect(html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"))).toContain("Image");
+    expect(html).not.toContain("k2b-detail-panel__header-icon");
+    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).toContain('aria-label="More image actions"');
     expect(html).toContain("1200 × 800 px");
     expect(html).toContain('<img src="data:image/png;base64,aW1hZ2U=" alt="Preview"');
     expect(html).toContain('role="radiogroup" aria-label="Options"');
@@ -143,8 +163,11 @@ describe("Tools detail panels", () => {
 
     expect(html).toContain("Apply");
     expect(html).toContain("Cancel");
-    expect(html).toMatch(/<button aria-label="Add images"[^>]* disabled /);
-    expect(html).toMatch(/<button aria-label="Remove image"[^>]* disabled /);
+    // Adding and removing images sit in the header's "…" menu and stay disabled while cropping.
+    expect(html).toMatch(/<button[^>]*role="menuitem"[^>]* disabled [^>]*>(?:(?!<\/button>).)*<span>Add images<\/span>/);
+    expect(html).toMatch(
+      /<button[^>]*role="menuitem"[^>]*data-danger="true" disabled [^>]*>(?:(?!<\/button>).)*<span>Remove image<\/span>/,
+    );
     expect(html).toMatch(
       /<button[^>]* disabled ><span class="k2b-button__label"><i class="ti ti-download"><\/i> (?:<!--!\$-->)?Export image/,
     );

@@ -45,6 +45,13 @@ describe("TabBar", () => {
     expect(html).toContain('<a href="/pwa/tasks" data-tab="tasks" data-k2b-title="Tasks">');
     expect(html.match(/aria-current/g)?.length).toBe(1);
   });
+  test("a tab's badge sits in its own mark after the label; a tab without one has none", () => {
+    const html = renderToString(() => createComponent(TabBar, { label: "App", items: [items[0]!, { ...items[5]!, badge: "3" }] }));
+    expect(html).toContain(
+      '<a href="/pwa/chat" data-tab="chat" data-k2b-title="Chat"><i class="ti ti-messages" aria-hidden="true"></i><span class="k2b-truncate-fade">Chat</span><span class="k2b-tab-bar__badge">3</span></a>',
+    );
+    expect(html.match(/k2b-tab-bar__badge/g)?.length).toBe(1);
+  });
 });
 
 describe("MobileShell", () => {
@@ -65,6 +72,12 @@ describe("MobileShell", () => {
     expect(html).toMatch(
       /^<div class="k2b-mobile-shell my-app"[^>]*><header class="k2b-mobile-shell__header"[^>]*><h1 class="k2b-mobile-shell__title">Tasks<\/h1><\/header><main class="k2b-mobile-shell__main"[^>]*><div [^>]*class="k2b-scroll-area k2b-mobile-shell__body ?"[^>]*>Rows<\/div><\/main><nav class="k2b-tab-bar"/,
     );
+  });
+
+  test("a screen of its own is marked from the server's first paint", () => {
+    const shell = (screen?: boolean) => renderToString(() => createComponent(MobileShell, { screen, children: "Chat" }));
+    expect(shell(true)).toMatch(/^<div class="k2b-mobile-shell"[^>]* data-k2b-screen=""/);
+    expect(shell()).not.toContain("data-k2b-screen");
   });
 
   test("the header offers Back as a link or a button and keeps actions after the title", () => {
@@ -90,7 +103,14 @@ describe("MobileShell", () => {
             logo: "/branding/logo",
             items: [{ id: "start", label: "Start", icon: "ti ti-home", href: "/pwa/", current: true }],
             sections: [
-              { title: "Apps", items: [{ id: "chat", label: "Chat", icon: "ti ti-messages", href: "/pwa/chat", count: 3 }] },
+              {
+                title: "Apps",
+                items: [
+                  { id: "chat", label: "Chat", icon: "ti ti-messages", href: "/pwa/chat", count: 3 },
+                  // A badge calls for attention and takes the quiet count's place.
+                  { id: "mail", label: "Mail", icon: "ti ti-mail", href: "/pwa/mail", count: 9, badge: "2" },
+                ],
+              },
               { title: "Empty", items: [] },
             ],
             footer: [{ id: "settings", label: "Settings", icon: "ti ti-settings", href: "/pwa/settings" }],
@@ -109,6 +129,8 @@ describe("MobileShell", () => {
     expect(html).toContain("<h2>Apps</h2>");
     expect(html).not.toContain("Empty");
     expect(html).toContain('<span class="k2b-mobile-shell__sidebar-count">3</span>');
+    expect(html).toContain('<span class="k2b-mobile-shell__sidebar-count">2</span>');
+    expect(html).not.toContain('<span class="k2b-mobile-shell__sidebar-count">9</span>');
     expect(html).toMatch(/<div class="k2b-mobile-shell__sidebar-foot"><ul><li><a href="\/pwa\/settings"/);
     // The page's title on the phone names the app; beside the sidebar, which names it already, the page.
     expect(html).toContain(

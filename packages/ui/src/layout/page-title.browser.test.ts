@@ -32,7 +32,14 @@ window.renameTrail = () => setPageTrail({ title: "Renamed entry", ancestors: [{ 
 if (params.has("document")) installPageTitleController(document);
 const header = document.querySelector("header");
 header.style.width = (params.get("own") ?? "0") + "px";
-render(
+// A host marks its page; a title the page shows later, as a client-side step brings it, keeps the mark current.
+const [shown, setShown] = createSignal(false);
+window.setShown = setShown;
+if (params.has("host")) {
+  const host = document.getElementById("app");
+  host.setAttribute("data-k2b-title-host", "");
+  render(() => createComponent(LocaleProvider, { locale: "en", get children() { return () => (shown() ? own() : null); } }), host);
+} else render(
   () =>
     createComponent(LocaleProvider, {
       locale: params.get("locale") ?? "en",
@@ -241,4 +248,20 @@ describe("PageTitle without a host", () => {
       }
     }
   });
+});
+
+test("a title that mounts in the browser marks its host, and one that leaves clears it", async () => {
+  const page = await load(1180, "host");
+  try {
+    const marked = () => page.evaluate(() => document.getElementById("app")!.hasAttribute("data-k2b-own-title"));
+    expect(await marked()).toBe(false);
+    await page.evaluate(() => (window as unknown as { setShown: (value: boolean) => void }).setShown(true));
+    await settle(page);
+    expect(await marked()).toBe(true);
+    await page.evaluate(() => (window as unknown as { setShown: (value: boolean) => void }).setShown(false));
+    await settle(page);
+    expect(await marked()).toBe(false);
+  } finally {
+    await page.close();
+  }
 });

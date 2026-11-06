@@ -1,22 +1,62 @@
+import { fadeScrollPadding } from "@k2b/editor/markdown/fade-scroll-margins";
+import { notebookChartFrameHtml } from "@k2b/editor/markdown/lib/chart-blocks";
 import { highlight } from "@k2b/stdlib";
-import { Button, NoticeCard, ScrollArea, useLocale } from "@k2b/ui";
-import { notebookChartFrameHtml } from "../../../../lib/chart-blocks";
-import { fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
+import { NoticeCard, personColor, ScrollArea, useLocale } from "@k2b/ui";
+import type { AnnotationProjection } from "../../../../lib/annotation-contracts";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
+import { changesBetween } from "../../../lib/yjs/lazy-collab";
 import { notebookWorkspaceMessages } from "../../messages";
-import { NOTE_PREVIEW_ID, type NotePreviewLine, type NotePreviewPart, notePreviewChart, notePreviewLines } from "./note-preview";
+import { commentMessages } from "../comments/messages";
+import {
+  NOTE_PREVIEW_BUDGET,
+  NOTE_PREVIEW_ID,
+  type NotePreviewLine,
+  type NotePreviewMark,
+  type NotePreviewPart,
+  notePreviewChart,
+  notePreviewLines,
+} from "./note-preview";
 
 type Props = {
   text: string;
   mode: "rich" | "source";
   historyIncomplete: boolean;
+  /** The note's comments: their open passages show as the editor will show them, so nothing changes when it mounts. */
+  annotations?: AnnotationProjection | null;
+  /** The reader's user ID, whose own comments read as "you". */
+  me?: string;
+};
+
+/** The open comments' passages in the preview's text, moved by any edit saved after the comments were read. */
+const previewMarks = (projection: AnnotationProjection | null | undefined, text: string, me: string | undefined, locale: string) => {
+  if (!projection?.items.length) return [];
+  const t = commentMessages.resolve([locale]).t;
+  const normalized = text.replace(/\r\n?/g, "\n");
+  const changes = projection.text === normalized ? null : changesBetween(projection.text, normalized);
+  const map = (pos: number, assoc: 1 | -1) => (changes ? changes.mapPos(Math.min(pos, changes.length), assoc) : pos);
+  return projection.items
+    .filter((item) => item.state === "open")
+    .map((item): NotePreviewMark => {
+      const from = map(item.from, 1);
+      const to = item.orphan ? from : Math.max(from, map(item.to, -1));
+      const name = item.author.kind === "user" && item.author.id === me ? t.you : item.author.name;
+      const orphan = item.orphan || to <= from;
+      return {
+        id: item.id,
+        from,
+        to,
+        color: personColor(item.author.name),
+        orphan,
+        label: orphan ? t.deletedPassage({ name }) : t.commentedBy({ names: name }),
+      };
+    });
 };
 
 const PreviewPart = (props: { part: NotePreviewPart }) =>
   typeof props.part === "string" ? (
     props.part
   ) : (
-    <span class={props.part.className}>
+    <span class={props.part.className} {...props.part.attributes}>
       {props.part.children.map((part) => (
         <PreviewPart part={part} />
       ))}
@@ -38,8 +78,13 @@ const PreviewLine = (props: { line: NotePreviewLine }) => (
 export default function NotePreview(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
-  const lines = notePreviewLines(props.text, props.mode);
-  const chart = props.mode === "rich" ? notePreviewChart(props.text, lines) : null;
+  const lines = notePreviewLines(
+    props.text,
+    props.mode,
+    NOTE_PREVIEW_BUDGET,
+    previewMarks(props.annotations, props.text, props.me, locale()),
+  );
+  const chart = props.mode === "rich" ? notePreviewChart(props.text, lines, locale()) : null;
   const blocks = () => queryBlockMessages.resolve([locale()]).t;
   // CodeMirror sizes the gutter with a hidden spacer for the note's last line number, which can lie past the preview.
   const lastNumber = "9".repeat(String((props.text.match(/\r\n?|\n/g)?.length ?? 0) + 1).length);
@@ -75,11 +120,6 @@ export default function NotePreview(props: Props) {
               {chart && (
                 // The editor's chart widget while its drawing loads (query-blocks.tsx), inert until the editor runs.
                 <div class="cm-query-block-widget" role="group" aria-label={blocks().chart} inert>
-                  <div class="flex justify-end gap-1 mb-1">
-                    <Button size="xs" variant="ghost">
-                      {blocks().showSource}
-                    </Button>
-                  </div>
                   <div
                     class="cm-query-block-preview notebook-book-content"
                     innerHTML={notebookChartFrameHtml(

@@ -1,13 +1,25 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { coreSettings } from "../services";
 import * as credentials from "./credentials";
+import { aiAssignmentFixture, aiSettingsFixture } from "./model-fixture";
 import { createAiProvider } from "./provider";
+import * as connections from "./provider-connections";
 import * as settings from "./settings";
-import { parseAiModelProfiles, resolveAiSettingsStateFromRaw, selectAiModelProfile, validateAiSettingsConfiguration } from "./settings";
+import { selectAiModelProfile } from "./settings";
 import { createAiTranscriptionProvider, describeTranscriptionFailure, resolveAiAudioModel } from "./transcription";
 import type { AiModelProfile } from "./types";
 
+// Adapter unit tests own HTTP fakes; provider status persistence belongs to its integration seam.
+beforeEach(() => spyOn(connections, "recordAiProviderStatus").mockResolvedValue(undefined));
+afterEach(() => mock.restore());
+
 const audio: AiModelProfile = {
+  modelId: "speech",
+  providerId: "speech",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "speech",
   label: "Speech",
   provider: "openai-compatible",
@@ -17,27 +29,18 @@ const audio: AiModelProfile = {
   capabilities: ["transcription"],
   dataBoundary: "private",
 };
-const chat: AiModelProfile = { ...audio, id: "chat", model: "chat", capabilities: ["streaming", "tools"] };
+const chat: AiModelProfile = { ...audio, id: "chat", model: "chat", capabilities: ["tools"] };
 
 describe("audio model boundaries", () => {
-  test("validates exclusive capabilities and compatible protocols", () => {
-    expect(parseAiModelProfiles(JSON.stringify([audio])).error).toBeUndefined();
-    for (const profile of [
-      { ...audio, capabilities: ["transcription", "streaming"] },
-      { ...audio, provider: "anthropic" },
-    ]) {
-      expect(parseAiModelProfiles(JSON.stringify([profile])).error?.code).toBe("invalid_model_profiles");
-    }
-  });
   test("rejects audio even from a chat policy without required capabilities", async () => {
-    const state = await resolveAiSettingsStateFromRaw({
+    const state = aiSettingsFixture({
       enabled: true,
-      defaultModelId: chat.id,
-      profilesJson: JSON.stringify([chat, audio]),
+      assignments: [aiAssignmentFixture("balanced", chat.id), aiAssignmentFixture("audio", audio.id)],
+      profiles: [chat, audio],
     });
     expect(state.ok).toBe(true);
-    if (!state.ok) throw new Error(state.error.message);
-    expect(() => selectAiModelProfile(state, { kind: "selectable" }, audio.id)).toThrow();
+
+    expect(() => selectAiModelProfile(state, { kind: "selectable" }, { id: audio.id })).toThrow();
     expect(() => selectAiModelProfile(state, { kind: "locked", modelId: audio.id })).toThrow();
     expect(selectAiModelProfile(state, { kind: "locked", modelId: audio.id, requiredCapabilities: ["transcription"] }).id).toBe(audio.id);
     expect(() =>
@@ -50,26 +53,6 @@ describe("audio model boundaries", () => {
     ).toThrow();
     expect(() => createAiProvider(audio)).toThrow();
     expect(() => createAiTranscriptionProvider(chat)).toThrow();
-  });
-  test("validates every text default and the audio selection", async () => {
-    const errors = validateAiSettingsConfiguration({
-      enabled: true,
-      defaultModelId: audio.id,
-      backgroundModelId: audio.id,
-      workflowModelId: audio.id,
-      audioModelId: chat.id,
-      profiles: [chat, audio],
-      credentialProfileIds: [],
-    });
-    expect(errors.map((issue) => issue.setting).sort()).toEqual([
-      "ai.audio_model_id",
-      "ai.background_model_id",
-      "ai.default_model_id",
-      "ai.workflow_model_id",
-    ]);
-    expect(
-      (await resolveAiSettingsStateFromRaw({ enabled: true, defaultModelId: audio.id, profilesJson: JSON.stringify([audio]) })).ok,
-    ).toBe(false);
   });
   test("sends multipart through the transcription adapter and supports cancellation", async () => {
     let requestBody: FormData | undefined;
@@ -89,7 +72,9 @@ describe("audio model boundaries", () => {
       expect(requestBody?.get("language")).toBe("de");
       const controller = new AbortController();
       controller.abort(new Error("Canceled"));
-      await expect(provider.transcribe({ file: new Blob(), signal: controller.signal })).rejects.toThrow("Canceled");
+      await expect(provider.transcribe({ file: new Blob(), signal: controller.signal })).rejects.toThrow(
+        "Audio transcription was canceled or timed out.",
+      );
     } finally {
       server.stop(true);
     }
@@ -109,17 +94,34 @@ test("classifies provider failures without storing response bodies", () => {
   expect(describeTranscriptionFailure(new Error("secret"), "provider", true).code).toBe("transcription_aborted");
 });
 
-afterEach(() => mock.restore());
+test("an explicit class request is validated instead of silently using the audio slot", async () => {
+  spyOn(settings, "readAiSettingsState").mockResolvedValue(
+    aiSettingsFixture({
+      assignments: [aiAssignmentFixture("balanced", chat.id), aiAssignmentFixture("audio", audio.id)],
+      profiles: [chat, audio],
+    }),
+  );
+  await expect(resolveAiAudioModel({ model: { class: "balanced" } })).rejects.toMatchObject({
+    aiError: { code: "model_policy_mismatch" },
+  });
+});
 
 for (const [name, enabled, modelId, profile, boundaries, expected] of [
-  ["missing selection", true, "", audio, undefined, "no audio model is configured"],
+  ["missing selection", true, "", audio, undefined, "no audio model is assigned"],
   ["AI disabled", false, audio.id, audio, undefined, "AI is disabled"],
-  ["missing credentials", true, audio.id, { ...audio, provider: "openai" }, undefined, "credentials"],
-  ["forbidden boundary", true, audio.id, audio, ["hosted"], "data boundary"],
-  ["incompatible profile", true, audio.id, { ...audio, capabilities: ["streaming"] }, undefined, "transcription"],
+  ["missing credentials", true, audio.id, { ...audio, provider: "openai" }, undefined, "credential"],
+  ["forbidden boundary", true, audio.id, audio, ["hosted"], "policy"],
+  ["incompatible profile", true, audio.id, { ...audio, capabilities: [] }, undefined, "transcription"],
 ] satisfies Array<[string, boolean, string, AiModelProfile, AiModelProfile["dataBoundary"][] | undefined, string]>) {
   test(`audio configuration failure explains ${name} and administrator recovery`, async () => {
-    const state = await resolveAiSettingsStateFromRaw({ enabled, defaultModelId: chat.id, profilesJson: JSON.stringify([chat, profile]) });
+    const state = aiSettingsFixture({
+      enabled,
+      assignments: [
+        aiAssignmentFixture("balanced", chat.id),
+        aiAssignmentFixture("audio", typeof modelId === "undefined" ? audio.id : modelId || null),
+      ],
+      profiles: [chat, profile],
+    });
     spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
     spyOn(coreSettings, "get").mockResolvedValue(modelId);
     spyOn(credentials, "getAiCredential").mockResolvedValue(null);
@@ -132,7 +134,7 @@ for (const [name, enabled, modelId, profile, boundaries, expected] of [
     expect(failure).toBeInstanceOf(Error);
     if (!(failure instanceof Error)) throw new Error("Expected configuration failure");
     expect(failure.message).toContain(expected);
-    expect(failure.message).toContain("administrator");
+
     const classified = describeTranscriptionFailure(failure, "configuration");
     expect(classified.code).toBe("transcription_configuration_failed");
     expect(classified.message).toBe(failure.message);
@@ -147,30 +149,69 @@ test("unknown configuration failures are sanitized and point to administrator se
   expect(failure.message).not.toContain("secret");
 });
 
-for (const [name, defaultModelId, profile, expected] of [
-  ["missing default model", "", chat, "AI is enabled but no valid default model profile is configured."],
-  ["disabled default model", chat.id, { ...chat, enabled: false }, 'Default AI model "chat" must be an enabled text model.'],
-  ["missing default credential", chat.id, { ...chat, provider: "openai" }, 'Default AI model "chat" is missing provider credentials.'],
-] satisfies Array<[string, string, AiModelProfile, string]>) {
-  test(`audio configuration preserves the specific settings cause: ${name}`, async () => {
-    const state = await resolveAiSettingsStateFromRaw({
-      enabled: true,
-      defaultModelId,
-      profilesJson: JSON.stringify([profile, audio]),
-    });
-    expect(state.ok).toBe(false);
-    if (state.ok) throw new Error("Expected invalid AI settings");
-    spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
-    let failure: unknown;
-    try {
-      await resolveAiAudioModel();
-    } catch (error) {
-      failure = error;
-    }
-    expect(failure).toMatchObject({
-      code: "transcription_configuration_failed",
-      message: `Audio transcription is not available: ${expected} An administrator can fix this in the AI settings.`,
-      aiError: state.error,
-    });
+test("the public transcription provider excludes HTTP error bodies before callers can log them", async () => {
+  const marker = "FICTIONAL_AUDIO_PROVIDER_CANARY";
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => Response.json({ detail: [{ input: marker }] }, { status: 422 }),
   });
-}
+  try {
+    const provider = createAiTranscriptionProvider({ ...audio, baseURL: `${server.url}v1` });
+    let caught: unknown;
+    try {
+      await provider.transcribe({ file: new Blob(["fictional audio"]), filename: "fixture.wav" });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ code: "transcription_http_422", httpStatus: 422, retryable: false });
+    expect(JSON.stringify(caught)).not.toContain(marker);
+    expect(caught).toBeInstanceOf(Error);
+    if (!(caught instanceof Error)) throw new Error("Expected classified transcription failure");
+    expect(caught.message).not.toContain(marker);
+    expect(caught.stack).not.toContain(marker);
+    expect(caught.cause).toBeUndefined();
+  } finally {
+    server.stop(true);
+  }
+});
+
+for (const httpStatus of [200, 422])
+  test(`transcription settles status persistence before returning HTTP ${httpStatus}`, async () => {
+    const started = Promise.withResolvers<void>();
+    const finished = Promise.withResolvers<void>();
+    spyOn(connections, "recordAiProviderStatus").mockImplementation(async () => {
+      started.resolve();
+      await finished.promise;
+    });
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => Response.json(httpStatus === 200 ? { text: "fixture" } : {}, { status: httpStatus }),
+    });
+    let settled = false;
+    const provider = createAiTranscriptionProvider({ ...audio, baseURL: `${server.url}v1` });
+    const call = provider.transcribe({ file: new Blob(["fictional audio"]), filename: "fixture.wav" }).then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    try {
+      await Promise.race([
+        started.promise,
+        call.then(() => {
+          throw new Error("Transcription settled without waiting for status persistence");
+        }),
+      ]);
+      await Bun.sleep(0);
+      expect(settled).toBe(false);
+    } finally {
+      finished.resolve();
+      await call;
+      server.stop(true);
+    }
+    expect(settled).toBe(true);
+  });

@@ -147,20 +147,6 @@ const fieldsForView = (view: View, fieldsByTable: CustomAppCatalog["fieldsByTabl
   return (visible.length > 0 ? visible : tableFields).slice(0, 30);
 };
 
-const blockMeta: Record<CustomAppBlock["type"], { icon: string }> = {
-  actions: { icon: "ti ti-bolt" },
-  chart: { icon: "ti ti-chart-bar" },
-  comments: { icon: "ti ti-messages" },
-  form: { icon: "ti ti-forms" },
-  html: { icon: "ti ti-code" },
-  markdown: { icon: "ti ti-markdown" },
-  metrics: { icon: "ti ti-chart-dots" },
-  record: { icon: "ti ti-id" },
-  records: { icon: "ti ti-table" },
-  referenced_records: { icon: "ti ti-table-share" },
-  scanner: { icon: "ti ti-scan" },
-};
-
 export const isCustomAppBlockSourceDiagnostic = (diagnostic: CustomAppDiagnostic, blockId: string): boolean =>
   diagnostic.path.includes(blockId) && diagnostic.path.includes("source");
 
@@ -2180,16 +2166,14 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       >
         <DetailPanel>
           <DetailPanel.Header
-            icon={
-              inspectorMode() === "action"
-                ? selectedAction()?.action.kind === "workflow"
-                  ? "ti ti-player-play"
-                  : "ti ti-link"
-                : inspectorMode() === "block"
-                  ? blockMeta[selectedBlock()?.block.type ?? "markdown"].icon
-                  : inspectorMode() === "sidebar-action"
-                    ? `ti ti-${selectedSidebarAction()?.icon ?? "forms"}`
-                    : "ti ti-file-settings"
+            kind={
+              <span>
+                {inspectorMode() === "action" || inspectorMode() === "sidebar-action"
+                  ? text("Action settings")
+                  : inspectorMode() === "block"
+                    ? blockLabel(selectedBlock()?.block.type ?? "markdown")
+                    : text("Page settings")}
+              </span>
             }
             title={
               inspectorMode() === "action"
@@ -2199,15 +2183,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                   : inspectorMode() === "sidebar-action"
                     ? (selectedSidebarAction()?.label ?? text("Action"))
                     : selectedPage().title
-            }
-            subtitle={
-              inspectorMode() === "action"
-                ? text("Action settings")
-                : inspectorMode() === "block"
-                  ? text("Content block")
-                  : inspectorMode() === "sidebar-action"
-                    ? text("Action settings")
-                    : text("Page settings")
             }
             actions={
               <IconButton size="sm" label={text("Close inspector")} onClick={() => setInspectorOpen(false)}>
@@ -2474,7 +2449,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
               <DetailPanel.Group label={text("Page behavior")}>
                 <DetailPanel.Section
                   title={text("Route parameters")}
-                  icon="ti ti-route"
                   description={
                     selectedPage().id === draft.draft().startPageId
                       ? text("Start pages open without a record. Make another page the start page before adding a required record.")
@@ -2570,7 +2544,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                 />
               </DetailPanel.Group>
               <DetailPanel.Group label={text("Page management")}>
-                <DetailPanel.Section title={text("Page order")} icon="ti ti-arrows-sort" collapsible defaultOpen={false}>
+                <DetailPanel.Section
+                  title={text("Page order")}
+                  collapsible
+                  defaultOpen={false}
+                  summary={messages().pageNumber({ number: draft.draft().pages.findIndex((page) => page.id === selectedPage().id) + 1 })}
+                >
                   <div class="flex flex-wrap gap-2">
                     <Button
                       size="sm"
@@ -2590,18 +2569,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     </Button>
                   </div>
                 </DetailPanel.Section>
-                <DetailPanel.Section
-                  title={text("Danger zone")}
-                  icon="ti ti-trash"
-                  tone="danger"
-                  description={
-                    draft.draft().pages.length === 1
+                <DetailPanel.Section title={text("Danger zone")} summary={text("Remove page")} collapsible defaultOpen={false}>
+                  <p class="grids-details-none">
+                    {draft.draft().pages.length === 1
                       ? text("Every app needs at least one page.")
-                      : text("Permanently remove this page from the draft.")
-                  }
-                  collapsible
-                  defaultOpen={false}
-                >
+                      : text("Permanently remove this page from the draft.")}
+                  </p>
                   <Button size="sm" variant="danger" disabled={draft.draft().pages.length === 1} onClick={() => void removePage()}>
                     <i class="ti ti-trash" aria-hidden="true" /> {text("Remove page")}
                   </Button>
@@ -2647,7 +2620,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     </div>
                   </DetailPanel.Summary>
                   <DetailPanel.Group label={text("Block behavior")}>
-                    <DetailPanel.Section title={text("Progressive disclosure")} icon="ti ti-fold" collapsible defaultOpen={false}>
+                    <DetailPanel.Section
+                      title={text("Progressive disclosure")}
+                      collapsible
+                      defaultOpen={false}
+                      summary={selected().block.disclosure?.label ?? text("Shown directly")}
+                    >
                       <TextInput
                         label={text("Collapsed heading")}
                         description={text(
@@ -2696,13 +2674,20 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     >
                       <DetailPanel.Section
                         title={text("Empty state")}
-                        icon="ti ti-placeholder"
-                        description={text("Message shown when this block has no content.")}
                         collapsible
                         defaultOpen={false}
+                        summary={(() => {
+                          const block = selected().block;
+                          return (
+                            (block.type === "records" || block.type === "referenced_records" || block.type === "record"
+                              ? block.emptyText
+                              : undefined) || text("Default message")
+                          );
+                        })()}
                       >
                         <TextInput
                           label={text("Message")}
+                          description={text("Message shown when this block has no content.")}
                           value={() => {
                             const block = selected().block;
                             return block.type === "records" || block.type === "referenced_records" || block.type === "record"
@@ -2723,7 +2708,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     <Show when={selected().block.type === "actions"}>
                       <DetailPanel.Section
                         title={text("Actions")}
-                        icon="ti ti-bolt"
                         description={text("Open another page or run an available App workflow.")}
                         collapsible
                         defaultOpen
@@ -2805,7 +2789,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     <DetailPanel.Group label={text("Referenced records settings")}>
                       <DetailPanel.Section
                         title={text("Relation source")}
-                        icon="ti ti-table-share"
                         description={text("Pin the source table, its Relation to this page record, and the displayed fields.")}
                         collapsible
                         defaultOpen
@@ -2907,7 +2890,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       </DetailPanel.Section>
                       <DetailPanel.Section
                         title={text("Row actions")}
-                        icon="ti ti-click"
                         description={text("Signed-in app readers can run workflows for selected rows.")}
                         collapsible
                         defaultOpen={(selectedReferencedRecordsBlock()?.rowActions?.length ?? 0) > 0}
@@ -2942,7 +2924,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     <DetailPanel.Group label={text("Data settings")}>
                       <DetailPanel.Section
                         title={text("Data source")}
-                        icon="ti ti-database-search"
                         description={text("Choose the published data this block can read.")}
                         collapsible
                         defaultOpen
@@ -3066,7 +3047,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         </div>
                       </DetailPanel.Section>
                       <Show when={selected().block.type === "metrics"}>
-                        <DetailPanel.Section title={text("Value format")} icon="ti ti-decimal" collapsible defaultOpen>
+                        <DetailPanel.Section title={text("Value format")} collapsible defaultOpen>
                           <CustomAppValueFormatEditor
                             value={(() => {
                               const block = selectedSourceBlock();
@@ -3081,7 +3062,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       <Show when={selected().block.type === "records"}>
                         <DetailPanel.Section
                           title={text("Records table")}
-                          icon="ti ti-table"
                           description={
                             selectedRecordsBlock()?.source.kind === "view"
                               ? text("Choose visible columns and optional row navigation.")
@@ -3343,7 +3323,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         </DetailPanel.Section>
                         <DetailPanel.Section
                           title={text("Row actions")}
-                          icon="ti ti-click"
                           description={text("Signed-in app readers can run workflows for selected table rows or cards.")}
                           collapsible
                           defaultOpen={(selectedRecordsBlock()?.rowActions?.length ?? 0) > 0}
@@ -3399,11 +3378,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                   </Show>
                   <Show when={selected().block.type === "form"}>
                     <DetailPanel.Group label={text("Form settings")}>
-                      <DetailPanel.Section
-                        title={text("Form")}
-                        icon="ti ti-forms"
-                        description={text("Choose the active Form rendered by this block.")}
-                      >
+                      <DetailPanel.Section title={text("Form")} description={text("Choose the active Form rendered by this block.")}>
                         <Select
                           label={text("Form")}
                           description={text("Only active forms you can use in this base are listed.")}
@@ -3537,7 +3512,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         <Show when={selectedFormBlock()?.actionsBlockId}>
                           <DetailPanel.Section
                             title={text("Workspace context")}
-                            icon="ti ti-layout-sidebar-right"
                             collapsible
                             defaultOpen={Boolean(selectedFormBlock()?.workspace)}
                           >
@@ -3573,7 +3547,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         <Show when={selectedFormBindingOptions().length > 0}>
                           <DetailPanel.Section
                             title={text("Values supplied by this page")}
-                            icon="ti ti-input-check"
                             description={text("Hide Form inputs and provide trusted values from this page.")}
                             collapsible
                             defaultOpen={Object.keys(selectedFormBlock()?.fixedValues ?? {}).length > 0}
@@ -3661,7 +3634,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         </Show>
                         <DetailPanel.Section
                           title={text("After submission")}
-                          icon="ti ti-arrow-forward-up"
                           description={text("Optionally navigate after the Form creates its record.")}
                           collapsible
                           defaultOpen={Boolean(selectedFormBlock()?.onSuccessNavigate)}
@@ -3749,7 +3721,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     <DetailPanel.Group label={text("Scanner settings")}>
                       <DetailPanel.Section
                         title={text("Scanner workflow")}
-                        icon="ti ti-scan"
                         description={text("Each scan resolves a code and starts this workflow. Readers must be signed in.")}
                       >
                         <div class="flex flex-col gap-3">
@@ -3787,7 +3758,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     <DetailPanel.Group label={text("Record settings")}>
                       <DetailPanel.Section
                         title={text("Fields")}
-                        icon="ti ti-columns-3"
                         description={text("Choose visible fields and which of them readers may edit.")}
                         collapsible
                         defaultOpen
@@ -3918,7 +3888,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       </Show>
                       <DetailPanel.Section
                         title={text("Documents")}
-                        icon="ti ti-files"
                         description={text("Let readers view and download existing documents for the page record.")}
                         collapsible
                         defaultOpen={Boolean(selectedRecordBlock()?.documents)}
@@ -4002,18 +3971,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     )}
                   </Show>
                   <DetailPanel.Group label={text("Block management")}>
-                    <DetailPanel.Section
-                      title={text("Danger zone")}
-                      icon="ti ti-trash"
-                      tone="danger"
-                      description={
-                        blockCount() === 1
+                    <DetailPanel.Section title={text("Danger zone")} summary={text("Remove block")} collapsible defaultOpen={false}>
+                      <p class="grids-details-none">
+                        {blockCount() === 1
                           ? text("Every page needs at least one block.")
-                          : text("Permanently remove this block from the draft.")
-                      }
-                      collapsible
-                      defaultOpen={false}
-                    >
+                          : text("Permanently remove this block from the draft.")}
+                      </p>
                       <Button size="sm" variant="danger" disabled={blockCount() === 1} onClick={() => void removeSelectedBlock()}>
                         <i class="ti ti-trash" aria-hidden="true" /> {text("Remove block")}
                       </Button>
@@ -4046,7 +4009,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       }}
                     />
                     <DetailPanel.Group label={text("Action settings")}>
-                      <DetailPanel.Section title={text("Action")} icon="ti ti-bolt" tone="accent">
+                      <DetailPanel.Section title={text("Action")}>
                         <div class="flex flex-col gap-3">
                           <TextInput
                             label={text("Label")}
@@ -4157,7 +4120,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       </DetailPanel.Section>
                       <Show when={selectedNavigateAction()}>
                         {(action) => (
-                          <DetailPanel.Section title={text("Navigation")} icon="ti ti-route">
+                          <DetailPanel.Section title={text("Navigation")}>
                             <div class="flex flex-col gap-3">
                               <Select
                                 label={text("Target page")}
@@ -4263,7 +4226,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         {(workflowAction) => (
                           <DetailPanel.Section
                             title={text("Workflow")}
-                            icon="ti ti-player-play"
                             description={text("Workflow actions are available only to signed-in app readers.")}
                           >
                             <div class="flex flex-col gap-3">
@@ -4589,7 +4551,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         }
                         error={() => diagnosticFor(selected().action.id, "availableWhen")}
                       />
-                      <DetailPanel.Section title={text("Order")} icon="ti ti-arrows-sort" collapsible defaultOpen={false}>
+                      <DetailPanel.Section
+                        title={text("Order")}
+                        collapsible
+                        defaultOpen={false}
+                        summary={`${selected().index + 1} / ${selectedActionCount()}`}
+                      >
                         <div class="flex flex-wrap gap-2">
                           <Button size="sm" variant="secondary" disabled={selected().index === 0} onClick={() => moveSelectedAction(-1)}>
                             <i class="ti ti-arrow-up" aria-hidden="true" /> {text("Move up")}
@@ -4604,18 +4571,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           </Button>
                         </div>
                       </DetailPanel.Section>
-                      <DetailPanel.Section
-                        title={text("Danger zone")}
-                        icon="ti ti-trash"
-                        tone="danger"
-                        description={
-                          selected().owner === "actions" && selectedActionCount() <= 1
+                      <DetailPanel.Section title={text("Danger zone")} summary={text("Remove action")} collapsible defaultOpen={false}>
+                        <p class="grids-details-none">
+                          {selected().owner === "actions" && selectedActionCount() <= 1
                             ? text("Every Actions block needs at least one action.")
-                            : text("Permanently remove this action from the draft.")
-                        }
-                        collapsible
-                        defaultOpen={false}
-                      >
+                            : text("Permanently remove this action from the draft.")}
+                        </p>
                         <Button
                           size="sm"
                           variant="danger"

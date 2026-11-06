@@ -19,6 +19,25 @@ const activityPage = {
   })),
   nextCursor: null,
 };
+const accessMembers = [
+  { principal: { type: "group", groupId: "00000000-0000-4000-8000-0000000000a1" }, permission: "write", displayName: "Lager-Team" },
+  ...(
+    [
+      ["00000000-0000-4000-8000-000000000002", "Jana Berger", "admin"],
+      ["00000000-0000-4000-8000-000000000001", "Anna Becker", "admin"],
+      ["00000000-0000-4000-8000-000000000004", "Mira Schulz", "write"],
+      ["00000000-0000-4000-8000-000000000003", "Paul Wagner", "read"],
+      ["00000000-0000-4000-8000-000000000005", "Tom Krüger", "write"],
+    ] as const
+  ).map(([userId, displayName, permission]) => ({
+    principal: { type: "user", userId },
+    permission,
+    displayName,
+    // One picture and initials for the others, so the access list shows both avatar forms.
+    avatarHash: displayName === "Jana Berger" ? "h1" : null,
+  })),
+  { principal: { type: "authenticated" }, permission: "read" },
+];
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 beforeAll(async () => {
@@ -30,7 +49,8 @@ beforeAll(async () => {
     entrypoints: [resolve(import.meta.dir, "detail-panel.browser-harness.tsx")],
     target: "browser",
     conditions: ["browser"],
-    format: "iife",
+    // The PDF dialog includes MapLibre's import.meta worker URLs.
+    format: "esm",
     plugins: [
       {
         name: "solid-detail-panel-test",
@@ -68,6 +88,7 @@ beforeAll(async () => {
     fetch(request) {
       const path = new URL(request.url).pathname;
       if (path === "/api/notebooks/overview/activity") return Response.json(activityPage);
+      if (path === "/api/notebooks/book01/access/members") return Response.json(accessMembers);
       if (/^\/api\/accounts\/users\/[^/]+\/avatar$/.test(path))
         return new Response(
           '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="#247b92"/><circle cx="12" cy="9" r="4" fill="#fff"/></svg>',
@@ -77,7 +98,7 @@ beforeAll(async () => {
       if (path.startsWith("/api/")) return new Response("Unexpected harness API", { status: 404 });
       if (path === "/harness.js") return new Response(bundle, { headers: { "content-type": "application/javascript; charset=utf-8" } });
       return new Response(
-        `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plex.css"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root" style="height:100dvh;display:flex;flex-direction:column"></div><script src="/harness.js"></script></body></html>`,
+        `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plex.css"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root" style="height:100dvh;display:flex;flex-direction:column"></div><script type="module" src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
@@ -95,7 +116,7 @@ const settle = async (page: Page) => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
   });
 };
-const open = async (width: number, delayActivity = false) => {
+const open = async (width: number, delayActivity = false, state = "many") => {
   const page = await browser.newPage({
     viewport: { width, height: width < 600 ? 844 : 900 },
     isMobile: width < 600,
@@ -117,7 +138,7 @@ const open = async (width: number, delayActivity = false) => {
         await gate;
         if (!page.isClosed()) await route.continue();
       });
-    await page.goto(`${server.url}?state=many`);
+    await page.goto(`${server.url}?state=${state}`);
     await page.waitForFunction(() => Boolean(window.harness));
     if (delayActivity) await request;
     else await page.locator(".notebook-activity-skeleton").first().waitFor({ state: "detached" });
@@ -142,24 +163,70 @@ const sameBox = (actual: Awaited<ReturnType<typeof box>>, expected: Awaited<Retu
   for (const key of ["x", "y", "width", "height"] as const) closeTo(actual[key], expected[key], 0.5);
 };
 const header = ".k2b-discussion__header";
+/** A panel section by its title, open or closed. */
+const titled = (title: string) => `section.k2b-detail-panel__section:has(h3:text-is("${title}"))`;
+const access = titled("Zugriff");
+const presence = "section.k2b-detail-panel__section:has(.k2b-detail-presence)";
 const contents = '.k2b-detail-panel__section:has(h3:text-is("Inhalt"))';
 
 for (const width of [1440, 390]) {
-  test(`${width}: section and row text share one leading and trailing edge`, async () => {
+  test(`${width}: every section's content starts on its title's text edge`, async () => {
     const { page } = await open(width);
     try {
+      await page.evaluate(() => window.harness.presence(3));
+      // Closed sections under "Mehr zu dieser Notiz" open, so their rows count too.
+      for (const name of [/^Zugriff/, /^Eigenschaften/, /^Aktivität/, /^Referenzen/])
+        await page
+          .getByRole("button", { name, expanded: false })
+          .first()
+          .evaluate((button) => (button instanceof HTMLButtonElement ? button.click() : undefined));
+      await page.locator(`${access} .k2b-detail-panel__row`, { hasText: "Lager-Team" }).waitFor();
+      await settle(page);
       const edges = await page.evaluate(() => {
-        const visible = (element: Element) => element.getBoundingClientRect().width > 0;
-        const left = [
-          ...document.querySelectorAll(
-            ".k2b-detail-panel__section-header h3, .k2b-discussion__header h3, .k2b-discussion__entry > header > strong, .notebook-outline-row[data-depth='0'] .k2b-detail-panel__action-title, .notebook-activity .k2b-detail-panel__action-title, .k2b-detail-panel__section:has(.ti-paperclip) .k2b-detail-panel__action-title",
-          ),
+        const visible = (element: Element) => element.getBoundingClientRect().width > 0 && element.getClientRects().length > 0;
+        const titles = [
+          ...document.querySelectorAll(".k2b-detail-panel__body :is(.k2b-detail-panel__section-header h3, .k2b-discussion__header h3)"),
         ]
           .filter(visible)
           .map((element) => ({ label: element.textContent, x: element.getBoundingClientRect().left }));
+        // Ink is what a person sees: text, icons and their filled tiles, avatars, images, bars. Hover fills and
+        // paddings do not count.
+        const inkLeft = (root: Element) => {
+          let left = Number.POSITIVE_INFINITY;
+          for (const element of root.querySelectorAll(
+            "i, .k2b-icon-tile, .k2b-avatar, img, svg, [role='progressbar'], .k2b-detail-tag, .k2b-detail-presence__swatch",
+          ))
+            if (visible(element)) left = Math.min(left, element.getBoundingClientRect().left);
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+          while (walker.nextNode()) {
+            const node = walker.currentNode as Text;
+            if (!node.textContent?.trim() || !node.parentElement || !visible(node.parentElement)) continue;
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            const rect = range.getBoundingClientRect();
+            if (rect.width > 0) left = Math.min(left, rect.left);
+          }
+          return left;
+        };
+        const bodies = [...document.querySelectorAll(".k2b-detail-panel__body :is(.k2b-detail-panel__section-body, .k2b-discussion__body)")]
+          .filter((body) => visible(body) && !body.closest("[hidden]"))
+          .map((body) => ({
+            label: body.closest("section")?.querySelector("h3")?.textContent ?? "",
+            x: inkLeft(body),
+          }))
+          .filter((body) => Number.isFinite(body.x));
+        // Each row on its own, so one row stepping in or back is not hidden by another on the edge.
+        const rows = [
+          ...document.querySelectorAll(
+            ".k2b-detail-panel__body :is(.k2b-detail-panel__section-body, .k2b-discussion__body) :is(.k2b-detail-panel__action:not(.notebook-outline-row:not([data-depth='0'])), .k2b-detail-panel__row, .k2b-discussion__item, .k2b-file-grid__item, .k2b-detail-section-label, .k2b-detail-tags > li:first-child, .k2b-detail-properties dt, .k2b-detail-presence__strip, .k2b-detail-presence__where)",
+          ),
+        ]
+          .filter((row) => visible(row) && !row.closest("[hidden]"))
+          .map((row) => ({ label: row.textContent?.trim().slice(0, 30) ?? "", x: inkLeft(row) }))
+          .filter((row) => Number.isFinite(row.x));
         const right = [
           ...document.querySelectorAll(
-            ".k2b-discussion__timestamp, .notebook-activity .notebook-time time, .k2b-detail-panel__section:has(.ti-paperclip) .k2b-detail-panel__action-trailing, .k2b-detail-panel__section-actions .k2b-button, .k2b-discussion__actions .k2b-button",
+            ".k2b-discussion__timestamp, .notebook-activity .notebook-time time, .k2b-detail-panel__section-actions .k2b-button, .k2b-discussion__actions .k2b-button",
           ),
         ]
           .filter(visible)
@@ -177,14 +244,123 @@ for (const width of [1440, 390]) {
             range.setEnd(last, last.length - (last.textContent?.match(/\s*$/)?.[0].length ?? 0));
             return { label: element.textContent, x: range.getBoundingClientRect().right };
           });
-        return { left, right };
+        return { titles, bodies, rows, right };
       });
-      expect(edges.left.length).toBeGreaterThan(14);
+      const edge = edges.titles[0]!.x;
+      expect(edges.titles.length).toBeGreaterThan(9);
+      expect(edges.titles.filter((title) => Math.abs(title.x - edge) > 1).map((title) => title.label)).toEqual([]);
+      // Presence, comments, tasks, contents, tags, links, attachments, references, access, properties, activity.
+      expect(edges.bodies.length).toBeGreaterThanOrEqual(10);
+      expect(edges.bodies.filter((body) => Math.abs(body.x - edge) > 1).map((body) => `${body.label}: ${body.x - edge}`)).toEqual([]);
+      expect(edges.rows.length).toBeGreaterThan(30);
+      expect(edges.rows.filter((row) => Math.abs(row.x - edge) > 1).map((row) => `${row.label}: ${row.x - edge}`)).toEqual([]);
       expect(edges.right.length).toBeGreaterThan(8);
-      for (const edge of edges.left) closeTo(edge.x, edges.left[0]!.x, 1);
-      for (const edge of edges.right) closeTo(edge.x, edges.right[0]!.x, 2);
+      for (const right of edges.right) closeTo(right.x, edges.right[0]!.x, 2);
     } finally {
       await page.close();
+    }
+  }, 30_000);
+
+  test(`${width}: every avatar in the panel is round, pictures and initials alike`, async () => {
+    const { page } = await open(width);
+    try {
+      await page.evaluate(() => window.harness.presence(5));
+      for (const name of [/^Zugriff/, /^Eigenschaften/, /^Aktivität/])
+        await page
+          .getByRole("button", { name, expanded: false })
+          .first()
+          .evaluate((button) => (button instanceof HTMLButtonElement ? button.click() : undefined));
+      await page.locator(`${access} .k2b-detail-panel__row`, { hasText: "Lager-Team" }).waitFor();
+      await settle(page);
+      const avatars = await page.evaluate(() =>
+        [...document.querySelectorAll(".k2b-detail-panel .k2b-avatar")]
+          .filter((avatar) => avatar.getClientRects().length > 0)
+          .map((avatar) => {
+            const { width, height } = avatar.getBoundingClientRect();
+            const slot = avatar.parentElement?.className.split(" ")[0] ?? "";
+            return { slot, picture: avatar.tagName === "IMG", width, height, radius: getComputedStyle(avatar).borderTopLeftRadius };
+          }),
+      );
+      // Presence chips and slots, comments, activity rows, access, and properties, with pictures among them.
+      for (const slot of [
+        "k2b-detail-presence__face",
+        "k2b-detail-presence-slot",
+        "k2b-discussion__avatar",
+        "k2b-detail-panel__action-leading",
+        "k2b-detail-properties__leading",
+      ])
+        expect(avatars.some((avatar) => avatar.slot === slot)).toBe(true);
+      expect(avatars.filter((avatar) => avatar.picture).length).toBeGreaterThan(4);
+      expect(avatars.filter((avatar) => Math.abs(avatar.width - avatar.height) > 0.5)).toEqual([]);
+      expect(avatars.filter((avatar) => parseFloat(avatar.radius) < avatar.width / 2 - 0.5)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test(`${width}: people coming, going, and the connection failing never move the panel`, async () => {
+    const { page } = await open(width);
+    try {
+      const tracked = [presence, ".k2b-discussion__header", `${contents} .k2b-detail-panel__section-header`];
+      const outlineTitle = `${contents} .notebook-outline-row .k2b-detail-panel__action-title`;
+      const loading = await Promise.all([...tracked, outlineTitle].map((selector) => box(page, selector)));
+      const steps: [string, () => void][] = [
+        ["five here", () => window.harness.presence(5)],
+        ["one here", () => window.harness.presence(1)],
+        ["only you", () => window.harness.presence(0)],
+        ["four here", () => window.harness.presence(4)],
+        ["outage", () => window.harness.presenceStatus("down")],
+        ["back", () => window.harness.presence(2)],
+        ["offline", () => window.harness.offline(true)],
+      ];
+      for (const [, step] of steps) {
+        await page.evaluate(step);
+        await settle(page);
+        // The offline band in the header is the one approved shift (16.10.); it moves the body, not its sections' sizes.
+        const after = await Promise.all([...tracked, outlineTitle].map((selector) => box(page, selector)));
+        after.forEach((current, index) => {
+          closeTo(current.height, loading[index]!.height, 0.5);
+          closeTo(current.width, loading[index]!.width, 0.5);
+          closeTo(current.x, loading[index]!.x, 0.5);
+        });
+      }
+      expect(await page.locator(".k2b-detail-presence__face[data-live='true']").count()).toBe(0);
+      await page.evaluate(() => window.harness.offline(false));
+      await page.evaluate(() => window.harness.presence(5));
+      await settle(page);
+      expect(await page.locator(".k2b-detail-presence__face[data-live='true']").count()).toBeGreaterThan(0);
+      for (let index = 0; index < tracked.length; index++) sameBox(await box(page, tracked[index]!), loading[index]!);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test(`${width}: access is a read-only list that public-link readers never see`, async () => {
+    const { page } = await open(width);
+    try {
+      // Closed, the section names the first entries once the list has loaded after the first paint.
+      await page
+        .locator(`${access} .k2b-detail-panel__section-preview`, { hasText: "Lager-Team, Jana Berger und 5 weitere" })
+        .waitFor({ state: "attached" });
+      await page
+        .getByRole("button", { name: /^Zugriff/, expanded: false })
+        .evaluate((button) => (button instanceof HTMLButtonElement ? button.click() : undefined));
+      await page.locator(`${access} .k2b-detail-panel__row`, { hasText: "Lager-Team" }).waitFor();
+      const rows = await page.locator(`${access} .k2b-detail-panel__row`).allTextContents();
+      expect(rows).toHaveLength(5);
+      expect(rows[0]).toContain("Lager-Team");
+      expect(rows[0]).toContain("Bearbeiten");
+      expect(rows.some((row) => row.includes("Du") && row.includes("Verwalten"))).toBe(true);
+      expect(await page.getByRole("button", { name: "2 weitere anzeigen" }).count()).toBe(1);
+      expect(await page.locator(`${access} input, ${access} select`).count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+    const reader = await open(width, false, "publiclink");
+    try {
+      expect(await reader.page.locator(access).count()).toBe(0);
+    } finally {
+      await reader.page.close();
     }
   }, 30_000);
 
@@ -211,7 +387,8 @@ for (const width of [1440, 390]) {
           closeTo(after.height, before.height, 0.5);
         } else sameBox(after, before);
       }
-      const above = [".k2b-detail-panel__header", header, ".notebook-tasks"];
+      // Contents now precedes the comments (K1 order), so only what stands above it must hold still.
+      const above = [".k2b-detail-panel__header", ".notebook-tasks"];
       const beforeCollapse = await Promise.all(above.map((selector) => box(page, selector)));
       // DOM click avoids Playwright scrolling the body to the disclosure.
       await page

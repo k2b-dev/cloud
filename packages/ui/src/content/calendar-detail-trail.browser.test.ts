@@ -55,6 +55,8 @@ type PanelWidth = "md" | "lg" | "xl";
 const eventOf = (page: Page, title = "Sunday meeting") => page.locator("[data-calendar-event]", { hasText: title });
 const motion: BrowserContextOptions = { reducedMotion: "no-preference" };
 const touch: BrowserContextOptions = { hasTouch: true, isMobile: true };
+/** A workspace a quarter pixel short of the viewport, which gives the xl drawer a width three quarters into a pixel. */
+const fractionalDrawer = "#app{width:calc(100% - 0.25px)}";
 // Main's 0.5 rem padding is the one Spaces gives its calendar, so the surface ends one gap before the panel.
 const load = async (
   width: number,
@@ -64,6 +66,8 @@ const load = async (
   panel: PanelWidth = "md",
   hours = false,
   lane?: string,
+  extraStyle = "",
+  beforeOpen?: (page: Page) => Promise<void>,
 ) => {
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce", ...options });
   await page.setContent(
@@ -71,6 +75,7 @@ const load = async (
     .k2b-ui .k2b-app-workspace{border:0;--k2b-workspace-radius:0px}
     .fixture-main{padding:0.5rem;display:flex;flex-direction:column}
     .fixture-calendar{flex:1;min-height:0}
+    ${extraStyle}
     </style></head><body class="k2b-ui" style="margin:0"><div id="app" style="height:100vh"></div></body></html>`,
   );
   await page.evaluate(
@@ -89,6 +94,7 @@ const load = async (
     expect(await eventOf(page, lane).count()).toBe(1);
     await hoursSettled(page);
     const closed = view === "week" ? await hoursColumns(page) : [];
+    await beforeOpen?.(page);
     await eventOf(page, lane).click();
     await page.locator(".k2b-app-workspace__detail").waitFor();
     await page.waitForFunction(() => document.querySelector(".k2b-app-workspace__detail")!.getAnimations().length === 0);
@@ -192,7 +198,7 @@ const mondayEdges = (page: Page) =>
   });
 
 /**
- * Resolves once the strip rests: ten still frames, which outlast its 140 ms settle timer, at a place it settles on, a
+ * Resolves once the strip rests: twelve still frames, which outlast its 140 ms settle timer and the two frames after it, at a place it settles on, a
  * day start beside the hours, a day end at the trail's end, or either scroll limit. The day view only needs to be still.
  */
 const hoursSettled = (page: Page) =>
@@ -223,7 +229,7 @@ const hoursSettled = (page: Page) =>
               const rect = column.getBoundingClientRect();
               return Math.abs(rect.left - gutter!) < 0.5 || Math.abs(rect.right - end) < 0.5;
             });
-          if (still >= 10 && atRest) resolve(true);
+          if (still >= 12 && atRest) resolve(true);
           else requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
@@ -401,6 +407,47 @@ describe("dayHours calendar beside the workspace detail", () => {
   });
   test("820×1180 touch tablet with motion: the dayHours week settles Sunday's end beside the drawer", async () => {
     const { page } = await load(820, 1180, "week", { ...touch, ...motion }, "xl", true);
+    try {
+      const shape = await hoursPlacement(page);
+      expect(Math.abs(shape.columnRight! - shape.trailEnd)).toBeLessThan(0.5);
+      expect(shape.right).toBeLessThanOrEqual(shape.panelLeft);
+      expect(shape.hit).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+  // A drawer can measure a fractional width, which puts the day end the strip settles on between two pixels. WebKit
+  // drops the fraction of a scroll position, so a target off the pixel left the strip short of every place it rests.
+  test("820×1180 touch tablet with motion, a drawer of fractional width: the dayHours week settles Sunday's end beside it", async () => {
+    const { page } = await load(820, 1180, "week", { ...touch, ...motion }, "xl", true, undefined, fractionalDrawer);
+    try {
+      const shape = await hoursPlacement(page);
+      expect(shape.scrollLeft % 1).toBe(0);
+      expect(Math.abs(shape.columnRight! - shape.trailEnd)).toBeLessThan(0.5);
+      expect(shape.right).toBeLessThanOrEqual(shape.panelLeft);
+      expect(shape.hit).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+  // Long tasks run the 140 ms rest timer before the scroll event of the reveal on its way. A settle then stopped the
+  // reveal days short, with Sunday's end under the drawer, at a place the strip rests on, so it stayed there (#2199).
+  test("820×1180 touch tablet with motion, long tasks during the reveal: the dayHours week still settles Sunday's end beside the drawer", async () => {
+    const { page } = await load(820, 1180, "week", { ...touch, ...motion }, "xl", true, undefined, "", (page) =>
+      page.evaluate(() => {
+        const scroll = document.querySelector<HTMLElement>(".k2b-calendar-week__scroll")!;
+        let tasks = 3;
+        const frame = () => {
+          if (scroll.scrollLeft >= 100) {
+            tasks--;
+            const end = performance.now() + 200;
+            while (performance.now() < end);
+          }
+          if (tasks > 0) requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      }),
+    );
     try {
       const shape = await hoursPlacement(page);
       expect(Math.abs(shape.columnRight! - shape.trailEnd)).toBeLessThan(0.5);

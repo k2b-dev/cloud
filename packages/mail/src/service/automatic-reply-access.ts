@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { PermissionLevel } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { getMailboxPermission } from "./access";
 import type { MailRequestContext } from "./auth";
 import type { SqlClient } from "./workflow-data";

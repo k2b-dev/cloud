@@ -34,9 +34,11 @@ suiteFor("database")("Core-owned pgcrypto", () => {
             process.execPath,
             "--no-env-file",
             "-e",
-            `const {migrate}=await import(${JSON.stringify(new URL(`../../../../${app}/src/migrate.ts`, import.meta.url).pathname)}); await migrate(); process.exit(0);`,
+            // Each child is a separate application process: it starts the platform clients before migrating.
+            `const {initializePlatform}=await import(${JSON.stringify(Bun.resolveSync("@k2b/cloud/start", import.meta.dir))}); await initializePlatform({appId:${JSON.stringify(app)},source:"env"}); const {migrate}=await import(${JSON.stringify(new URL(`../../../../${app}/src/migrate.ts`, import.meta.url).pathname)}); await migrate(); process.exit(0);`,
           ],
-          env: { ...process.env, DATABASE_URL: url.href },
+          // No inherited test preload: it would start the platform first and select the shared test database.
+          env: { ...process.env, BUN_OPTIONS: "", DATABASE_URL: url.href },
           stdin: "ignore",
           stdout: "pipe",
           stderr: "pipe",

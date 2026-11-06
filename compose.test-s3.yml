@@ -1,0 +1,24 @@
+# Optional test infrastructure only; never part of a deployed Cloud installation.
+# docker compose -f compose.test-s3.yml up -d
+services:
+  s3-test:
+    image: ghcr.io/k2b-dev/mirror/dxflrs/garage:v2.3.0@sha256:866bd13ed2038ba7e7190e840482bc27234c4afaf77be8cfa439ae088c1e4690
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    configs:
+      - source: s3_test_config
+        target: /etc/garage.toml
+    environment:
+      GARAGE_DEFAULT_ACCESS_KEY: GK0123456789abcdef01234567
+      GARAGE_DEFAULT_SECRET_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      GARAGE_DEFAULT_BUCKET: cloud-test
+    ports:
+      - "127.0.0.1:3900:3900"
+    healthcheck:
+      test: ["CMD", "/garage", "bucket", "info", "cloud-test"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+configs:
+  s3_test_config:
+    file: ./scripts/fixtures/s3-test.toml

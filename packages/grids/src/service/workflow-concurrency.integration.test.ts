@@ -1,5 +1,5 @@
 import { expect, spyOn } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { app } from "../config";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { gridsWorkflows } from "../workflows/module";

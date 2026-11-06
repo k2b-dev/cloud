@@ -5,7 +5,7 @@ section: Operations
 order: 1150
 description: Run multiple application instances and shut them down without losing work.
 tags: [scaling, lifecycle, shutdown]
-updated: 2026-10-22
+updated: 2026-11-02
 ---
 
 # Scaling and shutdown
@@ -63,7 +63,7 @@ grow with the replica count.
 
 | Application | Several replicas | Coordinated by | Per-process limits that multiply |
 |---|---|---|---|
-| Gateway (`gateway`) | Yes | No registry entry; each process builds its route table from the shared registry. Give each replica its own `GATEWAY_INSTANCE_ID` or `HOSTNAME`, or their operations snapshots overwrite each other | None |
+| Gateway (`gateway`) | Yes | No registry entry; each process builds its route table from the shared registry. Each process uses a random ID for its operations snapshots. Remove the deprecated `GATEWAY_INSTANCE_ID` override; `HOSTNAME` is no longer used as an ID | None |
 | Core (`core`) | Yes | NATS schedulers and keyed jobs with Postgres claims for AI turns, outgoing mail and notifications | 8 AI turn workers, 8 SMTP send workers plus 4 bulk send workers, 4 notification workers, 2 chat PDF conversions |
 | Accounts (`accounts`) | Yes | Postgres draft rows and recipient claims | None |
 | API Docs (`api-docs`) | Yes | Specs built per request from the shared registry | None |
@@ -82,7 +82,7 @@ grow with the replica count.
 | OAuth (`oauth`) | Yes | Valkey consent state; Postgres consumes codes and refresh tokens atomically | None |
 | Proxy Auth (`proxy-auth`) | Yes | Postgres reads per verification; Valkey return state | None |
 | Pulse (`pulse`) | Yes | NATS scheduler and keyed scrape jobs; Postgres lock per source | Scrape, rollup and retention workers |
-| Mobile app (`pwa`) | Yes | Core's Postgres pairing locks | None |
+| Cloud app (`pwa`) | Yes | Core's Postgres pairing locks | None |
 | Quotes (`quotes`) | Yes | Valkey cache | None |
 | Spaces (`spaces`) | Yes | Postgres locks and outbox; Valkey link previews | None |
 | Tools (`tools`) | Yes | Postgres rows for webhook endpoints | 2 PDF conversions |
@@ -158,7 +158,53 @@ Do not use process memory for:
 Use [Data](/en/docs/data) and
 [Automation](/en/docs/automation) for shared state.
 
+### Notebooks reader presence
+
+Opening a note joins its participant list through the existing notebook
+workspace socket, including in Read mode and for locked notes. Editing starts
+a separate collaboration connection only when needed. Both connections count
+as one browser tab for that person; another tab counts separately. The detail
+panel shows other readers as reading until cursor awareness reports writing.
+
+Each workspace socket watches one opened note. Switching replaces that note;
+leaving or closing the socket removes its presence. Connections renew their
+shared presence leases every 10 seconds, and an abandoned lease expires after
+30 seconds. Access is checked before joining and rechecked on permission
+invalidation and the existing 10-second backstop. A workspace socket cannot
+watch a note in another notebook, even when its user may read both. If the
+opened note is deleted or moved, its reader watch ends while workspace updates
+continue.
+
+Upgrade all Notebooks replicas for reader presence. This requires no database
+migration or new service; presence remains transient shared NATS state.
+
 ## Application registration
+
+Application registry reads use a process-local view of the shared NATS entries.
+Each reading process opens one watch on first use. Heartbeats update the view;
+removal and access-rule revisions arrive through that watch. Readers also check
+the 180-second lease locally, so a missing expiry event cannot keep an app live.
+
+A lost watch, a resync request, or a NATS disconnect invalidates the view. The
+next read shares one fresh NATS snapshot with concurrent readers and reopens
+the watch. A failed refresh fails the read instead of serving the previous
+view. A successful local write also checks watch progress: if the watch does
+not cover its acknowledged revision within one heartbeat interval (60 seconds),
+the view is invalidated and the next read recovers it. Subsequent writes cannot
+postpone that deadline. Local lease expiry also triggers recovery in processes
+that only read the view: a fresh snapshot retains renewed entries and removes
+those that really expired.
+Registry records do not cache permission decisions: SQL grants and
+owner resource checks still run for each request. Discovery allows three
+seconds per owner within a shared six-second budget, below the ten-second
+request idle timeout. No migration, new service, or operator setting is required.
+
+Treat registry content returned by `getApp`, `listApps`, `getCapability`, and
+`listCapabilities` as read-only. `getApp()` and capability entries are deeply
+frozen. `listApps()` retains flat copies with frozen nested content and the
+current `updatedAt`, `expiresAt`, and `version` lease metadata. Use `structuredClone()`
+on a result when you need a mutable local copy. Passing your own app snapshot
+to `listCapabilities(snapshot)` does not freeze or modify that input.
 
 Every reader uses one logical application entry and one capability manifest per
 application ID. Use the same stable `baseUrl` for every replica.
@@ -196,15 +242,92 @@ The registry has no conditional delete. If NATS applies a stopping replica's
 delete only after its lock lease ended, the delete can remove an entry that a
 new replica has just written. That replica writes it again within 60 seconds.
 
-The gateway rebuilds its route table when registry entries change. It renews
-its own operations snapshot every five seconds, including when the registry is
-idle, so its 30-second presence lease and request counters stay current.
+Gateway route and request-counter snapshots renew every 30 seconds with a
+90-second presence lease. Registry changes refresh routes immediately; committed
+app-domain assignments wake every gateway. A 30-second reconciliation repairs
+missed domain hints. With an older Core that does not publish hints, every
+domain change waits for reconciliation, up to 30 seconds. Changes to `app.url`
+and `gateway.ingress_cert_resolver` also take up to 30 seconds to reach gateways.
+
+Gateway Ops stores app metadata only when its content changes or an app
+reappears. Live status comes from the registry. Registry notifications also
+checkpoint each app's last observed heartbeat at most once every five minutes:
+20 unchanged apps average four timestamp updates per minute, with no content
+upserts. On departure, Gateway Ops persists the final observed heartbeat once.
+After a restart that misses the departure, offline durations use the saved
+checkpoint and can overestimate downtime by one checkpoint interval plus the
+registry heartbeat cadence. Database write failures can extend this gap.
 
 Use the orchestrator, not the Cloud registry, to measure replica health and
 count.
 
 During a rolling deployment, old and new instances may both receive traffic.
 Keep database changes backward-compatible until the rollout completes.
+
+## Background delivery recovery
+
+Platform live updates and application events wake outbox dispatchers across
+instances after their database transaction commits. Core wakes event delivery
+across its instances after accepting an event. Grids and Mail workflow workers
+also use distributed wake signals. Outbox dispatchers and Core event delivery
+retain a **five-second safety scan** for missed signals. Workflow workers use a
+**30-second safety scan** for missed signals, due retries, deadlines and expired
+claims. Under idle conditions this means twelve scans per minute per outbox
+and two per workflow worker, plus startup. Workflow workers probe their execution
+slots before and after recovery. With C free execution slots, this costs at
+most 4 × C slot probes per idle minute. Grids probes both execution and dry-run
+queues, so its claim-query budget is 8 × C; Mail probes execution only.
+Local and distributed workflow hints still wake workers immediately. A lost
+hint, a due retry or deadline, or an expired claim may wait up to 30 seconds
+for the next workflow recovery scan, before backlog and execution time.
+This counts safety scans, not all database queries. Core also reconciles
+declarations and wakes delivery on registry updates, including each app
+instance's minute heartbeat. Near idle, those heartbeats add roughly one wake
+per app instance per minute; concurrent wakes can coalesce. The frozen-clock
+guard covers the delivery dispatcher without the registry watcher.
+Outbox dispatchers also schedule a wake at known retry and claim deadlines.
+Commit notifications wake locally and signal other instances; the originating
+process ignores its own signal. Shutdown drains accepted producers before
+stopping their outbox.
+
+A missed signal can delay discovery of committed work until the next safety
+scan. Backlogs, claims, and unavailable dependencies can add delay. Postgres
+retains the work, and the existing claim and retry rules still apply. Core's
+event gap and retention checks run once per minute, independently of signal
+volume. No new service or operator setting is required.
+
+Grids starts its 32 record-event workflow partition readers only while at least
+one enabled record-event workflow exists in a base outside the trash. Workflow
+changes and base trash/restore actions wake the runtime across replicas; the existing minute reconciliation
+recovers missed hints. Readers drain when the last such workflow is disabled,
+removed, or its base is trashed. A drain runs outside the runtime topic reader,
+so it does not hold up schedule changes or subsequent hints.
+
+The PostgreSQL record-event outbox also supplies the change feed and snapshot
+anchors. These rows keep their existing retention even without workflows.
+Before forwarding an event to NATS, the dispatcher checks committed workflow
+demand for its base and occurrence time in its existing database read. Without
+an eligible workflow, it completes that outbox entry without publishing workflow
+work. Enabling a workflow before writing records guarantees that its first
+event can be queued even before any replica starts the readers. An activation
+still in an uncommitted transaction does not claim events already dispatched
+without it; activation does not replay earlier record changes.
+
+The durable queue, partition positions, delivery budgets, and per-record
+ordering remain. During a mixed-version rollout, older publishers can still
+queue idle events. On activation, readers acknowledge historical messages
+without a workflow SQL query when both their occurrence and publication times
+precede the earliest active workflow's activation. Recently published events,
+delayed outbox publications, and manual replays still query current definitions;
+this also covers activations not yet reflected in a reader's cached minimum.
+Existing backlogs still require transport reads and acknowledgments.
+The existing 30-day / 1 GiB queue limit remains, and older
+publishers must finish rolling out before idle writes stop adding queue work.
+
+Only Core registers the hourly [one-time link cleanup](/en/docs/identity/one-time-links#operations-notes).
+Other applications still provision the shared links table before setup.
+Cleanup waits for Core to return during an outage; expired links remain invalid.
+No migration or new operator setting is required.
 
 ## Roll out replicas
 
@@ -302,6 +425,86 @@ combines failures.
 Background frameworks may also provide leases and retry. Follow their shutdown
 contract. See [Lifecycle background work](/en/docs/automation/lifecycle-background-work).
 
+## Upgrade or restart Mail with sends queued
+
+You do not need to empty Mail's send queue before a normal update. Waiting sends,
+their frozen content, undo deadlines, and delivery state remain in Postgres;
+restarting a Mail process does not discard them. Preserve Postgres, NATS and the
+configured message storage, and follow the release's schema compatibility rules.
+An update that forbids mixed Mail versions still needs a coordinated stop/start.
+
+Use graceful termination and allow both the HTTP drain and the subsequent worker
+drain described above. Mail stops taking new send jobs and lets accepted work
+finish within the worker drain budget. A forced kill, or a send that outlasts the worker drain, can leave delivery
+unclear even though the send record survives. If you need every current SMTP outcome to
+be known before stopping, stop submitting sends and wait for in-flight work to
+finish; an empty waiting list alone does not prove this.
+
+### What happens to each send
+
+The states below are outbox states. The associated command has its own state,
+which `cld mail command get <command-id>` reports.
+
+| Send at shutdown | What happens after restart | Delivery and duplicate risk |
+| --- | --- | --- |
+| Waiting, not yet claimed (`scheduled`) | It resumes when due. Startup and a once-per-minute recovery scan submit due sends, up to 500 per scan. Queue and provider contention can add delay. | The queued send is retained; recovery does not create a second send. |
+| Still inside Undo (`undo_window`) | The original deadline continues during downtime; it does not restart. Delivery waits for both the undo deadline and dispatch time. Immediate sends with Undo have an additional 10-second dispatch grace. | It remains unsent while Undo is open. If the deadline passes while Mail is stopped, it becomes eligible after restart. |
+| Claimed, before SMTP (`sending`) | A caught failure before the provider effect starts can restore the unstarted claim without using an attempt. A crash leaves it executing until its last heartbeat is more than 10 minutes old; recovery then queues a retry, or returns it to Drafts as `failed` if its five-attempt budget is exhausted. | Nothing was submitted by that attempt. Crash recovery uses an attempt and adds retry backoff, so repeated interrupted upgrades can exhaust the budget. |
+| SMTP in flight (`sending`) | It may finish during the drain. If the process disappears after recording that SMTP may start, stale recovery changes it to `unknown` and its command to `ambiguous`, then checks provider evidence. This also covers a crash just before SMTP actually starts. | It may have been accepted, or may never have left Mail. Mail does not automatically resend an unclear send. |
+| SMTP accepted, Sent copy pending (`sent_sync_pending`, or a stopped copy worker in `accepted`) | Mail retries the Sent copy, not SMTP. A stale `accepted` copy is recovered after 10 minutes; normally copy retries use backoff, and the minute scan also finds pending copies. Exhaustion becomes `needs_attention`. | Recipients were already accepted by SMTP. A missing Sent copy does not mean delivery failed; restarting does not send it again. |
+| Outcome already unclear (`unknown`) | Mail checks the saved SMTP answer and looks for the stable Message-ID in Sent. Evidence settles it as accepted; otherwise bounded checks end in `needs_attention`. | No automatic resend. Without evidence, delivery remains unproven and may require operator action. |
+
+These are recovery intervals, not a delivery deadline. A crashed job can retain
+its broker claim for the remainder of a four-minute lease, and its provider
+mailbox lock for the remainder of five minutes. The ten-minute stale threshold
+runs from the last worker heartbeat, not from startup; recovery runs at startup
+and once a minute. Pre-SMTP crash retries then wait 30, 60, 120 or 240 seconds
+according to the attempt already used. A backlog, unavailable provider or stopped
+worker can extend every delay. Sent-copy retries and unknown-outcome checks share
+the send's bounded attempt budget; they do not get five new attempts on restart.
+
+### Check delivery after the update
+
+Record the send command IDs from the submitting CLI or script. After Mail is
+ready, inspect the mailbox and any commands that were executing before shutdown:
+
+```bash
+cld --json mail operator status
+cld --json mail command get <command-id>
+```
+
+Mailbox administrators can read outbox counts under `queues.outbox` and the
+commands that need attention under `attentionCommands`. Waiting sends should
+resume; `sending` left over from a hard stop may remain until stale recovery.
+Check again after the ten-minute heartbeat threshold, the next recovery scan
+and any retry backoff, allowing for queue contention. Investigate persistent
+`failed`, `ambiguous` or `needs_attention` commands and their error messages.
+`WORKER_LEASE_EXPIRED` identifies an interrupted worker; `SENT_COPY_LEASE_EXPIRED`
+or `SENT_APPEND_FAILED` identifies copy work, not another SMTP delivery attempt.
+Partial SMTP acceptance also needs attention: some recipients may already have
+the message, regardless of whether its Sent copy is present.
+
+For an unclear send, check the provider's Sent folder and SMTP logs for its
+Message-ID before deciding to send again. An eligible command can request an
+operator check:
+
+```bash
+cld mail operator run reconcile --command <command-id> --wait
+```
+
+This checks evidence; it does not resend. The retry operator action does not
+retry failed sends. A send that failed before SMTP can be edited and sent
+again from Drafts after its error is resolved.
+
+There is no exactly-once SMTP guarantee: the server can accept a message just
+before Mail loses the connection or stops, before Mail records the answer. Mail
+preserves that uncertainty instead of automatically repeating delivery. Sending
+a new message manually while the original outcome is unknown can deliver it
+twice; a stable Message-ID is evidence for reconciliation, not a promise that
+SMTP deduplicates. Hold off on a manual resend until you have checked that
+outcome. This uncertainty is a reason to allow graceful draining and inspect
+interrupted sends, not to hold back an ordinary compatible update indefinitely.
+
 ## Set the termination window
 
 The process exits after lifecycle shutdown finishes. Give the container enough
@@ -329,3 +532,15 @@ for address normalization and custom budgets.
 When upgrading, existing full-address IPv6 counters are replaced by network
 counters. Expect one fresh window at cutover; after all replicas are updated,
 changing host addresses cannot obtain a new budget.
+
+## Inspect Mail send progress
+
+Mail's **Outbox** view counts sends waiting for a worker alongside sends scheduled
+for later. Sends stay out while Undo or its dispatch grace is still running.
+Open mailboxes refresh the count through live updates as sends finish. Readers with
+assigned access see only the sends their current conversation access allows.
+
+`cld mail scheduled list` prints the visible total, such as `290 waiting`, with a
+paginated list. Under `--json`, use `total` and `nextCursor`. Mailbox administrators
+can use `cld mail operator status` for an `Outbox:` line of state counts, including
+in-flight and completed states; structured output keeps these in `queues.outbox`.

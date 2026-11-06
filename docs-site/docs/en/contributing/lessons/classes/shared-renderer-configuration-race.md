@@ -1,0 +1,1 @@
+| Shared renderer configuration race | Concurrent Mermaid consumers overwrite singleton configuration before a queued render reads it. | Test: Notebooks `mermaid-render.test.ts` checks serialized configuration and rendering, call order, and recovery after rejection. Convention: all Notebooks Mermaid consumers use `renderMermaid`. |

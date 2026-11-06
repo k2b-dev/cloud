@@ -5,11 +5,13 @@ import { basename, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
+import { createStore } from "solid-js/store";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import type { Button as ButtonComponent } from "../actions/Button";
 import type { MapView as MapViewComponent } from "./MapView";
-import type { MapViewStyle } from "./map-view-types";
+import { mapStyle } from "./map-style";
+import type { MapViewArea, MapViewHandle, MapViewLine, MapViewMarker, MapViewStyle } from "./map-view-types";
 
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-map-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: directory });
@@ -28,6 +30,7 @@ type FixtureOptions = {
   tallTile?: boolean;
   growTile?: boolean;
   longCredit?: boolean;
+  vector?: boolean;
 };
 // Shared data and tree, without compiled JSX closures: SSR and the browser create the very same fixture.
 function fixtureTree(
@@ -36,11 +39,12 @@ function fixtureTree(
     Button: typeof ButtonComponent;
     createComponent: typeof createComponent;
     createSignal: typeof createSignal;
+    createStore: typeof createStore;
   },
   options: FixtureOptions,
 ) {
-  const { MapView, Button, createComponent, createSignal } = components;
-  const markers = options.empty
+  const { MapView, Button, createComponent, createSignal, createStore } = components;
+  const markers: MapViewMarker[] = options.empty
     ? []
     : options.dateline
       ? [
@@ -57,66 +61,86 @@ function fixtureTree(
             { id: "a", mark: "A", label: "Start", point: { lat: 48.397, lon: 9.982 } },
             { id: "one", mark: 1, label: "Museum", point: { lat: 48.398, lon: 9.992 } },
           ];
+  if (options.vector) markers.push({ id: "b", mark: "B", label: "Finish", point: { lat: 48.405, lon: 9.999 } });
   if (options.nearMe) markers.push({ id: "here", mark: 3, label: "Cafe", point: { lat: 48.401, lon: 9.991 } });
+  const [saved, setSaved] = createStore({ markers });
+  const [hidden, setHidden] = createSignal(false);
+  if (typeof window !== "undefined") window.mapClear = () => setHidden(true);
+  if (typeof window !== "undefined") window.mapSetTone = () => setSaved("markers", 0, "tone", "warning");
   const [selectedId, setSelectedId] = createSignal("one");
   const [ownLocation, setOwnLocation] = createSignal(
-    options.empty || options.polar || options.dateline ? undefined : { point: { lat: 48.401, lon: 9.991 }, accuracyMeters: 20 },
+    options.empty || options.polar || options.dateline || options.vector
+      ? undefined
+      : { point: { lat: 48.401, lon: 9.991 }, accuracyMeters: 20 },
   );
   return [
     createComponent(MapView, {
       height: 400,
+      ref: (handle) => {
+        if (typeof window !== "undefined") window.mapHandle = handle;
+      },
       class: options.tallTile || options.growTile ? "tall-tile" : undefined,
       style: { light: options.stylePath, dark: options.darkPath ?? "/dark.json" },
-      markers,
+      get markers() {
+        return hidden() ? [] : saved.markers;
+      },
       get selectedId() {
         return selectedId();
       },
       onSelect: setSelectedId,
       infoTile: (marker) =>
         options.tallTile ? [marker.label, "Open until 18:00", "Category", "Street 1", "example.org"].join("\n") : marker.label,
-      attribution: options.longCredit ? "© OpenStreetMap contributors · © OpenMapTiles · Geoapify" : "Local fixture",
+      attribution: options.longCredit || options.vector ? "© OpenStreetMap contributors · © OpenMapTiles · Geoapify" : "Local fixture",
       notice: "Walking route",
       empty: "Choose a place",
       get ownLocation() {
-        return ownLocation();
+        return hidden() ? undefined : ownLocation();
       },
       onLocate: () => setOwnLocation({ point: { lat: 48.401, lon: 9.991 }, accuracyMeters: 20 }),
-      lines:
-        options.empty || options.polar || options.dateline
+      get lines(): MapViewLine[] {
+        return hidden()
           ? []
-          : [
-              {
-                id: "route",
-                points: [
-                  { lat: 48.397, lon: 9.982 },
-                  { lat: 48.398, lon: 9.992 },
-                  { lat: 48.405, lon: 9.999 },
-                ],
-              },
-              {
-                id: "preview",
-                tone: "preview",
-                points: [
-                  { lat: 48.398, lon: 9.992 },
-                  { lat: 48.406, lon: 9.988 },
-                ],
-              },
-            ],
-      areas:
-        options.empty || options.polar || options.dateline
+          : options.empty || options.polar || options.dateline
+            ? []
+            : options.vector
+              ? [{ id: "route", polyline6: "ok|h{A_bg`Ro}@_pRotLotL" }]
+              : [
+                  {
+                    id: "route",
+                    points: [
+                      { lat: 48.397, lon: 9.982 },
+                      { lat: 48.398, lon: 9.992 },
+                      { lat: 48.405, lon: 9.999 },
+                    ],
+                  },
+                  {
+                    id: "preview",
+                    tone: "preview",
+                    points: [
+                      { lat: 48.398, lon: 9.992 },
+                      { lat: 48.406, lon: 9.988 },
+                    ],
+                  },
+                ];
+      },
+      get areas(): MapViewArea[] {
+        return hidden()
           ? []
-          : [
-              {
-                id: "area",
-                tone: "second",
-                polygon: [
-                  { lat: 48.394, lon: 9.976 },
-                  { lat: 48.394, lon: 10.006 },
-                  { lat: 48.41, lon: 10.006 },
-                  { lat: 48.41, lon: 9.976 },
-                ],
-              },
-            ],
+          : options.empty || options.polar || options.dateline || options.vector
+            ? []
+            : [
+                {
+                  id: "area",
+                  tone: "second",
+                  polygon: [
+                    { lat: 48.394, lon: 9.976 },
+                    { lat: 48.394, lon: 10.006 },
+                    { lat: 48.41, lon: 10.006 },
+                    { lat: 48.41, lon: 9.976 },
+                  ],
+                },
+              ];
+      },
     }),
     ...markers.map((marker) =>
       createComponent(Button, {
@@ -159,6 +183,9 @@ function measureFrame() {
 }
 declare global {
   interface Window {
+    mapHandle: MapViewHandle;
+    mapSetTone: () => void;
+    mapClear: () => void;
     mapServerFrame: ReturnType<typeof measureFrame>;
     mapFirstFrame: ReturnType<typeof measureFrame>;
     mapDispose: () => void;
@@ -176,13 +203,14 @@ const result = await Bun.build({
     [entry]: `
     import { createComponent, createSignal } from "solid-js";
     import { render } from "solid-js/web";
+    import { createStore } from "solid-js/store";
     import { MapView, Button } from ${JSON.stringify(resolve(dist, "browser/index.js"))};
     const tree = ${fixtureTree.toString()};
     const measure = ${measureFrame.toString()};
     const island = document.getElementById("island");
     const options = JSON.parse(island.dataset.options);
     island.innerHTML = "";
-    window.mapDispose = render(() => tree({ MapView, Button, createComponent, createSignal }, options), island);
+    window.mapDispose = render(() => tree({ MapView, Button, createComponent, createSignal, createStore }, options), island);
     // settled: this synchronous first island frame is the subject of the SSR parity test.
     window.mapFirstFrame = measure();
   `,
@@ -231,6 +259,84 @@ const style = (dark: boolean): MapViewStyle => ({
     { id: "park", type: "fill", source: "park", paint: { "fill-color": dark ? "#305c40" : "#a4c894" } },
   ],
 });
+// Tiny deterministic OpenMapTiles-schema vector fixture. Coordinates are encoded for each requested tile;
+// no provider, captured production tile, network service or renderer mock participates.
+const varint = (input: number): number[] => {
+  const output: number[] = [];
+  let n = input;
+  do {
+    const byte = n % 128;
+    n = Math.floor(n / 128);
+    output.push(byte + (n ? 128 : 0));
+  } while (n);
+  return output;
+};
+const intField = (tag: number, n: number) => [...varint(tag * 8), ...varint(n)];
+const bytesField = (tag: number, data: number[]) => [...varint(tag * 8 + 2), ...varint(data.length), ...data];
+const stringField = (tag: number, text: string) => bytesField(tag, Array.from(new TextEncoder().encode(text)));
+const zigzag = (n: number) => (n < 0 ? -n * 2 - 1 : n * 2);
+function vectorTile(z: number, x: number, y: number): Uint8Array<ArrayBuffer> {
+  const point = (lon: number, lat: number) => [
+    Math.round((((lon + 180) / 360) * 2 ** z - x) * 4096),
+    Math.round((((1 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / Math.PI) / 2) * 2 ** z - y) * 4096),
+  ];
+  const layer = (name: string, coords: number[][], properties: Record<string, string>, type: number) => {
+    let px = 0,
+      py = 0;
+    const encoded: number[] = [];
+    coords.forEach(([lon, lat], i) => {
+      const [a, b] = point(lon!, lat!);
+      encoded.push(i ? 10 : 9, ...varint(zigzag(a! - px)), ...varint(zigzag(b! - py)));
+      px = a!;
+      py = b!;
+    });
+    if (type === 3) encoded.push(15);
+    const entries = Object.entries(properties);
+    const feature = [
+      ...bytesField(
+        2,
+        entries.flatMap((_, i) => [i, i]),
+      ),
+      ...intField(3, type),
+      ...bytesField(4, encoded),
+    ];
+    return bytesField(3, [
+      ...stringField(1, name),
+      ...bytesField(2, feature),
+      ...entries.flatMap(([key]) => stringField(3, key)),
+      ...entries.flatMap(([, value]) => bytesField(4, stringField(1, value))),
+      ...intField(5, 4096),
+      ...intField(15, 2),
+    ]);
+  };
+  const road = [
+    [9.975, 48.4035],
+    [10.01, 48.4035],
+  ];
+  return new Uint8Array([
+    ...layer(
+      "water",
+      [
+        [9.989, 48.4],
+        [9.993, 48.4],
+        [9.993, 48.402],
+        [9.989, 48.402],
+      ],
+      {},
+      3,
+    ),
+    ...layer("transportation", road, { class: "minor" }, 2),
+    ...layer("transportation_name", road, { class: "minor", name: "Example Road" }, 2),
+  ]);
+}
+let vectorRequests = 0;
+let glyphRequests = 0;
+let vectorFailure: false | number = false;
+let glyphFailure = false;
+let glyphCorrupt = false;
+let glyphRedirect = false;
+let releaseTiles: (() => void) | undefined;
+let tileBarrier: Promise<void> | undefined;
 let failedStyleRequests = 0;
 let failedDarkRequests = 0;
 let failedTileRequests = 0;
@@ -238,8 +344,35 @@ let failedGlyphRequests = 0;
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
-  fetch(request) {
+  async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === "/vector.json" || url.pathname === "/vector-dark.json")
+      return Response.json(
+        mapStyle({
+          theme: url.pathname.includes("dark") ? "dark" : "light",
+          locale: "en",
+          tiles: `${url.origin}/vector/{z}/{x}/{y}.pbf`,
+          glyphs: `${url.origin}/glyphs/{fontstack}/{range}.pbf`,
+        }),
+      );
+    if (url.pathname.startsWith("/vector/")) {
+      vectorRequests++;
+      await tileBarrier;
+      if (vectorFailure) return new Response("Missing vector tile", { status: vectorFailure });
+      const [z, x, y] = url.pathname.slice(8, -4).split("/").map(Number);
+      return new Response(vectorTile(z!, x!, y!), { headers: { "Content-Type": "application/x-protobuf" } });
+    }
+    if (url.pathname.startsWith("/glyphs/") || url.pathname.startsWith("/real-glyphs/")) {
+      glyphRequests++;
+      if (glyphFailure) return new Response("Missing glyphs", { status: 500 });
+      if (glyphCorrupt) return new Response("<html>Not a glyph file</html>");
+      if (glyphRedirect && url.pathname.startsWith("/glyphs/"))
+        return Response.redirect(`${url.origin}/real-glyphs/${url.pathname.slice(8)}`, 302);
+      const name = decodeURIComponent(url.pathname.split("/").at(-2)!);
+      const range = url.pathname.split("/").at(-1)!;
+      if (name !== "IBM Plex Sans Medium" || !/^\d+-\d+\.pbf$/.test(range)) return new Response(null, { status: 404 });
+      return new Response(Bun.file(resolve(import.meta.dir, "../../map-glyphs", name, range)));
+    }
     if (url.pathname === "/styles.css")
       return new Response(readFileSync(resolve(dist, "styles.css")), { headers: { "Content-Type": "text/css" } });
     if (url.pathname === "/flaky.json" && ++failedStyleRequests === 1) return new Response("Style unavailable", { status: 500 });
@@ -249,7 +382,7 @@ const server = Bun.serve({
     if (url.pathname === "/glyphs.json") {
       return Response.json({
         version: 8,
-        glyphs: `${url.origin}/glyphs/{fontstack}/{range}.pbf`,
+        glyphs: `${url.origin}/missing-glyphs/{fontstack}/{range}.pbf`,
         sources: {
           label: { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [9.991, 48.401] } } },
         },
@@ -259,7 +392,7 @@ const server = Bun.serve({
         ],
       });
     }
-    if (url.pathname.startsWith("/glyphs/")) {
+    if (url.pathname.startsWith("/missing-glyphs/")) {
       failedGlyphRequests++;
       return new Response("Glyph unavailable", { status: 500 });
     }
@@ -279,14 +412,17 @@ const server = Bun.serve({
     if (asset) return new Response(asset, { headers: { "Content-Type": "text/javascript" } });
     if (url.pathname !== "/") return new Response("Missing", { status: 404 });
     const options: FixtureOptions = {
-      stylePath: url.searchParams.has("flaky")
-        ? "/flaky.json"
-        : url.searchParams.has("tilefail")
-          ? "/tiles.json"
-          : url.searchParams.has("glyphfail")
-            ? "/glyphs.json"
-            : "/light.json",
-      darkPath: url.searchParams.has("darkfail") ? "/dark.json?fail" : "/dark.json",
+      stylePath: url.searchParams.has("vector")
+        ? "/vector.json"
+        : url.searchParams.has("flaky")
+          ? "/flaky.json"
+          : url.searchParams.has("tilefail")
+            ? "/tiles.json"
+            : url.searchParams.has("glyphfail")
+              ? "/glyphs.json"
+              : "/light.json",
+      darkPath: url.searchParams.has("vector") ? "/vector-dark.json" : url.searchParams.has("darkfail") ? "/dark.json?fail" : "/dark.json",
+      vector: url.searchParams.has("vector"),
       empty: url.searchParams.has("empty"),
       polar: url.searchParams.has("polar"),
       dateline: url.searchParams.has("dateline"),
@@ -295,7 +431,7 @@ const server = Bun.serve({
       growTile: url.searchParams.has("growTile"),
       longCredit: url.searchParams.has("longCredit"),
     };
-    const html = renderToString(() => fixtureTree({ MapView, Button, createComponent, createSignal }, options));
+    const html = renderToString(() => fixtureTree({ MapView, Button, createComponent, createSignal, createStore }, options));
     const spacer = url.searchParams.has("spacer") ? '<div style="height:2000px"></div>' : "";
     return new Response(
       `<!doctype html><html${url.searchParams.has("motion") ? ' data-k2b-motion="reduced"' : ""}><head>
@@ -867,6 +1003,14 @@ test("without WebGL 2 the static frame stays with a notice and MapLibre never lo
       timeout: 10_000,
     });
     expect(await page.getByRole("status").textContent()).toContain("This browser cannot show the map image. The pins stay.");
+    expect(
+      await page.evaluate(() =>
+        window.mapHandle.snapshot().then(
+          () => "unexpected",
+          (error) => error.code,
+        ),
+      ),
+    ).toBe("not_ready");
     expect(await page.locator(".k2b-map-view__pin").count()).toBe(3);
     expect(requests.some((url) => lazyChunks.includes(basename(new URL(url).pathname)) || url.includes("map-view-worker"))).toBe(false);
   } finally {
@@ -884,6 +1028,14 @@ test("empty geometry never imports the live map", async () => {
       timeout: 10_000,
     });
     expect(await page.locator(".k2b-map-view__empty").textContent()).toBe("Choose a place");
+    expect(
+      await page.evaluate(() =>
+        window.mapHandle.snapshot().then(
+          () => "unexpected",
+          (error) => error.code,
+        ),
+      ),
+    ).toBe("not_ready");
     expect(await page.locator(".k2b-map-view__fit").count()).toBe(0);
     expect(requests.some((url) => lazyChunks.includes(basename(new URL(url).pathname)) || url.includes("map-view-worker"))).toBe(false);
   } finally {
@@ -904,6 +1056,303 @@ test("disposing removes the map DOM and loses its WebGL context", async () => {
     await page.waitForFunction(() => window.mapSavedGl?.isContextLost() === true, undefined, { timeout: 10_000 });
     expect(await page.locator(".maplibregl-canvas").count()).toBe(0);
     expect(await page.evaluate(() => window.mapSavedGl?.isContextLost())).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
+async function capturePixels(page: Page) {
+  return page.evaluate(async () => {
+    const result = await window.mapHandle.snapshot();
+    const bitmap = await createImageBitmap(result.data);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const count = (r: number, g: number, b: number, tolerance = 0, fromY = 0, toY = canvas.height) => {
+      let count = 0;
+      for (let i = Math.max(0, fromY) * canvas.width * 4; i < Math.min(canvas.height, toY) * canvas.width * 4; i += 4)
+        if (
+          Math.abs(rgba[i]! - r) <= tolerance &&
+          Math.abs(rgba[i + 1]! - g) <= tolerance &&
+          Math.abs(rgba[i + 2]! - b) <= tolerance &&
+          rgba[i + 3] === 255
+        )
+          count++;
+      return count;
+    };
+    const dark = document.documentElement.classList.contains("dark");
+    const roadColor = dark ? [44, 51, 61] : [255, 255, 255];
+    let roadY = 0,
+      roadWidth = 0;
+    for (let y = 0; y < canvas.height; y++) {
+      const pixels = count(roadColor[0]!, roadColor[1]!, roadColor[2]!, dark ? 8 : 0, y, y + 1);
+      if (pixels > roadWidth) {
+        roadY = y;
+        roadWidth = pixels;
+      }
+    }
+    const colorCanvas = document.createElement("canvas");
+    colorCanvas.width = colorCanvas.height = 1;
+    const colorContext = colorCanvas.getContext("2d")!;
+    colorContext.fillStyle = getComputedStyle(document.querySelector(".k2b-map-view__stroke")!).stroke;
+    colorContext.fillRect(0, 0, 1, 1);
+    const routeColor = colorContext.getImageData(0, 0, 1, 1).data;
+    const routePixels = count(routeColor[0]!, routeColor[1]!, routeColor[2]!);
+    const base = document.querySelector<HTMLCanvasElement>(".maplibregl-canvas")!;
+    const pins = Array.from(document.querySelectorAll<HTMLElement>(".k2b-map-view__pin"), (pin) => {
+      const rect = pin.getBoundingClientRect(),
+        root = pin.closest(".k2b-map-view")!.getBoundingClientRect();
+      const cx = rect.x + rect.width / 2 - root.x,
+        cy = rect.y + rect.height / 2 - root.y;
+      const x = Math.round(cx),
+        y = Math.round(cy);
+      colorContext.clearRect(0, 0, 1, 1);
+      colorContext.fillStyle = getComputedStyle(pin).boxShadow.match(/(?:rgba?|color|oklch|oklab)\([^)]*\)/)![0];
+      colorContext.fillRect(0, 0, 1, 1);
+      const expectedRing = Array.from(colorContext.getImageData(0, 0, 1, 1).data);
+      // Inspect the ring's solid middle, not one rounded coordinate on its antialiased outer edge.
+      let ringPixels = 0;
+      const radius = rect.width / 2;
+      for (let py = Math.floor(cy - radius); py <= Math.ceil(cy + radius); py++)
+        for (let px = Math.floor(cx - radius); px <= Math.ceil(cx + radius); px++) {
+          if (Math.abs(Math.hypot(px + 0.5 - cx, py + 0.5 - cy) - (radius - 1)) > 0.6) continue;
+          const actual = ctx.getImageData(px, py, 1, 1).data;
+          if (expectedRing.every((channel, index) => Math.abs(actual[index]! - channel) < 8)) ringPixels++;
+        }
+      return {
+        ringPixels,
+        id: pin.dataset.id,
+        mark: pin.textContent,
+        text: Array.from(ctx.getImageData(x - 6, y - 7, 12, 14).data),
+      };
+    });
+    return {
+      width: result.width,
+      height: result.height,
+      type: result.data.type,
+      size: result.data.size,
+      routePixels,
+      land: count(241, 239, 233),
+      darkLand: count(26, 31, 38),
+      water: count(207, 227, 243),
+      road: count(255, 255, 255),
+      roadY,
+      roadWidth,
+      // The road's band excludes attribution and pin text: those cannot stand in for a missing road label.
+      // At 11px the dark SDF label has no fully covered ink pixels; its antialiased cores remain far above road ink.
+      label: dark ? count(161, 161, 170, 24, roadY - 10, roadY + 11) : count(82, 82, 91, 8, roadY - 10, roadY + 11),
+      pins,
+      baseWidth: base.width,
+      attribution: Array.from(ctx.getImageData(canvas.width - 100, canvas.height - 18, 100, 18).data),
+    };
+  });
+}
+for (const width of [390, 1024])
+  test(`complete Cloud vector basemap snapshot has real pixels, labels and overlays at ${width}px`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 800 }, deviceScaleFactor: 2, reducedMotion: "reduce" });
+    const external: string[] = [];
+    page.on("request", (request) => {
+      if (!request.url().startsWith(origin) && !request.url().startsWith("data:")) external.push(request.url());
+    });
+    try {
+      await page.goto(`${origin}/?vector`);
+      await ready(page);
+      if (process.env.MAP_SNAPSHOT_EVIDENCE_DIR) {
+        const png = await page.evaluate(async () =>
+          Array.from(new Uint8Array(await (await window.mapHandle.snapshot()).data.arrayBuffer())),
+        );
+        await Bun.write(resolve(process.env.MAP_SNAPSHOT_EVIDENCE_DIR, `map-capture-light-${width}.png`), new Uint8Array(png));
+      }
+      const result = await capturePixels(page);
+      expect(result.type).toBe("image/png");
+      expect(result.width).toBe(width);
+      expect(result.height).toBe(400);
+      expect(result.baseWidth).toBe(width * 2);
+      expect(result.size).toBeGreaterThan(1000);
+      expect(vectorRequests).toBeGreaterThan(0);
+      expect(glyphRequests).toBeGreaterThan(0);
+      expect(result.land).toBeGreaterThan(10000);
+      expect(result.water).toBeGreaterThan(30);
+      expect(result.road).toBeGreaterThan(50);
+      expect(result.label).toBeGreaterThan(20);
+      expect(result.routePixels).toBeGreaterThan(100);
+      expect(result.pins.map((pin) => pin.mark).sort()).toEqual(["1", "2", "A", "B"]);
+      for (const pin of result.pins) {
+        expect(pin.ringPixels, `${pin.mark} ring pixels`).toBeGreaterThan(10);
+        const white = pin.text.filter(
+          (_, index) => index % 4 === 0 && pin.text[index]! > 245 && pin.text[index + 1]! > 245 && pin.text[index + 2]! > 245,
+        ).length;
+        if (pin.id === "a" || pin.id === "one") expect(white).toBeGreaterThan(1);
+      }
+      expect(result.attribution.some((value, index) => index % 4 !== 3 && value < 150)).toBe(true);
+      expect(external).toEqual([]);
+      const requests = vectorRequests;
+      await capturePixels(page);
+      expect(vectorRequests).toBe(requests); // Capture adds no paid resource chain.
+    } finally {
+      await page.close();
+    }
+  });
+
+test("snapshot refuses missing vector tiles and glyphs, then retries through the real renderer", async () => {
+  for (const failure of ["tile", "tile-404", "glyph", "corrupt-glyph"]) {
+    vectorFailure = failure === "tile" ? 500 : failure === "tile-404" ? 404 : false;
+    glyphFailure = failure === "glyph";
+    glyphCorrupt = failure === "corrupt-glyph";
+    const page = await browser.newPage({ reducedMotion: "reduce" });
+    try {
+      await page.goto(`${origin}/?vector`);
+      await page.waitForSelector('.k2b-map-view[data-state="error"]');
+      const code = await page.evaluate(() =>
+        window.mapHandle.snapshot().then(
+          () => "unexpected-success",
+          (error) => error.code,
+        ),
+      );
+      expect(code).toBe("resource_failed");
+      vectorFailure = false;
+      glyphFailure = false;
+      glyphCorrupt = false;
+      await page.getByRole("button", { name: "Try again" }).click();
+      await ready(page);
+      expect((await capturePixels(page)).water).toBeGreaterThan(30);
+    } finally {
+      vectorFailure = false;
+      glyphFailure = false;
+      glyphCorrupt = false;
+      await page.close();
+    }
+  }
+});
+
+test("snapshot waits for resources; abort, timeout, view change and disposal cannot produce a partial PNG", async () => {
+  tileBarrier = new Promise<void>((resolve) => {
+    releaseTiles = resolve;
+  });
+  const page = await browser.newPage({ reducedMotion: "reduce" });
+  try {
+    await page.goto(`${origin}/?vector`);
+    await page.waitForSelector('.k2b-map-view[data-state="loading"]');
+    await page.waitForFunction(() => !!document.querySelector(".maplibregl-canvas"));
+    expect(
+      await page.evaluate(() =>
+        window.mapHandle.snapshot({ timeoutMs: 20 }).then(
+          () => "unexpected",
+          (error) => error.code,
+        ),
+      ),
+    ).toBe("timed_out");
+    expect(
+      await page.evaluate(async () => {
+        const controller = new AbortController();
+        const pending = window.mapHandle.snapshot({ signal: controller.signal });
+        controller.abort();
+        return pending.then(
+          () => "unexpected",
+          (error) => error.code,
+        );
+      }),
+    ).toBe("aborted");
+    expect(
+      await page.evaluate(async () => {
+        const controller = new AbortController();
+        const first = window.mapHandle.snapshot({ signal: controller.signal });
+        const second = await window.mapHandle.snapshot().then(
+          () => "unexpected",
+          (error) => error.code,
+        );
+        controller.abort();
+        await first.catch(() => {});
+        return second;
+      }),
+    ).toBe("busy");
+    releaseTiles!();
+    tileBarrier = undefined;
+    await ready(page);
+    expect((await capturePixels(page)).water).toBeGreaterThan(30);
+    expect(
+      await page.evaluate(async () => {
+        const pending = window.mapHandle.snapshot();
+        document.querySelector<HTMLElement>(".host-choice")!.click();
+        return pending.then(
+          () => "unexpected",
+          (error) => error.code,
+        );
+      }),
+    ).toBe("changed");
+    await page.evaluate(() => window.mapDispose());
+    expect(
+      await page.evaluate(() =>
+        window.mapHandle.snapshot().then(
+          () => "unexpected",
+          (error) => error.code,
+        ),
+      ),
+    ).toBe("disposed");
+  } finally {
+    releaseTiles?.();
+    tileBarrier = undefined;
+    await page.close();
+  }
+});
+
+test("dark map snapshots preserve the basemap and actual numbered-pin ring tone", async () => {
+  const page = await browser.newPage({ viewport: { width: 768, height: 800 }, reducedMotion: "reduce" });
+  try {
+    await page.goto(`${origin}/?vector`);
+    await ready(page);
+    await Promise.all([
+      page.waitForResponse((response) => response.url().endsWith("/vector-dark.json")),
+      page.evaluate(() => document.documentElement.classList.add("dark")),
+    ]);
+    const result = await capturePixels(page);
+    if (process.env.MAP_SNAPSHOT_EVIDENCE_DIR) {
+      const png = await page.evaluate(async () => Array.from(new Uint8Array(await (await window.mapHandle.snapshot()).data.arrayBuffer())));
+      await Bun.write(resolve(process.env.MAP_SNAPSHOT_EVIDENCE_DIR, "map-capture-dark-768.png"), new Uint8Array(png));
+    }
+    expect(result.darkLand).toBeGreaterThan(10000);
+    expect(result.label, `road at ${result.roadY}, ${result.roadWidth} pixels`).toBeGreaterThan(20);
+    for (const pin of result.pins) expect(pin.ringPixels, `${pin.mark} dark ring pixels`).toBeGreaterThan(10);
+  } finally {
+    await page.close();
+  }
+});
+
+test("glyph observation preserves same-origin redirect behavior", async () => {
+  glyphRedirect = true;
+  const page = await browser.newPage({ reducedMotion: "reduce" });
+  try {
+    await page.goto(`${origin}/?vector`);
+    await ready(page);
+    expect((await capturePixels(page)).label).toBeGreaterThan(20);
+  } finally {
+    glyphRedirect = false;
+    await page.close();
+  }
+});
+
+test("clearing geometry during fresh-frame capture rejects immediately rather than waiting for timeout", async () => {
+  const page = await browser.newPage({ reducedMotion: "reduce" });
+  try {
+    await page.goto(`${origin}/?vector`);
+    await ready(page);
+    await capturePixels(page);
+    expect(
+      await page.evaluate(async () => {
+        const pending = window.mapHandle.snapshot({ timeoutMs: 1000 });
+        // Drain the font/idle awaits while staying in the same browser task before the scheduled GPU frame.
+        for (let i = 0; i < 6; i++) await Promise.resolve();
+        window.mapClear();
+        return pending.then(
+          () => "unexpected",
+          (error) => error.code,
+        );
+      }),
+    ).toBe("changed");
   } finally {
     await page.close();
   }

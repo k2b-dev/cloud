@@ -95,9 +95,18 @@ const mount = (
         <Workspace
           userId="user01"
           cloudUrl="http://localhost"
-          status={{ ok: true, enabled: true, defaultModelId: "", visionModelConfigured: false, error: null, models: [] }}
+          status={{
+            ok: true,
+            enabled: true,
+            status: "ok",
+            selection: null,
+            effectiveDefault: { class: "balanced" },
+            classes: [],
+            visionModelConfigured: false,
+            error: null,
+            options: [],
+          }}
           models={[]}
-          lastModelId=""
           timeZone="Europe/Berlin"
           renderedAt={now}
           initialLiveCursor="s6t.cloud-live-core.0"

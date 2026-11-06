@@ -1,0 +1,1 @@
+| A schema rebuild keeps stale mirror acknowledgements | A recreated database is empty while Postgres still says its sources and series are mirrored. | Test: Pulse `service/source-mirror.integration.test.ts` rebuilds missing and empty databases through provision and clear, retries source mirrors, and re-mirrors series on the next write. |

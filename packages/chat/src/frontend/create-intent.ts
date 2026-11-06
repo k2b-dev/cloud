@@ -1,12 +1,20 @@
 import { createSignal, onMount } from "solid-js";
 import { z } from "zod";
-import { CreateConversationSchema, MEMBER_PAGE_SIZE, MemberPrincipalSchema } from "../service/contracts";
+import { CreateConversationSchema, MEMBER_PAGE_SIZE, MemberPrincipalSchema, MemberSchema } from "../service/contracts";
 import { ChatRequestError } from "./chat-store";
 import type { ChosenMember } from "./MemberPicker";
 
 const PendingSchema = z.object({
   input: CreateConversationSchema.extend({ createKey: z.uuid() }),
-  chosen: z.array(z.object({ principal: MemberPrincipalSchema, displayName: z.string() })).max(MEMBER_PAGE_SIZE),
+  chosen: z
+    .array(
+      z.object({
+        principal: MemberPrincipalSchema,
+        displayName: z.string(),
+        serviceAccountKind: MemberSchema.shape.serviceAccountKind.optional(),
+      }),
+    )
+    .max(MEMBER_PAGE_SIZE),
 });
 type Pending = z.infer<typeof PendingSchema>;
 

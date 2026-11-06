@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
 import { captureRecordEventSnapshot, enqueueRecordEvent, notifyRecordEventOutbox } from "./record-event-outbox";

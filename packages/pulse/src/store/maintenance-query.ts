@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { lazySync } from "@k2b/cloud";
 import type { Mutex } from "@k2b/sync";
 import { clickhouseQuery, type QueryOptions, StoreQueryError } from "./client";
@@ -102,51 +103,70 @@ export const createMaintenanceQuery =
       await lane.release(lock).catch(() => false);
       throw admission.aborted ? new MaintenanceBusy() : error;
     }
-    // Derive an absolute deadline from the broker lease, so delayed acquisition
-    // never receives a fresh full query window. Refuse before submitting SQL.
-    const remaining = lock.expiresAt.getTime() - Date.now() - KILL_MS - 1_000;
-    if (remaining <= 2_000 || admission.aborted || options.signal?.aborted) {
-      await lane.release(lock);
-      throw new MaintenanceBusy();
-    }
-    const timeoutMs = Math.min(options.timeoutMs, HTTP_MS, remaining);
     const queryId = `pulse_maintenance_${randomUUID()}`;
-    let release = false;
+    let release = true;
     try {
-      const result = await query({
-        ...options,
-        queryId,
-        timeoutMs,
-        settings: {
-          ...options.settings,
-          // Server admission also fences a delayed request from a dead replica.
-          // Same-user ingest can defer maintenance, but keeps its own settings.
-          max_concurrent_queries_for_user: 1,
-          max_execution_time: Math.max(1, Math.floor((timeoutMs - 2_000) / 1_000)),
-          timeout_before_checking_execution_speed: 0,
-        },
-      });
-      release = true;
-      return result;
-    } catch (error) {
-      // A missing HTTP answer is not proof the query stopped. Kill by both the
-      // generated ID and exact service user before giving another replica room.
-      try {
-        const cancelled = await query({
-          ...options,
-          signal: undefined,
-          queryId: undefined,
-          timeoutMs: KILL_MS,
-          settings: undefined,
-          params: { id: queryId, user: options.user },
-          query: "KILL QUERY WHERE query_id={id:String} AND user={user:String} SYNC",
-          format: "JSON",
-        });
-        release = cancellationFinished(cancelled);
-      } catch {
-        /* Keep the lease until expiry when cancellation cannot be observed. */
+      for (;;) {
+        // Recompute after each refused admission: neither a delayed acquisition
+        // nor a retry may receive a fresh execution window beyond the lease.
+        const remaining = lock.expiresAt.getTime() - Date.now() - KILL_MS - 1_000;
+        if (remaining <= 2_000 || Date.now() >= admissionDeadline || admission.aborted || options.signal?.aborted)
+          throw new MaintenanceBusy();
+        const timeoutMs = Math.min(options.timeoutMs, HTTP_MS, remaining);
+        release = false;
+        try {
+          const result = await query({
+            ...options,
+            queryId,
+            timeoutMs,
+            settings: {
+              ...options.settings,
+              // Server admission also fences a delayed request from a dead replica.
+              // Same-user ingest can defer maintenance, but keeps its own settings.
+              max_concurrent_queries_for_user: 1,
+              max_execution_time: Math.max(1, Math.floor((timeoutMs - 2_000) / 1_000)),
+              timeout_before_checking_execution_speed: 0,
+            },
+          });
+          release = true;
+          return result;
+        } catch (error) {
+          if (error instanceof StoreQueryError && error.kind === "clickhouse" && error.code === 202) {
+            // KILL SYNC confirms its target is gone, but its own HTTP response
+            // can arrive before its same-user process entry is removed.
+            // Pulse maintenance uses local tables, without shard fan-out.
+            // Here 202 proves this statement never started: retry admission only,
+            // under the original five-second budget and while holding the lease.
+            release = true;
+            const waitMs = Math.min(200, admissionDeadline - Date.now());
+            if (waitMs <= 0 || admission.aborted) throw new MaintenanceBusy();
+            try {
+              await delay(waitMs, undefined, { signal: admission });
+            } catch {
+              throw new MaintenanceBusy();
+            }
+            continue;
+          }
+          // A missing HTTP answer is not proof the query stopped. Kill by both the
+          // generated ID and exact service user before giving another replica room.
+          try {
+            const cancelled = await query({
+              ...options,
+              signal: undefined,
+              queryId: undefined,
+              timeoutMs: KILL_MS,
+              settings: undefined,
+              params: { id: queryId, user: options.user },
+              query: "KILL QUERY WHERE query_id={id:String} AND user={user:String} SYNC",
+              format: "JSON",
+            });
+            release = cancellationFinished(cancelled);
+          } catch {
+            /* Keep the lease until expiry when cancellation cannot be observed. */
+          }
+          throw error;
+        }
       }
-      throw error instanceof StoreQueryError && error.code === 202 ? new MaintenanceBusy() : error;
     } finally {
       if (release) await lane.release(lock).catch(() => false);
     }

@@ -205,7 +205,7 @@ test("managed host carries its verified invocation authority through the local c
         conversationId,
         status: "running",
         attempt: 1,
-        modelProfileId: null,
+        modelId: null,
         createdAt: at,
         completedAt: null,
         error: null,

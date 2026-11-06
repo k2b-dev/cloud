@@ -41,7 +41,7 @@ export default function ContactsWorkspaceMain(props: Props) {
   const t = () => resultsMessages.resolve([locale()]).t;
   return (
     <AppWorkspace.Main scroll={false}>
-      <header class="flex shrink-0 flex-col gap-3 px-3 py-3 sm:px-4">
+      <header class="contacts-workspace__normal-heading flex shrink-0 flex-col gap-3 px-3 py-3 sm:px-4">
         <div class="flex min-w-0 items-start justify-between gap-3">
           <div class="min-w-0">
             <h1 class="truncate text-base font-semibold text-primary">{props.title}</h1>

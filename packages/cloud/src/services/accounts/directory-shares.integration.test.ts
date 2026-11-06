@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
 import { z } from "zod";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { EntityListItemSchema } from "../../contracts";
+import { sql } from "../../runtime/clients";
 import { prepareIdentitySigner } from "../identity/key-ring";
 import { getIdentityRuntimeConfig } from "../identity/runtime-config";
 import "../../../../../scripts/fixtures/authorization-preload";
@@ -94,7 +94,7 @@ suite("machine directory shares", () => {
         const privateGroupResponse = await routes.request(`/accounts/entities?kinds=group&group_ids=${groupId}`, { headers });
         expect(privateGroupResponse.status).toBe(200);
         expect(await privateGroupResponse.json()).toMatchObject({
-          items: [{ kind: "group", group: { id: groupId, personalOwner: null } }],
+          items: [],
         });
         const ownerGrant = await directoryShares.grant({
           actor: admin,
@@ -104,7 +104,7 @@ suite("machine directory shares", () => {
         if (!ownerGrant.ok) throw new Error("Owner share fixture failed");
         await directoryShares.revoke({ actor: admin, recipientId: machineId, id: ownerGrant.data.id });
         expect(await (await routes.request(`/accounts/entities?group_ids=${groupId}`, { headers })).json()).toMatchObject({
-          items: [{ group: { personalOwner: null } }],
+          items: [],
         });
         await sql`DELETE FROM auth.user_posix WHERE user_id=${hiddenId}::uuid`;
         expect((await routes.request(`/admin/${machineId}/${grant.data.id}`, { method: "DELETE", headers: readOnlyAdmin })).status).toBe(
@@ -120,8 +120,11 @@ suite("machine directory shares", () => {
             })
           ).status,
         ).toBe(201);
-        expect((await list("?per_page=1")).pagination.total).toBe(2);
-        expect(await list("?per_page=1&page=3")).toMatchObject({ items: [], pagination: { total: 2 } });
+        // Removing the mutable POSIX projection must not reclassify a personal group.
+        expect((await list("?per_page=1")).pagination.total).toBe(1);
+        expect(await list("?per_page=1&page=3")).toMatchObject({ items: [], pagination: { total: 1 } });
+        expect((await list("?include_personal=true&per_page=1")).pagination.total).toBe(1);
+        expect(await list("?include_personal=true&per_page=1&page=3")).toMatchObject({ items: [], pagination: { total: 1 } });
         expect(await directoryShares.list({ actor: admin, recipientId: machineId, page: 3, perPage: 1 })).toMatchObject({
           ok: true,
           data: { items: [], total: 2 },

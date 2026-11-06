@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** Additive startup migration; rerunning preserves both data and definitions. */
 export const migrate = async (): Promise<void> => {
@@ -49,10 +49,48 @@ export const migrate = async (): Promise<void> => {
         OR (kind = 'system' AND system_code IS NOT NULL AND system_params IS NOT NULL AND body_md IS NULL AND client_id IS NULL)
       )
     );
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS refs jsonb NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS via text CHECK (via IN ('assistant', 'mcp'));
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS client_input_hash text;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS links text[] NOT NULL DEFAULT '{}';
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_refs ON chat.messages(conversation_id, seq DESC) WHERE refs <> '[]'::jsonb;
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_links ON chat.messages(conversation_id, seq DESC) WHERE links <> '{}';
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_short_id ON chat.messages(short_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_seq ON chat.messages(conversation_id, seq);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_rev ON chat.messages(conversation_id, rev);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_client ON chat.messages(conversation_id, author_type, author_id, client_id);
+    CREATE TABLE IF NOT EXISTS chat.attachments (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id text NOT NULL UNIQUE CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      message_id uuid REFERENCES chat.messages(id) ON DELETE CASCADE,
+      uploader_type text NOT NULL CHECK (uploader_type IN ('user', 'service_account')),
+      uploader_id uuid NOT NULL,
+      filename text NOT NULL CHECK (char_length(filename) BETWEEN 1 AND 255),
+      mime_type text NOT NULL CHECK (char_length(mime_type) BETWEEN 1 AND 255),
+      size_bytes int NOT NULL CHECK (size_bytes BETWEEN 0 AND 10485760),
+      kind text NOT NULL CHECK (kind IN ('image', 'file')),
+      width int,
+      height int,
+      content bytea NOT NULL CHECK (octet_length(content) = size_bytes),
+      created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+      CHECK ((kind = 'image' AND width IS NOT NULL AND height IS NOT NULL AND width > 0 AND height > 0)
+        OR (kind = 'file' AND width IS NULL AND height IS NULL))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_attachments_message ON chat.attachments(message_id, created_at, id);
+    CREATE INDEX IF NOT EXISTS idx_chat_attachments_unsent ON chat.attachments(conversation_id, uploader_type, uploader_id)
+      WHERE message_id IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_attachments_cleanup ON chat.attachments(created_at, id) WHERE message_id IS NULL;
+    CREATE TABLE IF NOT EXISTS chat.message_reactions (
+      message_id uuid NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
+      principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
+      principal_id uuid NOT NULL,
+      display_name text NOT NULL,
+      emoji text NOT NULL CHECK (octet_length(emoji) BETWEEN 1 AND 32),
+      position bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
+      PRIMARY KEY (message_id, principal_type, principal_id, emoji)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_reactions_message ON chat.message_reactions(message_id, emoji, position);
     CREATE TABLE IF NOT EXISTS chat.threads (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       short_id text NOT NULL CHECK (short_id ~ '^[0-9A-Za-z]{6}$') UNIQUE,
@@ -65,7 +103,6 @@ export const migrate = async (): Promise<void> => {
       created_at timestamptz NOT NULL DEFAULT now(),
       last_activity_at timestamptz NOT NULL DEFAULT now()
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_threads_name ON chat.threads(conversation_id, lower(name));
     CREATE TABLE IF NOT EXISTS chat.thread_create_intents (
       principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
       principal_id uuid NOT NULL,
@@ -119,6 +156,23 @@ export const migrate = async (): Promise<void> => {
         REFERENCES chat.participants(principal_type, principal_id, conversation_id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_chat_thread_reads_participant ON chat.thread_reads(principal_type, principal_id, conversation_id);
+    CREATE TABLE IF NOT EXISTS chat.thread_follows (
+      principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
+      principal_id uuid NOT NULL,
+      conversation_id uuid NOT NULL,
+      thread_id uuid NOT NULL REFERENCES chat.threads(id) ON DELETE CASCADE,
+      since timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (principal_type, principal_id, thread_id),
+      FOREIGN KEY (principal_type, principal_id, conversation_id)
+        REFERENCES chat.participants(principal_type, principal_id, conversation_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_thread_follows_participant
+      ON chat.thread_follows(principal_type, principal_id, conversation_id, since DESC, thread_id);
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'chat.participants'::regclass AND conname = 'notify_until_only_none') THEN
+        ALTER TABLE chat.participants ADD CONSTRAINT notify_until_only_none CHECK (notify_until IS NULL OR notify = 'none');
+      END IF;
+    END $$;
     CREATE TABLE IF NOT EXISTS chat.account_prefs (
       principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
       principal_id uuid NOT NULL,
@@ -130,6 +184,83 @@ export const migrate = async (): Promise<void> => {
       voice_hint_seen boolean NOT NULL DEFAULT false,
       PRIMARY KEY (principal_type, principal_id)
     )
+  `.simple();
+  await sql`
+    ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat', 'system'));
+    ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS resource_type text;
+    ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS resource_id text;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_system_resource ON chat.conversations(resource_type, resource_id) WHERE kind = 'system';
+    ALTER TABLE chat.threads ADD COLUMN IF NOT EXISTS resource_type text;
+    ALTER TABLE chat.threads ADD COLUMN IF NOT EXISTS resource_id text;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_thread_resource ON chat.threads(conversation_id, resource_type, resource_id) WHERE resource_type IS NOT NULL;
+    -- Item titles need not be unique. Preserve the manual-thread name constraint.
+    DROP INDEX IF EXISTS chat.idx_chat_threads_name;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_threads_manual_name ON chat.threads(conversation_id, lower(name)) WHERE resource_type IS NULL;
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS chat.message_mentions (
+      message_id uuid NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
+      principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
+      principal_id uuid NOT NULL,
+      start_offset int NOT NULL CHECK (start_offset >= 0),
+      end_offset int NOT NULL CHECK (end_offset > start_offset AND end_offset <= 40000),
+      created_at timestamptz NOT NULL,
+      PRIMARY KEY (message_id, start_offset)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_mentions_subject ON chat.message_mentions(principal_type, principal_id, created_at DESC, message_id DESC);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_author ON chat.messages(author_type, author_id, conversation_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_reply ON chat.messages(conversation_id, reply_to_seq, created_at DESC, id DESC) WHERE reply_to_seq IS NOT NULL;
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_chat_threads_search_conversation_activity
+    ON chat.threads(conversation_id, last_activity_at DESC, short_id)
+    WHERE archived_at IS NULL AND resource_type IS NOT NULL AND resource_id IS NOT NULL`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS chat.notification_outbox (
+      seq bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      id uuid NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+      message_id uuid NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
+      user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+      ordering_key text NOT NULL, due_at timestamptz,
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      attempts int NOT NULL DEFAULT 0, next_attempt_at timestamptz NOT NULL DEFAULT now(),
+      claimed_until timestamptz, last_error text
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_notification_outbox_message ON chat.notification_outbox(message_id) WHERE user_id IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_notification_outbox_push ON chat.notification_outbox(message_id, user_id) WHERE user_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_notification_outbox_busy ON chat.notification_outbox(ordering_key)
+      WHERE claimed_until IS NOT NULL OR attempts > 0;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS notification_cursor uuid;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS notification_added_users uuid[] NOT NULL DEFAULT '{}';
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS notification_done boolean NOT NULL DEFAULT true;
+    CREATE TABLE IF NOT EXISTS chat.notification_pending (
+      user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      message_id uuid NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
+      personal_message_id uuid REFERENCES chat.messages(id) ON DELETE CASCADE,
+      reason text NOT NULL CHECK (reason IN ('mention', 'reply', 'follow', 'message', 'added')),
+      message_count int NOT NULL DEFAULT 1 CHECK (message_count > 0),
+      due_at timestamptz NOT NULL DEFAULT (clock_timestamp() + interval '3 seconds'),
+      PRIMARY KEY (user_id, conversation_id)
+    );
+    CREATE TABLE IF NOT EXISTS chat.notification_push_state (
+      user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      last_seq bigint NOT NULL DEFAULT 0, last_push_at timestamptz,
+      PRIMARY KEY (user_id, conversation_id)
+    );
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS content_rev bigint NOT NULL DEFAULT 0;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS edited_at timestamptz;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+    CREATE TABLE IF NOT EXISTS chat.message_mutations (
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      principal_type text NOT NULL, principal_id uuid NOT NULL, client_id text NOT NULL,
+      message_id uuid NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
+      operation text NOT NULL CHECK (operation IN ('edit', 'delete')),
+      revision bigint NOT NULL, body_hash text, created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (conversation_id, principal_type, principal_id, client_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_message_mutations_message ON chat.message_mutations(message_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_message_mutations_created ON chat.message_mutations(created_at);
   `.simple();
   console.log("  ✓ chat schema");
 };

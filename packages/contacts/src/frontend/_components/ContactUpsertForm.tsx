@@ -1,3 +1,4 @@
+import type { GeoAvailabilityData } from "@k2b/cloud/contracts/geo";
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, InlineGuidance, PanelDialog, prompts, TextInput, toast, useLocale } from "@k2b/ui";
@@ -46,6 +47,8 @@ type Props = {
   onCancel?: () => void;
   onSaved?: (contact: Contact) => void;
   onDeleted?: () => void;
+  /** Address suggestions and their budget state from the page's SSR snapshot. */
+  geoAvailability?: GeoAvailabilityData;
 };
 
 type IdentitySectionProps = {
@@ -702,7 +705,7 @@ export default function ContactUpsertForm(props: Props) {
             />
           </Show>
           <Show when={showAddresses()}>
-            <AddressFields rows={addresses} setRows={setAddresses} />
+            <AddressFields rows={addresses} setRows={setAddresses} geoAvailability={props.geoAvailability} />
           </Show>
           <Show when={showBankAccounts()}>
             <BankAccountFields rows={bankAccounts} setRows={setBankAccounts} />

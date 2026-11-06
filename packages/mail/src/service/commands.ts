@@ -1,8 +1,8 @@
+import { sql } from "@k2b/cloud";
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { audit, logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { workflowEffectKey } from "@k2b/cloud/workflows/store";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import {
   type ActorCommandInput,
@@ -19,11 +19,13 @@ import { withShortIdDb } from "../lib/short-id";
 import { requireDraftAccess, requireMailboxAccess, requireMailboxPermission, requireVisibleMessages } from "./access";
 import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueFailure } from "./attachment-extraction";
 import { actorRefFromRequest, auditActorFromRequest, durableCredentialSnapshot, type MailRequestContext } from "./auth";
+import { invalidateAutomationEffects } from "./automation-effect-state";
 import { sha256Json } from "./canonical";
 import { commandTargetVisibleTo, commandVisibleTo, conversationCommandKinds } from "./command-authorization";
 import { enqueueMailCommand } from "./command-runtime";
 import { validateDraftComposeSafety } from "./compose-safety";
 import { checkCommandKeepProtection, isKeptMessage, keepError } from "./conversation-keep-rules";
+import { lockDraftDocumentInTransaction } from "./draft-documents";
 import { invalidateDraftLeaseAfterSend } from "./draft-leases";
 import { resolveMailExecution } from "./execution";
 import { mailLive } from "./live";
@@ -40,6 +42,7 @@ import {
   queuedSenderVerificationTargetSchema,
   type SenderVerificationRequest,
 } from "./sender-verification";
+import { authorizeMailWorkflowSend } from "./workflow-send-policy";
 
 const log = logger("mail:commands");
 
@@ -67,7 +70,7 @@ type DbCommand = {
   updated_at: Date | string;
 };
 
-const commandColumns = sql`
+const commandColumns = () => sql`
   c.id,
   c.mailbox_id,
   c.kind,
@@ -462,9 +465,18 @@ const createSendOutbox = async (params: {
   selectedBindingId: string;
   prepared: PreparedActorCommand;
   actor: ActorRef;
+  context?: MailRequestContext;
 }): Promise<OutboundMessageProjection | null> => {
   const { prepared } = params;
   if (prepared.kind !== "send" || !prepared.draftId || !prepared.senderIdentityId) return null;
+  if (params.actor.kind === "workflow") {
+    const allowed = await authorizeMailWorkflowSend({
+      db: params.db,
+      mailboxId: params.mailboxId,
+      workflowVersionId: params.actor.workflowVersionId,
+    });
+    if (!allowed.ok) throw Object.assign(new Error(allowed.error.message), allowed.error);
+  }
   const send = await loadSendContent({
     db: params.db,
     mailboxId: params.mailboxId,
@@ -539,6 +551,37 @@ const createSendOutbox = async (params: {
   } catch (error) {
     const invalid = err.badInput(error instanceof Error ? error.message : "Message exceeds the provider limit");
     throw Object.assign(new Error(invalid.message), invalid);
+  }
+  const [editing] = await params.db<{ edit_mode: "lock" | "shared" }[]>`
+    SELECT edit_mode FROM mail.drafts WHERE id = ${prepared.draftId}::uuid
+  `;
+  if (editing?.edit_mode === "shared") {
+    if (!params.context)
+      throw Object.assign(
+        new Error("Shared draft sending requires the current editor identity"),
+        err.forbidden("Shared draft sending requires the current editor identity"),
+      );
+    const locked = await lockDraftDocumentInTransaction({
+      db: params.db,
+      context: params.context,
+      mailboxId: params.mailboxId,
+      draftId: prepared.draftId,
+    });
+    if (!locked.ok) throw Object.assign(new Error(locked.error.message), locked.error);
+    const state = await locked.data.read();
+    if (!state.ok) throw Object.assign(new Error(state.error.message), state.error);
+    // A successful publication with a failed projection must not send the old SQL body.
+    // The editor retries projection, obtains the new revision, then reviews that version.
+    if (!Buffer.from(state.data.fresh.state).equals(Buffer.from(state.data.durable.state))) {
+      const changed = sendContentChanged();
+      throw Object.assign(new Error(changed.message), changed);
+    }
+    const frozen = await locked.data.freeze({ generation: state.data.generation });
+    if (!frozen.ok) throw Object.assign(new Error(frozen.error.message), frozen.error);
+    await params.db`
+      INSERT INTO mail.draft_document_freezes (draft_id, generation, revision, cursor, state)
+      VALUES (${prepared.draftId}::uuid, ${frozen.data.generation}::bigint, ${frozen.data.revision}, ${frozen.data.cursor}, ${Buffer.from(frozen.data.state)})
+    `;
   }
   const outboxRows = await withShortIdDb(
     params.db,
@@ -709,7 +752,7 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
   await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${params.mailboxId}:${prepared.kind}:${stableTargetKey(prepared.target)}`}, 0))`;
 
   const [existing] = await tx<DbCommand[]>`
-    SELECT ${commandColumns}
+    SELECT ${commandColumns()}
     FROM mail.commands c
     WHERE c.mailbox_id = ${params.mailboxId}::uuid AND c.idempotency_key = ${prepared.idempotencyKey}
     FOR UPDATE
@@ -794,10 +837,28 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
       ${credential.credentialId}::uuid,
       ${credential.credentialExpiresAt}::timestamptz
     )
-    RETURNING ${commandColumns}
+    RETURNING ${commandColumns()}
   `;
   if (!row) throw new Error("Mail command insert returned no row");
   let command = mapCommand(row);
+  if ("messageId" in params.input && ["move", "delete", "set_flags", "change_message_state"].includes(params.input.kind)) {
+    const owners = await tx<
+      { conversation_id: string }[]
+    >`SELECT conversation_id FROM mail.conversation_messages WHERE message_id = ${params.input.messageId}::uuid`;
+    for (const owner of owners) {
+      if (params.input.kind === "move" || params.input.kind === "delete")
+        await invalidateAutomationEffects(tx, owner.conversation_id, "placement", [params.input.messageId]);
+      if (params.input.kind === "set_flags") await invalidateAutomationEffects(tx, owner.conversation_id, "flag", [params.input.messageId]);
+      if (params.input.kind === "change_message_state") {
+        const change = params.input.change;
+        const providerFlags: Record<string, string> = { seen: "\\Seen", answered: "\\Answered", flagged: "\\Flagged", draft: "\\Draft" };
+        for (const flag of [...change.addFlags, ...change.removeFlags])
+          await invalidateAutomationEffects(tx, owner.conversation_id, "flag", [params.input.messageId], providerFlags[flag]);
+        for (const keyword of [...change.addKeywords, ...change.removeKeywords])
+          await invalidateAutomationEffects(tx, owner.conversation_id, "keyword", [params.input.messageId], keyword);
+      }
+    }
+  }
   await params.afterCreate?.(tx, command);
   const projection = await createSendOutbox({
     db: tx,
@@ -806,6 +867,7 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
     selectedBindingId: execution.data.bindingId,
     prepared,
     actor,
+    context: params.context ?? undefined,
   });
   if (projection) {
     const result = {
@@ -965,7 +1027,7 @@ export const adoptWorkflowSendCommand = async (params: {
     )
       return fail(err.internal("Workflow command must use its current step's effect key"));
     const [existing] = await tx<DbCommand[]>`
-      SELECT ${commandColumns} FROM mail.commands c
+      SELECT ${commandColumns()} FROM mail.commands c
       WHERE c.mailbox_id=${params.mailboxId}::uuid AND c.idempotency_key=${input.idempotencyKey}
       FOR UPDATE`;
     if (!existing) return ok(null);
@@ -1111,7 +1173,7 @@ export const createMaintenanceCommand = async (params: {
       const requestHash = sha256Json({ kind: input.kind, target: prepared.target, payload: prepared.payload });
 
       const [existing] = await tx<DbCommand[]>`
-        SELECT ${commandColumns}
+        SELECT ${commandColumns()}
         FROM mail.commands c
         WHERE c.mailbox_id = ${params.mailboxId}::uuid AND c.idempotency_key = ${input.idempotencyKey.trim()}
         FOR UPDATE
@@ -1152,7 +1214,7 @@ export const createMaintenanceCommand = async (params: {
           ${credential.credentialId}::uuid,
           ${credential.credentialExpiresAt}::timestamptz
         )
-        RETURNING ${commandColumns}
+        RETURNING ${commandColumns()}
       `;
       if (!row) throw new Error("Mail maintenance command insert returned no row");
       await tx`
@@ -1233,7 +1295,7 @@ export const queueSenderVerification = async (params: {
       `;
       if (!identity) return fail(err.notFound("Sender identity or provider binding"));
       const [pending] = await tx<DbCommand[]>`
-        SELECT ${commandColumns}
+        SELECT ${commandColumns()}
         FROM mail.commands c
         WHERE c.mailbox_id = ${request.mailboxId}::uuid
           AND c.kind = 'verify_sender_identity'
@@ -1274,7 +1336,7 @@ export const queueSenderVerification = async (params: {
           ${credential.credentialId}::uuid,
           ${credential.credentialExpiresAt}::timestamptz
         )
-        RETURNING ${commandColumns}
+        RETURNING ${commandColumns()}
       `;
       if (!row) throw new Error("Sender verification command insert returned no row");
       await tx`
@@ -1337,7 +1399,7 @@ export const getCommand = async (context: MailRequestContext, mailboxId: string,
   const execution = await resolveMailExecution({ mailboxId, operation: "actorRead", context, conversationScoped: true });
   if (!execution.ok) return execution;
   const [row] = await sql<DbCommand[]>`
-    SELECT ${commandColumns}
+    SELECT ${commandColumns()}
     FROM mail.commands c
     WHERE c.id = ${commandId}::uuid AND c.mailbox_id = ${mailboxId}::uuid
       AND ${commandVisibleTo(access.data, mailboxId)}
@@ -1389,7 +1451,7 @@ export const listCommands = async (
   }
   const boundedLimit = Math.min(Math.max(Math.floor(query.limit ?? 50), 1), 100);
   const rows = await sql<DbCommand[]>`
-    SELECT ${commandColumns}
+    SELECT ${commandColumns()}
     FROM mail.commands c
     WHERE c.mailbox_id = ${mailboxId}::uuid
       AND ${commandVisibleTo(access.data, mailboxId)}

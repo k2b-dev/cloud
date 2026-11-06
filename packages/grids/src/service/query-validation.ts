@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { AggregationSpec, ComputedColumnSpec, FilterTree, GroupBySpec, GroupSortSpec, RecordQuery, SearchSpec } from "../contracts";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
 import { normalizeRefKey } from "../ref-syntax";

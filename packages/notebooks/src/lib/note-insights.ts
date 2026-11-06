@@ -2,7 +2,7 @@
  * Pure markdown-derived note insights shared by SSR, API route-state loading,
  * and editor/detail islands.
  */
-import { literalMarkdownLines } from "./markdown-context";
+import { literalMarkdownLines } from "@k2b/editor/markdown/lib/markdown-context";
 
 export type TocItem = {
   level: number;

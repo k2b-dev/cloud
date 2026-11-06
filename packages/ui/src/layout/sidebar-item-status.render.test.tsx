@@ -12,6 +12,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: AppWorkspace } = await import("./AppWorkspace");
+const { AppWorkspaceSidebarItemStatus } = await import("./AppWorkspaceSidebarItemStatus");
 const { LocaleProvider } = await import("../intl/locale");
 
 const render = (status: AppWorkspaceSidebarItemStatusProps, locale = "en") =>
@@ -35,6 +36,9 @@ const render = (status: AppWorkspaceSidebarItemStatusProps, locale = "en") =>
 const text = (html: string, className: string) => html.match(new RegExp(`class="${className}"[^>]*>([^<]*)<`))?.[1]?.trim();
 
 describe("AppWorkspace.SidebarItemStatus", () => {
+  test("the standalone export preserves the compound component", () => {
+    expect(AppWorkspace.SidebarItemStatus).toBe(AppWorkspaceSidebarItemStatus);
+  });
   test("renders an empty status without unread items, a mention, or muting", () => {
     // The empty element keeps the row's label on one line before the first count arrives.
     for (const status of [{}, { unread: 0 }, { unread: false }, { unread: -2 }, { unread: Number.NaN }]) {
@@ -100,6 +104,9 @@ describe("AppWorkspace.SidebarItemStatus", () => {
     const marks = html.match(/class="k2b-app-workspace__sidebar-status-(muted|mention|unread)"[^>]*>/g) ?? [];
     expect(marks).toHaveLength(3);
     for (const mark of marks) expect(mark).toContain('aria-hidden="true"');
+    // A muted item marks itself, so its label and count stay quiet.
+    expect(html).toContain('data-muted="true"');
+    expect(render({ unread: 5 })).not.toContain("data-muted");
     expect(html).toMatch(/<a [^>]*href="\/design"[\s\S]*k2b-sr-only[\s\S]*<\/a>/);
   });
 

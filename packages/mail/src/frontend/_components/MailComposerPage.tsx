@@ -26,6 +26,8 @@ export default function MailComposerPage(props: {
   canManageMailbox: boolean;
   currentUserEmail: string | null;
   calendarIntegrationAvailable: boolean;
+  /** Live dictation is set up and allowed for this person. */
+  liveDictation?: boolean;
   contactDirectory: MailContactDirectory;
   /** Open approvals whose review links to this draft, such as sending it; rendered with the page so they never push it down. */
   approvals?: { link: string; page: ApprovalPage };
@@ -52,6 +54,7 @@ export default function MailComposerPage(props: {
             canManageMailbox={props.canManageMailbox}
             currentUserEmail={props.currentUserEmail}
             calendarIntegrationAvailable={props.calendarIntegrationAvailable}
+            liveDictation={props.liveDictation}
           />
         </MailContactDirectoryProvider>
       </div>

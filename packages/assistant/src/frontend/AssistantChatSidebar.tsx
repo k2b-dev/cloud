@@ -753,7 +753,7 @@ export function AssistantChatSidebarContent(props: {
             fallback={<SidebarSearchResults snapshot={snapshot()} search={props.search} actions={props.actions} files={files()} />}
           >
             <Show when={attention().length}>
-              <DetailPanel.Section title={copy().attention} icon="ti ti-alert-triangle" tone="warning">
+              <DetailPanel.Section title={copy().attention}>
                 <For each={attention()}>
                   {(item) => (
                     <DetailPanel.Action
@@ -770,7 +770,6 @@ export function AssistantChatSidebarContent(props: {
 
             <DetailPanel.Section
               title={copy().results}
-              icon="ti ti-sparkles"
               class="assistant-sidebar-results"
               // No count while empty: the body already says there are no results yet.
               count={snapshot().results.length || undefined}
@@ -846,7 +845,7 @@ export function AssistantChatSidebarContent(props: {
             </DetailPanel.Section>
 
             <Show when={yourFiles().count}>
-              <DetailPanel.Section title={copy().yourFiles} icon="ti ti-upload" count={yourFiles().count}>
+              <DetailPanel.Section title={copy().yourFiles} count={yourFiles().count}>
                 <For each={yourFiles().recent}>{(file) => <FileRow file={file} open={() => void openUpload(file)} />}</For>
                 <Show when={yourFiles().olderCount}>
                   <Disclosure
@@ -903,7 +902,6 @@ export function AssistantChatSidebarContent(props: {
                 open={workingOpen()}
                 onOpenChange={setWorkingOpen}
                 title={copy().workingFiles}
-                icon="ti ti-archive"
                 count={working().count}
                 description={[
                   working()
@@ -925,7 +923,7 @@ export function AssistantChatSidebarContent(props: {
                   <For each={working().groups}>
                     {(timeGroup) => (
                       <div class="assistant-sidebar-timegroup">
-                        <p class="assistant-sidebar-timegroup__label">{groupLabel(timeGroup)}</p>
+                        <p class="assistant-sidebar-timegroup__label k2b-list-group-heading">{groupLabel(timeGroup)}</p>
                         <For each={timeGroup.items}>
                           {(working) => (
                             <WorkingGroupRow
@@ -1219,14 +1217,7 @@ function SourcesSection(props: { snapshot: AssistantChatContextSnapshot; actions
   const entries = createMemo(() => buildSourceEntries(pages.sources()));
   const groups = createMemo(() => groupByTime(entries(), (entry) => entry.at, props.snapshot.now, props.snapshot.timeZone));
   return (
-    <DetailPanel.Section
-      collapsible
-      open={open()}
-      onOpenChange={setOpen}
-      title={copy().sources}
-      icon="ti ti-world"
-      count={props.snapshot.sourceCount}
-    >
+    <DetailPanel.Section collapsible open={open()} onOpenChange={setOpen} title={copy().sources} count={props.snapshot.sourceCount}>
       <Show when={open()}>
         <Show
           when={all()}
@@ -1288,14 +1279,7 @@ function ContextSection(props: {
   const Heading = (headingProps: { children: JSX.Element }) => <p class="assistant-sidebar-timegroup__label">{headingProps.children}</p>;
   const [open, setOpen] = createSignal(false);
   return (
-    <DetailPanel.Section
-      collapsible
-      open={open()}
-      onOpenChange={setOpen}
-      title={copy().context}
-      icon="ti ti-briefcase"
-      description={summary()}
-    >
+    <DetailPanel.Section collapsible open={open()} onOpenChange={setOpen} title={copy().context} summary={summary()}>
       <Show when={open()}>
         <Show when={props.project}>
           {(project) => (
@@ -1463,12 +1447,12 @@ function SidebarSearchResults(props: {
     <>
       <Show when={debounced().length >= SEARCH_MIN_CHARS}>
         <Show when={results().length}>
-          <DetailPanel.Section title={copy().results} icon="ti ti-sparkles">
+          <DetailPanel.Section title={copy().results}>
             <For each={results()}>{(result) => <ResultRow result={result} actions={props.actions} files={props.files} />}</For>
           </DetailPanel.Section>
         </Show>
         <Show when={fileHits().length}>
-          <DetailPanel.Section title={copy().files} icon="ti ti-files">
+          <DetailPanel.Section title={copy().files}>
             <For each={fileHits()}>
               {(hit) => (
                 <DetailPanel.Action
@@ -1484,7 +1468,7 @@ function SidebarSearchResults(props: {
           </DetailPanel.Section>
         </Show>
         <Show when={sourceHits().length}>
-          <DetailPanel.Section title={copy().sources} icon="ti ti-world">
+          <DetailPanel.Section title={copy().sources}>
             <For each={sourceHits()}>{(entry) => <SourceRow entry={entry} actions={props.actions} />}</For>
           </DetailPanel.Section>
         </Show>

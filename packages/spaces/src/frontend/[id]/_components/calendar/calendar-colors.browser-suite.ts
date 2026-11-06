@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -161,7 +161,29 @@ let server: ReturnType<typeof Bun.serve>;
 const viewRequests: string[] = [];
 let browser: Browser;
 
+/**
+ * The day the suite runs on, before the scenarios' items: an open task past its day is overdue and turns red, so the
+ * server and the page share this clock instead of the real one.
+ */
+const CLOCK = Date.parse("2026-10-01T06:00:00Z");
+/** Starts the page's wall clock at `at`; only `Date` changes, so timers and frames keep running. */
+const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now();
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0) super(RealDate.now() + offset);
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset;
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
+
 beforeAll(async () => {
+  setSystemTime(new Date(CLOCK));
   const built = await Promise.all(styleEntries.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
   for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
   css = [
@@ -192,6 +214,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+  setSystemTime();
   await browser?.close();
   server?.stop(true);
 });
@@ -216,6 +239,7 @@ const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "l
     reducedMotion: "reduce",
     extraHTTPHeaders: { "x-locale": scenario.locale, "x-theme": theme },
   });
+  await context.addInitScript(pinPageClock, CLOCK);
   const page = await context.newPage();
   await page.goto(`${server.url}app/spaces/Space1${query(scenario)}`);
   await hydrated(page);

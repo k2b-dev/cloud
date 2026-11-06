@@ -6,26 +6,57 @@ import { createTemplateService } from "./templates";
 
 type Classification = { kind: "read" } | { kind: "mutation" | "mixed"; coverage: "converted" | readonly PendingMigrationKey[] };
 const read: Classification = { kind: "read" };
-const mixed = (...coverage: PendingMigrationKey[]): Classification => ({ kind: "mixed", coverage });
-const mutation = (...coverage: PendingMigrationKey[]): Classification => ({ kind: "mutation", coverage });
-const base = () => mixed("lifecycle.operation");
+const mixed = (...coverage: PendingMigrationKey[]): Classification => ({
+  kind: "mixed",
+  coverage: coverage.length ? coverage : "converted",
+});
+const mutation = (...coverage: PendingMigrationKey[]): Classification => ({
+  kind: "mutation",
+  coverage: coverage.length ? coverage : "converted",
+});
+const base = () => mixed();
 // This is the classification of Filegate user-data effects. Catalog/grant/configuration
 // writes stay in Postgres; "read" here means they do not change data in Filegate.
 const files: Record<string, Classification> = {
-  maintain: mutation("lifecycle.operation"),
-  provision: mutation("lifecycle.operation"),
-  archive: mutation("lifecycle.operation"),
+  exportActivity: read,
+  previewActivityExport: read,
+  observeActivityContact: read,
+  activityRecovery: read,
+  restoreActivity: { kind: "mutation", coverage: "converted" },
+  moveActivityBack: { kind: "mutation", coverage: "converted" },
+  recheckActivity: read,
+  activity: read,
+  activityEntry: read,
+  activityBatchContext: read,
+  activityForEntry: read,
+  movementChain: read,
+  shareAccess: read,
+  machineStorage: read,
+  createMachineStorage: mutation(),
+  storageGrants: read,
+  grantStorage: read,
+  revokeStorage: read,
+  // Relay tickets only transfer/read staged bytes; publication remains commitUpload/publicInboxCommit.
+  transfer: read,
+  authorizeTransfer: base(),
+  uploadTarget: base(),
+  maintain: mutation(),
+  provisionUserHome: mutation(),
+  reconcileUserHomes: mutation(),
+  adminHomeProvisioning: read,
+  provision: mutation(),
+  archive: mutation(),
   retire: read,
   archives: read,
-  restore: mutation("lifecycle.operation"),
+  restore: mutation(),
   adminList: read,
   adminDownload: read,
   adminVersions: read,
-  adminDeleteVersion: mutation("lifecycle.admin_delete_version"),
-  adminDelete: mutation("lifecycle.operation"),
-  deleteDirectory: mutation("lifecycle.operation"),
-  deleteArchive: mutation("lifecycle.operation"),
-  retry: mutation("lifecycle.operation"),
+  adminDeleteVersion: mutation(),
+  adminDelete: mutation(),
+  deleteDirectory: mutation(),
+  deleteArchive: mutation(),
+  retry: mutation(),
   refreshRoot: read,
   rebuildRoot: read,
   unlockShare: base(),
@@ -35,18 +66,19 @@ const files: Record<string, Classification> = {
   publicShare: base(),
   publicShareDownload: base(),
   publicShareArchive: base(),
-  publicInboxUpload: mixed("lifecycle.operation"),
-  publicInboxLease: mixed("lifecycle.operation"),
-  publicInboxCommit: mixed("lifecycle.operation"),
-  publicInboxAbort: mutation("lifecycle.operation"),
-  reconcileInboxUploads: mutation("lifecycle.operation"),
+  publicInboxUpload: mixed(),
+  publicInboxLease: mixed(),
+  publicInboxCommit: mixed(),
+  publicInboxAbort: mutation(),
+  reconcileInboxUploads: mutation(),
   adminUploadReservations: read,
-  remove: mutation("lifecycle.operation", "files.ensure_trash", "trash.transfer"),
+  remove: mutation(),
   trash: base(),
   trashEntry: base(),
-  restoreTrash: mutation("lifecycle.operation", "trash.transfer"),
+  restoreTrash: mutation(),
   bases: base(),
   baseNames: read,
+  adminActivityBases: read,
   list: base(),
   search: base(),
   folder: base(),
@@ -54,27 +86,27 @@ const files: Record<string, Classification> = {
   folderLocation: base(),
   mkdir: { kind: "mutation", coverage: "converted" },
   mkdirs: { kind: "mutation", coverage: "converted" },
-  upload: mutation("lifecycle.operation"),
-  uploadLease: mixed("lifecycle.operation"),
-  commitUpload: mutation("lifecycle.operation"),
-  abortUpload: mutation("lifecycle.operation"),
+  upload: mutation(),
+  uploadLease: mixed(),
+  commitUpload: mutation(),
+  abortUpload: mutation(),
   rename: { kind: "mutation", coverage: "converted" },
   move: { kind: "mutation", coverage: "converted" },
   copy: { kind: "mutation", coverage: "converted" },
   bundle: base(),
   versions: base(),
-  commentVersion: mutation("lifecycle.operation", "files.version_comment"),
-  restoreVersion: mutation("lifecycle.operation", "files.version_restore"),
-  restoreVersionAs: mutation("lifecycle.operation", "files.version_restore_copy"),
-  deleteVersion: mutation("lifecycle.operation", "files.version_delete"),
+  commentVersion: mutation(),
+  restoreVersion: mutation(),
+  restoreVersionAs: mutation(),
+  deleteVersion: mutation(),
   versionDownload: base(),
   editor: base(),
   templateSource: base(),
-  createFromBytes: mutation("lifecycle.operation"),
-  createDocument: mutation("lifecycle.operation"),
+  createFromBytes: mutation(),
+  createDocument: mutation(),
   editorFileInfo: base(),
   editorContent: base(),
-  editorSave: mutation("lifecycle.operation"),
+  editorSave: mutation(),
   entry: base(),
   entryById: base(),
   recent: base(),
@@ -82,8 +114,8 @@ const files: Record<string, Classification> = {
   setFavorite: base(),
   thumbnail: base(),
   capabilityDownload: base(),
-  capabilityUploadStatus: mixed("lifecycle.operation"),
-  capabilityUpload: mutation("lifecycle.operation"),
+  capabilityUploadStatus: mixed(),
+  capabilityUpload: mutation(),
   download: base(),
   downloadById: base(),
   inlinePdf: base(),
@@ -103,34 +135,16 @@ const templates: Record<string, Classification> = {
   grants: read,
   grant: read,
   revoke: read,
-  use: mutation("lifecycle.operation"),
+  use: mutation(),
 };
 function unclassified(methods: readonly string[], table: Record<string, Classification>): string[] {
   return methods.filter((name) => !Object.hasOwn(table, name));
 }
-const frozen = [
-  "files.ensure_trash",
-  "files.version_comment",
-  "files.version_restore",
-  "files.version_restore_copy",
-  "files.version_delete",
-  "trash.transfer",
-  "lifecycle.operation",
-  "lifecycle.admin_delete_version",
-] as const;
+const frozen: readonly string[] = [];
 function addedKeys(keys: readonly string[]): string[] {
   return keys.filter((key) => !frozen.some((known) => known === key));
 }
-const frozenCallSites: Readonly<Record<string, number>> = {
-  "files.ensure_trash": 1,
-  "files.version_comment": 1,
-  "files.version_restore": 1,
-  "files.version_restore_copy": 1,
-  "files.version_delete": 1,
-  "trash.transfer": 1,
-  "lifecycle.operation": 1,
-  "lifecycle.admin_delete_version": 1,
-} satisfies Record<(typeof frozen)[number], number>;
+const frozenCallSites: Readonly<Record<string, number>> = {};
 function grownCallSites(counts: Readonly<Record<string, number>>): string[] {
   return Object.entries(counts)
     .filter(([key, count]) => !Object.hasOwn(frozenCallSites, key) || count > (frozenCallSites[key] ?? 0))
@@ -142,7 +156,15 @@ function dummyService() {
     throw new Error("Classification must not invoke a dependency");
   };
   return createFilesService({
-    identities: { reconcile: unused, localLifecycle: unused, self: unused, groups: unused, inventory: unused },
+    identities: {
+      reconcile: unused,
+      localLifecycle: unused,
+      self: unused,
+      groups: unused,
+      inventory: unused,
+      provisioningUsers: unused,
+      provisioningIdentity: unused,
+    },
     bindings: { find: unused, claim: unused, byId: unused, path: unused },
     displayNames: unused,
     readConfiguration: unused,
@@ -173,9 +195,9 @@ test("the migration allowlist can only shrink", () => {
   expect(addedKeys([...PENDING_MIGRATION, "fake.new_write"])).toEqual(["fake.new_write"]);
   expect(addedKeys(PENDING_MIGRATION.slice(1))).toEqual([]);
 });
-test("pending migration methods cover exactly the migration keys and are non-empty", () => {
-  expect(Object.keys(PENDING_MIGRATION_METHODS).sort()).toEqual([...PENDING_MIGRATION].sort());
-  for (const methods of Object.values(PENDING_MIGRATION_METHODS)) expect(methods.length).toBeGreaterThan(0);
+test("all writer migrations are complete", () => {
+  expect(PENDING_MIGRATION).toEqual([]);
+  expect(PENDING_MIGRATION_METHODS).toEqual({});
 });
 test("pending migration call sites can only shrink", async () => {
   const sourceRoot = join(import.meta.dir, "..");
@@ -195,8 +217,7 @@ test("pending migration call sites can only shrink", async () => {
   expect(Object.values(counts).reduce((sum, count) => sum + count, 0)).toBe(calls);
 });
 test("call site comparison reports growth and unknown keys but permits shrinking", () => {
-  expect(grownCallSites({ ...frozenCallSites, "files.version_comment": 2 })).toEqual(["files.version_comment"]);
+  expect(grownCallSites({ ...frozenCallSites, "files.upload_session": 4 })).toEqual(["files.upload_session"]);
   expect(grownCallSites({ ...frozenCallSites, "fake.new_write": 1 })).toEqual(["fake.new_write"]);
-  expect(grownCallSites({ ...frozenCallSites, "files.version_comment": 0 })).toEqual([]);
   expect(grownCallSites({})).toEqual([]);
 });

@@ -101,6 +101,7 @@ const checkUiPackageBoundaries = (workspaceRoot: string): Finding[] => {
   const roots = [
     join(workspaceRoot, "packages", "ui", "src"),
     join(workspaceRoot, "packages", "ssr", "src"),
+    join(workspaceRoot, "packages", "editor", "src"),
     join(workspaceRoot, "fixtures", "ui-ssr", "src"),
   ];
 
@@ -117,7 +118,7 @@ const checkUiPackageBoundaries = (workspaceRoot: string): Finding[] => {
           findings.push({
             file,
             line: lineFromIndex(source, index),
-            message: `@k2b/ui, @k2b/ssr, and the standalone UI fixture must not depend on Cloud packages (${specifier}).`,
+            message: `@k2b/ui, @k2b/ssr, @k2b/editor, and the standalone UI fixture must not depend on Cloud packages (${specifier}).`,
           });
         }
       }

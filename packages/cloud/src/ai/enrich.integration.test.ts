@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Message } from "@k2b/nessi";
-import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
+import { sql } from "../runtime/clients";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 
@@ -32,7 +32,7 @@ const runConfig = { kind: "chat" as const, input: "hi", toolSource: { kind: "non
 const seedUserMessage = async (conversationId: string, text: string) => {
   await aiConversations.submitChatTurn({
     conversationId,
-    modelProfileId: "test-model",
+    modelId: "test-model",
     runConfig,
     userMessage: userMessage(text),
   });

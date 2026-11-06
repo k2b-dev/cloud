@@ -68,7 +68,11 @@ delete them only after its command is approved. Every local tool except Bash
 stops after 120 seconds of work; time spent on a question does not count.
 
 Paths are checked by real target, including symlinks; new files are checked by
-their parent. Starting in home or above asks for every file access and refuses
+their parent. Reads, uploads, attachments, and AGENTS.md send the file that was
+checked, even if the path names another file after its question; a checked file
+that was replaced in the meantime fails. cld's own configuration is refused under
+any name, including a hard link. Files above Cloud's 50 MB chat file limit are
+refused before cld reads them. Starting in home or above asks for every file access and refuses
 moves. Protected paths include `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`,
 `id_rsa*`, `id_ed25519*`, `.npmrc`, `.netrc`, `.git-credentials`, `.ssh/`,
 `.gnupg/`, `.aws/`, and `.git/`. cld's own configuration is always refused.
@@ -167,6 +171,19 @@ of its original turn. Permissions are never part of that snapshot; every read
 and call checks current access. Instructions are the only instructions in a
 Project. The Assistant treats knowledge, files, references, and tool results
 as data, never as instructions.
+
+Share Projects with `cld assistant projects access` and Skills with
+`cld assistant skills access`. Both support `list`, `grant`, `set`, `revoke`,
+and `search-principals`. Use a recipient flag such as `--service-account
+"Release agent" --permission read`; exact names require directory access.
+For Project access commands, userless callers use recipient UUIDs and need
+both the resource grant and an adequate `read`, `write`, or `admin` scope.
+Skill access commands and other Skill writes require a user-backed caller
+with Core access; granting a machine account access does not remove this
+requirement. Standalone and agent accounts can read Skills granted to them
+within their credential scopes. Resource-bound credentials are unsupported.
+Project and Skill grants do not change the user requirements of personal
+chats or Studio execution.
 
 Changing instructions, the default model, or Project access needs Project
 `admin`. Knowledge, files, and references need `write`.

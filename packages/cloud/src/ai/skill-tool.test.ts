@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { CloudAiLoadSkillInputSchema, createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool, loadSelectedAiSkills } from "./skill-tool";
+import { userResourceContext } from "./projects.test-fixture";
+import {
+  CloudAiLoadSkillInputSchema,
+  CloudAiLoadSkillOutputSchema,
+  createCloudAiLoadSkillTool,
+  createCloudAiSearchSkillsTool,
+  loadSelectedAiSkills,
+} from "./skill-tool";
 import { aiSkills } from "./skills";
 
 afterEach(() => mock.restore());
@@ -12,16 +19,17 @@ test("explicit Skills respect tool scope, deduplicate and fail clearly after rev
     revision: 2,
     instructions: "Read rules.",
     files: [],
+    loadTools: [],
     loadedAt: "2026-09-16",
   });
-  await expect(loadSelectedAiSkills(["Sk2345"], "turn", subject, false)).rejects.toThrow("tool scope");
+  await expect(loadSelectedAiSkills(["Sk2345"], "turn", userResourceContext(subject), false)).rejects.toThrow("tool scope");
   expect(load).not.toHaveBeenCalled();
-  expect(await loadSelectedAiSkills(["Sk2345", "Sk2345"], "turn", subject, true)).toEqual([
+  expect(await loadSelectedAiSkills(["Sk2345", "Sk2345"], "turn", userResourceContext(subject), true)).toEqual([
     { name: "invoice", revision: 2, instructions: "Read rules.", files: [] },
   ]);
   expect(load).toHaveBeenCalledTimes(1);
   load.mockResolvedValue(null);
-  await expect(loadSelectedAiSkills(["Sk2345"], "next-turn", subject, true)).rejects.toThrow("revoked");
+  await expect(loadSelectedAiSkills(["Sk2345"], "next-turn", userResourceContext(subject), true)).rejects.toThrow("revoked");
 });
 
 describe("load_skill", () => {
@@ -34,12 +42,12 @@ describe("load_skill", () => {
     const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
     const read = spyOn(aiSkills, "getByShortId");
     const load = spyOn(aiSkills, "loadForTurn").mockResolvedValue(null);
-    const tool = createCloudAiLoadSkillTool(subject);
+    const tool = createCloudAiLoadSkillTool(userResourceContext(subject));
     if (tool.location !== "server") throw new Error("Expected server tool");
     const ctx = { turnId: "turn-1" } as never;
     await expect(tool.run({ id: "Sk2345" }, ctx)).rejects.toThrow("unavailable");
     expect(read).not.toHaveBeenCalled();
-    expect(load).toHaveBeenCalledWith("turn-1", { id: "Sk2345" }, subject, null);
+    expect(load).toHaveBeenCalledWith("turn-1", { id: "Sk2345" }, userResourceContext(subject), null);
   });
   test("pins the selected revision and returns its standard file mount", async () => {
     const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
@@ -52,9 +60,10 @@ describe("load_skill", () => {
         { path: "/skills/weekly-status/SKILL.md", content: "skill" },
         { path: "/skills/weekly-status/references/style.md", content: "style" },
       ],
+      loadTools: [],
       loadedAt: "2026-08-20T12:00:00.000Z",
     });
-    const tool = createCloudAiLoadSkillTool(subject);
+    const tool = createCloudAiLoadSkillTool(userResourceContext(subject));
     if (tool.location !== "server") throw new Error("Expected server tool");
 
     expect(
@@ -72,13 +81,72 @@ describe("load_skill", () => {
       mount: "/skills/weekly-status",
       files: ["/skills/weekly-status/SKILL.md", "/skills/weekly-status/references/style.md"],
     });
-    expect(aiSkills.loadForTurn).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222", "weekly-status", subject, null);
+    expect(aiSkills.loadForTurn).toHaveBeenCalledWith(
+      "22222222-2222-4222-8222-222222222222",
+      "weekly-status",
+      userResourceContext(subject),
+      null,
+    );
+  });
+
+  test("loads the tools the Skill lists and reports them with the Skill", async () => {
+    const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
+    spyOn(aiSkills, "loadForTurn").mockResolvedValue({
+      name: "cloud-spaces",
+      description: "Spaces.",
+      revision: 3,
+      instructions: "Create tasks.",
+      files: [],
+      loadTools: ["spaces.space.browse", "spaces.task.create"],
+      loadedAt: "2026-10-31T12:00:00.000Z",
+    });
+    const loadTools = mock(async (names: readonly string[]) => ({
+      loaded: names.map((name) => ({ name, call: name.replaceAll(".", "__") })),
+      alreadyLoaded: [],
+      unavailable: [],
+      evicted: [],
+      titles: { ignored: "not part of the Skill result" },
+    }));
+    const tool = createCloudAiLoadSkillTool(userResourceContext(subject));
+    if (tool.location !== "server") throw new Error("Expected server tool");
+    const result = await tool.run({ name: "cloud-spaces" }, { turnId: "turn-1", loadTools } as never);
+    expect(loadTools).toHaveBeenCalledWith(["spaces.space.browse", "spaces.task.create"]);
+    expect(CloudAiLoadSkillOutputSchema.parse(result).tools).toEqual({
+      loaded: [
+        { name: "spaces.space.browse", call: "spaces__space__browse" },
+        { name: "spaces.task.create", call: "spaces__task__create" },
+      ],
+      alreadyLoaded: [],
+      unavailable: [],
+      evicted: [],
+    });
+  });
+
+  test("loads no tools for a Skill without load-tools or a turn without tool discovery", async () => {
+    const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
+    const snapshot = {
+      name: "weekly-status",
+      description: "Summarize recent work.",
+      revision: 1,
+      instructions: "List wins.",
+      files: [],
+      loadTools: [] as string[],
+      loadedAt: "2026-10-31T12:00:00.000Z",
+    };
+    const load = spyOn(aiSkills, "loadForTurn").mockResolvedValue(snapshot);
+    const loadTools = mock(async () => ({ loaded: [], alreadyLoaded: [], unavailable: [], evicted: [] }));
+    const tool = createCloudAiLoadSkillTool(userResourceContext(subject));
+    if (tool.location !== "server") throw new Error("Expected server tool");
+    expect(await tool.run({ name: "weekly-status" }, { turnId: "turn-1", loadTools } as never)).not.toHaveProperty("tools");
+    expect(loadTools).not.toHaveBeenCalled();
+    load.mockResolvedValue({ ...snapshot, loadTools: ["spaces.task.create"] });
+    expect(await tool.run({ name: "weekly-status" }, { turnId: "turn-2" } as never)).not.toHaveProperty("tools");
   });
 
   test("does not expose a skill after its permission check fails", async () => {
     const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
     spyOn(aiSkills, "loadForTurn").mockResolvedValue(null);
-    const tool = createCloudAiLoadSkillTool(subject);
+    const tool = createCloudAiLoadSkillTool(userResourceContext(subject));
     if (tool.location !== "server") throw new Error("Expected server tool");
     await expect(
       tool.run({ name: "weekly-status" }, {
@@ -98,14 +166,15 @@ describe("load_skill", () => {
         revision: 2,
         instructions: "Use GQL",
         files: [],
+        loadTools: [],
         loadedAt: "2026-09-09T20:00:00Z",
       })
       .mockResolvedValueOnce(null);
-    const tool = createCloudAiLoadSkillTool(subject);
+    const tool = createCloudAiLoadSkillTool(userResourceContext(subject));
     if (tool.location !== "server") throw new Error("Expected server tool");
     await tool.run({ name: "cloud-grids" }, { turnId: "turn-1" } as never);
     await expect(tool.run({ name: "cloud-grids" }, { turnId: "turn-2" } as never)).rejects.toThrow("unavailable or access was revoked");
-    expect(load).toHaveBeenNthCalledWith(2, "turn-2", "cloud-grids", subject, null);
+    expect(load).toHaveBeenNthCalledWith(2, "turn-2", "cloud-grids", userResourceContext(subject), null);
   });
 });
 
@@ -131,7 +200,7 @@ describe("search_skills", () => {
       more: skills.length > limit,
     }));
     const tool = createCloudAiSearchSkillsTool(
-      subject,
+      userResourceContext(subject),
       skills.slice(0, 20).map(({ name, description }) => ({ name, description, source: "local", manualOnly: true })),
     );
     if (tool.location !== "server") throw new Error("Expected server tool");
@@ -139,7 +208,7 @@ describe("search_skills", () => {
       skills: [{ name: "invoice-20", description: "Invoice workflow." }],
       more: false,
     });
-    expect(search).toHaveBeenCalledWith(subject, "invoice", 30, { modelInvocableOnly: true, authority: null });
+    expect(search).toHaveBeenCalledWith(userResourceContext(subject), "invoice", 30, { modelInvocableOnly: true, authority: null });
   });
 
   test("rechecks access and returns only enabled matching Skills", async () => {
@@ -148,7 +217,7 @@ describe("search_skills", () => {
       skills: [{ name: "cloud-mail", description: "Email and inbox workflows.", enabled: true }] as never,
       more: false,
     });
-    const tool = createCloudAiSearchSkillsTool(subject);
+    const tool = createCloudAiSearchSkillsTool(userResourceContext(subject));
     if (tool.location !== "server") throw new Error("Expected server tool");
 
     expect(
@@ -157,7 +226,7 @@ describe("search_skills", () => {
         signal: new AbortController().signal,
       } as never),
     ).toEqual({ skills: [{ name: "cloud-mail", description: "Email and inbox workflows." }], more: false });
-    expect(aiSkills.search).toHaveBeenCalledWith(subject, "email", 10, { modelInvocableOnly: true, authority: null });
+    expect(aiSkills.search).toHaveBeenCalledWith(userResourceContext(subject), "email", 10, { modelInvocableOnly: true, authority: null });
   });
 });
 
@@ -213,7 +282,7 @@ test.each([false, true])("search_skills respects local precedence with manualOnl
       throw new Error("Unexpected client tool");
     },
   };
-  const tool = createCloudAiSearchSkillsTool(subject, [
+  const tool = createCloudAiSearchSkillsTool(userResourceContext(subject), [
     { name: "invoice", description: "Local invoice workflow.", source: "local", ...(manualOnly ? { manualOnly: true } : {}) },
     { name: "notes", description: "Meeting minutes.", source: "local" },
   ]);

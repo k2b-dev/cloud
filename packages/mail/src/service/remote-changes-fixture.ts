@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, spyOn } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";

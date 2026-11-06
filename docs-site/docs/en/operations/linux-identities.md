@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1086
 description: Assign local UID, GID, home and shell attributes and backfill existing accounts without changing authentication.
 tags: [linux, identity, administration, freeipa]
-updated: 2026-09-09
+updated: 2026-10-28
 ---
 
 # Assign Linux identities
@@ -20,7 +20,7 @@ becomes unreadable during editing, a rejected save refreshes the warning and
 replacement choice while preserving the entered configuration.
 
 Administrators configure local Linux identity assignment in **Administration →
-Accounts & sign-in → Linux identities**. Individual identities and group IDs appear in
+Sign-in & security → Linux identities**. Individual identities and group IDs appear in
 **Accounts**. FreeIPA remains the authority for its own identities.
 
 Linux identities contain a user's UID, primary GID, home path and login shell.
@@ -117,27 +117,170 @@ The private primary group created for each local account is its personal Linux
 group, named after the username. Linux needs it; people do not work with it as a
 team. Group lists and pickers therefore leave personal groups out:
 
-- The Accounts group list hides them unless **View → Linux → Personal groups**
-  is on. The count above the list includes only the groups shown, and each
-  personal group names and links its owner.
+- The Accounts group list, a person's membership list, and **My account → Access**
+  hide them. Dashboard and widget group counts include ordinary groups only.
+  Inspect the person's Linux identity section for their primary GID.
 - Sharing, permission, role and membership pickers do not offer them. Grant the
   person instead.
 - Files does not show a personal group as a group area; people use their own
   files area instead.
-- An exact group ID or name, such as an existing grant, still resolves.
+- Personal groups are available only as user identity diagnostics, such as the
+  primary GID in the person's Linux identity section.
 
-The group list and entity search APIs mark such a group with `personalOwner`
-(`{ id, uid, displayName }`) and include it only with `include_personal=true`.
-Exact `group_ids` lookups and relation filters, such as a group's members,
-always return it. The CLI lists them with `cld accounts groups list
---include-personal`.
+### Upgrade group exports and integrations
+
+**Operator note:** Personal Linux groups are excluded from Accounts API and
+CLI group listings, entity search (including exact group IDs and relation
+filters), and OAuth/OIDC `groups` claims in access tokens, ID tokens and
+UserInfo. The API query option
+`include_personal` is ignored; the CLI rejects the removed `--include-personal`
+flag. The server-side `accounts.users.getGroups` projection also excludes
+personal groups.
+Ordinary groups and inherited memberships through personal groups remain in
+these outputs. Internal authorization and Linux primary GIDs retain their
+existing meaning. FreeIPA groups are not classified by matching usernames.
+
+Before upgrading, review directory exports and integrations that used the
+personal group name. Configure an ordinary team group or use the user's
+identity instead. Refresh exported inventories and verify group mapping at the
+consumer after upgrading. Stored group references in sharing settings or Grids
+may lose their display label or require replacement before editing. Review
+existing nested memberships and manager-group relationships before upgrading;
+new relationships cannot use personal groups. Inspect Linux attributes with `cld accounts users
+linux get <user> --json` when diagnosing an identity.
+
+Operators with database access can inventory existing group relationships before
+replacing them with ordinary groups or direct user memberships:
+
+```sql
+SELECT 'member' AS relationship, gg.child_group_id AS principal_id, p.group_name, gg.parent_group_id AS target_group_id
+FROM auth.personal_groups p
+JOIN auth.group_groups_v2 gg ON p.group_id IN (gg.child_group_id, gg.parent_group_id)
+UNION ALL
+SELECT 'manager', gm.manager_group_id, p.group_name, gm.group_id
+FROM auth.personal_groups p
+JOIN auth.group_manager_groups_v2 gm ON p.group_id IN (gm.manager_group_id, gm.group_id)
+UNION ALL
+SELECT 'user-member', ug.user_id, p.group_name, ug.group_id
+FROM auth.personal_groups p JOIN auth.user_groups_v2 ug ON ug.group_id = p.group_id
+WHERE ug.user_id <> p.owner_id
+UNION ALL
+SELECT 'user-manager', gmu.user_id, p.group_name, gmu.group_id
+FROM auth.personal_groups p JOIN auth.group_manager_users_v2 gmu ON gmu.group_id = p.group_id;
+```
+
+After recording the intended replacement, an administrator can remove an old
+relationship by its exact IDs without exporting the personal group:
+
+```bash
+cld --profile <profile> accounts groups members remove <target-group-id> --group <principal-id> --yes
+cld --profile <profile> accounts groups managers remove <target-group-id> --group <principal-id> --yes
+cld --profile <profile> accounts groups members remove <target-group-id> --user <principal-id> --yes
+cld --profile <profile> accounts groups managers remove <target-group-id> --user <principal-id> --yes
+```
+
+Use `--group` for group relationships and `--user` for user relationships. Keep
+the owner's own membership in their personal group; it supplies their primary
+Linux group and is excluded from the user-member query above.
+
+Files group directories associated with a recorded personal group appear as
+**Legacy** in **Files administration → Directories**, including after account
+retirement. These are Filegate directories under the configured group path,
+not the user's Linux home path. Files preserves their contents and excludes
+these bindings from automatic archival. An administrator can browse them and
+explicitly archive them or copy their contents to the intended destination.
+Bindings use the recorded group ID. For an unbound directory, Files also
+recognizes the former group name stored in the ownership record and preserves
+it as Legacy if a new team reuses that name. Matching a username alone never
+establishes personal ownership. Historical contents are never deleted automatically.
 
 Disabling local assignment stops automatic assignment and backfill, retains existing identities and allows their
 local home/shell values to be maintained in Accounts. The administration
 inventory is only shown while assignment is enabled. Unavailable selections
 are disabled, with the reason in the Status column. Deleting an account does not free its
-reserved numbers for reuse. Its primary group remains for deliberate review;
-Cloud does not infer filesystem cleanup from account deletion.
+reserved numbers for reuse. Deleting the account also retires its personal
+Linux group in the same transaction, including after a profile or provider
+change. The group disappears from lists and lookups; its memberships,
+manager relationships and grants are removed. New memberships and grants
+cannot target it. Cloud keeps an ownership record, the recorded group name
+and its reserved GID.
+An application foreign key that restricts deletion of the group makes the
+whole account deletion fail and roll back. Application authors should use
+`ON DELETE CASCADE` for references that must retire with a Cloud group.
+Account deletion does not delete filesystem content. Files preserves recorded
+personal-group directories as Legacy; its configured
+archive policy still applies to other directories whose identity no longer
+exists. Operators can review their contents through Files administration.
+
+### Review historical groups after upgrading
+
+Upgrade Core before starting application versions that use `auth.personal_groups`.
+The production Compose template only gives OAuth an explicit Core dependency;
+other applications can start before Core. Follow the Core-first sequence in
+[Deployment requirements](/en/docs/operations/deployment-requirements#upgrade-personal-linux-group-retirement).
+
+Core startup installs the ownership protection and review schema. After startup,
+a background pass collects historical candidates with a provisioning audit or
+a GID allocation without a current primary-group owner. A GID value alone is
+not evidence of personal ownership. Explicitly provisioned ordinary Linux groups are excluded unless
+conflicting personal provisioning evidence exists.
+
+The pass retires a historical group automatically only when retained audits
+and ID reservations prove one deleted owner and no references remain. It scans
+each installed reference table once against the whole candidate set. References
+include memberships, grants, nesting, managers, directory shares, application
+foreign keys, Files directory bindings, Grids approval policies and JSON values
+in Grids, workflows and notifications.
+
+The inspection takes locks only if they are immediately available, uses a
+250 ms lock timeout and a two-second statement timeout, and checks a ten-second
+inspection budget before each table. A busy, unreadable or oversized table
+defers the batch to operator review. Completed cases, including deferred and
+unproven cases, are recorded and never automatically scanned again. Core logs
+each new completed review case once. Restarting Core does not repeat those
+warnings or retry those cases.
+
+**Upgrading alone does not remediate preserved historical groups.** They remain
+usable, retain existing memberships and grants, and accept authorized changes
+until an administrator resolves them. Operators with database access must work
+through the review list:
+
+```sql
+SELECT g.id, g.name, g.gid_number, r.reason, r.details, r.completed_at
+FROM auth.personal_group_review r
+JOIN auth.groups g ON g.id = r.group_id
+ORDER BY g.name, g.id;
+```
+
+1. Establish ownership from the recorded provisioning audit and UID/GID
+   reservations. Names alone do not prove ownership. Resolve missing or
+   conflicting evidence before deciding to retain an ordinary group.
+2. For a confirmed orphaned personal group, open **Accounts → Groups** as an
+   administrator, open that exact local group and choose **Delete** in
+   its actions. Confirm deletion. This normal path removes memberships and
+   cascading grants; it does not require a personal-group ownership row.
+   Its GID allocation stays reserved. A restrictive application reference can
+   block deletion; resolve that reference with the application owner and retry.
+3. Verify that the group no longer resolves and its grants no longer apply.
+   Review filesystem contents separately; deleting the group does not delete
+   files. Preserve historical messages, revisions and audit snapshots.
+
+An active personal group with an ownership record cannot be deleted through
+that group action; delete its owning account when retiring that account.
+The review table can retain a resolved group's row until the next background
+pass; the query above excludes groups already deleted.
+
+For `references_unchecked`, either resolve the group through Accounts or fix
+the reported contention, permissions or scan cost first. To explicitly retry
+one unresolved case, delete only its row from `auth.personal_group_review` by
+exact `group_id`, then restart Core. Never remove its ID reservations. A scan
+that fails before recording cases logs an error and is retried at the next
+Core start.
+
+If Core reports multiple owners for one personal group, startup stops and the
+error identifies the group. Verify its account ownership and correct the
+conflicting primary-group links before restarting; do not delete its ID
+reservations.
 
 ## Use the CLI
 

@@ -1,0 +1,6 @@
+### A published version does not identify the current source
+
+- **What happened:** A main sync ran the packed consumer in release mode and failed on `AppWorkspace.MainPane`’s new `heading` prop, although the checkout contained that prop.
+- **Root cause:** The sync changed the release manifest, so CI selected release mode. The pin resolver trusted the existence of `@k2b/ui@0.44.0` on npm without comparing its older declarations with the same-version workspace source.
+- **Error class:** Version identity can hide shipped TypeScript or declaration drift between a published artifact and an unreleased checkout.
+- **Guard:** The packed consumer compares shipped TypeScript files and public package metadata for same-version published siblings. Already-published Cloud snapshots use current tarballs for changed TypeScript; unpublished Cloud releases require a sibling version bump. The byte comparison includes comments and compiler output. Refresh a stale release PR or land a scoped `fix`/`feat` commit for the affected package to trigger its bump. Pin and archive regression tests cover added props, changed entrypoints and conditional export order, snapshot selection, release rejection, older pins and registry failures.

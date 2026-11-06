@@ -1,13 +1,14 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
+import { bindAppAccessRequest } from "../../_internal/app-access-request";
 import { getApp } from "../../_internal/registry";
 import type { AppMeta } from "../../contracts/app";
-import { canUseApp } from "../../services/app-access";
+import { AppAccessUnavailableError, canUseApp } from "../../services/app-access";
 import { recordAppAccessDenied } from "../../services/app-access-metrics";
 import { type ResolvedInvocationAuthority, resolveInvocationAuthority } from "../../services/identity/invocation-actor";
 import { type CloudInvocationClaims, isInvocationJwtCandidate, verifyInvocationToken } from "../../services/identity/invocation-token";
 import { appAccessDeniedBody } from "./app-access";
-import type { AuthContext } from "./auth";
+import { type AuthContext, requireOAuthMutationScope } from "./auth";
 
 export type InvocationExpectation = {
   targetAppId: string;
@@ -53,8 +54,18 @@ export const requireInvocation = (
     if (!claims) return reject(c);
     const authority = await (dependencies.resolve ?? resolveInvocationAuthority)(claims);
     if (!authority) return reject(c);
+    bindAppAccessRequest(authority, c.req.raw);
     const app = await (dependencies.getApp ?? getApp)(expectation.targetAppId).catch(() => null);
-    if (!app || !(await canUseApp(authority, app))) {
+    let allowed = false;
+    try {
+      allowed = !!app && (await canUseApp(authority, app));
+    } catch (error) {
+      if (!(error instanceof AppAccessUnavailableError)) throw error;
+      c.header("Retry-After", "1");
+      c.header("Cache-Control", "private, no-store");
+      return c.json({ code: error.code, app: error.app.id, message: error.message }, 503);
+    }
+    if (!app || !allowed) {
       if (app) recordAppAccessDenied(app.id);
       return c.json(appAccessDeniedBody(app ?? { id: expectation.targetAppId }), 403);
     }
@@ -62,5 +73,5 @@ export const requireInvocation = (
       return c.json({ code: "SCHEMA_MISMATCH", message: "The invocation schema no longer matches the target" }, 409);
     }
     installAuthority(c, claims, authority);
-    return next();
+    return requireOAuthMutationScope(c, next);
   });

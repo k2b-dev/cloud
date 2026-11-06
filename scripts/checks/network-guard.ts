@@ -38,6 +38,7 @@ export const guardedServerRoots = [
   "packages/assistant/src/artifacts/database.ts",
   // The shared transport behind the HTTP endpoints above: node:http there must keep its pinned lookup.
   "packages/cloud/src/services/allowed-network-fetch.ts",
+  "packages/cloud/src/services/app-domain-check.ts",
 ];
 const isGuardedServer = (path: string) =>
   guardedServerRoots.some((root) => (root.endsWith("/") ? path.startsWith(root) : path === root)) &&

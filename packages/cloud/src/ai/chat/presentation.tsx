@@ -13,6 +13,7 @@ import {
   Show,
 } from "solid-js";
 import type { AiActiveTurn } from "../client/projection";
+import { aiModelChooserMessages } from "../model-chooser-messages";
 import { type AiActiveTurnSegment, type AiTurnBlock, splitActiveTurnBlocks } from "../protocol";
 import { type AiAssistantTimelineItem, buildAiMessageTimeline } from "../timeline";
 import type { AiConversationTimelineEntry, AiStoredMessage, AiTurnError } from "../types";
@@ -257,7 +258,27 @@ const storedItems = (
         actionDisplay: "menu",
         anchorId: item.entry.seq,
       };
-      return [userItem, ...unansweredNotice(item.entry, itemIndex)];
+      // A removed model: the chat says once which model answers from now on, right before the message it took over.
+      const replacement = item.entry.meta?.modelReplacement;
+      const replacementItem: ChatTimelineItem[] = replacement
+        ? [
+            {
+              kind: "message",
+              id: `${item.id}:model-replaced`,
+              role: "system",
+              createdAt: item.entry.createdAt,
+              content: (
+                <p class="text-xs text-dimmed">
+                  <i class="ti ti-replace mr-1" aria-hidden="true" />
+                  {aiModelChooserMessages
+                    .resolve([locale])
+                    .t.noteRemoved({ removed: replacement.previousLabel, next: replacement.nextLabel })}
+                </p>
+              ),
+            },
+          ]
+        : [];
+      return [...replacementItem, userItem, ...unansweredNotice(item.entry, itemIndex)];
     }
 
     if (item.type === "summary") {

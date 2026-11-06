@@ -50,6 +50,9 @@ const drawChart = (input: CloudAiChartInput, locale: string): DrawnChart | null 
  * 280-unit drawing; at 12rem a row is still taller than its text.
  */
 const chartHeight = (kind: Kind) => (kind === "sparkline" ? "8rem" : kind === "stat" ? "10rem" : kind === "barGauge" ? "12rem" : "18rem");
+/** A drawing taller than the usual 280 units, such as many bar rows, grows its frame up to 40rem and scrolls inside. */
+const grownHeight = (kind: Kind, chart: DrawnChart | null) =>
+  chart && chart.snapshot.height > 280 ? `min(40rem, max(${chartHeight(kind)}, ${chart.snapshot.height}px))` : chartHeight(kind);
 
 function ChartFrame(props: {
   title: string;
@@ -60,6 +63,11 @@ function ChartFrame(props: {
   cursor?: ReturnType<typeof createChartCursor>;
   /** A chart of a titled group: its title sits one heading level and one size below the group's. */
   nested?: boolean;
+  /**
+   * The frame takes the drawing's height (`grownHeight`). Only for a drawing present with the first frame: a frame
+   * that waits for its data keeps the kind's height, so the data never moves the chat.
+   */
+  grow?: boolean;
 }) {
   const locale = useLocale();
   const columns = () =>
@@ -80,7 +88,7 @@ function ChartFrame(props: {
       title={props.title}
       headingLevel={props.nested ? 4 : 3}
       description={props.subtitle ? <span class="text-sm text-secondary">{props.subtitle}</span> : undefined}
-      height={chartHeight(props.kind)}
+      height={props.grow ? grownHeight(props.kind, props.chart) : chartHeight(props.kind)}
       data={props.chart ? { chart: props.chart.snapshot, rows: props.chart.table.rows } : { chart: emptySnapshot(props.kind), rows: [] }}
       columns={columns()}
       legend={props.chart?.legend.length ? props.chart.legend : undefined}
@@ -166,7 +174,8 @@ const groupSummary = (group: CloudAiGroupView): GroupSummary => ({
 
 /**
  * One `chart` tool call: the shared chart with its data table and Copy data, or a group of them. The block takes its
- * full size with its first frame and keeps it; switching to the table scrolls inside the same height. A call whose
+ * full size with its first frame and keeps it, up to 40rem for a tall single chart; switching to the table scrolls
+ * inside the same height. A call whose
  * arguments are not a valid chart shows nothing while it runs, because the model gets the validation error and the
  * call fails.
  */
@@ -198,7 +207,7 @@ export function CloudChartBlock(props: { args: unknown; completed: boolean }) {
           }
         >
           {(value) => (
-            <ChartFrame title={value().input.title} subtitle={value().input.subtitle} kind={value().input.kind} chart={value()} />
+            <ChartFrame title={value().input.title} subtitle={value().input.subtitle} kind={value().input.kind} chart={value()} grow />
           )}
         </Show>
       }

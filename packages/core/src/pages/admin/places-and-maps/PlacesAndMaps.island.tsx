@@ -18,7 +18,6 @@ import { placesAndMapsMessages } from "./messages";
 
 const api = coreClient.admin.core.geo;
 /** A map question ("museums in Ulm") costs about 6 reference credits: geocoding, a place search and one map view. */
-const CREDITS_PER_MAP_QUESTION = 6;
 const PLAN_NAMES: Record<Exclude<GeoPlanId, "custom">, string> = {
   free: "Free",
   api10: "API 10",
@@ -98,7 +97,12 @@ function Calm(props: { icon: string; children: JSX.Element }) {
   );
 }
 
-export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; documentationBase?: string }): JSX.Element {
+export default function PlacesAndMaps(props: {
+  initial: PlacesAndMapsInitial;
+  documentationBase?: string;
+  /** Inside a titled level of the Base settings area, which already shows the title. */
+  embedded?: boolean;
+}): JSX.Element {
   const locale = useLocale();
   const t = () => placesAndMapsMessages.resolve([locale()]).t;
   const [status, setStatus] = createSignal<GeoAdminStatus | null>(props.initial.status);
@@ -132,7 +136,6 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
     customRps: value ? number(value.budget.customRps) : "",
     customDailyCredits: value ? number(value.budget.customDailyCredits) : "",
     monthlyCredits: value && !value.budget.unreadable.includes("monthlyCredits") ? number(value.budget.monthlyCredits) : "",
-    personDailyCredits: value && !value.budget.unreadable.includes("personDailyCredits") ? number(value.budget.personDailyCredits) : "",
   });
   const [values, setValues] = createSignal<BudgetValues>(fromStatus(props.initial.status));
   const setValue = (field: GeoBudgetField, value: string) => setValues((current) => ({ ...current, [field]: value }));
@@ -157,7 +160,6 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
     if (error.code === "not_whole_number") return t().notWholeNumber;
     if (error.code === "too_small") return t().tooSmall({ min: number(error.min) });
     if (error.code === "too_large") return t().tooLarge({ max: number(error.max) });
-    return t().aboveMonthly({ max: number(error.max) });
   };
 
   const save = async () => {
@@ -167,7 +169,6 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
       customRps: parseWhole(current.customRps),
       customDailyCredits: parseWhole(current.customDailyCredits),
       monthlyCredits: parseWhole(current.monthlyCredits),
-      personDailyCredits: parseWhole(current.personDailyCredits),
     };
     const errors = validateGeoBudget(input);
     setFieldErrors(errors);
@@ -201,7 +202,6 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
       stored.unreadable.length === 0 &&
       stored.plan === input.plan &&
       stored.monthlyCredits === input.monthlyCredits &&
-      stored.personDailyCredits === input.personDailyCredits &&
       (input.plan !== "custom" || (stored.customRps === input.customRps && stored.customDailyCredits === input.customDailyCredits))
     )
       return saved(after);
@@ -559,11 +559,6 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
       </div>
     );
   };
-  const personHint = () => {
-    const limit = parseWhole(values().personDailyCredits);
-    if (limit === 0) return t().personDailyOff;
-    return t().personDailyHint({ count: number(Math.floor((limit ?? 0) / CREDITS_PER_MAP_QUESTION)) });
-  };
   const planOptions = () =>
     GEO_PLAN_IDS.map((plan) => {
       if (plan === "custom") return { value: plan, label: t().customPlan };
@@ -686,17 +681,6 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
                 detail={t().routeCostOverrunsDetail}
               />
             </Show>
-            <Show when={data().peopleAtLimit > 0}>
-              <div class="mt-2">
-                <StateRow
-                  tone="warning"
-                  icon="ti ti-user"
-                  role="status"
-                  title={t().peopleAtLimit({ count: number(data().peopleAtLimit) })}
-                  detail={t().peopleAtLimitDetail({ when: t().resetTime({ time: resetTime(data().today.resetsAt) }) })}
-                />
-              </div>
-            </Show>
             <Show when={data().month.used > 0} fallback={<Calm icon="ti ti-chart-bar">{t().noUsage}</Calm>}>
               {shares(data())}
             </Show>
@@ -718,6 +702,7 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
   return (
     <SettingsPage
       class="places-maps-settings"
+      header={!props.embedded}
       title={t().title}
       subtitle={t().lead}
       icon="ti ti-map-2"
@@ -748,7 +733,6 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
               {numberField("customRps", t().customRps, () => t().customRpsHint)}
               {numberField("customDailyCredits", t().customDaily, () => t().customDailyHint)}
             </Show>
-            {numberField("personDailyCredits", t().personDaily, personHint)}
           </div>
           <div class="mt-3.5 flex min-h-10 flex-col items-start gap-2 text-[13px] @lg:flex-row @lg:flex-wrap @lg:items-center @lg:gap-3.5">
             <Button

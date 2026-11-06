@@ -1,0 +1,6 @@
+### The whole command menu was rebuilt under a press, so keyed rows were not enough
+
+- **What happened:** After #2154, `catalog and resource recovery in real panel at 1440px` failed again in WebKit on #2169 (#2140). The press trace from #2154 showed `pointerdown` on the Notes command row and `click` on the composer's `SECTION`. The row and its whole menu had been replaced between press and release.
+- **Root cause:** #2154 keyed command rows by command key, which keeps a row while its list stays. In the Assistant's empty page, the composer's command menu itself left and came back while the catalog settled, so every row was new, keyed or not. Why the menu briefly closed in that run is not established; the composer removes it whenever the host offers no commands, search, or fallback for a moment.
+- **Error class:** A list keyed by object identity replaces interactive elements when the host rebuilds equal data, here one level higher: the container of the list.
+- **Guard:** A press on a command row now remembers the command's key. If the row is gone at release and the release lands on the new row of the same command, the composer runs that command. `chat-composer.browser.test.ts` removes and rebuilds the whole menu between `mouse.down()` and `mouse.up()`; it failed in Chromium before the change and passes in Chromium and WebKit.

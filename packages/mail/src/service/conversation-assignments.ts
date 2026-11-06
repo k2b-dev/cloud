@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { accounts, logger, notifications } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { app } from "../config";
 import type { UpdateConversationCollaboration } from "../contracts";
 import { conversationVisibleTo, getMailboxAccess } from "./access";
@@ -29,6 +29,12 @@ const notifyAssignee = async (params: {
   for (const added of change.added) {
     if (actor?.id === added.userId) continue;
     try {
+      const [assignment] = await sql<{ person: boolean }[]>`SELECT EXISTS (
+        SELECT 1 FROM mail.conversation_assignees a JOIN mail.conversations c ON c.id = a.conversation_id
+        JOIN mail.mailboxes m ON m.id = c.mailbox_id
+        WHERE m.short_id = ${change.mailbox.shortId} AND a.user_id = ${added.userId}::uuid
+      ) AS person`;
+      if (!assignment?.person) continue;
       const user = await accounts.users.get({ id: added.userId });
       if (!user) continue;
       const [mailbox] = await sql<

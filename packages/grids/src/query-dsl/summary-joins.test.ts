@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { normalizedSql } from "../sql-test-utils";
 import { canonicalizeDslQuery } from "./canonical";
 import { resolveDslQueryToQueryPlan, resolveDslQueryToRecordQuery } from "./resolver";
 import { amountFieldId, ctx, customerLinkFieldId, customers, orders, parseOk } from "./resolver-fixtures";
 import { compileDslQueryPlanToSql } from "./sql-compiler";
+
+useUnitClients();
 
 const view = {
   kind: "view" as const,

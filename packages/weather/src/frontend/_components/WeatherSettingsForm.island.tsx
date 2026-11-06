@@ -114,7 +114,7 @@ export default function WeatherSettingsForm(props: { initial: Initial; unreadabl
           <p>{t().forecastSourceBody}</p>
           <p>
             {t().geocodingBody}{" "}
-            <a href="/admin/places-and-maps" target="_blank" class="underline" rel="noreferrer">
+            <a href="/admin/base/places" target="_blank" class="underline" rel="noreferrer">
               {t().locationSearch}
             </a>
             .

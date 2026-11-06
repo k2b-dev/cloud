@@ -15,7 +15,6 @@ export const mailTestRow = (id: string, overrides: Partial<MailListItem> = {}): 
   unread: true,
   activeFolderIds: ["inbox"],
   flagged: false,
-  hasAttachments: false,
   messageCount: 1,
   workStatus: "needs_action",
   assigneeUserIds: [],

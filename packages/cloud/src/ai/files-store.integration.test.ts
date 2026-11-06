@@ -1,7 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { aiFileContentVersion } from "./file-content-version";
 import { createCloudAiReadFileTool } from "./file-tools";
 import {
@@ -359,7 +359,7 @@ suite("aiFileStore integration", () => {
     try {
       await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "legacy-test",
+        modelId: "legacy-test",
         runConfig: {
           kind: "chat",
           input: [{ type: "file", mediaType: "image/png", data: "AQID" }],

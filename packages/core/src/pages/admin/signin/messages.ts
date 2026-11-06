@@ -1,0 +1,53 @@
+import { i18n } from "@k2b/stdlib";
+
+export const signinAreaMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      area: "Sign-in & security",
+      sections: "Sign-in & security sections",
+      signin: "Sign-in",
+      signinDescription: "Account types, sign-in options and sessions",
+      registration: "Registration",
+      registrationDescription: "Self-registration, requests, expiry and reminders",
+      security: "Security",
+      securityDescription: "Rate limits and access protection",
+      linux: "Linux identities",
+      linuxDescription: "ID range and defaults for local accounts",
+      freeipa: "FreeIPA",
+      freeipaDescription: "Connection, service account, groups and synchronization",
+      operations: "Account operations",
+      operationsDescription: "Logs, scheduled jobs and maintenance",
+      groupDirectory: "Directory",
+      guest: "Guest",
+      login: "Login",
+      freeipaCategory: "FreeIPA",
+      session: "Session",
+      approvalState: "App sign-in now",
+    },
+    de: {
+      area: "Anmeldung & Sicherheit",
+      sections: "Abschnitte von Anmeldung & Sicherheit",
+      signin: "Anmeldung",
+      signinDescription: "Kontoarten, Anmeldewege und Sitzungen",
+      registration: "Registrierung",
+      registrationDescription: "Selbstregistrierung, Anfragen, Ablauf und Erinnerungen",
+      security: "Sicherheit",
+      securityDescription: "Ratenbegrenzung und Zugriffsschutz",
+      linux: "Linux-Identitäten",
+      linuxDescription: "ID-Bereich und Standards für lokale Konten",
+      freeipa: "FreeIPA",
+      freeipaDescription: "Verbindung, Dienstkonto, Gruppen und Abgleich",
+      operations: "Kontovorgänge",
+      operationsDescription: "Protokolle, geplante Aufgaben und Wartung",
+      groupDirectory: "Verzeichnis",
+      guest: "Gast",
+      login: "Login",
+      freeipaCategory: "FreeIPA",
+      session: "Sitzung",
+      approvalState: "App-Anmeldung jetzt",
+    },
+  },
+});
+
+export type SigninAreaMessages = ReturnType<typeof signinAreaMessages.resolve>["t"];

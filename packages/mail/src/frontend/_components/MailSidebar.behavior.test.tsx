@@ -254,3 +254,34 @@ test.skipIf(isServer)("hiding the open mailbox opens the closed Hidden section, 
     dom.cleanup();
   }
 });
+
+test.skipIf(isServer)("shares the open mailbox projection across sidebar consumers and follows its changes", () => {
+  const dom = createDomTestHarness();
+  const m = modules!;
+  const [active, setActive] = createSignal<string | null>(null);
+  const [name, setName] = createSignal("Support");
+  const folders = [mailTestFolder("Fold01"), mailTestFolder("Fold02")];
+  let projections = 0;
+  const dispose = render(() => {
+    const initial = m.openMailboxFixture({ folders });
+    return createComponent(m.default, {
+      ...m.mailSidebarFixture(),
+      get open() {
+        projections++;
+        return { ...initial, activeFolderId: active(), mailboxName: name() };
+      },
+    });
+  }, dom.root);
+  try {
+    expect(projections).toBe(1);
+    setActive("Fold02");
+    expect(projections).toBe(2);
+    expect(dom.root.querySelector('a[href="/app/mail/Box001?folder=Fold02"]')?.getAttribute("aria-current")).toBe("page");
+    setName("Renamed support");
+    expect(projections).toBe(3);
+    expect(dom.root.querySelector('[data-mailbox="Box001"]')?.textContent).toContain("Renamed support");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

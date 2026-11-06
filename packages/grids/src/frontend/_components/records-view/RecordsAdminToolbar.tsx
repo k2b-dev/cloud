@@ -1,5 +1,7 @@
-import { Button, Tooltip, useLocale } from "@k2b/ui";
+import { Button, Dropdown, Tooltip, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
+import type { PublicField as Field } from "../../../api/public-dto";
+import { fieldTypeIcon } from "../fields/field-type-meta";
 import { recordsViewMessages } from "./messages";
 
 export function RecordsAdminToolbar(props: {
@@ -9,6 +11,9 @@ export function RecordsAdminToolbar(props: {
   hiddenViewColumnCount: number;
   allowForms: boolean;
   formsButtonLabel: string;
+  tableFields: Field[];
+  /** Opens a field's settings; omitted when the person cannot change the table's fields. */
+  onFieldSettings?: (field: Field) => void;
   onOpenTableSettings: () => void;
   onAddField: () => void;
   onOpenForms: () => void;
@@ -24,6 +29,28 @@ export function RecordsAdminToolbar(props: {
     if (!props.canEditActiveView) return t().editViewDenied;
     return "";
   };
+  // The same field settings as the column headers of the table view, reachable from every view and display mode.
+  const fieldsMenu = () => (
+    <Show when={props.onFieldSettings && props.tableFields.length > 0 ? props.onFieldSettings : undefined}>
+      {(onFieldSettings) => (
+        <Dropdown.Root
+          position="bottom-right"
+          label={t().fields}
+          items={props.tableFields.map((field) => ({
+            icon: fieldTypeIcon(field.type, field.icon),
+            label: field.name,
+            ariaLabel: t().fieldSettingsFor({ name: field.name }),
+            action: () => onFieldSettings()(field),
+          }))}
+        >
+          <Dropdown.Trigger variant="success" size="sm">
+            <i class="ti ti-columns" /> {t().fields}
+            <i class="ti ti-chevron-down text-[10px] opacity-60" />
+          </Dropdown.Trigger>
+        </Dropdown.Root>
+      )}
+    </Show>
+  );
 
   return (
     <div class="flex flex-wrap items-center gap-2 shrink-0">
@@ -34,6 +61,7 @@ export function RecordsAdminToolbar(props: {
             <Button variant="success" size="sm" onClick={props.onOpenTableSettings}>
               <i class="ti ti-settings" /> {t().general}
             </Button>
+            {fieldsMenu()}
             <Button variant="success" size="sm" onClick={props.onAddField}>
               <i class="ti ti-plus" /> {t().addField}
             </Button>
@@ -55,6 +83,7 @@ export function RecordsAdminToolbar(props: {
             </Button>
           </span>
         </Tooltip.Anchor>
+        {fieldsMenu()}
       </Show>
       <Show when={props.hiddenViewColumnCount > 0}>
         <Button variant="success" size="sm" onClick={props.onAddViewColumn}>

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { RecordMetaSortKey, SortSpec } from "../contracts";
 import { type ProjectionKind, storageOf } from "./field-storage";
 import { type FormulaSqlExpression, requireValidCalculationSql } from "./formula-sql-values";

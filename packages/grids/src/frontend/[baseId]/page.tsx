@@ -1,6 +1,4 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { coreSettings } from "@k2b/cloud/services";
-import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { NotFoundState } from "@k2b/ui";
 import { currentActorUser } from "../../api/permissions";
@@ -78,11 +76,10 @@ export default ssr<AuthContext>(async (c) => {
   const state = loaded.state;
   if (!state) throw new Error("Workspace state projection is missing");
   state.initialNavigationExpansion = parseNavigationExpansion(c.req.header("Cookie"), state.base.id);
-  const cloudUrl = publicCloudOrigin(await coreSettings.get<string>("app.url"));
 
   return () => (
     <Layout c={c} fullWidth title={state.title}>
-      <GridsWorkspace userId={user.id} state={state} cloudUrl={cloudUrl} />
+      <GridsWorkspace userId={user.id} state={state} />
     </Layout>
   );
 });

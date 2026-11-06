@@ -2,6 +2,7 @@ import { PayloadTooLargeError } from "@k2b/sync";
 import { lazySync } from "../_internal/process-sync";
 import { logger } from "../services/logging";
 import { latestTopicCursor } from "../services/topic-cursor";
+import type { AiConversationWatch } from "./conversation-watchers";
 import {
   type AiStreamEvent,
   type AiTurnSnapshot,
@@ -134,7 +135,7 @@ const turnSnapshotFromActive = (active: NonNullable<Awaited<ReturnType<typeof ai
   status: active.turn.status,
   seq: active.liveSeq,
   blocks: [...active.liveBlocks],
-  modelProfileId: active.turn.modelProfileId,
+  modelId: active.turn.modelId,
   createdAt: active.turn.createdAt,
   actionWaitMs: active.actionWaitMs,
   waitingSince: active.waitingSince,
@@ -386,6 +387,8 @@ export const createAiConversationStreamResponse = (input: {
    * client's reconnect then meets the ordinary 401, 403, or 404.
    */
   revalidate?: () => Promise<boolean>;
+  /** A signed-in tab's watch: refreshed with each heartbeat and released when the stream ends. */
+  watch?: AiConversationWatch;
 }): Response => {
   const heartbeatMs = input.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
   const liveAbort = new AbortController();
@@ -425,6 +428,7 @@ export const createAiConversationStreamResponse = (input: {
           closed = true;
           if (heartbeat) clearInterval(heartbeat);
           heartbeat = undefined;
+          void input.watch?.release();
           input.signal?.removeEventListener("abort", abortLive);
           abortLive();
           try {
@@ -437,6 +441,7 @@ export const createAiConversationStreamResponse = (input: {
         if (heartbeatMs > 0) {
           heartbeat = setInterval(() => {
             if (!enqueue(encodeSseHeartbeat())) return;
+            input.watch?.refresh();
             if (!input.revalidate) return;
             // Fail closed: a revalidation that throws is not a pass.
             void input
@@ -472,6 +477,7 @@ export const createAiConversationStreamResponse = (input: {
       cancel() {
         closed = true;
         if (heartbeat) clearInterval(heartbeat);
+        void input.watch?.release();
         abortLive();
       },
     },

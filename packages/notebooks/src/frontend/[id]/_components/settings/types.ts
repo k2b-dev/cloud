@@ -1,15 +1,16 @@
 import type { DateContext } from "@k2b/stdlib";
 import type { LogTableEntry } from "@k2b/ui";
-import type { Notebook, NoteTreeNode } from "../sidebar/types";
+import type { Notebook } from "../sidebar/types";
 
 export type NotebookSettingsProps = {
   notebook: Notebook;
-  tree: NoteTreeNode[];
   isAdmin: boolean;
   canWrite: boolean;
   dateConfig: DateContext;
   /** Returns an element inside the app; settings that depend on the app's width follow its `k2b-app-area` host. */
   host: () => Element;
+  /** The tab to open on, such as `access`. Defaults to `general`. */
+  initialTab?: string;
 };
 
 export type NoteSelectOption = {

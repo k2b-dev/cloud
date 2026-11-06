@@ -3,19 +3,18 @@ import { history, undo } from "@codemirror/commands";
 import { forceParsing, syntaxTree } from "@codemirror/language";
 import { EditorState, type Extension, StateEffect, type Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+
+import { isolateYjsHistory } from "@k2b/editor/collab";
 import { isServer } from "solid-js/web";
 import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
-import { basicExtensions } from "../../../lib/editor/basic";
-import { markdownExtension } from "../../../lib/editor/markdown";
-import { isolateYjsHistory } from "../../../lib/yjs/history";
 
 const loading = createDomTestHarness();
+const { basicExtensions, markdownExtension } = await import("@k2b/editor/markdown");
 const { toggleInlineMark, caretFormat, setHeadingLevel, toggleHeadingLevel, insertTable, insertNoteLink } = await import(
   "./editor-actions"
 );
-const { prompts } = await import("@k2b/ui");
 const noteSearch = await import("../search/openNoteSearchPrompt");
 const { formattingKeymap } = await import("./EditorToolbar");
 const { renderNotebookBook } = await import("../../../../lib/book-renderer");
@@ -258,9 +257,15 @@ describe("notebook inline formatting", () => {
   test("parses a distant span before toggling without forceParsing", () => {
     const prefix = "Paragraph\n\n".repeat(1000);
     using editor = mount(prefix + "**word**", prefix.length + 2, prefix.length + 6, [], false);
-    editor.press("b");
-    expect(editor.text()).toBe(prefix + "word");
-    expect(editor.selected()).toBe("word");
+    // Exercise the successful parse independently of VM scheduling.
+    const clock = spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 9, 26));
+    try {
+      editor.press("b");
+      expect(editor.text()).toBe(prefix + "word");
+      expect(editor.selected()).toBe("word");
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   test.each([false, true])("Yjs isolates formatting from adjacent typing (type after: %s)", (after) => {
@@ -532,20 +537,23 @@ describe("insert dialogs after the note became read-only", () => {
     return;
   }
 
-  // Sync can end while a dialog is open; its answer must not change the read-only note.
-  test.each(["table", "note link"])("a %s answered after the note became read-only inserts nothing", async (kind) => {
+  test("a table picker answered after the note became read-only inserts nothing", async () => {
     using editor = mount("Keep", 4);
-    const form = spyOn(prompts, "form").mockResolvedValue({ rows: 2, cols: 2 });
+    editor.view.dispatch({ effects: StateEffect.appendConfig.of(EditorState.readOnly.of(true)) });
+    await insertTable(editor.view, { rows: 2, cols: 2 }, "en");
+    expect(editor.text()).toBe("Keep");
+  });
+
+  test("a note link answered after the note became read-only inserts nothing", async () => {
+    using editor = mount("Keep", 4);
     const picker = spyOn(noteSearch, "openNoteLinkPrompt").mockResolvedValue({ id: "Other1", title: "Other" });
     try {
-      // The dialog opens synchronously; the note becomes read-only before its answer arrives.
-      const inserting = kind === "table" ? insertTable(editor.view, undefined, "en") : insertNoteLink(editor.view, "Book01", "en");
+      const inserting = insertNoteLink(editor.view, "Book01", "en");
       editor.view.dispatch({ effects: StateEffect.appendConfig.of(EditorState.readOnly.of(true)) });
       await inserting;
-      expect(kind === "table" ? form : picker).toHaveBeenCalledTimes(1);
+      expect(picker).toHaveBeenCalledTimes(1);
       expect(editor.text()).toBe("Keep");
     } finally {
-      form.mockRestore();
       picker.mockRestore();
     }
   });

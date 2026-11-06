@@ -213,7 +213,9 @@
   display: contents;
 }
 
-.dashboard-widget-status > div {
+/* A status sits on the widget's surface; its tone colours the icon and the text. The tone rules of @k2b/ui, dark
+   ones included, are nearly as specific, so this names the frame and the tone too. */
+.k2b-ui .dashboard-widget-accent .dashboard-widget-status > .k2b-widget-status[data-tone] {
   background: transparent;
 }
 
@@ -234,14 +236,14 @@
 
 .dashboard-page .dashboard-widget-placeholder {
   gap: 0.25rem;
-  padding: 0.5rem 0.75rem 0.75rem;
+  padding: 0 0.75rem;
 }
 
 /* A small widget on a narrow phone keeps its message and Try again inside its frame, below the header's icon chip:
    its message gets a smaller icon box and tighter padding in every state, and a message with Try again drops the
    icon, so a three-line failure still fits at 320px. */
 .dashboard-page .dashboard-tile[data-size="small"] .dashboard-widget-placeholder {
-  padding: 0.25rem 0.25rem 0.5rem;
+  padding: 0 0.25rem;
 }
 .dashboard-page .dashboard-tile[data-size="small"] .dashboard-widget-placeholder .k2b-placeholder__icon {
   width: 1.25rem;
@@ -409,7 +411,7 @@
 .dashboard-board .dashboard-tile__sizes .k2b-segmented-control {
   width: auto;
   max-width: 100%;
-  background: var(--k2b-surface);
+  /* The size choice floats over the widget, so it casts the shadow of a floating layer. */
   box-shadow: var(--k2b-shadow-float);
   pointer-events: auto;
 }
@@ -535,7 +537,6 @@
 
 .dashboard-gallery .dashboard-gallery-card__actions .k2b-segmented-control {
   width: auto;
-  background: var(--k2b-surface);
 }
 
 .dashboard-gallery .dashboard-gallery-card__actions .k2b-segmented-control__option {
@@ -637,7 +638,6 @@
 
   .dashboard-board {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: 10rem;
     gap: 0.75rem;
   }
 

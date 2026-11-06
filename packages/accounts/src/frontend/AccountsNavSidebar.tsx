@@ -11,6 +11,7 @@ export type AccountsNavActiveKey =
   | "requests"
   | "audit"
   | "service-accounts"
+  | "agents"
   | "notifications"
   | "deleted-accounts"
   | "reminders"
@@ -65,6 +66,7 @@ export default function AccountsNavSidebar(props: Props) {
       label: messages().duplicateEmails,
       active: props.active === "duplicate-emails",
     },
+    { href: "/app/accounts/agents", icon: "ti ti-robot", label: messages().agents, active: props.active === "agents" },
     {
       href: "/app/accounts/service-accounts",
       icon: "ti ti-user-key",

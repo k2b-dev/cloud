@@ -211,7 +211,7 @@ describe("setting a password on the sign-in page", () => {
 
   test("comes back to the retry after signing in or accepting the terms when a retry finds no browser sign-in", async () => {
     const t = authMessages.resolve(["de"]).t;
-    // 401: this browser's sign-in ended or still waits for the terms. 403: the request fell back to a mobile app session.
+    // 401: this browser's sign-in ended or still waits for the terms. 403: the request fell back to a Cloud app session.
     for (const [form, status] of [
       ["reset", 401],
       ["new-password", 403],

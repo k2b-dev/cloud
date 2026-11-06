@@ -1,4 +1,4 @@
-import { type BoundNotificationMap, lazySync, notification } from "@k2b/cloud";
+import { type BoundNotificationMap, lazySync, notification, sql } from "@k2b/cloud";
 import {
   accounts,
   coreSettings,
@@ -12,7 +12,6 @@ import {
 } from "@k2b/cloud/services";
 import { i18n } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { z } from "zod";
 import { MAIL_CONVERSATION_BATCH_LIMIT } from "./contracts";
 import { SHORT_ID_REGEX } from "./lib/short-id";

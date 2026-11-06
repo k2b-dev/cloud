@@ -34,8 +34,11 @@ const routes = new Hono<AuthContext>()
     await next();
     setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
   })
-  // A Cloud admin's OAuth token with only read or write scope must not administer store credentials.
-  .use("*", auth.requireOAuthScope("admin"))
+  // Status accepts a read-scoped administrator. Store credentials and backend actions retain explicit step-up.
+  .use("*", auth.requireRole("admin"))
+  .use("*", (c, next) =>
+    auth.requireOAuthScope(...(c.req.method === "GET" || c.req.method === "HEAD" ? ["read", "admin"] : ["admin"]))(c, next),
+  )
   .onError((error, c) => {
     if (error instanceof StoreAdminError) return c.json({ code: error.code }, error.status);
     // Do not serialize setting, transport, SQL, or validation errors with input values.

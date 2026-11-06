@@ -1,14 +1,15 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { cloudAiChartSchema } from "@k2b/cloud/ai/browser";
-import * as prettyTable from "../frontend/lib/pretty-table";
-import { evaluatePrettyTable, renderPrettyTableHtml } from "../frontend/lib/pretty-table";
 import {
-  CHART_MAX_BLOCKS,
   chartBlockFrame,
   notebookChartFrameHtml,
+  notebookChartHeight,
   parseNotebookChartBlocks,
   renderNotebookChartFigure,
-} from "./chart-blocks";
+} from "@k2b/editor/markdown/lib/chart-blocks";
+import * as prettyTable from "@k2b/editor/markdown/pretty-table";
+import { evaluatePrettyTable, renderPrettyTableHtml } from "@k2b/editor/markdown/pretty-table";
+import { CHART_MAX_BLOCKS, notebookChartOptions } from "./chart-options";
 
 const chart = (body: string) => `:::chart\n${body}\n:::`;
 const inline = "type: bar\ntitle: Sales\ncolumns: [Month, Revenue]\nrows:\n  - [Jan, 12]\n  - [Feb, 18]\nx: Month\ny: Revenue";
@@ -16,7 +17,7 @@ const table =
   "@umsatz\n| Datum | Umsatz | Kosten |\n| --- | --- | --- |\n| 2026-01-01 | 1200 | =Umsatz / 2 |\n| 2026-02-01 | 1400 | =Umsatz / 2 |\n| Total | =SUM(Umsatz) | =SUM(Kosten) |\n\n";
 const named = "type: line\ntitle: Umsatz 2026\ndata: @umsatz\nx: Datum\ny: [Umsatz, Kosten]";
 const input = (markdown: string) => {
-  const parsed = parseNotebookChartBlocks(markdown);
+  const parsed = parseNotebookChartBlocks(markdown, notebookChartOptions);
   expect(parsed.diagnostics).toEqual([]);
   expect(parsed.blocks).toHaveLength(1);
   return parsed.blocks[0]!.input;
@@ -31,7 +32,7 @@ describe("notebook chart mapping", () => {
         Array.from({ length: 480 }, (_, i) => `| ${i} | ${i + 1} | =b/SUM(b) |`).join("\n") +
         "\n\n" +
         Array.from({ length: 20 }, () => chart("type: bar\ntitle: Shares\ndata: @t\nx: a\ny: share")).join("\n");
-      const result = parseNotebookChartBlocks(markdown);
+      const result = parseNotebookChartBlocks(markdown, notebookChartOptions);
       expect(result.diagnostics).toEqual([]);
       expect(result.blocks).toHaveLength(20);
       expect(evaluate).toHaveBeenCalledTimes(1);
@@ -72,8 +73,83 @@ describe("notebook chart mapping", () => {
         { label: "Jan", value: 12 },
         { label: "Feb", value: 18 },
       ],
+      xAxis: { label: "Month" },
+      yAxis: { label: "Revenue" },
       tooltip: { label: "Revenue" },
     });
+  });
+
+  test("the chart format and unit write the value axis and tooltips; the tooltip label names the value axis", () => {
+    expect(
+      input(
+        chart(`${inline}
+format: EUR
+unit: netto`),
+      ),
+    ).toMatchObject({
+      yAxis: { label: "Revenue", format: { style: "currency", currency: "EUR", unit: "netto" } },
+      tooltip: { label: "Revenue", format: { style: "currency", currency: "EUR", unit: "netto" } },
+    });
+    // An existing tooltip format also reaches the axis; a chart format wins there.
+    expect(
+      input(
+        chart(`${inline}
+tooltip:
+  label: Umsatz
+  format: EUR`),
+      ),
+    ).toMatchObject({
+      yAxis: { label: "Umsatz", format: { style: "currency", currency: "EUR" } },
+    });
+    expect(
+      input(
+        chart(`${inline}
+format: number
+tooltip:
+  format: EUR`),
+      ),
+    ).toMatchObject({
+      yAxis: { format: { style: "number" } },
+      tooltip: { format: { style: "currency", currency: "EUR" } },
+    });
+    expect(
+      parseNotebookChartBlocks(
+        chart(`${inline}
+format: euro`),
+        notebookChartOptions,
+      ).diagnostics,
+    ).toEqual([{ code: "invalid-type", line: 2 + inline.split("\n").length, path: "chart.format" }]);
+  });
+
+  test("several series get a legend with their column names; one named series titles the value axis", () => {
+    const series = (y: string) =>
+      chart(`type: line\ntitle: Ernte\ncolumns: [Tag, Äpfel, Birnen]\nrows:\n  - [1, 12, 8]\n  - [2, 18, 11]\nx: Tag\ny: ${y}`);
+    const two = renderNotebookChartFigure(
+      parseNotebookChartBlocks(series("[Äpfel, Birnen]"), notebookChartOptions).blocks[0]!.input,
+      "de",
+    )!;
+    const legend = /<ul class="k2b-chart-legend"[^>]*>([\s\S]*?)<\/ul>/.exec(two)?.[1] ?? "";
+    expect([...legend.matchAll(/<\/span>([^<]*)<\/li>/g)].map((match) => match[1])).toEqual(["Äpfel", "Birnen"]);
+    const one = renderNotebookChartFigure(parseNotebookChartBlocks(series("Äpfel"), notebookChartOptions).blocks[0]!.input, "de")!;
+    expect(one).not.toContain("k2b-chart-legend");
+    expect([...one.matchAll(/stdlib-chart-axis-label"[^>]*>([^<]*)</g)].map((match) => match[1]).sort()).toEqual(["Tag", "Äpfel"]);
+  });
+
+  test("the drawn figure labels every category and titles both axes", () => {
+    const rows = Array.from({ length: 15 }, (_, index) => `  - [Sorte ${index + 1}, ${(index + 1) * 1000}]`).join("\n");
+    const markdown = chart(`type: bar\ntitle: Obst\ncolumns: [Sorte, Umsatz]\nrows:\n${rows}\nx: Sorte\ny: Umsatz\nformat: EUR`);
+    const figure = renderNotebookChartFigure(parseNotebookChartBlocks(markdown, notebookChartOptions).blocks[0]!.input, "de")!;
+    const labels = [...figure.matchAll(/stdlib-chart-category-label"[^>]*>([^<]*)</g)].map((match) => match[1]);
+    expect(labels).toEqual(Array.from({ length: 15 }, (_, index) => `Sorte ${index + 1}`));
+    // Whole euros print without cents.
+    expect(figure).toMatch(/>15\.000\s€</);
+    expect([...figure.matchAll(/stdlib-chart-axis-label"[^>]*>([^<]*)</g)].map((match) => match[1])).toEqual(["Sorte", "Umsatz"]);
+    expect(figure).toContain('data-bar-layout="rows"');
+    // The frame takes the drawing's height, which an editor placeholder reads from the same block.
+    const height = notebookChartHeight(parseNotebookChartBlocks(markdown, notebookChartOptions).blocks[0]!.input, "de");
+    expect(height).toBeGreaterThan(288);
+    expect(figure).toContain(`style="--notebook-chart-height:${height}px"`);
+    expect(figure).toContain(`--k2b-chart-height:${height}px`);
   });
 
   test("keeps raw numeric-looking table labels and evaluates formula labels", () => {
@@ -160,7 +236,7 @@ describe("notebook chart mapping", () => {
         },
       ],
     });
-    expect(parseNotebookChartBlocks(markdown.replace("+1.2e2", "120 EUR")).diagnostics[0]).toMatchObject({
+    expect(parseNotebookChartBlocks(markdown.replace("+1.2e2", "120 EUR"), notebookChartOptions).diagnostics[0]).toMatchObject({
       code: "not-a-number",
       params: { name: "Y", row: 1 },
     });
@@ -175,7 +251,7 @@ describe("notebook chart mapping", () => {
 
 describe("chart diagnostics point to the authored setting", () => {
   test("missing columns reports only the missing key", () => {
-    expect(parseNotebookChartBlocks(chart(inline.replace("columns: [Month, Revenue]\n", ""))).diagnostics).toEqual([
+    expect(parseNotebookChartBlocks(chart(inline.replace("columns: [Month, Revenue]\n", "")), notebookChartOptions).diagnostics).toEqual([
       { code: "missing-key", line: 1, path: "chart.columns" },
     ]);
   });
@@ -184,7 +260,7 @@ describe("chart diagnostics point to the authored setting", () => {
     for (const body of [inline, "type: stat\ntitle: Revenue\nvalue: 42"]) {
       for (const field of ["unit", "label"]) {
         const markdown = chart(body + `\ntooltip:\n  format: EUR\n  ${field}: ${"x".repeat(201)}`);
-        expect(parseNotebookChartBlocks(markdown).diagnostics).toEqual([
+        expect(parseNotebookChartBlocks(markdown, notebookChartOptions).diagnostics).toEqual([
           { code: "chart-unsupported", line: markdown.split("\n").length - 1, path: `chart.tooltip.${field}` },
         ]);
       }
@@ -194,7 +270,7 @@ describe("chart diagnostics point to the authored setting", () => {
   test("a named data source with errors reports invalid-source at data", () => {
     const markdown =
       "@sales\n:::data\nrevenue: 12\nrevenue: 18\n:::\n\n" + chart("type: stat\ntitle: Revenue\ndata: @sales\nvalue: revenue");
-    expect(parseNotebookChartBlocks(markdown).diagnostics).toEqual([
+    expect(parseNotebookChartBlocks(markdown, notebookChartOptions).diagnostics).toEqual([
       { code: "invalid-source", line: 10, path: "chart.data", params: { name: "sales" } },
     ]);
   });
@@ -203,7 +279,7 @@ describe("chart diagnostics point to the authored setting", () => {
     for (const value of ["Ada", '"007"', "true"]) {
       const markdown =
         `@sales\n:::data\nrevenue: 12\nowner: ${value}\n:::\n\n` + chart("type: stat\ntitle: Owner\ndata: @sales\nvalue: owner");
-      expect(parseNotebookChartBlocks(markdown).diagnostics).toEqual([
+      expect(parseNotebookChartBlocks(markdown, notebookChartOptions).diagnostics).toEqual([
         { code: "not-a-number", line: 11, path: "chart.value", params: { name: "owner", row: 2 } },
       ]);
     }
@@ -230,18 +306,22 @@ describe("chart diagnostics point to the authored setting", () => {
     [inline + "\ndata: @nope", "invalid-type", 10, "chart.data"],
   ] as const) {
     test(`${code} at ${path}:${line}`, () => {
-      expect(parseNotebookChartBlocks(chart(body)).diagnostics).toContainEqual(expect.objectContaining({ code, line, path }));
-      expect(parseNotebookChartBlocks(chart(body)).blocks).toEqual([]);
+      expect(parseNotebookChartBlocks(chart(body), notebookChartOptions).diagnostics).toContainEqual(
+        expect.objectContaining({ code, line, path }),
+      );
+      expect(parseNotebookChartBlocks(chart(body), notebookChartOptions).blocks).toEqual([]);
     });
   }
   test("unknown y column preserves its name and exact note line", () => {
     const markdown = table + chart(named.replace("Kosten]", "Kosen]"));
-    expect(parseNotebookChartBlocks(markdown).diagnostics).toEqual([
+    expect(parseNotebookChartBlocks(markdown, notebookChartOptions).diagnostics).toEqual([
       { code: "unknown-column", line: 13, path: "chart.y", params: { name: "Kosen" } },
     ]);
   });
   test("a formula failure in a used cell is a numeric diagnostic", () => {
-    expect(parseNotebookChartBlocks(table.replace("=Umsatz / 2", "=1 / 0") + chart(named)).diagnostics[0]).toMatchObject({
+    expect(
+      parseNotebookChartBlocks(table.replace("=Umsatz / 2", "=1 / 0") + chart(named), notebookChartOptions).diagnostics[0],
+    ).toMatchObject({
       code: "not-a-number",
       line: 13,
       params: { name: "Kosten", row: 1 },
@@ -253,7 +333,7 @@ describe("chart diagnostics point to the authored setting", () => {
         Array.from({ length: 485 }, (_, i) => `  - [${i}, ${i}]`).join("\n") +
         "\nx: X\ny: Y",
     );
-    expect(parseNotebookChartBlocks(markdown).diagnostics).toEqual([
+    expect(parseNotebookChartBlocks(markdown, notebookChartOptions).diagnostics).toEqual([
       { code: "too-many-items", line: 486, path: "chart.rows.480", params: { limit: 480 } },
     ]);
   });
@@ -263,36 +343,45 @@ describe("chart diagnostics point to the authored setting", () => {
       Array.from({ length: 481 }, (_, i) => `| ${i} | ${i} |`).join("\n") +
       "\n\n" +
       chart("type: bar\ntitle: Too many\ndata: @many\nx: X\ny: Y");
-    expect(parseNotebookChartBlocks(markdown).diagnostics).toEqual([
+    expect(parseNotebookChartBlocks(markdown, notebookChartOptions).diagnostics).toEqual([
       { code: "too-many-items", line: 489, path: "chart.data", params: { limit: 480 } },
     ]);
   });
   test("unclosed charts remain source", () => {
-    expect(parseNotebookChartBlocks(`:::chart\n${inline}`).diagnostics).toContainEqual({ code: "unclosed-block", line: 1, path: "chart" });
+    expect(parseNotebookChartBlocks(`:::chart\n${inline}`, notebookChartOptions).diagnostics).toContainEqual({
+      code: "unclosed-block",
+      line: 1,
+      path: "chart",
+    });
   });
   test("every block after the twentieth is over budget", () => {
     const markdown = Array.from({ length: CHART_MAX_BLOCKS + 2 }, () => chart("type: stat\ntitle: Value\nvalue: 12")).join("\n");
-    const result = parseNotebookChartBlocks(markdown);
+    const result = parseNotebookChartBlocks(markdown, notebookChartOptions);
     expect(result.blocks).toHaveLength(20);
     expect(result.diagnostics).toEqual([101, 106].map((line) => ({ code: "too-many-items", line, path: "chart" })));
   });
   test("contract failures are owned diagnostics, never contract text", () => {
     expect(
-      parseNotebookChartBlocks(chart("type: pie\ntitle: Negative\ncolumns: [X, Y]\nrows:\n  - [A, -1]\nlabel: X\nvalue: Y")).diagnostics[0],
+      parseNotebookChartBlocks(
+        chart("type: pie\ntitle: Negative\ncolumns: [X, Y]\nrows:\n  - [A, -1]\nlabel: X\nvalue: Y"),
+        notebookChartOptions,
+      ).diagnostics[0],
     ).toMatchObject({ code: "chart-unsupported", line: 5 });
     expect(
-      parseNotebookChartBlocks(chart("type: pie\ntitle: Empty\ncolumns: [X, Y]\nrows:\n  - [A, 0]\nlabel: X\nvalue: Y")).diagnostics[0]
-        ?.code,
+      parseNotebookChartBlocks(
+        chart("type: pie\ntitle: Empty\ncolumns: [X, Y]\nrows:\n  - [A, 0]\nlabel: X\nvalue: Y"),
+        notebookChartOptions,
+      ).diagnostics[0]?.code,
     ).toBe("chart-unsupported");
   });
 });
 
 test("frame placeholders reuse the figure header and escape authored text", () => {
-  const frame = chartBlockFrame(["type: bar", "title: <b>Sales</b>", "subtitle: Draft"]);
+  const frame = chartBlockFrame(["type: bar", "title: <b>Sales</b>", "subtitle: Draft"], notebookChartOptions);
   expect(frame).toEqual({ kind: "bar", title: "<b>Sales</b>", subtitle: "Draft" });
   expect(frame && notebookChartFrameHtml(frame, "")).toContain("&lt;b&gt;Sales&lt;/b&gt;");
-  expect(chartBlockFrame(["type: nope", "title: Sales"])).toBeNull();
-  expect(chartBlockFrame(["type: bar"])).toBeNull();
+  expect(chartBlockFrame(["type: nope", "title: Sales"], notebookChartOptions)).toBeNull();
+  expect(chartBlockFrame(["type: bar"], notebookChartOptions)).toBeNull();
   const figure = renderNotebookChartFigure(input(chart(inline)), "en");
   expect(figure).toContain("<svg");
   expect(figure).toMatch(/<title>[^<]*Revenue[^<]*12/);
@@ -314,13 +403,13 @@ test("timestamp list labels keep their colons for the x column", () => {
 });
 
 test("frame uses the same quoted types and header limits as the parser", () => {
-  expect(chartBlockFrame(['type: "bar"', 'title: " Sales "'])).toEqual({ kind: "bar", title: "Sales" });
-  expect(chartBlockFrame(["type: bar", "title: " + "x".repeat(161)])).toBeNull();
-  expect(chartBlockFrame(["type: bar", "title: Sales", 'subtitle: ""'])).toBeNull();
+  expect(chartBlockFrame(['type: "bar"', 'title: " Sales "'], notebookChartOptions)).toEqual({ kind: "bar", title: "Sales" });
+  expect(chartBlockFrame(["type: bar", "title: " + "x".repeat(161)], notebookChartOptions)).toBeNull();
+  expect(chartBlockFrame(["type: bar", "title: Sales", 'subtitle: ""'], notebookChartOptions)).toBeNull();
 });
 
 test("a bad column reports its first row once, not one diagnostic per row", () => {
-  const diagnostics = parseNotebookChartBlocks(chart(inline.replace("type: bar", "type: line"))).diagnostics;
+  const diagnostics = parseNotebookChartBlocks(chart(inline.replace("type: bar", "type: line")), notebookChartOptions).diagnostics;
   expect(diagnostics.filter((entry) => entry.code === "chart-x-type")).toEqual([
     { code: "chart-x-type", line: 8, path: "chart.x", params: { name: "Month" } },
   ]);
@@ -331,15 +420,15 @@ test("a name shared by two blocks is a diagnostic, never an arbitrary pick", () 
   const markdown =
     "@sales\n:::data\nrevenue: 12\n:::\n\n@sales\n:::data\nrevenue: 999\n:::\n\n" +
     chart("type: stat\ntitle: Revenue\ndata: @sales\nvalue: revenue");
-  expect(parseNotebookChartBlocks(markdown).diagnostics).toEqual([
+  expect(parseNotebookChartBlocks(markdown, notebookChartOptions).diagnostics).toEqual([
     { code: "duplicate-block", line: 14, path: "chart.data", params: { name: "sales" } },
   ]);
 });
 
 test("one chart can be read alone, still within the note's block budget", () => {
   const markdown = Array.from({ length: CHART_MAX_BLOCKS + 1 }, () => chart("type: stat\ntitle: Value\nvalue: 12")).join("\n");
-  expect(parseNotebookChartBlocks(markdown, { line: 6 }).blocks.map((block) => block.line)).toEqual([6]);
-  expect(parseNotebookChartBlocks(markdown, { line: 101 })).toEqual({
+  expect(parseNotebookChartBlocks(markdown, { ...notebookChartOptions, line: 6 }).blocks.map((block) => block.line)).toEqual([6]);
+  expect(parseNotebookChartBlocks(markdown, { ...notebookChartOptions, line: 101 })).toEqual({
     blocks: [],
     diagnostics: [{ code: "too-many-items", line: 101, path: "chart" }],
   });

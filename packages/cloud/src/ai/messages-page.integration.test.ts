@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { migrateCloudAi } from "./migrate";
 import { publicAiStoredMessages } from "./public-projection";
 import { createAiShortId } from "./short-id";

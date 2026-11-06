@@ -1,9 +1,9 @@
-import { type ApiErrorResponse, type AuthContext, getLocale, respond } from "@k2b/cloud/server";
+import { type ApiErrorResponse, type AuthContext, auth, getLocale, respond } from "@k2b/cloud/server";
 import { err, fail, type Result, type ServiceError } from "@k2b/stdlib";
 import type { Context, Next, TypedResponse } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import { ResourceShortIdSchema } from "../contracts";
+import { type DraftSeedOrigin, ResourceShortIdSchema } from "../contracts";
 import { publicResources } from "../service";
 import { localizeMailError } from "../service/error-messages";
 
@@ -165,6 +165,22 @@ export const internalInput = async <T>(c: Context<MailApiContext>, value: T): Pr
   if (!resolved) throw new HTTPException(404, { message: localizeMailError(err.notFound("Mail resource"), getLocale(c)).message });
   return resolved;
 };
+
+/**
+ * Resolves a draft seed request to internal IDs. `messageId` names different resources across Mail inputs, so the
+ * relation walk above leaves it alone; the derive origin ("Use as new message") resolves it here.
+ */
+export const internalDraftSeedInput = async <T extends { origin: DraftSeedOrigin }>(c: Context<MailApiContext>, input: T): Promise<T> => {
+  const resolved = await internalInput(c, input);
+  if (resolved.origin.kind !== "derive") return resolved;
+  const messageId = await publicResources.resolveMailboxPublicId("messages", internalMailboxId(c), resolved.origin.messageId);
+  if (!messageId) throw new HTTPException(404, { message: localizeMailError(err.notFound("Mail resource"), getLocale(c)).message });
+  return { ...resolved, origin: { ...resolved.origin, messageId } };
+};
+
+/** Returns a draft seed with public IDs, including the derived message the composer sends back when it saves. */
+export const projectDraftSeed = async <T extends { origin: DraftSeedOrigin }>(result: Promise<Result<T>>): Promise<Result<T>> =>
+  projectResourcePaths(await result, [{ path: ["origin", "messageId"], table: "messages" }]);
 
 export const projectPublicRelations = async <T>(value: T): Promise<T> => {
   const maps = await relationMaps(value, "public");
@@ -359,13 +375,13 @@ export const internalParams = <T extends Record<string, unknown>>(c: Context<Mai
   return resolved;
 };
 
-export const resolveMailboxParam = async (c: Context<MailApiContext>, next: Next) => {
+export const resolveMailboxParam = auth.readOnlyMiddleware(async (c: Context<MailApiContext>, next: Next) => {
   const shortId = c.req.param("mailboxId");
   const mailboxId = shortId ? await publicResources.resolvePublicId("mailboxes", shortId) : null;
   if (!mailboxId) return respondPublic(c, fail(err.notFound("Mailbox")));
   c.set("internalMailboxId", mailboxId);
   await next();
-};
+});
 
 export const resolveMailboxResourceParam =
   (table: publicResources.MailboxOwnedPublicResourceTable, param: PublicParam, label: string) =>

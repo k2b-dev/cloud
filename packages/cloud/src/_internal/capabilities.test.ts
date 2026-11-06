@@ -10,6 +10,7 @@ import {
   CapabilityPageSchema,
   type CapabilityQueryManifest,
   CapabilitySemanticLinkSchema,
+  CloudResourceViewSchema,
   cloudResourceRefAppId,
   defineCapabilities,
   resolveCapabilityResourceReader,
@@ -26,6 +27,7 @@ import {
   reviewCompiledCapability,
   serializeCapabilityProviderResult,
 } from "./capabilities";
+import { projectSchema } from "./capability-schemas";
 
 const context = {
   actor: {
@@ -90,6 +92,23 @@ const example = () =>
 describe("capability v1 compilation", () => {
   test("rejects app ids that cannot be projected to stable qualified and MCP ids", () => {
     expect(() => compileCapabilities("example_app", example())).toThrow();
+  });
+
+  test("a type keeps its icon colour from the shared palette and rejects any other", () => {
+    const coloured = example();
+    const compiled = compileCapabilities("example", {
+      ...coloured,
+      types: { item: { ...coloured.types.item, color: "emerald" } },
+    });
+    expect(compiled.manifest.types[0]?.color).toBe("emerald");
+    expect(compileCapabilities("example", example()).manifest.types[0]).not.toHaveProperty("color");
+    expect(() =>
+      compileCapabilities("example", {
+        ...coloured,
+        // @ts-expect-error a colour outside the palette
+        types: { item: { ...coloured.types.item, color: "#ff0000" } },
+      }),
+    ).toThrow();
   });
 
   test("builds deterministic namespaced manifests and schemas", () => {
@@ -721,8 +740,12 @@ describe("capability v1 compilation", () => {
       compileCapabilities("example", defineCapabilities({ ...base, queries: { ...base.queries, search }, commands: { open } })),
     ).not.toThrow();
     rejects(
-      defineCapabilities({ ...base, events: { changed: { title: "Changed" } } }),
-      'Capability declaration contains unsupported field "events"',
+      defineCapabilities({ ...base, futureEvents: { changed: { title: "Changed" } } }),
+      'Capability declaration contains unsupported field "futureEvents"',
+    );
+    rejects(
+      defineCapabilities({ ...base, calendarSource: { calendars: "get", events: "get", subscribe: "rename" } }),
+      'calendarSource contains unsupported field "subscribe"',
     );
     rejects(
       defineCapabilities({ ...base, fileProvider: { list: "get", read: "get", trash: "rename" } }),
@@ -784,6 +807,40 @@ describe("capability v1 compilation", () => {
     const { manifestHash: _manifestHash, ...collisionBase } = collision;
     expect(() => parseCapabilityManifest({ ...collisionBase, manifestHash: capabilityHash(collisionBase) }, "example")).toThrow(
       "declared more than once",
+    );
+  });
+
+  test("keeps the Universal Search of an app built before result metadata had a format", () => {
+    const search = {
+      title: "Search items",
+      description: "Finds items for the global search surface.",
+      input: UniversalSearchInputSchema,
+      data: UniversalSearchDataSchema,
+      openWorld: false,
+      universalSearch: { tags: [{ tag: "item", title: "Items", description: "Search test items." }] },
+      run: async () => ok({ data: [] }),
+    };
+    const manifest = compileCapabilities("example", defineCapabilities({ protocolVersion: 2, queries: { search } })).manifest;
+    const untypedView = CloudResourceViewSchema.extend({
+      metadata: z
+        .array(z.object({ label: z.string().min(1).max(120), value: z.string().max(1000) }).strict())
+        .max(20)
+        .optional()
+        .describe("Small structured metadata shown with the result."),
+    });
+    for (const view of [untypedView, untypedView.omit({ context: true, status: true })]) {
+      const copy = structuredClone(manifest);
+      const query = copy.queries[0]!;
+      query.dataSchema = projectSchema(z.array(view).max(100), "Universal Search data", "output");
+      query.schemaHash = capabilityHash({ inputSchema: query.inputSchema, dataSchema: query.dataSchema });
+      const { manifestHash: _previous, ...base } = copy;
+      expect(parseCapabilityManifest({ ...base, manifestHash: capabilityHash(base) }, "example").queries[0]?.universalSearch).toEqual(
+        search.universalSearch,
+      );
+    }
+    // The data schema the release before `format` declared; the untyped view above must reproduce it.
+    expect(capabilityHash(projectSchema(z.array(untypedView).max(100), "Universal Search data", "output"))).toBe(
+      "ee85e1db41be2f7f916468539134714faa4b2e594fad0887bb4cae5bc93d0a88",
     );
   });
 
@@ -1698,3 +1755,31 @@ for (const kind of ["query", "action", "review"] as const) {
     expect(review).not.toHaveBeenCalled();
   });
 }
+
+test("capability execution caps OAuth actions even for direct and delegated callers", async () => {
+  const compiled = compileCapabilities("example", example());
+  for (const credentialKind of ["oauth", "invocation", "session", "api_key"] as const) {
+    for (const scopes of [[], ["read"], ["write"], ["admin"]]) {
+      const actor = {
+        ...context.actor,
+        delegation: { kind: "invocation" as const, callingAppId: "core", credentialKind: "oauth" as const, invocationId: "scope-test" },
+      };
+      const result = await invokeCompiledCapability({
+        compiled,
+        kind: "action",
+        localId: "rename",
+        input: { id: "one", name: "renamed" },
+        expectedSchemaHash: compiled.actions.get("rename")!.manifest.schemaHash,
+        context: {
+          ...context,
+          actor,
+          idempotencyKey: "scope-test-action",
+          authority: { actor, accessSubject: context.accessSubject, credentialKind, scopes },
+        },
+      });
+      const allowed = credentialKind === "session" || credentialKind === "api_key" || scopes.includes("write") || scopes.includes("admin");
+      expect(result.ok).toBe(allowed);
+      if (!allowed) expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
+    }
+  }
+});

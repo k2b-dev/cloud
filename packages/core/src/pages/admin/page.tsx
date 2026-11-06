@@ -8,16 +8,22 @@ const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
   [
     { href: "/admin/apps", title: t.apps, description: t.appsDescription, icon: "ti ti-apps", color: "blue" },
     { href: "/admin/rail", title: t.rail, description: t.railDescription, icon: "ti ti-layout-sidebar", color: "blue" },
-    { href: "/admin/app-credentials", title: t.appCredentials, description: t.appCredentialsDescription, icon: "ti ti-key", color: "blue" },
     {
-      href: "/admin/settings?tab=general",
+      href: "/admin/base",
       title: t.generalSettings,
       description: t.generalSettingsDescription,
       icon: "ti ti-app-window",
       color: "blue",
     },
     {
-      href: "/admin/settings?tab=security",
+      href: "/admin/settings?tab=storage",
+      title: t.storageSettings,
+      description: t.storageSettingsDescription,
+      icon: "ti ti-database",
+      color: "blue",
+    },
+    {
+      href: "/admin/signin/security",
       title: t.security,
       description: t.securityDescription,
       icon: "ti ti-shield-lock",
@@ -31,7 +37,7 @@ const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
       color: "orange",
     },
     {
-      href: "/admin/settings?tab=ai-providers",
+      href: "/admin/ai",
       title: t.aiProviders,
       description: t.aiProvidersDescription,
       icon: "ti ti-sparkles",
@@ -45,7 +51,7 @@ const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
       color: "amber",
     },
     {
-      href: "/admin/settings?tab=legal",
+      href: "/admin/base/legal",
       title: t.legal,
       description: t.legalDescription,
       icon: "ti ti-file-text",
@@ -59,8 +65,9 @@ export default ssr<AuthContext>(async (c) => {
   const adminApps = getDisplayRuntimeContext(c)
     .apps.filter((app) => !!app.adminHref && app.id !== "gateway-ops")
     .sort((a, b) => a.name.localeCompare(b.name));
-  const gatewayAdminAvailable = hasDedicatedRuntimeRoute(allApps, "/admin/gateway", "core");
+  // Apps and routes are a section of the Observability area.
   const observabilityAvailable = hasDedicatedRuntimeRoute(allApps, "/admin/observability", "core");
+  const gatewayAdminAvailable = observabilityAvailable;
   const primaryDestination = observabilityAvailable
     ? {
         href: "/admin/observability",
@@ -71,7 +78,7 @@ export default ssr<AuthContext>(async (c) => {
         icon: "ti ti-stethoscope",
       }
     : {
-        href: "/admin/settings?tab=general",
+        href: "/admin/base",
         eyebrow: t.configuration,
         title: t.configureInstance,
         description: t.configureDescription,
@@ -127,7 +134,7 @@ export default ssr<AuthContext>(async (c) => {
             <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
               {gatewayAdminAvailable ? (
                 <LinkCard
-                  href="/admin/gateway/apps"
+                  href="/admin/apps"
                   title={t.appsAndRoutes}
                   description={t.appsAndRoutesDescription}
                   icon="ti ti-route-scan"
@@ -143,7 +150,7 @@ export default ssr<AuthContext>(async (c) => {
                 />
               )}
               <LinkCard
-                href="/admin/settings?tab=user"
+                href="/admin/signin"
                 title={t.peopleAndAccess}
                 description={t.peopleAndAccessDescription}
                 icon="ti ti-users"
