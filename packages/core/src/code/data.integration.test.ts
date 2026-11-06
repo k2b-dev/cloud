@@ -5,8 +5,10 @@ import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
+import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
+import { migrate as migrateEvents } from "../migrate/core/events";
 import * as access from "./access";
 import { clearCodeAttentionCache, readCodeAttention } from "./attention";
 import { type Code, codeQueryContracts } from "./contracts";
@@ -89,6 +91,8 @@ databaseSuite()("Core Code data and Query authorization", () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code");
     await migrateAuth();
+    await migrateEvents();
+    await migrateAppEvents();
     await migrateCode(); // Forward on an empty identity database.
     for (const [name, id] of Object.entries(ids))
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${name},'local','user',${name === "admin"})`;

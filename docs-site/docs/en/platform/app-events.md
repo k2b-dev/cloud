@@ -445,3 +445,8 @@ Resource visibility checks carry a query-only, mandate-bound event proof. The
 provider revalidates the active subscription and claimed delivery before its
 ordinary Type reader checks the principal's current read access. The proof
 expires with that claim and cannot authorize an Action or a workload run.
+
+Code's resource-owned `app.on` registrations use these workload subscriptions,
+with their checked owner, event version and execution mandate. Delivery commits
+the event-to-run receipt before acknowledgment. See
+[Code event deliveries](/en/docs/platform/code-runs#understand-event-deliveries).

@@ -514,3 +514,14 @@ Keep Core, checker SDK and runner images on the same release: manifests use
 origin arrays, and a refused request can report a validated `origin` alongside
 its stable error code. See [Code secrets](/en/docs/platform/code-secrets) for
 literal declarations, redirect checks and network protections.
+
+## Event admission budget
+
+`core.code.event_backlog` limits queued and running event runs per Code to 100
+by default (operator range 1–1000). A full backlog leaves the event in the
+platform event-delivery queue, using its retry and retention budgets. Inspect
+failed admission on the Code page's Runs tab; an editor can deliberately retry
+an active subscription's failed delivery. No separate event broker is required.
+Runs from the same event subject do not overlap, including at higher per-Code
+concurrency. Pause, owner deletion and version changes fence subscriptions
+transactionally; resume starts with a fresh publication cutoff.

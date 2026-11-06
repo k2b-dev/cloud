@@ -39,6 +39,7 @@ import {
   type CodePageTargetRow,
   type CodePageVersion,
   coreQuery,
+  type EventDeliverySchema,
   RunListSchema,
   StartSchema,
   wrapped,
@@ -744,11 +745,17 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
   const schedule = () =>
     props.automation.kind === "schedule" && props.automation.cron
       ? describeCodeSchedule(props.automation.cron, props.text.locale())
-      : t().manualStart;
+      : props.automation.kind === "event"
+        ? t().triggerEvent
+        : t().manualStart;
   return (
     <div class="cloud-code__row cloud-code__row--automation" role="row">
       <span class="cloud-code__kind" aria-hidden="true">
-        <i class={props.automation.kind === "schedule" ? "ti ti-clock" : "ti ti-hand-finger"} />
+        <i
+          class={
+            props.automation.kind === "schedule" ? "ti ti-clock" : props.automation.kind === "event" ? "ti ti-bolt" : "ti ti-hand-finger"
+          }
+        />
       </span>
       <span class="cloud-code__cell" role="cell">
         <span class="cloud-code__title">
@@ -873,6 +880,71 @@ function LastRunRefusal(props: { data: CodePageData; state: CodePageReady; refus
   );
 }
 
+function EventDelivery(props: { delivery: z.infer<typeof EventDeliverySchema>; state: CodePageReady; text: PageText }) {
+  const [pending, setPending] = createSignal(false);
+  const [failed, setFailed] = createSignal(false);
+  let retryKey: string | undefined;
+  const retry = async () => {
+    if (pending()) return;
+    setPending(true);
+    setFailed(false);
+    try {
+      retryKey ??= crypto.randomUUID();
+      const result = await browserInvoke(
+        {
+          appId: "core",
+          capabilityId: "code.event.redeliver",
+          kind: "action",
+          target: { type: "core.code", id: props.state.code.id },
+          input: { deliveryId: props.delivery.id },
+          idempotencyKey: retryKey,
+        },
+        z.object({ deliveryId: z.string() }),
+      );
+      if (!result.ok) {
+        setFailed(true);
+        return;
+      }
+      retryKey = undefined;
+      refreshCurrentPath();
+    } catch {
+      setFailed(true);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <li>
+      <div class="cloud-code__row">
+        <span class="cloud-code__cell">
+          <span class="cloud-code__title">
+            {props.delivery.eventType} · {shortId(props.delivery.eventId)}
+          </span>
+          <span class="cloud-code__sub">
+            {props.text.when(props.delivery.createdAt)}
+            {props.delivery.code ? ` · ${props.delivery.code}` : ""}
+          </span>
+          <Show when={failed()}>
+            <span role="alert" class="cloud-code__bad">
+              {props.text.t().deliveryRetryFailed}
+            </span>
+          </Show>
+        </span>
+        <StatusBadge
+          tone={props.delivery.state === "failed" ? "error" : "neutral"}
+          label={props.delivery.state === "failed" ? props.text.t().deliveryFailed : props.text.t().deliveryWaiting}
+          variant="dot"
+        />
+        <Show when={props.delivery.state === "failed" && props.state.permission === "editor" && props.state.code.state === "active"}>
+          <Button type="button" size="sm" variant="secondary" loading={pending()} onClick={() => void retry()}>
+            {props.text.t().deliveryRetry}
+          </Button>
+        </Show>
+      </div>
+    </li>
+  );
+}
+
 function Runs(props: { data: CodePageData; state: CodePageReady; text: PageText }) {
   const t = props.text.t;
   const [items, setItems] = createSignal(props.state.runs?.items ?? []);
@@ -896,6 +968,16 @@ function Runs(props: { data: CodePageData; state: CodePageReady; text: PageText 
     <div class="cloud-code__body cloud-code__runs">
       <Show when={props.state.runs} fallback={<InlineError text={t().runsFailed} retry={t().tryAgain} />}>
         <section class="cloud-code__run-list" aria-label={t().runs}>
+          <Show when={props.state.runs?.eventDeliveries?.length}>
+            <section aria-label={t().eventDeliveries}>
+              <h3>{t().eventDeliveries}</h3>
+              <ul class="cloud-code__list">
+                <For each={props.state.runs?.eventDeliveries}>
+                  {(delivery) => <EventDelivery delivery={delivery} state={props.state} text={props.text} />}
+                </For>
+              </ul>
+            </section>
+          </Show>
           <Show when={items().length > 0} fallback={<p class="cloud-code__quiet">{t().runsEmpty}</p>}>
             <ul class="cloud-code__list">
               <For each={items()}>
@@ -969,7 +1051,11 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
   /** Only the complete call list proves that a failed run never reached an action. */
   const beforeFirstAction = () => calls() !== null && !afterAction() && next() === null;
   const canRerun = () =>
-    run().state === "failed" && afterAction() && props.state.permission === "editor" && props.state.code.state === "active";
+    run().trigger !== "event" &&
+    run().state === "failed" &&
+    afterAction() &&
+    props.state.permission === "editor" &&
+    props.state.code.state === "active";
   const loadMore = async () => {
     const after = next();
     if (after === null || loading()) return;

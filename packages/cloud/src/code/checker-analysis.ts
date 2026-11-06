@@ -289,27 +289,51 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         } else if (app && method) {
           const phase = codeSdkPhaseDiagnostic(method);
           if (phase) report(node, phase.code, phase.message);
-          if (method === "on") {
+          if (method === "on" && collecting) {
             const explicit = node.arguments.length === 3;
-            const event = node.arguments[explicit ? 1 : 0];
+            const eventNode = node.arguments[explicit ? 1 : 0];
+            const eventNames = eventNode && literals(eventNode);
+            const owner = request.sdk.manifest.owner;
             const place =
               explicit && node.arguments[0]
                 ? handle(node.arguments[0])
-                : request.sdk.manifest.owner?.kind === "resource"
-                  ? { type: request.sdk.manifest.owner.ref.type, ids: [request.sdk.manifest.owner.ref.id] }
-                  : request.sdk.manifest.owner?.kind === "app"
-                    ? { type: "cloud.app", ids: [request.sdk.manifest.owner.appId] }
-                    : { type: "owner", ids: ["owner"] };
-            const eventNames = event && literals(event);
-            if (!eventNames || !place?.ids) report(node, "code_dynamic_event", "Ereignis und Ort müssen als Konstanten erkennbar sein.");
-            else
-              for (const name of eventNames)
-                for (const id of place.ids) {
-                  const key = JSON.stringify([name, place.type, id]);
-                  if (events.has(key))
-                    report(node, "code_duplicate_on", "Ein zweites app.on für dasselbe Ereignis am selben Ort ist nicht erlaubt.");
-                  events.add(key);
-                }
+                : owner?.kind === "resource"
+                  ? { type: owner.ref.type, ids: [owner.ref.id] }
+                  : undefined;
+            const name = eventNames?.length === 1 ? eventNames[0] : undefined;
+            const spec = request.sdk.manifest.events.find((event) => event.type === name);
+            if (!name || !place?.ids || place.ids.length !== 1)
+              report(node, "code_dynamic_event", "Ereignis und Ort müssen als Konstanten erkennbar sein.");
+            else if (
+              !owner ||
+              owner.kind !== "resource" ||
+              spec?.place !== owner.ref.type ||
+              place.type !== owner.ref.type ||
+              place.ids[0] !== owner.ref.id
+            )
+              report(node, "code_event_owner", "Ereignisse sind nur am eigenen Ressourcen-Ort verfügbar.");
+            else if (!ts.isExpressionStatement(node.parent) || !ts.isSourceFile(node.parent.parent))
+              report(node, "code_static_event", "Deklariere Ereignisse auf Modulebene.");
+            else {
+              const key = JSON.stringify([name, place.type, place.ids[0]]);
+              if (events.has(key))
+                report(node, "code_duplicate_on", "Ein zweites app.on für dasselbe Ereignis am selben Ort ist nicht erlaubt.");
+              events.add(key);
+              const entrypoint = `event:${name}@${spec.version}`;
+              if (entryNames.has(entrypoint)) report(node, "code_duplicate_on", "Der Ereignis-Name ist bereits vergeben.");
+              entryNames.add(entrypoint);
+              const handler = node.arguments[explicit ? 2 : 1];
+              if (handler) handlers.push({ handler, name: entrypoint });
+              const sf = node.getSourceFile();
+              result.entrypoints.push({
+                kind: "event",
+                entrypoint,
+                cron: null,
+                event: { type: name, version: spec.version, place: owner.ref },
+                file: sf.fileName.slice(root.length),
+                line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
+              });
+            }
           }
           if (method === "schedule" && collecting) {
             const cron = node.arguments[0] && literals(node.arguments[0]);

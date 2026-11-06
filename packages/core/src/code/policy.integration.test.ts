@@ -4,10 +4,12 @@ import { CapabilityActionCallReviewSchema, type User } from "@k2b/cloud/contract
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
+import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
+import { migrate as migrateEvents } from "../migrate/core/events";
 import type { CodeContext } from "./access";
 import {
   effectiveCodePolicy,
@@ -85,6 +87,8 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     setSystemTime(now);
     database = await useFreshDatabase("core_code_policy");
     await migrateAuth();
+    await migrateEvents();
+    await migrateAppEvents();
     await migrateCode();
     await migratePolicy();
     await migrateAudit();

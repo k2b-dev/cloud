@@ -125,16 +125,47 @@ Names contain letters,
 digits, dots, underscores or hyphens, start with a letter or digit, and must be
 unique in the module. Keep the name across versions to identify the same task.
 
+## React to resource events
+
+Resource-owned Code can register a declared automation event at its own place:
+
+```ts
+import { app, owner } from "@sdk";
+
+app.on("inventory.item.changed", async (event) => {
+  // event.subject identifies the changed item; event.place is this Code's owner.
+  // Read current data through the SDK before deciding what to do.
+});
+```
+
+Use an event actually offered by the generated SDK. `app.on(owner, event, handler)`
+is the explicit form. The event name and place must be constants at module level.
+Only one handler per event is allowed. Personal Code and app-owned Code cannot
+subscribe. Events without a place, events at another place, and declarations
+with `automation: false` cannot start this Code.
+
+The handler receives the typed reference envelope: `id`, `type`, `version`,
+`source`, `time`, `subject`, `place`, optional `cause`, and `data`. Data stays
+reference-only; the event grants no access to the referenced resource. Cloud
+checks the Code account's current read permission at the place before admitting
+a run. Actual SDK calls still check their current target permissions.
+
+Checking records the exact event version and owner place in the immutable
+manifest. Activation installs those subscriptions with the approved version's
+execution mandate. The stable entrypoint is `event:<event-type>@<version>`.
+See [Code runs](/en/docs/platform/code-runs#understand-event-deliveries) for
+pause, replay, deduplication and queue behavior.
+
 ## Recognize later-phase APIs
 
 The `app` type includes `schedule`, `on`, `get`, `post`, `put`, `delete`, `all`,
-`nav`, `webhook`, and `fetch`. Only `schedule` is available in Phase 1.
+`nav`, `webhook`, and `fetch`. `schedule` and resource-scoped `on` are available.
 Route, navigation and fetch registrations report
-`app.<method> kommt in Phase 2`; events and webhooks report Phase 3. The runtime
+`app.<method> kommt in Phase 2`; webhooks report Phase 3. The runtime
 also refuses these calls. Declaring a later-phase method never silently
 registers a working route or event handler.
 
-Eligible event payloads come from event schemas. Events with
+Event data types come from event schemas. Events with
 `automation: false` are absent. Future route contexts provide `c.req`,
 `c.user`, `c.json`, `c.text`, `c.html`, and `c.redirect`. Webhook contexts have
 `c.verify(secret)` and no `c.user`. Navigation controls presentation only;

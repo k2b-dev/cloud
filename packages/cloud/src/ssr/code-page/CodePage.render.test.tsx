@@ -927,3 +927,42 @@ test("a legacy version entry shows the reconfirmation hint", () => {
   expect(rendered).toContain("Neu bestätigen");
   expect(rendered).toContain("Beim Wechsel pausiert der alte Eintrag.");
 });
+
+test("failed event delivery remains visible and only an active editor can retry it", () => {
+  const page = (permission: "editor" | "reader", state: "active" | "paused") => {
+    const data = codePageFixture("runs");
+    if (data.state.kind !== "ready") throw new Error("Missing ready fixture");
+    data.state.permission = permission;
+    data.state.code.state = state;
+    data.state.runs = {
+      items: [],
+      nextCursor: null,
+      eventDeliveries: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          eventId: "22222222-2222-4222-8222-222222222222",
+          eventType: "fixture.changed",
+          state: "failed",
+          code: "code_event_backlog_full",
+          attempts: 8,
+          createdAt: "2026-11-06T12:00:00Z",
+        },
+      ],
+    };
+    return renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "en",
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    );
+  };
+  const markup = page("editor", "active");
+  expect(markup).toContain("fixture.changed");
+  expect(markup).toContain("code_event_backlog_full");
+  expect(markup).toContain("Retry delivery");
+  expect(markup).toContain('data-tone="error"');
+  expect(page("reader", "active")).not.toContain("Retry delivery");
+  expect(page("editor", "paused")).not.toContain("Retry delivery");
+});

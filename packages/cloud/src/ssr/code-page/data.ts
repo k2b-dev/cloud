@@ -58,7 +58,12 @@ export const ManifestSchema = z.object({
   secrets: z.array(z.object({ name: z.string(), binding_revision: z.string(), origin: z.string() })).optional(),
   internet: CodeInternetOriginsSchema.optional(),
   entrypoints: z.array(
-    z.object({ kind: z.enum(["schedule", "manual"]), entrypoint: z.string(), title: z.string().optional(), cron: z.string().nullable() }),
+    z.object({
+      kind: z.enum(["schedule", "manual", "event"]),
+      entrypoint: z.string(),
+      title: z.string().optional(),
+      cron: z.string().nullable(),
+    }),
   ),
   permissions: z.array(PermissionSchema),
 });
@@ -86,7 +91,20 @@ const RunSchema = z.object({
   /** Who started it again, as the directory shows them to this viewer. */
   rerunByName: z.string().nullable().optional(),
 });
-export const RunListSchema = z.object({ items: z.array(RunSchema), nextCursor: z.string().nullable() });
+export const EventDeliverySchema = z.object({
+  id: z.string(),
+  eventId: z.string(),
+  eventType: z.string(),
+  state: z.enum(["pending", "retrying", "failed"]),
+  code: z.string().nullable(),
+  attempts: z.number(),
+  createdAt: z.string(),
+});
+export const RunListSchema = z.object({
+  items: z.array(RunSchema),
+  nextCursor: z.string().nullable(),
+  eventDeliveries: z.array(EventDeliverySchema).optional(),
+});
 const CallSchema = z.object({
   ordinal: z.number().int(),
   kind: z.enum(["query", "action"]),
@@ -230,7 +248,7 @@ export type CodePageAutomation = {
   entrypoint: string;
   /** Reviewed human title; absent on older versions. */
   title?: string;
-  kind: "schedule" | "manual";
+  kind: "schedule" | "manual" | "event";
   cron: string | null;
   /** Only the waiting version has it. */
   isNew: boolean;
@@ -318,7 +336,7 @@ export type CodePageReady = {
   refusal: CodePageRefusal | null;
   /** What switching on the waiting version asks for; null without a waiting version or when unreadable. */
   waitingTargets: CodePageActivationRow[] | null;
-  runs: { items: CodePageRun[]; nextCursor: string | null } | null;
+  runs: { items: CodePageRun[]; nextCursor: string | null; eventDeliveries?: z.infer<typeof EventDeliverySchema>[] } | null;
   run: CodePageRunDetail | null;
   /** The selected version and its difference to the previous one. */
   diff: CodePageDiff | null;

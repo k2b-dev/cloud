@@ -196,6 +196,8 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       if (event.automation === false) continue;
       manifest.events.push({
         type: `${app.appId}.${event.localId}`,
+        version: event.version,
+        subject: `${app.appId}.${event.subject}`,
         place: event.place ? `${app.appId}.${event.place}` : null,
         dataSchema: structuredClone(event.dataSchema),
         schemaHash: event.schemaHash,
@@ -257,13 +259,18 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     const events = manifest.events.map((event, index) => {
       const data = schemaTypes(event.dataSchema, `Event${index}`);
       declarations.push(...data.declarations);
-      return `${quote(event.type)}: ${data.type}`;
+      return `${quote(event.type)}: CodeEvent<${quote(event.type)}, ${data.type}>`;
     });
     declarations.push(
+      `export type CodeEvent<Type extends string, Data> = {
+  id: string; type: Type; version: number; source: string; time: string;
+  subject: { type: string; id: string }; place: { type: string; id: string };
+  cause?: { requestId: string }; data: Data;
+};`,
       `export type CodeEvents = { ${events.join("; ")} };`,
       `export type CodeApp = {
   schedule(cron: string, handler: CodeScheduleHandler, options?: { name: string; title?: string }): CodeApp;
-  /** Phase 3; check reports code_phase_unavailable. */
+  /** The checked event is scoped to this resource Code owner. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   /** Phase 2; check reports code_phase_unavailable. */
@@ -303,6 +310,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     })),
     ...(manifest.owner ? { owner: manifest.owner } : {}),
     appMethods: manifest.appMethods,
+    events: manifest.events.map(({ type, version, place }) => ({ type, version, place })),
   };
   return {
     declarations: `${declarations.join("\n\n")}\n`,

@@ -146,7 +146,7 @@ export const resolveInvocationAuthority = async (
       !claims.mandate_id ||
       !claims.mandate_revision ||
       !claims.workload_id ||
-      !claims.workload_run ||
+      (!claims.workload_run && !claims.workload_event) ||
       claims.scopes.length !== 0
     )
       return null;

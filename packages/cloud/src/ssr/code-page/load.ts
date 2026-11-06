@@ -592,7 +592,10 @@ const loadReady = async (
     refusal,
     attentionReasons: attentionResult?.ok ? (attentionResult.data.data.items.find((item) => item.codeId === code.id)?.reasons ?? []) : null,
     waitingTargets,
-    runs: runs && runsResult.ok ? { items: runs, nextCursor: runsResult.data.data.nextCursor } : null,
+    runs:
+      runs && runsResult.ok
+        ? { items: runs, nextCursor: runsResult.data.data.nextCursor, eventDeliveries: runsResult.data.data.eventDeliveries ?? [] }
+        : null,
     run,
     diff,
     selectionFailed: Boolean((selectedRunId && !run) || (selectedVersionId && !diff)),

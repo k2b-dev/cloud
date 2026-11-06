@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CapabilityQualifiedIdSchema, CloudResourceRefSchema } from "./capabilities";
 import { CodeInternetOriginsSchema } from "./code-internet";
 import { CodeSecretVersionBindingSchema } from "./code-secrets";
 
@@ -67,6 +68,15 @@ export const CodeVersionPermissionSchema = z
   .strict();
 /** One permission emitted by the checker, with its source location and, when known, the entrypoints that use it. */
 export type CodeVersionPermission = z.infer<typeof CodeVersionPermissionSchema>;
+/** Exact checked resource event registration. It carries no resource grants. */
+export const CodeEventTriggerSchema = z
+  .object({
+    type: CapabilityQualifiedIdSchema,
+    version: z.number().int().positive(),
+    place: CloudResourceRefSchema,
+  })
+  .strict();
+
 /** The checker's immutable manifest plus the host's original check entry and policyRows.
  * Copy version/entrypoints/permissions/ai/hashes unchanged from checkCode's result.
  * entry comes from CodeCheckRequest.entry; policyRows comes from trusted operation metadata.
@@ -79,14 +89,22 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
     .array(
       z
         .object({
-          kind: z.enum(["schedule", "manual"]).describe("Scheduled or manually invoked entrypoint."),
+          kind: z.enum(["schedule", "manual", "event"]).describe("Scheduled or manually invoked entrypoint."),
           entrypoint: z.string().min(1).describe("Named ESM export selected by the runner."),
           title: CodeAutomationTitleSchema.optional().describe("Optional reviewed display title; entrypoint remains the stable key."),
+          event: CodeEventTriggerSchema.optional().describe("Exact event version and owner place for an event entrypoint."),
           cron: z.string().nullable().describe("Five-field schedule expression, or null for manual execution."),
           file: z.string().min(1).describe("Relative source file containing this declaration or operation."),
           line: z.number().int().positive().describe("One-based source line."),
         })
-        .strict(),
+        .strict()
+        .refine(
+          (entry) =>
+            entry.kind === "event"
+              ? !!entry.event && entry.cron === null && entry.entrypoint === `event:${entry.event.type}@${entry.event.version}`
+              : !entry.event,
+          "Event metadata and stable entrypoint must match the registration kind",
+        ),
     )
     .describe("All named executable entrypoints detected by the checker."),
   permissions: z.array(CodeVersionPermissionSchema).describe("Every detected operation and target with its source location."),

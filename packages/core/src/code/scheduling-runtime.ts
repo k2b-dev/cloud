@@ -6,6 +6,7 @@ import { coreSettings, logger } from "@k2b/cloud/services";
 import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import type { Queue, Scheduler, Worker } from "@k2b/sync";
 import { claimCodeWork } from "./dispatch";
+import { startCodeEventConsumer } from "./events";
 import { reconcileCodeJobs } from "./runner-jobs";
 import { codeRunnerLease, processCurrentCodeScheduleTick, readCodeRunLimits, reconcileCodeRuns, recordCodeRunner } from "./scheduling";
 import { CODE_SCHEDULE_TICK_RETENTION_MS } from "./scheduling-contracts";
@@ -187,6 +188,7 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
 
 /** Core lifecycle owns the queue publisher, scheduler worker and bounded lease/outbox repair. Stop drains every owned task. */
 export async function startCodeScheduling(): Promise<() => Promise<void>> {
+  const stopEventConsumer = startCodeEventConsumer();
   let worker: Worker | undefined;
   let pending: Promise<void> | undefined;
   const reconcileSchedules = createCodeScheduleReconciler(codeRunScheduler());
@@ -202,6 +204,7 @@ export async function startCodeScheduling(): Promise<() => Promise<void>> {
     codeRunOutbox.start();
     codeJobOutbox.start();
   } catch (error) {
+    stopEventConsumer();
     worker?.stop();
     await worker?.drain();
     await codeRunOutbox.stop();
@@ -226,6 +229,7 @@ export async function startCodeScheduling(): Promise<() => Promise<void>> {
   return async () => {
     clearInterval(timer);
     await pending;
+    stopEventConsumer();
     worker?.stop();
     await worker?.drain();
     await codeRunOutbox.stop();
