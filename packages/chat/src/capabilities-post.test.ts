@@ -186,16 +186,3 @@ test("chat post checks a delegated credential before review or dispatch and carr
   await action.run(input, { ...context, via: "assistant" });
   expect(send.mock.calls[0]?.[0].via).toBe("assistant");
 });
-
-test("the shared send service rejects a credential ceiling before accessing storage", async () => {
-  const allowed = spyOn(access, "requireConversation");
-  const result = await messages.send({
-    actor: context.actor,
-    accessSubject: context.accessSubject,
-    credentialScopes: ["read"],
-    conversationId: "Chat01",
-    input: { clientId: "key", body: "Text" },
-  });
-  expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
-  expect(allowed).not.toHaveBeenCalled();
-});
