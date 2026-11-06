@@ -19,7 +19,12 @@ import { superviseRuntimeTask } from "./runtime-lifecycle";
 
 export { APP_EVENT_DELIVERY_ATTEMPTS, APP_EVENT_DELIVERY_BACKOFF_MS } from "./app-events/deliver";
 export type { ResourceEventBinding, ResourceEventConsumer } from "./app-events/resources";
-export { cancelResourceEventSubscriptions, registerResourceEventConsumer, subscribeResourceEvent } from "./app-events/resources";
+export {
+  cancelResourceEventSubscriptions,
+  registerResourceEventConsumer,
+  replayResourceEventDelivery,
+  subscribeResourceEvent,
+} from "./app-events/resources";
 
 const log = logger("app-events:broker");
 const topicInventory = lazySync((sync) => () => sync.listTopics({ idPrefix: "cloud:app-events" }));

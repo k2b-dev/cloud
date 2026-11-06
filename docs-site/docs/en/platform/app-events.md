@@ -349,7 +349,7 @@ For the retry schedule, retention budget, and recovery commands, see
 ## Platform-owned resource consumers
 
 The server module `@k2b/cloud/services/app-events` exposes the Core host hooks
-`subscribeResourceEvent`, `cancelResourceEventSubscriptions`, and
+`subscribeResourceEvent`, `cancelResourceEventSubscriptions`, `replayResourceEventDelivery`, and
 `registerResourceEventConsumer`. These are platform-owned hooks, not an
 application subscription API. Ordinary application authors continue to use
 `subscribes` for service events.
@@ -382,6 +382,15 @@ committed first is already separate workload work. Offline consumer code leaves
 work retrying without spending handler attempts. Resource consumers share the
 existing broker, delivery table, eight-attempt retry policy, retention and
 per-subscription subject ordering; no second transport is installed.
+
+For deliberate recovery after a workload change, the host can call
+`replayResourceEventDelivery` in its authorized workload transaction. It moves
+a retained delivery to the current subscription for the same consumer, key,
+event version and place. This explicit operation bypasses the registration
+cutoff, then repeats ordinary visibility and admission checks. It does not
+repeat effects already admitted by the consumer's receipt. Recovery is limited
+to 30 days after the event was received. Resource delivery records remain for
+30 days to support this recovery; ordinary service delivery retention is unchanged.
 
 ## Test a handler locally
 

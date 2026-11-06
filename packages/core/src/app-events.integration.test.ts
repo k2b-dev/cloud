@@ -3,7 +3,12 @@ import { sql } from "@k2b/cloud";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { AppEventEnvelope } from "@k2b/cloud/contracts/app-events";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
-import { cancelResourceEventSubscriptions, createAppEventBroker, subscribeResourceEvent } from "@k2b/cloud/services/app-events";
+import {
+  cancelResourceEventSubscriptions,
+  createAppEventBroker,
+  replayResourceEventDelivery,
+  subscribeResourceEvent,
+} from "@k2b/cloud/services/app-events";
 import { createSync, type TopicDeadLetter } from "@k2b/sync";
 import { z } from "zod";
 import { connectTestNats, suiteFor, testFor, testInfra, testSyncNamespace, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
@@ -221,6 +226,20 @@ suiteFor("database")("Core app event broker", () => {
     for (const row of claimed) await broker.deliver(row);
     expect(received).toEqual([]);
     expect((await broker.deliveries()).items.every((row: Record<string, unknown>) => row.state === "cancelled")).toBe(true);
+    await subscribeResourceEvent(sql, {
+      appId: "receivera",
+      type: "eventsource.changed",
+      version: 1,
+      binding: { ...binding, revision: "version-2" },
+    });
+    const cancelled = (await broker.deliveries()).items.find((row: Record<string, unknown>) => row.eventId === id(64))!;
+    expect(await sql.begin((db) => replayResourceEventDelivery(db, String(cancelled.id), "fixture", "foreign"))).toBeNull();
+    expect(await sql.begin((db) => replayResourceEventDelivery(db, String(cancelled.id), "fixture", "workload"))).toBeTruthy();
+    await broker.work();
+    expect(received).toEqual([id(64)]);
+    await sql`UPDATE events.app_events SET received_at=now()-interval '31 days' WHERE id=${id(65)}::uuid`;
+    const expired = (await broker.deliveries()).items.find((row: Record<string, unknown>) => row.eventId === id(65))!;
+    expect(await sql.begin((db) => replayResourceEventDelivery(db, String(expired.id), "fixture", "workload"))).toBeNull();
   });
   test("bounded retry ends failed, audits it, redelivers the same ID and preserves subject order", async () => {
     entries = entries.filter((entry) => entry.appId !== "receiverb");

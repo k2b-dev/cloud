@@ -270,7 +270,10 @@ a shorter outage target. A missed or expired event requires domain reconciliatio
 Core retains unresolved deliveries for **30 days** from creation or the latest
 administrator redelivery, then marks them
 `cancelled` with `retention_expired`. That cancellation remains visible for
-**7 days**. Completed and cancelled deliveries are retained for **7 days**;
+**7 days** for service deliveries, or **30 days** for resource workloads.
+Completed and cancelled service deliveries are retained for **7 days**;
+resource workload deliveries remain for **30 days** to support explicit recovery
+across workload revisions within the event's 30-day recovery window;
 failures are not silently discarded. Events are retained for at least
 **30 days**, and longer while deliveries still reference them. After cleanup
 removes the retained records, `redeliver` cannot recover them.

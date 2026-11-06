@@ -87,6 +87,42 @@ export async function cancelResourceEventSubscriptions(db: SQL, consumer: string
       AND delivery.state IN ('pending','retrying','failed')`;
 }
 
+/** Deliberate workload recovery within event retention. The caller authorizes the workload and holds its activation lock. */
+export async function replayResourceEventDelivery(db: SQL, deliveryId: string, consumer: string, key: string): Promise<string | null> {
+  const [source] = await db<
+    {
+      event_id: string;
+      subscription_id: string;
+      subject_key: string;
+      resource_binding: ResourceEventBinding;
+      event_type: string;
+      version: number;
+    }[]
+  >`
+    SELECT delivery.event_id,delivery.subscription_id,delivery.subject_key,subscription.resource_binding,subscription.event_type,subscription.version
+    FROM events.app_deliveries delivery JOIN events.app_subscriptions subscription ON subscription.id=delivery.subscription_id
+    JOIN events.app_events event ON event.id=delivery.event_id
+    WHERE delivery.id=${deliveryId}::uuid AND subscription.resource_binding->>'consumer'=${consumer}
+      AND subscription.resource_binding->>'key'=${key} AND event.state='accepted'
+      AND event.received_at>=clock_timestamp()-interval '30 days'
+      AND delivery.state IN ('failed','cancelled','done') FOR UPDATE OF delivery`;
+  if (!source) return null;
+  const [current] = await db<{ id: string }[]>`SELECT id FROM events.app_subscriptions
+    WHERE state='active' AND resource_binding->>'consumer'=${consumer} AND resource_binding->>'key'=${key}
+      AND resource_binding->'place'=${JSON.stringify(source.resource_binding.place)}::text::jsonb
+      AND event_type=${source.event_type} AND version=${source.version} FOR SHARE`;
+  if (!current) return null;
+  const [delivery] = await db<{ id: string }[]>`INSERT INTO events.app_deliveries(id,subscription_id,event_id,subject_key)
+    VALUES(gen_random_uuid(),${current.id},${source.event_id}::uuid,${source.subject_key})
+    ON CONFLICT(subscription_id,event_id) DO UPDATE SET state='pending',code=NULL,last_error=NULL,
+      attempts=0,unreachable_count=0,claimed_until=NULL,claim_token=NULL,next_attempt_at=now(),retained_from=now(),updated_at=now()
+    WHERE events.app_deliveries.state IN ('failed','cancelled','done') RETURNING id`;
+  if (!delivery) return null;
+  if (source.subscription_id !== current.id)
+    await db`UPDATE events.app_deliveries SET code='workload_replayed',updated_at=now() WHERE id=${deliveryId}::uuid`;
+  return delivery.id;
+}
+
 /** Permission checks use the place's ordinary Type reader. They grant no permission to the handler. */
 export async function authorizeResourceEvent(
   appId: string,
