@@ -12,7 +12,7 @@ updated: 2026-11-06
 
 This release adds protected summary writes and idempotent reference allocation
 to Mail's capability API. It also adds explicit `waiting` and `needs_action`
-status writes, revision fences for status batches, an atomic unassigned-only
+status writes through new `conversation.status.set` and `.batch` Actions, revision fences for status batches, an atomic unassigned-only
 assignment option, and an exact-message target for move and mark.
 
 These Actions declare the shared silent policy and still enforce current Mail

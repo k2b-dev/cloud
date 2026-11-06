@@ -644,6 +644,8 @@ describe("mail capabilities", () => {
       "conversation.reminder.cancel",
       "conversation.reminder.set",
       "conversation.snooze",
+      "conversation.status.set",
+      "conversation.status.set.batch",
       "conversation.status.update",
       "conversation.status.update.batch",
       "conversation.summary.write",
@@ -720,6 +722,8 @@ describe("mail capabilities", () => {
       "conversation.reminder.cancel",
       "conversation.reminder.set",
       "conversation.snooze",
+      "conversation.status.set",
+      "conversation.status.set.batch",
       "conversation.status.update",
       "conversation.status.update.batch",
       "conversation.summary.write",
@@ -757,6 +761,8 @@ describe("mail capabilities", () => {
       "conversation.reminder.cancel",
       "conversation.reminder.set",
       "conversation.snooze",
+      "conversation.status.set",
+      "conversation.status.set.batch",
       "conversation.status.update",
       "conversation.status.update.batch",
       "conversation.summary.write",
@@ -1463,6 +1469,14 @@ describe("mail capabilities", () => {
         { mailboxId, conversationId, expectedRevision: 4, status: "done" },
         context,
       ),
+      await mailCapabilities.actions["conversation.status.set.batch"].review(
+        { mailboxId, conversationIds: [conversationId], status: "waiting" },
+        context,
+      ),
+      await mailCapabilities.actions["conversation.status.set"].review(
+        { mailboxId, conversationId, expectedRevision: 4, status: "waiting" },
+        context,
+      ),
       await mailCapabilities.actions["conversation.keep"].review({ mailboxId, conversationId }, context),
       await mailCapabilities.actions["conversation.snooze"].review(
         { mailboxId, conversationId, expectedRevision: 4, snoozedUntil: timestamp },
@@ -1813,6 +1827,24 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["conversation.status.update"],
         run: () =>
           mailCapabilities.actions["conversation.status.update"].run(
+            { mailboxId, conversationId, expectedRevision: 4, status: "done" },
+            context,
+          ),
+      },
+      {
+        localId: "conversation.status.set.batch",
+        action: mailCapabilities.actions["conversation.status.set.batch"],
+        run: () =>
+          mailCapabilities.actions["conversation.status.set.batch"].run(
+            { mailboxId, conversationIds: [conversationId, relatedConversationId], status: "done" },
+            context,
+          ),
+      },
+      {
+        localId: "conversation.status.set",
+        action: mailCapabilities.actions["conversation.status.set"],
+        run: () =>
+          mailCapabilities.actions["conversation.status.set"].run(
             { mailboxId, conversationId, expectedRevision: 4, status: "done" },
             context,
           ),
@@ -3646,12 +3678,12 @@ describe("Mail safe unattended actions", () => {
       ok: true,
       data: { completion: "needs_action", results: [] },
     });
-    await mailCapabilities.actions["conversation.status.update"].run(
+    await mailCapabilities.actions["conversation.status.set"].run(
       { mailboxId, conversationId, expectedRevision: 4, status: "waiting" },
       context,
     );
     expect(single).toHaveBeenCalledWith(expect.objectContaining({ input: { expectedRevision: 4, completion: "waiting" } }));
-    await mailCapabilities.actions["conversation.status.update.batch"].run(
+    await mailCapabilities.actions["conversation.status.set.batch"].run(
       { mailboxId, conversationIds: [conversationId], expectedRevisions: { [conversationId]: 4 }, status: "needs_action" },
       context,
     );

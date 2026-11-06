@@ -9,6 +9,8 @@ import {
   ConversationMarkInputSchema,
   ConversationMoveInputSchema,
   ConversationSearchInputSchema,
+  ConversationStatusSetBatchInputSchema,
+  ConversationStatusSetInputSchema,
   ConversationStatusUpdateBatchInputSchema,
   ConversationStatusUpdateInputSchema,
   ConversationSummaryWriteInputSchema,
@@ -87,13 +89,24 @@ describe("Mail unattended mutation contracts", () => {
       ConversationMoveInputSchema.parse({ mailboxId: "MbA123", target, destination: { kind: "role", role: "archive" } }).target,
     ).toEqual(target);
   });
+  test("published update schemas retain done and open only", () => {
+    for (const status of ["waiting", "needs_action"]) {
+      expect(
+        ConversationStatusUpdateInputSchema.safeParse({ mailboxId: "MbA123", conversationId: "CvB456", expectedRevision: 3, status })
+          .success,
+      ).toBeFalse();
+      expect(
+        ConversationStatusUpdateBatchInputSchema.safeParse({ mailboxId: "MbA123", conversationIds: ["CvB456"], status }).success,
+      ).toBeFalse();
+    }
+  });
   test("status accepts domain states and preserves explicit revisions", () => {
     for (const status of ["needs_action", "waiting", "done", "open"] as const) {
       expect(
-        ConversationStatusUpdateInputSchema.parse({ mailboxId: "MbA123", conversationId: "CvB456", expectedRevision: 3, status }).status,
+        ConversationStatusSetInputSchema.parse({ mailboxId: "MbA123", conversationId: "CvB456", expectedRevision: 3, status }).status,
       ).toBe(status);
       expect(
-        ConversationStatusUpdateBatchInputSchema.parse({
+        ConversationStatusSetBatchInputSchema.parse({
           mailboxId: "MbA123",
           conversationIds: ["CvB456"],
           expectedRevisions: { CvB456: 3 },

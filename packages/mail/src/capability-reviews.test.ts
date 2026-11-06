@@ -78,6 +78,8 @@ const silent = [
   "conversation.tag.update",
   "conversation.summary.write",
   "conversation.reference.ensure",
+  "conversation.status.set",
+  "conversation.status.set.batch",
   "conversation.status.update",
   "conversation.status.update.batch",
   "conversation.keep",
@@ -90,7 +92,7 @@ const silent = [
 ];
 
 describe("Mail review contract", () => {
-  test("all 30 policies compile exactly as decided, without legacy approval declarations", () => {
+  test("all 32 policies compile exactly as decided, without legacy approval declarations", () => {
     const expected: Record<string, import("@k2b/cloud/contracts").CapabilityActionPolicy> = {
       ...Object.fromEntries(silent.map((id) => [id, { silent: "shared" }])),
       ...Object.fromEntries(Object.entries(askPolicies).map(([id, ask]) => [id, { ask }])),
@@ -98,7 +100,7 @@ describe("Mail review contract", () => {
       "conversation.reminder.cancel": { silent: "you" },
       "folder.display.set": { silent: "shared", routines: false },
     };
-    expect(Object.keys(expected)).toHaveLength(30);
+    expect(Object.keys(expected)).toHaveLength(32);
     expect(Object.keys(mailActionReviews).sort()).toEqual(Object.keys(expected).sort());
     expect(Object.keys(mailCapabilities.actions).sort()).toEqual(Object.keys(expected).sort());
     for (const [id, policy] of Object.entries(expected)) expect(capabilityActionPolicy(manifest, id)).toEqual(policy);
@@ -284,6 +286,10 @@ describe("Mail review contract", () => {
       for (const status of ["done", "open"] as const) {
         assertCapabilityReview(mailActionReviews["conversation.status.update"](status, locale, conversation));
         assertCapabilityReview(mailActionReviews["conversation.status.update.batch"](status, locale, count, { effects: 3 }));
+      }
+      for (const status of ["done", "open", "waiting", "needs_action"] as const) {
+        assertCapabilityReview(mailActionReviews["conversation.status.set"](status, locale, conversation));
+        assertCapabilityReview(mailActionReviews["conversation.status.set.batch"](status, locale, count, { effects: 3 }));
       }
       for (const until of [undefined, "2026-10-20T06:00:00.000Z"])
         assertCapabilityReview(

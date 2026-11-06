@@ -46,13 +46,16 @@ cld mail conversation summary write Convo1 --mailbox Mail01 \
 
 ## Set work status
 
-`mail.conversation.status.update` accepts `needs_action`, `waiting`, `done`,
+`mail.conversation.status.set` accepts `needs_action`, `waiting`, `done`,
 and `open`, together with `expectedRevision`. `open` keeps its existing
 behavior: Mail derives the next step from the latest verified message direction.
 The other values set the requested status explicitly. A status change clears
 an active snooze; change status and snooze separately.
 
-The `.batch` Action accepts up to 50 unique `conversationIds`. Its optional
+The published `mail.conversation.status.update` and `.batch` Actions keep
+accepting only `done` and `open`. Use `status.set` for the full status set.
+
+The `mail.conversation.status.set.batch` Action accepts up to 50 unique `conversationIds`. Its optional
 `expectedRevisions` object must supply a revision for every requested ID. Mail
 checks every visible conversation before changing any; one stale revision
 returns `CONFLICT` and leaves the whole batch unchanged. Without that object,

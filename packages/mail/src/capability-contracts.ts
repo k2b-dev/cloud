@@ -1088,7 +1088,7 @@ export const ConversationAssignBatchDataSchema = z
     ),
   })
   .strict();
-export const ConversationStatusUpdateBatchInputSchema = z
+export const ConversationStatusSetBatchInputSchema = z
   .object({
     mailboxId: MailboxIdInputSchema,
     conversationIds: completeConversationsSchema.shape.conversationIds,
@@ -1105,9 +1105,16 @@ export const ConversationStatusUpdateBatchInputSchema = z
     (value) => !value.expectedRevisions || value.conversationIds.every((id) => value.expectedRevisions?.[id] !== undefined),
     "Supply a revision for every conversation",
   );
-export const ConversationStatusUpdateBatchDataSchema = conversationCompletionResultSchema;
+export const ConversationStatusSetBatchDataSchema = conversationCompletionResultSchema;
+// Published update contracts retain their original status enums.
+export const ConversationStatusUpdateBatchInputSchema = ConversationStatusSetBatchInputSchema.safeExtend({
+  status: z.enum(["done", "open"]).describe("Mark the conversations done or reopen them."),
+});
+export const ConversationStatusUpdateBatchDataSchema = conversationCompletionResultSchema.extend({
+  completion: z.enum(["done", "open"]),
+});
 
-export const ConversationStatusUpdateInputSchema = z
+export const ConversationStatusSetInputSchema = z
   .object({
     ...CollaborationMutationBaseShape,
     status: z
@@ -1115,6 +1122,9 @@ export const ConversationStatusUpdateInputSchema = z
       .describe("Explicit work status, or open to derive the status from the latest message."),
   })
   .strict();
+export const ConversationStatusUpdateInputSchema = ConversationStatusSetInputSchema.extend({
+  status: z.enum(["done", "open"]).describe("Mark the conversation done or reopen it."),
+});
 export const ConversationKeepInputSchema = z
   .object({ mailboxId: MailboxIdInputSchema, conversationId: ConversationIdInputSchema })
   .strict();

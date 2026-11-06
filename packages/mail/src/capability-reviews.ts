@@ -443,6 +443,18 @@ export const mailActionReviews = {
     slots: Record<"count", CapabilitySlot>,
     options: MailReviewOptions = {},
   ) => buildMailReview(`conversation.status.update.batch.${status}`, locale, slots, options),
+  "conversation.status.set": (
+    status: "done" | "open" | "waiting" | "needs_action",
+    locale: string | undefined,
+    slots: Record<"conversation", CapabilitySlot>,
+    options: MailReviewOptions = {},
+  ) => buildMailReview(`conversation.status.update.${status}`, locale, slots, options),
+  "conversation.status.set.batch": (
+    status: "done" | "open" | "waiting" | "needs_action",
+    locale: string | undefined,
+    slots: Record<"count", CapabilitySlot>,
+    options: MailReviewOptions = {},
+  ) => buildMailReview(`conversation.status.update.batch.${status}`, locale, slots, options),
   "conversation.snooze": (
     until: string | null | undefined,
     locale: string | undefined,

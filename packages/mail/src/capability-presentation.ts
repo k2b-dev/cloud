@@ -571,7 +571,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             "Bei aktivierter Referenzvergabe: Liefert eine bestehende Referenz oder vergibt einmalig eine Nummer nach den Postfacheinstellungen.",
           input: { mailboxId: "Postfach-ID.", conversationId: "Unterhaltungs-ID." },
         },
-        "conversation.status.update.batch": {
+        "conversation.status.set.batch": {
           title: "Status von Unterhaltungen aktualisieren",
           description:
             "Setzt needs_action, waiting oder done für bis zu 50 Unterhaltungen; open leitet den Status aus dem Verlauf ab. Meldet ok oder not_found je Unterhaltung.",
@@ -582,7 +582,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             status: "needs_action, waiting oder done setzen; open leitet den Status aus dem Verlauf ab.",
           },
         },
-        "conversation.status.update": {
+        "conversation.status.set": {
           title: "Konversationsstatus aktualisieren",
           description: "Setzt needs_action, waiting oder done mit Revisionsprüfung; open leitet den Status aus dem Verlauf ab.",
           input: {
@@ -591,6 +591,27 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
             status: "needs_action, waiting oder done setzen; open leitet den Status aus dem Verlauf ab.",
+          },
+        },
+        "conversation.status.update.batch": {
+          title: "Status von Unterhaltungen aktualisieren",
+          description: "Markiert bis zu 50 Unterhaltungen als erledigt oder öffnet sie erneut. Meldet ok oder not_found je Unterhaltung.",
+          input: {
+            expectedRevisions: "Optional: Revision jeder angefragten Unterhaltung. Ein Konflikt lässt den gesamten Stapel unverändert.",
+            mailboxId: "Exakte mail.mailbox ID des Postfachs.",
+            conversationIds: "Exakte mail.conversation IDs desselben Postfachs, höchstens 50.",
+            status: "done setzt Erledigt; open leitet den Status aus dem Verlauf ab.",
+          },
+        },
+        "conversation.status.update": {
+          title: "Konversationsstatus aktualisieren",
+          description: "Markiert eine Unterhaltung mit Revisionsprüfung als erledigt oder öffnet sie erneut.",
+          input: {
+            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
+            conversationId:
+              "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
+            expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
+            status: "done setzt Erledigt; open leitet den Status aus dem Verlauf ab.",
           },
         },
         "conversation.tag.update": {

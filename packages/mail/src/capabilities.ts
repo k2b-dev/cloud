@@ -2491,6 +2491,116 @@ const assignmentOptions = (change: reviewReaders.AssignmentReviewChange, locale?
   };
 };
 
+const conversationStatusSetActions = {
+  "conversation.status.set.batch": {
+    title: "Update the status of conversations",
+    description:
+      "Set needs_action, waiting, or done on up to 50 conversations, or reopen them from their latest message direction. Optional expectedRevisions fences every item. Reports ok or not_found for each conversation.",
+    input: c.ConversationStatusSetBatchInputSchema,
+    data: c.ConversationStatusSetBatchDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "none",
+    policy: { silent: "shared" },
+    review: async (input: z.output<typeof c.ConversationStatusSetBatchInputSchema>, context: CapabilityExecutionContext) => {
+      const scope = await resolveMailboxScope(input.mailboxId);
+      if (!scope.ok) return scope;
+      const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "write");
+      if (!access.ok) return access;
+      return ok(
+        mailActionReviews["conversation.status.set.batch"](
+          input.status,
+          context.locale,
+          { count: reviewCount(input.conversationIds.length, context.locale) },
+          { effects: input.conversationIds.length, scope: `mailbox:${input.mailboxId}`, links: [openLink(mailboxHref(input.mailboxId))] },
+        ),
+      );
+    },
+    run: async (input: z.output<typeof c.ConversationStatusSetBatchInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
+      const scope = await resolveMailboxScope(input.mailboxId);
+      if (!scope.ok) return scope;
+      return mapResult(
+        await collaboration.applyConversationCompletions({
+          context: requestContext(context),
+          mailboxId: scope.data.id,
+          conversationIds: input.conversationIds,
+          completion: input.status,
+          expectedRevisions: input.expectedRevisions,
+        }),
+        (result) => result,
+        (result) => {
+          const count = result.results.filter((item) => item.status === "ok").length;
+          return {
+            refs: result.results
+              .filter((item) => item.status === "ok")
+              .map((item) => conversationRef(item.conversationId, undefined, undefined, context.locale)),
+            links: [openLink(mailboxHref(input.mailboxId))],
+            receipt: batchReceipt(`conversation.status.update.batch.${input.status}`, count, result.results.length, context.locale),
+            summary: capabilitySummary(
+              input.status === "done" || input.status === "open"
+                ? t.statusBatchSummary({ count, missing: result.results.length - count, done: input.status === "done" })
+                : t.workStatusBatchSummary({ count, missing: result.results.length - count, status: input.status }),
+            ),
+          };
+        },
+      );
+    },
+  },
+  "conversation.status.set": {
+    title: "Update conversation status",
+    description: "Set needs_action, waiting, or done with a revision fence, or reopen using the latest message direction.",
+    input: c.ConversationStatusSetInputSchema,
+    data: c.CollaborationDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "none",
+    policy: { silent: "shared" },
+    review: async (input: z.output<typeof c.ConversationStatusSetInputSchema>, context: CapabilityExecutionContext) => {
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "write");
+      if (!conversation.ok) return conversation;
+      return ok(
+        mailActionReviews["conversation.status.set"](
+          input.status,
+          context.locale,
+          { conversation: conversationSlot(input.conversationId, conversation.data.subject) },
+          { scope: `mailbox:${input.mailboxId}`, links: [openLink(conversation.data.href)] },
+        ),
+      );
+    },
+    run: async (input: z.output<typeof c.ConversationStatusSetInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
+      if (!conversation.ok) return conversation;
+      const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
+      if (!scope.ok) return scope;
+      return mapResult(
+        await conversationAssignments.updateConversationCollaboration({
+          context: requestContext(context),
+          mailboxId: scope.data.mailbox.id,
+          conversationId: scope.data.conversationId,
+          input: { expectedRevision: input.expectedRevision, completion: input.status },
+          locale: context.locale,
+        }),
+        (item) => ({ ...item, conversationId: input.conversationId }),
+        () => ({
+          receipt: mailReceipt(`conversation.status.update.${input.status}`, context.locale, {
+            conversation: conversationSlot(input.conversationId, conversation.data.subject),
+          }),
+          summary: capabilitySummary(
+            input.status === "done"
+              ? t.completedConversation({ subject: conversation.data.subject })
+              : input.status === "open"
+                ? t.reopenedConversation({ subject: conversation.data.subject })
+                : t.workStatusSummary({ subject: conversation.data.subject, status: input.status }),
+          ),
+          ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
+        }),
+      );
+    },
+  },
+} as const;
+
 const actionDefinitions = {
   "draft.patch": {
     title: "Change selected draft fields",
@@ -3677,112 +3787,17 @@ const actionDefinitions = {
       );
     },
   },
+  ...conversationStatusSetActions,
   "conversation.status.update.batch": {
-    title: "Update the status of conversations",
-    description:
-      "Set needs_action, waiting, or done on up to 50 conversations, or reopen them from their latest message direction. Optional expectedRevisions fences every item. Reports ok or not_found for each conversation.",
+    ...conversationStatusSetActions["conversation.status.set.batch"],
+    description: "Mark up to 50 conversations done or reopen them. Optional expectedRevisions fences every item.",
     input: c.ConversationStatusUpdateBatchInputSchema,
     data: c.ConversationStatusUpdateBatchDataSchema,
-    destructive: false,
-    openWorld: false,
-    idempotency: "none",
-    policy: { silent: "shared" },
-    review: async (input: z.output<typeof c.ConversationStatusUpdateBatchInputSchema>, context: CapabilityExecutionContext) => {
-      const scope = await resolveMailboxScope(input.mailboxId);
-      if (!scope.ok) return scope;
-      const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "write");
-      if (!access.ok) return access;
-      return ok(
-        mailActionReviews["conversation.status.update.batch"](
-          input.status,
-          context.locale,
-          { count: reviewCount(input.conversationIds.length, context.locale) },
-          { effects: input.conversationIds.length, scope: `mailbox:${input.mailboxId}`, links: [openLink(mailboxHref(input.mailboxId))] },
-        ),
-      );
-    },
-    run: async (input: z.output<typeof c.ConversationStatusUpdateBatchInputSchema>, context: CapabilityExecutionContext) => {
-      const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(input.mailboxId);
-      if (!scope.ok) return scope;
-      return mapResult(
-        await collaboration.applyConversationCompletions({
-          context: requestContext(context),
-          mailboxId: scope.data.id,
-          conversationIds: input.conversationIds,
-          completion: input.status,
-          expectedRevisions: input.expectedRevisions,
-        }),
-        (result) => result,
-        (result) => {
-          const count = result.results.filter((item) => item.status === "ok").length;
-          return {
-            refs: result.results
-              .filter((item) => item.status === "ok")
-              .map((item) => conversationRef(item.conversationId, undefined, undefined, context.locale)),
-            links: [openLink(mailboxHref(input.mailboxId))],
-            receipt: batchReceipt(`conversation.status.update.batch.${input.status}`, count, result.results.length, context.locale),
-            summary: capabilitySummary(
-              input.status === "done" || input.status === "open"
-                ? t.statusBatchSummary({ count, missing: result.results.length - count, done: input.status === "done" })
-                : t.workStatusBatchSummary({ count, missing: result.results.length - count, status: input.status }),
-            ),
-          };
-        },
-      );
-    },
   },
   "conversation.status.update": {
-    title: "Update conversation status",
-    description: "Set needs_action, waiting, or done with a revision fence, or reopen using the latest message direction.",
+    ...conversationStatusSetActions["conversation.status.set"],
+    description: "Mark a conversation done or reopen it using the latest message direction, with a revision fence.",
     input: c.ConversationStatusUpdateInputSchema,
-    data: c.CollaborationDataSchema,
-    destructive: false,
-    openWorld: false,
-    idempotency: "none",
-    policy: { silent: "shared" },
-    review: async (input: z.output<typeof c.ConversationStatusUpdateInputSchema>, context: CapabilityExecutionContext) => {
-      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "write");
-      if (!conversation.ok) return conversation;
-      return ok(
-        mailActionReviews["conversation.status.update"](
-          input.status,
-          context.locale,
-          { conversation: conversationSlot(input.conversationId, conversation.data.subject) },
-          { scope: `mailbox:${input.mailboxId}`, links: [openLink(conversation.data.href)] },
-        ),
-      );
-    },
-    run: async (input: z.output<typeof c.ConversationStatusUpdateInputSchema>, context: CapabilityExecutionContext) => {
-      const t = mailCapabilityMessages(context.locale);
-      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
-      if (!conversation.ok) return conversation;
-      const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
-      if (!scope.ok) return scope;
-      return mapResult(
-        await conversationAssignments.updateConversationCollaboration({
-          context: requestContext(context),
-          mailboxId: scope.data.mailbox.id,
-          conversationId: scope.data.conversationId,
-          input: { expectedRevision: input.expectedRevision, completion: input.status },
-          locale: context.locale,
-        }),
-        (item) => ({ ...item, conversationId: input.conversationId }),
-        () => ({
-          receipt: mailReceipt(`conversation.status.update.${input.status}`, context.locale, {
-            conversation: conversationSlot(input.conversationId, conversation.data.subject),
-          }),
-          summary: capabilitySummary(
-            input.status === "done"
-              ? t.completedConversation({ subject: conversation.data.subject })
-              : input.status === "open"
-                ? t.reopenedConversation({ subject: conversation.data.subject })
-                : t.workStatusSummary({ subject: conversation.data.subject, status: input.status }),
-          ),
-          ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
-        }),
-      );
-    },
   },
   "conversation.summary.write": {
     title: "Write automated conversation summary",
