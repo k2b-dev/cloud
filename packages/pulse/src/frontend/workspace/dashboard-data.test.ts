@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { charts } from "@k2b/stdlib";
 import { dashboardRangeSearch } from "./dashboard-client";
 import { dashboardCategories, dashboardLine, dashboardSections, readDashboardRange } from "./dashboard-data";
 import { dashboardTestDashboard, dashboardTestKinds, dashboardTestPanelResult } from "./dashboard-test-fixtures";
@@ -55,6 +56,30 @@ test("line adaptation retains missing observations, uses named time and series c
   ]);
   expect(chart.maxGap).toBe(5400000);
   expect(chart.series[0]!.data[0]!.y).toBe(10);
+});
+test("a day bucket that starts before the window widens the axis instead of failing the chart", () => {
+  // toStartOfDay(ts, :base_tz) over the default 24 hours returns yesterday 00:00 Berlin, before :from.
+  const panel = { ...dashboardTestDashboard.definition.panels[4]!, series: undefined, columns: ["tag", "besucher", "aufrufe"], x: "tag" };
+  const window = { from: "2026-11-05T14:30:00.000Z", to: "2026-11-06T14:30:00.000Z" };
+  const chart = dashboardLine(
+    panel,
+    {
+      columns: [
+        { name: "tag", type: "DateTime('Europe/Berlin')" },
+        { name: "besucher", type: "UInt64" },
+        { name: "aufrufe", type: "UInt64" },
+      ],
+      rows: [
+        ["2026-11-05 00:00:00", "12", "40"],
+        ["2026-11-06 00:00:00", "7", "19"],
+      ],
+    },
+    "de",
+    window,
+  );
+  expect(chart.xAxis?.domain).toEqual([Date.parse("2026-11-04T23:00:00.000Z"), Date.parse(window.to)]);
+  const { kind: _kind, maxGap: _maxGap, tooltip: _tooltip, ...options } = chart;
+  expect(() => charts.line({ ...options, width: 480, height: 200 })).not.toThrow();
 });
 test("funnel and bar values use named columns with complete source order", () => {
   const panel = dashboardTestKinds.definition.panels[2]!;

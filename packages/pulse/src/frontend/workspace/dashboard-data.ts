@@ -72,13 +72,15 @@ export const dashboardLine = (
     .map((time, index) => time - times[index]!)
     .filter((distance) => distance > 0);
   const date = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
-  const span = window ? Date.parse(window.to) - Date.parse(window.from) : (times.at(-1) ?? 0) - (times[0] ?? 0);
-  const tickStep = niceStep(span, 3);
+  // A bucket such as toStartOfDay() may begin before :from. The chart rejects
+  // points outside its domain, so the window widens to the data, never clips it.
   const domain: [number, number] | undefined = window
-    ? [Date.parse(window.from), Date.parse(window.to)]
+    ? [Math.min(Date.parse(window.from), times[0] ?? Infinity), Math.max(Date.parse(window.to), times.at(-1) ?? -Infinity)]
     : times.length > 1
       ? [times[0]!, times.at(-1)!]
       : undefined;
+  const span = domain ? domain[1] - domain[0] : 0;
+  const tickStep = niceStep(span, 3);
   const tickDate = new Intl.DateTimeFormat(locale, {
     ...(span <= 2 * 86400000
       ? { hour: "2-digit", minute: "2-digit" }
