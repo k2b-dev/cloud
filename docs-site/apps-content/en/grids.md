@@ -958,8 +958,9 @@ additive changes; the shared compatibility check remains enabled.
 - `record.create` requires an idempotency key and a review through Cloud's
   capability dispatcher. Reuse a key only for retries of the same request.
 - Record updates and external upserts retain review and permission checks but
-  are no longer classified as destructive operations. They can remember an
-  approval scoped to one table; document issuance still needs individual approval.
+  are no longer classified as destructive operations. Their silent shared policy
+  permits unattended writes with ordinary base access; document issuance still
+  needs individual approval.
 - Timestamps use ISO 8601 with an explicit UTC offset; consumers must accept
   offsets as well as `Z`.
 
@@ -982,7 +983,7 @@ for the supported formats and limits.
 
 Use `grids.record.atomic` to create or update several records together. Supply
 one base, at least one existing coordination record in `locks`, optional
-current-version and field-value `checks`, and ordered `changes`. The operation
+current-version, field-value or GQL `checks`, and ordered `changes`. The operation
 allows 100 distinct locked records, 50 checks and 50 changes. Every check runs
 after the locks; any failure rolls back all changes. Choose a coordination
 record shared by competing writers when asserting a business condition.
