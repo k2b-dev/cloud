@@ -376,7 +376,9 @@ clients resolve each card with the reader's session. Sharing grants no access
 to the referenced resource. Message responses and live message events always
 include `refs`, including an empty array for messages without refs. A retry
 with the same `clientId` returns the stored content with the caller's current
-reactions.
+reactions. Message responses and live message events also include the
+message's `clientId` (`null` for system messages), so the sending client can
+replace its pending send when the live event arrives before the response.
 
 `GET /api/chat/conversations/:conversation/shared` requires chat read access.
 It returns `{ items, nextCursor }`, with up to 30 items, newest message first.
