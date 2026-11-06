@@ -367,7 +367,9 @@ older events still in the publisher outbox. Registration and event acceptance se
 The consumer receives the binding, original reference envelope and standard
 delivery context. It must recheck its current workload revision and enabled
 state under its workload lock, then commit its durable receipt and admission
-in one transaction before returning. It must honor the abort signal and make
+in one transaction before returning. If the workload has changed before
+admission, return `{ cancelled: true }` to record `workload_changed` instead
+of acknowledging an admission. It must honor the abort signal and make
 admission idempotent by event ID. Cloud does not turn event visibility into
 permission to read content or perform an effect: subsequent capability calls
 still enforce the workload's policy and current grants. Keep resource event

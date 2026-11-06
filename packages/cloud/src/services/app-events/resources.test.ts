@@ -57,12 +57,14 @@ const manifest = compileCapabilityManifest("fixture", {
     },
   },
 });
+let clock: ReturnType<typeof spyOn<typeof Date, "now">>;
 let load: ReturnType<typeof spyOn<typeof mandates, "get">>;
 let resolve: ReturnType<typeof spyOn<typeof identity, "resolveIssuanceAuthority">>;
 let access: ReturnType<typeof spyOn<typeof identity, "requireRegisteredAppAccess">>;
 let lookup: ReturnType<typeof spyOn<typeof registry, "getCapability">>;
 let invoke: ReturnType<typeof spyOn<typeof invocation, "invokeCapabilityWithDataSchema">>;
 beforeEach(() => {
+  clock = spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-06T12:00:00Z"));
   load = spyOn(mandates, "get").mockResolvedValue(mandate);
   // The reader receives exactly the currently resolved authority, with no publisher identity.
   resolve = spyOn(identity, "resolveIssuanceAuthority").mockResolvedValue(adminAuthority());
@@ -78,6 +80,7 @@ beforeEach(() => {
   invoke = spyOn(invocation, "invokeCapabilityWithDataSchema").mockResolvedValue({ ok: true, data: { data: {} } });
 });
 afterEach(() => {
+  clock.mockRestore();
   load.mockRestore();
   resolve.mockRestore();
   access.mockRestore();

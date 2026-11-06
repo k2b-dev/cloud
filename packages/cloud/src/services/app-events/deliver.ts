@@ -154,6 +154,7 @@ export function createEventDelivery(
           onAbort = () => reject(signal.reason);
           signal.addEventListener("abort", onAbort, { once: true });
         });
+        let cancelled = false;
         try {
           await Promise.race([
             (async () => {
@@ -163,19 +164,20 @@ export function createEventDelivery(
                 return;
               }
               signal.throwIfAborted();
-              await consumer(binding, row.envelope, {
+              const result = await consumer(binding, row.envelope, {
                 subscriptionId: row.subscription_id,
                 eventId: row.event_id,
                 attempt: row.attempts,
                 signal,
               });
+              cancelled = result?.cancelled === true;
             })(),
             aborted,
           ]);
         } finally {
           signal.removeEventListener("abort", onAbort);
         }
-        await finish(row, "done", null);
+        await finish(row, cancelled ? "cancelled" : "done", cancelled ? "workload_changed" : null);
         return;
       }
       const app = await findApp(row.app_id);

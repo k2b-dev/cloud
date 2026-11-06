@@ -29,7 +29,7 @@ export type ResourceEventConsumer = (
   binding: ResourceEventBinding,
   envelope: AppEventEnvelope,
   context: AppEventDeliveryContext,
-) => Promise<void>;
+) => Promise<void | { cancelled: true }>;
 
 // Runtime implementations are installed by Core; the subscription and all work remain in Postgres.
 const consumers = new Map<string, ResourceEventConsumer>();
