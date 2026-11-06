@@ -748,12 +748,17 @@
     --mail-other-mailbox-ink: var(--k2b-neutral-400);
   }
 
-  .k2b-ui .mail-sidebar-mailbox:not([data-open="true"]) :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-icon) {
+  /* The row that folds the hidden mailboxes is as quiet as the mailboxes it stands for. */
+  .k2b-ui
+    :is(.mail-sidebar-mailbox:not([data-open="true"]), .mail-sidebar-hidden-toggle)
+    :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-icon, .k2b-app-workspace__sidebar-item-meta) {
     color: var(--mail-other-mailbox-ink);
     font-weight: 400;
   }
 
-  .k2b-ui .mail-sidebar-mailbox:not([data-open="true"]):is(:hover, :focus-within) :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-icon) {
+  .k2b-ui
+    :is(.mail-sidebar-mailbox:not([data-open="true"]), .mail-sidebar-hidden-toggle):is(:hover, :focus-within)
+    :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-icon) {
     color: var(--k2b-text-secondary);
   }
 
@@ -801,17 +806,6 @@
     padding-inline: 0.5rem;
     color: var(--k2b-text-muted);
     font-size: 0.75rem;
-  }
-
-  .mail-sidebar-deleted {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.25rem 0.5rem;
-    padding: 0.25rem 0.5rem;
-    color: var(--color-zinc-500);
-    font-size: 0.6875rem;
   }
 
   .mail-list-preview {
