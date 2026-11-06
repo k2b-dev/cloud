@@ -18,7 +18,7 @@ export const app = defineApp({
       },
     },
   },
-  appearance: { accent: "#be185d", background: { from: "#ec4899", to: "#f59e0b", angle: 135 } },
+  appearance: { accent: "#be185d", background: { from: "#f43f5e", to: "#f59e0b", angle: 135 } },
   basePath: "/app/quotes",
   baseUrl: "http://app-quotes:3000",
   widgets: [
