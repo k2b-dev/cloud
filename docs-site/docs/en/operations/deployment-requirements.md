@@ -272,6 +272,10 @@ Older versions still discover the Actions through derived approval metadata,
 but reject the new response shapes. Existing apps need no migration in this
 release. See [Action contract migration](/en/docs/platform/capabilities#migrate-an-application).
 
+Spaces now uses typed reviews for task and event creation, task updates, and
+resource linking. Upgrade Action callers before Spaces. Plain calls can be
+authorized for background work; template use and assignee changes still ask.
+
 ## Enable addresses and places
 
 Core's [geo Queries](/en/docs/platform/places-and-maps) need outbound HTTPS to
