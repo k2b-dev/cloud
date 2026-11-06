@@ -107,6 +107,25 @@ describe("Format components SSR", () => {
     expect(html).toContain("€");
   });
 
+  test("currency shows a sign on request, for changes and net amounts", () => {
+    const html = (value: number | null, signDisplay?: "exceptZero" | "never" | "always") =>
+      renderToString(() =>
+        provided("de", () => createComponent(Format.Currency, { value, currency: "EUR", ...(signDisplay ? { signDisplay } : {}) })),
+      );
+    expect(html(1234.5, "exceptZero")).toContain("+1.234,50");
+    expect(html(-80, "exceptZero")).toContain("-80,00");
+    expect(html(0, "exceptZero")).not.toMatch(/[+-]0,00/);
+    expect(html(-0, "always")).toContain("+0,00");
+    expect(html(-80, "never")).not.toContain("-");
+    expect(html(-80)).toContain("-80,00");
+    expect(html(null, "exceptZero")).toContain("—");
+    expect(
+      renderToString(() =>
+        createComponent(Format.Currency, { value: 12.345, currency: "EUR", locale: "en", decimals: 1, signDisplay: "always" }),
+      ),
+    ).toContain("+€12.3");
+  });
+
   test("formats bytes and falls back for invalid input", () => {
     const html = renderToString(() => [
       createComponent(Format.Bytes, { value: 1536, locale: "de" }),
