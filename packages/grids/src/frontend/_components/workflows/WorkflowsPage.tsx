@@ -637,7 +637,8 @@ export default function WorkflowsPage(props: Props) {
     { id: "mode", header: t().mode, value: (run) => run.mode, cellClass: "whitespace-nowrap" },
     { id: "result", header: t().result, value: (run) => run.error?.message ?? run.resultMessage, cellClass: "max-w-[32rem]" },
     { id: "duration", header: t().duration, value: (run) => formatDuration(run, locale()), cellClass: "whitespace-nowrap" },
-    { id: "revision", header: t().revision, value: (run) => run.workflowRevision, align: "right" },
+    // A revision is a version number: its digits stay ungrouped.
+    { id: "revision", header: t().revision, value: (run) => String(run.workflowRevision), align: "right" },
   ]);
 
   const openEmailActivity = async () => {
