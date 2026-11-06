@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import type { FilterTree } from "../contracts";
+import { type AtomicRecordRef, lockAtomicRecords as lockDomainAtomicRecords } from "./atomic-record-locks";
 import type { SqlClient } from "./audit";
 import { listByTable } from "./field-read";
 import { compileFilter, renderClause } from "./filter-compiler";
@@ -14,7 +15,15 @@ import {
   type WorkflowEffectAccess,
 } from "./workflow-action-scope";
 
-export { type AtomicRecordRef, lockAtomicRecords } from "./atomic-record-locks";
+export type { AtomicRecordRef } from "./atomic-record-locks";
+
+/** Preserve the workflow engine's terminal error classification at its adapter boundary. */
+export const lockAtomicRecords = (
+  client: SqlClient,
+  records: AtomicRecordRef[],
+  requireAccess: (record: AtomicRecordRef) => Promise<void>,
+  additionalTableIds: readonly string[] = [],
+): Promise<void> => lockDomainAtomicRecords(client, records, requireAccess, additionalTableIds, actionError);
 export type AtomicQueryPredicate = {
   fieldId: string;
   op: string;

@@ -119,6 +119,13 @@ postgresTest("document capabilities capture, issue and read immutable bytes with
     );
     expect(captured.ok).toBeTrue();
     if (!captured.ok) throw captured.error;
+    // Correlation IDs may repeat; only the operation key identifies a capture.
+    const independent = await capture.run(
+      capture.input.parse({ baseId: f.base, query: `from table {${f.table}}\nselect {${f.name.shortId}} as otherName` }),
+      { ...f.context, idempotencyKey: uuid() },
+    );
+    expect(independent.ok).toBeTrue();
+    if (independent.ok) expect(independent.data.data.id).not.toBe(captured.data.data.id);
     const issue = gridsCapabilities.actions["document.issue"];
     const ids: string[] = [];
     for (const output of [
@@ -258,11 +265,27 @@ postgresTest("Four-eyes capability requires an independent eligible approver and
     const approve = gridsCapabilities.actions["record.finalize"];
     const proposal = approve.input.parse({ ...input, approvalRequestId: readiness.data.data.request.id });
     expect((await approve.run(proposal, f.context)).ok).toBeFalse();
-    const approved = await approve.run(proposal, { ...userContext(testUser(approverId)), requestId: uuid(), idempotencyKey: uuid() });
+    const approverContext = { ...userContext(testUser(approverId)), requestId: uuid(), idempotencyKey: uuid() };
+    // Exercise resolver housekeeping independently of the ordinary writer's eager supersession.
+    await sql`UPDATE grids.records SET version=version+1 WHERE id=${f.record.id}::uuid`;
+    const currentVersion = f.record.version + 1;
+    expect((await approve.run({ ...proposal, ifVersion: currentVersion }, approverContext)).ok).toBeFalse();
+    const [stale] = await sql<Array<{ status: string }>>`SELECT status FROM grids.record_finalization_requests
+      WHERE table_id=${f.tableId}::uuid AND short_id=${proposal.approvalRequestId}`;
+    expect(stale?.status).toBe("superseded");
+    expect((await gridsService.record.get(f.tableId, f.record.id))?.finalizedAt).toBeNull();
+    expect((await close.run(close.input.parse({ ...input, ifVersion: currentVersion }), f.context)).ok).toBeTrue();
+    const latest = await gridsCapabilities.queries["record.finalization.read"].run(
+      { tableId: f.table, recordId: f.record.shortId },
+      f.context,
+    );
+    if (!latest.ok || !latest.data.data.request) throw new Error("Missing replacement request");
+    const replacement = approve.input.parse({ ...input, ifVersion: currentVersion, approvalRequestId: latest.data.data.request.id });
+    const approved = await approve.run(replacement, approverContext);
     expect(approved.ok).toBeTrue();
     const [resolved] = await sql<
       Array<{ status: string }>
-    >`SELECT status FROM grids.record_finalization_requests WHERE table_id=${f.tableId}::uuid AND short_id=${proposal.approvalRequestId}`;
+    >`SELECT status FROM grids.record_finalization_requests WHERE table_id=${f.tableId}::uuid AND short_id=${replacement.approvalRequestId}`;
     expect(resolved?.status).toBe("approved");
   } finally {
     await cleanup(f);

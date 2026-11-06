@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import { accessActorUser, actorViewerFor, type GridsAccessContext, gateBaseAtAccess } from "../api/permissions";
@@ -209,56 +210,64 @@ export const changeRecordsAtomically = (input: z.infer<typeof AtomicRecordsInput
   });
 
 export const finalizeRecord = (input: z.infer<typeof FinalizeRecordInputSchema>, context: IntegrityContext, close = false) =>
-  recordTransaction<{ id: string; tableId: string; version: number; state: "requested" | "finalized" }>(async (client, notify) => {
-    const table = await integrityTable(client, input.tableId, context);
-    const current = await record(client, table.id, input.recordId, context);
-    await lockAtomicRecords(client, [{ tableId: table.id, recordId: current.id, required: "write" }], async () => {});
-    version((await record(client, table.id, input.recordId, context)).version, input.ifVersion, context);
-    const authorize = async () => {
-      context.signal.throwIfAborted();
-      unwrap(await gateBaseAtAccess(context, table.base_id, "write", client));
-    };
-    await authorize();
-    const policy = unwrap(await getStatus(table.id, client, context.locale));
-    if (!policy.enabled || policy.policyRevision !== input.expectedPolicyRevision)
-      return fail(err.conflict(message(context.locale, "Finalization policy changed.", "Die Abschlussregel wurde geändert.")));
-    if (close && policy.mode === "fourEyes" && !input.approvalRequestId) {
-      const userId = actorId(context);
-      if (!userId)
-        return fail(
-          err.forbidden(
-            message(
-              context.locale,
-              "A person must request Four-eyes finalization.",
-              "Eine Person muss den Vier-Augen-Abschluss beantragen.",
-            ),
-          ),
-        );
-      unwrap(
-        await requestFinalizationInTransaction(client, {
+  integrityAttempt(async () => {
+    let outboxId: string | null = null;
+    // Like approveFinalization, commit resolver housekeeping on a rejected stale request.
+    // The domain finalizer rolls back rejected allocations with its own savepoint.
+    const result = await sql.begin(
+      async (client): Promise<Result<{ id: string; tableId: string; version: number; state: "requested" | "finalized" }>> => {
+        const table = await integrityTable(client, input.tableId, context);
+        const current = await record(client, table.id, input.recordId, context);
+        await lockAtomicRecords(client, [{ tableId: table.id, recordId: current.id, required: "write" }], async () => {});
+        version((await record(client, table.id, input.recordId, context)).version, input.ifVersion, context);
+        const authorize = async () => {
+          context.signal.throwIfAborted();
+          unwrap(await gateBaseAtAccess(context, table.base_id, "write", client));
+        };
+        await authorize();
+        const policy = unwrap(await getStatus(table.id, client, context.locale));
+        if (!policy.enabled || policy.policyRevision !== input.expectedPolicyRevision)
+          return fail(err.conflict(message(context.locale, "Finalization policy changed.", "Die Abschlussregel wurde geändert.")));
+        if (close && policy.mode === "fourEyes" && !input.approvalRequestId) {
+          const userId = actorId(context);
+          if (!userId)
+            return fail(
+              err.forbidden(
+                message(
+                  context.locale,
+                  "A person must request Four-eyes finalization.",
+                  "Eine Person muss den Vier-Augen-Abschluss beantragen.",
+                ),
+              ),
+            );
+          unwrap(
+            await requestFinalizationInTransaction(client, {
+              tableId: table.id,
+              recordId: current.id,
+              actorId: userId,
+              expectedPolicyRevision: input.expectedPolicyRevision,
+              dateConfig: context.dateConfig,
+              locale: context.locale,
+            }),
+          );
+          return ok({ id: input.recordId, tableId: input.tableId, version: current.version, state: "requested" as const });
+        }
+        const finalized = await finalizeInTransaction(client, {
           tableId: table.id,
           recordId: current.id,
-          actorId: userId,
+          actorId: actorId(context),
+          origin: "direct",
           expectedPolicyRevision: input.expectedPolicyRevision,
-          dateConfig: context.dateConfig,
-          locale: context.locale,
-        }),
-      );
-      return ok({ id: input.recordId, tableId: input.tableId, version: current.version, state: "requested" as const });
-    }
-    const finalized = unwrap(
-      await finalizeInTransaction(client, {
-        tableId: table.id,
-        recordId: current.id,
-        actorId: actorId(context),
-        origin: "direct",
-        expectedPolicyRevision: input.expectedPolicyRevision,
-        approvalRequestId: input.approvalRequestId,
-        ...options(context, authorize),
-      }),
+          approvalRequestId: input.approvalRequestId,
+          ...options(context, authorize),
+        });
+        if (!finalized.ok) return finalized;
+        outboxId = finalized.data.outboxId;
+        return ok({ id: input.recordId, tableId: input.tableId, version: finalized.data.record.version, state: "finalized" as const });
+      },
     );
-    notify(finalized.outboxId);
-    return ok({ id: input.recordId, tableId: input.tableId, version: finalized.record.version, state: "finalized" as const });
+    if (result.ok && outboxId) notifyRecordEventOutbox(outboxId);
+    return result;
   });
 
 export const createCorrectionDraft = (input: z.infer<typeof CorrectionDraftInputSchema>, context: IntegrityContext) =>
