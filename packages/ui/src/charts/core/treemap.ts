@@ -110,7 +110,7 @@ export function renderTreemapSvg(spec: TreemapOptions): string {
             ? `<text x="${c.x + 8}" y="${c.y + 18}" font-size="12" font-weight="600" fill="var(--k2b-text,#27272a)">${escapeXml(c.label)}</text><text x="${c.x + 8}" y="${c.y + 33}" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(number(c.value))}</text>`
             : "";
         return chartDatumSvg(
-          `<rect x="${c.x + 1}" y="${c.y + 1}" width="${Math.max(0, c.width - 2)}" height="${Math.max(0, c.height - 2)}" rx="4" fill="color-mix(in srgb,${color} 55%,var(--k2b-surface,#fff))" stroke="none"/>${text}`,
+          `<rect class="k2b-chart-treemap-cell" x="${c.x + 1}" y="${c.y + 1}" width="${Math.max(0, c.width - 2)}" height="${Math.max(0, c.height - 2)}" rx="4" fill="color-mix(in srgb,${color} 55%,var(--k2b-surface,#fff))" stroke="none"/>${text}`,
           {
             role: "item",
             index: c.index,

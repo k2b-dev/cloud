@@ -397,6 +397,10 @@ describe("frame states", () => {
     expect(table).toContain("height:calc(15rem + 1rem)");
     expect(table).toContain('data-surface="plain"');
     expect(table).toContain("Exports");
+    // Block and inline like CSS padding: the height grows by the block inset, the sides use the inline one.
+    const panel = frame({ data: { rows }, children: "LIVE CHART", defaultView: "table", inset: "0.875rem 1rem" });
+    expect(panel).toContain("height:calc(15rem + 0.875rem)");
+    expect(panel).toContain("--k2b-chart-explorer-inset:1rem;--k2b-chart-explorer-inset-block:0.875rem");
   });
 
   test("without a request nothing changes for existing hosts", () => {

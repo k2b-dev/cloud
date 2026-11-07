@@ -1,6 +1,12 @@
 import { createEffect, onCleanup } from "solid-js";
 import type { ChartCursor } from "./chart-cursor";
-import { type ChartKind, type ChartSelection, type ChartTooltipFormatter, createChartInspector } from "./chart-inspection-core";
+import {
+  type ChartInspectionNavigation,
+  type ChartKind,
+  type ChartSelection,
+  type ChartTooltipFormatter,
+  createChartInspector,
+} from "./chart-inspection-core";
 
 export type { ChartSelection } from "./chart-inspection-core";
 
@@ -10,6 +16,7 @@ export function createChartInspection(options: {
   tooltip: () => HTMLSpanElement | undefined;
   anchor: () => HTMLSpanElement | undefined;
   kind: () => ChartKind;
+  nav?: () => ChartInspectionNavigation | undefined;
   enabled: () => boolean;
   locale?: () => string;
   legend?: () => ParentNode | undefined;
