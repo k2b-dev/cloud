@@ -14,10 +14,11 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { DashboardGrid, DashboardPanel, DashboardSection } = await import("./Dashboard");
 const css = readFileSync(resolve(import.meta.dir, "../styles/surfaces-widgets-parity.css"), "utf8");
 // Dynamic leaves a trailing space in class lists and before ">" on the server; it is not part of the contract.
+const solidMarkers = ["<!--$-->", "<!--/-->", "<!--!$-->"];
 const strip = (html: string) =>
-  html
+  solidMarkers
+    .reduce((text, marker) => text.replaceAll(marker, ""), html)
     .replace(/ data-hk="[^"]*"/g, "")
-    .replace(/<!--[^>]*-->/g, "")
     .replace(/ +([">])/g, "$1");
 
 test("a section names itself by its heading and draws its icon as a plain glyph", () => {
