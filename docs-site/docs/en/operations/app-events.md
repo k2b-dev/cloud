@@ -129,6 +129,14 @@ resource events with public refs and empty data. They are retained through the
 normal event pipeline, but **are not delivered to app subscribers**. Retrying,
 redelivering, or restarting does not remove the authorization block.
 
+Contacts publishes `contacts.contact.created` and `contacts.contact.updated`,
+with a public contact subject and book place. Creation data is empty; update
+data contains only the changed field-group names. Content stays behind the
+permission-aware capability readers. Normalized no-op writes emit no update.
+Imports publish once for every committed entry, including when the import stops
+early; idempotent replays add none. Moves publish only in the destination book.
+See [Contacts event groups](/en/docs/platform/app-events#built-in-resource-events).
+
 Note updates are trailing, bounded batches: Q = **30 seconds** quiet time,
 W = **five minutes** until eligibility despite continuous edits, T = **one minute**
 between sweeps, M = **four notes** per sweep across all replicas. A durable
@@ -231,16 +239,17 @@ letters can accept older events later, so handlers must tolerate that order.
 The stream budget is shared by **all producers**. The producer fixture tests
 measure compact JSON envelopes at **241 bytes** for `spaces.item.created`,
 **243 bytes** for `spaces.item.completed`, **256 bytes** for either note event,
-and **264 bytes** for either notebook event (six-character public IDs, a UUID
-event ID, fixed ISO timestamp, empty data, no cause). Mail's
+**254 bytes** for `contacts.contact.created`, **362 bytes** for
+`contacts.contact.updated` with all ten groups, and **264 bytes** for either notebook event (six-character public IDs, a UUID
+event ID, fixed ISO timestamp, empty data except the Contacts changed-group list, no cause). Mail's
 `mail.message.received` fixture is **292 bytes**, including its UUID receipt
-reference. PostgreSQL `jsonb::text` adds whitespace: **262–314 bytes** across
+reference. PostgreSQL `jsonb::text` adds whitespace: **262–393 bytes** across
 these fixtures. Longer refs or an optional cause increase the size; the platform maximum remains
 **4096 bytes** in PostgreSQL `jsonb::text`.
 
 The shared JetStream has a **256 MiB** byte limit and a **7-day** maximum age.
-Before transport overhead, 292-byte thin envelopes fit at
-`268435456 / (292 × 604800) = 1.52 events/s` for seven days. This is an
+Before transport overhead, 362-byte thin envelopes fit at
+`268435456 / (362 × 604800) = 1.23 events/s` for seven days. This is an
 upper bound, not an operating rate: Sync wrapping, subjects, headers, and NATS
 storage consume bytes too. The fixture test also publishes through Sync:
 notebook events occupy **692 retained bytes/message**, note events **684**,
@@ -249,9 +258,9 @@ and UUID deduplication key). These values vary with namespace and headers;
 692 bytes would allow only `268435456 / (692 × 604800) = 0.64 events/s`.
 Retaining the conservative **1024-byte transport
 allowance** and using the largest measured database representation gives
-`268435456 / ((314 + 1024) × 604800) = 0.332 events/s`.
+`268435456 / ((393 + 1024) × 604800) = 0.313 events/s`.
 Use **0.3 events/s aggregate** (25,920/day) as the thin-envelope planning rate,
-with roughly 10% of stream space left beyond that allowance. At the full
+with roughly 4% of stream space left beyond that allowance. At the full
 4096-byte envelope limit plus the allowance, only 52,428 events fit: about
 two days at 0.3 events/s. Byte pressure can shorten history before seven days.
 JetStream reserves the byte limit on every replica; replication multiplies
@@ -268,6 +277,19 @@ remaining 0.233 events/s is a planning allowance for all other events, including
 discrete Mail receipts at the eligible incoming-message rate, not a
 publisher limit. Sustained discrete writes above it require more capacity or
 a shorter outage target. A missed or expired event requires domain reconciliation.
+
+Contacts bulk operations are bounded discrete writes, outside the coalesced
+note-update quota. An import commits at most **1,000 contacts** one at a time,
+with one event in each domain transaction. At the maximum 4096-byte envelope
+plus 1024-byte transport allowance, one import plans for at most **5,120,000
+bytes**, less than **2% of the 256 MiB stream**; the measured creation fixtures
+need 1,299,000 bytes with that allowance. Bulk tag and move operations select
+at most **500 contacts**, so even a changed event for each uses at most
+**2,560,000 bytes** under the maximum-envelope allowance, less than **1%**.
+No event is emitted for unchanged assignments. These are burst bounds; repeated
+imports and bulk edits still share the **0.3 events/s aggregate** seven-day
+outage planning rate. Higher sustained volume needs more capacity or a shorter
+outage target. The normal outbox and subscriber retries can add delivery delay.
 
 Core retains unresolved deliveries for **30 days** from creation or the latest
 administrator redelivery, then marks them
