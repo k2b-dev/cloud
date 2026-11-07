@@ -443,9 +443,9 @@ describe("grids schema migration", () => {
           WHERE table_schema = 'grids'
             AND table_type = 'BASE TABLE'
         `;
-        // Durable History, frozen workflow query data, external Record identity, Form retry receipts and the evidence lifecycle
-        // add explicit owners without replacing the lightweight live rows.
-        expect(row?.tableCount).toBe(56);
+        // Durable History, frozen workflow query data, external Record identity, Form retry receipts, the evidence lifecycle
+        // and transactional event-batch counts add explicit owners without replacing the lightweight live rows.
+        expect(row?.tableCount).toBe(57);
         const historyTables = await database<Array<{ tableName: string }>>`
           SELECT table_name AS "tableName"
           FROM information_schema.tables

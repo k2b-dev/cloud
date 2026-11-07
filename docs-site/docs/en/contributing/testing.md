@@ -1134,7 +1134,7 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in nine shards, WebKit tests in eleven, and integration tests in
+Unit tests run in nine shards, WebKit tests in fifteen, and integration tests in
 five. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
@@ -1152,8 +1152,10 @@ returns the jobs to standard runners without a pull request.
 
 Each shard prints its predicted and actual time. Its runner stops an active
 suite and fails with an annotation at the 20-minute budget, before the
-30-minute job limit. A shard that finishes above the 15-minute target stays green
-and gets a warning annotation that asks for a weight refresh. The budget also includes NATS housekeeping and integration database bootstrap.
+30-minute job limit. A shard that finishes above its target (11 minutes for
+WebKit, 15 for unit and integration) stays green and gets a warning annotation
+that asks for a weight refresh. The budget also includes NATS housekeeping and
+integration database bootstrap.
 To refresh the weights, run
 `bun scripts/test-weights.ts --run <id> <id> <id>` with recent completed runs,
 including slow or failed runs, using `gh-agent` authentication; add
@@ -1165,8 +1167,10 @@ suite's elapsed time is only a lower bound, so it does not replace a complete
 measurement. Later refreshes replace observed weights, so an exceptional slow
 runner does not increase them permanently. The script plans the current checkout,
 excluding Grids from integration.
-It reports the smallest shard count whose predicted slowest shard fits 15
-minutes. If one suite alone exceeds that target, split the suite: `test:part:<name>`
+It reports the smallest shard count whose predicted slowest shard fits 11
+minutes for WebKit, or 15 for unit and integration. For example, refresh WebKit
+with `bun scripts/test-weights.ts --mode browser --run <id> <id>`.
+If one suite alone exceeds that target, split the suite: `test:part:<name>`
 scripts in the package become the suites `<package> <name>` in place of its `test`
 script, and together they must run the same files. Commit the
 refreshed weights and adjust the matrix together; keep the 20-minute execution
@@ -1175,12 +1179,40 @@ when the jobs still pass. An outdated table can balance predicted times while
 leaving actual times far apart.
 
 The runner tests check that every unit, WebKit, and integration suite is
-assigned exactly once and each predicted shard fits 15 minutes. They also
-cover deterministic assignment and distributing unmeasured new files. These
+assigned exactly once and each predicted shard fits its target. WebKit must
+fit 55% of its 20-minute execution budget. They also cover deterministic
+assignment and distributing unmeasured new files. These
 checks validate the measured plan rather than a future runner's speed.
 Importer tests cover failed jobs, unexecuted suites, and replacing old weights
 when the selected runs are faster. Actual times still depend on the runner: a whole
 job running several times slower cannot be bounded by historical file weights.
+
+The WebKit target comes from the November 7 measurements for
+[#1998](https://github.com/k2b-dev/cloud/issues/1998). The refresh includes all
+33 WebKit job logs from runs
+[42371812311](https://github.com/k2b-dev/cloud/actions/runs/42371812311),
+[42373338426](https://github.com/k2b-dev/cloud/actions/runs/42373338426), and
+[42377096341](https://github.com/k2b-dev/cloud/actions/runs/42377096341).
+The latter two stopped shard 4 at 20 minutes with no preceding failed tests;
+the first finished that shard in 13.7 minutes. Across the 65 completed-file
+observations shared with the green shard, the per-file duration ratios had
+medians of 1.490 and 1.480 in the failed runs. Their combined nearest-rank p95
+was 1.610 (sort the ratios, take observation `ceil(0.95 * 65)`). This is evidence
+of a job-wide slowdown; its hardware or process cause remains unconfirmed.
+
+Reserve the full 2-minute browser warm-up limit, then allow that measured
+slowdown: `11 * 1.61 + 2 = 19.71 < 20` minutes. The refreshed table covers all
+380 files, up from 289. With these same measurements, the old shard membership
+needs up to 20.43 minutes. Rebalancing gives 14.95 minutes with eleven shards,
+11.75 with fourteen, and 10.97 with fifteen,
+so fifteen is the smallest matrix that meets the target. These are historical
+planning estimates, not new CI wall times. The largest file is ChatWorkspace
+at 447.6 seconds; text-editor-component took 29.5 seconds in the green shard
+and 36.8 in the first failed one. Neither needs splitting to meet this target.
+Keep contexts isolated between tests, as required above. Refresh the weights
+and reconsider the matrix when the measured workload grows; keep the execution
+budget at 20 minutes.
+
 Inspect a selection without
 starting services with `bun run test --integration --exclude grids --shard 1/3 --list`.
 
@@ -1447,7 +1479,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in eleven shards with `bun run test --browser`, against
+them again in WebKit in fifteen shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the
