@@ -1134,7 +1134,7 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in nine shards, WebKit tests in fifteen, and integration tests in
+Unit tests run in nine shards, WebKit tests in sixteen, and integration tests in
 five. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
@@ -1205,7 +1205,8 @@ slowdown: `11 * 1.61 + 2 = 19.71 < 20` minutes. The refreshed table covers all
 380 files, up from 289. With these same measurements, the old shard membership
 needs up to 20.43 minutes. Rebalancing gives 14.95 minutes with eleven shards,
 11.75 with fourteen, and 10.97 with fifteen,
-so fifteen is the smallest matrix that meets the target. These are historical
+so fifteen was the smallest matrix that met the target. The matrix grew to
+sixteen when one more suite pushed the fullest shard past 11 minutes. These are historical
 planning estimates, not new CI wall times. The largest file is ChatWorkspace
 at 447.6 seconds; text-editor-component took 29.5 seconds in the green shard
 and 36.8 in the first failed one. Neither needs splitting to meet this target.
@@ -1479,7 +1480,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in fifteen shards with `bun run test --browser`, against
+them again in WebKit in sixteen shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the

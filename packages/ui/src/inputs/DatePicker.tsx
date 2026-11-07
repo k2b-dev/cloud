@@ -331,7 +331,8 @@ function PresetRail<T>(props: { presets?: readonly DatePreset<T>[]; onSelect: (v
   );
 }
 
-function DatePickerPanel(props: {
+/** One month of days. Exported for composite pickers in this package (the period picker shows two side by side). */
+export function DatePickerPanel(props: {
   visibleMonth: () => Date;
   setVisibleMonth: (date: Date) => void;
   selected?: () => string | null | undefined;
@@ -343,6 +344,14 @@ function DatePickerPanel(props: {
   /** Earliest and latest selectable day as date keys. */
   min?: string;
   max?: string;
+  /** Which month steps this panel offers; a second month beside it offers the other one. */
+  nav?: "both" | "previous" | "next";
+  /** Leaves the days of neighbouring months empty, so two months side by side never show a day twice. */
+  hideOutside?: boolean;
+  /** Whether a day is already on screen, also in a neighbouring panel; arrow keys then move there without paging. */
+  isShown?: (date: Date) => boolean;
+  /** Where keyboard navigation looks for the day to focus; the panel itself by default. */
+  focusRoot?: () => HTMLElement | undefined;
 }): JSX.Element {
   const messages = useUiMessages();
   const [view, setView] = createSignal<PanelView>("days");
@@ -445,8 +454,11 @@ function DatePickerPanel(props: {
   const focusDate = (date: Date) => {
     const targetKey = dateKey(date, context());
     if (blocked(targetKey)) return;
-    if (!dates.isSameMonth(date, props.visibleMonth(), context())) props.setVisibleMonth(date);
-    queueMicrotask(() => calendar?.querySelector<HTMLElement>(`[data-date-day="${targetKey}"]`)?.focus());
+    const shown = props.isShown ? props.isShown(date) : dates.isSameMonth(date, props.visibleMonth(), context());
+    if (!shown) props.setVisibleMonth(date);
+    queueMicrotask(() =>
+      (props.focusRoot?.() ?? calendar)?.querySelector<HTMLElement>(`[data-date-day="${targetKey}"]:not([data-hidden="true"])`)?.focus(),
+    );
   };
 
   const handleDayKeyDown = (event: KeyboardEvent, day: Date) => {
@@ -479,6 +491,9 @@ function DatePickerPanel(props: {
         <button
           type="button"
           class="k2b-date-calendar__nav"
+          data-hidden={props.nav === "next" ? "true" : undefined}
+          tabIndex={props.nav === "next" ? -1 : undefined}
+          aria-hidden={props.nav === "next" ? "true" : undefined}
           onClick={() => (view() === "days" ? moveMonth(-1) : moveYear(-1))}
           disabled={stepBlocked(-1)}
           aria-label={previousLabel()}
@@ -493,6 +508,9 @@ function DatePickerPanel(props: {
         <button
           type="button"
           class="k2b-date-calendar__nav"
+          data-hidden={props.nav === "previous" ? "true" : undefined}
+          tabIndex={props.nav === "previous" ? -1 : undefined}
+          aria-hidden={props.nav === "previous" ? "true" : undefined}
           onClick={() => (view() === "days" ? moveMonth(1) : moveYear(1))}
           disabled={stepBlocked(1)}
           aria-label={nextLabel()}
@@ -543,7 +561,12 @@ function DatePickerPanel(props: {
           </For>
           <For each={dayRows()}>
             {(week) => (
-              <div class="k2b-date-week" role="row">
+              // A week of a neighbouring month only, left empty beside a second month, is no row for assistive tech.
+              <div
+                class="k2b-date-week"
+                role="row"
+                aria-hidden={props.hideOutside && week.every((cell) => cell.outside) ? "true" : undefined}
+              >
                 <For each={week}>
                   {(cell, cellIndex) => {
                     const selected = () => props.selected?.() === cell.key;
@@ -551,6 +574,7 @@ function DatePickerPanel(props: {
                     const active = () => selected() || isRangeEdge(cell.key, range());
                     const focusable = () => cell.key === defaultFocus();
                     const today = () => cell.key === todayKey();
+                    const hidden = () => Boolean(props.hideOutside && cell.outside);
                     const label = () => {
                       const name = today() ? todayLabel(cell.label) : cell.label;
                       return blocked(cell.key) ? inputMessages().notSelectable({ date: name }) : name;
@@ -562,13 +586,15 @@ function DatePickerPanel(props: {
                         data-date-day={cell.key}
                         data-date-focus={focusable() ? "true" : undefined}
                         data-outside={cell.outside ? "true" : undefined}
+                        data-hidden={hidden() ? "true" : undefined}
+                        aria-hidden={hidden() ? "true" : undefined}
                         data-weekend={weekendColumns()[cellIndex()] ? "true" : undefined}
                         data-in-range={inRange(cell.key, range()) && !active() ? "true" : undefined}
                         data-today={today() ? "true" : undefined}
                         aria-current={today() ? "date" : undefined}
                         aria-label={label()}
                         aria-selected={active()}
-                        disabled={blocked(cell.key)}
+                        disabled={hidden() || blocked(cell.key)}
                         tabIndex={focusable() ? 0 : -1}
                         onClick={() => props.onSelect(cell.key)}
                         onKeyDown={(event) => handleDayKeyDown(event, cell.day)}
