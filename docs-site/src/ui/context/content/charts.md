@@ -1149,3 +1149,6 @@ inspected column. A missing column (or a zero-sum normalized column) has no insp
 legend uses a dash when its final column is a gap.
 
 Waterfall labels and printed amounts follow the drawn container width. Amounts appear when bars are at least 46 CSS pixels wide and the text fits its slot; shrinking to a phone hides them without a hydration redraw.
+Stat-tile trends use the same sparkline SVG and interaction host as `Chart`,
+without importing the catalog dispatcher. Adding another chart kind therefore
+does not add its renderer to pages that only show stat trends.

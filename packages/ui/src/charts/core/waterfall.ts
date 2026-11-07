@@ -1,4 +1,4 @@
-import { chartDatumSvg, escapeXml, niceStep } from "./svg";
+import { chartDatumSvg, escapeXml, niceStep } from "./svg-renderers";
 
 export type WaterfallOptions = {
   start: { label: string; value: number };

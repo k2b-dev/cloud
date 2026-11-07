@@ -2008,6 +2008,8 @@ workflows reference|list|get|create|update|history|restore|delete|validate|autoc
 workflow-launchers list|create|update|delete|invoke
 workflow-runs list|get|cancel|steps|documents|download-documents|preview-export|confirm-export|file|download-file
 workflow-emails list
+records atomic|correction-draft|close
+documents capture|issue|confirm
 ```
 
 Background document actions on Record pages use `background: { acceptedMessage,

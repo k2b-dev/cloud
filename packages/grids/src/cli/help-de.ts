@@ -1,5 +1,14 @@
 /** German help text for `cld grids`, keyed by the English text. `cli.test.ts` requires an entry for every help string. */
 export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
+  "Change Records atomically after current-state checks": "Datensätze nach aktuellen Bedingungen atomar ändern",
+  "Create a linked correction or cancellation draft": "Einen verknüpften Korrektur- oder Stornoentwurf erstellen",
+  "Close a Record under its pinned finalization policy": "Einen Datensatz nach der festgehaltenen Abschlussregel abschließen",
+  "Freeze complete GQL data for document issuance": "Vollständige GQL-Daten für die Dokumentausgabe festhalten",
+  "Issue a document from an immutable data capture": "Ein Dokument aus einer unveränderlichen Datenaufnahme ausgeben",
+  "Confirm the exact financial preview and issue its document": "Die genaue Finanzvorschau bestätigen und ihr Dokument ausgeben",
+  "Stable key for retries of this exact operation": "Stabiler Schlüssel für Wiederholungen genau dieses Vorgangs",
+  "Uses the capability contract and its current permissions and approval policy. Read cld capabilities review grids <action> before an asking operation.":
+    "Verwendet den Capability-Vertrag mit aktuellen Berechtigungen und Freigaberegeln. Vor einem Vorgang mit Rückfrage cld capabilities review grids <action> lesen.",
   "A request, not a write: a queued run is canceled at once, while a running or waiting one stops when the worker holding it next checks in. It never undoes an effect that already happened.":
     "Eine Anfrage, kein Schreibvorgang: Ein eingereihter Lauf wird sofort abgebrochen, ein laufender oder wartender stoppt, sobald sich der Worker, der ihn hält, das nächste Mal meldet. Bereits eingetretene Effekte werden nie rückgängig gemacht.",
   "A step has its own vocabulary, not the run's: STATUS is running, completed, waiting, failed, needs_attention, terminal, planned, unsupported, indeterminate, or canceled. A step completes where a run succeeds, and a dry run records planned steps. ATTEMPT counts re-runs of that one step and is 0 the first time.":

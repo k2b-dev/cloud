@@ -149,7 +149,7 @@ export function ShowcaseFrame(props: ShowcaseFrameProps): JSX.Element {
             <div class="ui-charts-slot" style={{ height: height() }}>
               <span class="ui-charts-slot__kind">{slot().kind}</span>
               <strong>{props.intended ?? `The ${slot().kind} kind`} comes here</strong>
-              <p>{slot().reason} This panel fills itself once the catalog step is merged.</p>
+              <p>{slot().reason} The panel draws itself once the build has it.</p>
             </div>
           </Paper>
         )}
