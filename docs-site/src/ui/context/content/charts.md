@@ -1167,8 +1167,11 @@ one shared node in normal width; other inflow/outflow nodes sit inside their mon
 gap. The shared tooltip names the closing and following opening together;
 accessible names replace native browser tooltips. Month names stay above their part of the flow. The newest period is visible in the server frame, before any script runs.
 Touch or trackpad scrolls through earlier months with snap points at boundaries.
-On phones, adjacent months peek beside the current month; complete amount rows
-stay below the drawing. Scroll edges fade softly.
+On phones, adjacent months peek beside the current month. Compact amount rows
+with hairline separators sit directly below the drawing; names wrap beside
+right-aligned tabular amounts. The list shows up to six rows, using the shortest
+period to set a shared viewport height. Longer lists scroll inside it. Scroll
+edges fade softly.
 Previous/Next or Left/Right scroll one period, timed by `--k2b-motion-base`;
 either the operating system preference or `html[data-k2b-motion="reduced"]`
 removes animated scrolling. Up/Down inspect amounts, Enter pins and Escape
@@ -1176,7 +1179,8 @@ dismisses. The buttons disable at the ends. Accessible summaries cover every
 period's opening, total inflows, total outflows and closing. Diagram/Table
 switches between the continuous flow and complete tables for all periods.
 
-The drawing and frame reserve space for the largest period, including on phones.
+The drawing uses the largest period to keep a common scale. On phones, the frame
+uses the compact list viewport and crops the unused SVG caption space.
 `state` is a Solid-only prop: `loading`, `empty`, `error`, `stale` or `data`.
 `onRetry` handles retry; `error` can supply a load-failure explanation. Invalid
 accounting names the offending period in the frame and Notebook diagnostic. A stale

@@ -192,6 +192,39 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
           });
           expect(peek.left).toBeCloseTo(24, 1);
           expect(peek.right).toBeCloseTo(24, 1);
+          const compact = await frame.evaluate((e) => {
+            const list = e.querySelector<HTMLElement>('[data-balance-phone-period="1"]')!;
+            const bounds = list.getBoundingClientRect();
+            const balance = e.querySelector('[data-balance-period="1"] [data-balance-key="closing"]')!.getBoundingClientRect();
+            return {
+              gap: bounds.top - balance.bottom,
+              rows: Array.from(list.children).map((row) => {
+                const label = row.querySelector("dt")!.getBoundingClientRect();
+                const amount = row.querySelector("dd")!.getBoundingClientRect();
+                const style = getComputedStyle(row);
+                return { height: row.getBoundingClientRect().height, gap: amount.left - label.right, rule: style.borderTopWidth };
+              }),
+            };
+          });
+          expect(compact.gap).toBeGreaterThanOrEqual(0);
+          expect(compact.gap).toBeLessThanOrEqual(10.1);
+          for (const row of compact.rows) {
+            expect(row.height).toBeCloseTo(44, 1);
+            expect(row.gap).toBeGreaterThanOrEqual(8);
+            expect(row.rule).toBe("1px");
+          }
+          await frame.locator('[data-balance-step="-1"]').click();
+          await settled(page);
+          const longer = frame.locator('[data-balance-phone-period="0"]');
+          expect(await longer.evaluate((e) => e.scrollHeight)).toBeGreaterThan(await longer.evaluate((e) => e.clientHeight));
+          await longer.evaluate((e) => (e.scrollTop = e.scrollHeight));
+          await settled(page);
+          expect(
+            await longer.evaluate((e) => e.lastElementChild!.getBoundingClientRect().bottom <= e.getBoundingClientRect().bottom + 1),
+          ).toBe(true);
+          expect(await frame.evaluate(documentBox)).toEqual(box);
+          await frame.locator('[data-balance-step="1"]').click();
+          await settled(page);
         }
 
         await page.locator("html").evaluate((e) => delete e.dataset.k2bMotion);

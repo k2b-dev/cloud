@@ -233,8 +233,9 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
     if (svg !== undefined) return new Html(svg);
     const id = `c${++chartSeq}`;
     pendingChartOptions.set(id, prepared);
+    const frameHeight = balanceFlowHeight(input.periods, height);
     return new Html(
-      `<div class="k2b-chart k2b-ui" data-balance-pending style="--k2b-balance-flow-height:${balanceFlowHeight(input.periods, height)}px;--k2b-balance-flow-rows:${Math.max(2, ...input.periods.map((p) => p.inflows.length + p.outflows.length + 3))}"><div class="k2b-chart__svg" data-chart-pending="${id}" aria-busy="true" style="--k2b-chart-width:${width}px;--k2b-chart-height:${height}px">${chartLoading(locale)}</div></div>`,
+      `<div class="k2b-chart k2b-ui" data-balance-pending style="--k2b-balance-flow-height:${frameHeight}px;--k2b-balance-flow-phone-height:${(180 * (frameHeight - 46)) / frameHeight + 2}px;--k2b-balance-flow-rows:${Math.min(6, ...input.periods.map((p) => p.inflows.length + p.outflows.length + 3))}"><div class="k2b-chart__svg" data-chart-pending="${id}" aria-busy="true" style="--k2b-chart-width:${width}px;--k2b-chart-height:${height}px">${chartLoading(locale)}</div></div>`,
     );
   }
   // Bar rows take the height their labels need; the box reserves it.

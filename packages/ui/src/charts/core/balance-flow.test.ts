@@ -101,6 +101,14 @@ test("server frame contains all months and starts at the newest scroll origin ac
   expect(markup).toContain("data-balance-scroll");
   expect(markup.match(/data-balance-period="/g)).toHaveLength(4);
   expect(markup.match(/<table /g)).toHaveLength(4);
+  expect(markup).toContain("--k2b-balance-flow-rows:6");
+  const phoneHeight = Number(/--k2b-balance-flow-phone-height:([\d.]+)px/.exec(markup)?.[1]);
+  expect(phoneHeight).toBeCloseTo((180 * (280 - 46)) / 280 + 2, 5);
+  const shortest = renderBalanceFlowHtml({
+    ...balanceFixture,
+    periods: [{ label: "Zero", opening: 0, inflows: [], outflows: [], closing: 0 }],
+  });
+  expect(shortest).toContain("--k2b-balance-flow-rows:3");
   for (const state of ["loading", "empty", "error", "stale"] as const) {
     const other = renderBalanceFlowHtml(balanceFixture, state);
     expect(/--k2b-balance-flow-height:(\d+)px/.exec(other)?.[1]).toBe(/--k2b-balance-flow-height:(\d+)px/.exec(markup)?.[1]);
