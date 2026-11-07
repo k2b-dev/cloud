@@ -1124,3 +1124,7 @@ percentage axis and tooltips.
 The top legend starts with the final column's amount or share and follows the
 inspected column. A missing column (or a zero-sum normalized column) has no inspected values; the
 legend uses a dash when its final column is a gap.
+
+Stat-tile trends use the same sparkline SVG and interaction host as `Chart`,
+without importing the catalog dispatcher. Adding another chart kind therefore
+does not add its renderer to pages that only show stat trends.

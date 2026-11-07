@@ -132,3 +132,47 @@ test("a section instantiates its body once even though it renders the body condi
   dispose();
   dom.cleanup();
 });
+
+test("a row's checkbox toggles on its own, shows its state, and leaves the row its own command", async () => {
+  const dom = createDomTestHarness();
+  const { DetailPanel } = await import("../src");
+  const { createSignal } = await import("solid-js");
+  const calls: string[] = [];
+  const [done, setDone] = createSignal(false);
+  const dispose = render(
+    () => (
+      <DetailPanel.Action
+        title="Call Mrs. Weber"
+        onClick={() => calls.push("open")}
+        checkbox={{
+          get checked() {
+            return done();
+          },
+          label: "Done: Call Mrs. Weber",
+          onChange: (checked) => {
+            calls.push(`done:${checked}`);
+            setDone(checked);
+          },
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    const row = dom.root.querySelector<HTMLElement>(".k2b-detail-panel__action-row")!;
+    const box = row.querySelector<HTMLInputElement>("input[type='checkbox']")!;
+    // The checkbox comes first, as its own control beside the row's button, never inside it.
+    expect(row.firstElementChild?.classList.contains("k2b-detail-panel__action-check")).toBe(true);
+    expect(box.closest("button")).toBeNull();
+    expect(box.getAttribute("aria-label")).toBe("Done: Call Mrs. Weber");
+    expect(box.checked).toBe(false);
+    box.click();
+    expect(calls).toEqual(["done:true"]);
+    expect(box.checked).toBe(true);
+    row.querySelector<HTMLButtonElement>("button.k2b-detail-panel__action")!.click();
+    expect(calls).toEqual(["done:true", "open"]);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

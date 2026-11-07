@@ -13,7 +13,7 @@ import {
   type ReferenceLine,
   referenceLineAttributes,
   svgRoot,
-} from "../charts/core/svg";
+} from "../charts/core/svg-renderers";
 
 /**
  * Bar chart options: stdlib's `charts.bar` options plus a title for the category axis and a separate value format.

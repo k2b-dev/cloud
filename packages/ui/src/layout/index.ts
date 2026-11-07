@@ -79,6 +79,7 @@ export type { DataPanelProps } from "./DataPanel";
 export { DataPanel } from "./DataPanel";
 export type {
   DetailPanelActionButtonProps,
+  DetailPanelActionCheckbox,
   DetailPanelActionLinkProps,
   DetailPanelActionProps,
   DetailPanelActionSecondary,
