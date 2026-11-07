@@ -103,6 +103,12 @@ application subscription to them stays `blocked` with
 `resource_events_unsupported`, and only resource-bound workload subscriptions with a valid mandate
 and current read access receive them (see [Who receives an event](#who-receives-an-event)).
 
+### Grids record changes
+
+Grids also publishes version 1 resource events for record creation, updates,
+deletion, and finalization. See [Grids events](/en/docs/reference/grids-events)
+for mutation boundaries, bulk summaries, and table/base lifecycle events.
+
 ### Mail receipts
 
 `mail.message.received` has strict data `{ receiptId: UUID }`. The receipt ID
