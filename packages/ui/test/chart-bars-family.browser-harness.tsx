@@ -1,6 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import { render } from "solid-js/web";
 import Chart from "../src/content/Chart";
+import type { ChartDatumRef } from "../src/content/chart-inspection-core";
 import { Widget } from "../src/widgets/Widget";
 import { barFamilyFixtures } from "./chart-bars-family-fixtures";
 
@@ -9,11 +10,23 @@ const withoutTitle = (spec: (typeof barFamilyFixtures)[number]) => {
   return chart;
 };
 const [state, setState] = createSignal("data");
+const [selected, setSelected] = createSignal<ChartDatumRef | null>({ role: "item", index: 0 });
 render(
   () => (
     <>
       <div class="states">
         <For each={["data", "loading", "empty", "error", "stale"]}>{(s) => <button onClick={() => setState(s)}>{s}</button>}</For>
+      </div>
+      <div id="old-bar-outline">
+        <Chart
+          kind="bar"
+          data={[
+            { label: "Old A", value: 10 },
+            { label: "Old B", value: 20 },
+          ]}
+          selected={selected()}
+          onSelect={(selection) => setSelected(selection.datum)}
+        />
       </div>
       <main class="cards">
         <For each={barFamilyFixtures}>

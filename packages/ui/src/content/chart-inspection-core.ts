@@ -109,7 +109,7 @@ export function createChartInspector(options: {
               : ".stdlib-chart-sparkline, .stdlib-chart-stat-sparkline",
           )
       : (item.element.querySelector(".stdlib-chart-bar-gauge-fill, .stdlib-chart-gauge-fill, .stdlib-chart-stat-value") ??
-        item.element.querySelector("rect, path, circle"));
+        item.element.querySelector(":is(rect, path, circle):not(.k2b-chart-category-band)"));
     const paint = source ? source.ownerDocument.defaultView?.getComputedStyle(source) : undefined;
     const color =
       (point || item.element.hasAttribute("data-chart-reference") ? paint?.stroke : paint?.fill) ||
@@ -195,20 +195,23 @@ export function createChartInspector(options: {
     byElement.clear();
     receive(options.cursor?.()?.read() ?? null);
   };
-  const show = (entry: Entry, broadcast = true) => {
+  const show = (entry: Entry, broadcast = true, hover = false) => {
     const x = rawX(entry);
     if (broadcast && options.kind() === "line" && typeof x === "number") options.cursor?.()?.move(source, x);
     const tooltip = options.tooltip(),
       anchor = options.anchor(),
       container = options.container();
     if (!tooltip || !anchor || !container || !options.enabled()) return;
-    if (active === entry && tooltip.matches(":popover-open")) return;
+    if (active === entry && tooltip.matches(":popover-open")) {
+      entry.element.setAttribute("data-inspected", hover ? "hover" : "true");
+      return;
+    }
     clearHighlight();
     active = entry;
     highlighted = options.kind() === "line" ? records().filter((candidate) => rawX(candidate) === rawX(entry)) : [entry];
     for (const item of highlighted) {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
-      item.element.setAttribute("data-inspected", "true");
+      item.element.setAttribute("data-inspected", hover ? "hover" : "true");
     }
     for (const value of container.querySelectorAll<SVGTextElement>("[data-bar-legend]")) {
       const field = entry.datum.values.find((f) => f.key === value.getAttribute("data-bar-legend"));
@@ -393,7 +396,7 @@ export function createChartInspector(options: {
       if (!sample) return;
       const entry = nearest(sample.x, sample.y, sample.target);
       if (entry) {
-        show(entry);
+        show(entry, true, true);
         if (seriesChart()) {
           const container = options.container();
           container?.setAttribute("data-cursor-source", "true");

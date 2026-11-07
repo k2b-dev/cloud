@@ -7,6 +7,7 @@ import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { barFamilyFixtures } from "../../test/chart-bars-family-fixtures";
 import { renderHbarSvg } from "../charts/core/hbar";
 import { renderBarChartSvg } from "./chart-bar";
+import { selectedChartSvg } from "./chart-svg";
 
 const { plugin } = createConfig({ dev: true, rootDir: import.meta.dir });
 Bun.plugin(plugin());
@@ -91,6 +92,18 @@ for (const width of [1440, 390])
         const rects = await marks.evaluateAll((nodes) =>
           nodes.flatMap((g) => [g, ...g.querySelectorAll(".stdlib-chart-bar")].map((e) => getComputedStyle(e).opacity)),
         );
+        expect(
+          await marks
+            .first()
+            .locator(".stdlib-chart-bar")
+            .evaluateAll((nodes) => nodes.every((n) => getComputedStyle(n).stroke === "none")),
+        ).toBe(true);
+        expect(
+          await marks
+            .first()
+            .locator(".k2b-chart-category-band")
+            .evaluate((n) => getComputedStyle(n).fill),
+        ).not.toBe("none");
         const tipBox = await chart.locator('[role="tooltip"]').boundingBox();
         await marks
           .first()
@@ -106,6 +119,17 @@ for (const width of [1440, 390])
         await chart.press("Enter");
         expect(await chart.locator('[role="tooltip"]').textContent()).not.toBe(first);
         await chart.press("Home");
+        expect(await marks.first().evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-inspection-color")))).toBe(
+          true,
+        );
+        expect(
+          await marks
+            .first()
+            .locator(".stdlib-chart-bar")
+            .evaluateAll((nodes) =>
+              nodes.every((n) => getComputedStyle(n).stroke !== "none" && parseFloat(getComputedStyle(n).strokeWidth) > 0),
+            ),
+        ).toBe(true);
         await chart.press("Escape");
         expect(await chart.locator('[role="tooltip"]:popover-open').count()).toBe(0);
         await marks.first().evaluate((g) => g.setAttribute("data-selected", ""));
@@ -189,7 +213,7 @@ for (const width of [1440, 390])
       }
       await page.getByRole("button", { name: "error", exact: true }).click();
       await page.getByRole("button", { name: "Retry", exact: true }).first().click();
-      expect(await page.locator(".k2b-chart").count()).toBe(barFamilyFixtures.length);
+      expect(await page.locator(".sample .k2b-chart").count()).toBe(barFamilyFixtures.length);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const shots = process.env.CHARTS_SCREENSHOTS;
       if (shots) {
@@ -251,7 +275,7 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
         await page
           .locator(".k2b-chart-category-band")
           .first()
-          .evaluate((n) => n.parentElement!.setAttribute("data-inspected", ""));
+          .evaluate((n) => n.parentElement!.setAttribute("data-inspected", "hover"));
         await settled(page);
         expect(
           await page
@@ -268,6 +292,55 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
         ).toEqual(["none", "none"]);
       }
     }
+  } finally {
+    await page.close();
+  }
+});
+
+test("old bars keep valid SSR/client selection and inspection outlines inside k2b-ui", async () => {
+  const page = await browser.newPage();
+  try {
+    const svg = selectedChartSvg(
+      renderChartSvg(
+        {
+          kind: "bar",
+          data: [
+            { label: "Old A", value: 10 },
+            { label: "Old B", value: 20 },
+          ],
+        },
+        480,
+        280,
+      ),
+      { role: "item", index: 0 },
+    );
+    await page.setContent(
+      `<style>${css}</style><body class="k2b-ui"><div id="ssr" class="k2b-chart">${svg}</div><div id="root"></div></body>`,
+    );
+    const serverStroke = await page.locator("#ssr [data-selected] .stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke);
+    expect(serverStroke).not.toBe("none");
+    await page.addScriptTag({ content: bundle });
+    const chart = page.locator("#old-bar-outline .k2b-chart");
+    await settled(page);
+    const first = chart.locator("[data-chart-datum]").first();
+    const second = chart.locator("[data-chart-datum]").nth(1);
+    expect(await first.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).toBe(serverStroke);
+    expect(await first.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-selection-color")))).toBe(true);
+    await second.locator(".k2b-chart-category-band").hover({ position: { x: 3, y: 3 } });
+    await chart.locator('[role="tooltip"]:popover-open').waitFor();
+    expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).toBe("none");
+    expect(await second.locator(".k2b-chart-category-band").evaluate((n) => getComputedStyle(n).fill)).not.toBe("none");
+    await chart.focus();
+    await chart.press("End");
+    expect(await second.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-inspection-color")))).toBe(true);
+    expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).not.toBe("none");
+    await chart.press("Enter");
+    expect(await second.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-selection-color")))).toBe(true);
+    expect(await second.locator(".stdlib-chart-bar").evaluate((n) => parseFloat(getComputedStyle(n).strokeWidth))).toBeGreaterThan(0);
+    await chart.press("Escape");
+    await second.locator(".k2b-chart-category-band").hover({ position: { x: 3, y: 3 } });
+    expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).not.toBe("none");
+    expect(await second.locator(".k2b-chart-category-band").evaluate((n) => getComputedStyle(n).stroke)).toBe("none");
   } finally {
     await page.close();
   }

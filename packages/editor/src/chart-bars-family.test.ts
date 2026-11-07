@@ -59,3 +59,11 @@ test("Notebook horizontal rows reserve their growing drawing height", () => {
   });
   expect(notebookChartHeight(input, "en")).toBeGreaterThan(600);
 });
+
+test("unlimited editor bars support an empty state while AI-limited bars require data", () => {
+  const empty = { kind: "bar", title: "Orders", data: [] };
+  expect(schema.safeParse(empty).success).toBe(true);
+  const limited = chartKinds({ maxSeries: 8, maxValues: 480, maxMarks: 1000 }).safeParse(empty);
+  expect(limited.success).toBe(false);
+  if (!limited.success) expect(limited.error.issues.some((issue) => issue.path[0] === "data")).toBe(true);
+});

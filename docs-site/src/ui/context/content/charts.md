@@ -138,7 +138,8 @@ Group headings follow first appearance. All source values remain in the
 accessible table, including values that do not fit on a segment.
 
 Both renderers inspect whole categories. A calm band appears behind the active
-category without changing other marks. Arrow keys move between categories,
+category on pointer hover without outlining its segments. Keyboard inspection
+and controlled selection outline the marks using their series color. Arrow keys move between categories,
 Home/End jump to the edges, Enter pins and Escape closes inspection. A tap
 selects only when it has not become a swipe.
 

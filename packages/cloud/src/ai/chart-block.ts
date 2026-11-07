@@ -1,3 +1,5 @@
+import { seriesBarLayout } from "@k2b/ui/charts";
+
 // Cloud retains AI policy and its public export names; portable rendering lives in @k2b/editor.
 export {
   type ChartColumn as CloudAiChartColumn,
@@ -104,8 +106,6 @@ export function chartDataIssue(input: CloudAiChartInput): string | undefined {
   }
   return undefined;
 }
-
-import { seriesBarLayout } from "@k2b/ui/charts";
 
 /** Why chart options that pass the data checks still would not draw well; draws them once. */
 export function chartDrawingIssue(input: CloudAiChartInput): string | undefined {

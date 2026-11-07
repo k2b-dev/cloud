@@ -135,3 +135,16 @@ test("dense comparison pairs stay inside their category and budget the actual wi
     expect(Number(bar[1]) + Number(bar[2])).toBeLessThanOrEqual(category.center + g.slot / 2);
   });
 });
+
+test("horizontal legend budget is stable when rows grow the reserved height", () => {
+  const spec = {
+    series: Array.from({ length: 20 }, (_, i) => `Long channel name ${i}`),
+    rows: Array.from({ length: 30 }, (_, i) => ({ label: `Row ${i}`, values: Array(20).fill(1) as number[] })),
+  };
+  const layout = hbarLayout(spec);
+  const rendered = hbarLayout(spec, { width: 480, height: layout.height });
+  expect(rendered.legend.height).toBe(layout.legend.height);
+  expect(rendered.legend.hidden).toBe(layout.legend.hidden);
+  expect(rendered.height).toBe(layout.height);
+  expect(renderHbarSvg({ ...spec, width: 480, height: layout.height }).match(/viewBox="([^"]+)"/)?.[1]).toBe(`0 0 480 ${layout.height}`);
+});
