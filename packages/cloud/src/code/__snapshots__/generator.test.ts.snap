@@ -28,7 +28,7 @@ export type CodeContext = {
   json(value: unknown, status?: number): Response;
   text(value: string, status?: number): Response;
   /** Draws a page built from SDK blocks; its root is \`<Page>\`. */
-  page(page: CodePageElement): Response;
+  page(page: CodePageBlock): Response;
   redirect(location: string, status?: number): Response;
 };
 /** A webhook is anonymous and must verify its request explicitly. */
@@ -129,11 +129,11 @@ export type CodeChartDescription = ((({ "format"?: ({ "compact"?: (boolean); "cu
  * one); JSX cannot type which element a child is, so the checker and Core enforce it.
  */
 export type CodePageNode = CodePageTree["children"][number];
-/** A part that only its block reads, such as a form field or a table column. Never a page node of its own. */
-export type CodePagePart = { readonly kind: \`#\${string}\` };
-export type CodePageElement = CodePageNode | CodePageTree | CodePagePart;
-export type CodePageChild = CodePageElement | readonly CodePageChild[] | false | null | undefined;
-export type CodePageComponent<P> = (props: P) => CodePageElement;
+declare const __codePageBlock: unique symbol;
+/** A block made by an SDK component. Only blocks make pages; what a block holds is Cloud's business. */
+export type CodePageBlock = { readonly [__codePageBlock]: true };
+export type CodePageChild = CodePageBlock | readonly CodePageChild[] | false | null | undefined;
+export type CodePageComponent<P> = (props: P) => CodePageBlock;
 type CodeNodeProps<K extends CodePageNode["kind"]> = Omit<Extract<CodePageNode, { kind: K }>, "kind">;
 type Parts = { children?: CodePageChild };
 type NoChildren = { children?: never };
@@ -202,10 +202,10 @@ export declare const Chart: {
   Stat: CodePageComponent<CodeChartProps<"stat">>;
   Empty: CodePageComponent<{ title: string; empty: string } & Pick<CodeNodeProps<"Chart">, "width"> & NoChildren>;
 };
-export declare function jsx<P>(component: CodePageComponent<P>, props: P | null, ...children: CodePageChild[]): CodePageElement;
+export declare function jsx<P>(component: CodePageComponent<P>, props: P | null, ...children: CodePageChild[]): CodePageBlock;
 export declare namespace jsx {
   namespace JSX {
-    type Element = CodePageElement;
+    type Element = CodePageBlock;
     interface ElementChildrenAttribute {
       children: {};
     }
@@ -365,7 +365,10 @@ const http = Object.freeze({
     return bridge.call("http.fetch", { method: "GET", headers: {}, ...options, url });
   },
 });
+// Pages that the SDK's blocks built; c.page draws only these, never a hand-written description.
+const builtPages = new WeakSet();
 const __codeSdk = Object.freeze({
+  markPage: page => { builtPages.add(page); return page; },
   namespaces, owner, app, secrets, http,
   bind(cloud) {
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
@@ -408,6 +411,7 @@ const __codeSdk = Object.freeze({
             }
             ancestors.delete(value);
           };
+          if (!builtPages.has(tree)) throw new Error("code_page_blocks");
           visit(tree, 0);
           if (tree.kind !== "Page" || tree.version !== 1) throw new Error("code_page_root");
           if (new TextEncoder().encode(JSON.stringify(tree)).byteLength > manifest.pageLimits.bytes) throw new Error("code_page_limit");
@@ -441,59 +445,78 @@ export const work_shop = __codeSdk.namespaces["work_shop"];
 export const owner = __codeSdk.owner;
 export const app = __codeSdk.app;
 
-const pageComponents = new Set();
-const childNodes = children => [children].flat(Infinity).filter(value => value !== null && value !== undefined && value !== false);
-const textChildren = children => {
-  const values = children === undefined ? [] : [children].flat(Infinity);
-  if (values.some(value => typeof value !== "string" && typeof value !== "number")) throw new Error("code_page_text");
-  return values.join("");
-};
-const builder = (kind, build) => {
-  const component = props => build ? build(props) : { kind, ...props };
-  pageComponents.add(component);
-  return component;
-};
-// A part belongs to exactly one block, such as a field to its form; elsewhere it is an error.
-const part = (kind, build) => builder(kind, props => ({ ...(build ? build(props) : props), kind: "#" + kind }));
-const parts = (children, kind) => childNodes(children).map(child => {
-  if (!child || typeof child !== "object" || child.kind !== "#" + kind) throw new Error("code_page_child");
-  const { kind: _kind, ...rest } = child;
-  return rest;
-});
-const noChildren = ({ children, ...props }) => {
-  if (childNodes(children).length) throw new Error("code_page_child");
-  return props;
-};
-export const Page = builder("Page", ({ children, ...props }) => ({ kind: "Page", version: 1, ...props, children: childNodes(children) }));
-export const Section = builder("Section", ({ children, ...props }) => ({ kind: "Section", ...props, children: childNodes(children) }));
-export const Text = builder("Text", ({ children, text, ...props }) => ({ kind: "Text", ...props, text: text ?? textChildren(children) }));
-export const Heading = builder("Heading", ({ children, text, ...props }) => ({ kind: "Heading", ...props, text: text ?? textChildren(children) }));
-export const Stat = part("Stat", noChildren);
-export const Stats = builder("Stats", ({ children, ...props }) => ({ kind: "Stats", ...noChildren(props), items: parts(children, "Stat") }));
-export const Column = part("Column", noChildren);
-export const Table = builder("Table", ({ children, ...props }) => ({ kind: "Table", ...props, columns: parts(children, "Column") }));
-export const Item = part("Item", noChildren);
-export const Detail = builder("Detail", ({ children, ...props }) => ({ kind: "Detail", ...props, items: parts(children, "Item") }));
-export const Option = part("Option", noChildren);
-export const Field = {};
-for (const type of ["text", "email", "number", "textarea", "checkbox", "scan"])
-  Field[type[0].toUpperCase() + type.slice(1)] = part("Field", props => ({ type, ...noChildren(props) }));
-Field.Select = part("Field", ({ children, ...props }) => ({ type: "select", ...props, options: parts(children, "Option") }));
-export const Form = builder("Form", ({ children, ...props }) => ({ kind: "Form", ...props, fields: parts(children, "Field") }));
-export const Link = builder("Link");
-export const Button = builder("Button");
-export const Action = builder("Action");
-export const Notice = builder("Notice");
-export const Chart = {};
-for (const kind of ["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"])
-  Chart[kind[0].toUpperCase() + kind.slice(1)] = builder("Chart", ({ width, ...props }) => ({
-    kind: "Chart", ...(width === undefined ? {} : { width }), description: { kind, ...noChildren(props) },
+const __codePage = (() => {
+  const components = new Set();
+  const built = new WeakSet();
+  const done = node => {
+    built.add(node);
+    return Object.freeze(node);
+  };
+  const flat = children => [children].flat(Infinity).filter(value => value !== null && value !== undefined && value !== false);
+  // A block's children are blocks made here, never hand-written objects, and never a part outside its block.
+  const blocks = children => Object.freeze(flat(children).map(child => {
+    if (!built.has(child)) throw new Error("code_page_blocks");
+    if (child.kind.startsWith("#")) throw new Error("code_page_child");
+    return child;
   }));
-Chart.Empty = builder("Chart", props => ({ kind: "Chart", ...noChildren(props) }));
-export function jsx(component, props, ...children) {
-  if (!pageComponents.has(component)) throw new Error("code_page_component");
-  return component(children.length ? { ...props, children: children.length === 1 ? children[0] : children } : props ?? {});
-}
+  const text = children => {
+    const values = children === undefined ? [] : [children].flat(Infinity);
+    if (values.some(value => typeof value !== "string" && typeof value !== "number")) throw new Error("code_page_text");
+    return values.join("");
+  };
+  const block = (kind, build) => {
+    const component = props => done(build ? build(props ?? {}) : { kind, ...noChildren(props ?? {}) });
+    components.add(component);
+    return component;
+  };
+  // A part belongs to exactly one block, such as a field to its form; elsewhere it is an error.
+  const part = (kind, build) => block(kind, props => ({ ...(build ? build(props) : noChildren(props)), kind: "#" + kind }));
+  const parts = (children, kind) => Object.freeze(flat(children).map(child => {
+    if (!built.has(child) || child.kind !== "#" + kind) throw new Error("code_page_child");
+    const { kind: _kind, ...rest } = child;
+    return Object.freeze(rest);
+  }));
+  const noChildren = ({ children, ...props }) => {
+    if (flat(children).length) throw new Error("code_page_child");
+    return props;
+  };
+  const Page = block("Page", ({ children, ...props }) => ({ kind: "Page", version: 1, ...props, children: blocks(children) }));
+  const page = props => __codeSdk.markPage(Page(props));
+  components.add(page);
+  const Section = block("Section", ({ children, ...props }) => ({ kind: "Section", ...props, children: blocks(children) }));
+  const Text = block("Text", ({ children, text: value, ...props }) => ({ kind: "Text", ...props, text: value ?? text(children) }));
+  const Heading = block("Heading", ({ children, text: value, ...props }) => ({ kind: "Heading", ...props, text: value ?? text(children) }));
+  const Field = {};
+  for (const type of ["text", "email", "number", "textarea", "checkbox", "scan"])
+    Field[type[0].toUpperCase() + type.slice(1)] = part("Field", props => ({ type, ...noChildren(props) }));
+  Field.Select = part("Field", ({ children, ...props }) => ({ type: "select", ...props, options: parts(children, "Option") }));
+  const Chart = {};
+  for (const kind of ["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"])
+    Chart[kind[0].toUpperCase() + kind.slice(1)] = block("Chart", ({ width, ...props }) => ({
+      kind: "Chart", ...(width === undefined ? {} : { width }), description: { kind, ...noChildren(props) },
+    }));
+  Chart.Empty = block("Chart", props => ({ kind: "Chart", ...noChildren(props) }));
+  function jsx(component, props, ...children) {
+    if (!components.has(component)) throw new Error("code_page_component");
+    return component(children.length ? { ...props, children: children.length === 1 ? children[0] : children } : props ?? {});
+  }
+  return {
+    Page: page, Section, Text, Heading, Field, Chart, jsx,
+    Stat: part("Stat"),
+    Stats: block("Stats", ({ children, ...props }) => ({ kind: "Stats", ...noChildren(props), items: parts(children, "Stat") })),
+    Column: part("Column"),
+    Table: block("Table", ({ children, ...props }) => ({ kind: "Table", ...props, columns: parts(children, "Column") })),
+    Item: part("Item"),
+    Detail: block("Detail", ({ children, ...props }) => ({ kind: "Detail", ...props, items: parts(children, "Item") })),
+    Option: part("Option"),
+    Form: block("Form", ({ children, ...props }) => ({ kind: "Form", ...props, fields: parts(children, "Field") })),
+    Link: block("Link"),
+    Button: block("Button"),
+    Action: block("Action"),
+    Notice: block("Notice"),
+  };
+})();
+export const { Page, Section, Text, Heading, Field, Chart, jsx, Stat, Stats, Column, Table, Item, Detail, Option, Form, Link, Button, Action, Notice } = __codePage;
 
 "
 `;

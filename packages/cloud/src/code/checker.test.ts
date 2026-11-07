@@ -984,6 +984,9 @@ test("each building block types its props: a wrong prop, value or child text is 
     '<Chart.Empty title="Orders" />',
   ];
   const routes = wrong.map((block, index) => `app.get("/${index}", c => c.page(<Page title="P">${block}</Page>));`);
+  // The description is Cloud's transport, not a way to build pages.
+  wrong.push('c.page({ version: 1, kind: "Page", title: "P", children: [] })');
+  routes.push(`app.get("/object", c => c.page({ version: 1, kind: "Page", title: "P", children: [] }));`);
   const result = await checkCode(
     {
       ...base,

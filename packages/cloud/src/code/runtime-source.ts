@@ -139,7 +139,10 @@ const http = Object.freeze({
     return bridge.call("http.fetch", { method: "GET", headers: {}, ...options, url });
   },
 });
+// Pages that the SDK's blocks built; c.page draws only these, never a hand-written description.
+const builtPages = new WeakSet();
 const __codeSdk = Object.freeze({
+  markPage: page => { builtPages.add(page); return page; },
   namespaces, owner, app, secrets, http,
   bind(cloud) {
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
@@ -182,6 +185,7 @@ const __codeSdk = Object.freeze({
             }
             ancestors.delete(value);
           };
+          if (!builtPages.has(tree)) throw new Error("code_page_blocks");
           visit(tree, 0);
           if (tree.kind !== "Page" || tree.version !== 1) throw new Error("code_page_root");
           if (new TextEncoder().encode(JSON.stringify(tree)).byteLength > manifest.pageLimits.bytes) throw new Error("code_page_limit");

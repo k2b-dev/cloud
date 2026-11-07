@@ -5,11 +5,11 @@ import type { CodeChartDescription, CodePageTree } from "./page-contract";
  * one); JSX cannot type which element a child is, so the checker and Core enforce it.
  */
 export type CodePageNode = CodePageTree["children"][number];
-/** A part that only its block reads, such as a form field or a table column. Never a page node of its own. */
-export type CodePagePart = { readonly kind: `#${string}` };
-export type CodePageElement = CodePageNode | CodePageTree | CodePagePart;
-export type CodePageChild = CodePageElement | readonly CodePageChild[] | false | null | undefined;
-export type CodePageComponent<P> = (props: P) => CodePageElement;
+declare const __codePageBlock: unique symbol;
+/** A block made by an SDK component. Only blocks make pages; what a block holds is Cloud's business. */
+export type CodePageBlock = { readonly [__codePageBlock]: true };
+export type CodePageChild = CodePageBlock | readonly CodePageChild[] | false | null | undefined;
+export type CodePageComponent<P> = (props: P) => CodePageBlock;
 type CodeNodeProps<K extends CodePageNode["kind"]> = Omit<Extract<CodePageNode, { kind: K }>, "kind">;
 type Parts = { children?: CodePageChild };
 type NoChildren = { children?: never };
@@ -78,10 +78,10 @@ export declare const Chart: {
   Stat: CodePageComponent<CodeChartProps<"stat">>;
   Empty: CodePageComponent<{ title: string; empty: string } & Pick<CodeNodeProps<"Chart">, "width"> & NoChildren>;
 };
-export declare function jsx<P>(component: CodePageComponent<P>, props: P | null, ...children: CodePageChild[]): CodePageElement;
+export declare function jsx<P>(component: CodePageComponent<P>, props: P | null, ...children: CodePageChild[]): CodePageBlock;
 export declare namespace jsx {
   namespace JSX {
-    type Element = CodePageElement;
+    type Element = CodePageBlock;
     interface ElementChildrenAttribute {
       children: {};
     }

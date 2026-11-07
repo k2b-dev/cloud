@@ -1,4 +1,4 @@
-import type { CodePageElement } from "./page-authoring-types";
+import type { CodePageBlock } from "./page-authoring-types";
 
 /** A target identity created by a generated factory, never an authorization grant. */
 declare const __codeHandle: unique symbol;
@@ -25,7 +25,7 @@ export type CodeContext = {
   json(value: unknown, status?: number): Response;
   text(value: string, status?: number): Response;
   /** Draws a page built from SDK blocks; its root is `<Page>`. */
-  page(page: CodePageElement): Response;
+  page(page: CodePageBlock): Response;
   redirect(location: string, status?: number): Response;
 };
 /** A webhook is anonymous and must verify its request explicitly. */

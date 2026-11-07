@@ -109,10 +109,12 @@ test("SDK builders emit only descriptions; c.page rejects handlers before JSON s
   runtime.app.get("/", (c: { page(value: unknown): Response }) => c.page(tree));
   const input = { method: "GET", path: "/", query: "", contentType: "text/plain", body: "", params: {}, user: null };
   expect(await runtime.__codeSdk.run("route:GET:/", input)).toEqual({ kind: "page", status: 200, tree });
-  runtime.app.get("/bad", (c: { page(value: unknown): Response }) => c.page(page([{ kind: "Text", text: "Hi", onClick: () => {} }])));
+  // A handler smuggled in as a prop never reaches JSON: the runtime refuses it before serializing.
+  const handler = runtime.jsx(runtime.Page, { title: "P" }, runtime.jsx(runtime.Text, { onClick: () => {} }, "Hi"));
+  runtime.app.get("/bad", (c: { page(value: unknown): Response }) => c.page(handler));
   await expect(runtime.__codeSdk.run("route:GET:/bad", input)).rejects.toThrow("code_page_data_only");
-  runtime.app.get("/root", (c: { page(value: unknown): Response }) => c.page({ kind: "Text", text: "Hi" }));
-  await expect(runtime.__codeSdk.run("route:GET:/root", input)).rejects.toThrow("code_page_root");
+  runtime.app.get("/root", (c: { page(value: unknown): Response }) => c.page(runtime.jsx(runtime.Text, null, "Hi")));
+  await expect(runtime.__codeSdk.run("route:GET:/root", input)).rejects.toThrow("code_page_blocks");
   expect(runtime.jsx(runtime.Text, null, "Hello ", "Valentin", "!", 2)).toEqual({ kind: "Text", text: "Hello Valentin!2" });
   expect(() => runtime.jsx(runtime.Text, null, () => "bad")).toThrow("code_page_text");
 });
@@ -262,4 +264,32 @@ test("blocks compose their parts and refuse a part in the wrong place before Cor
   expect(() => validateCodePage(page([jsx(ui.Stat, { label: "S", value: 1 })]), codeId)).toThrow();
   // Only SDK blocks build pages; the chart family itself is no block.
   expect(() => jsx(ui.Chart, { title: "C" })).toThrow("code_page_component");
+  // A hand-written description never enters a page, and a block cannot be changed after it is built.
+  expect(() => jsx(ui.Section, { title: "S" }, { kind: "Text", text: "hand-written" })).toThrow("code_page_blocks");
+  expect(() => jsx(ui.Page, { title: "P" }, jsx(ui.Field.Text, { name: "t", label: "T" }))).toThrow("code_page_child");
+  const built = jsx(ui.Page, { title: "P" }, jsx(ui.Text, null, "Hello"));
+  expect(Object.isFrozen(built) && Object.isFrozen(built.children)).toBe(true);
+  expect(() => built.children.push({ kind: "Text", text: "added" })).toThrow();
+});
+test("routes draw only pages that the SDK's blocks built", async () => {
+  const sdk = generateCodeSdk([], { mode: "personal" });
+  const runtime = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
+  type Route = { page(value: unknown): Response };
+  runtime.app.get("/built", (c: Route) => c.page(runtime.jsx(runtime.Page, { title: "Built" }, runtime.jsx(runtime.Text, null, "Hi"))));
+  runtime.app.get("/object", (c: Route) => c.page({ version: 1, kind: "Page", title: "Object", children: [] }));
+  const request = (path: string) => ({
+    method: "GET",
+    path,
+    query: "",
+    contentType: "text/plain",
+    body: "",
+    params: {},
+    user: { id: "v", groups: [] },
+  });
+  expect(await runtime.__codeSdk.run("route:GET:/built", request("/built"))).toEqual({
+    kind: "page",
+    status: 200,
+    tree: { kind: "Page", version: 1, title: "Built", children: [{ kind: "Text", text: "Hi" }] },
+  });
+  await expect(runtime.__codeSdk.run("route:GET:/object", request("/object"))).rejects.toThrow("code_page_blocks");
 });

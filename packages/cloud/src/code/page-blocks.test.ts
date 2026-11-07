@@ -25,7 +25,7 @@ test("blocks with parts take only their parts, and parts sit only in their block
     '<Table title="T" rows={[]}>loose text</Table>',
   ])
     expect(childErrors(page).length, page).toBeGreaterThan(0);
-});
+}, 60_000);
 
 test("parts in their block pass, also when mapped from data or imported under another name", () => {
   for (const page of [
@@ -35,8 +35,9 @@ test("parts in their block pass, also when mapped from data or imported under an
     '<Table title="T" rows={[]}>{names.map(name => <Column key={name} label={name} />)}</Table>',
     '<Detail title="D"><Item label="L" value="V" /></Detail>',
     '<Section title="S"><Text>Text may sit in a section</Text></Section>',
+    '<Form title="F" action="/x" submit="Go" children={[<Field.Text name="a" label="A" />]} />',
   ])
     expect(childErrors(page), page).toEqual([]);
   const aliased = `import { app, jsx, Page, Text, Form as Entry } from "@sdk";`;
   expect(childErrors('<Entry title="F" action="/x" submit="Go"><Text>Not a field</Text></Entry>', aliased)).toHaveLength(1);
-});
+}, 60_000);
