@@ -6,6 +6,7 @@ import {
   chartReferenceMark,
   chartRenderOptions,
   chartRows,
+  chartTable,
   chartTooltip,
 } from "@k2b/editor/charts";
 import type { ChartExplorerColumn, ChartLegendEntry, ChartProps, ChartSnapshot } from "@k2b/ui";
@@ -178,6 +179,17 @@ export function resolveDrawing(spec: JsonValue, locale = "en"): ShowcaseDrawing 
   const lost = lostKeys(spec, parsed.data);
   if (lost.length) return { mode: "slot", kind, reason: `Its options ${lost.join(", ")} arrive with their catalog step.` };
   const input: ChartInput = parsed.data;
+  if (input.kind === "balanceFlow") {
+    const drawing = chartRenderOptions(input, locale);
+    if (drawing.kind !== "balanceFlow") throw new Error("Expected a balance flow drawing");
+    const table = chartTable(input, locale);
+    return {
+      mode: "live",
+      props: { ...drawing, title: input.title, subtitle: input.subtitle },
+      rows: table.rows,
+      columns: columnsOf(table.columns),
+    };
+  }
   const table = chartRows(input, locale);
   const snapshot = prepareChartSnapshot(chartRenderOptions(input, locale, { legend: "outside" }), {
     key: ({ datum }) => chartMarkKey(datum),

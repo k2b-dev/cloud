@@ -158,3 +158,27 @@ describe("chart chat block", () => {
     expect(render({ kind: "stat", title: "Orders", value: 1 })).toMatch(/k2b-chart-explorer__viewport[^>]*height:\s*10rem/);
   });
 });
+
+test("balance flow chat retains the period navigator, full table and explicit locale", () => {
+  const html = render({
+    kind: "balanceFlow",
+    title: "Settlements",
+    currency: "EUR",
+    locale: "de-DE",
+    periods: [
+      {
+        label: "Oktober",
+        opening: 10,
+        inflows: [{ label: "Bestellungen", value: 20 }],
+        outflows: [{ label: "Gebühren", value: 5 }],
+        closing: 25,
+      },
+      { label: "November", opening: 25, inflows: [], outflows: [{ label: "Auszahlung", value: 15 }], closing: 10 },
+    ],
+  });
+  expect(html).toContain("data-balance-flow");
+  expect(html).toContain('data-balance-template="1"');
+  expect(html.match(/<h3[^>]*>Settlements<\/h3>/g)).toHaveLength(1);
+  expect(html).toContain("↙ 20,00 €");
+  expect(html).toContain("Nächster Zeitraum");
+});

@@ -13,7 +13,7 @@ const STRETCH_HEIGHT = 180;
  * How a card holds a drawing without clipping it: a stretching chart takes a calm fixed height; rows (bar lists,
  * horizontal bars, funnels) keep the height their rows need; a drawing that scales as a whole (pie, donut, gauge)
  * keeps its proportions; a drawing wider than the card (calendar, sankey) keeps its size and scrolls sideways,
- * newest end first.
+ * calendar newest end first; Sankey sources first.
  */
 export const cardFit = (snapshot: ChartSnapshot): { mode: "stretch" | "rows" | "whole" | "wide"; style: JSX.CSSProperties } => {
   if (snapshot.width > DRAWING_WIDTH) return { mode: "wide", style: { height: `${snapshot.height}px` } };
@@ -40,9 +40,9 @@ export function ShowcaseCardChart(props: { example: ChartShowcaseExample; height
         {(snapshot) => {
           const fit = () => cardFit(snapshot().snapshot);
           let scroller: HTMLDivElement | undefined;
-          // A wide drawing opens at its newest end, like the calendar in a frame.
+          // Calendars open at their newest end; flows start at their sources.
           onMount(() => {
-            if (scroller && fit().mode === "wide") scroller.scrollLeft = scroller.scrollWidth;
+            if (scroller && fit().mode === "wide" && snapshot().snapshot.kind === "heatmap") scroller.scrollLeft = scroller.scrollWidth;
           });
           // Slices name themselves in a legend under the card's drawing; the drawing's own legend is too small there.
           const slices = () =>
@@ -80,7 +80,7 @@ export function ShowcaseCardChart(props: { example: ChartShowcaseExample; height
       </Match>
       <Match when={drawing().mode === "live" && (drawing() as Extract<ReturnType<typeof resolveDrawing>, { mode: "live" }>)}>
         {(live) => (
-          <div class="ui-charts-card__chart" style={{ height: `${props.height}px` }}>
+          <div class="ui-charts-card__chart" style={live().props.kind === "balanceFlow" ? undefined : { height: `${props.height}px` }}>
             <Chart {...live().props} style={{ height: "100%" }} />
           </div>
         )}

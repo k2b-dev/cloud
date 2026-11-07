@@ -4,6 +4,24 @@ export const chartMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      balanceOpening: "Opening",
+      balanceClosing: "Closing",
+      balanceInflows: "Inflows",
+      balanceOutflows: "Outflows",
+      balanceBalance: "Balance",
+      balanceAvailable: "Available",
+      balanceOwed: "owed",
+      balancePeriod: "Period",
+      balanceDirection: "Direction",
+      balancePrevious: "Previous period",
+      balanceNext: "Next period",
+      balanceEmpty: "No periods to show.",
+      balanceNoMovements: "No movements in this period.",
+      balanceInvalid: "The amounts do not balance. Check the opening, inflows, outflows and closing for every period.",
+      balanceStale: "Showing the last loaded amounts.",
+      balanceRetry: "Try again",
+      balanceKeyboard:
+        "Left and right arrows change the period. Up and down arrows inspect amounts. Enter pins an amount; Escape closes it.",
       chartView: "Chart view",
       chartDiagram: "Diagram",
       chartData: "Table",
@@ -64,6 +82,8 @@ export const chartMessages = i18n.define({
           errX: "X error",
           errXHigh: "Upper X error",
           errXLow: "Lower X error",
+          incoming: "Incoming",
+          outgoing: "Outgoing",
           group: "Group",
         };
         return labels[key] ?? key;
@@ -75,6 +95,24 @@ export const chartMessages = i18n.define({
       resetTimelineView: "Reset timeline view",
     },
     de: {
+      balanceOpening: "Anfang",
+      balanceClosing: "Schluss",
+      balanceInflows: "Eingänge",
+      balanceOutflows: "Ausgänge",
+      balanceBalance: "Saldo",
+      balanceAvailable: "Verfügbar",
+      balanceOwed: "geschuldet",
+      balancePeriod: "Zeitraum",
+      balanceDirection: "Richtung",
+      balancePrevious: "Vorheriger Zeitraum",
+      balanceNext: "Nächster Zeitraum",
+      balanceEmpty: "Keine Zeiträume vorhanden.",
+      balanceNoMovements: "Keine Bewegungen in diesem Zeitraum.",
+      balanceInvalid: "Die Beträge gehen nicht auf. Anfang, Eingänge, Ausgänge und Schluss jedes Zeitraums prüfen.",
+      balanceStale: "Die zuletzt geladenen Beträge werden angezeigt.",
+      balanceRetry: "Erneut versuchen",
+      balanceKeyboard:
+        "Pfeil links und rechts wechseln den Zeitraum. Pfeil oben und unten zeigen Beträge. Enter hält einen Betrag fest; Escape schließt ihn.",
       chartView: "Diagrammansicht",
       chartDiagram: "Diagramm",
       chartData: "Tabelle",
@@ -135,6 +173,8 @@ export const chartMessages = i18n.define({
           errX: "X-Fehler",
           errXHigh: "Oberer X-Fehler",
           errXLow: "Unterer X-Fehler",
+          incoming: "Eingang",
+          outgoing: "Ausgang",
           group: "Bereich",
         };
         return labels[key] ?? key;

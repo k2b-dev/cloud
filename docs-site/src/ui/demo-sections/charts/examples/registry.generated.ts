@@ -2,6 +2,7 @@
 // Do not edit: add a `<kind>.ts` next to it instead. After a merge conflict here, run generate.ts again.
 import * as areaExamples from "./area";
 import * as balanceExamples from "./balance";
+import * as balanceFlowExamples from "./balanceFlow";
 import * as bar_basicExamples from "./bar-basic";
 import * as barGaugeExamples from "./barGauge";
 import * as boxplotExamples from "./boxplot";
@@ -15,6 +16,7 @@ import * as histogramExamples from "./histogram";
 import * as lineExamples from "./line";
 import * as mapExamples from "./map";
 import * as pieExamples from "./pie";
+import * as sankeyExamples from "./sankey";
 import * as scatterExamples from "./scatter";
 import * as sparklineExamples from "./sparkline";
 import * as statExamples from "./stat";
@@ -25,6 +27,7 @@ import * as tableExamples from "./table";
 export const exampleModules: Record<string, unknown>[] = [
   areaExamples,
   balanceExamples,
+  balanceFlowExamples,
   bar_basicExamples,
   barGaugeExamples,
   boxplotExamples,
@@ -38,6 +41,7 @@ export const exampleModules: Record<string, unknown>[] = [
   lineExamples,
   mapExamples,
   pieExamples,
+  sankeyExamples,
   scatterExamples,
   sparklineExamples,
   statExamples,

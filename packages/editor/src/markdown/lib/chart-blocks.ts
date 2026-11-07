@@ -1,6 +1,7 @@
 import { highlight, text } from "@k2b/stdlib";
 import { prepareChartSnapshot } from "@k2b/ui";
 import { barChartLayout } from "@k2b/ui/charts";
+import { balanceFlowHeight, renderBalanceFlowHtml, sankeyLayout } from "@k2b/ui/charts/core";
 import { Lexer, type Tokens } from "marked";
 import type { z } from "zod";
 import {
@@ -31,11 +32,18 @@ export type MarkdownChartOptions = {
 };
 export type ChartBlock = { line: number; input: ChartInput };
 /** `height` is the drawing's own height in CSS pixels when it needs more than the kind's frame (app.css). */
-type Frame = { kind: ChartInput["kind"]; area?: boolean; title: string; subtitle?: string; height?: number };
+type Frame = {
+  kind: ChartInput["kind"];
+  area?: boolean;
+  title: string;
+  subtitle?: string;
+  height?: number;
+  balanceFlow?: Extract<ChartInput, { kind: "balanceFlow" }>;
+};
 type Entry = { value: string; line: number };
 type Cell = { raw: string; result: EvalResult };
 type SourceData = { columns: string[]; rows: Cell[][]; implicit: boolean; entries?: NamedDataEntry[]; invalid?: boolean };
-const TYPES = new Set(["line", "area", "bar", "pie", "donut", "scatter", "stat"]);
+const TYPES = new Set(["line", "area", "bar", "pie", "donut", "scatter", "stat", "balanceFlow"]);
 const escape = highlight.escape;
 const scalarCell = (value: string | number | boolean): Cell => {
   const raw = String(value);
@@ -133,7 +141,25 @@ const parseChart = (
       const key = entry[1]!;
       section = "";
       if (
-        !["type", "title", "subtitle", "data", "columns", "rows", "x", "y", "label", "value", "format", "unit", "tooltip"].includes(key)
+        ![
+          "type",
+          "title",
+          "subtitle",
+          "data",
+          "columns",
+          "rows",
+          "x",
+          "y",
+          "label",
+          "value",
+          "format",
+          "unit",
+          "tooltip",
+          "periods",
+          "currency",
+          "locale",
+          "period",
+        ].includes(key)
       ) {
         add("unknown-key", key, line);
         continue;
@@ -180,6 +206,44 @@ const parseChart = (
   const title = string("title");
   const subtitle = string("subtitle");
   if (type && !TYPES.has(type)) add("invalid-type", "type");
+  if (type === "balanceFlow") {
+    let periods: unknown;
+    try {
+      periods = JSON.parse(top.get("periods")?.value ?? "");
+    } catch {
+      add("invalid-type", "periods");
+    }
+    for (const key of top.keys())
+      if (!["type", "title", "subtitle", "periods", "currency", "locale", "period"].includes(key)) add("unknown-key", key);
+    const parsed = options.schema.safeParse({
+      kind: "balanceFlow",
+      title,
+      subtitle,
+      periods,
+      currency: string("currency"),
+      locale: string("locale"),
+      ...(top.has("period") ? { period: parseScalar(top.get("period")!.value) } : {}),
+    });
+    if (!parsed.success)
+      for (const issue of parsed.error.issues) {
+        const index = issue.path[0] === "periods" && typeof issue.path[1] === "number" ? issue.path[1] : undefined;
+        const period: unknown = index !== undefined && Array.isArray(periods) ? periods[index] : undefined;
+        if (period && typeof period === "object" && "label" in period && typeof period.label === "string")
+          add("chart-balance-period", issue.path.join("."), top.get("periods")?.line, { name: period.label });
+        else add("invalid-type", String(issue.path[0] ?? "periods"));
+      }
+    if (diagnostics.length || !parsed.success) return { diagnostics };
+    if (
+      parsed.data.kind === "balanceFlow" &&
+      parsed.data.periods.reduce((sum, p) => sum + p.inflows.length + p.outflows.length + 3, 0) > options.maxSeries * options.maxValues
+    ) {
+      add("too-many-items", "periods", undefined, { limit: options.maxSeries * options.maxValues });
+      return { diagnostics };
+    }
+    return { diagnostics, block: { line: directive.line, input: parsed.data } };
+  }
+  for (const key of ["periods", "currency", "locale", "period"]) if (top.has(key)) add("unknown-key", key);
+
   let data: SourceData = { columns: [], rows: [], implicit: false };
   if (top.has("data")) {
     if (top.has("columns") || top.has("rows")) add("invalid-type", "data");
@@ -422,7 +486,7 @@ export const parseNotebookChartBlocks = (
 export const chartBlockFrame = (body: string[], options: Pick<MarkdownChartOptions, "schema">): Frame | null => {
   const entries = new Map<string, string>();
   for (const line of body) {
-    const pair = /^(type|title|subtitle):\s*(.*)$/.exec(line);
+    const pair = /^(type|title|subtitle|periods|currency|locale|period):\s*(.*)$/.exec(line);
     if (!pair) continue;
     if (entries.has(pair[1]!)) return null;
     entries.set(pair[1]!, pair[2]!);
@@ -438,6 +502,25 @@ export const chartBlockFrame = (body: string[], options: Pick<MarkdownChartOptio
   switch (type) {
     case "area":
       return { kind: "line", area: true, title: header.data.title, ...(header.data.subtitle ? { subtitle: header.data.subtitle } : {}) };
+    case "balanceFlow": {
+      let periods: unknown;
+      try {
+        periods = JSON.parse(entries.get("periods") ?? "");
+      } catch {
+        return null;
+      }
+      const parsed = options.schema.safeParse({
+        kind: type,
+        title,
+        subtitle,
+        periods,
+        currency: parseScalar(entries.get("currency") ?? ""),
+        ...(entries.has("locale") ? { locale: parseScalar(entries.get("locale")!) } : {}),
+        ...(entries.has("period") ? { period: parseScalar(entries.get("period")!) } : {}),
+      });
+      if (!parsed.success || parsed.data.kind !== "balanceFlow") return null;
+      return { kind: type, title, subtitle, balanceFlow: parsed.data };
+    }
     case "line":
     case "bar":
     case "scatter":
@@ -457,6 +540,8 @@ export const chartBlockFrame = (body: string[], options: Pick<MarkdownChartOptio
  */
 export const notebookChartHeight = (input: ChartInput, locale: string): number | undefined => {
   const options = chartRenderOptions(input, locale, { legend: "outside" });
+  if (options.kind === "balanceFlow") return balanceFlowHeight(options.periods);
+  if (options.kind === "sankey") return sankeyLayout(options).height;
   if (options.kind === "heatmap" && options.layout === "calendar") return 280;
   if (options.kind === "area") return 280;
   if (options.kind !== "bar") return undefined;
@@ -473,9 +558,18 @@ export const notebookChartHeight = (input: ChartInput, locale: string): number |
 export const notebookChartFrameHtml = (
   frame: Frame,
   viewportHtml: string,
-  options: { legend?: boolean; input?: ChartInput; print?: boolean } = {},
+  options: { legend?: boolean; input?: ChartInput; print?: boolean; locale?: string } = {},
 ): string =>
-  `<figure class="notebook-book-chart" data-kind="${frame.kind === "line" && frame.area ? "area" : frame.kind}"${options.input ? ` data-chart="${escape(JSON.stringify(options.input))}"` : ""}><figcaption class="notebook-book-chart__header"><span class="notebook-book-chart__title">${escape(frame.title)}</span>${frame.subtitle ? `<span class="notebook-book-chart__subtitle">${escape(frame.subtitle)}</span>` : ""}</figcaption>${options.print ? "" : '<div class="notebook-book-chart__actions"></div>'}<div class="notebook-book-chart__viewport"${options.legend ? ' data-legend="true"' : ""}${frame.height ? ` style="--notebook-chart-height:${frame.height}px"` : ""}>${viewportHtml}</div></figure>`;
+  frame.balanceFlow
+    ? renderBalanceFlowHtml(
+        { ...frame.balanceFlow, locale: frame.balanceFlow.locale ?? options.locale },
+        "loading",
+        undefined,
+        "chart",
+        false,
+        Boolean(options.print),
+      )
+    : `<figure class="notebook-book-chart" data-kind="${frame.kind === "line" && frame.area ? "area" : frame.kind}"${options.input ? ` data-chart="${escape(JSON.stringify(options.input))}"` : ""}><figcaption class="notebook-book-chart__header"><span class="notebook-book-chart__title">${escape(frame.title)}</span>${frame.subtitle ? `<span class="notebook-book-chart__subtitle">${escape(frame.subtitle)}</span>` : ""}</figcaption>${options.print ? "" : '<div class="notebook-book-chart__actions"></div>'}<div class="notebook-book-chart__viewport"${options.legend ? ' data-legend="true"' : ""}${frame.height ? ` style="--notebook-chart-height:${frame.height}px"` : ""}>${viewportHtml}</div></figure>`;
 
 /** A chart's data as a note table: the PDF prints it below the figure, and the table view shows it in the frame. */
 export const notebookChartTableHtml = (table: ChartTable, options: { label?: string; className?: string } = {}): string =>
@@ -484,6 +578,18 @@ export const notebookChartTableHtml = (table: ChartTable, options: { label?: str
 /** Only the shared renderer supplies SVG. A failed drawing leaves the caller's source visible. */
 export const renderNotebookChartFigure = (input: ChartInput, locale: string, options: { print?: boolean } = {}): string | null => {
   try {
+    if (input.kind === "balanceFlow") {
+      const drawing = chartRenderOptions(input, locale);
+      if (drawing.kind === "balanceFlow")
+        return renderBalanceFlowHtml(
+          { ...drawing, title: input.title, subtitle: input.subtitle },
+          "data",
+          undefined,
+          "chart",
+          false,
+          Boolean(options.print),
+        );
+    }
     const rows = chartRows(input, locale);
     const snapshot = prepareChartSnapshot(chartRenderOptions(input, locale, { legend: "outside" }), {
       key: ({ datum }) => chartMarkKey(datum),

@@ -14,6 +14,7 @@ import {
 // Named renderers, not the `charts` namespace, so app frames leave out the map and state timeline renderers.
 import { money } from "@k2b/stdlib";
 import {
+  balanceFlowHeight,
   barChartLayout,
   calendarLayout,
   donut,
@@ -22,6 +23,8 @@ import {
   line,
   pie,
   renderBarChartSvg,
+  sankeyFrame,
+  sankeyWidth,
   sparkline,
   stat,
 } from "@k2b/ui/charts/core";
@@ -131,7 +134,7 @@ function drawChart(
       default:
         svg = rareChartSvg(mapped, common);
     }
-    if (svg === undefined) return { svg, table: { columns: [], rows: [] } };
+    if (svg === undefined || mapped.kind === "balanceFlow") return { svg, table: { columns: [], rows: [] } };
     // Walk marks in emitted order, exactly as the chat builds its table and tooltips.
     const rows = cloudAiChartRows(options.input, locale, { formats });
     svg = svg.replace(
@@ -226,12 +229,33 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
   const { input } = prepared;
   const { svg, table } = drawChart(prepared, locale, width, height);
   if (svg === undefined && !deferChartDrawing) throw new CloudError("invalid", "cloud.chart: The chart renderer returned no SVG.");
+  if (input.kind === "balanceFlow") {
+    if (svg !== undefined) return new Html(svg);
+    const id = `c${++chartSeq}`;
+    pendingChartOptions.set(id, prepared);
+    return new Html(
+      `<div class="k2b-chart k2b-ui" data-balance-pending style="--k2b-balance-flow-height:${balanceFlowHeight(input.periods, height)}px;--k2b-balance-flow-rows:${Math.max(2, ...input.periods.map((p) => p.inflows.length + p.outflows.length + 3))}"><div class="k2b-chart__svg" data-chart-pending="${id}" aria-busy="true" style="--k2b-chart-width:${width}px;--k2b-chart-height:${height}px">${chartLoading(locale)}</div></div>`,
+    );
+  }
   // Bar rows take the height their labels need; the box reserves it.
-  const drawnHeight = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || height;
+  const drawnHeight =
+    input.kind === "sankey"
+      ? sankeyFrame({
+          nodes: input.nodes,
+          links: input.links,
+          legend: input.legend,
+          width,
+          height,
+          title: prepared.title,
+          subtitle: input.subtitle,
+        }).height
+      : Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || height;
+  const sankey = input.kind === "sankey";
   const calendar = input.kind === "heatmap" && input.layout === "calendar";
   // Only sizing stays eager; the calendar renderer itself belongs to the offline module.
   let calendarWidth = calendar ? Number(/data-chart-min-width="([\d.]+)"/.exec(svg ?? "")?.[1]) || width : width;
-  if (calendar && svg === undefined) calendarWidth = pendingCalendarWidth(prepared, locale, width, height);
+  if (calendar && svg === undefined) calendarWidth = pendingChartWidth(prepared, locale, width, height);
+  if (sankey) calendarWidth = sankeyWidth(input, width);
   const stretch = !calendar && !KEEP_ASPECT.has(input.kind);
   const title = prepared.title ?? "";
   const subtitle = input.subtitle ?? "";
@@ -255,13 +279,14 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${(stretch || calendar) && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendar ? `min-width:${calendarWidth}px;width:${calendarWidth}px;` : ""}${svg === undefined ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar || sankey ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${(stretch || calendar) && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendar || sankey ? `min-width:${calendarWidth}px;width:${calendarWidth}px;` : ""}${svg === undefined ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
   );
 }
 
-/** Reserve calendar scrolling geometry before its renderer arrives, including at a measured frame width. */
-export function pendingCalendarWidth(prepared: StoredChart, locale: string, width: number, height: number): number {
+/** Reserve scrolling geometry before its renderer arrives, including at a measured frame width. */
+export function pendingChartWidth(prepared: StoredChart, locale: string, width: number, height: number): number {
   const mapped = cloudAiChartRenderOptions(prepared.input, locale, { width });
+  if (mapped.kind === "sankey") return sankeyWidth(mapped, width);
   return mapped.kind === "heatmap" && mapped.layout === "calendar"
     ? calendarLayout({ ...mapped, width, height, title: prepared.title, subtitle: prepared.input.subtitle }).width
     : width;
@@ -277,7 +302,7 @@ export async function resolveChartHtml(content: string, locale: string): Promise
   if (!content.includes("data-chart-pending=")) return content;
   await loadChartRenderer();
   return content.replace(
-    /<div class="k2b-chart"[^>]*><div class="k2b-chart__svg"[^>]* data-chart-pending="([^"]+)"[^>]*>[\s\S]*?<\/div><\/div>/g,
+    /<div class="k2b-chart(?: k2b-ui)?"[^>]*><div class="k2b-chart__svg"[^>]* data-chart-pending="([^"]+)"[^>]*>[\s\S]*?<\/div><\/div>/g,
     (markup, id: string) => {
       const options = pendingChartOptions.get(id);
       if (!options) throw new CloudError("unavailable", "The chart expired. Draw it again before creating the PDF.");

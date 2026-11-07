@@ -123,6 +123,43 @@ const flatChartSchema = () => {
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
+    periods: z
+      .array(
+        z.object({
+          label: ChartLabel,
+          opening: z.number(),
+          inflows: z.array(z.object({ label: ChartLabel, value: z.number().min(0) })).max(CLOUD_AI_CHART_MAX_VALUES),
+          outflows: z.array(z.object({ label: ChartLabel, value: z.number().min(0) })).max(CLOUD_AI_CHART_MAX_VALUES),
+          closing: z.number(),
+        }),
+      )
+      .max(CLOUD_AI_CHART_MAX_VALUES)
+      .optional()
+      .describe(
+        "balanceFlow: ordered periods; opening + inflows − outflows = closing; closing must equal the next opening. Never adjust inconsistent amounts.",
+      ),
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .optional()
+      .describe("balanceFlow: ISO 4217 currency."),
+    period: z.number().int().min(0).optional().describe("balanceFlow: initial period, zero based."),
+    nodes: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          label: ChartLabel,
+          tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]).optional(),
+        }),
+      )
+      .max(CLOUD_AI_CHART_MAX_VALUES)
+      .optional()
+      .describe("sankey: unique nodes; labels name each stage."),
+    links: z
+      .array(z.object({ source: z.string(), target: z.string(), value: z.number().positive() }))
+      .max(CLOUD_AI_VIEW_MAX_MARKS)
+      .optional()
+      .describe("sankey: positive flows between existing node ids, without cycles."),
     layout: z.enum(["stacked", "calendar"]).optional().describe("area: stacked; heatmap: calendar."),
     scale: z.enum(["sequential", "diverging"]).optional().describe("Calendar heatmap color scale; domain includes all days."),
     locale: chartLocaleSchema().optional(),
@@ -176,9 +213,14 @@ const flatChartSchema = () => {
     xAxis: ChartAxis.optional().describe("line, scatter: x axis. bar: only label, the category axis title."),
     yAxis: ChartAxis.optional().describe("bar, line, scatter, boxplot: y axis; label names the value, format sets units."),
     legend: z
-      .boolean()
+      .union([
+        z.boolean(),
+        z
+          .array(z.object({ tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]), label: ChartLabel }))
+          .max(CLOUD_AI_CHART_MAX_SERIES),
+      ])
       .optional()
-      .describe("bar (colorByBar), line, scatter, pie, donut: legend; defaults to several series or unlabeled slices."),
+      .describe("sankey: explicit {tone,label}[] color meanings. Other kinds: boolean legend."),
     colorByBar: z.boolean().optional().describe("bar: one palette color per bar."),
     showValues: z.boolean().optional().describe("bar: print values, by default when they stay readable. heatmap: print values."),
     area: z.boolean().optional().describe("line, sparkline: fill under the line."),

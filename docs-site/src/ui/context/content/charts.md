@@ -1082,6 +1082,23 @@ as dots; Antarctica appears only in the list. Values that are not positive finit
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
 
+## Sankey flows
+
+`Chart.Sankey` and `kind="sankey"` accept `nodes: {id,label,tone?}[]` and
+`links: {source,target,value}[]`. IDs are unique, endpoints exist, values are
+positive and the graph has no cycles. Invalid JSON is rejected before drawing.
+Stages follow the longest path from a source. A node's value is the larger of
+incoming and outgoing totals; unused capacity remains visible. Each band uses
+its source node's color; a muted source uses the target color. An explicit
+`legend: {tone,label}[]` names color meanings and wraps. Optional `format`, `locale` and
+`displayWidth` control presentation. Explicit locale takes precedence.
+
+The plot keeps at least 620 px, starts at the sources and scrolls horizontally on narrow screens.
+Small flows stay visible; colliding node labels are available in the tooltip. Long node names wrap at word boundaries to two lines when the node has enough height. Names that still do not fit end in an ellipsis; the tooltip and accessible SVG title retain the complete name.
+Hover strengthens one band without dimming others. Arrows inspect nodes and
+links, Home/End jump, Enter pins and Escape dismisses; tap shares this behavior.
+Use the host's fixed-height loading, empty, error/retry and stale-subtitle states.
+Plain SVG hosts pass `nav: sankeyInspectionNavigation` (from `@k2b/ui/charts`) to `inspectChart` for node-first keyboard traversal and scroll reveal. The newsletter showcase includes converging and diverging flows.
 ## Calendar heatmaps
 
 `Chart.Calendar` (or `Chart.Heatmap` with `layout="calendar"`) accepts `data: ["YYYY-MM-DD", number | null][]`
@@ -1122,3 +1139,45 @@ percentage axis and tooltips.
 The top legend starts with the final column's amount or share and follows the
 inspected column. A missing column (or a zero-sum normalized column) has no inspected values; the
 legend uses a dash when its final column is a gap.
+
+Small Sankey cards start at their source nodes. Labels stay within the scrollable drawing; scroll horizontally to follow later stages.
+
+## Balance flows across periods
+
+`Chart.BalanceFlow` and `kind="balanceFlow"` explain a settlement balance in one
+currency. Supply `currency` and ordered `periods`, each with `label`, `opening`,
+`inflows: {label,value}[]`, `outflows: {label,value}[]`, and `closing`.
+The JSON entry rejects a period unless opening + inflows − outflows = closing,
+and rejects a boundary unless its closing equals the next opening. Decimal input
+values are compared exactly; the chart never rounds an inconsistent ledger into
+balance. Flows are nonnegative; a negative balance is labelled **owed**.
+
+Opening and closing share blue. Receipts use the turquoise money-in tokens,
+deductions the violet money-out tokens, with direction arrows and unsigned
+currency values. The available node stays neutral. Red and green have no role.
+Every desktop bar keeps a caption; closely spaced flows use staggered captions with leaders.
+Long labels keep their full text in the tooltip and table. Narrow panels show the
+complete name and amount rows below the drawing, with wrapping names and tabular
+numbers; they do not squeeze or cut labels inside the bands.
+
+Previous/Next or Left/Right move one period. The closing bar travels to the next
+opening position, timed by `--k2b-motion-base`; either the operating system preference
+or `html[data-k2b-motion="reduced"]` removes the animation. Up/Down inspect amounts,
+Enter pins and Escape dismisses. The buttons disable at the ends. An accessible
+summary reads the period's opening, total inflows, total outflows and closing.
+`period` sets the initial zero-based period; it defaults to 0 on both server and
+browser. Diagram/Table changes the representation of the same period.
+
+The drawing and frame reserve space for the largest period, including on phones.
+`state` is a Solid-only prop: `loading`, `empty`, `error`, `stale` or `data`.
+`onRetry` handles retry; `error` can supply a load-failure explanation. Invalid
+accounting names the offending period in the frame and Notebook diagnostic. A stale
+notice occupies the subtitle line. Changing period, view, hover or state keeps the
+frame height. `view`/`onViewChange` optionally control the Diagram/Table switch.
+The JSON form carries the data, currency, initial period and optional validated
+BCP 47 `locale`; it uses the inherited UI locale by default. Assistant frames load
+the renderer in their existing offline chart module.
+
+In Notebook chart directives, use `type: balanceFlow`, `currency: EUR` and
+`periods: [...]` with the period array as one line of JSON. The note reserves the
+same frame while loading and keeps the current period's value table in print.

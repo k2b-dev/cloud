@@ -121,7 +121,22 @@ export function ShowcaseFrame(props: ShowcaseFrameProps): JSX.Element {
         }
       </Match>
       <Match when={drawing().mode === "live" && (drawing() as Extract<ReturnType<typeof resolveDrawing>, { mode: "live" }>)}>
-        {(live) => explorer(live().rows, () => <Chart {...live().props} style={{ height: "100%" }} />)}
+        {(live) =>
+          live().props.kind === "balanceFlow" ? (
+            <Paper class="ui-charts-frame">
+              <div style={{ padding: "1rem" }}>
+                <Chart
+                  {...live().props}
+                  {...(live().props.kind === "balanceFlow"
+                    ? { state: props.state, view: props.view, onViewChange: props.onViewChange, onRetry: props.onRetry }
+                    : {})}
+                />
+              </div>
+            </Paper>
+          ) : (
+            explorer(live().rows, () => <Chart {...live().props} style={{ height: "100%" }} />)
+          )
+        }
       </Match>
       <Match when={drawing().mode === "block" && (drawing() as Extract<ReturnType<typeof resolveDrawing>, { mode: "block" }>)}>
         {(block) => (

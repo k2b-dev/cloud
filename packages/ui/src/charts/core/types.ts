@@ -13,7 +13,7 @@ export type ChartDatum = {
   label?: string;
   anchor: [number, number];
   grid?: [number, number];
-  values: { key: string; value: string | number; formatted?: string }[];
+  values: { key: string; value: string | number; formatted?: string; label?: string }[];
 };
 
 /** Serializable number presentation, compatible with the editor's NumberFormat contract. */

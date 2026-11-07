@@ -6,21 +6,13 @@ import "./no-eval";
 import "./no-hints";
 import { cloudAiChartMarkKey } from "@k2b/cloud/ai/app-frame";
 import { type ChartInspection, type ChartTooltip, inspectChart, isChartDatum } from "@k2b/ui/chart-inspection";
-import { calendarInspectionNavigation, mountCalendarScroll } from "@k2b/ui/charts";
+import { calendarInspectionNavigation, mountBalanceFlow, mountCalendarScroll, sankeyInspectionNavigation } from "@k2b/ui/charts";
 import { LIMITS } from "../contracts";
 import { createBridge } from "../runtime/bridge";
 import { configureChartModule, loadChartRenderer } from "../runtime/chart-renderers-frame";
 import { createCloud } from "../runtime/cloud";
 import { CloudError } from "../runtime/errors";
-import {
-  chartLoading,
-  chartMarkup,
-  chartOptions,
-  chartSvg,
-  isAppChartKind,
-  pendingCalendarWidth,
-  pendingChartOptions,
-} from "../runtime/lib";
+import { chartLoading, chartMarkup, chartOptions, chartSvg, isAppChartKind, pendingChartOptions, pendingChartWidth } from "../runtime/lib";
 import { ensureRandomUuid } from "../runtime/random-uuid";
 import { moduleSpecifiers } from "./imports";
 import type { FrameConfig, FrameLogLevel, FrameToHost, HostToFrame } from "./protocol";
@@ -306,7 +298,11 @@ const charts = new ResizeObserver((entries) => {
     const element = entry.target as HTMLElement;
     const options = chartOptions.get(element.dataset.chartId ?? "");
     const calendar = element.querySelector("svg[data-calendar]");
-    const width = Math.round(calendar ? (element.parentElement?.clientWidth ?? entry.contentRect.width) : entry.contentRect.width);
+    const width = Math.round(
+      calendar || options?.input.kind === "sankey"
+        ? (element.parentElement?.clientWidth ?? entry.contentRect.width)
+        : entry.contentRect.width,
+    );
     if (element.hasAttribute("data-chart-pending")) continue;
     if (!options || width < 120 || Math.abs((drawn.get(element) ?? 0) - width) < 8) continue;
     drawn.set(element, width);
@@ -314,7 +310,10 @@ const charts = new ResizeObserver((entries) => {
     element.style.setProperty("--k2b-chart-width", `${width}px`);
     element.innerHTML = chartSvg(options, config.context.locale, width, height);
     // Bar rows at a new width can wrap their labels differently and take another height.
-    const intrinsicWidth = Number(element.querySelector("svg[data-calendar]")?.getAttribute("data-chart-min-width"));
+    const intrinsicWidth =
+      options.input.kind === "sankey"
+        ? element.querySelector("svg")?.viewBox.baseVal.width
+        : Number(element.querySelector("svg[data-calendar]")?.getAttribute("data-chart-min-width"));
     if (intrinsicWidth) {
       element.style.width = `${intrinsicWidth}px`;
       element.style.minWidth = `${intrinsicWidth}px`;
@@ -351,7 +350,7 @@ async function paintChart(element: HTMLElement) {
     const widthAt = () => {
       const measured = measure
         ? Math.round(
-            options.input.kind === "heatmap" && options.input.layout === "calendar"
+            options.input.kind === "sankey" || (options.input.kind === "heatmap" && options.input.layout === "calendar")
               ? (element.parentElement?.clientWidth ?? element.getBoundingClientRect().width)
               : element.getBoundingClientRect().width,
           )
@@ -359,8 +358,8 @@ async function paintChart(element: HTMLElement) {
       return (measured >= 120 ? measured : 0) || Number.parseFloat(element.style.getPropertyValue("--k2b-chart-width")) || 480;
     };
     const height = Number.parseFloat(element.style.getPropertyValue("--k2b-chart-height")) || 280;
-    if (measure && options.input.kind === "heatmap" && options.input.layout === "calendar") {
-      const reservedWidth = pendingCalendarWidth(options, config.context.locale, widthAt(), height);
+    if (measure && (options.input.kind === "sankey" || (options.input.kind === "heatmap" && options.input.layout === "calendar"))) {
+      const reservedWidth = pendingChartWidth(options, config.context.locale, widthAt(), height);
       element.style.width = element.style.minWidth = `${reservedWidth}px`;
       element.style.aspectRatio = `${reservedWidth}/${height}`;
       element.style.setProperty("--k2b-chart-width", `${reservedWidth}px`);
@@ -377,6 +376,10 @@ async function paintChart(element: HTMLElement) {
     const markup = chartMarkup(options, config.context.locale, width, height, measure);
     if (markup.includes("data-chart-pending=")) throw new Error("The chart module does not support this chart kind.");
     const fragment = document.createRange().createContextualFragment(String(markup));
+    if (options.input.kind === "balanceFlow") {
+      element.closest(".k2b-chart")?.replaceWith(fragment);
+      return;
+    }
     const chart = fragment.querySelector(".k2b-chart")!;
     const drawing = chart.firstElementChild!;
     // Keep author listeners and references on the returned chart and drawing nodes.
@@ -447,6 +450,12 @@ new MutationObserver((records) => {
     chartTooltips.delete(element);
   }
   for (const element of document.querySelectorAll<HTMLElement>("[data-chart-pending]")) void fillChart(element);
+  for (const root of document.querySelectorAll<HTMLElement>("[data-balance-flow]:not([data-balance-mounted])")) {
+    const chart = root.querySelector<HTMLElement>(".k2b-chart");
+    if (!chart) continue;
+    const dispose = mountBalanceFlow(root, { locale: config.context.locale });
+    inspections.set(chart, { invalidate() {}, close() {}, destroy: dispose });
+  }
   for (const chart of document.querySelectorAll<HTMLElement>(".k2b-chart")) {
     if (inspections.has(chart) || !chart.querySelector("[data-chart-datum]")) continue;
     const kind = chart.getAttribute("data-chart-kind");
@@ -461,7 +470,12 @@ new MutationObserver((records) => {
     const unmountCalendar = chart.querySelector("svg[data-calendar]") ? mountCalendarScroll(chart) : () => {};
     const inspection = inspectChart(chart, {
       kind,
-      nav: chart.querySelector("svg[data-calendar]") ? calendarInspectionNavigation : undefined,
+      nav:
+        kind === "sankey"
+          ? sankeyInspectionNavigation
+          : chart.querySelector("svg[data-calendar]")
+            ? calendarInspectionNavigation
+            : undefined,
       locale: config.context.locale,
       format: ({ datum }) => {
         const key = cloudAiChartMarkKey(datum);

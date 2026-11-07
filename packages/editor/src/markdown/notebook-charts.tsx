@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { CopyButton, IconButton, LocaleProvider, prepareChartSnapshot, toast } from "@k2b/ui";
 import { type ChartTooltip, inspectChart } from "@k2b/ui/chart-inspection";
-import { calendarInspectionNavigation, mountCalendarScroll } from "@k2b/ui/charts";
+import { calendarInspectionNavigation, mountBalanceFlow, mountCalendarScroll, sankeyInspectionNavigation } from "@k2b/ui/charts";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { type ChartInput, type ChartTable, chartMarkKey, chartReferenceMark, chartRenderOptions, chartRows, chartTooltip } from "../charts";
@@ -106,6 +106,8 @@ function ChartControls(props: { figure: HTMLElement; viewport: HTMLElement; draw
  */
 export function enhanceNotebookCharts(root: HTMLElement, locale: string, options: Pick<MarkdownChartOptions, "schema">): () => void {
   const cleanups: (() => void)[] = [];
+  for (const frame of root.querySelectorAll<HTMLElement>("[data-balance-flow]:not([data-balance-mounted])"))
+    cleanups.push(mountBalanceFlow(frame, { locale }));
   for (const figure of root.querySelectorAll<HTMLElement>("figure.notebook-book-chart[data-chart]:not([data-enhanced])")) {
     const chart = figure.querySelector<HTMLElement>(".notebook-book-chart__viewport > .k2b-chart");
     const viewport = chart?.parentElement;
@@ -125,7 +127,12 @@ export function enhanceNotebookCharts(root: HTMLElement, locale: string, options
     if (input.kind === "heatmap" && input.layout === "calendar") cleanups.push(mountCalendarScroll(chart));
     const inspection = inspectChart(chart, {
       kind: input.kind,
-      nav: input.kind === "heatmap" && input.layout === "calendar" ? calendarInspectionNavigation : undefined,
+      nav:
+        input.kind === "sankey"
+          ? sankeyInspectionNavigation
+          : input.kind === "heatmap" && input.layout === "calendar"
+            ? calendarInspectionNavigation
+            : undefined,
       locale,
       legend: figure,
       format: ({ datum }) => lazy().tooltips.get(chartMarkKey(datum)) ?? { rows: [] },

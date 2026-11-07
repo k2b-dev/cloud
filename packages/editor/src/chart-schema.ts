@@ -2,7 +2,7 @@ import { chartLocaleSchema } from "./chart-locale";
 
 export { chartAcceptsLocale, chartLocaleSchema } from "./chart-locale";
 
-import { CALENDAR_MAX_DAYS, calendarDay } from "@k2b/ui/charts/core";
+import { BalanceFlowError, CALENDAR_MAX_DAYS, calendarDay, sankeyGraph, validateBalanceFlow } from "@k2b/ui/charts/core";
 import { z } from "zod";
 
 /** Optional caller policy. Rendering itself has no AI input budget. */
@@ -36,7 +36,23 @@ export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
 export const chartKindSchema = () =>
-  z.enum(["area", "bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
+  z.enum([
+    "area",
+    "bar",
+    "line",
+    "scatter",
+    "pie",
+    "donut",
+    "histogram",
+    "gauge",
+    "sparkline",
+    "boxplot",
+    "heatmap",
+    "barGauge",
+    "stat",
+    "sankey",
+    "balanceFlow",
+  ]);
 
 export const chartParts = (limits?: ChartLimits) => {
   const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
@@ -319,6 +335,67 @@ export const chartKinds = (limits?: ChartLimits) => {
       better: z.enum(["up", "down"]).optional(),
       sparkline: list(ChartNumber, 2, limits?.maxValues).optional(),
     }),
+    z
+      .object({
+        kind: z.literal("sankey"),
+        ...ChartKindCommon,
+        nodes: list(
+          z.object({
+            id: z.string().min(1),
+            label: ChartLabel,
+            tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]).optional(),
+          }),
+          1,
+          limits?.maxValues,
+        ),
+        links: list(z.object({ source: z.string(), target: z.string(), value: z.number().positive() }), 1, limits?.maxMarks),
+        legend: list(
+          z.object({ tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]), label: ChartLabel }),
+          0,
+          limits?.maxSeries,
+        ).optional(),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        try {
+          sankeyGraph(spec);
+        } catch (error) {
+          ctx.addIssue({ code: "custom", message: error instanceof Error ? error.message : "Invalid Sankey graph." });
+        }
+      }),
+    z
+      .object({
+        kind: z.literal("balanceFlow"),
+        ...ChartKindCommon,
+        currency: z.string().regex(/^[A-Z]{3}$/),
+        locale: chartLocaleSchema().optional(),
+        period: z.number().int().min(0).optional(),
+        periods: list(
+          z.object({
+            label: ChartLabel,
+            opening: z.number(),
+            inflows: list(z.object({ label: ChartLabel, value: z.number().min(0) }), 0, limits?.maxValues),
+            outflows: list(z.object({ label: ChartLabel, value: z.number().min(0) }), 0, limits?.maxValues),
+            closing: z.number(),
+          }),
+          0,
+          limits?.maxValues,
+        ),
+      })
+      .superRefine((spec, ctx) => {
+        try {
+          validateBalanceFlow(spec.periods);
+        } catch (error) {
+          ctx.addIssue({
+            code: "custom",
+            path: error instanceof BalanceFlowError ? ["periods", error.period] : ["periods"],
+            message: error instanceof Error ? error.message : "Invalid balance flow.",
+          });
+        }
+        if ((spec.period ?? 0) >= Math.max(1, spec.periods.length))
+          ctx.addIssue({ code: "custom", path: ["period"], message: "Period is outside the supplied periods." });
+      }),
   ]);
 };
 

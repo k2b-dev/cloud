@@ -261,6 +261,39 @@ const examples = {
       interactive: true,
     },
   },
+  balanceFlow: {
+    description: "Balance flow · Reconciled periods carry the closing balance into the next opening.",
+    chart: {
+      kind: "balanceFlow",
+      currency: "EUR",
+      periods: [
+        {
+          label: "October",
+          opening: 100,
+          inflows: [{ label: "Orders", value: 300 }],
+          outflows: [{ label: "Fees", value: 50 }],
+          closing: 350,
+        },
+        { label: "November", opening: 350, inflows: [], outflows: [{ label: "Payout", value: 200 }], closing: 150 },
+      ],
+    },
+  },
+  sankey: {
+    description: "Sankey · Follow converging paths after a newsletter click; losses stay visible.",
+    chart: {
+      kind: "sankey",
+      nodes: [
+        { id: "a", label: "Click" },
+        { id: "b", label: "Read", tone: "green" },
+        { id: "c", label: "Signup", tone: "in" },
+      ],
+      links: [
+        { source: "a", target: "b", value: 120 },
+        { source: "a", target: "c", value: 20 },
+        { source: "b", target: "c", value: 60 },
+      ],
+    },
+  },
 } satisfies { [K in ChartKind]: { description: string; chart: Extract<ChartProps, { kind: K }> } };
 
 type TooltipField = { label: string; unit?: string; names?: Record<string, string> };
@@ -365,6 +398,19 @@ const tooltipExamples: Record<ChartKind, TooltipExample> = {
       to: { label: "Ended at", unit: " h" },
       duration: { label: "Time in this state", unit: " h" },
       detail: { label: "Activity" },
+    },
+  },
+  balanceFlow: {
+    title: "Settlements",
+    fields: { period: { label: "Period" }, direction: { label: "Direction" }, value: { label: "Amount" } },
+  },
+  sankey: {
+    title: "Paths after the click",
+    fields: {
+      incoming: { label: "Incoming" },
+      outgoing: { label: "Outgoing" },
+      value: { label: "Readers" },
+      percent: { label: "Share", unit: "%" },
     },
   },
 };

@@ -10,7 +10,9 @@ import {
 import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
 import { type AreaOptions, renderAreaSvg } from "./area";
+import { balanceFlowHeight } from "./balance-flow-size";
 import { chartRenderers } from "./registry";
+import { sankeyLayout } from "./sankey";
 import type { MapViewport } from "./svg";
 import type { ChartKind } from "./types";
 
@@ -40,6 +42,8 @@ export type ChartRenderOptions = RenderOptions<ChartDrawingOptions>;
 
 /** Keep the fixed 28-unit bar-gauge rows inside the shared SSR/browser coordinate space. */
 export const chartRenderHeight = (props: ChartRenderOptions): number => {
+  if (props.kind === "sankey") return sankeyLayout(props).height;
+  if (props.kind === "balanceFlow") return balanceFlowHeight(props.periods);
   if (props.kind === "stateTimeline") return stateTimelineHeight(props.rows.length, props.legend !== false);
   if (props.kind === "bar") return barChartLayout(props).height;
   if (props.kind === "barGauge") return Math.max(280, (props.title || props.subtitle ? 42 : 16) + props.data.length * 28 + 14);
@@ -55,6 +59,9 @@ export const renderChartSvg = (
   timelineViewport?: StateTimelineDomain,
   renderLocale?: string,
 ): string => {
+  if (props.kind === "sankey") return responsiveChartSvg(chartRenderers.sankey({ ...props, width, height, inspect: true }));
+  if (props.kind === "balanceFlow")
+    return chartRenderers.balanceFlow({ ...props, locale: props.locale ?? renderLocale, width, height, inspect: true });
   if (props.kind === "heatmap" && props.layout === "calendar") return chartRenderers.heatmap({ ...props, width, height, inspect: true });
   const {
     kind,

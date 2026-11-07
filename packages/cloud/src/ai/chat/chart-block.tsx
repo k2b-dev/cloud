@@ -1,4 +1,5 @@
 import {
+  Chart,
   ChartExplorer,
   type ChartExplorerColumn,
   type ChartLegendEntry,
@@ -83,20 +84,35 @@ function ChartFrame(props: {
         )
       : // A frame without a drawing keeps the explorer's header and height; its one column is never shown.
         [{ id: "value", label: aiChatMessages(locale()).chartUnavailable, value: () => "" }];
+  const balanceDrawing = createMemo(() => {
+    const input = props.chart?.input;
+    if (input?.kind !== "balanceFlow") return undefined;
+    const drawing = cloudAiChartRenderOptions(input, locale());
+    return drawing.kind === "balanceFlow" ? drawing : undefined;
+  });
   return (
-    <ChartExplorer
-      title={props.title}
-      headingLevel={props.nested ? 4 : 3}
-      description={props.subtitle ? <span class="text-sm text-secondary">{props.subtitle}</span> : undefined}
-      height={props.grow ? grownHeight(props.kind, props.chart) : chartHeight(props.kind)}
-      data={props.chart ? { chart: props.chart.snapshot, rows: props.chart.table.rows } : { chart: emptySnapshot(props.kind), rows: [] }}
-      columns={columns()}
-      legend={props.chart?.legend.length ? props.chart.legend : undefined}
-      cursor={props.cursor}
-      empty={props.empty}
-      renderDetails={false}
-      class={props.nested ? "[&_h4]:text-sm!" : undefined}
-    />
+    <Show
+      when={balanceDrawing()}
+      fallback={
+        <ChartExplorer
+          title={props.title}
+          headingLevel={props.nested ? 4 : 3}
+          description={props.subtitle ? <span class="text-sm text-secondary">{props.subtitle}</span> : undefined}
+          height={props.grow ? grownHeight(props.kind, props.chart) : chartHeight(props.kind)}
+          data={
+            props.chart ? { chart: props.chart.snapshot, rows: props.chart.table.rows } : { chart: emptySnapshot(props.kind), rows: [] }
+          }
+          columns={columns()}
+          legend={props.chart?.legend.length ? props.chart.legend : undefined}
+          cursor={props.cursor}
+          empty={props.empty}
+          renderDetails={false}
+          class={props.nested ? "[&_h4]:text-sm!" : undefined}
+        />
+      }
+    >
+      {(drawing) => <Chart {...drawing()} title={props.title} subtitle={props.subtitle} />}
+    </Show>
   );
 }
 
