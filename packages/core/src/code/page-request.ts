@@ -20,6 +20,8 @@ export type CodePageAnswer =
  * Never retries: a POST that lost its answer must not run twice.
  */
 export async function requestCodePage(url: string, body?: URLSearchParams): Promise<CodePageAnswer> {
+  // A POST whose answer is lost may have run: the page says so instead of claiming it did not.
+  const lost: CodePageAnswer = { kind: "failed", code: body ? "code_answer_lost" : undefined };
   let response: Response;
   try {
     response = await fetch(url, {
@@ -30,11 +32,15 @@ export async function requestCodePage(url: string, body?: URLSearchParams): Prom
       cache: "no-store",
     });
   } catch {
-    return { kind: "failed", code: undefined };
+    return lost;
   }
   if (response.ok && response.headers.get("X-Code-Page") === "tree") {
-    const page: { tree: CodePageTree; csrf: string } = await response.json();
-    return { kind: "tree", tree: page.tree, csrf: page.csrf, url: response.redirected ? response.url : null };
+    try {
+      const page: { tree: CodePageTree; csrf: string } = await response.json();
+      return { kind: "tree", tree: page.tree, csrf: page.csrf, url: response.redirected ? response.url : null };
+    } catch {
+      return lost;
+    }
   }
   if (response.ok) return response.redirected ? { kind: "navigate", url: response.url } : { kind: "done" };
   const failure: unknown = await response.json().catch(() => null);

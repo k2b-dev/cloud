@@ -310,6 +310,8 @@ describe("Code page in a browser", () => {
         });
         await page.getByRole("button", { name: "Receive", exact: true }).click();
         await page.getByText("Choose a longer title.").waitFor();
+        // Focus continues at the first field the Code marked invalid.
+        expect(await page.evaluate(() => document.activeElement?.getAttribute("name"))).toBe("barcode");
         expect(state.posts[1]?.fields).toMatchObject({
           _csrf: csrf,
           barcode: "W-1",
@@ -327,6 +329,7 @@ describe("Code page in a browser", () => {
         await page.waitForURL(`**/code/${codeId}/items/W-1`);
         await page.getByRole("heading", { name: "Chair", level: 1 }).waitFor();
         expect(await page.title()).toBe("Chair · Cloud");
+        expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("H1");
         await page.goBack();
         await page.waitForURL(`**/code/${codeId}/`);
         await page.getByRole("heading", { name: "Workshop", level: 1 }).waitFor();
@@ -340,6 +343,15 @@ describe("Code page in a browser", () => {
           .getByText("This page is out of date. Reload it and repeat the step.")
           .waitFor();
         expect(await page.getByRole("button", { name: "Print label", exact: true }).isEnabled()).toBe(true);
+        state.replies.push({ response: () => failure(503, "code_request_busy") });
+        await page.getByRole("button", { name: "Receive", exact: true }).click();
+        await page.getByRole("alert").filter({ hasText: "The Code is busy. Try again in a moment." }).waitFor();
+        // An answer that breaks off may have run: the form says so, and the next submit still works.
+        state.replies.push({
+          response: () => new Response("{", { headers: { "X-Code-Page": "tree", "Content-Type": "application/json" } }),
+        });
+        await page.getByRole("button", { name: "Receive", exact: true }).click();
+        await page.getByRole("alert").filter({ hasText: "The answer was lost." }).waitFor();
         state.replies.push({ response: () => failure(503, "code_request_busy") });
         await page.getByRole("button", { name: "Receive", exact: true }).click();
         await page.getByRole("alert").filter({ hasText: "The Code is busy. Try again in a moment." }).waitFor();
@@ -406,10 +418,24 @@ describe("Code page in a browser", () => {
       expect(await items.locator("tbody tr").first().innerText()).toContain("Lamp");
       await items.getByRole("button", { name: "Count" }).click();
       expect(await items.locator("tbody tr").first().innerText()).toContain("Bicycle");
+      await page.getByLabel("Title", { exact: true }).fill("Typed");
       await page.getByRole("button", { name: "Scan", exact: true }).click();
       await page.getByRole("dialog", { name: "Scan code" }).waitFor({ state: "detached" });
       expect(await page.locator('input[name="barcode"]').inputValue()).toBe("W-42");
+      // Closing the scanner leaves its history entry at the same address: nothing loads and nothing is sent.
+      await page.waitForFunction(() => !document.querySelector("main[aria-busy]"));
+      expect(await page.getByLabel("Title", { exact: true }).inputValue()).toBe("Typed");
+      expect(state.treeLoads).toBe(0);
       expect(state.posts).toEqual([]);
+      // Back closes the scanner, not the page, and keeps what was typed.
+      await page.getByRole("button", { name: "Scan", exact: true }).click();
+      await page.getByRole("dialog", { name: "Scan code" }).waitFor();
+      await page.goBack();
+      await page.getByRole("dialog", { name: "Scan code" }).waitFor({ state: "detached" });
+      await page.waitForFunction(() => !document.querySelector("main[aria-busy]"));
+      expect(page.url()).toBe(`${server.url.origin}/code/${codeId}/`);
+      expect(await page.getByLabel("Title", { exact: true }).inputValue()).toBe("Typed");
+      expect(state.treeLoads).toBe(0);
       expect(errors).toEqual([]);
     } finally {
       await close();

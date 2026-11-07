@@ -29,6 +29,7 @@ export const codePageMessages = i18n.define({
       busy: "The Code is busy. Try again in a moment.",
       unavailable: "The Code could not answer. Try again later.",
       tooLarge: "The input is too large.",
+      answerLost: "The answer was lost. Check whether the step took effect before you send it again.",
     },
     de: {
       yes: "Ja",
@@ -55,6 +56,7 @@ export const codePageMessages = i18n.define({
       busy: "Der Code ist ausgelastet. Versuche es gleich noch einmal.",
       unavailable: "Der Code konnte nicht antworten. Versuche es später erneut.",
       tooLarge: "Die Eingabe ist zu groß.",
+      answerLost: "Die Antwort ging verloren. Prüfe, ob der Schritt gewirkt hat, bevor du ihn erneut sendest.",
     },
   },
 });
@@ -77,6 +79,8 @@ export function codePageFailure(t: CodePageMessages, code: string | undefined, f
       return t.busy;
     case "code_request_size_limit":
       return t.tooLarge;
+    case "code_answer_lost":
+      return t.answerLost;
     case "code_request_failed":
     case "code_route_changed":
       return t.unavailable;

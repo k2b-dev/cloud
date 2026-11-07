@@ -332,7 +332,26 @@ function CodePageContent(props: PageProps) {
   const notices = new Set<ToastHandle>();
   let disposed = false;
 
-  const show = (tree: CodePageTree, csrf: string, url: string | null, mode: "push" | "replace" | "stay") => {
+  /** The address of the shown tree. Dialogs add history entries at the same address; only a new address loads. */
+  let shownAt: string | undefined;
+  let main: HTMLElement | undefined;
+  let heading: HTMLHeadingElement | undefined;
+  /** Finds the control that has focus again in the new tree: the same field or submit button of the same form. */
+  const focusKey = (element: Element | null): string | undefined => {
+    const form = element instanceof HTMLElement && main?.contains(element) ? element.closest("form") : null;
+    const action = form?.getAttribute("action");
+    if (!form || !action || !element) return undefined;
+    const scope = `form[action="${CSS.escape(action)}"]`;
+    const name = element.getAttribute("name") ?? element.closest("[data-code-field]")?.getAttribute("data-code-field");
+    if (name) return `${scope} [data-code-field="${CSS.escape(name)}"] :is(input:not([type="hidden"]), textarea, button)`;
+    return element.matches('button[type="submit"]') ? `${scope} button[type="submit"]` : undefined;
+  };
+  /**
+   * Shows a tree. Focus goes where the person continues: a new page starts at its heading, a returned form at its
+   * first invalid field, otherwise at the control they used; a background load moves focus only back to that control.
+   */
+  const show = (tree: CodePageTree, csrf: string, url: string | null, mode: "push" | "replace", focus: "submit" | "keep") => {
+    const key = focusKey(document.activeElement);
     const previous = page().tree.title;
     setPage({ tree, csrf });
     setEdited(false);
@@ -340,11 +359,20 @@ function CodePageContent(props: PageProps) {
     waiting = undefined;
     setFormFailure(null);
     if (document.title.startsWith(previous)) document.title = tree.title + document.title.slice(previous.length);
-    if (url && url !== location.href) {
+    const moved = !!url && url !== location.href;
+    if (moved) {
       if (mode === "push") history.pushState(null, "", url);
       else history.replaceState(null, "", url);
+      shownAt = location.href;
       window.scrollTo(0, 0);
     }
+    const again = key ? main?.querySelector<HTMLElement>(key) : null;
+    const target = moved
+      ? heading
+      : focus === "submit"
+        ? (main?.querySelector<HTMLElement>('[aria-invalid="true"]') ?? again ?? heading)
+        : again;
+    target?.focus({ preventScroll: !moved });
   };
 
   let reloading = false;
@@ -356,12 +384,16 @@ function CodePageContent(props: PageProps) {
     waiting = toast(t().newData, { duration: 0, action: { label: t().refresh, onClick: () => void reload(true) } });
     notices.add(waiting);
   };
+  /** Counts requests that may replace the tree. An answer applies only while its request is the latest one. */
+  let generation = 0;
   /**
    * Loads the current address again. Several events while one load runs end in exactly one more load. `force` comes
    * from the person (Refresh, Back) and replaces their input; an event never does, also when typing began mid-load.
+   * An event waits for a running submit, whose answer is the newer page.
    */
   const reload = async (force = false) => {
     if (edited() && !force) return offer();
+    if (sending() && !force) return;
     if (reloading) {
       reloadAgain = true;
       forceAgain ||= force;
@@ -373,8 +405,16 @@ function CodePageContent(props: PageProps) {
       let forced = force;
       do {
         reloadAgain = false;
-        const answer = await requestCodePage(location.href);
-        if (disposed) return;
+        const at = location.href;
+        const ticket = ++generation;
+        const answer = await requestCodePage(at);
+        // A submit started meanwhile: its answer is newer than this one.
+        if (disposed || ticket !== generation) return;
+        // Back or Forward changed the address meanwhile: load the new one instead.
+        if (location.href !== at) {
+          reloadAgain = true;
+          continue;
+        }
         if (answer.kind === "navigate") return location.assign(answer.url);
         if (answer.kind === "failed") {
           const notice = toast.error(codePageFailure(t(), answer.code, t().refreshFailed), {
@@ -391,7 +431,7 @@ function CodePageContent(props: PageProps) {
         }
         if (answer.kind === "tree") {
           if (edited() && !forced && !forceAgain) return offer();
-          show(answer.tree, answer.csrf, answer.url, "replace");
+          show(answer.tree, answer.csrf, answer.url, "replace", "keep");
         }
         forced = forceAgain;
         forceAgain = false;
@@ -406,12 +446,19 @@ function CodePageContent(props: PageProps) {
     event.preventDefault();
     if (sending()) return;
     const form = event.currentTarget;
+    const at = location.href;
+    const ticket = ++generation;
     setSending(owner);
     setFormFailure(null);
-    const answer = await requestCodePage(form.action, codePageFormBody(form));
-    if (disposed) return;
-    setSending(null);
-    if (answer.kind === "tree") return show(answer.tree, answer.csrf, answer.url, "push");
+    let answer: Awaited<ReturnType<typeof requestCodePage>>;
+    try {
+      answer = await requestCodePage(form.action, codePageFormBody(form));
+    } finally {
+      setSending(null);
+    }
+    // Back left this page meanwhile: the person is elsewhere now, so the answer is not shown.
+    if (disposed || ticket !== generation || location.href !== at) return;
+    if (answer.kind === "tree") return show(answer.tree, answer.csrf, answer.url, "push", "submit");
     if (answer.kind === "navigate") return location.assign(answer.url);
     // The Code answered with data: its effect happened, so the page shows the current state.
     if (answer.kind === "done") return void reload(true);
@@ -444,7 +491,12 @@ function CodePageContent(props: PageProps) {
       }
     };
     // Back and Forward return to pages that a submit opened without reloading the document.
-    const returned = () => void reload(true);
+    shownAt = location.href;
+    const returned = () => {
+      if (location.href === shownAt) return;
+      shownAt = location.href;
+      void reload(true);
+    };
     document.addEventListener("visibilitychange", visibility);
     window.addEventListener("popstate", returned);
     onCleanup(() => {
@@ -506,7 +558,13 @@ function CodePageContent(props: PageProps) {
             <Title level={level}>{item.title}</Title>
             {csrfField()}
             <div class="grid max-w-xl gap-4">
-              <For each={item.fields}>{(field) => <CodeField field={field} changed={() => setEdited(true)} />}</For>
+              <For each={item.fields}>
+                {(field) => (
+                  <div class="min-w-0" data-code-field={field.name}>
+                    <CodeField field={field} changed={() => setEdited(true)} />
+                  </div>
+                )}
+              </For>
             </div>
             <div class="flex flex-wrap items-center gap-3">
               <Button type="submit" loading={sending() === item} loadingLabel={t().sending}>
@@ -566,13 +624,16 @@ function CodePageContent(props: PageProps) {
 
   return (
     <main
+      ref={main}
       class="mx-auto grid w-full min-w-0 max-w-4xl gap-6 p-4 sm:p-8"
       data-print-region=""
       data-code-page-version={page().tree.version}
       aria-busy={loading() || undefined}
     >
       <header>
-        <h1 class="text-2xl font-semibold text-primary">{page().tree.title}</h1>
+        <h1 ref={heading} tabindex="-1" class="text-2xl font-semibold text-primary outline-none">
+          {page().tree.title}
+        </h1>
       </header>
       {children(page().tree.children, 2)}
     </main>
