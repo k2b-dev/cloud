@@ -1,0 +1,42 @@
+{
+  "format": "cloud.chat-tasks",
+  "version": 1,
+  "authority": "none",
+  "scope": "person",
+  "exportedAt": "2026-11-07T00:00:00.000Z",
+  "nextCursor": null,
+  "items": [
+    {
+      "kind": "chat-task",
+      "id": "ExTask",
+      "ownerUserId": "44bd0000-0000-4000-8000-000000000004",
+      "title": "One report",
+      "prompt": "Write one friendly English sentence reminding me to take a screen break. Use no tools, history, files or other inputs. Report here.",
+      "locale": "en",
+      "targetChat": {
+        "id": "ExChat",
+        "title": "Assistant reminders"
+      },
+      "schedule": {
+        "kind": "once",
+        "runAt": "2030-01-07T09:00:00.000Z"
+      },
+      "timezone": "UTC",
+      "grants": [],
+      "mandateSummary": {
+        "id": "44bd0000-0000-4000-8000-000000000005",
+        "revision": 1,
+        "state": "paused",
+        "expiresAt": null,
+        "apps": ["assistant"],
+        "operations": [],
+        "actions": "deny"
+      },
+      "state": "paused",
+      "revision": 2,
+      "reasonCode": null,
+      "createdAt": "2026-11-07T00:00:00.000Z",
+      "updatedAt": "2026-11-07T00:00:00.000Z"
+    }
+  ]
+}

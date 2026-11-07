@@ -1,0 +1,88 @@
+{
+  "format": "cloud.mail-automation",
+  "version": 1,
+  "authority": "none",
+  "scope": "mailbox",
+  "exportedAt": "2026-11-07T00:00:00.000Z",
+  "nextCursor": null,
+  "items": [
+    {
+      "kind": "mail-workflow",
+      "mailbox": {
+        "id": "ExBox1",
+        "name": "Fictional support",
+        "deletedAt": null,
+        "aiCallsPerDay": 20
+      },
+      "workflow": {
+        "id": "44bd0000-0000-4000-8000-000000000001",
+        "name": "Tag supplier arrivals",
+        "description": "Tag only messages from the supplier.",
+        "managedBy": "incoming_automation",
+        "enabled": false,
+        "priority": 7,
+        "order": 1,
+        "currentVersionId": "44bd0000-0000-4000-8000-000000000002",
+        "activeVersionId": null,
+        "createdAt": "2026-11-07T00:00:00.000Z",
+        "updatedAt": "2026-11-07T00:00:00.000Z"
+      },
+      "guidedDefinition": {
+        "id": "ExRule",
+        "revision": 1,
+        "name": "Tag supplier arrivals",
+        "enabled": false,
+        "scope": {
+          "mode": "conditions",
+          "conditions": {
+            "mode": "all",
+            "items": [
+              {
+                "field": "sender_address",
+                "operator": "is",
+                "value": "supplier@example.test"
+              }
+            ]
+          }
+        },
+        "steps": [
+          {
+            "id": "44bd0000-0000-4000-8000-000000000003",
+            "kind": "mail_action",
+            "action": {
+              "kind": "add_keyword",
+              "keyword": "supplier"
+            }
+          }
+        ],
+        "deletedAt": null
+      },
+      "automaticReply": null,
+      "mandateSummary": null,
+      "version": {
+        "id": "44bd0000-0000-4000-8000-000000000002",
+        "revision": 1,
+        "source": "inputs:\n  message:\n    type: mailMessage\n    required: true\n  conversation:\n    type: mailConversation\n    required: true\ntriggers:\n  messageReceived:\n    with:\n      message: ${{ trigger.message }}\n      conversation: ${{ trigger.conversation }}\nsteps:\n  - if:\n      equals:\n        - ${{ inputs.message.fromAddress }}\n        - supplier@example.test\n    then:\n      - addKeyword:\n          message: ${{ inputs.message }}\n          keyword: supplier\n",
+        "sourceHash": "237022e11ff956682c964f5881b20d37dae6c728ec15e0b5ef0700333bc44a91",
+        "languageId": "mail",
+        "languageVersion": 1,
+        "manifestHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "bindings": {},
+        "effectBudget": {
+          "maxTargets": 1,
+          "maxMoves": 0,
+          "maxCopies": 0,
+          "maxSends": 0,
+          "maxDrafts": 0,
+          "maxFlagChanges": 0,
+          "maxNotifications": 0,
+          "maxKeywordChanges": 1,
+          "maxCollaborationChanges": 0,
+          "maxAiCalls": 0
+        },
+        "createdAt": "2026-11-07T00:00:00.000Z"
+      },
+      "activations": []
+    }
+  ]
+}
