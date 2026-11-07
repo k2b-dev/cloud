@@ -20,7 +20,7 @@ import {
   cloudAiChartXValueFormat,
 } from "../chart-block";
 import type { CloudAiChartInput } from "../default-tool-contracts";
-import { type CloudAiGroupView, parseCloudAiChartToolView } from "../view-block";
+import { type CloudGroupDescription, cloudAiViewDescription, parseCloudAiChartToolView } from "../view-block";
 import { aiChatMessages } from "./messages";
 
 type Kind = CloudAiChartInput["kind"];
@@ -123,7 +123,7 @@ type GroupSummary = {
  * cannot be drawn alone shows unavailable in its own frame. With `linkX`, one cursor follows the pointer or a tap
  * across every chart. A grid puts two charts side by side once the chat column has room for both.
  */
-function ChartGroupFrame(props: { summary: GroupSummary; group: CloudAiGroupView | null | undefined; empty?: JSX.Element }) {
+function ChartGroupFrame(props: { summary: GroupSummary; group: CloudGroupDescription | null | undefined; empty?: JSX.Element }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const id = `cloud-chart-group-${createUniqueId()}`;
@@ -164,7 +164,7 @@ function ChartGroupFrame(props: { summary: GroupSummary; group: CloudAiGroupView
   );
 }
 
-const groupSummary = (group: CloudAiGroupView): GroupSummary => ({
+const groupSummary = (group: CloudGroupDescription): GroupSummary => ({
   title: group.title,
   subtitle: group.subtitle,
   linkX: group.linkX ?? false,
@@ -188,11 +188,11 @@ export function CloudChartBlock(props: { args: unknown; completed: boolean }) {
   // filled from that drawing.
   const chart = createMemo(() => {
     const value = view();
-    return value?.view === "chart" ? drawChart(value, locale()) : null;
+    return value?.view === "chart" ? drawChart(cloudAiViewDescription(value), locale()) : null;
   });
   const group = createMemo(() => {
     const value = view();
-    return value?.view === "group" ? value : undefined;
+    return value?.view === "group" ? cloudAiViewDescription(value) : undefined;
   });
   return (
     <Show
@@ -240,7 +240,7 @@ export function CloudChartView(props: {
 }
 
 /** A group view file, sized by its `present` summary like a chart view. */
-export function CloudChartGroupView(props: { summary: GroupSummary; group: CloudAiGroupView | null | undefined }) {
+export function CloudChartGroupView(props: { summary: GroupSummary; group: CloudGroupDescription | null | undefined }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   return (

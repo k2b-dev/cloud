@@ -574,3 +574,48 @@ describe("function formats in chart rows", () => {
     expect(chartRows(spark, "de", { formats: { x } }).add(datum).cells.x).toBe("2");
   });
 });
+
+test("saved Notebook and cloud.chart JSON retain null gaps and every existing chart kind", () => {
+  const fixtures = [
+    {
+      kind: "bar",
+      title: "Saved",
+      data: [
+        { label: "A", value: 2 },
+        { label: "Gap", value: null },
+      ],
+    },
+    {
+      kind: "line",
+      title: "Saved",
+      series: [
+        {
+          data: [
+            { x: "2026-11-01", y: 2 },
+            { x: "2026-11-02", y: null },
+            { x: "2026-11-03", y: 4 },
+          ],
+        },
+      ],
+    },
+    { kind: "scatter", title: "Saved", series: [{ data: [{ x: 1, y: 2 }] }] },
+    ...["pie", "donut"].map((kind) => ({ kind, title: "Saved", data: [{ label: "A", value: 2 }] })),
+    { kind: "histogram", title: "Saved", data: [1, 2, 3] },
+    { kind: "gauge", title: "Saved", value: 2 },
+    { kind: "sparkline", title: "Saved", data: [1, null, 3] },
+    { kind: "boxplot", title: "Saved", data: [{ label: "A", values: [1, 2, 3] }] },
+    { kind: "heatmap", title: "Saved", data: [{ x: "A", y: "B", value: 2 }] },
+    { kind: "barGauge", title: "Saved", data: [{ label: "A", value: 2 }] },
+    { kind: "stat", title: "Saved", value: 2, delta: 1 },
+  ];
+  for (const fixture of fixtures) {
+    const saved = JSON.stringify(fixture);
+    const input = chartKinds().parse(JSON.parse(saved));
+    expect(String(input.kind)).toBe(fixture.kind);
+    const options = chartRenderOptions(input, "en");
+    expect(String(options.kind)).toBe(fixture.kind);
+    expect(chartTable(input, "en")).toBeDefined();
+    expect(JSON.stringify(fixture)).toBe(saved);
+    if (input.kind === "line") expect(Number.isNaN(input.series[0]?.data[1]?.y)).toBe(true);
+  }
+});

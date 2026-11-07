@@ -10,6 +10,24 @@ Every non-empty chart has tooltips, keyboard inspection, and tap by default; see
 
 Use `StatCell` for one value. Use `DataTable` when readers need exact records rather than a visual summary.
 
+## Save a chart as JSON
+
+`ChartDescription`, `ChartInput`, `ChartNumberFormat`, and `ChartFormat` are
+owned by `@k2b/ui/charts`. A portable node uses `{kind, title, ...}` and named
+formats such as `{style: "currency", currency: "EUR"}`. It contains no
+callbacks. Use ISO text for dates and `null` for missing observations.
+
+The portable Zod validator `chartKinds()` from `@k2b/editor/charts` is checked
+against those types at compile time. It normalizes null gaps to non-finite
+renderer values; keep the original JSON when saving. Its optional limits are
+host policy. Chat and Pulse retain their own input budgets.
+
+Notebooks and `cloud.chart()` use the same description and validator. Cloud
+owns adjacent `{block: "stats" | "table" | "group" | "details" | "explorer", ...}`
+nodes, including Cloud reference cells. Existing saved `{view, ...}` envelopes
+remain valid; `cloudAiViewDescription()` from `@k2b/cloud/ai` converts validated
+views to nodes without changing their chart or table data.
+
 ## Import
 
 ```tsx
