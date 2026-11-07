@@ -224,7 +224,7 @@ export const renderChartSvg = (
     return responsiveChartSvg(
       renderWaterfallSvg({
         ...(opts as WaterfallOptions),
-        locale: renderLocale ?? (opts as WaterfallOptions).locale,
+        locale: (opts as WaterfallOptions).locale ?? renderLocale,
         width,
         height,
         inspect: true,
@@ -579,21 +579,23 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
           (selection.datum.seriesIndex !== undefined
             ? `${labels().series ?? chartMessages().series} ${selection.datum.seriesIndex + 1}`
             : undefined),
-        rows: selection.datum.values.map((field) => ({
-          label:
-            selection.kind === "line" && field.key === "y"
-              ? (selection.datum.label ?? labels().series ?? chartMessages().series)
-              : fields({ key: field.key }),
-          value:
-            field.formatted ??
-            (field.key === "upperInclusive"
-              ? field.value === "true"
-                ? messages().yes
-                : messages().no
-              : typeof field.value === "number"
-                ? `${format.format(field.value)}${field.key === "percent" ? "%" : ""}`
-                : field.value),
-        })),
+        rows: selection.datum.values
+          .filter((field) => selection.kind !== "waterfall" || field.key !== "before")
+          .map((field) => ({
+            label:
+              selection.kind === "line" && field.key === "y"
+                ? (selection.datum.label ?? labels().series ?? chartMessages().series)
+                : fields({ key: field.key }),
+            value:
+              field.formatted ??
+              (field.key === "upperInclusive"
+                ? field.value === "true"
+                  ? messages().yes
+                  : messages().no
+                : typeof field.value === "number"
+                  ? `${format.format(field.value)}${field.key === "percent" ? "%" : ""}`
+                  : field.value),
+          })),
       };
     },
   });

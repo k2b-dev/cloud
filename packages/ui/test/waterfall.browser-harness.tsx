@@ -52,6 +52,7 @@ render(
               <Chart
                 selected={selected() ? { role: "item", index: 2 } : null}
                 kind="waterfall"
+                locale="de"
                 {...waterfallFixture}
                 style={{ height: "280px" }}
               />

@@ -50,6 +50,7 @@ const labels = /* @__PURE__ */ i18n.define({
       category: "Category",
       series: "Series",
       balance: "Balance",
+      before: "Balance before",
       inflow: "In",
       outflow: "Out",
       after: "Balance after",
@@ -71,6 +72,7 @@ const labels = /* @__PURE__ */ i18n.define({
       category: "Kategorie",
       series: "Datenreihe",
       balance: "Stand",
+      before: "Stand davor",
       inflow: "Rein",
       outflow: "Raus",
       after: "Stand danach",
@@ -574,11 +576,17 @@ export const chartMarkKey = (datum: Pick<ChartDatum, "index" | "seriesIndex"> & 
   `${datum.role === "outlier" ? "outlier:" : datum.role === "value" ? "value:" : ""}${datum.seriesIndex ?? 0}:${datum.index}`;
 
 export type ChartColumn = { id: string; label: string; numeric: boolean };
-export type ChartRow = { key: string; cells: Record<string, string>; values: Record<string, string | number> };
+export type ChartRow = {
+  key: string;
+  cells: Record<string, string>;
+  values: Record<string, string | number>;
+  tooltip?: { title?: string; rows: { label: string; value: string }[] };
+};
 export type ChartTable = { columns: ChartColumn[]; rows: ChartRow[] };
 
-/** The first text column titles the tooltip; the other columns become rows, matching the table in every host. */
+/** Uses a prepared tooltip when table columns differ; otherwise the first text column titles the tooltip. */
 export function chartTooltip(columns: ChartColumn[], row: ChartRow): { title?: string; rows: { label: string; value: string }[] } {
+  if (row.tooltip) return row.tooltip;
   const [first, ...rest] = columns;
   const named = first && !first.numeric;
   return {
@@ -610,8 +618,19 @@ export function chartRows(
   const unit = "unit" in input && input.unit ? ` ${input.unit}` : "";
   const columns = new Map<string, ChartColumn>();
   const rows: ChartRow[] = [];
+  if (input.kind === "waterfall") {
+    for (const [id, label, numeric] of [
+      ["label", t.category, false],
+      ["before", t.before, true],
+      ["inflow", t.inflow, true],
+      ["outflow", t.outflow, true],
+      ["after", t.after, true],
+    ] as const)
+      columns.set(id, { id, label, numeric });
+  }
   const named = series.some((entry) => entry.label);
   const add = (datum: ChartDatum): ChartRow => {
+    const tooltip = input.kind === "waterfall" ? { title: datum.label, rows: [] as { label: string; value: string }[] } : undefined;
     const cells: Record<string, string> = {};
     const values: Record<string, string | number> = {};
     const cell = (id: string, label: string, value: string | number, text: string) => {
@@ -639,24 +658,25 @@ export function chartRows(
         continue;
       }
       if (typeof value !== "number" || field.key === "total") continue;
-      if (input.kind === "waterfall" && ["balance", "inflow", "outflow", "change", "after"].includes(field.key)) {
+      if (input.kind === "waterfall" && ["balance", "before", "inflow", "outflow", "change", "after"].includes(field.key)) {
         const label =
           field.key === "balance"
             ? t.balance
-            : field.key === "inflow"
-              ? t.inflow
-              : field.key === "outflow"
-                ? t.outflow
-                : field.key === "after"
-                  ? t.after
-                  : t.delta;
-        const arrow = field.key === "inflow" ? "↙ " : field.key === "outflow" ? "↗ " : "";
-        cell(
-          field.key,
-          label,
-          value,
-          `${arrow}${valueFormat(field.key === "inflow" || field.key === "outflow" ? Math.abs(value) : value)}`,
-        );
+            : field.key === "before"
+              ? t.before
+              : field.key === "inflow"
+                ? t.inflow
+                : field.key === "outflow"
+                  ? t.outflow
+                  : field.key === "after"
+                    ? t.after
+                    : t.delta;
+        const arrow = field.key === "inflow" ? "↙ " : field.key === "outflow" ? "↗ " : field.key === "change" ? "= " : "";
+        const text = `${arrow}${valueFormat(field.key === "inflow" || field.key === "outflow" ? Math.abs(value) : value)}`;
+        // Totals occupy the ending balance column; zero changes are neutral inflows.
+        const id = field.key === "balance" ? "after" : field.key === "change" ? "inflow" : field.key;
+        cell(id, label, value, text);
+        if (field.key !== "before") tooltip?.rows.push({ label, value: text });
       } else if (field.key === "x") {
         const header = (input.kind === "line" || input.kind === "scatter" ? input.xAxis?.label : undefined) ?? "X";
         cell(
@@ -692,7 +712,7 @@ export function chartRows(
         cell(field.key, t[field.key], value, `${fieldFormat(value)}${field.key === "min" || field.key === "max" ? unit : ""}`);
       }
     }
-    const row = { key: chartMarkKey(datum), cells, values };
+    const row = { key: chartMarkKey(datum), cells, values, ...(tooltip ? { tooltip } : {}) };
     rows.push(row);
     return row;
   };

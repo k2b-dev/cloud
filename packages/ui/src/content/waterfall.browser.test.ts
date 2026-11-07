@@ -40,7 +40,30 @@ beforeAll(async () => {
   bundle = await build.outputs[0]!.text();
   css = await Bun.file(resolve(import.meta.dir, "../../dist/styles.css")).text();
   const { default: ServerChart } = await import(resolve(import.meta.dir, "../../dist/ssr/content/Chart.js"));
-  ssr = renderToString(() => createComponent(ServerChart, { kind: "waterfall", ...waterfallFixture }));
+  const { LocaleProvider } = await import(resolve(import.meta.dir, "../../dist/ssr/intl/locale.js"));
+  ssr = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "en",
+      get children() {
+        return createComponent(ServerChart, { kind: "waterfall", ...waterfallFixture, locale: "de" });
+      },
+    }),
+  );
+  const explicitLocale = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "en",
+      get children() {
+        return createComponent(ServerChart, {
+          kind: "waterfall",
+          start: { label: "Opening", value: 1.5 },
+          steps: [],
+          end: { label: "Closing" },
+          locale: "de",
+        });
+      },
+    }),
+  );
+  expect(explicitLocale).toContain("1,5");
   browser = await launchBrowser();
   pages.push(await open(1440, false, true));
 }, 30000);
@@ -79,6 +102,8 @@ for (const width of [1440, 390])
     expect(await tooltip(page).textContent()).toContain("Raus");
     expect(await tooltip(page).textContent()).toContain("↗ 14.800");
     expect(await tooltip(page).textContent()).toContain("Stand danach");
+    expect(await tooltip(page).textContent()).not.toContain("before");
+    expect(await tooltip(page).textContent()).not.toContain("Stand davor");
     expect(await tooltip(page).textContent()).toContain("33.260");
     expect(await chart.locator("[data-inspected] .k2b-chart-category-band").evaluate((e) => getComputedStyle(e).fillOpacity)).toBe("0.05");
     await page.getByRole("button", { name: "Select outflow", exact: true }).click();

@@ -117,6 +117,7 @@ export function renderWaterfallSvg(spec: WaterfallOptions & { width: number; hei
           values: bar.total
             ? [{ key: "balance", value: bar.to, formatted: g.format(bar.to) }]
             : [
+                { key: "before", value: bar.from, formatted: g.format(bar.from) },
                 { key: bar.value > 0 ? "inflow" : bar.value < 0 ? "outflow" : "change", value: bar.value, formatted: amount },
                 { key: "after", value: bar.to, formatted: g.format(bar.to) },
               ],

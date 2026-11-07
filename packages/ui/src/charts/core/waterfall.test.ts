@@ -45,6 +45,7 @@ test("every mark includes portable paint, escaped names, raw before and after ba
   expect(svg.match(/k2b-waterfall-connector/g)).toHaveLength(4);
   expect(svg).toContain("&lt;script&gt;");
   expect(svg).toContain("&quot;key&quot;:&quot;after&quot;,&quot;value&quot;:-40");
+  expect(svg).toContain("&quot;key&quot;:&quot;before&quot;,&quot;value&quot;:140");
 });
 
 test("all-negative balances, many categories and measured widths remain finite and bounded", () => {
