@@ -3,16 +3,18 @@ import { createHttpTransport } from "./http";
 
 export function createBrowserTransport(server: string): Transport {
   const base = normalizeServer(server);
-  let payload: Uint8Array<ArrayBuffer> | undefined;
+  let payload: Blob | undefined;
   return createHttpTransport(
     base,
     (bytes, count, signal, headers) =>
       new Promise<void>((resolve, reject) => {
         if (signal.aborted) return reject(signal.reason);
         // Allocate lazily, once per test; no source data or Cloud credentials leave the browser.
-        if (payload?.byteLength !== bytes) {
-          payload = new Uint8Array(bytes);
-          for (let offset = 0; offset < bytes; offset += 65_536) crypto.getRandomValues(payload.subarray(offset, offset + 65_536));
+        if (payload?.size !== bytes) {
+          const data = new Uint8Array(bytes);
+          for (let offset = 0; offset < bytes; offset += 65_536) crypto.getRandomValues(data.subarray(offset, offset + 65_536));
+          // Reuse immutable backing storage; sending a typed array copies 16 MiB for every request on the main thread.
+          payload = new Blob([data], { type: "application/octet-stream" });
         }
         const xhr = new XMLHttpRequest();
         let sent = 0;
