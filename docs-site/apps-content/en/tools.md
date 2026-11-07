@@ -5,7 +5,7 @@ section: Everyday
 order: 230
 description: Small generators, converters, security helpers, media utilities, and network tests.
 tags: [tools, utilities, generators, network, cli]
-updated: 2026-09-07
+updated: 2026-11-07
 ---
 
 # Tools
@@ -27,7 +27,8 @@ testing tasks that do not need their own application.
 
 Check where each task runs before entering sensitive data. Most generators,
 converters, security helpers, and image operations are interactive page tools.
-Speed tests, document extraction, and PDF rendering call the Cloud server.
+Document extraction and PDF rendering call the Cloud server. Speed tests use
+the named standalone measurement server without sending Cloud credentials.
 Document conversion holds its input and result only in memory; webhook
 endpoints and request history are stored server-side.
 
@@ -39,7 +40,7 @@ endpoints and request history are stored server-side.
 | Browser utility | Processes its interactive input in the page and offers copy or download output |
 | Document to Markdown | Converts one signed-in user's document in memory and returns plain Markdown without persisting either side |
 | Markdown to PDF | Renders one signed-in user's Markdown with a bounded print template or custom CSS without persisting either side |
-| Speed test | Measures ping, download, upload, and jitter against the Cloud server |
+| Speed test | Measures ping, download, upload, jitter and loaded latency against the named standalone server |
 | Webhook endpoint | A user-owned receiving URL with server-side request history |
 
 Webhook logs redact common sensitive headers such as `Authorization` and

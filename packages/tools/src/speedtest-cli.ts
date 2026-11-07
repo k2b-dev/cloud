@@ -74,6 +74,8 @@ export async function runCloudSpeedtest(ctx: CloudCliContext) {
     if (error instanceof SpeedtestError) {
       if (error.code === "cancelled") throw new Error(t.cancelled);
       if (error.status === 429) throw new Error(error.retryAfter ? t.rateLimited({ seconds: error.retryAfter }) : t.rateLimitedUnknown);
+      if (error.code === "capacity") throw new Error(t.capacity);
+      if (error.status === 503 && error.retryAfter) throw new Error(t.busy({ seconds: error.retryAfter }));
       if (error.code === "slow_server") throw new Error(t.slow);
       if (error.status) throw new Error(t.http({ status: error.status }));
       if (error.code === "network") throw new Error(t.network);

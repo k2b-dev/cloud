@@ -111,7 +111,7 @@ test("offline, disabled, network retry and 429 keep feedback visible and control
       const state = await page.locator(".tools-speedtest").getAttribute("data-state");
       expect(state).toBe(scenario === "offline" || scenario === "disabled" ? scenario : "error");
       expect((await page.locator('[role="status"]').textContent())!.length).toBeGreaterThan(15);
-      const button = page.locator(".tools-speedtest-measure > button");
+      const button = page.locator(".tools-speedtest-start");
       if (["offline", "disabled", "429"].includes(scenario)) expect(await button.isDisabled()).toBe(true);
       else expect(await button.isEnabled()).toBe(true);
       if (scenario === "429") {
@@ -133,3 +133,17 @@ test("offline, disabled, network retry and 429 keep feedback visible and control
     }
   }
 }, 45_000);
+
+test("delayed browser callbacks keep every plotted sample inside the fixed time axis", async () => {
+  const page = await open("delayed");
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  try {
+    await page.clock.runFor(15_000);
+    expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("done");
+    expect(errors).toEqual([]);
+    expect(await page.locator(".tools-speedtest-chart svg").count()).toBe(1);
+  } finally {
+    await page.close();
+  }
+}, 30_000);

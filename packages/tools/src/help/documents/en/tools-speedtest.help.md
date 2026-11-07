@@ -18,6 +18,12 @@ sends no Cloud credentials or personal files. Other traffic, Wi-Fi and the
 route to the selected server affect the result. It is not a measurement of
 every destination on the internet.
 
+The measurement server also offers its own public page, without a login.
+Browser, CLI and scripts share a limit of two test starts per internet
+connection in any rolling 60 seconds. Cancelled starts count. People behind
+the same office connection share the limit; IPv6 uses a /64 network. After
+two starts, the countdown shows when you can run another test.
+
 ## Read and keep the result {icon="chart-line"}
 
 The tiles and terminal show the same measurements. Throughput excludes the
@@ -32,7 +38,9 @@ panel; it does not start a second measurement. **Run again** starts a fresh test
 
 - Offline: reconnect, then press **Start test**.
 - Unreachable or slow server: check the connection and use **Try again**.
-- Server budget reached: wait for the displayed countdown, then use **Try again**.
+- Two tests started: wait for the displayed countdown, then use **Try again**.
+- Server busy: wait for the countdown. A refused start does not consume your allowance.
+- Server bandwidth budget reached: the test has no valid result. Try again later.
 - Disabled or invalid server address: contact your Cloud operator.
 
 ## Use your terminal {icon="terminal"}

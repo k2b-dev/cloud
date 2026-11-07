@@ -25,7 +25,8 @@ Build the dedicated image from the repository root:
 
 ```bash
 docker build -f packages/speedtest/Dockerfile -t speedtest .
-docker run --rm -p 127.0.0.1:8080:8080 speedtest
+docker run --rm -p 127.0.0.1:8080:8080 \
+  -e SPEEDTEST_PUBLIC_URL=https://speedtest.example.com speedtest
 ```
 
 In another terminal, request `http://127.0.0.1:8080/health`; a ready server
@@ -45,6 +46,28 @@ HTTPS is required except on loopback. No Cloud credentials are sent.
 29 seconds. Both use four transfer streams and at most one concurrent loaded
 ping. stderr shows phase and remaining time; `--locale de` selects German.
 `--json` keeps stdout as one JSON result. Ctrl+C cancels active requests.
+
+## Public website and privacy
+
+`/de` and `/en` serve the same measurement UI as Cloud Tools, including the
+fixed-height terminal and result charts. `/` serves German. The heading,
+explanation, server identity and controls render on the server, with canonical
+and language-alternate links for search engines. JavaScript runs measurements;
+without it, the page explains how to download the CLI.
+
+Set `SPEEDTEST_PUBLIC_URL` to this service's public HTTPS origin, without a
+path, credentials, query or fragment. It controls both the measurement target
+and SEO links. Point HTTPS ingress at the same service for the pages,
+`/assets/*`, `/_ssr/*` and measurement routes; do not cache HTML. The build
+command `bun packages/speedtest/scripts/build.ts` emits the server, CLI and
+hashed local assets together. Deploy this directory as one unit.
+
+The page loads fonts, icons and scripts locally. It sets no cookies, uses no
+tracking, follows the device's color preference and links to Cloud in a short
+footer. Results stay in the current page unless the visitor copies them. The
+service briefly keeps source-network budget records in process memory. Review
+your ingress access-log retention separately before publishing a privacy notice.
+DNS, certificates, ingress limits and deployment belong to the operator.
 
 ## Preserve measurement traffic
 
@@ -70,6 +93,7 @@ aggregate IP budget at ingress. No durable user data is stored.
 | --- | --- | --- |
 | `SPEEDTEST_HOST` | `0.0.0.0` | Listen address |
 | `SPEEDTEST_PORT` | `8080` | HTTP port |
+| `SPEEDTEST_PUBLIC_URL` | `https://speedtest.k2b.dev` | Public origin for page measurements and SEO links |
 | `SPEEDTEST_UDP_PORT` | unset | UDP stays disabled until explicitly configured |
 | `SPEEDTEST_CAPACITY_MBPS` | `1000` | Sustainable aggregate measurement budget, combined download and upload |
 | `SPEEDTEST_TEST_MBPS` | `1000` | Capacity reserved per admitted test |
@@ -205,3 +229,6 @@ The supported workspace entries are `@k2b/speedtest` (engine, plans, progress
 and result types), `/browser` (fetch/XHR), `/node` (anonymous HTTP transport),
 `/http` (shared HTTP response checks) and `/udp-client` (explicit Node/Bun UDP
 diagnostic). Applications import these entries instead of copying transfer loops.
+The `/ui` entry exports the shared ordinary Solid component; import `/styles.css`
+and include the UI source in the consumer's Tailwind scan. `/messages` and
+`/format` supply its localized text and numeric formatting.

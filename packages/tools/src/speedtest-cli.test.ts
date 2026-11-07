@@ -60,14 +60,14 @@ test("explicit target never receives Cloud credentials and 429 retains recovery 
   const listeners = process.listenerCount("SIGINT");
   try {
     await expect(runCloudSpeedtest(ctx)).rejects.toThrow("30 s");
-    expect(requests.length).toBeGreaterThan(9);
+    expect(requests.map((request) => new URL(request.url).pathname)).toEqual(["/session"]);
     for (const request of requests) {
       expect(request.headers.get("authorization")).toBeNull();
       expect(request.headers.get("cookie")).toBeNull();
       expect(request.url).not.toContain("tools/api");
     }
     expect(output).toEqual([]);
-    expect(lines.some((line) => /noch ca\. \d+ s/.test(line))).toBe(true);
+    expect(lines.some((line) => line.includes("Messserver"))).toBe(true);
     expect(process.listenerCount("SIGINT")).toBe(listeners);
   } finally {
     await server.stop(true);

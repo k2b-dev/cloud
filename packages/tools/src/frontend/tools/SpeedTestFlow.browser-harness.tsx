@@ -5,6 +5,11 @@ import SpeedTest from "./SpeedTest.island";
 // Deterministic network fixtures for the real component and shared engine; no product state switches.
 const params = new URLSearchParams(location.search);
 const scenario = params.get("scenario") ?? "idle";
+if (scenario === "delayed") {
+  const monotonic = performance.now.bind(performance);
+  // Simulate callbacks arriving after the elapsed-time deadline, without real sleeps.
+  Object.defineProperty(performance, "now", { value: () => monotonic() + (monotonic() >= 5_000 ? 10_000 : 0) });
+}
 const nativeFetch = globalThis.fetch;
 const chunk = new Uint8Array(256 * 1024);
 let attempts = 0;
@@ -12,6 +17,12 @@ const aborted = () => new DOMException("Aborted", "AbortError");
 const fixtureFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = new URL(input instanceof Request ? input.url : String(input), location.href);
   if (url.origin !== "https://speedtest.k2b.dev") return nativeFetch(input, init);
+  if (url.pathname === "/session" && init?.method === "POST") {
+    if (scenario === "429") return new Response(null, { status: 429, headers: { "Retry-After": "2" } });
+    return Response.json({ token: "00000000-0000-4000-8000-000000000001" }, { status: 201 });
+  }
+  if (url.pathname === "/session" && init?.method !== "POST") return Response.json({ limited: false });
+  if (url.pathname === "/session/end") return new Response(null, { status: 204 });
   if (url.pathname.endsWith("/ping")) {
     attempts++;
     if (scenario === "error" || (scenario === "retry" && attempts === 1)) throw new TypeError("Fixture offline server");
@@ -101,7 +112,6 @@ render(
 );
 if (!["idle", "offline", "disabled"].includes(scenario))
   requestAnimationFrame(() => {
-    document.querySelector<HTMLButtonElement>(".tools-speedtest-measure > button")?.click();
-    if (scenario === "cancel")
-      setTimeout(() => document.querySelector<HTMLButtonElement>(".tools-speedtest-measure > button")?.click(), 500);
+    document.querySelector<HTMLButtonElement>(".tools-speedtest-start")?.click();
+    if (scenario === "cancel") setTimeout(() => document.querySelector<HTMLButtonElement>(".tools-speedtest-start")?.click(), 500);
   });
