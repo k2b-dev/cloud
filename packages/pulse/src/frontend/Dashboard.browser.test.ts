@@ -56,6 +56,7 @@ const open = async (
     listError?: boolean;
     now?: string;
     paginated?: boolean;
+    browserZone?: string;
   } = {},
 ) => {
   const dashboard = options.dashboard ?? dashboardTestDashboard;
@@ -82,7 +83,7 @@ const open = async (
   };
   let listResponse: Reply = { json: dashboardTestSnapshot };
   let overviewResponse: Reply = { json: overview };
-  const tab = await browser.newPage({ viewport: { width: options.width ?? 1440, height: 1000 } });
+  const tab = await browser.newPage({ viewport: { width: options.width ?? 1440, height: 1000 }, timezoneId: options.browserZone });
   await pauseWorkspaceClock(tab.clock, new Date(options.now ?? dashboardTestNow));
   const requests: { path: string; body: unknown; key: string | undefined }[] = [];
   const panels = new Map<string, Reply>();
@@ -118,7 +119,7 @@ const open = async (
     ...workspaceFixture,
     initialNow: dashboardTestNow,
     initialOverview: { data: overview, error: null },
-    initialBases: workspaceFixture.initialBases.map((base) => ({ ...base, name: "Betrieb" })),
+    initialBases: workspaceFixture.initialBases.map((base) => ({ ...base, name: "Betrieb", timezone: "Europe/Berlin" })),
     initialPermissions: { write: !options.readOnly, admin: !options.readOnly },
     initialRouteState: readWorkspacePathState(url, workspaceFixture.initialBaseId),
     initialDashboards: {
@@ -144,6 +145,7 @@ const open = async (
             id: dashboard.id,
             name: dashboard.name,
             revision: dashboard.revision,
+            timeZone: "Europe/Berlin",
             panels: dashboard.definition.panels.map(({ sql: _sql, params: _params, ...panel }) => panel),
           },
           range: props.initialRouteState.dashboardRange ?? { range: "24h" as const },
@@ -221,9 +223,15 @@ test("approved 3-column layout, stat tiles, linked keyboard tooltips, phone/tabl
       const server = tab.getByRole("region", { name: "Server", exact: true });
       expect(await traefik.locator(".ti-router").count()).toBe(1);
       expect(await server.locator(".ti-server-2").count()).toBe(1);
-      expect(await traefik.locator(".k2b-avatar").evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(
-        await server.locator(".k2b-avatar").evaluate((el) => getComputedStyle(el).backgroundColor),
-      );
+      // Section icons are plain glyphs in their section colour, never a tinted tile.
+      const sectionIcon = (section: typeof traefik) =>
+        section.locator(".pulse-dashboard__section-icon").evaluate((el) => {
+          const style = getComputedStyle(el);
+          return { color: style.color, background: style.backgroundColor };
+        });
+      const [traefikIcon, serverIcon] = await Promise.all([sectionIcon(traefik), sectionIcon(server)]);
+      expect(traefikIcon.color).not.toBe(serverIcon.color);
+      expect([traefikIcon.background, serverIcon.background]).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
       expect(await traefik.getByText("Quelle Traefik · Raster 5 Min.", { exact: true }).isVisible()).toBe(width !== 390);
       expect(await server.getByText("2 Quellen · Raster 5 Min.", { exact: true }).isVisible()).toBe(width !== 390);
       expect(await tab.locator("[data-panel]").count()).toBe(10);
@@ -234,7 +242,9 @@ test("approved 3-column layout, stat tiles, linked keyboard tooltips, phone/tabl
         expect(panels[1]!.y).toBe(panels[2]!.y);
         expect(Math.abs(panels[1]!.x - panels[0]!.x - panels[0]!.width - 32)).toBeLessThan(1);
       } else if (width === 390) expect(panels[0]!.y).toBeLessThan(panels[1]!.y);
-      expect(await tab.locator('[data-panel="req"] .k2b-chart').evaluate((el) => el.getBoundingClientRect().height)).toBe(198);
+      expect(
+        await tab.locator('[data-panel="req"] .k2b-chart-explorer__viewport').evaluate((el) => el.getBoundingClientRect().height),
+      ).toBe(216);
       expect(await tab.getByRole("table").getByText("demo-web").count()).toBe(1);
       expect(await tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
       const chart = tab.locator('[data-panel="req"] .k2b-chart');
@@ -266,6 +276,71 @@ test("approved 3-column layout, stat tiles, linked keyboard tooltips, phone/tabl
     }
   }
 }, 60_000);
+
+test("dashboard entries, section icons and tables follow the shared frame: plain icons, even insets, framed tables", async () => {
+  for (const width of [1440, 390]) {
+    const { tab } = await open({ width });
+    try {
+      await ready(tab);
+      if (width === 1440) {
+        // The selected dashboard row shows its glyph without a tile, inset as far from the row's start as from its top.
+        const row = tab.locator(".k2b-app-workspace__sidebar-item.is-active", { hasText: "Server & Traefik" });
+        const icon = await row.evaluate((element) => {
+          const outer = element.getBoundingClientRect();
+          const box = element.querySelector(".k2b-app-workspace__sidebar-item-icon")!;
+          // The glyph is square: its box is as tall as it is wide and sits centred in the row.
+          const glyph = box.getBoundingClientRect();
+          return {
+            tiles: element.querySelectorAll(".k2b-icon-tile").length,
+            background: getComputedStyle(box).backgroundColor,
+            start: glyph.left - outer.left,
+            block: (outer.height - glyph.width) / 2,
+          };
+        });
+        expect({ tiles: icon.tiles, background: icon.background }).toEqual({ tiles: 0, background: "rgba(0, 0, 0, 0)" });
+        expect(Math.abs(icon.start - icon.block)).toBeLessThanOrEqual(1);
+      }
+      // A table panel is one framed table: the frame draws the edge, and the last row ends on it.
+      const frame = await tab.locator('[data-panel="hosts"] .k2b-table-shell').evaluate((shell) => {
+        const style = getComputedStyle(shell);
+        const lastRow = shell.querySelector("tbody tr:last-child")!.getBoundingClientRect();
+        const box = shell.getBoundingClientRect();
+        return {
+          surface: shell.getAttribute("data-surface"),
+          border: style.borderTopWidth !== "0px" && style.borderTopStyle !== "none",
+          gap: box.bottom - lastRow.bottom,
+        };
+      });
+      expect({ surface: frame.surface, border: frame.border }).toEqual({ surface: "paper", border: true });
+      expect(frame.gap).toBeGreaterThanOrEqual(0);
+      expect(frame.gap).toBeLessThanOrEqual(2);
+    } finally {
+      await tab.close();
+    }
+  }
+}, 30_000);
+
+test("a line panel is a chart explorer with exact values, units and a table of every point", async () => {
+  const { tab } = await open();
+  try {
+    await ready(tab);
+    const panel = tab.locator('[data-panel="req"]');
+    expect(await panel.locator(".k2b-chart-explorer h3").textContent()).toBe("Anfragen je Dienst");
+    expect(await panel.getByRole("button", { name: "So gerechnet: Anfragen je Dienst", exact: true }).count()).toBe(1);
+    expect(await panel.locator(".k2b-chart-legend li").allTextContents()).toEqual(["demo-site", "demo-shop", "demo-cloud"]);
+    await panel.getByRole("button", { name: "Diagrammansicht", exact: true }).click();
+    await tab.getByRole("menuitemradio", { name: "Tabelle", exact: true }).click();
+    const table = panel.getByRole("table");
+    await table.locator("tbody tr").first().waitFor();
+    expect(await table.locator("thead th").allTextContents()).toEqual(["Zeit (Europe/Berlin)", "Reihe", "Wert (/s)"]);
+    // Each time carries its offset, so the two instants of a repeated hour stay apart in copied rows.
+    expect(await table.locator("tbody tr").first().locator("td").first().textContent()).toMatch(/GMT[+-]\d/);
+    // The table takes the chart's place at the same viewport height.
+    expect(await panel.locator(".k2b-chart-explorer__viewport").evaluate((el) => el.getBoundingClientRect().height)).toBe(216);
+  } finally {
+    await tab.close();
+  }
+}, 30_000);
 
 test("all five kinds render complete values and two-column sections without page overflow", async () => {
   for (const width of [1440, 390]) {
@@ -316,7 +391,28 @@ test("range presets reload their selected value and Back restores the prior rang
   }
 }, 60_000);
 
-test("custom dashboard range validates input and reloads the applied UTC time", async () => {
+test("dashboard times read in the base zone, never in UTC or the browser's zone, private and public", async () => {
+  for (const isPublic of [false, true]) {
+    // The browser sits in New York; the base reads its dashboard in Berlin, where 14:32 UTC is 16:32.
+    const { tab } = await open({ public: isPublic, browserZone: "America/New_York" });
+    try {
+      await ready(tab);
+      const band = await tab.locator(".pulse-dashboard__band").textContent();
+      expect(band).toContain("20.10.2026, 16:32");
+      const chart = tab.locator('[data-panel="req"] .k2b-chart');
+      await chart.focus();
+      await chart.press("ArrowRight");
+      const tooltip = tab.locator('[data-panel="req"] [role="tooltip"]:popover-open');
+      await tooltip.waitFor();
+      const shown = `${band} ${await tooltip.textContent()} ${await tab.locator(".pulse-dashboard").textContent()}`;
+      expect({ isPublic, utc: shown.includes("UTC") }).toEqual({ isPublic, utc: false });
+    } finally {
+      await tab.close();
+    }
+  }
+}, 30_000);
+
+test("custom dashboard range reads wall-clock time in the base zone and requests the exact instant", async () => {
   const { tab, requests } = await open();
   try {
     await ready(tab);
@@ -335,17 +431,20 @@ test("custom dashboard range validates input and reloads the applied UTC time", 
     expect(await tab.getByRole("link", { name: "Eigener Zeitraum", exact: true }).getAttribute("aria-current")).toBe("true");
     expect(await custom.getAttribute("aria-expanded")).toBe("false");
     await custom.click();
-    await tab.getByRole("button", { name: "Von (UTC)", exact: true }).click();
+    // 00:00 UTC is 02:00 in Berlin (CEST); the picker names the zone it reads in.
+    expect(await tab.getByRole("button", { name: "Von", exact: true }).textContent()).toContain("02:00");
+    await tab.getByRole("button", { name: "Von", exact: true }).click();
     const picker = tab.locator(".k2b-date-popover:popover-open");
+    expect(await picker.textContent()).toContain("Europe/Berlin");
     await picker.getByRole("textbox").fill("08:30");
     expect(await picker.getByRole("textbox").inputValue()).toBe("08:30");
     await picker.locator(".k2b-date-apply").click();
-    expect(await tab.getByRole("button", { name: "Von (UTC)", exact: true }).textContent()).toContain("08:30");
+    expect(await tab.getByRole("button", { name: "Von", exact: true }).textContent()).toContain("08:30");
     await tab.getByRole("button", { name: "Zeitraum übernehmen", exact: true }).click();
     // Previous panel data can remain ready while the new document navigation commits.
-    await tab.waitForURL((url) => url.searchParams.get("from") === "2026-10-01T08:30:00.000Z");
+    await tab.waitForURL((url) => url.searchParams.get("from") === "2026-10-01T06:30:00.000Z");
     await ready(tab);
-    expect(new URL(tab.url()).searchParams.get("from")).toBe("2026-10-01T08:30:00.000Z");
+    expect(new URL(tab.url()).searchParams.get("from")).toBe("2026-10-01T06:30:00.000Z");
     expect(
       requests
         .filter((req) => req.path.includes("/panels/"))
@@ -368,6 +467,7 @@ test("loading retains panel slots, per-panel failures retry, outages retain last
     panels.set("p95", {
       json: {
         panelId: "p95",
+        attribution: null,
         status: "error",
         error: "TIME_LIMIT",
         lastGood: null,
@@ -378,18 +478,15 @@ test("loading retains panel slots, per-panel failures retry, outages retain last
     release!();
     await ready(tab);
     expect(await tab.locator('[data-panel="p95"] [role="alert"]').textContent()).toContain("zu lange");
-    expect(
-      await tab
-        .locator('[data-panel="req"]')
-        .boundingBox()
-        .then((box) => box!.width),
-    ).toBe(before!.width);
+    const after = await tab.locator('[data-panel="req"]').boundingBox();
+    expect({ width: after!.width, height: after!.height }).toEqual({ width: before!.width, height: before!.height });
     panels.delete("p95");
     await tab.locator('[data-panel="p95"]').getByRole("button", { name: "Erneut versuchen", exact: true }).click();
     await tab.locator('[data-panel="p95"] .k2b-chart').waitFor();
     panels.set("req", {
       json: {
         panelId: "req",
+        attribution: null,
         status: "error",
         error: "STORE_UNAVAILABLE",
         lastGood: null,
@@ -405,6 +502,31 @@ test("loading retains panel slots, per-panel failures retry, outages retain last
     await tab.locator(".pulse-dashboard__band").getByRole("button", { name: "Erneut versuchen", exact: true }).click();
     await tab.getByText("Dashboard nicht verfügbar", { exact: true }).waitFor();
     expect(await tab.locator("[data-panel]").count()).toBe(0);
+  } finally {
+    release?.();
+    await tab.close();
+  }
+}, 30_000);
+
+test("a panel that cannot render its result fails alone and recovers on retry", async () => {
+  let release: (() => void) | undefined;
+  const deferred = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { tab, panels } = await open({ deferred });
+  try {
+    // Any render-time throw used to reach the island boundary and blank every panel.
+    const result = dashboardTestPanelResult(dashboardTestDashboard.definition.panels.find((panel) => panel.id === "p95")!);
+    panels.set("p95", { json: { ...result, lastGood: { ...result.lastGood!, data: { ...result.lastGood!.data, rows: null } } } });
+    release!();
+    await ready(tab);
+    const failed = tab.locator('[data-panel="p95"]');
+    expect(await failed.locator('[role="alert"]').textContent()).toContain("Diese Abfrage ist gescheitert");
+    expect(await tab.locator('[data-panel="req"] .k2b-chart').count()).toBe(1);
+    expect(await tab.locator("[data-panel] .k2b-skeleton").count()).toBe(0);
+    panels.delete("p95");
+    await failed.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+    await tab.locator('[data-panel="p95"] .k2b-chart').waitFor();
   } finally {
     release?.();
     await tab.close();
@@ -430,9 +552,32 @@ test("a map panel shades countries, names them, and answers a tap on a phone in 
       await panel.locator('path[data-country="DE"]').hover();
       await panel.locator(".k2b-country-map__readout", { hasText: "Deutschland" }).waitFor();
       expect((await panel.locator(".k2b-country-map").boundingBox())!.height).toBe(before!.height);
+      // DB-IP Lite (CC BY 4.0) needs its link beside the results; panels without countries carry none.
+      const credit = panel.locator("[data-geoip-attribution] a");
+      expect(await credit.textContent()).toBe("IP Geolocation by DB-IP");
+      expect(await credit.getAttribute("href")).toBe("https://db-ip.com");
+      expect(await tab.locator("[data-geoip-attribution]").count()).toBe(1);
     } finally {
       await tab.close();
     }
+  }
+}, 30_000);
+
+test("a map panel drops the DB-IP link while the City database comes from another provider", async () => {
+  let release: () => void = () => {};
+  const deferred = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { tab, panels } = await open({ dashboard: dashboardTestKinds, deferred });
+  try {
+    const map = dashboardTestKinds.definition.panels.find((panel) => panel.kind === "map")!;
+    panels.set(map.id, { json: { ...dashboardTestPanelResult(map), attribution: null } satisfies DashboardPanelResult });
+    release();
+    await ready(tab);
+    await tab.locator('[data-panel="countries"] .k2b-country-map path[data-country="DE"]').waitFor();
+    expect(await tab.locator("[data-geoip-attribution]").count()).toBe(0);
+  } finally {
+    await tab.close();
   }
 }, 30_000);
 
@@ -491,6 +636,7 @@ test("cleared data replaces the shown result, while a cache miss for the same da
     await tab.waitForFunction(() => !document.querySelector('[data-panel][aria-busy="true"]'));
     const waiting = (variant: string): DashboardPanelResult => ({
       panelId: "req",
+      attribution: null,
       status: "waiting",
       error: null,
       lastGood: null,
@@ -663,7 +809,7 @@ test("the actual SSR page and first client render preserve dashboard structure i
     const props: PulseWorkspaceProps = {
       ...workspaceFixture,
       initialNow: dashboardTestNow,
-      initialBases: workspaceFixture.initialBases.map((base) => ({ ...base, name: "Betrieb" })),
+      initialBases: workspaceFixture.initialBases.map((base) => ({ ...base, name: "Betrieb", timezone: "Europe/Berlin" })),
       initialRouteState: { view: "dashboards", sourceId: "", dashboardId: dashboardTestDashboard.id, dashboardRange: { range: "24h" } },
       initialDashboards: dashboardTestSnapshot,
       initialOverview: { data: { ...baseOverviewFixture, attention: { items: [], total: 0, nextOffset: null } }, error: null },
@@ -779,6 +925,7 @@ test("server admission waiting keeps a loading state until the shared result bec
     panels.set("req", {
       json: {
         panelId: "req",
+        attribution: null,
         status: "waiting",
         error: null,
         lastGood: null,
@@ -1092,6 +1239,7 @@ test("cold polling respects future backoff across visibility changes and expired
       panels.set("req", {
         json: {
           panelId: "req",
+          attribution: null,
           status: "waiting",
           error: null,
           lastGood: null,

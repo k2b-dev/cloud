@@ -66,7 +66,7 @@ describe("MailConversationSummaryCard", () => {
     expect(html).toContain("min-h-[12.25rem]");
   });
 
-  test("a text a person wrote stays neutral: no ✦, no cyan", () => {
+  test("a text a person wrote stays neutral: no ✦, no plum", () => {
     const html = render(
       summaryState({
         summary: "Zahlen abgestimmt, Rechnung nächste Woche.",

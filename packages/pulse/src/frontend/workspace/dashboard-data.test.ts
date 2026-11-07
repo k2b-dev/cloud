@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
+import { charts } from "@k2b/stdlib";
 import { dashboardRangeSearch } from "./dashboard-client";
-import { dashboardCategories, dashboardLine, dashboardSections, readDashboardRange } from "./dashboard-data";
+import { dashboardCategories, dashboardLine, dashboardLineExplorer, dashboardSections, readDashboardRange } from "./dashboard-data";
 import { dashboardTestDashboard, dashboardTestKinds, dashboardTestPanelResult } from "./dashboard-test-fixtures";
+
+const berlin = { locale: "de", timeZone: "Europe/Berlin" };
 
 test("custom ranges require both valid ordered endpoints and serialize without changing instants", () => {
   expect(readDashboardRange("/?range=7d&from=wrong&to=2026-10-22")).toEqual({ range: "7d" });
@@ -47,7 +50,7 @@ test("line adaptation retains missing observations, uses named time and series c
         ["demo-db", "2026-10-20T11:00:00Z", 9],
       ],
     },
-    "de",
+    berlin,
   );
   expect(chart.series.map((series) => [series.label, series.data.length])).toEqual([
     ["demo-web", 2],
@@ -55,6 +58,30 @@ test("line adaptation retains missing observations, uses named time and series c
   ]);
   expect(chart.maxGap).toBe(5400000);
   expect(chart.series[0]!.data[0]!.y).toBe(10);
+});
+test("a day bucket that starts before the window widens the axis instead of failing the chart", () => {
+  // toStartOfDay(ts, :base_tz) over the default 24 hours returns yesterday 00:00 Berlin, before :from.
+  const panel = { ...dashboardTestDashboard.definition.panels[4]!, series: undefined, columns: ["tag", "besucher", "aufrufe"], x: "tag" };
+  const window = { from: "2026-11-05T14:30:00.000Z", to: "2026-11-06T14:30:00.000Z" };
+  const chart = dashboardLine(
+    panel,
+    {
+      columns: [
+        { name: "tag", type: "DateTime('Europe/Berlin')" },
+        { name: "besucher", type: "UInt64" },
+        { name: "aufrufe", type: "UInt64" },
+      ],
+      rows: [
+        ["2026-11-05 00:00:00", "12", "40"],
+        ["2026-11-06 00:00:00", "7", "19"],
+      ],
+    },
+    berlin,
+    window,
+  );
+  expect(chart.xAxis?.domain).toEqual([Date.parse("2026-11-04T23:00:00.000Z"), Date.parse(window.to)]);
+  const { kind: _kind, maxGap: _maxGap, tooltip: _tooltip, ...options } = chart;
+  expect(() => charts.line({ ...options, width: 480, height: 200 })).not.toThrow();
 });
 test("funnel and bar values use named columns with complete source order", () => {
   const panel = dashboardTestKinds.definition.panels[2]!;
@@ -90,6 +117,111 @@ test("bar preserves every numeric output while funnel rejects ambiguous or inval
 test("alarm references retain their threshold and localized numeric caption", () => {
   const panel = { ...dashboardTestDashboard.definition.panels[4]!, threshold: 2.5, unit: "%" };
   const result = dashboardTestPanelResult(panel);
-  expect(dashboardLine(panel, result.lastGood!.data, "de").references).toEqual([{ value: 2.5, label: "Alarm 2,5 %" }]);
-  expect(dashboardLine({ ...panel, threshold: undefined }, result.lastGood!.data, "en").references).toEqual([]);
+  expect(dashboardLine(panel, result.lastGood!.data, berlin).references).toEqual([{ value: 2.5, label: "Alarm 2,5 %" }]);
+  expect(
+    dashboardLine({ ...panel, threshold: undefined }, result.lastGood!.data, { locale: "en", timeZone: "Europe/Berlin" }).references,
+  ).toEqual([]);
+});
+
+test("a line panel becomes explorer data: one row per drawn point, the series legend, and the widened window", () => {
+  const panel = dashboardTestDashboard.definition.panels.find((item) => item.id === "req")!;
+  const result = dashboardTestPanelResult(panel);
+  const explorer = dashboardLineExplorer(panel, result.lastGood!.data, berlin, result.lastGood!);
+  // ChartExplorer rejects marks without a row, so every drawn point needs exactly one.
+  const keys = explorer.data.rows.map((row) => row.key);
+  expect(new Set(keys).size).toBe(keys.length);
+  expect(explorer.data.chart.marks.map((mark) => mark.rowKey).sort()).toEqual([...keys].sort());
+  expect(explorer.legend.map((entry) => entry.label)).toEqual(["demo-site", "demo-shop", "demo-cloud"]);
+  expect(explorer.data.chart.marks[0]!.tooltip.rows[0]!.value).toMatch(/\/s$/);
+  const single = dashboardTestDashboard.definition.panels.find((item) => item.id === "e5")!;
+  expect(dashboardLineExplorer(single, dashboardTestPanelResult(single).lastGood!.data, berlin).legend).toEqual([]);
+  // The day bucket before :from from the #2714 case still renders and keeps every point.
+  const bucket = { ...panel, series: undefined, columns: ["tag", "besucher"], x: "tag" };
+  const day = dashboardLineExplorer(
+    bucket,
+    {
+      columns: [
+        { name: "tag", type: "DateTime('Europe/Berlin')" },
+        { name: "besucher", type: "UInt64" },
+      ],
+      rows: [
+        ["2026-11-05 00:00:00", "12"],
+        ["2026-11-06 00:00:00", "7"],
+      ],
+    },
+    berlin,
+    { from: "2026-11-05T14:30:00.000Z", to: "2026-11-06T14:30:00.000Z" },
+  );
+  expect(day.data.rows.map((row) => row.value)).toEqual([12, 7]);
+});
+test("a line point keeps its row key when a refresh drops older points, and a repeated time stays unique", () => {
+  const panel = { ...dashboardTestDashboard.definition.panels[4]!, series: "host", columns: ["time", "host", "value"] };
+  const columns = [
+    { name: "time", type: "DateTime('UTC')" },
+    { name: "host", type: "String" },
+    { name: "value", type: "Float64" },
+  ];
+  const keyAt = (rows: unknown[][], at: string) =>
+    dashboardLineExplorer(panel, { columns, rows }, berlin).data.rows.find((row) => row.at === Date.parse(at) && row.series === "demo-web")
+      ?.key;
+  const earlier = [
+    ["2026-10-20T10:00:00Z", "demo-web", 1],
+    ["2026-10-20T11:00:00Z", "demo-web", 2],
+  ];
+  expect(keyAt(earlier, "2026-10-20T11:00:00Z")).toBe(keyAt(earlier.slice(1), "2026-10-20T11:00:00Z"));
+  const repeated = dashboardLineExplorer(panel, { columns, rows: [...earlier, ["2026-10-20T11:00:00Z", "demo-web", 3]] }, berlin);
+  const keys = repeated.data.rows.map((row) => row.key);
+  expect(new Set(keys).size).toBe(3);
+  expect(repeated.data.chart.marks.map((mark) => mark.rowKey).sort()).toEqual([...keys].sort());
+});
+
+test("day buckets across the end of daylight saving time read as midnight in the base zone and keep the widened axis", () => {
+  // toStartOfDay(ts, :base_tz) in Europe/Berlin: 25 Oct 2026 starts at 22:00 UTC (CEST), 26 Oct at 23:00 UTC (CET).
+  const panel = { ...dashboardTestDashboard.definition.panels[4]!, series: undefined, columns: ["tag", "besucher"], x: "tag", unit: "" };
+  const window = { from: "2026-10-25T10:00:00.000Z", to: "2026-10-26T10:00:00.000Z" };
+  const data = {
+    columns: [
+      { name: "tag", type: "DateTime('Europe/Berlin')" },
+      { name: "besucher", type: "UInt64" },
+    ],
+    rows: [
+      ["2026-10-25 00:00:00", "12"],
+      ["2026-10-26 00:00:00", "7"],
+    ],
+  };
+  const explorer = dashboardLineExplorer(panel, data, berlin, window);
+  expect(explorer.data.rows.map((row) => new Date(row.at).toISOString())).toEqual(["2026-10-24T22:00:00.000Z", "2026-10-25T23:00:00.000Z"]);
+  expect(explorer.data.chart.marks.map((mark) => mark.tooltip.title)).toEqual(["25. Okt., 00:00", "26. Okt., 00:00"]);
+  expect(dashboardLine(panel, data, berlin, window).xAxis?.domain).toEqual([Date.parse("2026-10-24T22:00:00.000Z"), Date.parse(window.to)]);
+});
+test("dashboard times never format in UTC: no fixed UTC zone or suffix in the dashboard sources", async () => {
+  // Every dashboard time reads in the base zone (dashboardDateTime, DashboardClock). A UTC formatter or a " UTC"
+  // suffix coming back would show a second clock beside the base's.
+  const files = ["DashboardView.tsx", "DashboardPanelView.tsx", "dashboard-data.ts", "../PublicDashboard.island.tsx"];
+  for (const file of files) {
+    const source = await Bun.file(new URL(file, import.meta.url)).text();
+    expect({ file, utc: source.match(/timeZone:\s*"UTC"|["'`] UTC["'`]|\+ " UTC"/g) }).toEqual({ file, utc: null });
+  }
+});
+test("a date bucket from toDate(ts, :base_tz) starts at midnight in the base zone, east and west of UTC", () => {
+  const panel = { ...dashboardTestDashboard.definition.panels[4]!, series: undefined, columns: ["tag", "besucher"], x: "tag", unit: "" };
+  const data = {
+    columns: [
+      { name: "tag", type: "Date" },
+      { name: "besucher", type: "UInt64" },
+    ],
+    rows: [["2026-10-25", "12"]],
+  };
+  const newYork = dashboardLineExplorer(panel, data, { locale: "en", timeZone: "America/New_York" });
+  expect(new Date(newYork.data.rows[0]!.at).toISOString()).toBe("2026-10-25T04:00:00.000Z");
+  expect(newYork.data.chart.marks[0]!.tooltip.title).toBe("Oct 25, 12:00 AM");
+  expect(new Date(dashboardLineExplorer(panel, data, berlin).data.rows[0]!.at).toISOString()).toBe("2026-10-24T22:00:00.000Z");
+});
+test("a dashboard line axis labels round times in the base zone, never decimal steps such as 03:33", () => {
+  const panel = dashboardTestDashboard.definition.panels.find((item) => item.id === "req")!;
+  const result = dashboardTestPanelResult(panel);
+  const svg = dashboardLineExplorer(panel, result.lastGood!.data, berlin, result.lastGood!).data.chart.svg;
+  const labels = [...svg.matchAll(/class="stdlib-chart-tick-label"[^>]*text-anchor="middle"[^>]*>([^<]*)</g)].map((match) => match[1]);
+  // The fixture window runs 19 Oct 16:32 to 20 Oct 16:32 in Berlin: six-hour ticks and the day at midnight.
+  expect(labels).toEqual(["18:00", "20. Okt.", "06:00", "12:00"]);
 });

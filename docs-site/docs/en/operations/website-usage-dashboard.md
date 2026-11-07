@@ -5,7 +5,7 @@ section: Operations
 order: 1148
 description: Send page views from a website backend to Pulse and show totals, a time series, a country map, and top pages on one dashboard.
 tags: [operations, pulse, analytics, privacy]
-updated: 2026-11-01
+updated: 2026-11-06
 ---
 
 # Build a website usage dashboard
@@ -31,8 +31,9 @@ const dimensions = { path: "/services", ...(country ? { country } : {}) };
 
 Never send the IP address to Pulse. A page view without a country still counts
 in every panel except the map. When `attribution` in the result is set, link
-it where you show the results. Other backends send `dimensions.country` from
-their own source or leave it out.
+it where you show the results. Pulse dashboards add that link to panels with
+country data themselves. Other backends send `dimensions.country` from their
+own source or leave it out.
 
 ## Create the source and dashboard
 

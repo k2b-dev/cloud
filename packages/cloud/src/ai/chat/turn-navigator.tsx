@@ -104,7 +104,7 @@ export function TurnNavigator(props: TurnNavigatorProps) {
                 <span
                   class={`block h-0.5 rounded-full transition-[width,background-color] ${
                     loading()
-                      ? "w-5 animate-pulse bg-cyan-500"
+                      ? "w-5 animate-pulse bg-[var(--k2b-ai-accent)]"
                       : active()
                         ? "w-6 bg-zinc-700 dark:bg-zinc-100"
                         : entry.isSteer

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.49.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.48.0...npm-ui-v0.49.0) (2026-11-06)
+
+
+### Features
+
+* **cloud:** the phone web shell opens the panel full height with a draggable handle and drops the bottom dock ([#2678](https://github.com/k2b-dev/cloud/issues/2678)) ([aa0aecc](https://github.com/k2b-dev/cloud/commit/aa0aecc68f4c1eb9ba5aca35fe5e689064c77906))
+* **spaces:** add a task in the Cloud app from the field above the keyboard ([#2687](https://github.com/k2b-dev/cloud/issues/2687)) ([aae9f03](https://github.com/k2b-dev/cloud/commit/aae9f03b47f8e394daa81dca4c01f07ab2ec36ac))
+* **spaces:** the Cloud app switches Spaces from the title and lists a Space by status ([#2684](https://github.com/k2b-dev/cloud/issues/2684)) ([0c249ce](https://github.com/k2b-dev/cloud/commit/0c249ce4862e6e41bed7c97bf46317ca12962c66))
+* **ui:** confirm prompts can warn without being destructive ([#2691](https://github.com/k2b-dev/cloud/issues/2691)) ([336d901](https://github.com/k2b-dev/cloud/commit/336d90105d9794265caddeb09c30553419d69cdd))
+
+
+### Bug Fixes
+
+* **cloud:** the access dialog marks you in every app and the public link warns and copies as in the mockup ([#2696](https://github.com/k2b-dev/cloud/issues/2696)) ([07b86b1](https://github.com/k2b-dev/cloud/commit/07b86b147996216b59a1edf676409e6025585f5e))
+* **cloud:** the access dialog shows every state of the approved mockup and Remove is red ([#2681](https://github.com/k2b-dev/cloud/issues/2681)) ([9b92493](https://github.com/k2b-dev/cloud/commit/9b92493a958e8ca727d25a4e314b0b1a4b667f58))
+* **ui:** detail pages drop the back row beside a sidebar that marks their ancestor ([#2710](https://github.com/k2b-dev/cloud/issues/2710)) ([3e34b52](https://github.com/k2b-dev/cloud/commit/3e34b524c7480df735a207f95cc1789797a7d641))
+* **ui:** pad committed NumberInput values to their decimal precision ([#2679](https://github.com/k2b-dev/cloud/issues/2679)) ([1c03ca4](https://github.com/k2b-dev/cloud/commit/1c03ca4fb483378a54b3287b2371330f303d73d5))
+
 ## [0.48.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.47.0...npm-ui-v0.48.0) (2026-11-05)
 
 

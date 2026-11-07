@@ -36,7 +36,7 @@ export const app = defineApp({
     accent: "#8e1b6f",
     background: {
       from: "#8e1b6f",
-      to: "#62378d",
+      to: "#c4519f",
       angle: 135,
       strength: 14,
     },

@@ -11,7 +11,7 @@ import { launchPulseOverviewAssistant } from "./pulse-assistant-launch";
 import { buildPulseWorkspaceHref, type WorkspaceRouteState } from "./routes";
 
 export default function DashboardsView(props: {
-  base: { id: string; name: string };
+  base: { id: string; name: string; timezone: string };
   route: WorkspaceRouteState;
   snapshot?: DashboardSnapshot;
   canWrite: boolean;
@@ -138,6 +138,7 @@ export default function DashboardsView(props: {
           range={props.route.dashboardRange ?? { range: "24h" }}
           path={buildPulseWorkspaceHref({ baseId: props.base.id, state: { ...props.route, dashboardId: dashboard.id } })}
           target={{ baseId: props.base.id, dashboardId: dashboard.id }}
+          timeZone={props.base.timezone}
           private={{ dashboard, base: props.base, canWrite: props.canWrite, overview: props.overview }}
         />
       )}

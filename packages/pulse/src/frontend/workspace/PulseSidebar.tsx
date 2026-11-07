@@ -151,7 +151,6 @@ export default function PulseSidebar(props: Props) {
                 {(dashboard) => (
                   <AppWorkspace.SidebarItem
                     class={phoneDashboardId() === dashboard.id ? "pulse-sidebar__chip" : "pulse-sidebar__secondary"}
-                    variant="object"
                     icon="ti ti-layout-dashboard"
                     href={dashboardHref(dashboard.id)}
                     active={props.activeView === "dashboards" && props.dashboardId === dashboard.id}

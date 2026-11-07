@@ -2388,7 +2388,7 @@ html {
 
 /* The head: one 46 px row above the work area, without a line under it. It
    shows on a page with a page above it (`data-trail="up"`), unless from
-   64 rem the sidebar marks the page (see below), and from 48 to 64 rem
+   64 rem the sidebar marks the page or its ancestor (see below), and from 48 to 64 rem
    whenever the workspace has an overlay sidebar, whose button it holds. The page's own `PageTitle` replaces the head's title; the
    head then stays only for that button. A nested workspace's head never
    carries the title. */
@@ -2542,9 +2542,10 @@ html {
   flex: 1 1 auto;
 }
 
-/* The filters move as one group; on their own row they scroll sideways.
-   Both scrollers keep room for focus rings in a padding that a negative
-   margin returns, so no ring is cut and nothing moves. */
+/* The filters move as one group; on their own row they scroll sideways and,
+   like the view strip, fade at an edge that hides chips. Both scrollers keep
+   room for focus rings in a padding that a negative margin returns, so no
+   ring is cut and nothing moves. */
 .k2b-ui .k2b-app-workspace__head-filters {
   gap: 0.375rem;
   overflow: auto hidden;
@@ -2557,8 +2558,11 @@ html {
   padding: 0.25rem;
 }
 
-.k2b-ui .k2b-app-workspace__head-filters {
-  scroll-padding-inline: 0.25rem;
+/* A chip-row fade reaches past the focus padding into the cut chip, and a
+   chip focused by keyboard scrolls clear of it. */
+.k2b-ui .k2b-app-workspace__head-filters[data-scroll-fade-mode] {
+  --scroll-fade-size: 1.5rem;
+  scroll-padding-inline: var(--scroll-fade-size);
 }
 
 .k2b-ui .k2b-app-workspace__head-filters::-webkit-scrollbar {
@@ -2793,19 +2797,21 @@ html {
 }
 
 @container k2b-app-area (min-width: 64rem) {
-  /* A sidebar that marks the current page already names it, so the head
-     shows neither the title nor the way up beside it; Alt+Up still goes up.
+  /* A sidebar that marks the current page, or the item a deeper page belongs
+     to (`active="ancestor"`), already names the place and links the way up,
+     so the head shows neither the title nor the way up beside it; Alt+Up
+     still goes up.
      On a page without its own `h1` the head's heading stays for assistive
      technology. A collapsed sidebar shows no names and keeps the head. */
   .k2b-ui
     .k2b-app-workspace:not([data-sidebar-collapsed="true"])
     > :is(
       .k2b-app-workspace__head:has(
-          ~ .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
-          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
+          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
         ),
-      .k2b-app-workspace__sidebar:not([hidden]):has([aria-current="page"]) ~ .k2b-app-workspace__head,
-      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]) ~ .k2b-app-workspace__head
+      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
+      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
     )[data-trail="up"] {
     position: absolute;
     width: 1px;
@@ -2822,11 +2828,11 @@ html {
     .k2b-app-workspace:not([data-sidebar-collapsed="true"])
     > :is(
       .k2b-app-workspace__head:has(
-          ~ .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
-          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
+          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
         ),
-      .k2b-app-workspace__sidebar:not([hidden]):has([aria-current="page"]) ~ .k2b-app-workspace__head,
-      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]) ~ .k2b-app-workspace__head
+      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
+      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
     )
     > .k2b-app-workspace__head-lead
     > .k2b-page-title {
@@ -2837,11 +2843,11 @@ html {
     .k2b-app-workspace:not([data-sidebar-collapsed="true"])
     > :is(
       .k2b-app-workspace__head:has(
-          ~ .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
-          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+          ~ .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"]),
+          ~ :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])
         ),
-      .k2b-app-workspace__sidebar:not([hidden]):has([aria-current="page"]) ~ .k2b-app-workspace__head,
-      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]) ~ .k2b-app-workspace__head
+      .k2b-app-workspace__sidebar:not([hidden]):has(:is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head,
+      :is(solid-island, solid-client):has(> .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], :where(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main)[aria-current="true"])) ~ .k2b-app-workspace__head
     ):not(:has(~ :is(.k2b-app-workspace__content, solid-island, solid-client) .k2b-app-workspace__main h1))
     > .k2b-app-workspace__head-lead
     > .k2b-app-workspace__head-heading {

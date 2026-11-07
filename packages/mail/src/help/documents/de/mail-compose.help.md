@@ -49,7 +49,7 @@ Ein Browser kann sich eine frühere Ablehnung merken und nicht erneut fragen. We
 4. Wähle erneut **E-Mail-Links einrichten**.
 :::
 
-Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausfüllen. Bevor Cloud den Entwurf erstellt, zeigt es das Postfach, in dem du Zugriff **Bearbeiten** hast, und die bestätigte Absenderidentität. Links können keine verborgene Absenderidentität wählen, keine lokalen Dateien anhängen und nicht automatisch senden. In Browsern ohne Unterstützung für Protokollhandler nutzt du **Verfassen** weiterhin normal.
+Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausfüllen. Andere Cloud-Apps öffnen dieselbe Seite, etwa um einem Kontakt zu schreiben. Hast du Zugriff **Bearbeiten** auf genau ein Postfach und hat dieses Postfach genau eine bestätigte Absenderidentität, öffnet sich der Entwurf direkt mit dieser Absenderidentität. Sonst zeigt Cloud zuerst die Postfächer, in denen du Zugriff **Bearbeiten** hast, und ihre bestätigten Absenderidentitäten und beginnt mit der zuletzt verwendeten. Ist die einzige Absenderidentität noch nicht bestätigt, nennt die Seite den Grund. Links können keine verborgene Absenderidentität wählen, keine lokalen Dateien anhängen und nicht automatisch senden. **Zurück** führt zu der Seite, auf der du den Link geöffnet hast. In Browsern ohne Unterstützung für Protokollhandler nutzt du **Verfassen** weiterhin normal.
 
 ## Markdown oder Nur Text wählen {icon="route"}
 

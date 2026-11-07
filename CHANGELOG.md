@@ -3,6 +3,30 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.67.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.66.0...cloud-v0.67.0) (2026-11-06)
+
+
+### Features
+
+* **cloud:** allow anonymous internal geo autocomplete with global limits ([#2693](https://github.com/k2b-dev/cloud/issues/2693)) ([1b79561](https://github.com/k2b-dev/cloud/commit/1b79561a0d0055dcc3944813e0e0f59b439a0bb8))
+* **cloud:** the phone web shell opens the panel full height with a draggable handle and drops the bottom dock ([#2678](https://github.com/k2b-dev/cloud/issues/2678)) ([aa0aecc](https://github.com/k2b-dev/cloud/commit/aa0aecc68f4c1eb9ba5aca35fe5e689064c77906))
+* **mail:** a compose link opens the composer directly when one mailbox and one sender leave nothing to choose ([#2705](https://github.com/k2b-dev/cloud/issues/2705)) ([0e24a35](https://github.com/k2b-dev/cloud/commit/0e24a357919db0d311d602a62c6a110cf79a7519))
+* **spaces:** add a task in the Cloud app from the field above the keyboard ([#2687](https://github.com/k2b-dev/cloud/issues/2687)) ([aae9f03](https://github.com/k2b-dev/cloud/commit/aae9f03b47f8e394daa81dca4c01f07ab2ec36ac))
+* **spaces:** change a task's status, due date, people and title in the Cloud app ([#2690](https://github.com/k2b-dev/cloud/issues/2690)) ([3073041](https://github.com/k2b-dev/cloud/commit/3073041bf32c497039ecf24207e3e00415161964))
+* **spaces:** the Cloud app switches Spaces from the title and lists a Space by status ([#2684](https://github.com/k2b-dev/cloud/issues/2684)) ([0c249ce](https://github.com/k2b-dev/cloud/commit/0c249ce4862e6e41bed7c97bf46317ca12962c66))
+* **ui:** confirm prompts can warn without being destructive ([#2691](https://github.com/k2b-dev/cloud/issues/2691)) ([336d901](https://github.com/k2b-dev/cloud/commit/336d90105d9794265caddeb09c30553419d69cdd))
+
+
+### Bug Fixes
+
+* **accounts:** reactivate returning FreeIPA guests without changing file ownership ([#2689](https://github.com/k2b-dev/cloud/issues/2689)) ([09c19c5](https://github.com/k2b-dev/cloud/commit/09c19c5ea1c389f2bb03c78aee9decd4787ace5d))
+* **chat:** a sent message shows once when its live event beats the send's answer ([#2700](https://github.com/k2b-dev/cloud/issues/2700)) ([62cdd35](https://github.com/k2b-dev/cloud/commit/62cdd354afb738738a0f24dc4aa32bc7148e64c1))
+* **cloud:** the access dialog marks you in every app and the public link warns and copies as in the mockup ([#2696](https://github.com/k2b-dev/cloud/issues/2696)) ([07b86b1](https://github.com/k2b-dev/cloud/commit/07b86b147996216b59a1edf676409e6025585f5e))
+* **cloud:** the access dialog shows every state of the approved mockup and Remove is red ([#2681](https://github.com/k2b-dev/cloud/issues/2681)) ([9b92493](https://github.com/k2b-dev/cloud/commit/9b92493a958e8ca727d25a4e314b0b1a4b667f58))
+* **pulse:** panels with DB-IP country data show the DB-IP link ([#2708](https://github.com/k2b-dev/cloud/issues/2708)) ([df09ed1](https://github.com/k2b-dev/cloud/commit/df09ed1b940fb3cab07e6b5ce98b2c8d3b52d349))
+* **ui:** detail pages drop the back row beside a sidebar that marks their ancestor ([#2710](https://github.com/k2b-dev/cloud/issues/2710)) ([3e34b52](https://github.com/k2b-dev/cloud/commit/3e34b524c7480df735a207f95cc1789797a7d641))
+* **ui:** pad committed NumberInput values to their decimal precision ([#2679](https://github.com/k2b-dev/cloud/issues/2679)) ([1c03ca4](https://github.com/k2b-dev/cloud/commit/1c03ca4fb483378a54b3287b2371330f303d73d5))
+
 ## [0.66.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.65.0...cloud-v0.66.0) (2026-11-05)
 
 

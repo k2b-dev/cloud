@@ -9,6 +9,7 @@ import { renderToString } from "solid-js/web";
 import {
   dateKey,
   displayDate,
+  draftDateTimeValue,
   filterTimeInput,
   formatDateOnlyRangeDuration,
   isCompleteTime,
@@ -55,6 +56,16 @@ describe("@k2b/ui complete date picker migration", () => {
 
     expect(instant).toBe("2026-07-27T12:30:00.000Z");
     expect(splitDateTime(instant, context)).toEqual({ date: "2026-07-27", time: "14:30" });
+  });
+
+  test("an untouched draft keeps its exact instant, also in the hour a DST change repeats", () => {
+    const context = { timeZone: "Europe/Berlin", locale: "en" };
+    // 01:30 UTC on 25 Oct 2026 is the second 02:30 in Berlin; rebuilding that wall time picks the first (00:30 UTC).
+    const repeated = "2026-10-25T01:30:00.000Z";
+    expect(draftDateTimeValue(repeated, "2026-10-25", "02:30", context)).toBe(repeated);
+    expect(draftDateTimeValue("2026-07-27T12:30:15.000Z", "2026-07-27", "14:30", context)).toBe("2026-07-27T12:30:15.000Z");
+    expect(draftDateTimeValue(repeated, "2026-10-25", "03:30", context)).toBe("2026-10-25T02:30:00.000Z");
+    expect(draftDateTimeValue(null, "2026-07-27", "14:30", context)).toBe("2026-07-27T12:30:00.000Z");
   });
 
   test("keeps date-only labels on their calendar day", () => {

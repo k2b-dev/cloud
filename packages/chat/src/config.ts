@@ -18,7 +18,7 @@ export const app = defineApp({
     baseLocale: "en",
     translations: { de: { panelLabel: "Chat", description: "Chats und Kanäle für die Zusammenarbeit." } },
   },
-  appearance: { accent: "#7c3aed", background: { from: "#8b5cf6", to: "#d946ef", angle: 135 } },
+  appearance: { accent: "#7c3aed", background: { from: "#8b5cf6", to: "#a855f7", angle: 135 } },
   basePath: "/app/chat",
   baseUrl: "http://app-chat:3000",
   adminHref: "/admin/chat",
