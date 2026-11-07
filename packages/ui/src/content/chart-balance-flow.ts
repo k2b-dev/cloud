@@ -38,12 +38,18 @@ export function mountBalanceFlow(
   if (!chart || root.hasAttribute("data-balance-mounted")) return () => {};
   root.setAttribute("data-balance-mounted", "");
   const locale = root.dataset.locale ?? options.locale ?? "en";
-  const svgHost = chart.querySelector<HTMLElement>(".k2b-chart__svg")!;
-  const templates = Array.from(root.querySelectorAll<HTMLTemplateElement>("template[data-balance-template]"));
+  const viewport = root.querySelector<HTMLElement>("[data-balance-scroll]")!;
+  const months = Array.from(root.querySelectorAll<HTMLElement>("[data-balance-month]"));
   let period = Number(root.dataset.period) || 0;
-  const animations = new Set<Animation>();
+  let animation: Animation | undefined;
   const inspection = inspectChart(chart, {
     kind: "balanceFlow",
+    nav: {
+      last: true,
+      pointer: false,
+      keepScroll: true,
+      reveal: (element) => element.scrollIntoView({ block: "nearest", inline: "nearest" }),
+    },
     locale,
     format: options.tooltip ?? (({ datum }) => balanceFlowTooltip(datum, locale)),
     select: (selection) => {
@@ -55,66 +61,95 @@ export function mountBalanceFlow(
     root.addEventListener(event, listener);
     return () => root.removeEventListener(event, listener);
   };
-  const play = (element: Element, frames: Keyframe[], duration: number) => {
-    const animation = element.animate(frames, { duration, easing: "cubic-bezier(.2,.7,.2,1)", fill: "none" });
-    animations.add(animation);
-    void animation.finished.catch(() => {}).finally(() => animations.delete(animation));
-  };
-  const move = (delta: number) => {
-    const next = period + delta,
-      template = templates[next];
-    if (!template || !["data", "stale"].includes(root.dataset.state ?? "data")) return;
-    inspection.close();
-    for (const a of animations) a.cancel();
-    const oldNode = chart.querySelector<SVGGraphicsElement>(`[data-balance-key="${delta > 0 ? "closing" : "opening"}"]`);
-    const oldBox = oldNode?.getBoundingClientRect();
+  const update = (next: number) => {
     period = next;
     root.dataset.period = String(period);
     options.periodChange?.(period);
-    svgHost.innerHTML = template.content.querySelector("[data-balance-diagram]")!.innerHTML;
-    root.querySelector("[data-balance-table]")!.innerHTML = template.content.querySelector("[data-balance-table-template]")!.innerHTML;
-    root.querySelector("[data-balance-phone]")!.innerHTML = template.content.querySelector("[data-balance-phone-template]")!.innerHTML;
-    root.querySelector("[data-balance-label]")!.textContent = template.dataset.label ?? "";
-    root.querySelector("[data-balance-summary]")!.textContent = template.dataset.summary ?? "";
-    chart.setAttribute("aria-label", template.dataset.summary ?? "");
+    root.querySelector("[data-balance-label]")!.textContent = months[period]?.dataset.label ?? "";
+    root.querySelector("[data-balance-summary]")!.textContent = months[period]?.dataset.summary ?? "";
+    for (const list of root.querySelectorAll<HTMLElement>("[data-balance-phone-period]"))
+      list.hidden = Number(list.dataset.balancePhonePeriod) !== period;
     for (const button of root.querySelectorAll<HTMLButtonElement>("[data-balance-step]"))
-      button.disabled = Number(button.dataset.balanceStep) < 0 ? period === 0 : period === templates.length - 1;
-    selectBalanceFlowDatum(root, null);
-    inspection.invalidate();
+      button.disabled = Number(button.dataset.balanceStep) < 0 ? period === 0 : period === months.length - 1;
+  };
+  const targetScroll = (index: number) =>
+    Math.max(
+      viewport.clientWidth - viewport.scrollWidth,
+      Math.min(0, viewport.scrollLeft + months[index]!.getBoundingClientRect().right - viewport.getBoundingClientRect().right),
+    );
+  const scrolled = () => {
+    if (!months.length || animation) return;
+    const nearest = months.reduce(
+      (best, _, i) => (Math.abs(targetScroll(i) - viewport.scrollLeft) < Math.abs(targetScroll(best) - viewport.scrollLeft) ? i : best),
+      0,
+    );
+    if (nearest !== period) update(nearest);
+  };
+  const cancelMotion = () => {
+    const previous = animation;
+    animation = undefined;
+    previous?.cancel();
+    viewport.style.removeProperty("scroll-snap-type");
+    root.removeAttribute("data-balance-scrolling");
+  };
+  const move = (delta: number) => {
+    const next = period + delta,
+      month = months[next];
+    if (!month || !["data", "stale"].includes(root.dataset.state ?? "data")) return;
+    inspection.close();
+    cancelMotion();
+    update(next);
+    if (root.dataset.view === "table") {
+      const tables = root.querySelectorAll<HTMLTableElement>("[data-balance-table] table");
+      const tableHost = root.querySelector<HTMLElement>("[data-balance-table]")!;
+      tableHost.scrollTop = tables[next]!.offsetTop - tableHost.offsetTop;
+      return;
+    }
+    const from = viewport.scrollLeft,
+      to = targetScroll(next);
     const timing = getComputedStyle(root).getPropertyValue("--k2b-motion-base").trim() || "180ms";
     const duration = Number.parseFloat(timing) * (timing.endsWith("ms") ? 1 : 1000);
-    if (!prefersReducedMotion() && duration > 0 && root.dataset.view !== "table") {
-      const incoming = chart.querySelector<SVGGraphicsElement>(`[data-balance-key="${delta > 0 ? "opening" : "closing"}"]`);
-      if (incoming && oldBox) {
-        const box = incoming.getBoundingClientRect(),
-          matrix = incoming.getScreenCTM();
-        if (matrix && box.width && box.height) {
-          // The same balance bar travels from the previous closing position to the new opening position.
-          play(
-            incoming,
-            [
-              {
-                transform: `translate(${(oldBox.x - box.x) / matrix.a}px,${(oldBox.y - box.y) / matrix.d}px) scaleY(${oldBox.height / box.height})`,
-                transformOrigin: `${incoming.getAttribute("x")}px ${incoming.getAttribute("y")}px`,
-              },
-              { transform: "none" },
-            ],
-            duration,
-          );
-        }
-      }
-      const bands = chart.querySelectorAll(".k2b-balance-flow-band");
-      for (const band of bands)
-        play(
-          band,
-          [
-            { opacity: 0.45, transform: `translateX(${delta * 16}px)` },
-            { opacity: 1, transform: "none" },
-          ],
-          duration,
-        );
+    if (prefersReducedMotion() || duration <= 0) {
+      viewport.scrollLeft = to;
+      return;
     }
+    // Animate the scroll itself, so the joined band never disappears or changes shape.
+    root.setAttribute("data-balance-scrolling", "");
+    viewport.style.scrollSnapType = "none";
+    animation = viewport.animate([{ opacity: 1 }, { opacity: 1 }], { duration });
+    const running = animation;
+    const tick = () => {
+      if (running.playState !== "running") return;
+      const fraction = Math.min(1, Number(running.currentTime ?? 0) / duration);
+      const eased = fraction * fraction * (3 - 2 * fraction);
+      viewport.scrollLeft = from + (to - from) * eased;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    void running.finished
+      .catch(() => {})
+      .finally(() => {
+        if (animation !== running) return;
+        viewport.scrollLeft = to;
+        viewport.style.removeProperty("scroll-snap-type");
+        animation = undefined;
+        root.removeAttribute("data-balance-scrolling");
+        update(next);
+      });
   };
+  viewport.addEventListener("scroll", scrolled, { passive: true });
+  const interrupt = () => {
+    cancelMotion();
+    inspection.close();
+  };
+  viewport.addEventListener("pointerdown", interrupt, { passive: true });
+  viewport.addEventListener("wheel", interrupt, { passive: true });
+  // Redraws retain the selected month. A first mount remains at CSS's newest origin.
+  const remembered = Number(root.dataset.balanceRestore);
+  if (Number.isInteger(remembered) && root.hasAttribute("data-balance-restore") && months[remembered]) {
+    viewport.scrollLeft = targetScroll(remembered);
+    update(remembered);
+  }
   const cleanups = [
     listen("click", (event) => {
       const target = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
@@ -125,6 +160,7 @@ export function mountBalanceFlow(
         const table = target.dataset.balanceView === "table";
         root.dataset.view = table ? "table" : "chart";
         chart.hidden = table;
+        if (!table) move(0);
         root.querySelector<HTMLElement>("[data-balance-phone]")!.hidden = table;
         root.querySelector<HTMLElement>("[data-balance-table]")!.hidden = !table;
         options.viewChange?.(table ? "table" : "chart");
@@ -145,7 +181,10 @@ export function mountBalanceFlow(
   return () => {
     root.removeEventListener("keydown", key, true);
     cleanups.forEach((fn) => fn());
-    for (const a of animations) a.cancel();
+    cancelMotion();
+    viewport.removeEventListener("scroll", scrolled);
+    viewport.removeEventListener("pointerdown", interrupt);
+    viewport.removeEventListener("wheel", interrupt);
     inspection.destroy();
     root.removeAttribute("data-balance-mounted");
   };

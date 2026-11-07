@@ -44,8 +44,8 @@ export async function balanceFlowPage() {
   const bundle = await build.outputs[0]!.text(),
     css = await Bun.file(resolve(root, "dist/styles.css")).text();
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}
-    body{margin:0;padding:20px;background:var(--k2b-surface-canvas,#fafafa);color:var(--k2b-text,#27272a);font-family:system-ui}main{max-width:1040px;margin:auto}article{padding:20px;border:1px solid var(--k2b-border,#e4e4e7);border-radius:14px;background:var(--k2b-surface,#fff)}h1{font-size:22px;margin:0 0 8px}.intro{margin:0 0 24px;color:var(--k2b-text-muted,#71717a)}.states{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}.states button{padding:8px}#standalone{margin-top:30px}
-    </style></head><body class="k2b-ui"><main><h1>Liquidity · Marketplace</h1><p class="intro">Invented marketplace data. Each month's closing carries into the next.</p><article><div id="mount">${server}</div></article><div class="states">${["data", "loading", "empty", "error", "stale"].map((s) => `<button data-state-button="${s}">${s}</button>`).join("")}</div></main></body></html>`;
+    body{margin:0;padding:20px;background:var(--k2b-surface-canvas,#fafafa);color:var(--k2b-text,#27272a);font-family:system-ui}main{max-width:1240px;margin:auto}article{padding:20px;border:1px solid var(--k2b-border,#e4e4e7);border-radius:14px;background:var(--k2b-surface,#fff)}h1{font-size:22px;margin:0 0 8px}.intro{margin:0 0 24px;color:var(--k2b-text-muted,#71717a)}.states{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}.states button{padding:8px}#standalone{margin-top:30px}
+    </style></head><body class="k2b-ui"><main><h1>Liquidity · Marketplace</h1><p class="intro">Invented marketplace data. Each closing balance continues into the next month. Scroll horizontally for earlier months.</p><article><div id="mount">${server}</div></article><div class="states">${["data", "loading", "empty", "error", "stale"].map((s) => `<button data-state-button="${s}">${s}</button>`).join("")}</div></main></body></html>`;
 
   return { html, bundle };
 }

@@ -85,7 +85,7 @@ export function prepareChartSnapshot(
   return {
     kind: options.kind,
     svg: formattedSvg,
-    width,
+    width: options.kind === "balanceFlow" ? width * Math.max(1, options.periods.length) : width,
     height,
     ...(calendar ? { minWidth: calendar.minWidth } : {}),
     stretch: !calendar && !["map", "pie", "donut", "gauge", "balanceFlow"].includes(options.kind),

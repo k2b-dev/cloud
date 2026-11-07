@@ -33,14 +33,9 @@ export function ChartBalanceFlow(props: BalanceFlowUiProps): JSX.Element {
     "style",
   ]);
   let host: HTMLDivElement | undefined;
-  let initialPeriod = props.period;
-  let currentPeriod = initialPeriod ?? 0;
+  let currentPeriod = Math.max(0, props.periods.length - 1);
   let currentView = props.view ?? "chart";
   const markup = createMemo(() => {
-    if (props.period !== initialPeriod) {
-      initialPeriod = props.period;
-      currentPeriod = initialPeriod ?? 0;
-    }
     return selectedChartSvg(
       renderBalanceFlowHtml(
         { ...drawing, period: currentPeriod, locale: props.locale ?? locale() },
@@ -55,10 +50,13 @@ export function ChartBalanceFlow(props: BalanceFlowUiProps): JSX.Element {
   });
   let mounted = false,
     cleanup: (() => void) | undefined;
+  let enhanced = false;
   const enhance = () => {
     cleanup?.();
     const root = host?.querySelector<HTMLElement>("[data-balance-flow]");
-    if (root)
+    if (root) {
+      if (enhanced) root.dataset.balanceRestore = String(currentPeriod);
+      enhanced = true;
       cleanup = mountBalanceFlow(root, {
         locale: props.locale ?? locale(),
         select: props.onSelect,
@@ -72,6 +70,7 @@ export function ChartBalanceFlow(props: BalanceFlowUiProps): JSX.Element {
           currentPeriod = index;
         },
       });
+    }
   };
   createEffect(() => {
     markup();

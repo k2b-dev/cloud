@@ -392,7 +392,6 @@ export function chartRenderOptions(
       return {
         kind: "balanceFlow",
         periods: input.periods,
-        period: input.period,
         currency: input.currency,
         format: input.tooltip?.format ? format.value : options.formats?.value,
         valueLabel: input.tooltip?.label,

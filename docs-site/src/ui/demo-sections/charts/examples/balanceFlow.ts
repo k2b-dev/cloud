@@ -7,7 +7,7 @@ export const balanceFlowExamples = [
     question: "flow",
     title: "A closing balance becomes next month's opening",
     summary:
-      "Follow fictional marketplace settlements through three months. Every euro reconciles; the closing balance carries into the next opening.",
+      "Follow fictional marketplace settlements through four months. Every euro reconciles; the closing balance carries into the next opening.",
     spec: {
       kind: "balanceFlow",
       title: "Marketplace settlements",
@@ -48,6 +48,16 @@ export const balanceFlowExamples = [
           ],
           closing: 3000,
         },
+        {
+          label: "January 2027",
+          opening: 3000,
+          inflows: [{ label: "Marketplace orders", value: 6800 }],
+          outflows: [
+            { label: "Marketplace fees", value: 800 },
+            { label: "Payouts", value: 7000 },
+          ],
+          closing: 2000,
+        },
       ],
     },
     height: 540,
@@ -58,9 +68,9 @@ export const balanceFlowExamples = [
     ],
     avoidFor: ["Unreconciled or missing balances.", "Unrelated measures or conversions between currencies."],
     a11y: [
-      "Left/right arrows or Previous/Next change one period. Up/down inspect amounts; Enter pins, Escape dismisses.",
+      "Left/right arrows or Previous/Next scroll one period. Up/down inspect amounts; Enter pins, Escape dismisses.",
       "The period summary reads opening, inflows, outflows and closing. The table and phone rows retain every complete name and amount.",
-      "The blue closing bar moves to the next opening position; reduced motion removes the movement.",
+      "The closing band continues into the next opening at the bottom. Reduced motion removes animated scrolling.",
     ],
     options: [
       {
@@ -74,7 +84,6 @@ export const balanceFlowExamples = [
         type: "ISO 4217 string",
         description: "One currency for every amount, formatted without a sign. Negative balances explicitly say owed.",
       },
-      { name: "period", type: "number", description: "Initial zero-based period; defaults to 0 on server and browser." },
       { name: "locale", type: "BCP 47 string", description: "Optional override of the inherited UI locale." },
     ],
   },

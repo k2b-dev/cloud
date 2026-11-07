@@ -457,13 +457,15 @@ for (const width of [1200, 390])
       await app(page).locator("[data-balance-mounted]").waitFor();
       await settled(page);
       expect(await boxes(page)).toEqual(loading);
+      expect(await app(page).locator("[data-balance-label]").textContent()).toBe("November");
+      await app(page).locator('[data-balance-step="-1"]').click();
+      await settled(page);
       await app(page).locator('[data-balance-step="1"]').click();
       await settled(page);
-      expect(await app(page).locator("[data-balance-label]").textContent()).toBe("November");
       expect(await app(page).locator('[data-balance-step="1"]').isDisabled()).toBe(true);
       expect(
         await app(page)
-          .locator('[data-balance-key="opening"]')
+          .locator('[data-balance-period="1"] [data-balance-key="opening"]')
           .evaluate((e) => getComputedStyle(e).fill),
       ).not.toBe("rgb(0, 0, 0)");
       await app(page).locator('[data-balance-view="table"]').click();

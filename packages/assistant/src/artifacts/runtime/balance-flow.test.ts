@@ -20,7 +20,7 @@ const spec = {
 test("cloud.chart draws every period offline with complete currency values and no unrelated palette", async () => {
   const markup = String(chart(spec, "en"));
   expect(markup).toContain("data-balance-flow");
-  expect(markup).toContain('data-balance-template="1"');
+  expect(markup).toContain('data-balance-month="1"');
   expect(markup).toContain("25,00 €");
   expect(markup.match(/<h3[^>]*>Marketplace settlements<\/h3>/g)).toHaveLength(1);
   expect(markup).not.toMatch(/textLength|--[^,;)\s]*(?:green|red|success|danger)/);

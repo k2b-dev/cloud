@@ -143,7 +143,6 @@ const flatChartSchema = () => {
       .regex(/^[A-Z]{3}$/)
       .optional()
       .describe("balanceFlow: ISO 4217 currency."),
-    period: z.number().int().min(0).optional().describe("balanceFlow: initial period, zero based."),
     nodes: z
       .array(
         z.object({

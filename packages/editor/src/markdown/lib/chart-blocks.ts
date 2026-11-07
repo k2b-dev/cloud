@@ -222,7 +222,6 @@ const parseChart = (
       periods,
       currency: string("currency"),
       locale: string("locale"),
-      ...(top.has("period") ? { period: parseScalar(top.get("period")!.value) } : {}),
     });
     if (!parsed.success)
       for (const issue of parsed.error.issues) {
@@ -516,7 +515,6 @@ export const chartBlockFrame = (body: string[], options: Pick<MarkdownChartOptio
         periods,
         currency: parseScalar(entries.get("currency") ?? ""),
         ...(entries.has("locale") ? { locale: parseScalar(entries.get("locale")!) } : {}),
-        ...(entries.has("period") ? { period: parseScalar(entries.get("period")!) } : {}),
       });
       if (!parsed.success || parsed.data.kind !== "balanceFlow") return null;
       return { kind: type, title, subtitle, balanceFlow: parsed.data };

@@ -3,58 +3,83 @@ import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { balanceFlowPage, balanceFlowSpec as spec } from "../../test/charts/balance-flow-page";
 import { renderBalanceFlowSvg } from "./core/balance-flow";
 
-test("BalanceFlow SSR, continuity, inspection, phone rows and real state boxes", async () => {
+test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspection and real state boxes", async () => {
   const { html, bundle } = await balanceFlowPage();
   const browser = await launchBrowser();
   try {
     for (const width of [1440, 390]) {
-      const page = await browser.newPage({ viewport: { width, height: 1000 }, hasTouch: true });
+      const page = await browser.newPage({ viewport: { width, height: 1100 }, hasTouch: true });
       try {
         const errors = pageErrors(page);
         await page.setContent(html);
         await settled(page);
-        const svg = page.locator("#mount .k2b-chart__svg > svg"),
-          frame = page.locator("#mount [data-balance-flow]");
-        const before = await svg.evaluate((e) => e.outerHTML);
+        const frame = page.locator("#mount [data-balance-flow]"),
+          chart = frame.locator(".k2b-chart"),
+          svg = chart.locator(".k2b-chart__svg > svg"),
+          viewport = frame.locator("[data-balance-scroll]");
         const documentBox = (element: Element) => {
           const b = element.getBoundingClientRect();
           return { x: b.x + window.scrollX, y: b.y + window.scrollY, width: b.width, height: b.height };
         };
-        const box = await frame.evaluate(documentBox);
+        const before = await svg.evaluate((e) => e.outerHTML),
+          box = await frame.evaluate(documentBox);
+        const newestRight = await frame.locator('[data-balance-month="3"]').evaluate((e) => e.getBoundingClientRect().right);
+        expect(newestRight).toBe(await viewport.evaluate((e) => e.getBoundingClientRect().right));
+        expect(await viewport.evaluate((e) => e.scrollLeft)).toBe(0);
         await page.locator("#mount").evaluate((e) => e.replaceChildren());
         await page.addScriptTag({ content: bundle });
         await settled(page);
         expect(await svg.evaluate((e) => e.outerHTML)).toBe(before);
         expect(await frame.evaluate(documentBox)).toEqual(box);
-        expect(await frame.locator('[data-balance-step="-1"]').isDisabled()).toBe(true);
-        const chart = frame.locator(".k2b-chart");
-        if (width === 1440) {
-          const band = chart.locator(".k2b-balance-flow-band").first();
-          const opacity = await band.evaluate((e) => getComputedStyle(e).fillOpacity);
-          await chart.locator('[data-balance-key="in-0"]').hover();
-          await settled(page);
-          expect(await chart.locator('[role="tooltip"]').textContent()).toContain("Marketplace orders");
-          expect(await band.evaluate((e) => getComputedStyle(e).fillOpacity)).toBe(opacity);
-          for (const name of ["Refunds", "Shipping labels"]) {
-            const caption = chart.locator(".k2b-balance-flow-caption text").filter({ hasText: name }).first();
-            expect(await caption.isVisible()).toBe(true);
-          }
-          expect(await chart.locator(".k2b-balance-flow-caption").count()).toBe(await chart.locator("[data-balance-key]").count());
-          expect(await frame.evaluate(documentBox)).toEqual(box);
-          await page.mouse.move(1, 1);
-          await settled(page);
+        expect(await viewport.evaluate((e) => e.scrollLeft)).toBe(0);
+        expect(await frame.getAttribute("data-period")).toBe("3");
+        expect(await frame.locator('[data-balance-step="1"]').isDisabled()).toBe(true);
+        expect(await chart.locator("[data-balance-period]").count()).toBe(4);
+        for (let period = 0; period < 3; period++) {
+          const closing = await chart.locator(`[data-balance-period="${period}"] [data-balance-key="closing"]`).boundingBox();
+          const opening = await chart.locator(`[data-balance-period="${period + 1}"] [data-balance-key="opening"]`).boundingBox();
+          expect(closing!.x + closing!.width).toBeCloseTo(opening!.x, 2);
+          expect(closing!.y).toBeCloseTo(opening!.y, 2);
+          expect(closing!.height).toBeCloseTo(opening!.height, 2);
         }
-        await chart.focus();
-        await page.keyboard.press("Home");
-        await settled(page);
-        expect(await chart.locator("[data-inspected]").count()).toBe(1);
+        for (const period of [0, 3]) {
+          const anchor = await chart.locator(`[data-balance-period="${period}"] [data-balance-key="closing"]`).evaluate((e) => {
+            const mark = e.closest<SVGGraphicsElement>("[data-chart-datum]")!;
+            const datum = JSON.parse(mark.getAttribute("data-chart-datum")!);
+            const point = new DOMPoint(datum.anchor[0], datum.anchor[1]).matrixTransform(mark.getScreenCTM()!);
+            const b = e.getBoundingClientRect();
+            return { x: point.x, y: point.y, cx: b.x + b.width / 2, cy: b.y + b.height / 2 };
+          });
+          expect(anchor.x).toBeCloseTo(anchor.cx, 2);
+          expect(anchor.y).toBeCloseTo(anchor.cy, 2);
+        }
         const opacity = await chart
           .locator(".k2b-balance-flow-band")
           .first()
           .evaluate((e) => getComputedStyle(e).fillOpacity);
-        await page.keyboard.press("ArrowDown");
-        await page.keyboard.press("Enter");
+        await frame.evaluate((e) => e.style.setProperty("--k2b-motion-base", "0.24s"));
+        // settled: inspect the running scroll duration in the frame that starts it.
+        const timing = await frame.evaluate((e) => {
+          e.querySelector<HTMLButtonElement>('[data-balance-step="-1"]')!.click();
+          return e.querySelector("[data-balance-scroll]")!.getAnimations()[0]?.effect?.getTiming().duration;
+        });
+        expect(timing).toBe(240);
         await settled(page);
+        expect(await frame.getAttribute("data-period")).toBe("2");
+        expect(await viewport.evaluate((e) => e.scrollLeft)).toBeLessThan(0);
+        expect(await svg.evaluate((e) => e.outerHTML)).toBe(before);
+        expect(await frame.evaluate(documentBox)).toEqual(box);
+        // Real trackpad/swipe-equivalent scroll, without replacing any drawing.
+        await viewport.evaluate((e) => (e.scrollLeft = -e.scrollWidth));
+        await settled(page);
+        expect(await frame.getAttribute("data-period")).toBe("0");
+        expect(await frame.locator('[data-balance-step="-1"]').isDisabled()).toBe(true);
+        const oldScroll = await viewport.evaluate((e) => e.scrollLeft);
+        const mark = chart.locator('[data-balance-period="0"] [data-balance-key="in-0"]');
+        await mark.tap();
+        await settled(page);
+        expect(await viewport.evaluate((e) => e.scrollLeft)).toBe(oldScroll);
+        expect(await chart.locator('[role="tooltip"]').innerText()).toContain("Marketplace orders");
         expect(await chart.locator("[data-selected] > rect").evaluate((e) => getComputedStyle(e).strokeWidth)).toBe("2.5px");
         expect(
           await chart
@@ -62,78 +87,61 @@ test("BalanceFlow SSR, continuity, inspection, phone rows and real state boxes",
             .first()
             .evaluate((e) => getComputedStyle(e).fillOpacity),
         ).toBe(opacity);
-        await page.keyboard.press("Escape");
+        if (width === 1440) {
+          await mark.hover();
+          await settled(page);
+          expect(
+            await chart
+              .locator(".k2b-balance-flow-band")
+              .first()
+              .evaluate((e) => getComputedStyle(e).fillOpacity),
+          ).toBe(opacity);
+          for (const name of ["Refunds", "Shipping labels"])
+            expect(
+              await chart.locator('[data-balance-period="0"] .k2b-balance-flow-caption text').filter({ hasText: name }).isVisible(),
+            ).toBe(true);
+        } else {
+          expect(await frame.locator("[data-balance-phone]").innerText()).toContain("Shipping labels");
+          expect(await frame.locator(".k2b-balance-flow-caption").first().isVisible()).toBe(false);
+          expect(await page.locator("html").evaluate((e) => e.scrollWidth)).toBe(width);
+        }
+        await chart.focus();
+        await page.keyboard.press("End");
         await settled(page);
-        const old = await chart.locator('[data-balance-key="closing"]').evaluate((e) => ({
-          fill: getComputedStyle(e).fill,
-          value: JSON.parse(e.parentElement!.getAttribute("data-chart-datum")!).values.find((v: { key: string }) => v.key === "value")
-            .value,
-        }));
-        await frame.evaluate((e) => e.style.setProperty("--k2b-motion-base", "0.24s"));
+        expect(await frame.getAttribute("data-period")).toBe("3");
+        expect(await chart.locator("[data-inspected]").count()).toBe(1);
+        await page.keyboard.press("Home");
         await settled(page);
-        // settled: Observe the running continuity animation in the same frame as the navigation key.
-        const continuity = await chart.evaluate((e) => {
-          e.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
-          const rect = e.querySelector('[data-balance-key="opening"]');
-          return {
-            running: rect
-              ?.getAnimations()
-              .some((a) => (a.effect as KeyframeEffect).getKeyframes().some((k) => String(k.transform).includes("translate"))),
-            duration: rect?.getAnimations()[0]?.effect?.getTiming().duration,
-          };
-        });
-        expect(continuity.running).toBe(true);
-        expect(continuity.duration).toBe(240);
-        await settled(page);
-        expect(await frame.getAttribute("data-period")).toBe("1");
-        const opening = chart.locator('[data-balance-key="opening"]');
-        expect(await opening.evaluate((e) => getComputedStyle(e).fill)).toBe(old.fill);
-        expect(
-          await opening.evaluate(
-            (e) =>
-              JSON.parse(e.parentElement!.getAttribute("data-chart-datum")!).values.find((v: { key: string }) => v.key === "value").value,
-          ),
-        ).toBe(old.value);
-        await page.evaluate(() =>
-          Promise.all(
-            document
-              .getAnimations()
-              .filter((a) => a.timeline === document.timeline)
-              .map((a) => a.finished.catch(() => {})),
-          ),
-        );
-        await settled(page);
-        expect(await frame.evaluate(documentBox)).toEqual(box);
-        await page.emulateMedia({ reducedMotion: "reduce" });
-        await frame.locator('[data-balance-step="1"]').click();
-        await settled(page);
-        expect(await frame.getAttribute("data-period")).toBe("2");
-        expect(await frame.locator('[data-balance-step="1"]').isDisabled()).toBe(true);
-        expect(await page.evaluate(() => document.getAnimations().filter((a) => a.timeline === document.timeline).length)).toBe(0);
-        await page.emulateMedia({ reducedMotion: "no-preference" });
-        await page.locator("html").evaluate((e) => (e.dataset.k2bMotion = "reduced"));
-        await frame.locator('[data-balance-step="-1"]').click();
-        await settled(page);
-        expect(await page.evaluate(() => document.getAnimations().filter((a) => a.timeline === document.timeline).length)).toBe(0);
-        await page.locator("html").evaluate((e) => delete e.dataset.k2bMotion);
-        const mark = chart.locator('[data-balance-key="opening"]');
-        await mark.tap();
+        expect(await frame.getAttribute("data-period")).toBe("0");
+        await page.keyboard.press("ArrowDown");
+        await page.keyboard.press("Enter");
         await settled(page);
         expect(await chart.locator("[data-inspected]").count()).toBe(1);
-        expect(await chart.locator('[role="tooltip"]').textContent()).toContain("€2,000.00");
-        if (width === 390) {
-          expect(await frame.locator("[data-balance-phone]").innerText()).toContain("Marketplace orders");
-          expect(await frame.locator(".k2b-balance-flow-caption").first().isVisible()).toBe(false);
-          expect(await frame.evaluate((e) => e.scrollWidth)).toBeLessThanOrEqual(Math.ceil(box!.width));
-        } else {
-          const caption = frame.locator(".k2b-balance-flow-caption").last();
-          const labelBox = await caption.boundingBox();
-          expect(labelBox!.x + labelBox!.width).toBeLessThanOrEqual(box!.x + box!.width + 1);
-        }
+        await page.keyboard.press("Escape");
+        await settled(page);
+        await page.locator("html").evaluate((e) => (e.dataset.k2bMotion = "reduced"));
+        // settled: an immediate read proves host reduced-motion makes navigation synchronous.
+        const reduced = await chart.evaluate((e) => {
+          e.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+          return {
+            moving: e.closest("[data-balance-flow]")!.hasAttribute("data-balance-scrolling"),
+            scroll: e.querySelector("[data-balance-scroll]")!.scrollLeft,
+          };
+        });
+        expect(reduced.moving).toBe(false);
+        await settled(page);
+        expect(await frame.getAttribute("data-period")).toBe("1");
+        await page.locator("html").evaluate((e) => delete e.dataset.k2bMotion);
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.keyboard.press("ArrowRight");
+        await settled(page);
+        expect(await frame.getAttribute("data-period")).toBe("2");
+        expect(await frame.getAttribute("data-balance-scrolling")).toBeNull();
+        await page.emulateMedia({ reducedMotion: "no-preference" });
         await frame.locator('[data-balance-view="table"]').click();
         await settled(page);
-        expect(await frame.locator("[data-balance-table]").isVisible()).toBe(true);
-        expect(await frame.locator("[data-balance-table]").innerText()).toContain("↗ €6,500.00");
+        expect(await frame.locator("[data-balance-table] table").count()).toBe(4);
+        expect(await frame.locator("[data-balance-table]").innerText()).toContain("January 2027");
         expect(await frame.evaluate(documentBox)).toEqual(box);
         for (const state of ["loading", "empty", "error", "stale", "data"]) {
           await page.locator(`[data-state-button="${state}"]`).click();
@@ -146,31 +154,29 @@ test("BalanceFlow SSR, continuity, inspection, phone rows and real state boxes",
             expect(await frame.getAttribute("data-state")).toBe("data");
           }
         }
-        // A redraw remounts navigation after its new HTML is inserted, retaining the current period.
-        await frame.locator('[data-balance-step="-1"]').click();
-        await settled(page);
-        expect(await frame.getAttribute("data-period")).toBe("0");
         await frame.locator('[data-balance-view="chart"]').click();
         await settled(page);
-        const text = chart.locator(".k2b-balance-flow-caption").first();
-        const light = await text.evaluate((e) => getComputedStyle(e).fill);
-        const balanceLight = await chart.locator('[data-balance-key="opening"]').evaluate((e) => getComputedStyle(e).fill);
+        const balance = chart.locator('[data-balance-period="3"] [data-balance-key="opening"]');
+        const light = await balance.evaluate((e) => getComputedStyle(e).fill);
         await page.locator("body").evaluate((e) => (e.dataset.theme = "dark"));
         await settled(page);
-        expect(await text.evaluate((e) => getComputedStyle(e).fill)).not.toBe(light);
-        expect(await chart.locator('[data-balance-key="opening"]').evaluate((e) => getComputedStyle(e).fill)).not.toBe(balanceLight);
-        expect(await chart.locator('[data-balance-key="opening"]').evaluate((e) => getComputedStyle(e).fill)).toBe(
-          await chart.locator('[data-balance-key="closing"]').evaluate((e) => getComputedStyle(e).fill),
+        expect(await balance.evaluate((e) => getComputedStyle(e).fill)).not.toBe(light);
+        expect(await balance.evaluate((e) => getComputedStyle(e).fill)).toBe(
+          await chart.locator('[data-balance-period="3"] [data-balance-key="closing"]').evaluate((e) => getComputedStyle(e).fill),
         );
-        expect(await chart.locator('[data-balance-key="balance"]').evaluate((e) => getComputedStyle(e).fill)).not.toBe("rgb(0, 0, 0)");
-        // Truly outside .k2b-ui: literal SVG paint fallbacks must work without theme CSS.
+        expect(
+          await chart.locator('[data-balance-period="3"] [data-balance-key="balance"]').evaluate((e) => getComputedStyle(e).fill),
+        ).not.toBe("rgb(0, 0, 0)");
         await page.locator("body").evaluate((e) => e.insertAdjacentHTML("afterend", '<aside id="standalone"></aside>'));
-        await page.locator("#standalone").evaluate((e, svg) => (e.innerHTML = svg), renderBalanceFlowSvg({ ...spec, inspect: true }));
+        await page.locator("#standalone").evaluate((e, markup) => (e.innerHTML = markup), renderBalanceFlowSvg({ ...spec, inspect: true }));
         await settled(page);
         expect(await page.locator("#standalone").evaluate((e) => e.closest(".k2b-ui"))).toBeNull();
-        expect(await page.locator('#standalone [data-balance-key="in-0"]').evaluate((e) => getComputedStyle(e).fill)).not.toBe(
-          "rgb(0, 0, 0)",
-        );
+        expect(
+          await page
+            .locator('#standalone [data-balance-key="in-0"]')
+            .first()
+            .evaluate((e) => getComputedStyle(e).fill),
+        ).not.toBe("rgb(0, 0, 0)");
         expect(errors).toEqual([]);
       } finally {
         await page.close();
@@ -194,8 +200,18 @@ test("balance mark adapts to light and dark in base.css-only app frames", async 
     ] as const) {
       await page.locator("html").evaluate((e, theme) => (e.dataset.theme = theme), theme);
       await settled(page);
-      expect(await page.locator('[data-balance-key="opening"]').evaluate((e) => getComputedStyle(e).fill)).toBe(paint);
-      expect(await page.locator('[data-balance-key="closing"]').evaluate((e) => getComputedStyle(e).fill)).toBe(paint);
+      expect(
+        await page
+          .locator('[data-balance-key="opening"]')
+          .first()
+          .evaluate((e) => getComputedStyle(e).fill),
+      ).toBe(paint);
+      expect(
+        await page
+          .locator('[data-balance-key="closing"]')
+          .first()
+          .evaluate((e) => getComputedStyle(e).fill),
+      ).toBe(paint);
     }
     expect(errors).toEqual([]);
     await page.close();

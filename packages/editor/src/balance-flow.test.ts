@@ -25,12 +25,11 @@ const source = {
     { label: "November", opening: 350, inflows: [], outflows: [{ label: "Auszahlung", value: 200 }], closing: 150 },
   ],
 };
-test("balance flow schema validates accounting, currency, locale and initial period", () => {
+test("balance flow schema validates accounting, currency and locale", () => {
   const schema = chartKinds();
   for (const invalid of [
     { ...source, locale: "de_DE" },
     { ...source, currency: "Euro" },
-    { ...source, period: 2 },
     { ...source, periods: [{ ...source.periods[0], closing: 349 }] },
   ])
     expect(schema.safeParse(invalid).success).toBe(false);
@@ -48,7 +47,7 @@ test("every shared tooltip and table field matches Solid including the inherited
     expect(chartTooltip(rows.columns(), row, input.kind)).toEqual(balanceFlowTooltip(datum, source.locale));
   }
   const table = chartTable(input, "en");
-  expect(table.rows.map((r) => r.cells.label)).toEqual(balanceFlowRows(options).map((r) => r.label));
+  expect(table.rows.map((r) => r.cells.label)).toEqual(options.periods.flatMap((_, i) => balanceFlowRows(options, i).map((r) => r.label)));
   expect(table.rows[0]!.cells.value).toBe("100,00 €");
   expect(table.columns.map((c) => c.label)).toEqual(["Detail", "Zeitraum", "Richtung", "Wert"]);
 });
@@ -57,7 +56,7 @@ test("notebooks reserve the max period and preserve navigation and period tables
   expect(notebookChartHeight(input, "en")).toBeGreaterThanOrEqual(280);
   const figure = renderNotebookChartFigure(input, "en");
   expect(figure).toContain("data-balance-flow");
-  expect(figure).toContain('data-balance-template="1"');
+  expect(figure).toContain('data-balance-month="1"');
   expect(renderNotebookChartFigure(input, "en", { print: true })).toContain("350,00 €");
   const options = { maxBlocks: 8, maxSeries: 8, maxValues: 480, schema: chartKinds() };
   const block = `:::chart\ntype: balanceFlow\ntitle: Settlements\ncurrency: EUR\nperiods: ${JSON.stringify(source.periods)}\n:::`;

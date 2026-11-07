@@ -17660,16 +17660,25 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-balance-flow__content-box { min-height: var(--k2b-balance-flow-height); position: relative; }
 .k2b-ui .k2b-balance-flow__status { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; padding: 16px; text-align: center; }
 .k2b-ui .k2b-balance-flow__status p { max-width: 48ch; }
-.k2b-ui .k2b-balance-flow__data > .k2b-chart { width: 100%; height: var(--k2b-balance-flow-height); position: relative; }
-.k2b-ui .k2b-balance-flow__data .k2b-chart__svg { width: 100%; max-width: none; height: 100%; }
-.k2b-ui .k2b-balance-flow__data .k2b-chart__svg > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.k2b-ui .k2b-balance-flow__data [data-balance-month-text] { display: none; }
+/* Only the viewport is a query container; shrink-to-fit hosts keep their intrinsic width. */
+.k2b-ui .k2b-balance-flow__content { --k2b-balance-period-size: min(var(--k2b-balance-period-width, 620px), 100cqw); }
+.k2b-ui .k2b-balance-flow__data > .k2b-chart { width: 100%; position: relative; }
+.k2b-ui .k2b-balance-flow__scroll { display: flex; flex-direction: row-reverse; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; padding-bottom: 16px; }
+.k2b-ui .k2b-balance-flow__track { flex: none; width: calc(var(--k2b-balance-periods) * var(--k2b-balance-period-size)); }
+.k2b-ui .k2b-balance-flow__months { display: flex; height: 40px; position: sticky; top: 0; z-index: 1; background: var(--k2b-surface, #fff); }
+.k2b-ui .k2b-balance-flow__months > div { flex: none; width: var(--k2b-balance-period-size); scroll-snap-align: end; padding: 8px 16px; box-sizing: border-box; font-size: 13px; }
+.k2b-ui .k2b-balance-flow__months strong { position: sticky; left: 12px; }
+.k2b-ui .k2b-balance-flow__data .k2b-chart__svg { width: 100%; max-width: none; height: var(--k2b-balance-flow-height); }
+.k2b-ui .k2b-balance-flow__data .k2b-chart__svg > svg { display: block; width: 100%; height: 100%; overflow: hidden; }
+.k2b-ui .k2b-balance-flow__content-box { height: calc(72px + var(--k2b-balance-flow-height)); }
 .k2b-ui .k2b-balance-flow__table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
 .k2b-ui .k2b-balance-flow__table caption { text-align: start; font-weight: 600; padding: 8px 0; }
 .k2b-ui .k2b-balance-flow__table :is(th, td) { padding: 8px 10px; text-align: start; overflow-wrap: anywhere; }
 .k2b-ui .k2b-balance-flow__table :is(th, td):first-child { width: 48%; }
 .k2b-ui .k2b-balance-flow__table .num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .k2b-ui .k2b-balance-flow__table tbody th { font-weight: 400; }
-.k2b-ui .k2b-balance-flow__data > [data-balance-table] { height: var(--k2b-balance-flow-height); overflow: auto; }
+.k2b-ui .k2b-balance-flow__data > [data-balance-table] { height: calc(72px + var(--k2b-balance-flow-height)); overflow: auto; }
 .k2b-ui .k2b-balance-flow__amounts { display: none; margin: 0; }
 .k2b-ui .k2b-balance-flow__amounts > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 7px 0; }
 .k2b-ui .k2b-balance-flow__amounts dt { overflow-wrap: anywhere; }
@@ -17681,22 +17690,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-balance-flow [hidden], .k2b-ui.k2b-balance-flow [hidden] { display: none !important; }
 @container balance-flow (max-width: 540px) {
   .k2b-ui .k2b-balance-flow-caption { display: none; }
-  .k2b-ui .k2b-balance-flow__data > .k2b-chart { height: 140px; }
+  .k2b-ui .k2b-balance-flow__data .k2b-chart__svg { height: 180px; }
   .k2b-ui .k2b-balance-flow__amounts { display: block; font-size: 13px; }
-  .k2b-ui .k2b-balance-flow__content-box { height: max(var(--k2b-balance-flow-height), calc(156px + var(--k2b-balance-flow-rows) * 44px)); overflow: auto; }
-  .k2b-ui .k2b-balance-flow__data > [data-balance-table] { height: max(var(--k2b-balance-flow-height), calc(156px + var(--k2b-balance-flow-rows) * 44px)); }
+  .k2b-ui .k2b-balance-flow__content-box { height: max(calc(72px + var(--k2b-balance-flow-height)), calc(252px + var(--k2b-balance-flow-rows) * 44px)); overflow: auto; }
+  .k2b-ui .k2b-balance-flow__data > [data-balance-table] { height: max(calc(72px + var(--k2b-balance-flow-height)), calc(252px + var(--k2b-balance-flow-rows) * 44px)); }
 }
 @media (prefers-reduced-motion: reduce) { .k2b-ui .k2b-balance-flow * { animation: none !important; transition: none !important; } }
 @media print {
-  .k2b-ui .k2b-balance-flow__nav, .k2b-ui .k2b-balance-flow__views, .k2b-ui [data-balance-phone] { display: none; }
+  .k2b-ui .k2b-balance-flow__nav, .k2b-ui .k2b-balance-flow__views, .k2b-ui [data-balance-phone], .k2b-ui .k2b-balance-flow__data > .k2b-chart { display: none; }
   .k2b-ui.k2b-balance-flow [data-balance-table][hidden], .k2b-ui .k2b-balance-flow [data-balance-table][hidden] { display: block !important; height: auto; overflow: visible; }
   .k2b-ui .k2b-balance-flow__content-box { height: auto; overflow: visible; }
 }
 
 .k2b-ui.k2b-chart[data-balance-pending] { container-type: inline-size; container-name: balance-flow-pending; width: 100%; height: auto; }
-.k2b-ui.k2b-chart[data-balance-pending] > .k2b-chart__svg { height: calc(116px + var(--k2b-balance-flow-height)); width: 100%; max-width: none; }
+.k2b-ui.k2b-chart[data-balance-pending] > .k2b-chart__svg { height: calc(188px + var(--k2b-balance-flow-height)); width: 100%; max-width: none; }
 @container balance-flow-pending (max-width: 540px) {
-  .k2b-ui.k2b-chart[data-balance-pending] > .k2b-chart__svg { height: calc(116px + max(var(--k2b-balance-flow-height), 156px + var(--k2b-balance-flow-rows) * 44px)); }
+  .k2b-ui.k2b-chart[data-balance-pending] > .k2b-chart__svg { height: calc(116px + max(72px + var(--k2b-balance-flow-height), 252px + var(--k2b-balance-flow-rows) * 44px)); }
 }
 
 .k2b-ui.k2b-balance-flow > *, .k2b-ui .k2b-balance-flow > *, .k2b-ui .k2b-balance-flow__content-box > * { margin: 0; }

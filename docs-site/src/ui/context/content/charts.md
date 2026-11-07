@@ -1160,13 +1160,17 @@ Long labels keep their full text in the tooltip and table. Narrow panels show th
 complete name and amount rows below the drawing, with wrapping names and tabular
 numbers; they do not squeeze or cut labels inside the bands.
 
-Previous/Next or Left/Right move one period. The closing bar travels to the next
-opening position, timed by `--k2b-motion-base`; either the operating system preference
-or `html[data-k2b-motion="reduced"]` removes the animation. Up/Down inspect amounts,
-Enter pins and Escape dismisses. The buttons disable at the ends. An accessible
-summary reads the period's opening, total inflows, total outflows and closing.
-`period` sets the initial zero-based period; it defaults to 0 on both server and
-browser. Diagram/Table changes the representation of the same period.
+All periods share one horizontally scrollable canvas and one amount scale. Opening
+and closing stay at the bottom; the blue closing band continues directly into the
+next opening with identical thickness. Month names stay above their part of the
+flow. The newest period is visible in the server frame, before any script runs.
+Touch or trackpad scrolls through earlier months with snap points at boundaries.
+Previous/Next or Left/Right scroll one period, timed by `--k2b-motion-base`;
+either the operating system preference or `html[data-k2b-motion="reduced"]`
+removes animated scrolling. Up/Down inspect amounts, Enter pins and Escape
+dismisses. The buttons disable at the ends. Accessible summaries cover every
+period's opening, total inflows, total outflows and closing. Diagram/Table
+switches between the continuous flow and complete tables for all periods.
 
 The drawing and frame reserve space for the largest period, including on phones.
 `state` is a Solid-only prop: `loading`, `empty`, `error`, `stale` or `data`.
@@ -1174,10 +1178,10 @@ The drawing and frame reserve space for the largest period, including on phones.
 accounting names the offending period in the frame and Notebook diagnostic. A stale
 notice occupies the subtitle line. Changing period, view, hover or state keeps the
 frame height. `view`/`onViewChange` optionally control the Diagram/Table switch.
-The JSON form carries the data, currency, initial period and optional validated
+The JSON form carries the data, currency and optional validated
 BCP 47 `locale`; it uses the inherited UI locale by default. Assistant frames load
 the renderer in their existing offline chart module.
 
 In Notebook chart directives, use `type: balanceFlow`, `currency: EUR` and
 `periods: [...]` with the period array as one line of JSON. The note reserves the
-same frame while loading and keeps the current period's value table in print.
+same frame while loading and prints every period's complete value table.

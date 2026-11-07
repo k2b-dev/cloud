@@ -32,13 +32,26 @@ test("exact decimal equations and carry-forward reject every inconsistent period
   ).not.toThrow();
 });
 test("Sankey geometry balances the neutral middle and preserves the balance colour into the next period", () => {
-  for (let period = 0; period < 3; period++) {
+  for (let period = 0; period < balanceFixture.periods.length; period++) {
     const scene = balanceFlowLayout({ ...balanceFixture, period });
     const middle = scene.nodes.find((n) => n.id === "balance")!;
     expect(middle.incoming).toBe(middle.outgoing);
     expect(scene.links).toHaveLength(balanceFixture.periods[period]!.inflows.length + balanceFixture.periods[period]!.outflows.length + 2);
     expect(scene.height).toBe(balanceFlowHeight(balanceFixture.periods));
     for (const n of scene.nodes) expect(n.y + n.height).toBeLessThanOrEqual(scene.height);
+  }
+  for (let period = 0; period < balanceFixture.periods.length - 1; period++) {
+    const left = balanceFlowLayout({ ...balanceFixture, period }),
+      right = balanceFlowLayout({ ...balanceFixture, period: period + 1 });
+    const closing = left.nodes.find((n) => n.id === "closing")!,
+      opening = right.nodes.find((n) => n.id === "opening")!;
+    expect(closing.y).toBe(opening.y);
+    expect(closing.height).toBe(opening.height);
+    expect(closing.x + left.nodeWidth).toBe(left.width);
+    expect(opening.x).toBe(0);
+    expect(closing.y + closing.height).toBe(left.bottom);
+    expect(opening.y + opening.height).toBe(right.bottom);
+    expect(left.scale).toBe(right.scale);
   }
   const first = renderBalanceFlowSvg({ ...balanceFixture, inspect: true }),
     second = renderBalanceFlowSvg({ ...balanceFixture, period: 1, inspect: true });
@@ -72,17 +85,22 @@ test("negative and zero balances stay explicit, headers and snapshot metadata re
   expect(svg.match(/>Settlement overview</g)).toHaveLength(1);
   const snapshot = prepareChartSnapshot(
     { kind: "balanceFlow", ...balanceFixture },
-    { key: (s) => String(s.datum.index), tooltip: () => ({ rows: [] }) },
+    { key: (s) => `${s.datum.seriesIndex}:${s.datum.index}`, tooltip: () => ({ rows: [] }) },
   );
   expect(snapshot.kind).toBe("balanceFlow");
   expect(snapshot.stretch).toBe(false);
   expect(snapshot.marks.length).toBeGreaterThan(0);
 });
-test("server frame has accessible period controls, inert templates, stable states and a truthful error", () => {
+test("server frame contains all months and starts at the newest scroll origin across stable states", () => {
   const markup = renderBalanceFlowHtml({ ...balanceFixture, title: "Marketplace payout" });
-  expect(markup).toContain('data-balance-step="-1" aria-label="Previous period" disabled');
-  expect(markup).toContain('data-balance-template="2"');
+  expect(markup).toContain('data-balance-step="1" aria-label="Next period" disabled');
+  expect(markup).toContain('data-balance-month="3"');
   expect(markup).toContain("Marketplace orders");
+  expect(markup).not.toContain("<template");
+  expect(markup).toContain('data-period="3"');
+  expect(markup).toContain("data-balance-scroll");
+  expect(markup.match(/data-balance-period="/g)).toHaveLength(4);
+  expect(markup.match(/<table /g)).toHaveLength(4);
   for (const state of ["loading", "empty", "error", "stale"] as const) {
     const other = renderBalanceFlowHtml(balanceFixture, state);
     expect(/--k2b-balance-flow-height:(\d+)px/.exec(other)?.[1]).toBe(/--k2b-balance-flow-height:(\d+)px/.exec(markup)?.[1]);
@@ -91,6 +109,7 @@ test("server frame has accessible period controls, inert templates, stable state
   expect(invalid).toContain('data-state="error"');
   expect(invalid).toContain("The amounts do not balance");
   expect(renderBalanceFlowHtml({ currency: "EUR", periods: [] })).toContain("No periods to show.");
+  expect(balanceFlowLayout({ currency: "EUR", periods: [] }).nodes).toEqual([]);
   const zero = renderBalanceFlowSvg({ currency: "EUR", periods: [{ label: "Zero", opening: 0, inflows: [], outflows: [], closing: 0 }] });
   expect(zero).toContain(">Opening</text>");
   expect(zero).toContain(">Closing</text>");
@@ -112,7 +131,8 @@ test("balance-flow CSS has no red or green roles and long labels keep full inspe
   expect(svg).toContain(label);
   expect(svg).toContain("…");
   for (const match of svg.matchAll(/<text x="([^"]+)"[^>]*>([^<]+)<\/text>/g)) {
-    expect(Number(match[1]) + chartTextWidth(match[2]!, 12)).toBeLessThanOrEqual(620);
+    expect(chartTextWidth(match[2]!, 12)).toBeLessThanOrEqual(180);
+    expect(Number(match[1])).toBeLessThanOrEqual(620);
   }
 });
 
@@ -137,7 +157,12 @@ test("desktop captions label every bar without overlap, including clustered smal
     }
   }
   const svg = renderBalanceFlowSvg({ ...balanceFixture, inspect: true });
-  expect(svg.match(/class="k2b-balance-flow-caption"/g)).toHaveLength(scene.nodes.length);
+  expect(svg.match(/class="k2b-balance-flow-caption"/g)).toHaveLength(
+    balanceFixture.periods.reduce(
+      (total, _, period) => total + balanceFlowLayout({ ...balanceFixture, period }).nodes.filter((n) => n.showLabel).length,
+      0,
+    ),
+  );
   expect(svg).toContain(">Refunds</text>");
   expect(svg).toContain(">Shipping labels</text>");
 });

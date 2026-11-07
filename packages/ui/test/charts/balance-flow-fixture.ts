@@ -35,5 +35,15 @@ export const balanceFixture = {
       ],
       closing: 3000,
     },
+    {
+      label: "January 2027",
+      opening: 3000,
+      inflows: [{ label: "Marketplace orders", value: 6800 }],
+      outflows: [
+        { label: "Marketplace fees", value: 800 },
+        { label: "Payouts", value: 7000 },
+      ],
+      closing: 2000,
+    },
   ],
 };
