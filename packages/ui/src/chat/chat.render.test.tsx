@@ -528,12 +528,15 @@ describe("@k2b/ui portable chat family", () => {
       }),
     );
 
-    expect(withoutUsage).toContain("Context usage unavailable, 128,000 token context window");
-    expect(withoutUsage).toContain("<span>–</span>");
+    expect(withoutUsage).toContain('aria-label="Usage: Context usage unavailable, 128,000 token context window"');
+    // Without a share the ring stays an empty grey circle and shows no number.
+    expect(withoutUsage).toContain('stroke-dasharray="0 100"');
+    expect(withoutUsage).not.toContain("k2b-chat-usage__number");
     expect(withoutUsage).not.toContain("Remaining");
     expect(withoutUsage).not.toContain('data-warning="true"');
     expect(withUsage).toContain('data-warning="true"');
-    expect(withUsage).toContain("124,000 tokens used, 97% of the context window");
+    expect(withUsage).toContain('aria-label="Usage: context 97% full"');
+    expect(withUsage).toContain('<span class="k2b-chat-usage__number">97%</span>');
   });
 
   test("omits context usage from the composer until context pressure is known", () => {
@@ -573,10 +576,12 @@ describe("@k2b/ui portable chat family", () => {
       }),
     );
 
-    expect(zero).toContain("0 tokens used, 0% of the context window");
+    expect(zero).toContain('aria-label="Usage: context 0% full"');
+    expect(zero).toContain("<dt>Input</dt><dd>0</dd>");
     expect(zero).toContain("8,000");
     expect(invalid).toContain("Context usage unavailable, 8,000 token context window");
-    expect(invalid).not.toMatch(/NaN|Infinity|-1/);
+    // The popup's own tabindex="-1" is not a usage value.
+    expect(invalid.replaceAll('tabindex="-1"', "")).not.toMatch(/NaN|Infinity|-1/);
   });
 
   test("groups numbers in the render locale and lets the host override them", () => {
@@ -588,7 +593,8 @@ describe("@k2b/ui portable chat family", () => {
         },
       }),
     );
-    expect(german).toContain("1.260 Token verwendet, 1% des Kontextfensters");
+    expect(german).toContain('aria-label="Verbrauch: Kontext 1\u00a0% voll"');
+    expect(german).toContain("<dd>1.200</dd>");
     expect(german).toContain("128.000");
     expect(german).not.toContain("128,000");
 
@@ -601,7 +607,7 @@ describe("@k2b/ui portable chat family", () => {
     );
 
     expect(formatChatTokens(999)).toBe("999");
-    expect(localized).toContain("n:1250 tokens used");
+    expect(localized).toContain("<dt>In use</dt><dd>n:1250</dd>");
     expect(localized).toContain("n:8000");
   });
 
@@ -813,6 +819,99 @@ test("footer override preserves the editor and replaces standard actions", () =>
   expect(html).not.toContain("k2b-chat-composer__send");
 });
 
+test("one usage ring holds the context and application sections and shows the higher share", () => {
+  const budget = (percent: number | null, extra: Record<string, unknown> = {}) => ({
+    id: "budget",
+    title: "Your budget",
+    percent,
+    value: percent === null ? "Not available" : `${percent}% used`,
+    summary: `budget ${percent ?? "not available"}`,
+    content: createComponent(() => "Resets Monday", {}),
+    ...extra,
+  });
+  const render = (props: Record<string, unknown>) =>
+    renderToString(() => createComponent(Chat.ContextUsage, { usage: { total: 20_000 }, contextWindow: 100_000, ...props }));
+  const trigger = (html: string) => html.slice(html.indexOf("<button"), html.indexOf("</button>"));
+
+  // Context 20 %, budget 34 %: one ring, the higher share, both parts in the label and in the details, context first.
+  const rest = render({ sections: [budget(34)] });
+  expect(rest.match(/<button[^>]*k2b-chat-usage__trigger/g)).toHaveLength(1);
+  expect(trigger(rest)).toContain('aria-label="Usage: context 20% full, budget 34"');
+  expect(trigger(rest)).toContain('stroke-dasharray="34 100"');
+  expect(trigger(rest)).not.toContain("k2b-chat-usage__number");
+  expect(rest).toContain('<section class="k2b-chat-usage__part" data-section="budget">');
+  expect(rest).toContain("<h4>Your budget</h4>");
+  expect(rest).toContain("Resets Monday");
+  expect(rest.indexOf("<h4>This chat</h4>")).toBeLessThan(rest.indexOf("<h4>Your budget</h4>"));
+
+  // A section warns from 80 % by default, or from its own `warnAt`; the trigger then shows the number.
+  const warn = render({ sections: [budget(86)] });
+  expect(trigger(warn)).toContain('data-warning="true"');
+  expect(trigger(warn)).toContain('<span class="k2b-chat-usage__number">86%</span>');
+  expect(warn).toContain('<span class="k2b-chat-usage__value" data-warning="true">86% used</span>');
+  expect(trigger(render({ sections: [budget(79)] }))).not.toContain('data-warning="true"');
+  expect(trigger(render({ sections: [budget(60, { warnAt: 50 })] }))).toContain('data-warning="true"');
+
+  // The context warns from 85 %, even when the section's share is lower; the ring follows the higher share.
+  const full = render({ usage: { total: 85_000 }, sections: [budget(10)] });
+  expect(trigger(full)).toContain('<span class="k2b-chat-usage__number">85%</span>');
+  expect(trigger(render({ usage: { total: 84_000 } }))).not.toContain('data-warning="true"');
+
+  // Without context to report, only the sections show; a section without a share keeps the grey circle.
+  const only = render({ context: false, sections: [budget(null)] });
+  expect(only).not.toContain("This chat");
+  expect(trigger(only)).toContain('aria-label="Usage: budget not available"');
+  expect(trigger(only)).toContain('stroke-dasharray="0 100"');
+});
+
+test("the context action is an icon whose tooltip says why it is off", () => {
+  const action = { id: "compact", label: "Summarize now", icon: "ti ti-arrows-diagonal-minimize-2", onSelect: () => {} };
+  const render = (extra: Record<string, unknown>) =>
+    renderToString(() =>
+      createComponent(Chat.ContextUsage, { usage: { total: 72_000 }, contextWindow: 100_000, action: { ...action, ...extra } }),
+    );
+  const ready = render({});
+  expect(ready).toContain('aria-label="Summarize now"');
+  expect(ready).toContain("ti ti-arrows-diagonal-minimize-2");
+  expect(ready).not.toContain("aria-disabled");
+  expect(ready).toMatch(/role="tooltip"[^>]*>Summarize now</);
+  const running = render({ disabled: true, disabledReason: "While an answer runs, the chat cannot be summarized." });
+  // It stays focusable so the reason can be read; the label still names the action.
+  expect(running).toContain('aria-disabled="true"');
+  expect(running).toContain('aria-label="Summarize now"');
+  expect(running).toMatch(/role="tooltip"[^>]*>While an answer runs, the chat cannot be summarized.</);
+  expect(running).not.toMatch(/<button[^>]*k2b-chat-usage__action[^>]* disabled/);
+});
+
+test("the composer puts the usage ring right after + and the context actions after it", () => {
+  const html = renderToString(() =>
+    createComponent(Chat.Composer, {
+      value: "",
+      onValueChange: () => {},
+      onSubmit: () => {},
+      menuActions: [{ id: "new", label: "New chat", onSelect: () => {} }],
+      contextUsage: { usage: { total: 1_000 }, contextWindow: 100_000 },
+      contextSections: [{ id: "budget", title: "Your budget", percent: 30, summary: "budget 30%" }],
+      contextActions: [{ id: "tasks", label: "Show tasks", icon: "ti ti-list-check", onSelect: () => {} }],
+    }),
+  );
+  const tools = html.slice(html.indexOf("k2b-chat-composer__tools"), html.indexOf("k2b-chat-composer__submit"));
+  expect(tools).toContain("k2b-chat-usage");
+  expect(tools.indexOf("ti ti-plus")).toBeLessThan(tools.indexOf("k2b-chat-usage"));
+  expect(tools.indexOf("k2b-chat-usage")).toBeLessThan(tools.indexOf('aria-label="Show tasks"'));
+  // A section alone keeps the ring before the chat reports context.
+  const budgetOnly = renderToString(() =>
+    createComponent(Chat.Composer, {
+      value: "",
+      onValueChange: () => {},
+      onSubmit: () => {},
+      contextSections: [{ id: "budget", title: "Your budget", percent: 30, summary: "budget 30%" }],
+    }),
+  );
+  expect(budgetOnly).toContain("k2b-chat-usage__trigger");
+  expect(budgetOnly).not.toContain("This chat");
+});
+
 test("keeps context actions available without usage and out of the Plus menu", () => {
   const html = renderToString(() =>
     createComponent(Chat.Composer, {
@@ -826,7 +925,8 @@ test("keeps context actions available without usage and out of the Plus menu", (
   expect(html).toContain("Compact context");
   expect(html).toContain('aria-expanded="false"');
   // Context usage opens a dialog, not a hint; the only tooltip names the send button.
-  expect([...html.matchAll(/role="tooltip"[^>]*>([^<]*)</g)].map((match) => match[1])).toEqual(["Send message"]);
+  // The action is an icon whose tooltip names it.
+  expect([...html.matchAll(/role="tooltip"[^>]*>([^<]*)</g)].map((match) => match[1])).toEqual(["Compact context", "Send message"]);
 });
 
 test("working plan shows one semantic segment per step and bounded disclosure", () => {

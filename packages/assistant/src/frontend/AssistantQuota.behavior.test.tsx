@@ -43,26 +43,25 @@ test("seeded refresh shows pending state, coalesces requests and cleans up focus
   }
 });
 
-test("opening the panel refreshes usage, and new data swaps the ring in place", async () => {
+test("opening the details refreshes usage, new data swaps the ring in place, and a failure offers a retry", async () => {
   const dom = createDomTestHarness();
-  const { default: Quota, createAssistantQuota } = await import("./AssistantQuota");
+  const [{ Chat }, { createAssistantQuota, createAssistantQuotaSections }] = await Promise.all([
+    import("@k2b/ui"),
+    import("./AssistantQuota"),
+  ]);
   const resetsAt = new Date(Date.now() + 3 * 3_600_000).toISOString();
   const load = spyOn(assistantApi, "quotas").mockResolvedValue({
     enabled: true,
     balances: [{ scope: "*", unlimited: false, usedPercent: 100, resetsAt }],
   });
   const dispose = render(() => {
-    const state = createAssistantQuota({ enabled: true, balances: [{ scope: "*", unlimited: false, usedPercent: 40, resetsAt }] });
-    return createComponent(Quota, {
-      get snapshot() {
-        return state.data();
+    const quota = createAssistantQuota({ enabled: true, balances: [{ scope: "*", unlimited: false, usedPercent: 40, resetsAt }] });
+    const sections = createAssistantQuotaSections({ quota, model: () => "a", modelLabel: () => "Model A" });
+    return createComponent(Chat.ContextUsage, {
+      context: false,
+      get sections() {
+        return sections();
       },
-      model: "a",
-      modelLabel: "Model A",
-      get error() {
-        return state.error();
-      },
-      onRefresh: state.refresh,
     });
   }, dom.root);
   try {
@@ -71,27 +70,39 @@ test("opening the panel refreshes usage, and new data swaps the ring in place", 
     const popup = dom.root.querySelector<HTMLElement>("[role=dialog]")!;
     popup.showPopover = () => {};
     popup.hidePopover = () => {};
-    expect(trigger.getAttribute("aria-label")).toBe("Usage: 40%");
-    expect(popup.querySelector("button")).toBeNull();
+    expect(trigger.getAttribute("aria-label")).toBe("Usage: budget 40% used");
     const before = load.mock.calls.length;
     trigger.click();
     await tick();
     expect(load.mock.calls.length).toBe(before + 1);
     expect(dom.root.querySelector("button.k2b-chat-context")).toBe(trigger);
-    expect(trigger.getAttribute("aria-label")).toBe("Usage: 100%, used up");
-    expect(trigger.querySelector(".k2b-progress-ring")?.getAttribute("data-tone")).toBe("danger");
+    expect(trigger.getAttribute("aria-label")).toBe("Usage: budget 100% used, used up");
+    expect(trigger.getAttribute("data-warning")).toBe("true");
+    expect(trigger.querySelector(".k2b-progress-ring")?.getAttribute("data-tone")).toBe("warning");
     expect(popup.querySelector("time")?.getAttribute("title")).toBeTruthy();
 
-    // A failed refresh replaces the ring with the dashed circle in the same trigger, not with an empty ring.
+    // Refresh in the details loads again.
+    const refresh = popup.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!;
+    const beforeRefresh = load.mock.calls.length;
+    refresh.click();
+    await tick();
+    expect(load.mock.calls.length).toBe(beforeRefresh + 1);
+
+    // A failed refresh keeps the same trigger, drops the cached share, and offers a retry that loads again.
     load.mockRejectedValue(new Error("offline"));
     trigger.click();
     trigger.click();
     await tick();
     expect(dom.root.querySelector("button.k2b-chat-context")).toBe(trigger);
-    expect(trigger.getAttribute("aria-label")).toBe("Usage: Not available");
-    expect(trigger.querySelector(".k2b-progress-ring")).toBeNull();
-    expect(trigger.querySelector(".ti-circle-dashed")).not.toBeNull();
-    expect(popup.textContent).toContain("Usage could not be loaded.");
+    expect(trigger.getAttribute("aria-label")).toBe("Usage: budget Not available");
+    expect(trigger.getAttribute("data-warning")).toBeNull();
+    expect(popup.textContent).toContain("Usage not available");
+    load.mockResolvedValue({ enabled: true, balances: [{ scope: "*", unlimited: false, usedPercent: 30, resetsAt }] });
+    const retry = [...popup.querySelectorAll("button")].find((button) => button.textContent?.includes("Try again"))!;
+    retry.click();
+    await tick();
+    expect(trigger.getAttribute("aria-label")).toBe("Usage: budget 30% used");
+    expect(popup.textContent).not.toContain("Usage not available");
   } finally {
     dispose();
     load.mockRestore();

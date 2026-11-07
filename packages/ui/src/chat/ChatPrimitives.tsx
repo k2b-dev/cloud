@@ -11,16 +11,24 @@ import {
   Show,
   useContext,
 } from "solid-js";
-import { Button } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ProgressBar } from "../surfaces/ProgressBar";
-import { ChatContextPanel, ChatContextPopup } from "./ChatContextPopup";
+import { ProgressRing } from "../surfaces/ProgressRing";
+import { ChatContextPopup } from "./ChatContextPopup";
 import { executeChatAction } from "./chat-behavior";
 import { type ChatMessages, useChatMessages } from "./chat-messages";
-import type { ChatAction, ChatActivityTone, ChatAttachment, ChatContextUsageData, ChatMessageStatus, ChatRole } from "./types";
+import type {
+  ChatAction,
+  ChatActivityTone,
+  ChatAttachment,
+  ChatContextUsageData,
+  ChatMessageStatus,
+  ChatRole,
+  ChatUsageSection,
+} from "./types";
 
 export type ChatMessageProps = {
   role: ChatRole;
@@ -69,6 +77,11 @@ export type ChatActivityProps = {
 };
 
 export type ChatContextUsageProps = ChatContextUsageData & {
+  /** Application parts after the context, such as a budget. */
+  sections?: readonly ChatUsageSection[];
+  /** Set to false to show only `sections`, for example before a chat has context to report. */
+  context?: boolean;
+  /** A small icon action next to the context share, such as summarizing the chat now. */
   action?: ChatAction;
   onActionError?: (error: unknown) => void;
   /** Host-owned number formatting. The default groups whole numbers in the inherited render locale. */
@@ -486,6 +499,14 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
   );
 }
 
+/** Context pressure warns from this share of the window. */
+const CONTEXT_WARN_PERCENT = 85;
+/** An application part warns from this share unless it sets its own. */
+const SECTION_WARN_PERCENT = 80;
+
+const finitePercent = (value: number | null | undefined): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : null;
+
 export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
   const [busy, setBusy] = createSignal(false);
   const run = async () => {
@@ -504,7 +525,11 @@ export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
   const chatMessages = useChatMessages();
   const locale = useLocale();
   const formatNumber = (value: number) => (props.formatNumber ? props.formatNumber(value) : formatLocaleInteger(value, locale()));
+  const formatPercent = (value: number) =>
+    new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 0 }).format(Math.round(value) / 100);
   const formattedUsageValue = (value: number | null): string => (value === null ? messages().unknown : formatNumber(value));
+  const showContext = () => props.context !== false;
+  const sections = () => props.sections ?? [];
   const usage = () => normalizedUsage(props.usage);
   const loopUsage = () => normalizedUsage(props.loopUsage);
   const total = () => usage().total ?? 0;
@@ -512,7 +537,20 @@ export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
   const reported = () => usage().reported;
   const percent = () => (reported() && windowSize() > 0 ? Math.min(100, Math.round((total() / windowSize()) * 100)) : null);
   const remaining = () => (reported() && windowSize() > 0 ? Math.max(0, windowSize() - total()) : null);
-  const accessibleLabel = () => {
+  const contextWarns = () => showContext() && (percent() ?? 0) >= CONTEXT_WARN_PERCENT;
+  const sectionWarns = (section: ChatUsageSection) => {
+    const value = finitePercent(section.percent);
+    return value !== null && value >= (section.warnAt ?? SECTION_WARN_PERCENT);
+  };
+  /** The ring shows the highest known share: the part that runs out first. */
+  const highest = () => {
+    const values = [showContext() ? percent() : null, ...sections().map((section) => finitePercent(section.percent))].filter(
+      (value): value is number => value !== null,
+    );
+    return values.length ? Math.min(100, Math.max(...values)) : null;
+  };
+  const warning = () => contextWarns() || sections().some(sectionWarns);
+  const contextSummary = () => {
     if (!reported()) {
       return windowSize() > 0
         ? chatMessages().contextUsageUnavailableWithWindow({ window: formatNumber(windowSize()) })
@@ -520,72 +558,132 @@ export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
     }
     return percent() === null
       ? chatMessages().tokensUsed({ total: formatNumber(total()) })
-      : chatMessages().tokensUsedPercent({ total: formatNumber(total()), percent: percent()! });
+      : chatMessages().contextSummaryPercent({ percent: formatPercent(percent()!) });
   };
+  const accessibleLabel = () =>
+    chatMessages().usageSummary({
+      parts: [...(showContext() ? [contextSummary()] : []), ...sections().map((section) => section.summary)].join(", "),
+    });
+  const actionTooltip = (action: ChatAction) => (action.disabled && action.disabledReason ? action.disabledReason : action.label);
 
   return (
-    <ChatContextPopup
-      content={
-        <ChatContextPanel title={chatMessages().lastRequestContext}>
-          <Show when={percent() !== null}>
-            <ProgressBar
-              value={percent() ?? 0}
-              size="xs"
-              tone={(percent() ?? 0) >= 85 ? "danger" : "info"}
-              label={chatMessages().contextWindowUsed}
-            />
-          </Show>
-          <dl>
-            <Show when={props.modelLabel}>
-              {(model) => (
-                <div>
-                  <dt>{chatMessages().model}</dt>
-                  <dd>{model()}</dd>
-                </div>
+    <span class="k2b-chat-usage" data-warning={warning() ? "true" : undefined}>
+      <ChatContextPopup
+        content={
+          <div class="k2b-chat-context__tooltip k2b-chat-usage__panel">
+            <Show when={showContext()}>
+              <section class="k2b-chat-usage__part">
+                <header class="k2b-chat-usage__head">
+                  <h4>{chatMessages().thisChat}</h4>
+                  <span class="k2b-chat-usage__value" data-warning={contextWarns() ? "true" : undefined}>
+                    {percent() === null
+                      ? reported()
+                        ? chatMessages().tokensUsed({ total: formatNumber(total()) })
+                        : messages().unknown
+                      : chatMessages().contextFull({ percent: formatPercent(percent()!) })}
+                  </span>
+                  <Show when={props.action}>
+                    {(action) => (
+                      <Tooltip.Trigger
+                        type="button"
+                        class="k2b-chat-usage__action"
+                        aria-label={action().label}
+                        aria-disabled={action().disabled || busy() ? "true" : undefined}
+                        aria-busy={busy() ? "true" : undefined}
+                        content={actionTooltip(action())}
+                        onClick={() => void run()}
+                      >
+                        <i
+                          class={busy() ? "ti ti-loader-2 k2b-spin" : (action().icon ?? "ti ti-arrows-diagonal-minimize-2")}
+                          aria-hidden="true"
+                        />
+                      </Tooltip.Trigger>
+                    )}
+                  </Show>
+                </header>
+                <Show when={percent() !== null}>
+                  <ProgressBar
+                    value={percent() ?? 0}
+                    size="xs"
+                    tone={contextWarns() ? "warning" : "info"}
+                    label={chatMessages().contextWindowUsed}
+                  />
+                </Show>
+                <Show when={props.note}>
+                  <p>{props.note}</p>
+                </Show>
+                <dl>
+                  <Show when={props.modelLabel}>
+                    {(model) => (
+                      <div>
+                        <dt>{chatMessages().model}</dt>
+                        <dd>{model()}</dd>
+                      </div>
+                    )}
+                  </Show>
+                  <div>
+                    <dt>{chatMessages().input}</dt>
+                    <dd>{formattedUsageValue(usage().input)}</dd>
+                  </div>
+                  <div>
+                    <dt>{chatMessages().output}</dt>
+                    <dd>{formattedUsageValue(usage().output)}</dd>
+                  </div>
+                  <Show when={reported()}>
+                    <div>
+                      <dt>{chatMessages().contextInUse}</dt>
+                      <dd>{formatNumber(total())}</dd>
+                    </div>
+                  </Show>
+                  <Show when={loopUsage().reported}>
+                    <div>
+                      <dt>{chatMessages().loopTotal}</dt>
+                      <dd>{formattedUsageValue(loopUsage().total)}</dd>
+                    </div>
+                  </Show>
+                  <div>
+                    <dt>{chatMessages().contextWindow}</dt>
+                    <dd>{windowSize() > 0 ? formatNumber(windowSize()) : chatMessages().notConfigured}</dd>
+                  </div>
+                  <Show when={remaining() !== null}>
+                    <div>
+                      <dt>{chatMessages().remaining}</dt>
+                      <dd>{remaining() === null ? messages().unknown : formatNumber(remaining()!)}</dd>
+                    </div>
+                  </Show>
+                </dl>
+              </section>
+            </Show>
+            <For each={sections()}>
+              {(section) => (
+                <section class="k2b-chat-usage__part" data-section={section.id}>
+                  <header class="k2b-chat-usage__head">
+                    <h4>{section.title}</h4>
+                    <Show when={section.value}>
+                      <span class="k2b-chat-usage__value" data-warning={sectionWarns(section) ? "true" : undefined}>
+                        {section.value}
+                      </span>
+                    </Show>
+                  </header>
+                  {section.content}
+                </section>
               )}
-            </Show>
-            <div>
-              <dt>{chatMessages().input}</dt>
-              <dd>{formattedUsageValue(usage().input)}</dd>
-            </div>
-            <div>
-              <dt>{chatMessages().output}</dt>
-              <dd>{formattedUsageValue(usage().output)}</dd>
-            </div>
-            <Show when={loopUsage().reported}>
-              <div>
-                <dt>{chatMessages().loopTotal}</dt>
-                <dd>{formattedUsageValue(loopUsage().total)}</dd>
-              </div>
-            </Show>
-            <div>
-              <dt>{chatMessages().contextWindow}</dt>
-              <dd>{windowSize() > 0 ? formatNumber(windowSize()) : chatMessages().notConfigured}</dd>
-            </div>
-            <Show when={remaining() !== null}>
-              <div>
-                <dt>{chatMessages().remaining}</dt>
-                <dd>{remaining() === null ? messages().unknown : formatNumber(remaining()!)}</dd>
-              </div>
-            </Show>
-          </dl>
-          <Show when={props.action}>
-            {(action) => (
-              <Button size="xs" variant="subtle" disabled={action().disabled || busy()} onClick={() => void run()} aria-busy={busy()}>
-                <i class={busy() ? "ti ti-loader-2 k2b-spin" : action().icon} aria-hidden="true" />
-                {action().label}
-              </Button>
-            )}
-          </Show>
-        </ChatContextPanel>
-      }
-      type="button"
-      class={`k2b-chat-context ${props.class ?? ""}`}
-      data-warning={reported() && (percent() ?? 0) >= 85 ? "true" : undefined}
-      aria-label={accessibleLabel()}
-    >
-      <i class="ti ti-brain" aria-hidden="true" />
-      <span>{percent() === null ? "–" : `${percent()}%`}</span>
-    </ChatContextPopup>
+            </For>
+          </div>
+        }
+        type="button"
+        class={`k2b-chat-context k2b-chat-usage__trigger ${props.class ?? ""}`}
+        data-warning={warning() ? "true" : undefined}
+        aria-label={accessibleLabel()}
+        onOpen={() => {
+          for (const section of sections()) section.onOpen?.();
+        }}
+      >
+        <ProgressRing value={highest() ?? 0} tone={warning() ? "warning" : "info"} />
+        <Show when={warning() && highest() !== null}>
+          <span class="k2b-chat-usage__number">{formatPercent(highest()!)}</span>
+        </Show>
+      </ChatContextPopup>
+    </span>
   );
 }

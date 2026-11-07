@@ -6,9 +6,9 @@ import {
   type ChatTimelineItem,
   CodeDisplay,
   EmojiPicker,
+  IconButton,
   MessageRow,
   ProgressBar,
-  ProgressRing,
   ReferenceChip,
   rememberEmoji,
   Toolbar,
@@ -181,27 +181,7 @@ const ChatDemo = () => {
           ]}
           selectedModelId={model()}
           onModelChange={setModel}
-          modelDetails={
-            <Chat.ContextPopup
-              aria-label="Usage: 35%"
-              content={
-                <Chat.ContextPanel title="Usage">
-                  <section>
-                    <dl>
-                      <div>
-                        <dt>Used</dt>
-                        <dd>35%</dd>
-                      </div>
-                    </dl>
-                    <ProgressBar value={35} size="xs" label="Usage" />
-                    <p>Resets in 5 hours</p>
-                  </section>
-                </Chat.ContextPanel>
-              }
-            >
-              <ProgressRing value={35} />
-            </Chat.ContextPopup>
-          }
+          contextSections={[usageBudget(35)]}
           fileSelection={{ onSelect: () => undefined }}
           menuActions={[
             {
@@ -380,24 +360,51 @@ const ConversationComposerDemo = () => {
   );
 };
 
+const usageBudget = (percent: number) => ({
+  id: "budget",
+  title: "Your budget",
+  percent,
+  value: `${percent}% used`,
+  summary: `budget ${percent}% used`,
+  content: (
+    <>
+      <ProgressBar value={percent} size="xs" tone={percent >= 80 ? "warning" : "info"} label="Your budget" />
+      <div class="k2b-chat-usage__row">
+        <p>Deep · resets Monday, 00:00</p>
+        <IconButton label="Refresh" size="xs" onClick={() => undefined}>
+          <i class="ti ti-refresh" aria-hidden="true" />
+        </IconButton>
+      </div>
+    </>
+  ),
+});
+
 const ContextUsageDemo = () => (
   <DemoCard
     id="context-usage"
     chip={{ kind: "component", name: "Chat.ContextUsage", from: "@k2b/ui" }}
-    description="A compact percentage with an accessible summary and detailed token disclosure in its tooltip."
+    description="One ring for the context and a budget: calm grey at rest, the higher share with a number in the warning colour from 80 % budget or 85 % context."
     code={`<Chat.ContextUsage
   modelLabel="Deep"
   usage={{ input: 18_420, output: 2_140, total: 20_560 }}
   loopUsage={{ total: 31_800 }}
   contextWindow={128_000}
+  action={{ id: "compact", label: "Summarize now", icon: "ti ti-arrows-diagonal-minimize-2", onSelect: compact }}
+  sections={[{ id: "budget", title: "Your budget", percent: 86, value: "86% used", summary: "budget 86% used", content: <BudgetDetails /> }]}
 />`}
   >
-    <Chat.ContextUsage
-      modelLabel="Deep"
-      usage={{ input: 18_420, output: 2_140, total: 20_560 }}
-      loopUsage={{ total: 31_800 }}
-      contextWindow={128_000}
-    />
+    <div class="flex items-center gap-4">
+      {[34, 86].map((percent) => (
+        <Chat.ContextUsage
+          modelLabel="Deep"
+          usage={{ input: 18_420, output: 2_140, total: 20_560 }}
+          loopUsage={{ total: 31_800 }}
+          contextWindow={128_000}
+          action={{ id: "compact", label: "Summarize now", icon: "ti ti-arrows-diagonal-minimize-2", onSelect: () => undefined }}
+          sections={[usageBudget(percent)]}
+        />
+      ))}
+    </div>
   </DemoCard>
 );
 
