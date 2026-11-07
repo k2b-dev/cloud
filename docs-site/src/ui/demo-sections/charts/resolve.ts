@@ -151,12 +151,12 @@ export function resolveDrawing(spec: JsonValue, locale = "en"): ShowcaseDrawing 
   if (Array.isArray(spec) && spec.length && spec.every((entry) => object(entry) && entry.type === "flow"))
     return blockComponent("flow")
       ? { mode: "block", block: "flow", spec: { block: "flow", items: spec } }
-      : { mode: "slot", kind: "flow", reason: "This block arrives with its catalog step." };
+      : { mode: "slot", kind: "flow", reason: "This build does not draw this block yet." };
   if (!object(spec)) return { mode: "slot", kind: "unknown", reason: "The description is not an object." };
   if (typeof spec.block === "string")
     return drawableBlock(spec.block)
       ? { mode: "block", block: spec.block, spec }
-      : { mode: "slot", kind: spec.block, reason: "This block arrives with its catalog step." };
+      : { mode: "slot", kind: spec.block, reason: "This build does not draw this block yet." };
   const kind = typeof spec.kind === "string" ? spec.kind : "unknown";
   if (liveKinds.has(kind)) {
     const { title: _title, subtitle: _subtitle, ...props } = spec;
@@ -173,11 +173,11 @@ export function resolveDrawing(spec: JsonValue, locale = "en"): ShowcaseDrawing 
       kind,
       reason: known
         ? `This build does not accept ${paths.length ? paths.slice(0, 3).join(", ") : "this form"} yet.`
-        : "The kind arrives with its catalog step.",
+        : "This build does not draw this kind yet.",
     };
   }
   const lost = lostKeys(spec, parsed.data);
-  if (lost.length) return { mode: "slot", kind, reason: `Its options ${lost.join(", ")} arrive with their catalog step.` };
+  if (lost.length) return { mode: "slot", kind, reason: `This build does not know ${lost.join(", ")} yet.` };
   const input: ChartInput = parsed.data;
   const table = chartRows(input, locale);
   const snapshot = prepareChartSnapshot(chartRenderOptions(input, locale, { legend: "outside" }), {

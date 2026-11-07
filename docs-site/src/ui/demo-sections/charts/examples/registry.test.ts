@@ -8,6 +8,7 @@ writeExampleRegistry();
 const { showcaseDashboards } = await import("../dashboards");
 const { resolveDrawing } = await import("../resolve");
 const { specToTsx } = await import("../tsx");
+const { GUIDANCE_LIMIT, kindGuidance, schemaValues } = await import("../guidance");
 const { chartShowcaseExamples, chartShowcaseKinds, chartShowcaseQuestions } = await import(".");
 
 test("every example file in the folder reaches the registry", () => {
@@ -128,21 +129,50 @@ test("every showcase page has non-empty TSX and JSON, generated from the same de
   expect(specToTsx({ block: "table", columns: [{ id: "a", label: "A" }], rows: [] })).toContain("<DataTable");
 });
 
-test("a dashboard panel draws as soon as an example of its kind draws", () => {
-  // A slot only waits for a kind or option that is not in this build; a mistake in the panel's own data must not hide it.
-  const kindOf = (spec: unknown) => {
-    const object = (spec ?? {}) as Record<string, unknown>;
-    return String(object.kind ?? object.block ?? "");
-  };
-  const drawn = new Set(
-    chartShowcaseExamples.filter((example) => resolveDrawing(example.spec).mode !== "slot").map((example) => kindOf(example.spec)),
-  );
+test("a dashboard panel draws as soon as an example with its kind, layout and options draws", () => {
+  // A slot only waits for a kind or option this build lacks; a mistake in the panel's own data must not hide it.
+  const fields = (spec: unknown) =>
+    spec !== null && typeof spec === "object" && !Array.isArray(spec) ? (spec as Record<string, unknown>) : {};
+  const drawn = chartShowcaseExamples
+    .map((example) => fields(example.spec))
+    .filter((spec) => resolveDrawing(spec as never).mode !== "slot");
   for (const dashboard of showcaseDashboards)
     for (const panel of dashboard.sections.flatMap((section) => section.panels)) {
-      if (!drawn.has(kindOf(panel.spec))) continue;
+      const spec = fields(panel.spec);
+      const covered = drawn.some(
+        (example) =>
+          (example.kind ?? example.block) === (spec.kind ?? spec.block) &&
+          example.layout === spec.layout &&
+          Object.keys(spec).every((key) => key in example),
+      );
+      if (!covered) continue;
       const drawing = resolveDrawing(panel.spec);
       expect(drawing.mode === "slot" ? drawing.reason : "draws", `${dashboard.slug} ${panel.id}`).toBe("draws");
     }
+});
+
+test("a kind's page lists each option once, with the values the schema accepts, and short guidance", () => {
+  for (const kind of chartShowcaseKinds) {
+    const { options, useFor, avoidFor, a11y } = kindGuidance(kind);
+    const names = options.map((option) => option.name);
+    expect(new Set(names).size, kind.kind).toBe(names.length);
+    // A detail such as forecast.from belongs to its option.
+    for (const name of names.filter((name) => name.includes("."))) expect(names, `${kind.kind} ${name}`).not.toContain(name.split(".")[0]);
+    for (const list of [useFor, avoidFor]) expect(list.length, kind.kind).toBeLessThanOrEqual(GUIDANCE_LIMIT);
+    // The keyboard is described once.
+    expect(a11y.filter((item) => /arrow keys/i.test(item)).length, kind.kind).toBeLessThanOrEqual(1);
+  }
+  // Enumerated options read their values from the schema, such as every bar layout once the build has them.
+  for (const kind of chartShowcaseKinds) {
+    const spec = kind.examples[0]!.spec as Record<string, unknown>;
+    for (const option of kindGuidance(kind).options) {
+      const values = typeof spec.kind === "string" ? schemaValues(spec.kind, option.name) : undefined;
+      if (values) expect(option.type, `${kind.kind}.${option.name}`).toBe(values.map((value) => JSON.stringify(value)).join(" | "));
+    }
+  }
+  // An option this build rejects is not listed.
+  const bar = kindGuidance(chartShowcaseKinds.find((kind) => kind.kind === "bar")!);
+  expect(bar.options.some((option) => option.name === "layout")).toBe(schemaValues("bar", "layout") !== undefined);
 });
 
 test("dashboard panels have unique ids and say what each slot stands for", () => {

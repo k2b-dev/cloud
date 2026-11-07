@@ -31,12 +31,13 @@ const examples: ChartShowcaseExample[] = [
     height: 280,
     useFor: ["Patterns across two categories, such as weekday and hour.", "Spotting the busiest and quietest combinations."],
     avoidFor: ["Exact comparison of values; color is read only roughly.", "More rows than fit the frame; group them first."],
-    a11y: [...inspectA11y, "Arrow keys move cell by cell; the tooltip names both categories and the value."],
+    a11y: [
+      "One tab stop: Tab focuses the chart, arrow keys move cell by cell, Home and End jump to the first and the last; the tooltip names both categories and the value.",
+      ...inspectA11y.slice(1),
+    ],
     options: [
       ...commonOptions,
       { name: "data", type: "{ x, y, value }[]", description: "One cell per pair; x names the column, y the row." },
-      { name: "showValues", type: "boolean", description: "Prints the value in every cell that fits it." },
-      { name: "min, max", type: "number", description: "Fixed ends of the color scale." },
       numberFormatOption,
     ],
   },
