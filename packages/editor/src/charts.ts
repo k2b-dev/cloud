@@ -76,7 +76,7 @@ const labels = /* @__PURE__ */ i18n.define({
     },
     de: {
       category: "Kategorie",
-      group: "Gruppe",
+      group: "Bereich",
       size: "Größe",
       axis: "Achse",
       series: "Datenreihe",

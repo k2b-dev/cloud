@@ -33,6 +33,7 @@ import {
   type ChartDateFormat as CloudAiDateFormat,
   type ChartFormat as CloudAiFormat,
   type ChartNumberFormat as CloudAiNumberFormat,
+  chartAcceptsLocale,
   chartKinds,
   chartLocaleSchema,
   chartParts,
@@ -217,8 +218,12 @@ const chartInputSchema = () => {
       }
       if (value.charts !== undefined) {
         value.charts.forEach((chart, index) => {
-          if (chart.locale !== undefined && chart.kind !== "bubble" && chart.kind !== "radar")
-            context.addIssue({ code: "custom", path: ["charts", index, "locale"], message: "locale belongs to bubble and radar charts." });
+          if (chart.locale !== undefined && !chartAcceptsLocale(chart))
+            context.addIssue({
+              code: "custom",
+              path: ["charts", index, "locale"],
+              message: "locale is not supported for this chart kind.",
+            });
         });
         const parsed = groupSchema.safeParse(value);
         if (!parsed.success) {
@@ -232,8 +237,8 @@ const chartInputSchema = () => {
       } else {
         if (value.linkX !== undefined || value.layout !== undefined)
           context.addIssue({ code: "custom", message: "linkX and layout belong to groups." });
-        if (value.locale !== undefined && value.kind !== "bubble" && value.kind !== "radar")
-          context.addIssue({ code: "custom", path: ["locale"], message: "locale belongs to bubble and radar charts." });
+        if (value.locale !== undefined && !chartAcceptsLocale(value))
+          context.addIssue({ code: "custom", path: ["locale"], message: "locale is not supported for this chart kind." });
         const parsed = ChartSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });

@@ -38,7 +38,7 @@ test("bubble JSON passes named coordinates, group and area measure identically t
   const tip = chartTooltip(rows.columns(), row);
   expect(tip.title).toBe("Brief A");
   expect(tip.rows).toEqual([
-    { label: "Gruppe", value: "North" },
+    { label: "Bereich", value: "North" },
     { label: "Besuche", value: "1.200" },
     { label: "Öffnungen", value: "2.400" },
     { label: "Kontakte", value: "3.600" },

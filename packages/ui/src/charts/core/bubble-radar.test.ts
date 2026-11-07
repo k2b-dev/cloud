@@ -84,6 +84,7 @@ test("radar uses a common maximum and unit, one inspection datum per axis with e
   const svg = renderRadarSvg({ ...radar, inspect: true });
   expect([...svg.matchAll(/data-chart-datum=/g)]).toHaveLength(3);
   expect(svg).toContain("1 / 5 points");
+  expect(svg).toContain("--k2b-chart-inspection-color:var(--stdlib-chart-c2,#10b981)");
   expect(svg).toContain("2 / 5 points");
   expect(svg).not.toMatch(/NaN|Infinity/);
   expect(renderRadarSvg({ ...radar, max: 1e308 })).not.toMatch(/NaN|Infinity/);

@@ -50,3 +50,10 @@ test("saved view parse path preserves named distribution inputs", () => {
   expect(parseCloudAiView({ view: "chart", ...bubble })).toMatchObject({ view: "chart", ...bubble });
   expect(parseCloudAiView({ view: "chart", ...radar })).toMatchObject({ view: "chart", ...radar });
 });
+
+test("each named kind honours a validated explicit locale", () => {
+  for (const spec of [bubble, radar]) {
+    expect(CloudAiChartInputSchema.safeParse({ ...spec, locale: "de-DE" }).success).toBe(true);
+    expect(CloudAiChartInputSchema.safeParse({ ...spec, locale: "de_DE" }).success).toBe(false);
+  }
+});

@@ -106,6 +106,12 @@ for (const spec of cases)
           await settled(page);
           expect(await chart.locator("[data-inspected]").getAttribute("data-chart-datum")).not.toBe(first);
           if (spec.kind === "radar") {
+            const paints = await chart
+              .locator("[data-inspected] circle")
+              .evaluateAll((elements) => elements.map((e) => ({ fill: getComputedStyle(e).fill, stroke: getComputedStyle(e).stroke })));
+            expect(paints).toHaveLength(2);
+            expect(paints[0]!.fill).not.toBe(paints[1]!.fill);
+            for (const paint of paints) expect(paint.stroke).toBe(paint.fill);
             expect(await chart.locator("[role=tooltip]").textContent()).toContain("Plan A");
             expect(await chart.locator("[role=tooltip]").textContent()).toContain("Plan B");
             expect(await chart.locator("[role=tooltip]").textContent()).toContain("/ 5 points");

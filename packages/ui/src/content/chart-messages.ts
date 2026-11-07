@@ -125,7 +125,7 @@ const chartMessages = i18n.define({
           latitude: "Breitengrad",
           longitude: "Längengrad",
           size: "Größe",
-          group: "Gruppe",
+          group: "Bereich",
           state: "Zustand",
           duration: "Dauer",
           detail: "Details",

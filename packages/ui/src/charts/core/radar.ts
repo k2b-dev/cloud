@@ -106,7 +106,10 @@ export function renderRadarSvg(spec: RadarOptions): string {
     body.push(
       chartDatumSvg(
         axis.points
-          .map((point, index) => `<circle cx="${point[0]}" cy="${point[1]}" r="3" fill="${color(index)}" stroke="none"/>`)
+          .map(
+            (point, index) =>
+              `<circle cx="${point[0]}" cy="${point[1]}" r="3" fill="${color(index)}" style="--k2b-chart-inspection-color:${color(index)};--k2b-chart-selection-color:${color(index)}" stroke="none"/>`,
+          )
           .join("") +
           `<path class="k2b-chart-category-band k2b-chart-radar-axis" d="M${s.cx},${s.cy}L${axis.end[0]},${axis.end[1]}" fill="none" stroke="transparent" stroke-width="16"/>`,
         {

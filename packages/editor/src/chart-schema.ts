@@ -1,3 +1,7 @@
+import { chartLocaleSchema } from "./chart-locale";
+
+export { chartAcceptsLocale, chartLocaleSchema } from "./chart-locale";
+
 import { z } from "zod";
 
 /** Optional caller policy. Rendering itself has no AI input budget. */
@@ -29,18 +33,6 @@ export const chartFormatSchema = () => z.union([chartNumberFormatSchema(), dateF
 export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSchema>>;
 export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
-
-export const chartLocaleSchema = () =>
-  z
-    .string()
-    .min(1)
-    .refine((value) => {
-      try {
-        return Intl.getCanonicalLocales(value).length === 1;
-      } catch {
-        return false;
-      }
-    }, "Use a valid BCP 47 locale, such as de-DE.");
 
 export const chartKindSchema = () =>
   z.enum([
