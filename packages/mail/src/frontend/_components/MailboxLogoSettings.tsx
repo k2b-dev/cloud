@@ -238,10 +238,7 @@ export default function MailboxLogoSettings(props: {
             <Button variant="text" size="xs" type="button" disabled={logoQuery.loading()} onClick={() => void logoQuery.refresh()}>
               {messages().loadCurrentLogo}
             </Button>
-            <Show when={logoQuery.error() && !logoQuery.loading()}>
-              {" "}
-              {messages().failedLoadLogo}
-            </Show>
+            <Show when={logoQuery.error() && !logoQuery.loading()}> {messages().failedLoadLogo}</Show>
           </InlineGuidance>
         </Show>
         <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,15rem)]">
