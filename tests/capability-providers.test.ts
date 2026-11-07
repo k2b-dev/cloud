@@ -143,6 +143,8 @@ describe("Capability v2 provider conformance", () => {
       "mail.conversation.keep.release",
       "mail.conversation.mark",
       "mail.conversation.move",
+      "mail.conversation.reference.ensure",
+      "mail.conversation.summary.write",
       "mail.delivery.cancel",
       "mail.draft.attachment.add",
       "mail.draft.attachment.remove",

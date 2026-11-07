@@ -25,13 +25,16 @@ when a caller needs an immediate answer or asks another application to do work.
   on that person's behalf. Before every delivery Cloud checks, through the
   reader of the place's Type, that this person may still read the place. An
   event never carries the rights of its publisher or of whoever caused it.
-- Applications receive service events only. An application subscription to a
-  resource event stays `blocked` with `resource_events_unsupported`. This is the
-  rule, not a missing feature: applications are not readers of places.
+- Ordinary application subscriptions receive service events only. An application subscription to a
+  resource event stays `blocked` with `resource_events_unsupported`. Applications are not readers of places.
 
-Person-mandated subscriptions are not available yet, so resource events are
-stored and listed in the catalog but not delivered. `automation` metadata does
-not grant authority or install a Routine.
+Core-owned workloads can install resource subscriptions in their activation
+transaction. Each subscription binds an exact place, immutable workload
+revision, and confirmed mandate. Cloud matches the place and activation cutoff
+before creating a delivery and rechecks the current mandate and place Type
+reader before invoking the workload. A denied read cancels delivery with
+`resource_access_revoked`; an unavailable reader retries. `automation` metadata
+does not grant authority or install a workload.
 
 Deployed applications are trusted parts of the installation and share the
 platform database and NATS credentials. Deploying an application is approval
@@ -95,8 +98,8 @@ commits. The note sweep owns its transaction and calls `wake()` after commit.
 
 **Applications do not receive these events.** They are resource events: an
 application subscription to them stays `blocked` with
-`resource_events_unsupported`, and only subscriptions a person stands behind
-with a mandate will receive them (see [Who receives an event](#who-receives-an-event)).
+`resource_events_unsupported`, and only resource-bound workload subscriptions with a valid mandate
+and current read access receive them (see [Who receives an event](#who-receives-an-event)).
 
 ## Declare events and subscriptions
 
@@ -227,8 +230,7 @@ it is absent. A read whose schema and subscriber list exceed the result budget r
 
 These tools discover declarations only. They do not watch events, create
 subscriptions, or install Assistant Routines. A declared place and
-`automation: true` remain catalog metadata; they do not enable resource-event
-delivery or grant authority.
+`automation: true` remain catalog metadata; they do not install a resource subscription or grant authority.
 
 ## Read the envelope
 
@@ -344,6 +346,54 @@ newer events; there is no global or event-time ordering guarantee.
 For the retry schedule, retention budget, and recovery commands, see
 [Operate app events](/en/docs/operations/app-events).
 
+## Platform-owned resource consumers
+
+The server module `@k2b/cloud/services/app-events` exposes the Core host hooks
+`subscribeResourceEvent`, `cancelResourceEventSubscriptions`, `replayResourceEventDelivery`, and
+`registerResourceEventConsumer`. These are platform-owned hooks, not an
+application subscription API. Ordinary application authors continue to use
+`subscribes` for service events.
+
+Install a consumer once at startup and unregister it after draining the event
+broker. In the workload activation transaction, call `subscribeResourceEvent`
+with the subscriber `appId`, full event `type`, `version`, and a `binding`:
+`consumer`, stable workload `key`, immutable `revision`, `mandateId`,
+`mandateRevision`, and exact `place: { type, id }`. Registration is idempotent
+for an active complete binding. Reusing a cancelled binding fails; resuming
+creates a fresh registration revision. Mandate revision changes also require
+cancelling and registering again. Events published before registration are excluded, including
+older events still in the publisher outbox. Registration and event acceptance serialize the activation boundary. No implicit catch-up occurs.
+Publication timestamps come from the transaction's PostgreSQL clock with
+microsecond precision, matching subscription cutoffs regardless of the publisher process clock.
+
+The consumer receives the binding, original reference envelope and standard
+delivery context. It must recheck its current workload revision and enabled
+state under its workload lock, then commit its durable receipt and admission
+in one transaction before returning. If the workload has changed before
+admission, return `{ cancelled: true }` to record `workload_changed` instead
+of acknowledging an admission. It must honor the abort signal and make
+admission idempotent by event ID. Cloud does not turn event visibility into
+permission to read content or perform an effect: subsequent capability calls
+still enforce the workload's policy and current grants. Keep resource event
+data reference-only; read content through authorized capabilities.
+
+Use transaction handles, never a pool, for both registration and cancellation.
+Cancel subscriptions in the same transaction that disables or replaces the
+workload. Cancellation fences outstanding delivery claims; an admission that
+committed first is already separate workload work. Offline consumer code leaves
+work retrying without spending handler attempts. Resource consumers share the
+existing broker, delivery table, eight-attempt retry policy, retention and
+per-subscription subject ordering; no second transport is installed.
+
+For deliberate recovery after a workload change, the host can call
+`replayResourceEventDelivery` in its authorized workload transaction. It moves
+a retained delivery to the current subscription for the same consumer, key,
+event version and place. This explicit operation bypasses the registration
+cutoff, then repeats ordinary visibility and admission checks. It does not
+repeat effects already admitted by the consumer's receipt. Recovery is limited
+to 30 days after the event was received. Resource delivery records remain for
+30 days to support this recovery; ordinary service delivery retention is unchanged.
+
 ## Test a handler locally
 
 Use `appEventFixture` and `deliverAppEvent` from `@k2b/cloud/events/testing`
@@ -401,3 +451,8 @@ failure stops replay and reports how many finished.
 Replay sends no fixture to Cloud and does not invoke a production subscriber.
 The selected local handler controls its own effects. Its output is a count:
 `{ "delivered": 3 }`.
+
+Resource visibility checks carry a query-only, mandate-bound event proof. The
+provider revalidates the active subscription and claimed delivery before its
+ordinary Type reader checks the principal's current read access. The proof is usable only while a delivery of that event for that mandate is
+claimed and cannot authorize an Action or a workload run.

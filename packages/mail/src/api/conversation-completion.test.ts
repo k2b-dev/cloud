@@ -44,7 +44,7 @@ describe("Mail batch conversation completion route", () => {
   });
   test("publishes an authenticated completion operation with request and result schemas", async () => {
     const operation = (await generateSpecs(app)).paths?.[base]?.post;
-    expect(operation?.summary).toBe("Mark conversations done or reopen them");
+    expect(operation?.summary).toBe("Update conversation work status");
     expect(operation?.tags).toEqual(["Mail:Conversations"]);
     expect(operation?.security).toHaveLength(1);
     for (const status of ["200", "400", "401", "403", "404"]) expect(operation?.responses?.[status]).toBeDefined();
@@ -52,7 +52,7 @@ describe("Mail batch conversation completion route", () => {
     const response = operation?.responses?.["200"];
     expect(response && "$ref" in response ? undefined : response?.content?.["application/json"]?.schema).toMatchObject({
       type: "object",
-      properties: { completion: { enum: ["done", "open"] }, results: { type: "array" } },
+      properties: { completion: { enum: ["done", "open", "waiting", "needs_action"] }, results: { type: "array" } },
     });
   });
   test("requires authentication", async () => {
@@ -94,6 +94,25 @@ describe("Mail batch conversation completion route", () => {
     });
     expect(conversationResolver).not.toHaveBeenCalled();
   });
+  test("passes explicit work status and batch revision fences to the service", async () => {
+    const mailboxId = "22222222-2222-4222-8222-222222222222";
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
+    spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
+    const complete = spyOn(collaboration, "applyConversationCompletions");
+    for (const completion of ["waiting", "needs_action"] as const) {
+      const input = { conversationIds: ["Convo1"], completion, expectedRevisions: { Convo1: 3 } };
+      const data = { completion, results: [{ conversationId: "Convo1", status: "ok" as const, workStatus: completion, revision: 4 }] };
+      complete.mockResolvedValue({ ok: true, data });
+      const response = await app.request("/mailboxes/mbx123/conversations/completion", {
+        method: "POST",
+        headers: { authorization: "Bearer completion-test", "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(data);
+      expect(complete).toHaveBeenLastCalledWith({ context: expect.anything(), mailboxId, ...input });
+    }
+  });
   test("rejects empty, oversized, duplicate, unknown and non-strict inputs before calling the service", async () => {
     spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     spyOn(publicResources, "resolvePublicId").mockResolvedValue("22222222-2222-4222-8222-222222222222");
@@ -102,7 +121,7 @@ describe("Mail batch conversation completion route", () => {
       { conversationIds: [], completion: "done" },
       { conversationIds: Array.from({ length: 51 }, (_, i) => `Cv${String(i).padStart(4, "0")}`), completion: "done" },
       { conversationIds: ["Convo1", "Convo1"], completion: "done" },
-      { conversationIds: ["Convo1"], completion: "waiting" },
+      { conversationIds: ["Convo1"], completion: "unknown" },
       { conversationIds: ["Convo1"], completion: "done", extra: true },
     ]) {
       const response = await app.request("/mailboxes/mbx123/conversations/completion", {
