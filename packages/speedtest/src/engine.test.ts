@@ -5,7 +5,6 @@ import {
   Measurement,
   median,
   normalizeServer,
-  PLANS,
   type Progress,
   runSpeedtest,
   SpeedtestError,
@@ -205,17 +204,20 @@ describe("shared speedtest", () => {
     expect((await result).duration_ms).toBeLessThan(14_000);
     expect((await result).stable).toEqual({ download: true, upload: true });
   });
-  test("the shared fixed request sizes fit the approved budget", () => {
-    for (const mode of ["quick", "accurate"] as const)
-      for (const mbps of [100, 1_000]) {
-        const plan = PLANS[mode];
-        const requests =
-          Math.ceil((((mbps * 1_000_000) / 8) * plan.download) / 1_000 / (25 * 1024 * 1024)) +
-          4 +
-          Math.ceil((((mbps * 1_000_000) / 8) * plan.upload) / 1_000 / (16 * 1024 * 1024)) +
-          4;
-        expect(requests).toBeLessThanOrEqual(300);
-      }
+  test("admission belongs to the ping deadline and releases a session after failure", async () => {
+    const clock = new FakeClock();
+    const fake = fixture(clock);
+    let ended = false;
+    fake.transport.begin = () => new Promise(() => {});
+    fake.transport.end = () => {
+      ended = true;
+    };
+    const failure = runSpeedtest({ server, transport: fake.transport, clock, timestamp }).catch((error: unknown) => error);
+    await clock.advance(2_000);
+    expect(await failure).toMatchObject({ code: "slow_server" });
+    expect(ended).toBe(true);
+    expect(fake.downloadCalls()).toBe(0);
+    expect(clock.tasks.size).toBe(0);
   });
   test("server selection never silently falls back or carries credentials", () => {
     expect(normalizeServer("http://127.0.0.1:8080/")).toBe("http://127.0.0.1:8080");

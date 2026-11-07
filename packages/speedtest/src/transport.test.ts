@@ -103,11 +103,16 @@ test("native upload counts flowing bytes before request completion and respects 
 
 test("Bun propagates a real download disconnect and releases the server slot", async () => {
   const { createSpeedtestHandler } = await import("./server");
-  const handler = createSpeedtestHandler({ maxActive: 1, maxPeers: 4 });
+  const handler = createSpeedtestHandler({ maxActive: 10, maxPeers: 4 });
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request) => handler(request, "127.0.0.1") });
   const controller = new AbortController();
   try {
-    const response = await fetch(`http://127.0.0.1:${server.port}/download`, { signal: controller.signal });
+    const admission = await fetch(`http://127.0.0.1:${server.port}/session`, { method: "POST" });
+    const session = await admission.json();
+    const response = await fetch(`http://127.0.0.1:${server.port}/download`, {
+      signal: controller.signal,
+      headers: { "x-speedtest-token": session.token },
+    });
     const reader = response.body!.getReader();
     await reader.read();
     controller.abort();
@@ -121,5 +126,42 @@ test("Bun propagates a real download disconnect and releases the server slot", a
   } finally {
     controller.abort();
     await server.stop(true);
+  }
+});
+
+test("one admission supplies every transport request and releases the place without credentials", async () => {
+  const calls: string[] = [];
+  const token = "00000000-0000-4000-8000-000000000001";
+  const transport = createHttpTransport(
+    "https://example.com",
+    async (_bytes, _count, _signal, headers) => {
+      expect(headers["X-Speedtest-Token"]).toBe(token);
+    },
+    async (url, init) => {
+      expect(init?.credentials).toBe("omit");
+      calls.push(new URL(url).pathname);
+      if (url.includes("/session?")) return Response.json({ token }, { status: 201 });
+      expect(new Headers(init?.headers).get("x-speedtest-token")).toBe(token);
+      return new Response(null, { status: 204 });
+    },
+  );
+  const signal = new AbortController().signal;
+  await transport.begin?.("quick", signal);
+  await transport.ping(signal);
+  await transport.upload(1, () => {}, signal);
+  transport.end?.();
+  expect(calls).toEqual(["/session", "/ping", "/session/end"]);
+});
+
+test("a real exhausted server bucket produces an explicit capacity error in the shared client", async () => {
+  const { createSpeedtestHandler } = await import("./server");
+  const handler = createSpeedtestHandler({ maxActive: 10, maxPeers: 4, capacityMbps: 1, testMbps: 1, now: () => 0 });
+  const transport = createHttpTransport("http://127.0.0.1:8080", unusedUpload, (url, init) => handler(new Request(url, init), "127.0.0.1"));
+  const signal = new AbortController().signal;
+  try {
+    await transport.begin?.("quick", signal);
+    await expect(transport.download(200_000, () => {}, signal)).rejects.toMatchObject({ code: "capacity", status: 503, retryAfter: 1 });
+  } finally {
+    transport.end?.();
   }
 });

@@ -4,7 +4,7 @@ import { createUdpHandler } from "./udp";
 
 if (Bun.argv.includes("--help")) {
   console.log(
-    "Standalone speedtest server\nEnvironment: SPEEDTEST_HOST, SPEEDTEST_PORT (8080), SPEEDTEST_UDP_PORT (disabled), SPEEDTEST_MAX_ACTIVE (128), SPEEDTEST_MAX_PEERS (4096), SPEEDTEST_UDP_PACKETS_PER_SECOND (4096), SPEEDTEST_TRUSTED_PROXIES (exact IP list).\nGET /ping, GET /download, POST /upload, GET /cli, GET /health. No Cloud dependency.",
+    "Standalone speedtest server\nEnvironment: SPEEDTEST_HOST, SPEEDTEST_PORT (8080), SPEEDTEST_UDP_PORT (disabled), SPEEDTEST_CAPACITY_MBPS (1000), SPEEDTEST_TEST_MBPS (1000), SPEEDTEST_MAX_ACTIVE (128), SPEEDTEST_MAX_PEERS (4096), SPEEDTEST_UDP_PACKETS_PER_SECOND (4096), SPEEDTEST_TRUSTED_PROXIES (exact IP list).\nPOST /session, POST /session/end, GET /ping, GET /download, POST /upload, GET /cli, GET /health. No Cloud dependency.",
   );
 } else {
   const options = readServerEnv();

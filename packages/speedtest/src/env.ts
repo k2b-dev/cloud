@@ -17,7 +17,9 @@ export function readServerEnv() {
     hostname: process.env.SPEEDTEST_HOST ?? "0.0.0.0",
     port: integer("SPEEDTEST_PORT", 8080, 65_535),
     udpPort: process.env.SPEEDTEST_UDP_PORT ? integer("SPEEDTEST_UDP_PORT", 8080, 65_535) : undefined,
-    // 128 active streams × 64 KiB = 8 MiB of application download buffers.
+    capacityMbps: integer("SPEEDTEST_CAPACITY_MBPS", 1_000, 1_000_000),
+    testMbps: integer("SPEEDTEST_TEST_MBPS", 1_000, 1_000_000),
+    // Ten stream slots per admitted test, including cancellation headroom.
     maxActive: integer("SPEEDTEST_MAX_ACTIVE", 128, 65_535),
     // Bounded process-local abuse ledger; 4096 small records fit roughly within 1 MiB.
     maxPeers: integer("SPEEDTEST_MAX_PEERS", 4_096, 1_000_000),

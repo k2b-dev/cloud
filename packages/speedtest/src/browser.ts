@@ -6,7 +6,7 @@ export function createBrowserTransport(server: string): Transport {
   let payload: Uint8Array<ArrayBuffer> | undefined;
   return createHttpTransport(
     base,
-    (bytes, count, signal) =>
+    (bytes, count, signal, headers) =>
       new Promise<void>((resolve, reject) => {
         if (signal.aborted) return reject(signal.reason);
         // Allocate lazily, once per test; no source data or Cloud credentials leave the browser.
@@ -26,6 +26,7 @@ export function createBrowserTransport(server: string): Transport {
         };
         xhr.open("POST", `${base}/upload`);
         xhr.withCredentials = false;
+        for (const [key, value] of Object.entries(headers)) xhr.setRequestHeader(key, value);
         xhr.setRequestHeader("Content-Type", "application/octet-stream");
         xhr.upload.onprogress = (event) => {
           if (signal.aborted) return;

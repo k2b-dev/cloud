@@ -1,6 +1,6 @@
 import { addressBudgetKey } from "./address";
 
-/** Strict fixed window: at most the approved 300 transfer starts per source network in 600 seconds. */
+/** Separate UDP probe ceiling: at most 300 confirmed packets per source network in 600 seconds. */
 export class IpBudget {
   private readonly peers = new Map<string, { start: number; count: number; active: number }>();
   private active = 0;

@@ -71,22 +71,70 @@ aggregate IP budget at ingress. No durable user data is stored.
 | `SPEEDTEST_HOST` | `0.0.0.0` | Listen address |
 | `SPEEDTEST_PORT` | `8080` | HTTP port |
 | `SPEEDTEST_UDP_PORT` | unset | UDP stays disabled until explicitly configured |
-| `SPEEDTEST_MAX_ACTIVE` | `128` | Concurrent HTTP transfers; 64 KiB application chunks give an 8 MiB chunk budget |
+| `SPEEDTEST_CAPACITY_MBPS` | `1000` | Sustainable aggregate measurement budget, combined download and upload |
+| `SPEEDTEST_TEST_MBPS` | `1000` | Capacity reserved per admitted test |
+| `SPEEDTEST_MAX_ACTIVE` | `128` | Stream memory ceiling; ten slots are reserved per admitted test, including cancellation headroom |
 | `SPEEDTEST_MAX_PEERS` | `4096` | Maximum IP budget records, roughly 1 MiB of ledger storage |
 | `SPEEDTEST_UDP_PACKETS_PER_SECOND` | `4096` | Global UDP packet processing ceiling per second |
 | `SPEEDTEST_TRUSTED_PROXIES` | empty | Exact proxy addresses allowed to supply `X-Real-IP` |
 
-Each IPv4 address or IPv6 /64 gets 300 combined download/upload starts per 600-second fixed window
-and at most ten concurrent HTTP requests. This leaves room for aborting requests at a phase transition. The measurement engine itself opens at most five. Downloads accept up to 25 MiB;
-uploads accept up to 16 MiB. A transfer stops after at most 14 seconds, including
-clients that stop reading or sending. HTTP `429` means the IP budget is spent;
-HTTP `503` means capacity is full. Both include `Retry-After` in seconds.
-Expired idle IP records are removed when another address needs a record;
-live records are never evicted to admit a new caller.
+Each canonical IPv4 address or IPv6 /64 may start at most **two complete tests
+in any rolling 60-second interval**. A cancelled test still counts. Rejection
+because the server is full does not consume a start. Shared connections, such
+as an office NAT, share this allowance. HTTP 429 includes the seconds until
+the oldest counted start expires; the UI and CLI display that waiting time.
 
-At higher rates the request budget can stop a test before the time limit.
-Treat that result as a failed measurement. Results are estimates of throughput
-to the named server, affected by Wi-Fi, other traffic, peering and buffering.
+The engine requests admission with `POST /session?mode=quick` (or `accurate`).
+Its unpredictable, short-lived ticket travels in `X-Speedtest-Token`, never a
+cookie or URL. Downloads and uploads without a valid ticket are rejected.
+The ticket is bound to the source network, lasts at most 14 or 29 seconds,
+and permits ten overlapping requests for four streams plus loaded ping and
+cancellation headroom. `POST /session/end` releases the reserved place;
+expiry also releases it after disconnects. Clients cannot extend a ticket.
+Static page and CLI downloads do not consume a test start.
+
+### Derive capacity before exposing the server
+
+Measure the sustainable capacity available to this service after reserving
+headroom for the host and other workloads. Set `SPEEDTEST_CAPACITY_MBPS` to
+that available capacity and `SPEEDTEST_TEST_MBPS` to the desired reservation
+per test. Admission uses:
+
+```text
+maximum concurrent tests = min(floor(capacity Mbps / test Mbps),
+                               floor(maximum active streams / 10))
+```
+
+For example, a measured 10 Gbit/s link with 2 Gbit/s reserved for other work
+has an 8000 Mbit/s measurement budget. Reserving 2000 Mbit/s per test admits
+four tests. With ten 64 KiB stream slots per test, this reserves 2.5 MiB of
+application download chunks; socket and ingress buffers require additional
+memory. The defaults (1000/1000, one test) are a local starting configuration,
+not a measured claim about `speedtest.k2b.dev`. Reject configurations that
+cannot admit one test. Increase capacity only after measuring the host.
+
+A process-wide byte bucket accounts for both outgoing download chunks and
+incoming upload chunks. Its refill rate is `capacity Mbps × 1000000 / 8`
+bytes/second with a one-second burst allowance. Exhaustion fails the test;
+a truncated download never becomes a successful measurement. HTTP 503 and
+`Retry-After` report an unavailable server. This budget does not pace traffic
+and silently report an imposed ceiling as the client's speed.
+
+Application code cannot undo bytes already received from the network.
+Configure an aggregate ingress bandwidth ceiling and upload body limit at the
+proxy/host as well; the application bucket bounds accepted measurement work.
+Disable compression and buffering, preserve `X-Speedtest-Token` and its CORS
+preflight, and apply an ingress connection/request budget for static assets,
+public ping and rejected requests. This service is not a network firewall.
+
+Downloads accept up to 25 MiB; uploads accept up to 16 MiB. Each transfer stops
+after at most 14 seconds or the ticket's remaining lifetime, whichever is
+shorter. The IP ledger has at most `SPEEDTEST_MAX_PEERS` records. Expired
+records are reclaimed without evicting a live budget. The complete-test limit
+is shared by the public page, Cloud Tools, CLI and downloaded scripts.
+
+Results estimate throughput to the named server and depend on Wi-Fi, other
+traffic, peering and buffering. A capacity failure is not a completed result.
 
 ## Optional UDP diagnostics
 
@@ -106,7 +154,7 @@ Forward the configured UDP port to the measurement service at the host named by 
 
 All protocol packets are exactly 64 bytes. A short-lived proof binds subsequent
 probes to the source address and port. Responses never exceed the request,
-including the initial challenge. Confirmed UDP probes have an equal, separate budget of 300 per source network per 600 seconds. Unconfirmed traffic does not allocate peer records. `SPEEDTEST_UDP_PACKETS_PER_SECOND` (default 4096) limits all UDP packet processing per second to bound cryptographic work.
+including the initial challenge. Confirmed UDP probes have a separate packet budget of 300 per source network per 600 seconds. Unconfirmed traffic does not allocate peer records. `SPEEDTEST_UDP_PACKETS_PER_SECOND` (default 4096) limits all UDP packet processing per second to bound cryptographic work.
 
 ## Read the result
 

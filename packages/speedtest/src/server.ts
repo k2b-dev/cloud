@@ -1,25 +1,23 @@
 import { isIP } from "node:net";
 import { canonicalAddress } from "./address";
-import { IpBudget } from "./budget";
+import { type CapacityOptions, TestAdmission } from "./admission";
 import { CHUNK_BYTES, DOWNLOAD_BYTES, UPLOAD_BYTES } from "./engine";
 
 const headers = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, X-Speedtest-Token",
   "Access-Control-Expose-Headers": "Retry-After",
   "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0, no-transform",
   "X-Content-Type-Options": "nosniff",
 };
-export interface ServerOptions {
-  maxPeers: number;
-  maxActive: number;
+export interface ServerOptions extends CapacityOptions {
   trustedProxies?: readonly string[];
   script?: string;
   now?: () => number;
 }
 export function createSpeedtestHandler(options: ServerOptions) {
-  const budget = new IpBudget(options);
+  const budget = new TestAdmission(options);
   const chunk = new Uint8Array(CHUNK_BYTES);
   crypto.getRandomValues(chunk);
   const trusted = new Set((options.trustedProxies ?? []).map(canonicalAddress));
@@ -37,16 +35,42 @@ export function createSpeedtestHandler(options: ServerOptions) {
       return options.script
         ? respond(options.script, 200, { "Content-Type": "text/javascript; charset=utf-8" })
         : respond("CLI bundle is unavailable", 503);
-    if (!["/ping", "/download", "/upload"].includes(url.pathname)) return respond("Not found", 404);
-    if (request.method !== (url.pathname === "/upload" ? "POST" : "GET")) return respond("Method not allowed", 405);
+    if (!["/session", "/session/end", "/ping", "/download", "/upload"].includes(url.pathname)) return respond("Not found", 404);
+
     const forwarded = request.headers.get("x-real-ip");
     const ip = isIP(remoteIp) && trusted.has(canonicalAddress(remoteIp)) && forwarded && isIP(forwarded) ? forwarded : remoteIp;
     if (!isIP(ip)) return respond("Client address unavailable", 503);
-    const lease = budget.acquire(ip, url.pathname !== "/ping");
-    if ("status" in lease)
-      return respond(lease.status === 429 ? "IP budget exceeded" : "Server busy", lease.status, {
+    const token = request.headers.get("x-speedtest-token");
+    if (url.pathname === "/session" && request.method === "POST") {
+      await request.body?.cancel();
+      const mode = url.searchParams.get("mode") ?? "quick";
+      if (mode !== "quick" && mode !== "accurate") return respond("Invalid mode", 400);
+      const result = budget.start(ip, mode);
+      return "status" in result
+        ? respond(result.status === 429 ? "Test limit exceeded" : "Server busy", result.status, {
+            "Retry-After": String(result.retryAfter),
+          })
+        : respond(JSON.stringify(result), 201, { "Content-Type": "application/json" });
+    }
+    if (url.pathname === "/session" && request.method === "GET") {
+      const status = budget.status(ip, token);
+      return status ? respond(JSON.stringify(status), 200, { "Content-Type": "application/json" }) : respond("Test session expired", 401);
+    }
+    if (url.pathname === "/session/end" && request.method === "POST") {
+      await request.body?.cancel();
+      budget.end(ip, token);
+      return respond(null, 204);
+    }
+    if (url.pathname.startsWith("/session")) return respond("Method not allowed", 405);
+    if (request.method !== (url.pathname === "/upload" ? "POST" : "GET")) return respond("Method not allowed", 405);
+    if (url.pathname === "/ping" && !token) return respond(null, 204);
+    const lease = budget.acquire(ip, token);
+    if ("status" in lease) {
+      await request.body?.cancel();
+      return respond(lease.status === 401 ? "Test session required" : "Server budget exceeded", lease.status, {
         "Retry-After": String(lease.retryAfter),
       });
+    }
     if (url.pathname === "/ping") {
       lease.release();
       return respond(null, 204);
@@ -66,6 +90,7 @@ export function createSpeedtestHandler(options: ServerOptions) {
         closed = true;
         clearTimeout(stopTimeout);
         request.signal.removeEventListener("abort", cancel);
+        lease.signal.removeEventListener("abort", cancel);
         lease.release();
       };
       let controller: ReadableStreamDefaultController<Uint8Array>;
@@ -79,13 +104,18 @@ export function createSpeedtestHandler(options: ServerOptions) {
         {
           start(value) {
             controller = value;
-            stopTimeout = setTimeout(cancel, 14_000);
+            stopTimeout = setTimeout(cancel, Math.min(14_000, lease.remaining));
             request.signal.addEventListener("abort", cancel, { once: true });
-            if (request.signal.aborted) cancel();
+            lease.signal.addEventListener("abort", cancel, { once: true });
+            if (request.signal.aborted || lease.signal.aborted) cancel();
           },
           pull(value) {
             if (closed) return;
             const part = chunk.subarray(0, Math.min(CHUNK_BYTES, size - sent));
+            if (!lease.consume(part.byteLength)) {
+              cancel();
+              return;
+            }
             value.enqueue(part);
             sent += part.byteLength;
             if (sent === size) {
@@ -115,14 +145,19 @@ export function createSpeedtestHandler(options: ServerOptions) {
       expired = true;
       void reader.cancel().catch(() => {});
     };
-    const timeout = setTimeout(cancel, 14_000);
+    const timeout = setTimeout(cancel, Math.min(14_000, lease.remaining));
     request.signal.addEventListener("abort", cancel, { once: true });
-    if (request.signal.aborted) cancel();
+    lease.signal.addEventListener("abort", cancel, { once: true });
+    if (request.signal.aborted || lease.signal.aborted) cancel();
     let bytes = 0;
     try {
       while (!expired) {
         const value = await reader.read();
         if (value.done) break;
+        if (!lease.consume(value.value.byteLength)) {
+          await reader.cancel();
+          return respond("Server bandwidth budget exceeded", 503, { "Retry-After": "1" });
+        }
         bytes += value.value.byteLength;
         if (bytes > UPLOAD_BYTES) {
           await reader.cancel();
@@ -136,6 +171,7 @@ export function createSpeedtestHandler(options: ServerOptions) {
     } finally {
       clearTimeout(timeout);
       request.signal.removeEventListener("abort", cancel);
+      lease.signal.removeEventListener("abort", cancel);
       reader.releaseLock();
       lease.release();
     }
