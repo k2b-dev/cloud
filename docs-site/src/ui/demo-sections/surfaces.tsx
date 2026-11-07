@@ -3,6 +3,7 @@ import {
   Avatar,
   AvatarFaces,
   AvatarStack,
+  BudgetList,
   Button,
   Calendar,
   type CalendarEvent,
@@ -821,6 +822,38 @@ const ProgressDemo = () => (
   </DemoCard>
 );
 
+const BudgetDemo = () => (
+  <DemoCard
+    id="budget"
+    chip={[
+      { kind: "component", name: "BudgetList", from: "@k2b/ui" },
+      { kind: "component", name: "ProgressBar", from: "@k2b/ui" },
+    ]}
+    description="Budgets as rows: booked solid, expected hatched, over the budget red with a mark at the limit. The hint turns amber from 80 % and red beyond the budget; hover or focus a row for the breakdown."
+    code={`<BudgetList
+  currency="EUR"
+  items={[
+    { label: "Wareneinkauf", used: 9200, expected: 1800, limit: 15000 },
+    { label: "Marketing", used: 1400, expected: 300, limit: 2000 },
+    { label: "Reisen", used: 900, expected: 300, limit: 1000 },
+    { label: "Software", used: 380, limit: 600 },
+  ]}
+/>`}
+  >
+    <div style={{ "max-width": "32rem" }}>
+      <BudgetList
+        currency="EUR"
+        items={[
+          { label: "Wareneinkauf", used: 9200, expected: 1800, limit: 15000 },
+          { label: "Marketing", used: 1400, expected: 300, limit: 2000 },
+          { label: "Reisen", used: 900, expected: 300, limit: 1000 },
+          { label: "Software", used: 380, limit: 600 },
+        ]}
+      />
+    </div>
+  </DemoCard>
+);
+
 const ChangeListDemo = () => (
   <DemoCard
     id="change-list"
@@ -1414,6 +1447,7 @@ const demos: DemoSection = {
   progress: () => (
     <DemoGrid columns="one">
       <ProgressDemo />
+      <BudgetDemo />
     </DemoGrid>
   ),
   "change-list": () => (
