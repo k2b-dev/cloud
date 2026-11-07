@@ -407,7 +407,8 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (!textarea || event.isComposing) return;
+    // A key that an attached part, such as the slash commands, used is not the text's any more.
+    if (!textarea || event.isComposing || event.defaultPrevented) return;
     if (
       event.key === "Backspace" &&
       !event.metaKey &&
