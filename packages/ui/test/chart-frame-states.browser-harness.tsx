@@ -56,6 +56,7 @@ render(
           { label: "Eastern uplands", value: 97 },
         ]}
       />
+      <Chart kind="sparkline" class="trend-spark" style={{ height: "30px", width: "160px" }} data={[3, 5, 4, 8, 9]} />
     </main>
   ),
   document.getElementById("root")!,

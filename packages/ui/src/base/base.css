@@ -1074,8 +1074,14 @@
      light band behind it instead (data-inspecting="category"). */
   .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
     stroke: var(--k2b-chart-inspection-color);
-    stroke-width: 1.5px;
     vector-effect: non-scaling-stroke;
+  }
+  .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path) {
+    stroke-width: 1.5px;
+  }
+  /* Points keep a 2 px ring: a tiny point is hit through its stroke, so a thinner ring would let the drawing take the pointer. */
+  .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > circle {
+    stroke-width: 2px;
   }
 
   /* The band sits behind the marks without positioning the drawing, which would change what lies on top. */

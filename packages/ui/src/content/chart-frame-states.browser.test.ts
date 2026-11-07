@@ -164,3 +164,19 @@ test("calm hover: rows get a band from the baseline to the longest bar", async (
   expect(band.height).toBeGreaterThan(rect.height);
   await page.close();
 });
+
+test("calm hover keeps a 2 px ring on points, so a tiny point stays the pointer's target", async () => {
+  const { page } = await open(1280);
+  const point = page.locator(".trend-spark [data-chart-datum] circle").last();
+  await point.hover();
+  await page.waitForSelector(".trend-spark [data-inspected]");
+  await settled(page);
+  expect(
+    await page
+      .locator(".trend-spark [data-inspected] > circle")
+      .first()
+      .evaluate((node) => getComputedStyle(node).strokeWidth),
+  ).toBe("2px");
+  await point.hover();
+  await page.close();
+});
