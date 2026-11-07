@@ -153,6 +153,17 @@ metadata updates affect one notebook without note fan-out, so they remain
 transactional too. Operators must budget all these writes together with Core
 and other producers; the note sweep does not enforce the overall stream budget.
 
+Chat also publishes `chat.message.posted` version 1 at an ordinary
+`chat.conversation` place. It emits one transactional event per new text
+message, including replies and capability posts. System lines and system
+conversations, edits, deletes and retries are excluded; imports do not replay
+old messages. Its readers and author/mention predicates are documented in
+[Chat posted messages](/en/docs/platform/app-events#chat-posted-messages).
+There is no aggregate publisher throttle. The existing limits of ten sends per
+principal per conversation per ten seconds and 60 per principal per minute
+bound individual writers, not installation throughput. Include Chat in the
+same shared outage allocation as other producers.
+
 ## Recover a delivery
 
 First fix the handler or its dependency and verify that the subscription is
@@ -238,6 +249,18 @@ reference. PostgreSQL `jsonb::text` adds whitespace: **262–314 bytes** across
 these fixtures. Longer refs or an optional cause increase the size; the platform maximum remains
 **4096 bytes** in PostgreSQL `jsonb::text`.
 
+Chat's `chat.message.posted` fixture is **374 compact / 405 jsonb-text bytes**
+with a service-account author and no mentions, root or cause. A reply with 20
+service-account mentions is **1829 compact / 1942 jsonb-text bytes**, before
+an optional cause. The maximum-mention fixture stays below the 4096-byte limit
+even with a 256-character request ID requiring JSON escapes. Longer PostgreSQL
+publication timestamps also consume a few extra bytes. Budget these larger
+payloads explicitly: with the same 1024-byte transport allowance, seven days
+of maximum-mention replies fit at only
+`268435456 / ((1942 + 1024) × 604800) = 0.150 events/s` before other producers.
+The 0.3 events/s thin-envelope planning rate below does not provide seven days
+of outage capacity for a mention-heavy Chat workload.
+
 The shared JetStream has a **256 MiB** byte limit and a **7-day** maximum age.
 Before transport overhead, 292-byte thin envelopes fit at
 `268435456 / (292 × 604800) = 1.52 events/s` for seven days. This is an
@@ -265,7 +288,8 @@ at most `M/T = 4/60 = 0.0667 events/s`, **22.2%** of the shared planning rate
 (with an initial burst of at most four). Q = 30 s merges short editing bursts;
 W = 300 s lets continuous editing become eligible within five minutes. The
 remaining 0.233 events/s is a planning allowance for all other events, including
-discrete Mail receipts at the eligible incoming-message rate, not a
+discrete Mail receipts at the eligible incoming-message rate and Chat posts
+at the new-message rate, not a
 publisher limit. Sustained discrete writes above it require more capacity or
 a shorter outage target. A missed or expired event requires domain reconciliation.
 
