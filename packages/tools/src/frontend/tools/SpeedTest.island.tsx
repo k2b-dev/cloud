@@ -1,474 +1,397 @@
-import { i18n } from "@k2b/stdlib";
-import { Button, Chart, CopyButton, NoticeCard, useLocale } from "@k2b/ui";
-import { batch, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import { apiClient } from "@/api/client";
+import { DEFAULT_SERVER, type Mode, PLANS, type Progress, type Result, runSpeedtest, SpeedtestError } from "@k2b/speedtest";
+import { createBrowserTransport } from "@k2b/speedtest/browser";
+import { Button, Chart, CopyButton, ProgressBar, SegmentedControl, StatCell, StatGrid, useLocale } from "@k2b/ui";
+import { batch, createMemo, createSignal, For, onCleanup, onMount } from "solid-js";
 import { formatSpeedTestReading, speedTestSparklineTooltip } from "./speed-test-format";
-import { ToolCodeBlock } from "./ToolOutput";
+import { speedTestMessages } from "./speedtest-messages";
 
-export const speedTestMessages = i18n.define({
-  baseLocale: "en",
-  messages: {
-    en: {
-      phasePing: "Pinging server",
-      phaseDownload: "Measuring download",
-      phaseUpload: "Measuring upload",
-      phaseDone: "Done",
-      phaseError: "Error",
-      unknownError: "unknown error",
-      dataNotice:
-        "This tool sends random test data to the cloud server to measure your connection. The data is generated in your browser and discarded server-side — nothing is stored.",
-      runAgain: "Run again",
-      startTest: "Start test",
-      stop: "Stop",
-      terminalTitle: "Run from your terminal",
-      cliHintBefore: "Use the Cloud CLI or pipe the script into your runtime. Append ",
-      cliHintAfter: " for structured output.",
-      cliRuntimeAria: "CLI runtime",
-    },
-    de: {
-      phasePing: "Ping wird gemessen",
-      phaseDownload: "Download wird gemessen",
-      phaseUpload: "Upload wird gemessen",
-      phaseDone: "Fertig",
-      phaseError: "Fehler",
-      unknownError: "unbekannter Fehler",
-      dataNotice:
-        "Dieses Werkzeug sendet zufällige Testdaten an den Cloud-Server, um deine Verbindung zu messen. Die Daten werden im Browser erzeugt und serverseitig verworfen. Nichts wird gespeichert.",
-      runAgain: "Erneut testen",
-      startTest: "Test starten",
-      stop: "Stoppen",
-      terminalTitle: "Im Terminal ausführen",
-      cliHintBefore: "Nutze die Cloud CLI oder übergib das Skript an deine Laufzeitumgebung. Ergänze ",
-      cliHintAfter: " für strukturierte Ausgabe an.",
-      cliRuntimeAria: "Laufzeitumgebung",
-    },
-  },
-});
+export { speedTestMessages } from "./speedtest-messages";
 
-type SpeedTestMessages = ReturnType<typeof speedTestMessages.resolve>["t"];
+type State = "idle" | "ping" | "download" | "upload" | "done" | "cancelled" | "error";
+type Sample = { x: number; y: number };
+type CliVariant = "cloud" | "bun" | "node";
+const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+export function speedtestSnippet(variant: CliVariant, server: string, mode: Mode) {
+  if (variant === "cloud") return `cld tools speedtest --server ${shellQuote(server)} --mode ${mode}`;
+  return `curl -fsS ${shellQuote(`${server}/cli`)} -o speedtest.mjs\n${variant === "bun" ? "bun" : "node"} speedtest.mjs --server ${shellQuote(server)} --mode ${mode}`;
+}
 
-type Phase = "idle" | "ping" | "download" | "upload" | "done" | "error";
-
-type CliVariant = "cloud" | "bun" | "node" | "python";
-
-type SpeedTestProps = {
-  /** Public-facing base URL of the speedtest API, e.g. `https://cloud.example.org/tools/api/speedtest`. */
-  cliBaseUrl?: string;
-};
-
-const speedtestServerFromBase = (base: string): string => {
-  try {
-    return new URL(base).origin;
-  } catch {
-    return base.replace(/\/tools\/api\/speedtest\/?$/, "").replace(/\/+$/, "");
-  }
-};
-
-const buildSnippet = (variant: CliVariant, base: string): string => {
-  switch (variant) {
-    case "cloud":
-      return `cld tools speedtest --server ${speedtestServerFromBase(base)}`;
-    case "bun":
-      return `curl -fsSL ${base}/cli | bun -`;
-    case "node":
-      return `curl -fsSL ${base}/cli | node --input-type=module`;
-    case "python":
-      return `curl -fsSL ${base}/cli.py | python3 -`;
-  }
-};
-
-const PING_SAMPLES = 10;
-const PING_WARMUP = 1;
-const DOWNLOAD_PARALLEL = 4;
-const DOWNLOAD_PER_STREAM = 25 * 1024 * 1024;
-const UPLOAD_PARALLEL = 4;
-const UPLOAD_PER_STREAM = 12 * 1024 * 1024;
-
-const phaseLabel = (t: SpeedTestMessages): Record<Phase, string> => ({
-  idle: "",
-  ping: t.phasePing,
-  download: t.phaseDownload,
-  upload: t.phaseUpload,
-  done: t.phaseDone,
-  error: t.phaseError,
-});
-
-// crypto.getRandomValues caps at 65536 bytes per call (Web Crypto spec).
-const RANDOM_CHUNK = 64 * 1024;
-const fillRandom = <T extends Uint8Array>(buf: T): T => {
-  for (let off = 0; off < buf.byteLength; off += RANDOM_CHUNK) {
-    crypto.getRandomValues(buf.subarray(off, Math.min(off + RANDOM_CHUNK, buf.byteLength)));
-  }
-  return buf;
-};
-
-const stddev = (samples: number[]): number => {
-  if (samples.length < 2) return 0;
-  const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
-  const variance = samples.reduce((s, x) => s + (x - mean) ** 2, 0) / samples.length;
-  return Math.sqrt(variance);
-};
-
-export default function SpeedTest(props: SpeedTestProps) {
+export default function SpeedTest(props: { server?: string; enabled?: boolean }) {
   const locale = useLocale();
   const t = () => speedTestMessages.resolve([locale()]).t;
-  const [phase, setPhase] = createSignal<Phase>("idle");
+  const server = () => props.server ?? DEFAULT_SERVER;
+  const [mode, setMode] = createSignal<Mode>("quick");
+  const [state, setState] = createSignal<State>("idle");
+  const [online, setOnline] = createSignal(true);
+  const [progress, setProgress] = createSignal<Progress>();
   const [download, setDownload] = createSignal<number | null>(null);
   const [upload, setUpload] = createSignal<number | null>(null);
-  const [ping, setPing] = createSignal<number | null>(null);
-  const [jitter, setJitter] = createSignal<number | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
-  // History buffers feed the per-tile sparklines.
-  const [downloadHistory, setDownloadHistory] = createSignal<number[]>([]);
-  const [uploadHistory, setUploadHistory] = createSignal<number[]>([]);
-  const [pingHistory, setPingHistory] = createSignal<number[]>([]);
-
-  let abortController: AbortController | null = null;
-  let activeXhrs: XMLHttpRequest[] = [];
-
-  const cleanup = () => {
-    abortController?.abort();
-    abortController = null;
-    for (const xhr of activeXhrs) {
-      try {
-        xhr.abort();
-      } catch {}
+  const [downloadHistory, setDownloadHistory] = createSignal<Sample[]>([]);
+  const [uploadHistory, setUploadHistory] = createSignal<Sample[]>([]);
+  const [downloadRamp, setDownloadRamp] = createSignal<Sample[]>([]);
+  const [uploadRamp, setUploadRamp] = createSignal<Sample[]>([]);
+  const [completed, setCompleted] = createSignal<string[]>([]);
+  const [result, setResult] = createSignal<Result>();
+  const [error, setError] = createSignal<unknown>();
+  const [retryAt, setRetryAt] = createSignal(0);
+  const [now, setNow] = createSignal(0);
+  const [cliVariant, setCliVariant] = createSignal<CliVariant>("cloud");
+  const [json, setJson] = createSignal(false);
+  const [copyFailed, setCopyFailed] = createSignal(false);
+  let controller: AbortController | undefined;
+  let phaseStart = 0;
+  let previousPhase = "";
+  const running = () => ["ping", "download", "upload"].includes(state());
+  const disabled = () => props.enabled === false;
+  const waiting = () => Math.max(0, Math.ceil((retryAt() - now()) / 1_000));
+  const totalCap = () => PLANS[mode()].ping + PLANS[mode()].download + PLANS[mode()].upload;
+  const remaining = () => Math.ceil((progress()?.remaining_ms ?? totalCap()) / 1_000);
+  const labels = () => ({
+    idle: t().phaseIdle,
+    ping: t().phasePing,
+    download: t().phaseDownload,
+    upload: t().phaseUpload,
+    done: t().phaseDone,
+    cancelled: t().phaseCancelled,
+    error: t().phaseError,
+  });
+  const errorMessage = () => {
+    const value = error();
+    if (value instanceof SpeedtestError) {
+      if (value.status === 429)
+        return value.retryAfter && Number.isFinite(value.retryAfter) ? t().rateLimited({ seconds: waiting() }) : t().rateLimitedUnknown;
+      if (value.code === "slow_server") return t().slow;
+      if (value.code === "invalid_server") return t().invalid;
+      if (value.status === 503 && waiting()) return `${t().http({ status: 503 })} ${t().remaining({ seconds: waiting() })}`;
+      if (value.status) return t().http({ status: value.status });
     }
-    activeXhrs = [];
+    return t().network;
   };
-  onCleanup(cleanup);
-
-  const measurePing = async (signal: AbortSignal) => {
-    // Warmup requests are discarded — first request pays for connection
-    // setup, JIT warmup, settings cache fill, etc.
-    for (let i = 0; i < PING_WARMUP; i++) {
-      if (signal.aborted) throw new DOMException("aborted", "AbortError");
-      await apiClient.speedtest.ping.$get({}, { init: { cache: "no-store", signal } });
-    }
-    const samples: number[] = [];
-    for (let i = 0; i < PING_SAMPLES; i++) {
-      if (signal.aborted) throw new DOMException("aborted", "AbortError");
-      const t0 = performance.now();
-      await apiClient.speedtest.ping.$get({}, { init: { cache: "no-store", signal } });
-      samples.push(performance.now() - t0);
-      setPingHistory([...samples]);
-    }
-    // Report the minimum sample as ping: it represents the best-case
-    // network + server round-trip. Higher samples include transient
-    // scheduling/queueing delay and would inflate the result.
-    const min = Math.min(...samples);
-    return { ping: min, jitter: stddev(samples) };
+  const status = () =>
+    copyFailed()
+      ? t().copyFailed
+      : disabled()
+        ? t().disabled
+        : !online()
+          ? t().offline
+          : state() === "error"
+            ? errorMessage()
+            : state() === "cancelled"
+              ? t().cancelled
+              : state() === "done"
+                ? `${t().loaded}: ${formatSpeedTestReading(result()?.loaded_latency_ms ?? null, locale())} ms`
+                : running()
+                  ? t().remaining({ seconds: remaining() })
+                  : t().ready;
+  const reading = () =>
+    state() === "ping" ? (progress()?.ping_ms ?? null) : state() === "upload" || state() === "done" ? upload() : download();
+  const snippet = createMemo(() => speedtestSnippet(cliVariant(), server(), mode()));
+  const finalJson = () => JSON.stringify(result() ?? null, null, 2);
+  const terminal = createMemo(() => {
+    if (json()) return `${snippet()} --json\n${result() ? finalJson() : `# ${status()}`}`;
+    const p = progress();
+    return [
+      snippet(),
+      `${t().server}: ${server()}`,
+      `${t().ping}: ${formatSpeedTestReading(p?.ping_ms ?? null, locale())} ms · ${t().jitter}: ${formatSpeedTestReading(p?.jitter_ms ?? null, locale())} ms`,
+      `Download: ${formatSpeedTestReading(download(), locale())} Mbit/s`,
+      `Upload:   ${formatSpeedTestReading(upload(), locale())} Mbit/s`,
+      `${t().loaded}: ${formatSpeedTestReading(p?.loaded_latency_ms ?? null, locale())} ms`,
+      `${labels()[state()]} · ${running() ? t().remaining({ seconds: remaining() }) : status()}`,
+    ].join("\n");
+  });
+  const stop = () => {
+    controller?.abort();
+    setState("cancelled");
   };
-
-  const measureDownload = async (signal: AbortSignal) => {
-    let totalBytes = 0;
-    const t0 = performance.now();
-    let lastUpdate = t0;
-
-    const streams = Array.from({ length: DOWNLOAD_PARALLEL }, async () => {
-      const res = await apiClient.speedtest.download.$get(
-        { query: { size: String(DOWNLOAD_PER_STREAM) } },
-        { init: { cache: "no-store", signal } },
-      );
-      if (!res.body) throw new Error("download: no response body");
-      const reader = res.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          totalBytes += value.byteLength;
-          const now = performance.now();
-          if (now - lastUpdate > 100) {
-            lastUpdate = now;
-            const elapsed = (now - t0) / 1000;
-            if (elapsed > 0) {
-              const mbps = (totalBytes * 8) / elapsed / 1e6;
-              setDownload(mbps);
-              setDownloadHistory((prev) => [...prev, mbps]);
-            }
-          }
-        }
-      }
-    });
-    await Promise.all(streams);
-    const elapsed = (performance.now() - t0) / 1000;
-    const final = elapsed > 0 ? (totalBytes * 8) / elapsed / 1e6 : 0;
-    setDownload(final);
-    setDownloadHistory((prev) => [...prev, final]);
-  };
-
-  // XHR is required for upload progress events — fetch() has none.
-  const uploadOne = (payload: Blob, byteLength: number, onProgress: (loaded: number) => void, signal: AbortSignal) =>
-    new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      activeXhrs.push(xhr);
-      const finish = () => {
-        activeXhrs = activeXhrs.filter((x) => x !== xhr);
-      };
-      xhr.open("POST", "/tools/api/speedtest/upload");
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) onProgress(e.loaded);
-      };
-      xhr.onload = () => {
-        finish();
-        if (xhr.status >= 200 && xhr.status < 300) {
-          onProgress(byteLength);
-          resolve();
-        } else reject(new Error(`upload failed: HTTP ${xhr.status}`));
-      };
-      xhr.onerror = () => {
-        finish();
-        reject(new Error("upload network error"));
-      };
-      xhr.onabort = () => {
-        finish();
-        reject(new DOMException("aborted", "AbortError"));
-      };
-      signal.addEventListener(
-        "abort",
-        () => {
-          try {
-            xhr.abort();
-          } catch {}
-        },
-        { once: true },
-      );
-      xhr.send(payload);
-    });
-
-  const measureUpload = async (signal: AbortSignal) => {
-    const data = fillRandom(new Uint8Array(UPLOAD_PER_STREAM));
-    const payload = new Blob([data]);
-
-    const t0 = performance.now();
-    let lastUpdate = t0;
-    const loaded = new Array<number>(UPLOAD_PARALLEL).fill(0);
-
-    const streams = Array.from({ length: UPLOAD_PARALLEL }, (_, i) =>
-      uploadOne(
-        payload,
-        UPLOAD_PER_STREAM,
-        (l) => {
-          loaded[i] = l;
-          const now = performance.now();
-          if (now - lastUpdate > 100) {
-            lastUpdate = now;
-            const total = loaded.reduce((a, b) => a + b, 0);
-            const elapsed = (now - t0) / 1000;
-            if (elapsed > 0) {
-              const mbps = (total * 8) / elapsed / 1e6;
-              setUpload(mbps);
-              setUploadHistory((prev) => [...prev, mbps]);
-            }
-          }
-        },
-        signal,
-      ),
-    );
-    await Promise.all(streams);
-    const elapsed = (performance.now() - t0) / 1000;
-    const final = elapsed > 0 ? (UPLOAD_PER_STREAM * UPLOAD_PARALLEL * 8) / elapsed / 1e6 : 0;
-    setUpload(final);
-    setUploadHistory((prev) => [...prev, final]);
-  };
-
-  const run = async () => {
-    cleanup();
-    abortController = new AbortController();
-    const { signal } = abortController;
+  const update = (event: Progress) => {
     batch(() => {
-      setError(null);
+      setProgress(event);
+      setState(event.phase);
+      if (event.phase !== previousPhase) {
+        previousPhase = event.phase;
+        phaseStart = event.elapsed_ms;
+      }
+      if (event.phase_complete) setCompleted((items) => [...items, event.phase]);
+      if (event.phase === "ping") return;
+      (event.phase === "download" ? setDownload : setUpload)(event.mbps);
+      const sample = { x: event.elapsed_ms / 1_000, y: event.mbps };
+      if (!event.phase_complete && event.elapsed_ms - phaseStart < PLANS[mode()].warmup)
+        (event.phase === "download" ? setDownloadRamp : setUploadRamp)((items) => [...items, sample]);
+      else (event.phase === "download" ? setDownloadHistory : setUploadHistory)((items) => [...items, sample]);
+    });
+  };
+  const run = async () => {
+    if (running() || disabled() || !online() || waiting()) return;
+    controller = new AbortController();
+    const current = controller;
+    batch(() => {
+      setCopyFailed(false);
+      setError(undefined);
+      setRetryAt(0);
+      setResult(undefined);
+      setProgress(undefined);
       setDownload(null);
       setUpload(null);
-      setPing(null);
-      setJitter(null);
       setDownloadHistory([]);
       setUploadHistory([]);
-      setPingHistory([]);
+      setDownloadRamp([]);
+      setUploadRamp([]);
+      setCompleted([]);
+      setState("ping");
     });
+    previousPhase = "";
     try {
-      setPhase("ping");
-      const result = await measurePing(signal);
-      batch(() => {
-        setPing(result.ping);
-        setJitter(result.jitter);
+      const next = await runSpeedtest({
+        server: server(),
+        mode: mode(),
+        transport: createBrowserTransport(server()),
+        signal: current.signal,
+        onProgress: update,
       });
-      setPhase("download");
-      await measureDownload(signal);
-      setPhase("upload");
-      await measureUpload(signal);
-      setPhase("done");
-    } catch (err) {
-      if ((err as Error).name === "AbortError") {
-        setPhase("idle");
-        return;
+      if (controller !== current) return;
+      batch(() => {
+        setResult(next);
+        setDownload(next.download_mbps);
+        setUpload(next.upload_mbps);
+        setState("done");
+      });
+    } catch (value) {
+      if (controller !== current) return;
+      if (current.signal.aborted) setState("cancelled");
+      else {
+        batch(() => {
+          setError(value);
+          setState("error");
+          if (value instanceof SpeedtestError && value.retryAfter && Number.isFinite(value.retryAfter)) {
+            setNow(Date.now());
+            setRetryAt(Date.now() + value.retryAfter * 1_000);
+          }
+        });
       }
-      setError((err as Error).message ?? t().unknownError);
-      setPhase("error");
     }
   };
-
-  const stop = () => {
-    cleanup();
-    setPhase("idle");
-  };
-
-  const isRunning = () => phase() === "ping" || phase() === "download" || phase() === "upload";
-
-  const [cliVariant, setCliVariant] = createSignal<CliVariant>("cloud");
-  const cliSnippet = createMemo(() => (props.cliBaseUrl ? buildSnippet(cliVariant(), props.cliBaseUrl) : ""));
-
+  onMount(() => {
+    const updateOnline = () => {
+      setOnline(navigator.onLine);
+      if (!navigator.onLine && running()) stop();
+    };
+    updateOnline();
+    window.addEventListener("online", updateOnline);
+    window.addEventListener("offline", updateOnline);
+    const timer = setInterval(() => {
+      if (retryAt()) setNow(Date.now());
+    }, 250);
+    onCleanup(() => {
+      clearInterval(timer);
+      window.removeEventListener("online", updateOnline);
+      window.removeEventListener("offline", updateOnline);
+    });
+  });
+  onCleanup(() => {
+    controller?.abort();
+    controller = undefined;
+  });
   return (
-    <div class="flex flex-col gap-4">
-      <NoticeCard tone="warning">{t().dataNotice}</NoticeCard>
-
-      <div class="paper p-4 flex flex-col gap-4">
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Metric
-            label="Download"
-            value={formatSpeedTestReading(download(), locale())}
-            unit="Mbps"
-            icon="ti ti-download"
-            active={phase() === "download"}
-            series={downloadHistory()}
-            seriesColor="text-blue-500 dark:text-blue-400"
-          />
-          <Metric
-            label="Upload"
-            value={formatSpeedTestReading(upload(), locale())}
-            unit="Mbps"
-            icon="ti ti-upload"
-            active={phase() === "upload"}
-            series={uploadHistory()}
-            seriesColor="text-emerald-500 dark:text-emerald-400"
-          />
-          <Metric
-            label="Ping"
-            value={formatSpeedTestReading(ping(), locale())}
-            unit="ms"
-            icon="ti ti-activity"
-            active={phase() === "ping"}
-            series={pingHistory()}
-            seriesColor="text-amber-500 dark:text-amber-400"
-          />
-          <Metric
-            label="Jitter"
-            value={formatSpeedTestReading(jitter(), locale())}
-            unit="ms"
-            icon="ti ti-wave-square"
-            active={phase() === "ping"}
-          />
-        </div>
-
-        <div class="flex items-center gap-3">
-          <Show
-            when={isRunning()}
-            fallback={
-              <Button onClick={run}>
-                <i class="ti ti-player-play" />
-                {phase() === "done" || phase() === "error" ? t().runAgain : t().startTest}
-              </Button>
-            }
-          >
-            <Button variant="secondary" onClick={stop}>
-              <i class="ti ti-player-stop" /> {t().stop}
-            </Button>
-            <span class="text-sm text-dimmed flex items-center gap-1.5">
-              <i class="ti ti-loader-2 animate-spin" />
-              {phaseLabel(t())[phase()]}…
-            </span>
-          </Show>
-        </div>
-
-        <Show when={error()}>
-          <NoticeCard tone="danger">{error()}</NoticeCard>
-        </Show>
+    <div class="tools-speedtest" data-state={disabled() ? "disabled" : !online() ? "offline" : state()}>
+      <div class="tools-speedtest-server text-sm text-dimmed">
+        <span>
+          {t().server}: <strong class="text-primary break-all">{server()}</strong>
+        </span>
+        <p>{t().dataNotice}</p>
       </div>
-
-      <Show when={props.cliBaseUrl}>
-        <div class="paper p-4 flex flex-col gap-3">
-          <div class="flex items-end justify-between gap-3 flex-wrap">
-            <div>
-              <h2 class="text-sm font-semibold">{t().terminalTitle}</h2>
-              <p class="text-xs text-dimmed">
-                {t().cliHintBefore}
-                <code class="text-[11px]">--json</code>
-                {t().cliHintAfter}
-              </p>
+      <div class="tools-speedtest-layout">
+        <section class="tools-speedtest-measure" aria-label={t().duration}>
+          <SegmentedControl<Mode>
+            value={mode()}
+            onValueChange={setMode}
+            disabled={running()}
+            ariaLabel={t().duration}
+            options={[
+              { value: "quick", label: t().quick },
+              { value: "accurate", label: t().accurate },
+            ]}
+          />
+          <div class="tools-speedtest-gauge">
+            <Chart
+              kind="gauge"
+              value={reading() ?? 0}
+              max={Math.max(100, 10 ** Math.ceil(Math.log10(Math.max(1, reading() ?? 0))))}
+              format={(value) => formatSpeedTestReading(reading() === null && value === 0 ? null : value, locale())}
+              label={`${labels()[state()]} · ${state() === "ping" ? "ms" : "Mbit/s"}`}
+            />
+          </div>
+          <ol class="tools-speedtest-phases" aria-label={t().progress}>
+            <For
+              each={[
+                { phase: "ping", label: t().ping, value: () => progress()?.ping_ms ?? null, unit: "ms" },
+                { phase: "download", label: "Download", value: download, unit: "Mbit/s" },
+                { phase: "upload", label: "Upload", value: upload, unit: "Mbit/s" },
+              ]}
+            >
+              {(item) => (
+                <li data-active={state() === item.phase}>
+                  <span>
+                    <i aria-hidden="true" class={completed().includes(item.phase) ? "ti ti-check text-success" : "ti ti-circle-dashed"} />{" "}
+                    {item.label}
+                  </span>
+                  <span class="tabular-nums">
+                    {formatSpeedTestReading(item.value(), locale())} {item.unit}
+                  </span>
+                </li>
+              )}
+            </For>
+          </ol>
+          <div class="tools-speedtest-eta">
+            <ProgressBar
+              value={(progress()?.progress ?? 0) * 100}
+              label={t().progress}
+              valueText={t().remaining({ seconds: remaining() })}
+            />
+            <div class="flex justify-between text-xs text-dimmed tabular-nums">
+              <span>{labels()[state()]}</span>
+              <span>{running() ? t().remaining({ seconds: remaining() }) : `${totalCap() / 1_000} s`}</span>
             </div>
-            <div class="flex items-center gap-0.5 text-xs" role="tablist" aria-label={t().cliRuntimeAria}>
-              <For
-                each={[
-                  { value: "cloud" as CliVariant, label: "Cloud CLI" },
-                  { value: "bun" as CliVariant, label: "Bun" },
-                  { value: "node" as CliVariant, label: "Node" },
-                  { value: "python" as CliVariant, label: "Python" },
+          </div>
+          <Button
+            size="lg"
+            class="w-full"
+            variant={running() ? "secondary" : "primary"}
+            disabled={!running() && (disabled() || !online() || waiting() > 0)}
+            onClick={() => (running() ? stop() : void run())}
+          >
+            <i aria-hidden="true" class={running() ? "ti ti-player-stop" : state() === "error" ? "ti ti-refresh" : "ti ti-player-play"} />
+            {running() ? t().stop : state() === "error" ? t().retry : state() === "done" ? t().runAgain : t().startTest}
+          </Button>
+          <div
+            class="tools-speedtest-status text-sm"
+            role="status"
+            aria-live="polite"
+            classList={{ "text-danger": state() === "error", "text-dimmed": state() !== "error" }}
+          >
+            {status()}
+          </div>
+        </section>
+        <section class="tools-speedtest-detail">
+          <div>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <h2 class="text-sm font-semibold">{t().throughput}</h2>
+              <div class="tools-speedtest-legend text-xs text-dimmed">
+                <span>Download</span>
+                <span>Upload</span>
+                <span>{t().rampupLabel}</span>
+              </div>
+            </div>
+            <div class="tools-speedtest-chart">
+              <Chart
+                kind="line"
+                series={[
+                  { label: "Download", data: downloadHistory() },
+                  { label: "Upload", data: uploadHistory(), lineStyle: "dashed" },
+                  { label: `${t().rampup} · Download`, data: downloadRamp(), lineStyle: "dotted" },
+                  { label: `${t().rampup} · Upload`, data: uploadRamp(), lineStyle: "dotted" },
                 ]}
-              >
-                {(opt) => (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={cliVariant() === opt.value}
-                    class="px-2 py-1 rounded-md transition-colors"
-                    classList={{
-                      "bg-zinc-100 dark:bg-zinc-800 text-primary": cliVariant() === opt.value,
-                      "text-dimmed hover:text-secondary": cliVariant() !== opt.value,
-                    }}
-                    onClick={() => setCliVariant(opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                )}
-              </For>
+                xAxis={{ domain: [0, totalCap() / 1_000], label: "s" }}
+                yAxis={{ label: "Mbit/s" }}
+                legend={false}
+                labels={{ empty: t().pending }}
+              />
             </div>
+            <p class="text-xs text-dimmed">{t().rampup}</p>
           </div>
-
-          <div class="relative">
-            <ToolCodeBlock class="overflow-x-auto pr-12">{cliSnippet()}</ToolCodeBlock>
-            <div class="absolute top-2 right-2">
-              <CopyButton text={cliSnippet()} size="xs" />
+          <StatGrid columns={3} size="md">
+            <Metric
+              label="Download"
+              value={formatSpeedTestReading(download(), locale())}
+              unit="Mbit/s"
+              icon="ti ti-download"
+              active={state() === "download"}
+              series={downloadHistory().map((p) => p.y)}
+            />
+            <Metric
+              label="Upload"
+              value={formatSpeedTestReading(upload(), locale())}
+              unit="Mbit/s"
+              icon="ti ti-upload"
+              active={state() === "upload"}
+              series={uploadHistory().map((p) => p.y)}
+            />
+            <Metric
+              label={t().ping}
+              value={formatSpeedTestReading(progress()?.ping_ms ?? null, locale())}
+              unit="ms"
+              icon="ti ti-activity"
+              active={state() === "ping"}
+            />
+            <Metric
+              label={t().jitter}
+              value={formatSpeedTestReading(progress()?.jitter_ms ?? null, locale())}
+              unit="ms"
+              icon="ti ti-wave-square"
+              active={false}
+            />
+            <Metric
+              label={t().loaded}
+              value={formatSpeedTestReading(progress()?.loaded_latency_ms ?? null, locale())}
+              unit="ms"
+              icon="ti ti-activity-heartbeat"
+              active={false}
+            />
+          </StatGrid>
+          <div class="flex flex-col gap-3 min-w-0">
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <h2 class="text-sm font-semibold">{t().terminalTitle}</h2>
+              <div class="flex items-center gap-2">
+                <Button size="sm" variant="ghost" aria-pressed={json()} onClick={() => setJson(!json())}>
+                  {json() ? t().progress : "--json"}
+                </Button>
+                <CopyButton
+                  text={finalJson()}
+                  onCopyError={() => setCopyFailed(true)}
+                  onCopied={() => setCopyFailed(false)}
+                  label={t().copyResult}
+                  disabled={!result()}
+                  size="sm"
+                />
+              </div>
             </div>
+            <pre class="tools-speedtest-terminal" role="region" tabIndex={0} aria-label={t().terminalOutput}>
+              {terminal()}
+            </pre>
+            <div class="tools-speedtest-runtimes">
+              <SegmentedControl<CliVariant>
+                value={cliVariant()}
+                onValueChange={setCliVariant}
+                ariaLabel={t().terminalTitle}
+                size="sm"
+                options={[
+                  { value: "cloud", label: "Cloud CLI" },
+                  { value: "node", label: "Node" },
+                  { value: "bun", label: "Bun" },
+                ]}
+              />
+              <CopyButton text={snippet()} onCopyError={() => setCopyFailed(true)} onCopied={() => setCopyFailed(false)} size="sm" />
+            </div>
+            <p class="text-xs text-dimmed">{t().terminalHint}</p>
           </div>
-        </div>
-      </Show>
+        </section>
+      </div>
     </div>
   );
 }
 
-/** One reading with its unit and, while it has samples, a sparkline whose tooltip names the metric and unit. */
-export function Metric(props: {
-  label: string;
-  value: string;
-  unit: string;
-  icon: string;
-  active: boolean;
-  series?: number[];
-  seriesColor?: string;
-}) {
+/** App-owned reading composition; the shared KPI tile owns rendering and trend inspection. */
+export function Metric(props: { label: string; value: string; unit: string; icon: string; active: boolean; series?: number[] }) {
   const locale = useLocale();
-  const tooltip = createMemo(() => speedTestSparklineTooltip({ label: props.label, unit: props.unit, locale: locale() }));
   return (
-    <div
-      class="rounded-lg p-3 flex flex-col gap-1.5 transition-colors"
-      classList={{
-        "bg-zinc-50 dark:bg-zinc-800/50": !props.active,
-        "bg-[var(--k2b-info-surface)] ring-1 ring-(--k2b-info-text)/25": props.active,
-      }}
-    >
-      <div class="flex items-center gap-1.5 text-xs text-dimmed">
-        <i class={props.icon} />
-        <span>{props.label}</span>
-      </div>
-      <div class="flex items-baseline gap-1">
-        <span class="text-2xl font-semibold tabular-nums">{props.value}</span>
-        <span class="text-xs text-dimmed">{props.unit}</span>
-      </div>
-      <div class={`h-5 w-full ${props.seriesColor ?? ""}`}>
-        <Show when={props.series && props.series.length > 1}>
-          <Chart kind="sparkline" class="w-full h-full" data={props.series!} smooth showLast tooltip={tooltip()} />
-        </Show>
-      </div>
-    </div>
+    <StatCell
+      label={props.label}
+      value={props.value}
+      sub={props.unit}
+      icon={props.icon}
+      tone={props.active ? "blue" : "zinc"}
+      trend={props.series}
+      trendTooltip={speedTestSparklineTooltip({ label: props.label, unit: props.unit, locale: locale() })}
+    />
   );
 }

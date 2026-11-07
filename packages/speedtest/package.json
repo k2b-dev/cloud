@@ -6,7 +6,8 @@
     ".": "./src/engine.ts",
     "./browser": "./src/browser.ts",
     "./http": "./src/http.ts",
-    "./node": "./src/node.ts"
+    "./node": "./src/node.ts",
+    "./udp-client": "./src/udp-client.ts"
   },
   "scripts": {
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"

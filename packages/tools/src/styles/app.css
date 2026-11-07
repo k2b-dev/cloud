@@ -167,3 +167,36 @@
     min-height: 15rem;
   }
 }
+
+/* Speedtest: reserved measurement, feedback and terminal slots in every state. */
+.tools-speedtest { display: flex; flex-direction: column; gap: 1.5rem; min-width: 0; container-type: inline-size; }
+.tools-speedtest-server { display: flex; flex-direction: column; gap: .35rem; }
+.tools-speedtest-layout { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 2rem; align-items: start; }
+.tools-speedtest-measure, .tools-speedtest-detail { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.tools-speedtest-gauge { height: 15rem; width: 100%; }
+.tools-speedtest-gauge > * { width: 100%; height: 100%; }
+.tools-speedtest-phases { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: .35rem; margin: 0; padding: 0; list-style: none; }
+.tools-speedtest-phases li { display: flex; flex-direction: column; align-items: center; gap: .3rem; padding: .65rem .15rem; border-radius: var(--ui-radius-control); font-size: .75rem; color: var(--k2b-text-muted); }
+.tools-speedtest-phases li[data-active=true] { background: var(--ui-selected); color: var(--k2b-info-text); }
+.tools-speedtest-eta { display: flex; flex-direction: column; gap: .5rem; }
+.tools-speedtest-status { height: 6rem; overflow: auto; }
+.tools-speedtest-chart { height: 13rem; }
+.tools-speedtest-chart > * { width: 100%; height: 100%; }
+.tools-speedtest-terminal { height: 13rem; overflow: auto; margin: 0; padding: 1rem; border-radius: var(--ui-radius-control); background: var(--ui-surface-subtle); color: var(--k2b-text); font: .75rem/1.7 var(--font-mono, monospace); white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }
+@container (max-width: 760px) {
+  .tools-speedtest-layout { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+  .tools-speedtest-gauge { height: 13rem; }
+  .tools-speedtest-status { height: 5rem; }
+  .tools-speedtest-chart { height: 11rem; }
+}
+
+.tools-speedtest-chart { --stdlib-chart-c3: var(--k2b-text-muted); --stdlib-chart-c4: var(--k2b-text-muted); }
+.tools-speedtest-legend { display: flex; gap: .75rem; }
+.tools-speedtest-legend span::before { content: ""; display: inline-block; width: .8rem; margin-inline-end: .3rem; vertical-align: middle; border-block-start: 2px solid var(--stdlib-chart-c1, var(--k2b-info-text)); }
+.tools-speedtest-legend span:nth-child(2)::before { border-block-start-style: dashed; border-color: var(--stdlib-chart-c2, var(--k2b-success-text)); }
+.tools-speedtest-legend span:nth-child(3)::before { border-block-start-style: dotted; border-color: var(--k2b-text-muted); }
+
+.tools-speedtest-gauge .stdlib-chart-gauge-value { font-size: 38px; font-weight: 650; }
+.tools-speedtest-gauge .stdlib-chart-gauge-label { font-size: 11px; }
+.tools-speedtest-runtimes { display: flex; align-items: center; gap: .5rem; }
+.tools-speedtest-runtimes > .k2b-segmented-control { flex: 1; min-width: 0; width: auto; }

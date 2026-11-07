@@ -122,3 +122,38 @@ which used minimum ping, standard-deviation jitter and throughput including
 warmup. JSON retains the existing numeric field names and adds server, mode,
 duration, byte totals and stability flags. Do not compare the old and new
 values as if the method were unchanged.
+
+
+## Migrate Cloud Tools clients (breaking)
+
+Cloud no longer serves transfer data or measurement scripts. The legacy
+`/tools/api/speedtest/ping`, `/download`, `/upload`, `/cli` and `/cli.py` URLs
+return bounded HTTP 410 migration responses with `Cache-Control: no-store`.
+They remain declared public routes and do not redirect, forward credentials,
+or consume uploaded bodies. Replace automation that uses these URLs.
+
+In Tools application settings, set `tools.speedtest_server` to the standalone
+HTTPS base URL (default `https://speedtest.k2b.dev`). HTTP is accepted only on
+loopback. Credentials, query strings and fragments are rejected. Set
+`tools.speedtest_enabled` to false to disable the Cloud page and CLI using this
+installation's settings. The separate server has its own lifecycle; disabling
+Tools does not stop that service or independently targeted CLI commands.
+
+The public `GET /tools/api/speedtest/config` returns only `{server, enabled}`
+with no-store caching. SSR uses the same settings before rendering the island.
+Cloud CLI reads this endpoint from its Cloud profile (at most two seconds for
+the lookup); errors fail visibly instead of silently selecting another target.
+Without a Cloud profile URL it uses the default measurement server. An explicit
+`cld tools speedtest --server https://speedtest.example.com` chooses an
+independent measurement target. The global `cld --server …` still selects Cloud.
+No Cloud credentials enter either HTTP or UDP measurement transports.
+
+Download `https://speedtest.example.com/cli` to `speedtest.mjs`, then run it with
+Node or Bun using `--server https://speedtest.example.com`. Python measurement
+scripts have been removed. Check your automation's HTTP status handling:
+`curl -f` fails on 410 rather than executing the comment-only migration notice.
+
+The supported workspace entries are `@k2b/speedtest` (engine, plans, progress
+and result types), `/browser` (fetch/XHR), `/node` (anonymous HTTP transport),
+`/http` (shared HTTP response checks) and `/udp-client` (explicit Node/Bun UDP
+diagnostic). Applications import these entries instead of copying transfer loops.

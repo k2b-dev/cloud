@@ -110,9 +110,38 @@ Input support follows the browser. Vector images are rasterized, animated
 images become still images, and converted output does not retain source image
 metadata.
 
+## Measure your connection
+
+Open **Internet Speed Test** and check the named measurement server. Choose
+**Quick · up to 14 s** or **Accurate · up to 29 s**, then start. Ping, download
+and upload share one bounded engine with the CLI and standalone Node/Bun script.
+The page and terminal show the same readings and decreasing remaining time.
+Stop cancels active work; a completed result can be copied as JSON.
+
+The test is anonymous. The measurement server sees the source IP address and
+test traffic, but receives no Cloud credentials or personal files. Throughput
+excludes ramp-up; ping is the median and jitter the mean consecutive difference.
+Loaded latency is measured during transfers. Offline and failed runs show a
+recovery action; HTTP 429 shows the server's retry delay.
+
+Operators can change `tools.speedtest_server` (default
+`https://speedtest.k2b.dev`) or turn off `tools.speedtest_enabled` in application
+settings. The page receives both settings during SSR.
+
+`cld tools speedtest --mode quick --json` reads those settings when the selected
+profile has a Cloud URL. Without one it uses the default server. The command's
+`--server` explicitly selects an independent measurement server. Progress goes
+to stderr; stdout contains the completed result. Only explicit `--udp` selects
+the separate jitter/loss diagnostic. Browser and default CLI tests use HTTP.
+
+Cloud's old measurement and curl-script URLs return HTTP 410 without a redirect.
+Download `/cli` from the selected standalone server for Node or Bun; Python
+scripts are no longer supplied. See [Run a speedtest server](/en/docs/operations/speedtest-server)
+for the operator migration and deployment contract.
+
 ## How Tools fits Cloud
 
-Tools owns the utility catalog, browser interactions, speed-test endpoints, and
+Tools owns the utility catalog, browser interactions, speedtest settings, and
 user-owned webhook records. Cloud supplies the shared application shell,
 identity for stored network tools, settings, lifecycle, and the in-product Help
 surface.
