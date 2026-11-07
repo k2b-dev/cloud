@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-11-04
+updated: 2026-11-07
 ---
 
 # Build and deploy
@@ -18,6 +18,19 @@ optional application-specific build output.
 The build and development preload scripts preserve every `color-mix()` value
 in application CSS, including multiple variable-based mixes in one rule.
 See [Mix semantic colors](/en/docs/frontend/styling-and-accessibility#mix-semantic-colors).
+
+## Enable an application's AI primary colour
+
+Rebuild and deploy applications that declare
+[`appearance.primary: "ai"`](/en/docs/build/define-app#set-the-application-appearance)
+with the matching Cloud and `@k2b/ui` packages. The application emits the
+primary scope; the UI stylesheet supplies the AI colours. Deploy Core with
+the matching shared stylesheet and Help panel renderer so that an AI app's
+Help panel also follows its primary colour inside other applications.
+
+The existing registry appearance metadata carries the optional field. No
+database migration or operator configuration is needed. Applications that
+omit it keep blue.
 
 ## Roll out app status providers
 

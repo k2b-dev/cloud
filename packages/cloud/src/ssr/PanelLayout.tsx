@@ -23,6 +23,7 @@ export default function PanelLayout(props: PanelLayoutProps) {
   const apps = runtime.apps.map((entry) => ({ ...entry, routes: entry.routes.map(canonicalRoute) }));
   const app = resolveRuntimeRoute(apps, new URL(props.c.req.raw.url).pathname)?.app;
   props.c.get("page").title = props.title;
+  props.c.get("page").appPrimary = app?.appearance?.primary;
   return (
     <LocaleProvider locale={getLocale(props.c)}>
       {(() => {

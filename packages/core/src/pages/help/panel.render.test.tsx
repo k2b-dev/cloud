@@ -3,6 +3,37 @@ import { helpMessages } from "@k2b/cloud/ssr/help-messages";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import { apps, defaultRailPreferences, help, panelUrl, rail, server, settings, snapshot } from "./panel.test-fixture";
 
+test("Core scopes an AI app's Help panel without changing the host document's primary", async () => {
+  const app = apps.find((app) => app.id === "spaces")!;
+  const original = app.appearance;
+  const spies = [
+    spyOn(rail, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+    spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    spyOn(snapshot, "loadSnapshot").mockResolvedValue({ app: { name: "Cloud" } }),
+    spyOn(help, "createHelpReader").mockReturnValue({
+      manifest: async () => null,
+      list: async () => [],
+      search: async () => [],
+      read: async () => null,
+    }),
+  ];
+  try {
+    for (const primary of [undefined, "ai"] as const) {
+      app.appearance = { accent: "#16a34a", primary };
+      const response = await server.request(panelUrl("spaces"));
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      const panel = html.match(/<div\b[^>]*data-surface="panel"[^>]*>/)?.[0] ?? "";
+      expect(panel).toContain("app-accent-scope");
+      expect(panel.includes('data-k2b-primary="ai"')).toBe(primary === "ai");
+      expect(html.match(/<body\b[^>]*>/)?.[0]).not.toContain("data-k2b-primary");
+    }
+  } finally {
+    app.appearance = original;
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
 // One reader stub preserves preloadLayoutHelp's actual failure tracking and request-local cache.
 test("Help panel SSR authorizes selectors and renders the first view without shell chrome", async () => {
   const articleReads: string[] = [];

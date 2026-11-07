@@ -107,6 +107,7 @@ import { normalizeLocale } from "../shared/locale";
 import { escapeHtml } from "../shared/markdown/shared";
 import { type CloudThemePreference, readThemePreferenceFromCookieHeader, themeBootstrapScript } from "../shared/theme";
 import { appAccentStyle } from "../ssr/app-appearance";
+import { validateAppAppearance } from "./app-appearance";
 import { appFaviconHref } from "./app-favicon";
 import { compileAppPresentation } from "./app-presentation";
 import { readBoundedJson } from "./bounded-json";
@@ -156,6 +157,7 @@ type ResolvedPageOptions = PageOptions & {
   performanceRoute?: string;
   themePreference?: CloudThemePreference;
   appAccent?: string;
+  appPrimary?: AppAppearance["primary"];
 };
 
 // ── Public types ────────────────────────────────────────────────────────────
@@ -514,6 +516,7 @@ export const defineApp = <
   opts: AppOptions<S, N, AppId>,
 ): AppDefinition<S, N, AppId> => {
   validatePublicSurfaceRoutes(opts.routes);
+  validateAppAppearance(opts.id, opts.appearance);
   const publicRouter = new Hono();
   const appSkills = opts.skills ? validateAppSkillCatalog(opts.skills) : undefined;
   const skillsManifestHash = appSkills ? appSkillManifestHash(appSkills) : undefined;
@@ -564,6 +567,7 @@ export const defineApp = <
       performanceRoute,
       pwa,
       appAccent,
+      appPrimary,
       installable: pageInstallable,
     }) => {
       // A URL changes only when what it names changes: the app's own files by their content, Core's shared sheets by
@@ -632,7 +636,7 @@ export const defineApp = <
     <link rel="stylesheet" href="${versionedPublicHref("/public/global.css", sharedVersion)}">${head.styles}
     <script>${themeBootstrapScript}</script>${pageInstallable ? `<script>${installableThemeScript(pageInstallable)}</script>` : ""}
   </head>
-  <body class="k2b-ui${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""} data-k2b-app-workspace-controller="global">
+  <body class="k2b-ui${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""}${appPrimary === "ai" ? ' data-k2b-primary="ai"' : ""} data-k2b-app-workspace-controller="global">
     ${body}
   </body>
   ${scripts}

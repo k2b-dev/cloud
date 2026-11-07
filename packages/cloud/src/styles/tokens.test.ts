@@ -24,6 +24,20 @@ const compileGlobal = () =>
   }));
 
 describe("Cloud tokens", () => {
+  test("AI scopes map Cloud selection and legacy focus onto primary tokens, including nested UI roots", async () => {
+    const compiled = ruleBlocks(await compileGlobal());
+    const scope = compiled.find(({ selector }) => selector.includes('[data-k2b-primary="ai"]'));
+    expect(scope?.selector).toContain('[data-k2b-primary="ai"] .k2b-ui');
+    expect(scope?.declarations).toEqual(
+      expect.arrayContaining([
+        { property: "--ui-selected", value: "var(--k2b-selected)" },
+        { property: "--ui-focus", value: "inset 0 0 0 2px var(--k2b-focus-ring)" },
+      ]),
+    );
+    // focus-ui and consumers of --ui-focus share the same scoped focus token.
+    expect(await compileGlobal()).toMatch(/\.focus-ui:focus-visible\s*\{[^}]*box-shadow:\s*var\(--ui-focus\)/);
+  });
+
   test("pins light and dark ink and uses secondary ink for compiled text utilities", async () => {
     const source = ruleBlocks(await Bun.file(resolve(import.meta.dir, "tokens.css")).text());
     for (const { selector, secondary, dimmed } of [

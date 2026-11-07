@@ -170,7 +170,7 @@ const accentServer = new Hono<{ Variables: { runtime: RuntimeContext } }>()
           icon: "ti ti-palette",
           description: "App color scope",
           routes: ["/accent", "/admin/accent"],
-          ...(accent === undefined ? {} : { appearance: { accent } }),
+          ...(accent === undefined ? {} : { appearance: { accent, primary: c.req.query("primary") === "ai" ? "ai" : undefined } }),
         },
         { id: "core", name: "Core", icon: "ti ti-cloud", description: "Help host", routes: ["/help"], appearance: { accent: "#2563eb" } },
       ],
@@ -206,6 +206,18 @@ const accentServer = new Hono<{ Variables: { runtime: RuntimeContext } }>()
   );
 
 describe("Cloud layouts SSR", () => {
+  test("the owning app's AI primary reaches the body on pages, focus pages, Help and administration", async () => {
+    for (const path of ["/accent", "/accent?focusMode=true", "/help/apps/accent-probe", "/admin/accent"]) {
+      const base = `${path}${path.includes("?") ? "&" : "?"}accent=%230f766e`;
+      for (const primary of [undefined, "ai"]) {
+        const response = await accentServer.request(`${base}${primary ? "&primary=ai" : ""}`);
+        expect(response.status).toBe(200);
+        const body = (await response.text()).match(/<body\b[^>]*>/)?.[0] ?? "";
+        expect(body.includes('data-k2b-primary="ai"')).toBe(primary === "ai");
+      }
+    }
+  });
+
   test("the page shell gives portalled dialogs the current app's accent without its canvas background", async () => {
     const style = appAccentStyle("#0f766e");
     expect(style).toBeDefined();
