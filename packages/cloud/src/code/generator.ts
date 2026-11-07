@@ -32,6 +32,7 @@ const reservedExports = new Set([
   "Button",
   "Action",
   "Notice",
+  "Stats",
   "jsx",
   "undefined",
   "eval",

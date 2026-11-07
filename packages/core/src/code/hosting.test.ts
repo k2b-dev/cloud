@@ -43,6 +43,7 @@ function hosting(
   isPublic = false,
   signed = false,
   response: Awaited<ReturnType<typeof requestCodeRoute>> = { kind: "json", status: 200, body: '{"returned":true}' },
+  personalOwner: string | null = null,
 ) {
   const rate = spyOn(server, "ratelimit").mockImplementation(({ id }) => ({
     id,
@@ -78,7 +79,7 @@ function hosting(
   router.route(
     "/",
     createCodeHostingRoutes({
-      version: async () => ({ versionId: "version", manifest }),
+      version: async () => ({ versionId: "version", manifest, personalOwner }),
       request: async (input) => {
         calls.push(input);
         return response;
@@ -217,4 +218,52 @@ test("a cancelled request stops waiting on a dependency before dispatch", async 
   cancel.abort();
   expect((await result).status).toBe(504);
   expect(dispatched).toBe(false);
+});
+
+test("personal Code pages open only for their owner unless the route is public", async () => {
+  const other = "22222222-2222-4222-8222-222222222222";
+  const foreign = hosting(false, true, undefined, other);
+  const refused = await foreign.router.request(`/code/${codeId}/`);
+  expect(refused.status).toBe(403);
+  expect(await refused.json()).toEqual({ code: "code_owner_only" });
+  expect(foreign.calls).toHaveLength(0);
+  expect((await hosting(false, false, undefined, id).router.request(`/code/${codeId}/`)).status).toBe(401);
+  const owner = hosting(false, true, undefined, id);
+  expect((await owner.router.request(`/code/${codeId}/`)).status).toBe(200);
+  expect(owner.calls[0]?.request.user).toEqual({ id, groups: ["group"] });
+  const open = hosting(true, true, undefined, other);
+  expect((await open.router.request(`/code/${codeId}/`)).status).toBe(200);
+  expect(open.calls[0]?.request.user).toBeNull();
+});
+
+test("the island receives a checked tree only from hosting, never Code JSON shaped like one", async () => {
+  const tree = { version: 1, kind: "Page", title: "Workshop", children: [{ kind: "Text", text: "Ready" }] };
+  const page = hosting(false, true, { kind: "page", status: 200, tree });
+  const answer = await page.router.request(`/code/${codeId}/`, { headers: { "X-Code-Page": "tree" } });
+  expect(answer.headers.get("X-Code-Page")).toBe("tree");
+  expect(answer.headers.get("Vary")).toContain("X-Code-Page");
+  expect(await answer.json()).toEqual({ tree, csrf: codeCsrf("fixture-session", codeId) });
+  const spoof = hosting(false, true, { kind: "json", status: 200, body: JSON.stringify({ tree, csrf: "x" }) });
+  const data = await spoof.router.request(`/code/${codeId}/`, { headers: { "X-Code-Page": "tree" } });
+  expect(data.headers.get("X-Code-Page")).toBeNull();
+  const invalid = hosting(false, true, { kind: "page", status: 200, tree: { ...tree, children: [{ kind: "HTML" }] } });
+  expect((await invalid.router.request(`/code/${codeId}/`, { headers: { "X-Code-Page": "tree" } })).status).toBe(503);
+});
+
+test("a submit from the island still needs the CSRF field of this session and Code", async () => {
+  const tree = { version: 1, kind: "Page", title: "Saved", children: [] };
+  const page = hosting(false, true, { kind: "page", status: 200, tree });
+  const post = (fields: Record<string, string>) =>
+    page.router.request(`/code/${codeId}/`, {
+      method: "POST",
+      headers: { "X-Code-Page": "tree", "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(fields),
+    });
+  expect((await post({ value: "one" })).status).toBe(403);
+  expect((await post({ _csrf: codeCsrf("other-session", codeId), value: "one" })).status).toBe(403);
+  expect(page.calls).toHaveLength(0);
+  const accepted = await post({ _csrf: codeCsrf("fixture-session", codeId), value: "one" });
+  expect(accepted.status).toBe(200);
+  expect(accepted.headers.get("X-Code-Page")).toBe("tree");
+  expect(page.calls[0]?.request.body).toBe("value=one");
 });

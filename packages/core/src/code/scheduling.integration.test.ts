@@ -35,7 +35,7 @@ import { listCodeAutomations } from "./automations";
 import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
 import { claimCodeWork } from "./dispatch";
 import * as ownerTransport from "./owner-transport";
-import { requestCodeRoute } from "./requests";
+import { codeRequestVersion, requestCodeRoute } from "./requests";
 import {
   completeCodeJob,
   createRunnerCodeCheckHost,
@@ -261,9 +261,16 @@ suiteFor(
     setSystemTime();
   });
 
-  for (const reply of ["json", "page", "invalid"] as const)
-    test(`HTTP ${reply} response reaches the runner and Core validates it before returning`, async () => {
-      const code = await fixture(owner, true, true, reply);
+  // Personal Code serves routes with its owner's mandate, exactly as resource Code does with its Code account.
+  for (const [reply, resource] of [
+    ["json", true],
+    ["page", true],
+    ["invalid", true],
+    ["page", false],
+  ] as const)
+    test(`HTTP ${reply} response of ${resource ? "resource" : "personal"} Code reaches the runner and Core validates it before returning`, async () => {
+      const code = await fixture(owner, resource, true, reply);
+      expect(await codeRequestVersion(code.codeId)).toMatchObject({ versionId: code.versionId, personalOwner: resource ? null : owner });
       const registry = spyOn(cloud, "getApp").mockResolvedValue({
         id: "example",
         name: "Example",
