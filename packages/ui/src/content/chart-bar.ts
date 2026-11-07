@@ -28,6 +28,8 @@ export type BarChartOptions = {
   series?: { label: string; data: (number | null)[] }[];
   layout?: "columns" | "rows" | "grouped" | "stacked" | "nested";
   normalize?: boolean;
+  /** Initial/restored legend: sum counts, or show the last category for rates and shares. */
+  legendValues?: "total" | "latest";
   marks?: "bars" | "dots";
   /** Dot matrix capacity in source units and an even mark budget (default 100). */
   total?: number;
@@ -525,13 +527,14 @@ export function barSeriesLegend(
   width = 480,
   displayWidth = 296,
   maxHeight = Infinity,
+  summary: "total" | "latest" = "total",
 ) {
   const unit = width / displayWidth;
   let x = 0,
     row = 0;
   const items = entries.map((entry) => {
     const finite = entry.data.filter((v): v is number => v !== null && Number.isFinite(v));
-    const total = finite.length ? finite.reduce((sum, v) => sum + v, 0) : null;
+    const total = summary === "latest" ? (entry.data.at(-1) ?? null) : finite.length ? finite.reduce((sum, v) => sum + v, 0) : null;
     const valueWidth = Math.max(
       chartTextWidth(total === null ? "–" : format(total)),
       ...entry.data.filter((v): v is number => v !== null && Number.isFinite(v)).map((v) => chartTextWidth(format(v))),
@@ -586,7 +589,7 @@ export function seriesBarLayout(opts: BarChartOptions, size = { width: 480, heig
   const legend = opts.legend !== false;
   // Keep the legend within one quarter of the frame, leaving room for the plot.
   const entries = [...series, ...(opts.compare ? [opts.compare] : [])];
-  const legendLayout = barSeriesLegend(entries, format, size.width, narrow(opts), size.height * 0.25);
+  const legendLayout = barSeriesLegend(entries, format, size.width, narrow(opts), size.height * 0.25, opts.legendValues);
   const top = headerHeight(opts) + 8 + (legend ? legendLayout.height : 0) + (opts.yAxis?.label ? 16 : 0);
   const left = Math.max(
     40,

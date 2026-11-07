@@ -1004,3 +1004,5 @@ Use `kind="bar" marks="dots" layout="nested"` for counts inside a shared capacit
 Each category is two dots wide. The smallest nested subset uses the strongest color, the larger set's remainder is lighter, and unused capacity is grey. `total` defaults to the largest observed count (at least one); `dots` defaults to 100 and must be an even positive integer. Values round to the nearest dot; tooltips, live legend values and the data table retain the exact counts. Every dot counts toward the host's mark budget before rendering.
 
 A missing nested observation leaves the category drawing as a gap. Zero counts retain a fully grey matrix. The full category is one hover, keyboard and tap target, and the tooltip stays at the top of the plot when moving between its dots. Comparisons, logarithmic scales and normalization are unavailable for nested matrices.
+
+Percentage bar and dot-matrix descriptions show the latest category in their legend until inspection shows the category at the cursor. They never sum percentages across periods. For direct `Chart.Bar` calls with a custom percentage formatter, set `legendValues="latest"`; count series keep summed totals by default.

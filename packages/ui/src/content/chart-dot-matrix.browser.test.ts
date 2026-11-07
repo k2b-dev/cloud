@@ -77,13 +77,17 @@ for (const width of [1440, 390])
         await chart.scrollIntoViewIfNeeded();
         await settled(page);
         const before = await sample.boundingBox();
-        expect(await chart.locator(".k2b-chart-dot").count()).toBe(i === 0 ? 500 : 120);
+        const spec = dotMatrixFixtures[i]!;
+        const drawn = spec.x!.filter((_, index) => spec.series!.every((entry) => entry.data[index] !== null)).length;
+        expect(await chart.locator(".k2b-chart-dot").count()).toBe(drawn * spec.dots!);
+        if (i === 2) expect(await chart.locator("[data-bar-legend]").allTextContents()).toEqual(["60%", "25%"]);
         const marks = chart.locator("[data-chart-datum]");
         await marks
           .first()
           .locator(".k2b-chart-category-band")
           .hover({ position: { x: 3, y: 3 } });
         await chart.locator('[role="tooltip"]:popover-open').waitFor();
+        if (i === 2) expect(await chart.locator("[data-bar-legend]").allTextContents()).toEqual(["45%", "15%"]);
         const first = await chart.locator('[role="tooltip"]').textContent();
         expect(first).not.toContain("series:");
         const legendValue = chart.locator("[data-bar-legend]").first();
@@ -108,6 +112,7 @@ for (const width of [1440, 390])
         expect(await chart.locator('[role="tooltip"]').textContent()).not.toBe(first);
         await chart.press("Home");
         await chart.press("Escape");
+        if (i === 2) expect(await chart.locator("[data-bar-legend]").allTextContents()).toEqual(["60%", "25%"]);
         expect(await chart.locator('[role="tooltip"]:popover-open').count()).toBe(0);
         await marks
           .first()

@@ -416,6 +416,11 @@ export function chartRenderOptions(
           series: input.series,
           layout: input.layout,
           normalize: input.normalize,
+          // Rates describe each category; summing percentages across periods has no meaning.
+          legendValues:
+            input.format?.style === "percent" || (yAxis?.format && "style" in yAxis.format && yAxis.format.style === "percent")
+              ? "latest"
+              : "total",
           marks: input.marks,
           total: input.total,
           dots: input.dots,

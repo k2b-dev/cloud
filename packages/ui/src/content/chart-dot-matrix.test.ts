@@ -63,3 +63,24 @@ test("missing categories are gaps, zero counts leave grey dots and capacity can 
   ).toBe(true);
   expect(seriesBarLayout({ ...spec, total: undefined, dots: undefined }).dot).toEqual({ total: 780, count: 100 });
 });
+
+test("share legends show the latest period, while count legends retain period totals", () => {
+  const shares = {
+    ...spec,
+    x: ["Jan", "Feb", "Mar"],
+    total: 1,
+    series: [
+      { label: "Opened", data: [0.5, 0.6, 0.7] },
+      { label: "Clicked", data: [0.2, 0.3, 0.4] },
+    ],
+    legendValues: "latest" as const,
+    valueFormat: (value: number) => new Intl.NumberFormat("en", { style: "percent" }).format(value),
+  };
+  expect(seriesBarLayout(shares).legendLayout.items.map((item) => item.total)).toEqual([0.7, 0.4]);
+  const svg = renderBarChartSvg({ ...shares, width: 480, height: 280, inspect: true });
+  expect(svg).toContain('data-bar-total="70%"');
+  expect(svg).toContain('data-bar-total="40%"');
+  expect(svg).not.toContain('data-bar-total="180%"');
+  expect(seriesBarLayout({ ...shares, legendValues: "total" }).legendLayout.items[0]?.total).toBeCloseTo(1.8);
+  expect(seriesBarLayout({ ...shares, series: [{ label: "Missing", data: [0.5, 0.6, null] }] }).legendLayout.items[0]?.total).toBeNull();
+});

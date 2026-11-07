@@ -16,7 +16,7 @@ render(
           {(spec, i) => (
             <section class="sample" data-example={i()}>
               <Widget
-                title={["Campaign engagement", "Counts with a missing region"][i()]!}
+                title={["Campaign engagement", "Counts with a missing region", "Newsletter shares"][i()]!}
                 meta={state() === "stale" ? "Updated 09:12 · Refresh failed" : "Invented quarterly data"}
                 size="content"
               >
@@ -39,7 +39,7 @@ render(
                   >
                     <Chart
                       {...spec}
-                      labels={{ interactiveChart: ["Campaign engagement", "Counts with a missing region"][i()] }}
+                      labels={{ interactiveChart: ["Campaign engagement", "Counts with a missing region", "Newsletter shares"][i()] }}
                       style={{ height: "100%" }}
                     />
                   </Show>

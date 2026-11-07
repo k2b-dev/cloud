@@ -24,4 +24,18 @@ export const dotMatrixFixtures = [
       { label: "Read", data: [30, null, 20, 65] },
     ],
   },
+  {
+    kind: "bar",
+    marks: "dots",
+    layout: "nested",
+    total: 1,
+    dots: 20,
+    x: ["Jan", "Feb", "Mar"],
+    series: [
+      { label: "Opened", data: [0.45, 0.55, 0.6] },
+      { label: "Clicked", data: [0.15, 0.2, 0.25] },
+    ],
+    legendValues: "latest",
+    valueFormat: (value: number) => new Intl.NumberFormat("en", { style: "percent" }).format(value),
+  },
 ] satisfies ChartProps[];

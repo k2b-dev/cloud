@@ -37,3 +37,22 @@ test("portable nested dots validate subsets and preserve source counts and gaps"
   ])
     expect(schema.safeParse({ ...spec, ...invalid }).success).toBe(false);
 });
+
+test("portable percentage matrices use latest values in the legend instead of summed shares", () => {
+  const input = chartKinds().parse({
+    kind: "bar",
+    title: "Newsletter",
+    marks: "dots",
+    layout: "nested",
+    total: 1,
+    x: ["Jan", "Feb"],
+    series: [
+      { label: "Opened", data: [0.45, 0.6] },
+      { label: "Clicked", data: [0.2, 0.25] },
+    ],
+    format: { style: "percent" },
+  });
+  expect(chartRenderOptions(input, "en")).toMatchObject({ legendValues: "latest" });
+  const axisInput = chartKinds().parse({ ...input, format: undefined, yAxis: { format: { style: "percent" } } });
+  expect(chartRenderOptions(axisInput, "en")).toMatchObject({ legendValues: "latest" });
+});
