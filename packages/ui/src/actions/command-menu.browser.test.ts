@@ -127,6 +127,7 @@ describe("CommandMenu", () => {
       await page.getByRole("button", { name: "Add" }).click();
       await page.keyboard.type("zustaendig");
       expect((await state(page)).active).toBe("Assign");
+      await settled(page);
       const width = (await box(page, ".k2b-dropdown__menu:popover-open"))!.width;
       await page.keyboard.press("Enter");
       await settled(page);
@@ -169,6 +170,7 @@ describe("MarkdownEditor slash commands", () => {
       const textarea = page.getByRole("textbox", { name: "Message" });
       await textarea.click();
       await page.keyboard.type("Hello ");
+      await settled(page);
       const before = await box(page, ".k2b-markdown-editor");
       await page.keyboard.type("/");
       await settled(page);
