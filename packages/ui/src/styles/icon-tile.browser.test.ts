@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 /** The packaged icon font with its file inlined, so centring is measured on drawn glyphs, not empty icon boxes. */
@@ -218,6 +218,7 @@ describe("standalone icon tiles", () => {
       await document.fonts.ready;
     });
     expect(await page.evaluate(() => document.fonts.check('16px "tabler-icons"'))).toBe(true);
+    await settled(page);
   };
 
   for (const theme of ["light", "dark"]) {
