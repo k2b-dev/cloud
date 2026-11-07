@@ -1,0 +1,3 @@
+/* Exercise the consumer with its real shared and application utility styles. */
+@import "../../../../cloud/src/styles/global.css";
+@import "../../styles/app.css";

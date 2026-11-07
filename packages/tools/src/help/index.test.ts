@@ -10,8 +10,8 @@ describe("toolsHelp", () => {
       "tools-document-markdown",
       "tools-markdown-pdf",
       "tools-image-converter",
-      "tools-photo-editor",
       "tools-safety",
+      "tools-photo-editor",
     ]);
 
     expect(toolsHelp.getMarkdown("tools-start")).toContain("Tools is a workspace for small generators");

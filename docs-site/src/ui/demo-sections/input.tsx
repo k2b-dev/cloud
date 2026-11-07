@@ -56,7 +56,7 @@ import {
   TextInput,
 } from "@k2b/ui";
 import { TextEditor } from "@k2b/ui/text-editor";
-import { createSignal, createUniqueId } from "solid-js";
+import { createSignal, createUniqueId, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DictationDemo, DictationHostDemo } from "./dictation";
 import { QrScannerDemo } from "./mobile-navigation";
@@ -1540,38 +1540,40 @@ const ImageEditorDemo = () => {
         <Switch label="Minimal square crop and rotation" value={minimal()} onValueChange={setMinimal} />
         <Switch label="Reject the next save" value={fail()} onValueChange={setFail} />
       </div>
-      <Show
-        when={minimal()}
-        keyed
-        fallback={
+      <div style={{ height: "42rem" }}>
+        <Show
+          when={minimal()}
+          keyed
+          fallback={
+            <ImageEditor
+              source="/assets/image-editor-photo.jpg"
+              features={{
+                crop: true,
+                rotate: true,
+                straighten: true,
+                adjust: true,
+                filters: true,
+                annotate: true,
+                redact: true,
+                export: { formats: ["image/jpeg", "image/png", "image/webp"], quality: true, resize: true },
+              }}
+              onSave={async (result) => {
+                if (fail()) throw new Error("Upload rejected. Turn off the rejected save and retry.");
+                setSaved(`${result.width} × ${result.height} px accepted`);
+              }}
+            />
+          }
+        >
           <ImageEditor
             source="/assets/image-editor-photo.jpg"
-            features={{
-              crop: true,
-              rotate: true,
-              straighten: true,
-              adjust: true,
-              filters: true,
-              annotate: true,
-              redact: true,
-              export: { formats: ["image/jpeg", "image/png", "image/webp"], quality: true, resize: true },
-            }}
+            features={{ crop: { aspects: ["1:1"], locked: true }, rotate: true }}
             onSave={async (result) => {
               if (fail()) throw new Error("Upload rejected. Turn off the rejected save and retry.");
               setSaved(`${result.width} × ${result.height} px accepted`);
             }}
           />
-        }
-      >
-        <ImageEditor
-          source="/assets/image-editor-photo.jpg"
-          features={{ crop: { aspects: ["1:1"], locked: true }, rotate: true }}
-          onSave={async (result) => {
-            if (fail()) throw new Error("Upload rejected. Turn off the rejected save and retry.");
-            setSaved(`${result.width} × ${result.height} px accepted`);
-          }}
-        />
-      </Show>
+        </Show>
+      </div>
       <p aria-live="polite">{saved()}</p>
     </DemoCard>
   );

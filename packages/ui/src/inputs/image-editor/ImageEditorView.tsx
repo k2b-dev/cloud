@@ -68,6 +68,9 @@ const lookOptions: readonly {
   { value: "cool", label: "cool" },
   { value: "mono", label: "mono" },
   { value: "soft", label: "soft" },
+  { value: "mono-hard", label: "monoHard" },
+  { value: "faded", label: "faded" },
+  { value: "vintage", label: "vintage" },
 ];
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
@@ -75,7 +78,7 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
 export default function ImageEditorView(props: ImageEditorProps): JSX.Element {
   return (
     <Show when={props.source} keyed>
-      {() => <ImageEditorSession {...props} />}
+      {(source) => <ImageEditorSession {...props} source={source} />}
     </Show>
   );
 }
@@ -235,7 +238,12 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       x: edit.point.x * source.width,
       y: edit.point.y * source.height,
     });
-    return { left: `${p.x}px`, top: `${p.y}px` };
+    const left = (viewport().width - display().width) / 2 + pan().x + p.x;
+    const top = (viewport().height - display().height) / 2 + pan().y + p.y;
+    return {
+      left: `clamp(.5rem, ${left}px, max(.5rem, calc(100% - 15rem - .5rem)))`,
+      top: `clamp(.5rem, ${top}px, max(.5rem, calc(100% - 3rem)))`,
+    };
   };
   function finishText() {
     const text = inlineText();
@@ -368,8 +376,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     generation++;
     saveAbort?.abort();
     cancelAnimationFrame(frame);
-    if (canvas) canvas.width = canvas.height = 1;
-    if (scratch) scratch.width = scratch.height = 1;
+    if (canvas) canvas.width = canvas.height = 0;
+    if (scratch) scratch.width = scratch.height = 0;
     pointers.clear();
   });
 
@@ -620,29 +628,37 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
               size="sm"
               disabled={!preview() || loading() || busy()}
               loading={busy()}
+              loadingLabel={t().saving}
               onClick={() =>
                 void save(async (result) => {
                   await props.onSave?.(result);
                 })
               }
             >
-              {busy() ? t().saving : t().done}
+              {t().done}
             </Button>
           )}
         </div>
       </header>
       <div class="k2b-image-editor__status" aria-live="polite" aria-busy={busy()}>
-        <div class="k2b-image-editor__notice">
-          {t().metadata} <Show when={dimensions()?.downscaled}>{t().smaller(dimensions()!)}</Show>
-        </div>
         <div class="k2b-image-editor__feedback">
-          <Show when={error()} fallback={<span>{busy() ? t().saving : saved() ? t().saved : ""}</span>}>
+          <Show
+            when={error()}
+            fallback={
+              <div>
+                <p class="k2b-image-editor__notice">
+                  {t().metadata} <Show when={dimensions()?.downscaled}>{t().smaller(dimensions()!)}</Show>
+                </p>
+                <span>{busy() ? t().saving : saved() ? t().saved : ""}</span>
+              </div>
+            }
+          >
             <NoticeCard role="alert" tone="danger" icon title={error()} />
           </Show>
           <Show when={error()}>
             <Button size="sm" variant="secondary" disabled={busy()} onClick={retry}>
               {suggestedMP()
-                ? t().retrySmaller({ megapixels: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(suggestedMP()) })
+                ? t().retrySmaller({ megapixels: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(suggestedMP() ?? 0) })
                 : t().retry}
             </Button>
           </Show>
@@ -707,35 +723,35 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                   </For>
                 </div>
               </Show>
-              <Show when={inlineText()}>
-                {(text) => (
-                  <div class="k2b-image-editor__text" style={textPosition()}>
-                    <TextInput
-                      aria-label={t().textPlaceholder}
-                      placeholder={t().textPlaceholder}
-                      value={text().value}
-                      ref={(element) =>
-                        queueMicrotask(() => {
-                          element.focus();
-                          element.select();
-                        })
-                      }
-                      onValueChange={(value) => setInlineText({ ...text(), value })}
-                      onBlur={finishText}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") {
-                          e.stopPropagation();
-                          setInlineText(undefined);
-                        } else if (e.key === "Enter" && !e.isComposing) {
-                          e.preventDefault();
-                          finishText();
-                        }
-                      }}
-                    />
-                  </div>
-                )}
-              </Show>
             </div>
+          </Show>
+          <Show when={inlineText()}>
+            {(text) => (
+              <div class="k2b-image-editor__text" style={textPosition()}>
+                <TextInput
+                  aria-label={t().textPlaceholder}
+                  placeholder={t().textPlaceholder}
+                  value={text().value}
+                  ref={(element) =>
+                    queueMicrotask(() => {
+                      element.focus({ preventScroll: true });
+                      element.select();
+                    })
+                  }
+                  onValueChange={(value) => setInlineText({ ...text(), value })}
+                  onBlur={finishText}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.stopPropagation();
+                      setInlineText(undefined);
+                    } else if (e.key === "Enter" && !e.isComposing) {
+                      e.preventDefault();
+                      finishText();
+                    }
+                  }}
+                />
+              </div>
+            )}
           </Show>
           <div class="k2b-image-editor__zoom">
             <IconButton
@@ -993,8 +1009,8 @@ function LookThumbnail(props: {
     renderImageEditor(image.image, image.sourceSize, { ...initialImageEditorState(), look }, canvas, scratch);
   });
   onCleanup(() => {
-    if (canvas) canvas.width = canvas.height = 1;
-    if (scratch) scratch.width = scratch.height = 1;
+    if (canvas) canvas.width = canvas.height = 0;
+    if (scratch) scratch.width = scratch.height = 0;
   });
-  return <canvas ref={canvas} aria-hidden="true" />;
+  return <canvas ref={canvas} aria-hidden="true" style={{ display: "block", width: "4rem", height: "auto" }} />;
 }

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, pageErrors, settled } from "./browser";
+import { browserName, launchBrowser, pageErrors, settled } from "../test/browser";
 
 setDefaultTimeout(30_000);
 const { transformAsync } = await import("@babel/core");
@@ -45,7 +45,7 @@ beforeAll(async () => {
       if (url.pathname === "/photo.jpg" || url.pathname === "/logo.png")
         return new Response(Bun.file(resolve(import.meta.dir, `../src/inputs/image-editor/fixtures${url.pathname}`)));
       return new Response(
-        `<!doctype html><html lang="${url.searchParams.get("locale") === "de" ? "de" : "en"}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" data-theme="light" style="margin:0"><div id="editor"></div><script src="/editor.js"></script></body></html>`,
+        `<!doctype html><html lang="${url.searchParams.get("locale") === "de" ? "de" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" data-theme="light" style="margin:0"><div id="editor" style="height:calc(100dvh - 1rem);min-height:34rem"></div><script src="/editor.js"></script></body></html>`,
         { headers: { "content-type": "text/html" } },
       );
     },
@@ -98,10 +98,40 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
+  test("all approved looks and strength participate in shared history", async () => {
+    const { page, errors } = await open();
+    try {
+      await page.getByRole("radio", { name: "Looks", exact: true }).click();
+      await settled(page);
+      expect(
+        await page.locator(".k2b-choice-tiles__tile").evaluateAll((tiles) =>
+          tiles.every((tile) => {
+            const preview = tile.querySelector("canvas")!.getBoundingClientRect();
+            const bounds = tile.getBoundingClientRect();
+            return preview.left >= bounds.left && preview.right <= bounds.right;
+          }),
+        ),
+      ).toBe(true);
+      for (const label of ["Mono hard", "Faded", "Vintage"]) {
+        await page.getByRole("radio", { name: label, exact: true }).click();
+        expect(await page.getByRole("radio", { name: label, exact: true }).getAttribute("aria-checked")).toBe("true");
+      }
+      await slider(page, "Strength", [80, 60, 40]);
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      expect(await page.getByRole("slider", { name: "Strength", exact: true }).inputValue()).toBe("100");
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      expect(await page.getByRole("radio", { name: "Faded", exact: true }).getAttribute("aria-checked")).toBe("true");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("upload rejection preserves edits, retry stays in place and awaits success", async () => {
     const { page, errors } = await open("failure=1");
     try {
       await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      await settled(page);
       const before = await stageBox(page);
       await page.getByRole("button", { name: "Done", exact: true }).click();
       await page.getByRole("alert").filter({ hasText: "Upload unavailable" }).waitFor();
@@ -118,13 +148,19 @@ describe("public ImageEditor interactions", () => {
   });
 
   test("a pending upload marks only the captured entry saved; undo reaches it", async () => {
-    const { page, errors } = await open();
+    const { page, errors } = await open("", 390);
     try {
       await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
       await fixture(page, 'mode = "pending"');
+      await settled(page);
+      const stageBefore = await stageBox(page);
+      const headerBefore = await page.locator(".k2b-image-editor__header").boundingBox();
       await page.getByRole("button", { name: "Done", exact: true }).click();
       await page.waitForFunction("window.editorFixture.attempts === 1");
       expect(await page.getByRole("button", { name: "Saving…", exact: true }).isDisabled()).toBe(true);
+      await settled(page);
+      expect(await stageBox(page)).toEqual(stageBefore);
+      expect(await page.locator(".k2b-image-editor__header").boundingBox()).toEqual(headerBefore);
       await page.getByRole("button", { name: "Flip horizontally", exact: true }).click();
       await fixture(page, "accept()");
       await page.getByRole("button", { name: "Done", exact: true }).waitFor();
@@ -144,6 +180,7 @@ describe("public ImageEditor interactions", () => {
       await page.getByRole("radio", { name: "Adjust", exact: true }).click();
       await slider(page, "Brightness", [4, 15, 31]);
       expect(await dirty(page)).toBe("true");
+      await settled(page);
       expect(await stageBox(page)).toEqual(before);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       expect(await page.getByRole("slider", { name: "Brightness", exact: true }).inputValue()).toBe("0");
@@ -177,15 +214,24 @@ describe("public ImageEditor interactions", () => {
   });
 
   test("inline text and opaque redaction share undo and export", async () => {
-    const { page, errors } = await open();
+    const { page, errors } = await open("", 390);
     try {
       await page.getByRole("radio", { name: "Annotate", exact: true }).click();
       await page.getByRole("combobox", { name: "Annotate", exact: true }).click();
       await page.getByRole("option", { name: "Text", exact: true }).click();
+      await settled(page);
+      const imageBefore = await page.locator(".k2b-image-editor__image").boundingBox();
       await page.getByRole("button", { name: "Add text", exact: true }).click();
+      await settled(page);
+      const textBounds = (await page.getByRole("textbox", { name: "Type on the photo", exact: true }).boundingBox())!;
+      const stage = (await stageBox(page))!;
+      expect(textBounds.x).toBeGreaterThanOrEqual(stage.x);
+      expect(textBounds.x + textBounds.width).toBeLessThanOrEqual(stage.x + stage.width);
+      expect(await page.locator(".k2b-image-editor__image").boundingBox()).toEqual(imageBefore);
       await page.getByRole("textbox", { name: "Type on the photo", exact: true }).fill("Test note");
       await page.keyboard.press("Enter");
       await page.getByRole("radio", { name: "Redact", exact: true }).click();
+      await settled(page);
       const image = (await page.locator(".k2b-image-editor__image").boundingBox())!;
       await page.mouse.move(image.x + image.width * 0.2, image.y + image.height * 0.2);
       await page.mouse.down();
@@ -216,7 +262,7 @@ describe("public ImageEditor interactions", () => {
   });
 
   test("size refusal requires an explicit reduced retry and keeps edits", async () => {
-    const { page, errors } = await open();
+    const { page, errors } = await open("locale=de", 390);
     try {
       await page.evaluate(() => {
         const encode = HTMLCanvasElement.prototype.toBlob;
@@ -230,15 +276,103 @@ describe("public ImageEditor interactions", () => {
           encode.call(this, callback, type, quality);
         };
       });
-      await page.getByRole("button", { name: "Flip horizontally", exact: true }).click();
-      await page.getByRole("button", { name: "Done", exact: true }).click();
-      await page.getByRole("alert").filter({ hasText: "could not save at this size" }).waitFor();
+      await page.getByRole("button", { name: "Horizontal spiegeln", exact: true }).click();
+      await settled(page);
+      const before = await stageBox(page);
+      await page.getByRole("button", { name: "Fertig", exact: true }).click();
+      const notice = page.getByRole("alert").filter({ hasText: "in dieser Größe" });
+      await notice.waitFor();
+      expect(await notice.evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
+      expect(await stageBox(page)).toEqual(before);
       expect(await fixture(page, "attempts")).toBe(0);
       expect(await dirty(page)).toBe("true");
-      await page.getByRole("button", { name: /Save again at .* MP/ }).click();
+      await page.getByRole("button", { name: /Mit .* MP erneut speichern/ }).click();
       await page.waitForFunction("window.editorFixture.results.length === 1");
       expect(await fixture(page, "results[0].downscaled")).toBe(true);
       expect(await dirty(page)).toBe("false");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("cancel and enhanced navigation preserve dirty edits when the warning is dismissed", async () => {
+    const { page, errors } = await open();
+    try {
+      await page.getByRole("button", { name: "Flip horizontally", exact: true }).click();
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByText("Discard unsaved changes?", { exact: true }).waitFor();
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      expect(await fixture(page, "cancellations")).toBe(0);
+      expect(await dirty(page)).toBe("true");
+      expect(await fixture(page, "leave()")).toBe(true);
+      await dialog.getByText("Discard unsaved changes?", { exact: true }).waitFor();
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      expect(await dirty(page)).toBe("true");
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+      await page.waitForFunction("window.editorFixture.cancellations === 1");
+      await fixture(page, "dispose()");
+      expect(await fixture(page, "leave()")).toBe(false);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test.skipIf(browserName !== "chromium")("phone pinch changes only viewport zoom and fit restores it", async () => {
+    const { page, errors } = await open("minimal=1", 390);
+    try {
+      const before = await stageBox(page);
+      const touch = await page.context().newCDPSession(page);
+      const box = (await page.locator(".k2b-image-editor__image").boundingBox())!;
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      await touch.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [
+          { x: x - 30, y, id: 1 },
+          { x: x + 30, y, id: 2 },
+        ],
+      });
+      await touch.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [
+          { x: x - 60, y, id: 1 },
+          { x: x + 60, y, id: 2 },
+        ],
+      });
+      await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      expect(await page.getByRole("status", { name: "Zoom", exact: true }).innerText()).not.toBe("100 %");
+      expect(await dirty(page)).toBe("false");
+      expect(await stageBox(page)).toEqual(before);
+      await page.getByRole("button", { name: "Fit", exact: true }).click();
+      expect(await page.getByRole("status", { name: "Zoom", exact: true }).innerText()).toBe("100 %");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a failed preview retries the same source and restores editing", async () => {
+    const page = await browser.newPage();
+    const errors = pageErrors(page);
+    let requests = 0;
+    try {
+      await page.route("**/not-an-image.jpg", (route) =>
+        ++requests === 1
+          ? route.fulfill({ contentType: "image/jpeg", body: "damaged image" })
+          : route.fulfill({ contentType: "image/jpeg", path: resolve(import.meta.dir, "../src/inputs/image-editor/fixtures/photo.jpg") }),
+      );
+      await page.goto(`${server.url}?broken=1`);
+      await page.getByRole("alert").filter({ hasText: "This image could not be opened." }).waitFor();
+      expect(await page.locator(".k2b-image-editor__save button").isDisabled()).toBe(true);
+      await page.getByRole("button", { name: "Try again", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".k2b-image-editor__save button")?.disabled);
+      expect(requests).toBe(2);
+      expect(await dirty(page)).toBe("false");
+      expect(await page.getByRole("alert").count()).toBe(0);
       expect(errors).toEqual([]);
     } finally {
       await page.close();

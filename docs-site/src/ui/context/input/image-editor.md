@@ -11,6 +11,8 @@ Use it for a complete photo-editing task with an explicit save. Use
 [`ImageCropper`](/en/ui/input/image-cropper) when the caller needs only crop
 coordinates and owns the preview and export.
 
+## Import
+
 ```tsx
 import { ImageEditor, type ImageEditorFeatures } from "@k2b/ui";
 
@@ -26,7 +28,9 @@ const features = {
 Each absent feature is off. The editor inherits the UI locale; it has no
 locale prop. English and German controls use the same layout.
 
-## Load a photo without loading its original
+## Runtime
+
+### Load a photo without loading its original
 
 `source` is a `File`, `Blob`, or same-origin/CORS URL. For a remote original,
 pass existing `previews` and `sourceSize`. Opening then loads only a suitable
@@ -58,12 +62,17 @@ formats before supplying them; Tools supplies its own HEIF conversion.
 - `straighten` enables −45° through 45°. The image fills the crop without
   leaving empty corners.
 - `adjust` enables brightness, contrast, saturation, warmth, vignette, and grain.
-- `filters` enables named looks and their strength.
+- `filters` enables Natural, Vivid, Warm, Cool, Mono, Soft, Mono hard, Faded,
+  and Vintage with adjustable strength. The `ImageEditorLook` values are
+  `"original"`, `"vivid"`, `"warm"`, `"cool"`, `"mono"`, `"soft"`,
+  `"mono-hard"`, `"faded"`, and `"vintage"`.
 - `annotate` accepts `true` or `{ tools }`, using `"pen"`, `"highlighter"`,
   `"arrow"`, `"rect"`, `"ellipse"`, and `"text"`. Text is edited on the photo.
 - `redact` enables opaque black rectangles drawn above all other edits.
 - `export` accepts `true` or `{ formats, quality, resize }`. Available formats
   are the intersection with the browser's verified encoders.
+
+## Example
 
 A minimal caller needs only:
 
@@ -136,6 +145,8 @@ accepts arrow keys. Ctrl/Cmd + Z undoes, Shift + Ctrl/Cmd + Z redoes. Shared
 selection controls and sliders keep their keyboard behavior. Pinch zoom and
 zoom buttons operate on the preview; **Fit** restores its position.
 
+Give the editor a parent with a defined height (for example a flex workspace).
+It fills that height, with a minimum of 34 rem and a maximum of 58 rem.
 The canvas and tool regions keep their places when tools, save status, or
 errors change. On phones, controls occupy a separate region below the canvas;
 they do not cover it or introduce an application navigation dock. The host

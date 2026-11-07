@@ -4,6 +4,7 @@ title: Foto bearbeiten
 icon: ti ti-photo-edit
 description: Fotos zuschneiden, anpassen, markieren und vor dem Herunterladen schwärzen.
 order: 150
+kind: task
 ---
 
 Öffne **Foto bearbeiten** und wähle Bilder oder füge einen Screenshot ein.
@@ -19,7 +20,7 @@ wenn der Browser sie nicht direkt öffnet.
 
 Ziehe die Zuschnittecken zum Vergrößern oder Verkleinern. Pfeiltasten verschieben
 den fokussierten Zuschnitt; Umschalt + Pfeiltasten ändern seine Größe.
-**Begradigen** hält die Ecken gefüllt. Wähle für Text **Text**, tippe ins Bild
+**Begradigen** hält die Ecken gefüllt. Wähle für Text **Text**, wähle eine Stelle im Bild
 und schreibe direkt darauf. Schwärzungen sind deckende schwarze Rechtecke über
 allen anderen Bearbeitungen.
 

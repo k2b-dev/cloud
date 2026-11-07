@@ -4,6 +4,7 @@ title: Edit a photo
 icon: ti ti-photo-edit
 description: Crop, adjust, annotate, and redact photos before downloading them.
 order: 150
+kind: task
 ---
 
 Open **Edit photo**, choose images, or paste a screenshot. Images stay on your
@@ -18,7 +19,7 @@ device. Tools can convert HEIC and HEIF when the browser cannot open them direct
 
 Drag crop corners to resize. Arrow keys move the focused crop;
 Shift + arrow resizes it. **Straighten** keeps the corners filled.
-For text, choose **Text**, tap the photo, and type directly on it.
+For text, choose **Text**, choose a point on the photo, and type directly on it.
 Redactions are opaque black rectangles above other edits.
 
 ## Download the result

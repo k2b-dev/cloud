@@ -12,7 +12,7 @@ import {
   Select,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { IMAGE_ACCEPT, isHeif } from "./image-intake/formats";
 import { disposeHeifDecoder, ImageIntakeError, type ImageIntakeFailure, type ImageIntakeStage, prepareImage } from "./image-intake/intake";
 import { imageIntakeMessages } from "./image-intake/messages";
@@ -188,7 +188,9 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       addFiles(images);
     }
   };
+  onMount(() => document.addEventListener("paste", paste));
   onCleanup(() => {
+    document.removeEventListener("paste", paste);
     alive = false;
     queue = [];
     for (const abort of controllers) abort.abort();
@@ -201,7 +203,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   return (
     <>
       <FileDropTarget accept={IMAGE_ACCEPT} multiple onDrop={addFiles} label={t().dropToAdd} disabled={archiving()} />
-      <div class="flex min-h-0 flex-1 flex-col" onPaste={paste}>
+      <div class="flex min-h-0 flex-1 flex-col">
         <Show
           when={photos().length}
           fallback={

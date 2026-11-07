@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
+import { allowsLeave } from "../../ssr/src/nav-veto";
 import { ImageEditor } from "../src/inputs/ImageEditor";
 import type { ImageEditorFeatures, ImageEditorResult } from "../src/inputs/image-editor/types";
 
@@ -20,6 +21,12 @@ const features: ImageEditorFeatures = parameters.has("minimal")
 const control = {
   mode: parameters.get("failure") ? "reject" : "success",
   attempts: 0,
+  cancellations: 0,
+  leave: () => {
+    const restore = allowsLeave(document.body, new URL("/?destination=1", location.href));
+    restore?.();
+    return !!restore;
+  },
   results: [] as ImageEditorResult[],
   accept: () => {},
   source: (_source: string) => {},
@@ -33,7 +40,9 @@ control.dispose = render(() => {
     <ImageEditor
       source={source()}
       features={features}
-      onCancel={() => {}}
+      onCancel={() => {
+        control.cancellations++;
+      }}
       onSave={async (result) => {
         control.attempts++;
         if (control.mode === "reject") throw new Error("Upload unavailable. Retry to keep your edits.");

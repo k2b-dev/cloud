@@ -97,6 +97,7 @@ export type {
   ImageEditorAspect,
   ImageEditorFeatures,
   ImageEditorFormat,
+  ImageEditorLook,
   ImageEditorOutput,
   ImageEditorPreview,
   ImageEditorProps,

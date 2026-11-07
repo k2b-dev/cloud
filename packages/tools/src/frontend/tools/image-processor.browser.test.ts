@@ -1,11 +1,16 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { resolve } from "node:path";
-import type { Browser, Page } from "playwright";
-import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
+import tailwind from "../../../../cloud/scripts/tailwind";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import { buildHarness } from "./image-intake/browser-harness";
 
 setDefaultTimeout(30_000);
 const script = await buildHarness(new URL("./image-processor.browser-harness.tsx", import.meta.url));
+const styles = await Bun.build({ entrypoints: [resolve(import.meta.dir, "image-processor.browser.css")], plugins: [tailwind] });
+if (!styles.success) throw new AggregateError(styles.logs, "Could not build Tools photo editor styles");
+const css = await styles.outputs[0]!.text();
+type Browser = Awaited<ReturnType<typeof launchBrowser>>;
+type Page = Awaited<ReturnType<Browser["newPage"]>>;
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 beforeAll(async () => {
@@ -15,12 +20,12 @@ beforeAll(async () => {
     fetch(request) {
       const path = new URL(request.url).pathname;
       if (path === "/editor.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
-      if (path === "/styles.css") return new Response(Bun.file(resolve(import.meta.dir, "../../../../ui/dist/styles.css")));
+      if (path === "/styles.css") return new Response(css, { headers: { "content-type": "text/css" } });
       if (path === "/photo.jpg")
         return new Response(Bun.file(resolve(import.meta.dir, "../../../../ui/src/inputs/image-editor/fixtures/photo.jpg")));
       if (path === "/sample.heic") return new Response(Bun.file(resolve(import.meta.dir, "image-intake/fixtures/sample-48x32.heic")));
       return new Response(
-        '<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" data-theme="light" style="margin:0"><main id="tools"></main><script src="/editor.js"></script></body></html>',
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" data-theme="light" style="margin:0"><main id="tools" style="height:100dvh;display:flex;flex-direction:column"></main><script src="/editor.js"></script></body></html>',
         { headers: { "content-type": "text/html" } },
       );
     },
@@ -31,11 +36,11 @@ afterAll(async () => {
   await browser?.close();
   server?.stop(true);
 });
-const open = async (query = "") => {
-  const page = await browser.newPage();
+const open = async (query = "", width = 1440) => {
+  const page = await browser.newPage({ viewport: { width, height: 950 } });
   const errors = pageErrors(page);
   await page.goto(`${server.url}?${query}`);
-  if (!query) await page.getByRole("button", { name: "Download", exact: true }).waitFor();
+  if (!query.includes("empty")) await page.getByRole("button", { name: "Download", exact: true }).waitFor();
   else await page.getByText("Choose photos to edit", { exact: true }).waitFor();
   return { page, errors };
 };
@@ -43,13 +48,17 @@ const dirty = (page: Page) => page.locator(".k2b-image-editor[data-dirty=true]")
 
 describe("Tools public photo editor adoption", () => {
   test("archive opens unvisited editors, keeps names unique and clears dirty after the destination succeeds", async () => {
-    const { page, errors } = await open();
+    const { page, errors } = await open("", 390);
     try {
+      await settled(page);
+      const stage = await page.locator(".k2b-image-editor__stage").boundingBox();
+      expect(stage!.height).toBeGreaterThanOrEqual(160);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
       expect(await dirty(page)).toBe(1);
       await page.getByRole("button", { name: "Download all as ZIP", exact: true }).click();
       await page.waitForFunction("window.photoFixture.downloads.length === 1");
-      const archive = await page.evaluate(
+      const archive = await page.evaluate<{ name: string; magic: number[]; text: string }>(
         `(async () => { const item=window.photoFixture.downloads[0]; const blob=await item.blob; const bytes=new Uint8Array(await blob.arrayBuffer()); return {name:item.filename,magic:[...bytes.slice(0,4)],text:new TextDecoder().decode(bytes)}; })()`,
       );
       expect(archive.name).toBe("photos.zip");
@@ -76,6 +85,40 @@ describe("Tools public photo editor adoption", () => {
       await page.getByRole("button", { name: "Download all as ZIP", exact: true }).click();
       await page.waitForFunction("window.photoFixture.downloads.length === 1");
       await page.waitForFunction(() => !document.querySelector(".k2b-image-editor[data-dirty=true]"));
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+  test("multiple mounted editors retain bounded canvases and release them on unmount", async () => {
+    const page = await browser.newPage();
+    const errors = pageErrors(page);
+    try {
+      await page.addInitScript(() => {
+        const canvases: HTMLCanvasElement[] = [];
+        const create = document.createElement.bind(document);
+        document.createElement = ((...args: Parameters<typeof document.createElement>) => {
+          const element = create(...args);
+          if (element instanceof HTMLCanvasElement) canvases.push(element);
+          return element;
+        }) as typeof document.createElement;
+        Object.assign(window, { retainedCanvases: canvases });
+      });
+      await page.goto(`${server.url}?large=1`);
+      await page.getByText("3000 × 1500 px", { exact: true }).waitFor();
+      await page.getByRole("combobox", { name: "Photo", exact: true }).click();
+      await page.getByRole("option", { name: "photo.jpg", exact: true }).nth(1).click();
+      await page.waitForFunction(() => document.querySelectorAll(".k2b-image-editor canvas").length === 2);
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll<HTMLCanvasElement>(".k2b-image-editor canvas")].every((c) => c.width > 1),
+      );
+      const sizes = await page.evaluate<{ width: number; height: number }[]>(
+        "window.retainedCanvases.filter(c=>c.width>0&&c.height>0).map(c=>({width:c.width,height:c.height}))",
+      );
+      expect(sizes.filter((c) => c.width === 2048 && c.height === 1024)).toHaveLength(2);
+      expect(sizes.every((c) => Math.max(c.width, c.height) <= 2048)).toBe(true);
+      await page.evaluate("window.photoFixture.dispose()");
+      expect(await page.evaluate<boolean>("window.retainedCanvases.every(c=>c.width===0&&c.height===0)")).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await page.close();
