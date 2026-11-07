@@ -1191,7 +1191,7 @@ people to a test conversation and check that
 Mail's list shows small thumbnails of image attachments. Its thumbnail endpoint
 uses the isolated Linux image workers that the shared build adds to the Mail
 image, two at once per process, with up to 64 requests waiting; beyond that it
-answers 503 and the list shows a placeholder. Sources are limited to 25 MiB and
+answers 503 and the list shows a quiet image icon instead. Sources are limited to 25 MiB and
 responses to 96×96 pixels and 48 KiB. Access is checked before reading and again
 before returning the image. Browsers revalidate each thumbnail, so a revoked
 access is never served from their cache. No setting, service, or migration is

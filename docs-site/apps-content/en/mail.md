@@ -771,7 +771,7 @@ image type against the bytes and returns a JPEG or PNG fitted within 96×96 pixe
 and 48 KiB. The response is private with an `ETag` and `no-cache`: the browser asks again
 every time, and an unchanged image answers 304 after the access check. Invalid images,
 unsupported files, and preparation failures return an error so the client can show
-a placeholder. GIF and WebP thumbnails use the first frame.
+an image icon instead. GIF and WebP thumbnails use the first frame.
 
 Agents and other Cloud clients can inspect one attachment's current extraction
 status and page through already persisted text with the public Mail Capability:
