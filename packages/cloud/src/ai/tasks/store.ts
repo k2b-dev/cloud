@@ -1,5 +1,6 @@
 import type { SQL } from "bun";
 import { withTransaction } from "../../_internal/sql-transaction";
+import { notifyWorkflowWorker, wakeWorkflowRunsWaitingOn } from "../../_internal/workflow-signals";
 import { sql } from "../../runtime/clients";
 import type { AccessSubject } from "../../server/services/access";
 import { type AiResolvedModelRef, AiResolvedModelRefSchema } from "../../shared/ai-models";
@@ -373,18 +374,10 @@ export const workflowAiTaskCancellationRequested = async (id: string, db: SQL = 
   return !row || row.canceled;
 };
 
-type WorkflowAiTaskWake = (task: Pick<WorkflowAiTask, "appId" | "id">) => Promise<void>;
-let wakeWorkflowTask: WorkflowAiTaskWake | undefined;
-
-/** Installed only by the workflow adapter; application-owned tasks never need it. */
-export const setWorkflowAiTaskWake = (wake: WorkflowAiTaskWake): void => {
-  wakeWorkflowTask = wake;
-};
-
 export const wakeWorkflowAiTask = async (task: Pick<WorkflowAiTask, "appId" | "id"> & { runId?: string | null }): Promise<void> => {
   if (task.runId === null) return;
-  if (!wakeWorkflowTask) throw new Error("Workflow AI task wake adapter is not installed.");
-  await wakeWorkflowTask(task);
+  await wakeWorkflowRunsWaitingOn({ appId: task.appId, kind: WORKFLOW_AI_DEPENDENCY_KIND, key: task.id });
+  notifyWorkflowWorker(task.appId);
 };
 
 export const markWorkflowAiTaskCanceledIfRequested = async (id: string, db: SQL = sql): Promise<WorkflowAiTask | null> => {

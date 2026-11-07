@@ -25,9 +25,12 @@ test("rejects absolute and normalized relative paths", () => {
   expect(checkSource(ai, 'import "./tasks/../../workflows/ai/store";', root)).toHaveLength(1);
 });
 
-test.each(["commands.ts", "command-runtime.ts", "conversation-summary-ai.ts"])("retained Mail %s stays independent", (name) => {
-  expect(checkSource(resolve(root, "packages/mail/src/service", name), 'import "@k2b/cloud/workflows/store";', root)).toHaveLength(1);
-});
+test.each(["commands.ts", "command-runtime.ts", "conversation-summary-ai.ts"])(
+  "retained Mail %s cannot directly import the engine",
+  (name) => {
+    expect(checkSource(resolve(root, "packages/mail/src/service", name), 'import "@k2b/cloud/workflows/store";', root)).toHaveLength(1);
+  },
+);
 
 test("allows neutral helpers and ignores ordinary strings", () => {
   expect(checkSource(ai, 'import "./tasks/store"; const description = "../workflows/ai/store";', root)).toEqual([]);

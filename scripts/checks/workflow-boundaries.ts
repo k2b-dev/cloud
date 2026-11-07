@@ -4,6 +4,7 @@ import ts from "@typescript/typescript6";
 import { isTestFile, listFiles, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
+// Guard direct imports; retained Mail services still use app-owned workflow adapters.
 // These application services survive the engine cut. Workflow-specific adapters
 // elsewhere in Mail and Grids still deliberately consume the public engine API.
 const retainedMailFiles = new Set([
@@ -61,7 +62,7 @@ export const checkSource = (file: string, source: string, workspaceRoot: string)
 
 export const rule: Rule = {
   name: "workflow-boundaries",
-  description: "shared platform and retained Mail services do not depend on the workflow engine",
+  description: "shared platform and retained Mail services do not directly import the workflow engine",
   run: async ({ workspaceRoot }) =>
     ["packages/cloud/src", "packages/mail/src"].flatMap((directory) =>
       listFiles(join(workspaceRoot, directory), sourceFilePattern).flatMap((file) =>

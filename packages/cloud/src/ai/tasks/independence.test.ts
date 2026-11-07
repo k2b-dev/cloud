@@ -1,5 +1,6 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { resolve } from "node:path";
+import * as signals from "../../_internal/workflow-signals";
 import { wakeWorkflowAiTask } from "./store";
 
 test("retained AI entrypoints bundle without the workflow engine", async () => {
@@ -25,4 +26,17 @@ test("retained AI entrypoints bundle without the workflow engine", async () => {
 
 test("application task settlement needs no workflow wake adapter", async () => {
   await expect(wakeWorkflowAiTask({ appId: "example", id: "application-task", runId: null })).resolves.toBeUndefined();
+});
+
+test("an application-only AI worker wakes run-owned tasks without loading the engine", async () => {
+  const wakeRuns = spyOn(signals, "wakeWorkflowRunsWaitingOn").mockResolvedValue([]);
+  const notify = spyOn(signals, "notifyWorkflowWorker").mockImplementation(() => {});
+  try {
+    await wakeWorkflowAiTask({ appId: "example", id: "ai-task", runId: "existing-workflow-run" });
+    expect(wakeRuns).toHaveBeenCalledWith({ appId: "example", kind: "ai.workflow-task", key: "ai-task" });
+    expect(notify).toHaveBeenCalledWith("example");
+  } finally {
+    wakeRuns.mockRestore();
+    notify.mockRestore();
+  }
 });
