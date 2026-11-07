@@ -5,7 +5,7 @@ section: Frontend
 order: 835
 description: Add application pages for devices to the installable Cloud app.
 tags: [mobile, pwa, routing, layout]
-updated: 2026-11-05
+updated: 2026-11-07
 ---
 
 # Pages in the Cloud app
@@ -202,6 +202,11 @@ has on the web, follows the person's Light, Dark, or Automatic theme preference,
 and `frame-ancestors 'none'`. In the browser, it registers the app's service
 worker, shows an offline notice, and keeps the app session alive. With
 Automatic, the status bar color follows the device's appearance.
+
+An AI part can declare [`appearance.primary: "ai"`](/en/docs/build/define-app#set-the-application-appearance)
+to use the AI colour for primary actions, selection, and focus. `PwaLayout`
+applies the part's primary scope to its document, as on the web. Parts that
+omit the field, Start, and Settings keep blue.
 
 In Settings, the appearance button shows the current choice. Each tap switches
 from **Automatic** to **Light**, then **Dark**, then **Automatic** again.

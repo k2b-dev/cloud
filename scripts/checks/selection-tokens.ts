@@ -43,6 +43,12 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
   },
   {
     file: "packages/cloud/src/styles/tokens.css",
+    subject: '[data-k2b-primary="ai"], [data-k2b-primary="ai"] .k2b-ui { --ui-selected }',
+    reason:
+      "Token owner: the AI primary scope maps Cloud's control selection fill to the UI primary token; object rows still use app fills.",
+  },
+  {
+    file: "packages/cloud/src/styles/tokens.css",
     subject: ".dark { --ui-app-accent-border }",
     reason: "Token owner: Cloud defines the AA-checked app border role here.",
   },

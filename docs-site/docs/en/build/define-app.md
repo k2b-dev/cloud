@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-11-05
+updated: 2026-11-07
 ---
 
 # Define an application
@@ -291,6 +291,24 @@ Signed-in people see the background behind the app bar from 768 px and, from
 1024 px, also around the app area. Anonymous pages show it around the header
 and content from 768 px. Narrower screens use the flat work surface in both
 light and dark mode.
+
+### Use the AI primary colour
+
+An AI application can also use plum for its primary actions, selection, and
+focus by declaring `appearance.primary: "ai"` alongside its required `accent`:
+
+```ts
+appearance: { accent: "#0f766e", primary: "ai" },
+```
+
+Omit `primary` to keep blue. `"ai"` is the only accepted value; any other value
+fails when `defineApp()` runs. Built-in and third-party applications use the
+same declaration. Cloud applies `data-k2b-primary="ai"` to the application's
+page body, its pages in the Cloud app, and its Help panel even when Core hosts
+that panel. Provider pages rendered with `PanelLayout` also take their own
+application's primary colour. Shared `@k2b/ui` controls and Cloud's selection
+and focus styles follow that scope in light and dark mode. Status colours and
+other applications' declared accents keep their meaning.
 
 ## Declare platform integrations
 

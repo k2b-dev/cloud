@@ -45,6 +45,7 @@ export function LayoutHelpPanel(props: LayoutHelpPanelProps) {
     <div
       class="help-shell app-accent-scope flex h-full min-h-0 flex-col"
       data-surface="panel"
+      data-k2b-primary={props.primary}
       style={props.appearance}
       data-help-initial-topic={topic?.id}
     >

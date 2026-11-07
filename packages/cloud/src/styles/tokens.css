@@ -229,6 +229,14 @@
   --k2b-link-accent: var(--ui-app-accent-text);
 }
 
+/* Re-read primary tokens inside the scope (also on nested UI roots). The
+   focus-ui utility consumes --ui-focus, so legacy Cloud controls follow it too. */
+[data-k2b-primary="ai"],
+[data-k2b-primary="ai"] .k2b-ui {
+  --ui-selected: var(--k2b-selected);
+  --ui-focus: inset 0 0 0 2px var(--k2b-focus-ring);
+}
+
 @utility slider-track-colors {
   --slider-fill: var(--color-blue-500);
   --slider-track: var(--ui-field);

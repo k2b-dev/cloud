@@ -39,6 +39,7 @@ const server = new Hono<Environment>()
               ...options,
               panel: c.req.query("noPanel") ? undefined : options.panel,
               routes: c.req.query("slash") ? ["/app/fixture/"] : options.routes,
+              appearance: { accent: "#0f766e", primary: c.req.query("primary") === "ai" ? "ai" : undefined },
             },
           ],
     });
@@ -89,6 +90,15 @@ test("PanelLayout names its provider when the app declares its route with a trai
 
 const runtimeProps = (html: string): unknown =>
   fromJSON(JSON.parse(html.match(/data-props="([^"]*)"/)?.[1]?.replace(/&quot;/g, '"') ?? ""));
+
+test("a provider panel document takes its own app's primary colour", async () => {
+  for (const primary of [undefined, "ai"]) {
+    const response = await server.request(`/app/fixture/panel${primary ? "?primary=ai" : ""}`);
+    expect(response.status).toBe(200);
+    const body = (await response.text()).match(/<body\b[^>]*>/)?.[0] ?? "";
+    expect(body.includes('data-k2b-primary="ai"')).toBe(primary === "ai");
+  }
+});
 
 test("PanelLayout passes the declared panel pathname as the runtime scope", async () => {
   const html = await (await server.request("/app/fixture/panel?slash=1")).text();

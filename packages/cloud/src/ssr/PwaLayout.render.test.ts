@@ -121,6 +121,8 @@ const server = new Hono<AuthContext>()
     c.set("settings" as never, { app: { name: "Example Cloud" } } as never);
     await next();
   })
+  .get("/pwa/", auth.requireRole("*"), ...page)
+  .get("/pwa/settings", auth.requireRole("*"), ...page)
   .get("/pwa/inventory", auth.requireRole("user", ssr.pwaAccess), auth.requireUser(ssr.pwaAccess), ...page)
   .get("/pwa/inventory/:id", auth.requireRole("user", ssr.pwaAccess), auth.requireUser(ssr.pwaAccess), ...page)
   .get("/pwa/admin-only", auth.requireRole("admin", ssr.pwaAccess), (c) => c.text("admin handler"))
@@ -323,6 +325,24 @@ describe("PwaLayout", () => {
     const plain = (await render("/pwa/inventory")).document.body;
     expect(plain.classList.contains("app-accent-scope")).toBe(false);
     expect(plain.getAttribute("style")).toBeNull();
+  });
+
+  test("a part's AI primary reaches its document; other parts and shell pages keep blue", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory", { appearance: { accent: "#0f766e", primary: "ai" } }), part("open", "Open")];
+    expect((await render("/pwa/inventory")).document.body.getAttribute("data-k2b-primary")).toBe("ai");
+    for (const [path, status] of [
+      ["/pwa/", 200],
+      ["/pwa/settings", 200],
+      ["/pwa/open", 200],
+      ["/pwa/missing", 404],
+    ] as const) {
+      const { response, document } = await render(path);
+      expect(response.status).toBe(status);
+      expect(document.body.hasAttribute("data-k2b-primary")).toBe(false);
+    }
+    apps = [shell, part("inventory", "Inventory", { appearance: { accent: "#0f766e" } })];
+    expect((await render("/pwa/inventory")).document.body.hasAttribute("data-k2b-primary")).toBe(false);
   });
 
   test("marks Start, which lists every part, for a part without its own tab", async () => {
