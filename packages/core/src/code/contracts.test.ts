@@ -78,6 +78,7 @@ describe("Core Code data contracts", () => {
       "code.attention",
       "code.attention.list",
       "code.automation.list",
+      "code.event.catchup.read",
       "code.list",
       "code.policy.effective",
       "code.policy.preview",
@@ -98,6 +99,9 @@ describe("Core Code data contracts", () => {
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
     ).toEqual(
       [
+        "code.event.catchup",
+        "code.event.catchup.cancel",
+        "code.event.catchup.resume",
         "code.event.redeliver",
         "code.pause",
         "code.policy.update",
@@ -178,6 +182,14 @@ describe("Core Code data contracts", () => {
     expect(() => codePerson({ authority: { ...authority, credentialKind: "oauth", scopes: ["mail:read"] } })).toThrow("Credential");
     expect(() => codePerson({ authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] } }, true)).toThrow("Credential");
     expect(codePerson({ authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] } }).id).toBe(user.id);
+  });
+  test("catch-up progress requires editor credentials before reading operation state", async () => {
+    const query = aiCapabilities.queries["code.event.catchup.read"];
+    const input = { operationId: "11111111-1111-4111-8111-111111111111" };
+    expect(await query.run(input, { ...context, authority: undefined })).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(
+      await query.run(input, { ...context, authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] } }),
+    ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
   });
 });
 
