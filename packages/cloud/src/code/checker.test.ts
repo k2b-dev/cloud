@@ -127,6 +127,7 @@ test("cld code init's TSX page passes cld code check and its generated editor ts
   const project = join(root, "work-shop", "owner-shop");
   const outputs: unknown[] = [];
   const commands: string[] = [];
+  let bundle = "";
   const context: CloudCliContext = {
     args: ["init"],
     flags: { title: "Overview", "owner-type": owner.ref.type, "owner-id": owner.ref.id, out: root },
@@ -154,7 +155,11 @@ test("cld code init's TSX page passes cld code check and its generated editor ts
       const result = await checkCode({ ...base, entry: input.entry, files: input.files }, host);
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
-      expect(result.manifest.entrypoints).toMatchObject([{ kind: "route", route: { method: "GET", path: "/", public: false } }]);
+      expect(result.manifest.entrypoints).toMatchObject([
+        { kind: "route", route: { method: "GET", path: "/", public: false } },
+        { kind: "route", route: { method: "POST", path: "/items", public: false } },
+      ]);
+      bundle = result.bundle;
       return Response.json({ version: 1, result, manifest: { ...result.manifest, entry: input.entry, policyRows: [] }, permissions: [] });
     },
     readJson: async (response) => response.json(),
@@ -192,6 +197,16 @@ test("cld code init's TSX page passes cld code check and its generated editor ts
   });
   const [exit, stdout, stderr] = await Promise.all([types.exited, new Response(types.stdout).text(), new Response(types.stderr).text()]);
   expect({ exit, stdout, stderr }).toEqual({ exit: 0, stdout: "", stderr: "" });
+  // The starting page is one Core draws: key figures, a section with a chart, a form and a table.
+  const module = await import(`data:text/javascript;base64,${Buffer.from(bundle).toString("base64")}`);
+  const response = await module["route:GET:/"](
+    { method: "GET", path: "/", query: "", params: {}, contentType: "text/plain", body: "", user: null },
+    { call: async () => null },
+  );
+  const tree = validateCodePage(response.tree, config.codeId);
+  expect(tree.children.map((node) => node.kind)).toEqual(["Stats", "Section"]);
+  const section = tree.children[1];
+  expect(section?.kind === "Section" && section.children.map((node) => node.kind)).toEqual(["Chart", "Form", "Table"]);
 }, 60_000);
 
 test("core.ai.decide is AI in the generated SDK and mail triage checks category before urgency", async () => {

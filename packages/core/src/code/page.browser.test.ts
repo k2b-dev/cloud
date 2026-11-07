@@ -305,11 +305,18 @@ describe("Code page in a browser", () => {
               check({
                 ...home,
                 children: home.children.map((child) =>
-                  child.kind === "Form"
+                  child.kind === "Section"
                     ? {
                         ...child,
-                        fields: child.fields.map((field) =>
-                          field.name === "title" ? { ...field, value: "Lamp", error: "Choose a longer title." } : field,
+                        children: child.children.map((inner) =>
+                          inner.kind === "Form"
+                            ? {
+                                ...inner,
+                                fields: inner.fields.map((field) =>
+                                  field.name === "title" ? { ...field, value: "Lamp", error: "Choose a longer title." } : field,
+                                ),
+                              }
+                            : inner,
                         ),
                       }
                     : child,

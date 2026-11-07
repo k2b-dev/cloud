@@ -23,9 +23,12 @@ export const Link = builder("Link");
 export const Button = builder("Button");
 export const Action = builder("Action");
 export const Notice = builder("Notice");
+export const Stats = builder("Stats");
 export const Chart = builder("Chart");
 for (const kind of ["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"])
-  Chart[kind[0].toUpperCase() + kind.slice(1)] = builder("Chart", props => ({ kind: "Chart", description: { kind, ...props } }));
+  Chart[kind[0].toUpperCase() + kind.slice(1)] = builder("Chart", ({ width, empty, ...props }) => ({
+    kind: "Chart", ...(width === undefined ? {} : { width }), ...(empty === undefined ? {} : { empty }), description: { kind, ...props },
+  }));
 export function jsx(component, props, ...children) {
   if (!pageComponents.has(component)) throw new Error("code_page_component");
   return component(children.length ? { ...props, children: children.length === 1 ? children[0] : children } : props ?? {});

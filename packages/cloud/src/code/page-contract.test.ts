@@ -153,3 +153,87 @@ test("a page follows a few unique event types and fields carry the Code's valida
     expect(() => validateCodePage({ ...page(), follow }, codeId)).toThrow();
   expect(() => validateCodePage(page([{ ...form, fields: [{ ...form.fields[0], error: "" }] }]), codeId)).toThrow();
 });
+test("key figures, grid widths, section symbols and number formats are data on the allow-list", () => {
+  const stats = {
+    kind: "Stats",
+    items: [
+      {
+        label: "Received",
+        value: 128,
+        icon: "ti ti-package",
+        delta: { value: 0.123, better: "up" },
+        compare: { label: "Last week", value: 114 },
+        trend: [92, 101, 128],
+      },
+      { label: "On time", value: 0.92, format: { style: "percent" }, delta: { value: 0.04, unit: "points", better: "up" } },
+      { label: "Not counted", value: null },
+    ],
+  };
+  const section = {
+    kind: "Section",
+    title: "Today",
+    description: "Updated with every change",
+    icon: "ti ti-calendar-event",
+    color: "emerald",
+    children: [
+      {
+        kind: "Chart",
+        width: "twoThirds",
+        empty: "No items yet.",
+        description: { kind: "bar", title: "Items", data: [{ label: "One", value: 2 }] },
+      },
+      { kind: "Detail", width: "third", title: "Item", items: [{ label: "Code", value: "W-1" }] },
+      {
+        kind: "Table",
+        width: "half",
+        title: "Prices",
+        columns: [{ key: "price", label: "Price", format: { style: "currency", currency: "EUR" } }],
+        rows: [{ price: 4 }],
+      },
+      {
+        kind: "Form",
+        width: "full",
+        title: "Find",
+        action: "/find",
+        submit: "Find",
+        fields: [{ type: "text", name: "q", label: "Query" }],
+      },
+    ],
+  };
+  const waiting = { kind: "Chart", width: "half", title: "Items", empty: "No item arrived today." };
+  const full = { ...page([stats, section, waiting]), subtitle: "As of 09:40", icon: "ti ti-tool", color: "blue" };
+  expect<unknown>(validateCodePage(full, codeId)).toEqual(full);
+  for (const bad of [
+    { ...full, icon: "ti ti-tool onload=alert(1)" },
+    { ...full, icon: "<svg>" },
+    { ...full, color: "plum" },
+    page([{ ...section, color: "#ff00ff" }]),
+    page([{ ...section, children: [{ ...section.children[1], width: "quarter" }] }]),
+    page([{ kind: "Stats", items: [] }]),
+    page([{ kind: "Stats", items: Array.from({ length: CODE_PAGE_LIMITS.stats + 1 }, () => ({ label: "x", value: 1 })) }]),
+    page([{ kind: "Stats", items: [{ label: "x", value: 1, trend: Array.from({ length: CODE_PAGE_LIMITS.trend + 1 }, () => 1) }] }]),
+    page([{ kind: "Stats", items: [{ label: "x", value: 1, delta: { value: 0.1, unit: "percent" } }] }]),
+    page([{ kind: "Stats", items: [{ label: "x", value: 1, format: { style: "currency" } }] }]),
+    page([{ kind: "Stats", items: [{ label: "x", value: Number.NaN }] }]),
+    page([{ kind: "Chart", title: "Without anything to say" }]),
+    page([{ kind: "Chart", empty: "Nothing" }]),
+    page([{ ...section.children[0], title: "Two titles" }]),
+  ])
+    expect(() => validateCodePage(bad, codeId)).toThrow();
+});
+test("chart builders keep page layout beside the portable description", async () => {
+  const sdk = generateCodeSdk([], { mode: "personal" });
+  const runtime = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
+  const chart = runtime.jsx(runtime.Chart.Bar, { width: "half", empty: "None yet.", title: "Items", data: [{ label: "One", value: 2 }] });
+  expect(chart).toEqual({
+    kind: "Chart",
+    width: "half",
+    empty: "None yet.",
+    description: { kind: "bar", title: "Items", data: [{ label: "One", value: 2 }] },
+  });
+  expect(runtime.jsx(runtime.Stats, { items: [{ label: "Open", value: 3 }] })).toEqual({
+    kind: "Stats",
+    items: [{ label: "Open", value: 3 }],
+  });
+  expect(() => validateCodePage(page([chart]), codeId)).not.toThrow();
+});

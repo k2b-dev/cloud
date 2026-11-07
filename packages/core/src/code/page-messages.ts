@@ -6,6 +6,8 @@ export const codePageMessages = i18n.define({
   messages: {
     en: {
       yes: "Yes",
+      points: "pts",
+      chartEmpty: "Nothing to show yet.",
       no: "No",
       scan: "Scan",
       scanTitle: "Scan code",
@@ -33,6 +35,8 @@ export const codePageMessages = i18n.define({
     },
     de: {
       yes: "Ja",
+      points: "Pkt.",
+      chartEmpty: "Noch nichts zu zeigen.",
       no: "Nein",
       scan: "Scannen",
       scanTitle: "Code scannen",

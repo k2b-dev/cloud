@@ -80,14 +80,15 @@ The version 1 allow-list is:
 
 | Node | Description fields |
 | --- | --- |
-| `Page` | `title`, `children`, optional `follow`; root only, `version: 1` |
-| `Section` | `title`, `children` |
+| `Page` | `title`, `children`, optional `subtitle`, `icon`, `color` and `follow`; root only, `version: 1` |
+| `Section` | `title`, `children`, optional `description`, `icon` and `color` |
+| `Stats` | `items` (1–6 key figures, see below) |
 | `Text` | `text`; TSX also accepts a text child |
 | `Heading` | `text`, optional `level: 2 \| 3 \| 4` |
-| `Table` | `title`, `columns: [{ key, label }]`, `rows` of scalar values, optional `empty` text |
-| `Form` | `title`, `action`, `fields`, `submit`; always POST |
-| `Detail` | `title`, `items: [{ label, value }]` |
-| `Chart` | `description: { kind, … }`; portable chart data, no callbacks |
+| `Table` | `title`, `columns: [{ key, label, format? }]`, `rows` of scalar values, optional `empty` text and `width` |
+| `Form` | `title`, `action`, `fields`, `submit`, optional `width`; always POST |
+| `Detail` | `title`, `items: [{ label, value }]`, optional `width` |
+| `Chart` | `description: { kind, … }` and optional `width`; with nothing to draw, `title` and `empty` instead; portable chart data, no callbacks |
 | `Link` | `label`, `href` |
 | `Button`, `Action` | `label`, `action`, optional string `values`; always POST |
 | `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` |
@@ -98,6 +99,49 @@ Fields have `name`, `label`, `type`, optional `value`, `required` and `error`. T
 Field names are unique; `_csrf` is reserved. Cloud inserts the CSRF token into
 forms and actions and removes it before invoking the handler. Links and POST
 destinations resolve inside `/code/<id>/`; they cannot leave that Code.
+
+### Lay out a page
+
+A page reads like a Cloud dashboard: the head with the page's `icon` in a soft
+chip of its `color`, the `title` and a quiet `subtitle`; then key figures, then
+sections. A `Section` names a topic with an optional `icon`, `color` and
+`description` beside its title.
+
+Blocks sit on a grid of six columns. `Chart`, `Table`, `Detail` and `Form`
+are framed panels; `width` gives a panel `third`, `half`, `twoThirds` or
+`full` (the default) of its row. Panels in one row share its height. The grid
+measures its own width: up to 1,000 px a third takes half a row and two thirds
+the whole row, up to 600 px every panel takes the row. All other blocks take
+the whole row.
+
+`Stats` shows up to six key figures in one row. Each item has a `label` and a
+`value` (number, text or `null` for not counted), and optionally a `format`
+(the chart number format: `style`, `currency`, `unit`, `decimals`, `compact`),
+an `icon`, a `delta` with the change since the comparison (`value` is a share,
+`0.082` for 8.2 %; with `unit: "points"` it is percentage points), its
+`better` direction (`up` or `down`, which colours the change), a `compare`
+with `label` and `value`, and a `trend` of up to 60 numbers. A column
+`format` formats a table's numbers the same way.
+
+`icon` is a Tabler class such as `ti ti-package`. `color` is one of `zinc`,
+`blue`, `emerald`, `amber` and `red`; the AI colour is reserved. In TSX,
+`Chart.Bar` and the other chart builders take `width` beside the description.
+A chart description needs at least one value, so a chart with nothing to draw
+yet is `<Chart title="Items per status" empty="No item arrived today." />`:
+the frame keeps its title and place and says why it is empty.
+
+```tsx
+<Page title="Workshop" subtitle="As of 09:40" icon="ti ti-tool" color="blue">
+  <Stats items={[
+    { label: "Received", value: 128, delta: { value: 0.12, better: "up" }, compare: { label: "Last week", value: 114 } },
+    { label: "Revenue", value: 4610, format: { style: "currency", currency: "EUR" } },
+  ]} />
+  <Section title="Today" icon="ti ti-calendar-event" color="blue">
+    <Chart.Bar width="twoThirds" title="Items per status" data={[{ label: "Received", value: 12 }]} />
+    <Detail width="third" title="Chair" items={[{ label: "Code", value: "W-1" }]} />
+  </Section>
+</Page>
+```
 
 Cloud draws every block with its shared components, on the server and again in
 the browser with the same result, in light and dark and at phone width. A chart

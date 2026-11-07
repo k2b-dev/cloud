@@ -58,7 +58,21 @@ test("SSR renders escaped content, own links, chart data and usable form control
 test("the server draws every block with shared components, including the chart and the scan control", () => {
   const full = validateCodePage(codePageFixture, "c_page");
   const html = renderToString(() => createComponent(Page, { tree: full, codeId: "c_page", csrf: "session-bound", locale: "en" }));
-  for (const kind of ["Notice", "Text", "Section", "Chart", "Table", "Form", "Detail", "Heading", "Actions", "Button", "Action", "Link"])
+  for (const kind of [
+    "Notice",
+    "Stats",
+    "Text",
+    "Section",
+    "Chart",
+    "Table",
+    "Form",
+    "Detail",
+    "Heading",
+    "Actions",
+    "Button",
+    "Action",
+    "Link",
+  ])
     expect(html).toContain(`data-code-block="${kind}"`);
   // A drawn chart, not only its data table.
   expect(html).toMatch(/<svg[^>]*stdlib-chart|class="[^"]*k2b-chart/);
@@ -71,6 +85,23 @@ test("the server draws every block with shared components, including the chart a
   expect(html).toContain("1,200");
   expect(html).toContain("Yes");
   expect(html.match(/data-code-block="Actions"/g)).toHaveLength(1);
+  // The page head, key figures with change and comparison, section symbols and panel widths.
+  expect(html).toContain("As of 7 Nov 2026, 09:40");
+  expect(html).toContain('class="ti ti-tool"');
+  expect(html).toContain("+12.3%");
+  expect(html).toContain("Last week €4,002.00");
+  expect(html).toContain("2.4 d");
+  expect(html).toContain("€95.50");
+  expect(html).toMatch(/class="ti ti-calendar-event text-lg"/);
+  expect(html).toContain("col-span-6 @[62.5rem]:col-span-4 min-w-0 p-4");
+  // A chart with nothing to draw keeps its frame and title and says why.
+  const waiting = validateCodePage(
+    { version: 1, kind: "Page", title: "Empty", children: [{ kind: "Chart", title: "Items per status", empty: "No item arrived today." }] },
+    "c_page",
+  );
+  const empty = renderToString(() => createComponent(Page, { tree: waiting, codeId: "c_page", csrf: "session-bound", locale: "en" }));
+  expect(empty).toContain("Items per status");
+  expect(empty).toContain("No item arrived today.");
   const german = renderToString(() => createComponent(Page, { tree: full, codeId: "c_page", csrf: "session-bound", locale: "de" }));
   expect(german).toContain("1.200");
   expect(german).toContain('aria-label="Scannen"');

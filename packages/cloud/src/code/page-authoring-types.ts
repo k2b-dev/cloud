@@ -4,8 +4,10 @@ export type CodePageNode = CodePageTree["children"][number];
 export type CodePageChild = CodePageNode | CodePageTree | readonly CodePageChild[] | false | null | undefined;
 export type CodePageComponent<P> = (props: P) => CodePageNode | CodePageTree;
 type CodeNodeProps<K extends CodePageNode["kind"]> = Omit<Extract<CodePageNode, { kind: K }>, "kind">;
-export declare const Page: CodePageComponent<{ title: string; follow?: CodePageTree["follow"]; children?: CodePageChild }>;
-export declare const Section: CodePageComponent<{ title: string; children?: CodePageChild }>;
+type CodeSectionNode = Extract<CodePageNode, { kind: "Section" }>;
+export declare const Page: CodePageComponent<Omit<CodePageTree, "kind" | "version" | "children"> & { children?: CodePageChild }>;
+export declare const Section: CodePageComponent<Omit<CodeSectionNode, "kind" | "children"> & { children?: CodePageChild }>;
+export declare const Stats: CodePageComponent<CodeNodeProps<"Stats">>;
 export declare const Text: CodePageComponent<{ text?: string; children?: string | number | readonly (string | number)[] }>;
 export declare const Heading: CodePageComponent<{
   text?: string;
@@ -22,7 +24,7 @@ export declare const Notice: CodePageComponent<CodeNodeProps<"Notice">>;
 type CodeChartProps<K> = CodeChartDescription extends infer D
   ? D extends { kind: infer Kind }
     ? K extends Kind
-      ? Omit<D, "kind">
+      ? Omit<D, "kind"> & Omit<CodeNodeProps<"Chart">, "description">
       : never
     : never
   : never;
