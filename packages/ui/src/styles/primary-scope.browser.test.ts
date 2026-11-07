@@ -176,8 +176,20 @@ for (const theme of ["light", "dark"] as const) {
           <body class="k2b-ui" data-theme="${theme}"><main id="evidence"><h1>Primary scope · ${theme}</h1><section id="outside"></section><section id="scope" data-k2b-primary="ai"><h2>AI primary</h2><div id="controls"></div><div class="k2b-ui" id="nested"></div></section></main><section id="catalog" data-k2b-primary="ai"></section></body></html>`);
         await settled(page);
         const before = await palette(page, "#outside");
-        await page.clock.setFixedTime(new Date("2026-11-07T12:00:00Z"));
         await page.evaluate(() => {
+          // Pin Date alone; timers, animation frames and performance keep running.
+          const at = Date.parse("2026-11-07T12:00:00Z");
+          const RealDate = Date;
+          class PinnedDate extends RealDate {
+            constructor(...args: ConstructorParameters<DateConstructor> | []) {
+              if (args.length === 0) super(at);
+              else super(...(args as ConstructorParameters<DateConstructor>));
+            }
+            static override now() {
+              return at;
+            }
+          }
+          globalThis.Date = PinnedDate as DateConstructor;
           let seed = 17;
           Math.random = () => {
             seed = (seed * 16807) % 2147483647;

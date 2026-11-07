@@ -1,14 +1,18 @@
 type UiScope = { primary: string | null; theme: "light" | "dark" };
-let interaction: { event: WeakRef<Event>; scope: UiScope } | undefined;
+let interactionEvent: WeakRef<Event> | undefined;
+let interactionScope: UiScope | undefined;
+export const PRIMARY_ATTRIBUTE = "data-k2b-primary";
+
+const eventSource = (event?: Event) => event?.composedPath().find((node): node is Element => node instanceof Element);
 
 const scopeFrom = (source: Element | undefined): UiScope => ({
-  primary: source?.closest("[data-k2b-primary]")?.getAttribute("data-k2b-primary") ?? null,
+  primary: source?.closest(`[${PRIMARY_ATTRIBUTE}]`)?.getAttribute(PRIMARY_ATTRIBUTE) ?? null,
   theme: (source?.ownerDocument.defaultView ?? window).getComputedStyle(source ?? document.body).colorScheme === "dark" ? "dark" : "light",
 });
 
 const liveInteraction = () => {
-  const event = interaction?.event.deref();
-  return event && event.eventPhase !== 0 ? event : undefined;
+  const event = interactionEvent?.deref();
+  return event?.eventPhase ? event : undefined;
 };
 
 // Capture before a menu's handler removes its trigger. Keep only palette values
@@ -18,30 +22,25 @@ if (typeof document !== "undefined") {
     document.addEventListener(
       type,
       (event) => {
-        const source = event.composedPath().find((node): node is Element => node instanceof Element);
-        interaction = { event: new WeakRef(event), scope: scopeFrom(source) };
+        interactionEvent = new WeakRef(event);
+        interactionScope = scopeFrom(eventSource(event));
       },
       true,
     );
   }
 }
 
-export const currentUiSource = (): Element | undefined => {
-  const trigger = liveInteraction()
-    ?.composedPath()
-    .find((node) => node instanceof Element);
-  const source = trigger instanceof Element ? trigger : document.activeElement;
-  return source instanceof Element ? source : undefined;
-};
+export const currentUiSource = (): Element | undefined => eventSource(liveInteraction()) ?? document.activeElement ?? undefined;
 
 /** A trigger owns the palette during dispatch; programmatic opens use focused UI. */
-export const readUiScope = (source?: Element): UiScope =>
-  source ? scopeFrom(source) : liveInteraction() && interaction ? interaction.scope : scopeFrom(currentUiSource());
+export const readUiScope = (source?: Element | null): UiScope =>
+  source ? scopeFrom(source) : ((liveInteraction() && interactionScope) ?? scopeFrom(currentUiSource()));
 
 export const applyUiScope = (target: HTMLElement, scope: UiScope): void => {
-  if (scope.primary) target.setAttribute("data-k2b-primary", scope.primary);
-  else target.removeAttribute("data-k2b-primary");
-  target.setAttribute("data-theme", scope.theme);
+  const data = target.dataset;
+  if (scope.primary) data.k2bPrimary = scope.primary;
+  else delete data.k2bPrimary;
+  data.theme = scope.theme;
 };
 
 export const inheritUiScope = (target: HTMLElement, source?: Element): void => {

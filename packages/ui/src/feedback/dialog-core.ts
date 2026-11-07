@@ -401,6 +401,7 @@ export const createDialogCore = () => {
   const applyPresentation = (entry: DialogStackEntry) => {
     const dialog = state.element;
     if (!dialog || state.stack[state.stack.length - 1] !== entry) return;
+    dialog.className = `k2b-ui ${entry.panelClassName}`;
     applyUiScope(dialog, entry.uiScope);
     const position = entry.position;
     dialog.style.position = position ? "fixed" : "";
@@ -491,7 +492,6 @@ export const createDialogCore = () => {
     const previous = state.stack[state.stack.length - 1];
     if (previous && dialog) {
       previous.container.style.display = "";
-      dialog.className = `k2b-ui ${previous.panelClassName}`;
       applyPresentation(previous);
       applyAccessibleName(dialog, previous);
       applyCancelBehavior(dialog, () => void requestDismiss(previous), previous.cancelBehavior);
@@ -573,7 +573,6 @@ export const createDialogCore = () => {
     const panelClassName = options.panelClassName ?? DEFAULT_PANEL_CLASS;
     const cancelBehavior = options.cancelBehavior ?? "resolve-undefined";
     const initialFocus = options.initialFocus ?? "first-input";
-    dialog.className = `k2b-ui ${panelClassName}`;
 
     const container = document.createElement("div");
     container.className = options.contentClassName ?? DEFAULT_CONTENT_CLASS;
@@ -624,6 +623,7 @@ export const createDialogCore = () => {
       if (options.history) pushHistory(entry);
       state.stack.push(entry);
       try {
+        applyPresentation(entry);
         entry.dispose = render(
           () =>
             createComponent(RenderErrorBoundary, {
@@ -648,7 +648,7 @@ export const createDialogCore = () => {
               onError: () => {
                 entry.panelClassName = RENDER_ERROR_PANEL_CLASS;
                 container.className = DEFAULT_CONTENT_CLASS;
-                if (state.stack[state.stack.length - 1] === entry) dialog.className = `k2b-ui ${RENDER_ERROR_PANEL_CLASS}`;
+                applyPresentation(entry);
               },
             }),
           container,

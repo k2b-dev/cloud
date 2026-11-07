@@ -302,6 +302,14 @@ function enforceCap(): void {
   }
 }
 
+const createToastCard = (doc: Document): HTMLDivElement => {
+  const element = doc.createElement("div");
+  element.className = "k2b-ui k2b-toast";
+  element.dataset.k2bToast = "";
+  inheritUiScope(element);
+  return element;
+};
+
 const showToast = (description: string, options?: ToastOptions): ToastHandle => {
   const initialContainer = ensureContainer();
   if (!initialContainer) {
@@ -324,11 +332,8 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   let timerStartedAt = 0;
   let lastAnnouncement = "";
 
-  const toastElement = doc.createElement("div");
-  toastElement.className = "k2b-ui k2b-toast";
-  inheritUiScope(toastElement);
+  const toastElement = createToastCard(doc);
   toastElement.dataset.tone = VARIANT_STYLES[currentVariant].tone;
-  toastElement.dataset.k2bToast = "";
 
   const leadElement = doc.createElement("div");
   leadElement.className = "k2b-toast__icon";
@@ -553,10 +558,7 @@ const showCustom = (content: HTMLElement): ToastSlot => {
   const initialContainer = ensureContainer();
   if (!initialContainer) return { dismiss: () => {} };
   let dismissed = false;
-  const slotElement = document.createElement("div");
-  slotElement.className = "k2b-ui k2b-toast";
-  inheritUiScope(slotElement);
-  slotElement.dataset.k2bToast = "";
+  const slotElement = createToastCard(initialContainer.ownerDocument);
   slotElement.dataset.custom = "true";
   // It stays until the application removes it, like a toast without a timer.
   slotElement.dataset.persistent = "true";
