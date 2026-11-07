@@ -199,6 +199,7 @@ describe("Chat.Composer suggestion", () => {
         const empty = await layout(page);
         await suggest(page, LONG);
         await page.locator(FIELD).focus();
+        await settled(page);
         const shown = await layout(page);
         expect(shown.overlay).not.toBeNull();
         await page.keyboard.press("Tab");
@@ -245,6 +246,7 @@ describe("Chat.Composer suggestion", () => {
         const empty = await layout(page);
         await suggest(page, LONG);
         await page.locator(FIELD).focus();
+        await settled(page);
         const shown = await layout(page);
         await page.keyboard.type("K");
         await settled(page);
