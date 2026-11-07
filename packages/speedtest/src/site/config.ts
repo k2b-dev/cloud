@@ -5,7 +5,7 @@ export const siteText = {
   de: {
     title: "Internet-Speedtest",
     description: "Miss Download, Upload und Latenz in höchstens 14 Sekunden. Ohne Anmeldung, Cookies oder Tracking.",
-    introduction: "Wie schnell ist deine Verbindung zu diesem Server? Starte eine kurze Messung oder prüfe länger im genauen Modus.",
+    introduction: "Miss Download, Upload und Latenz zu diesem Server.",
     limits: "Höchstens 2 Tests pro Minute je Internetzugang. Eine Messung kann viele Daten übertragen; beachte deinen Datentarif.",
     privacy:
       "Keine Cookies. Kein Tracking. Der Server verwendet deine IP-Adresse kurzzeitig für das Testlimit und speichert keine Ergebnisse.",
@@ -17,7 +17,7 @@ export const siteText = {
   en: {
     title: "Internet speed test",
     description: "Measure download, upload and latency in up to 14 seconds. No account, cookies or tracking.",
-    introduction: "How fast is your connection to this server? Start a short measurement or measure longer in accurate mode.",
+    introduction: "Measure download, upload and latency to this server.",
     limits: "Up to 2 tests per minute per internet connection. A test can transfer a lot of data; check your data allowance.",
     privacy: "No cookies. No tracking. The server briefly uses your IP address for the test limit and stores no results.",
     promotion: "Made with Cloud",

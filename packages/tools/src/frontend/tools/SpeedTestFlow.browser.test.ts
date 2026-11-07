@@ -55,6 +55,112 @@ const geometry = async (page: Awaited<ReturnType<typeof open>>) => {
   );
 };
 
+type Page = Awaited<ReturnType<typeof open>>;
+
+/** The gauge carries the download; each tile carries one other figure, once, without the phase check row. */
+const expectResultHierarchy = async (page: Page) => {
+  const view = await page.evaluate(() => ({
+    gauge: document.querySelector(".tools-speedtest-gauge .stdlib-chart-gauge-value")?.textContent?.trim(),
+    gaugeLabel: document.querySelector(".tools-speedtest-gauge .stdlib-chart-gauge-label")?.textContent?.trim(),
+    labels: [...document.querySelectorAll(".tools-speedtest .k2b-stat-cell__label")].map((node) => node.textContent?.trim()),
+    values: [...document.querySelectorAll(".tools-speedtest .k2b-stat-cell__value")].map((node) => ({
+      text: node.textContent?.trim(),
+      clipped: node.scrollWidth > node.clientWidth + 1,
+    })),
+    phaseRows: document.querySelectorAll(".tools-speedtest-phases").length,
+    tileHeights: [
+      ...new Set(
+        [...document.querySelectorAll(".tools-speedtest .k2b-stat-cell")].map((node) => Math.round(node.getBoundingClientRect().height)),
+      ),
+    ],
+    rows: new Set(
+      [...document.querySelectorAll(".tools-speedtest .k2b-stat-cell")].map((node) => Math.round(node.getBoundingClientRect().top)),
+    ).size,
+  }));
+  expect(view.gaugeLabel).toContain("Download");
+  expect(view.labels).toEqual(["Upload", "Ping", "Jitter", "Latenz unter Last"]);
+  expect(view.phaseRows).toBe(0);
+  expect(view.tileHeights).toHaveLength(1);
+  // Four tiles fill one row on a wide page and two full rows on a phone: no empty slot.
+  expect([1, 2]).toContain(view.rows);
+  for (const value of view.values) {
+    expect(value.clipped).toBe(false);
+    expect(value.text).toMatch(/\d (Mbit\/s|ms)$/);
+    expect(value.text?.startsWith(`${view.gauge} `)).toBe(false);
+  }
+};
+
+/** Measured windows end where they were measured: no aggregate cliff, no zero, warmup thin and neutral. */
+const expectCleanHistory = async (page: Page) => {
+  const history = await page.locator(".tools-speedtest-chart").evaluate((chart) => {
+    const points = [...chart.querySelectorAll<SVGElement>("[data-chart-datum]")]
+      .map(
+        (node) =>
+          JSON.parse(node.getAttribute("data-chart-datum")!) as {
+            role: string;
+            seriesIndex?: number;
+            values: { key: string; value: unknown }[];
+          },
+      )
+      .filter((datum) => datum.role === "point")
+      .map((datum) => ({
+        series: datum.seriesIndex ?? 0,
+        x: Number(datum.values.find((field) => field.key === "x")!.value),
+        y: Number(datum.values.find((field) => field.key === "y")!.value),
+      }));
+    const stroke = (index: number) =>
+      parseFloat(getComputedStyle(chart.querySelector(`.stdlib-chart-line.stdlib-chart-series-${index}`)!).strokeWidth);
+    return { points, measured: stroke(0), ramp: stroke(2) };
+  });
+  for (const series of [0, 1]) {
+    const points = history.points.filter((point) => point.series === series);
+    expect(points.length).toBeGreaterThan(2);
+    expect(points.every((point) => point.y > 0)).toBe(true);
+    for (let index = 1; index < points.length; index++)
+      expect(Math.abs(points[index]!.y - points[index - 1]!.y) / points[index - 1]!.y).toBeLessThan(0.3);
+  }
+  const download = history.points.filter((point) => point.series === 0);
+  const ramp = history.points.filter((point) => point.series === 2);
+  expect(ramp.length).toBeGreaterThan(0);
+  // Warmup windows come before the first measured window of their phase and never mix into it.
+  expect(Math.min(...download.map((point) => point.x))).toBeGreaterThan(Math.min(...ramp.map((point) => point.x)));
+  expect(history.ramp).toBeLessThan(history.measured);
+};
+
+test("modes stay on one line in German and English, on a phone and a wide page", async () => {
+  for (const [lang, width] of [
+    ["de", 390],
+    ["en", 390],
+    ["de", 1440],
+    ["en", 1440],
+  ] as const) {
+    const page = await open("idle", width, lang);
+    try {
+      const options = await page.locator(".tools-speedtest-mode [role=radio]").evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          text: node.textContent?.trim(),
+          clipped: node.scrollWidth > node.clientWidth + 1,
+        })),
+      );
+      expect(options.map((option) => option.text)).toEqual(
+        lang === "de" ? ["Schnell · 14 s", "Genau · 29 s"] : ["Quick · 14 s", "Accurate · 29 s"],
+      );
+      for (const option of options) expect(option.clipped).toBe(false);
+      const tops = await page
+        .locator(".tools-speedtest-mode")
+        .evaluate(
+          (node) =>
+            new Set([...node.querySelectorAll("[role=radio]")].map((option) => Math.round(option.getBoundingClientRect().top))).size,
+        );
+      expect(tops).toBe(1);
+      const heights = await page.locator(".tools-speedtest-mode").evaluate((node) => node.getBoundingClientRect().height);
+      expect(heights).toBeLessThan(48);
+    } finally {
+      await page.close();
+    }
+  }
+}, 45_000);
+
 test("real shared-engine run preserves slots, shows remaining time, copies JSON and cancels cleanly", async () => {
   for (const width of [1440, 390]) {
     const page = await open("idle", width);
@@ -66,19 +172,21 @@ test("real shared-engine run preserves slots, shows remaining time, copies JSON 
       expect(await page.locator('[role="status"]').textContent()).toMatch(/noch ca\. \d+ s/);
       expect(await page.locator(".tools-speedtest-terminal").textContent()).toMatch(/noch ca\. \d+ s/);
       expect(await geometry(page)).toEqual(initial);
-      // Ramp-up is excluded from the result and stays neutral, including the renderer's SVG root.
+      // Ramp-up is excluded from the result and stays neutral, in the plot and in the legend swatch.
       expect(
-        await page.locator(".tools-speedtest-chart svg").evaluate((element) => {
-          const style = getComputedStyle(element);
-          return ["--stdlib-chart-c3", "--stdlib-chart-c4"].every(
-            (name) => style.getPropertyValue(name).trim() === style.getPropertyValue("--k2b-text-muted").trim(),
-          );
-        }),
+        await page.locator(".tools-speedtest-chart").evaluate((element) =>
+          [element, element.querySelector(".k2b-chart__svg > svg")!].every((node) => {
+            const style = getComputedStyle(node);
+            return style.getPropertyValue("--stdlib-chart-c3").trim() === style.getPropertyValue("--k2b-text-muted").trim();
+          }),
+        ),
       ).toBe(true);
       await page.clock.runFor(14_000);
       await settled(page);
       expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("done");
       expect(await geometry(page)).toEqual(initial);
+      await expectResultHierarchy(page);
+      await expectCleanHistory(page);
       const gaugeFonts = await page.locator(".tools-speedtest-gauge").evaluate((element) =>
         [...element.querySelectorAll<SVGTextElement>("text")].map((text) => ({
           value: text.classList.contains("stdlib-chart-gauge-value"),
@@ -97,7 +205,7 @@ test("real shared-engine run preserves slots, shows remaining time, copies JSON 
       await page.clock.runFor(250);
       expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("cancelled");
       expect(await geometry(page)).toEqual(initial);
-      expect(await page.locator(".k2b-stat-cell__value").first().textContent()).toBe("—");
+      expect(await page.locator(".k2b-stat-cell__value").first().textContent()).toBe("–");
       expect(await page.locator(".tools-speedtest-terminal").textContent()).toContain("Download: — Mbit/s");
       expect(await page.locator(".tools-speedtest-gauge").getAttribute("data-empty")).toBe("true");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -119,10 +227,10 @@ test("offline, disabled, network retry and 429 keep feedback visible and control
       if (["offline", "disabled", "429"].includes(scenario)) expect(await button.isDisabled()).toBe(true);
       else expect(await button.isEnabled()).toBe(true);
       if (scenario === "429") {
-        expect(await page.locator(".tools-speedtest-eta").textContent()).toContain("Testlimit erreicht");
+        expect(await page.locator('[role="status"]').textContent()).toContain("Testlimit erreicht");
         expect(await page.locator('[role="status"]').getAttribute("class")).not.toContain("speedtest-danger");
         expect(await page.locator(".tools-speedtest-chart .k2b-chart__empty").count()).toBe(1);
-        expect(await page.locator(".k2b-stat-cell__value").first().textContent()).toBe("—");
+        expect(await page.locator(".k2b-stat-cell__value").first().textContent()).toBe("–");
         await page.clock.runFor(3_000);
         expect(await button.isEnabled()).toBe(true);
       }
@@ -148,7 +256,7 @@ test("delayed browser callbacks keep every plotted sample inside the fixed time 
     expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("error");
     expect(await page.getByRole("button", { name: "Ergebnis kopieren", exact: true }).isDisabled()).toBe(true);
     expect(errors).toEqual([]);
-    expect(await page.locator(".tools-speedtest-chart svg").count()).toBe(1);
+    expect(await page.locator(".tools-speedtest-chart .k2b-chart__svg > svg").count()).toBe(1);
   } finally {
     await page.close();
   }
@@ -166,7 +274,7 @@ test("verification keeps the countdown and slots while the public terminal start
     const initial = await geometry(page);
     await page.clock.runFor(7_750);
     expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("verify");
-    expect(await page.locator(".tools-speedtest-eta").textContent()).toContain("Ergebnis wird geprüft");
+    expect(await page.locator('[role="status"]').textContent()).toContain("Ergebnis wird geprüft");
     expect(await page.locator('[role="status"]').textContent()).toMatch(/noch ca\. [1-9]\d* s/);
     expect(await geometry(page)).toEqual(initial);
     await page.clock.runFor(2_000);
