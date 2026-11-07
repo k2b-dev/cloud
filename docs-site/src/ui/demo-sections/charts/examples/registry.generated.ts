@@ -4,6 +4,7 @@ import * as bar_basicExamples from "./bar-basic";
 import * as barGaugeExamples from "./barGauge";
 import * as boxplotExamples from "./boxplot";
 import * as donutExamples from "./donut";
+import * as flowExamples from "./flow";
 import * as gaugeExamples from "./gauge";
 import * as heatmapExamples from "./heatmap";
 import * as histogramExamples from "./histogram";
@@ -21,6 +22,7 @@ export const exampleModules: Record<string, unknown>[] = [
   barGaugeExamples,
   boxplotExamples,
   donutExamples,
+  flowExamples,
   gaugeExamples,
   heatmapExamples,
   histogramExamples,
