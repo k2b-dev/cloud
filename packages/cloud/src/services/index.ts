@@ -15,7 +15,7 @@ export { requestPublicHttps, type PublicHttpInput } from "./public-http";
 export { authFlows } from "./auth-flows";
 export { toPgIntArray, toPgTextArray, toPgUuidArray, escapeLikePattern, isUniqueViolation } from "./postgres";
 
-export { logger, logging, TRACE_STUCK_AFTER_MS, trace } from "./logging";
+export { logger, logging, TRACE_STUCK_AFTER_MS, trace, withObservabilityRead } from "./logging";
 export { redactSensitivePath } from "./logging/redaction";
 export {
   createRuntimeLifecycle,

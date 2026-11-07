@@ -329,9 +329,9 @@ export default function MailboxSettings(props: {
 
   const deleteMailbox = mutation.create<boolean, void>({
     mutation: async (_input, { abortSignal }) => {
-      const confirmed = await prompts.confirm(messages().recentlyDeletedDescription, {
-        title: messages().moveMailboxToRecentlyDeleted,
-        confirmText: messages().moveToRecentlyDeleted,
+      const confirmed = await prompts.confirm(messages().deleteMailboxDescription, {
+        title: messages().deleteMailboxTitle,
+        confirmText: messages().deleteMailbox,
         variant: "danger",
       });
       if (!confirmed || abortSignal.aborted) return false;
@@ -339,7 +339,7 @@ export default function MailboxSettings(props: {
         { param: { mailboxId: props.context.mailbox.id } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, messages().failedMoveToRecentlyDeleted));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedDeleteMailbox));
       return true;
     },
     onSuccess: (deleted) => {
@@ -737,11 +737,11 @@ export default function MailboxSettings(props: {
             description={messages().dangerZoneDescription}
             tone="danger"
           >
-            <SettingsGroup title={messages().moveToRecentlyDeleted} description={messages().recentlyDeletedGroupDescription}>
+            <SettingsGroup title={messages().deleteMailbox} description={messages().deleteMailboxGroupDescription}>
               <SettingsGroup.Action>
                 <Button variant="danger" size="sm" type="button" onClick={() => deleteMailbox.mutate()} disabled={deleteMailbox.loading()}>
                   <i class={`ti ${deleteMailbox.loading() ? "ti-loader-2 animate-spin" : "ti-trash"}`} aria-hidden="true" />
-                  {messages().moveToRecentlyDeleted}
+                  {messages().deleteMailbox}
                 </Button>
               </SettingsGroup.Action>
             </SettingsGroup>

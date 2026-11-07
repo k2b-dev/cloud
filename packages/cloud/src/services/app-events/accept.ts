@@ -86,6 +86,8 @@ export function createEventAcceptance(db: () => SQL, reconcile: () => Promise<vo
     const subjectKey = `${envelope.subject.type}:${envelope.subject.id}`;
     try {
       await db().begin(async (tx) => {
+        if (envelope.place)
+          await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`cloud.resource-event:${envelope.type}@${envelope.version}`},0))`;
         const inserted = await tx`
           INSERT INTO events.app_events(id, type, version, source, subject_key, envelope, state, code)
           VALUES (${envelope.id}::uuid, ${envelope.type}, ${envelope.version}, ${envelope.source}, ${subjectKey},
@@ -97,6 +99,11 @@ export function createEventAcceptance(db: () => SQL, reconcile: () => Promise<vo
             INSERT INTO events.app_deliveries(id, subscription_id, event_id, subject_key)
             SELECT gen_random_uuid(), id, ${envelope.id}::uuid, ${subjectKey} FROM events.app_subscriptions
             WHERE event_type = ${envelope.type} AND version = ${envelope.version} AND state = 'active'
+              AND (resource_binding IS NULL OR (
+                resource_binding->'place'->>'type' = ${envelope.place?.type ?? null}
+                AND resource_binding->'place'->>'id' = ${envelope.place?.id ?? null}
+                AND first_seen_at <= ${envelope.time}::timestamptz
+              ))
             ON CONFLICT(subscription_id, event_id) DO NOTHING
           `;
         }

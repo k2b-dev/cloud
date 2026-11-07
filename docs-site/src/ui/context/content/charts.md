@@ -45,6 +45,81 @@ import {
 
 TypeScript narrows the remaining properties from `kind`. `width` and `height` are removed from the accepted chart options: CSS fits the server-rendered SVG to the component’s box.
 
+## Typed components and portable core
+
+Import `Chart` from `@k2b/ui`. The drawing-only `@k2b/ui/charts` entry also works without a DOM. `Chart.Line`, `Chart.Bar`,
+`Chart.Pie`, `Chart.Donut`, `Chart.Scatter`, `Chart.Sparkline`, `Chart.Histogram`,
+`Chart.Boxplot`, `Chart.Gauge`, `Chart.BarGauge`, `Chart.Stat`, `Chart.Heatmap`,
+`Chart.Map`, and `Chart.StateTimeline` accept only their kind's options.
+They render exactly the same markup as `<Chart kind="…" … />`.
+Keep the discriminator form for saved JSON and dynamic chart selection.
+
+```tsx
+import { Chart } from "@k2b/ui";
+
+<Chart.Pie data={[{ label: "Imports", value: 42 }, { label: "Exports", value: 28 }]} />
+<Chart kind="pie" data={[{ label: "Imports", value: 42 }, { label: "Exports", value: 28 }]} />
+```
+
+`@k2b/ui/charts/core` works on the server and in browser code without Solid or
+DOM dependencies. Use `layout(spec, { width, height })` and `toSvg(scene)` for
+a fixed logical scene, or `renderChartSvg(spec, width, height)` for the same SVG
+that `Chart` displays. `chartRenderHeight(spec)` calculates the standard height.
+`prepareChartSnapshot` prepares that drawing and its keyed inspection data for
+`ChartSnapshotView` and `ChartExplorer`. Existing root imports remain supported.
+
+```ts
+import { layout, toSvg } from "@k2b/ui/charts/core";
+
+const scene = layout({ kind: "bar", data: [{ label: "Imports", value: 42 }] },
+  { width: 480, height: 280 });
+const svg = toSvg(scene);
+```
+
+The core owns `ChartKind`, `ChartDatum`, `ChartDatumRole`, `ChartDrawingOptions`,
+`ChartRenderOptions`, `ChartSelection`, and the tooltip types. `isChartDatum`,
+`sameChartDatum`, and `chartDatumRoles` expose the inert inspection protocol.
+The renderer registry and namespace map stay internal.
+
+For code migrating directly from stdlib, the core also exports `charts` and the
+14 named SVG functions, plus their numeric/layout helpers such as `computeDomain`,
+`niceStep`, `autoBin`, and `computeBoxStats`. Those raw functions retain their
+previous signatures and markup; use `renderChartSvg` or scenes for the UI bar
+and timeline layouts. `renderBarChartSvg` and `barChartLayout` remain available
+from `@k2b/ui/charts` too. Raw SVG in a browser needs `inspectChart` from
+`@k2b/ui/chart-inspection`; prefer `Chart` inside an island for an interactive UI.
+
+`ChartNumberFormat`, `ChartDateFormat`, and `ChartFormat` describe portable
+presentation. Number formats use `style: "number" | "percent" | "currency"`,
+with optional `currency`, `unit`, `decimals`, and `compact`. Date formats use
+`{ date: "day" | "minute" | "second" }`. The editor validates these descriptions
+before turning them into formatter callbacks; callbacks are not saved JSON.
+
+To add a chart kind, register its pure renderer in `charts/core/registry.ts`. Its key defines the
+discriminator and capitalized namespace member, including the narrowed props.
+Keep any kind-specific presentation adaptation in `renderChartSvg`. Add a
+fixture to `packages/ui/test/charts/fixtures.ts`; the namespace render test checks both forms.
+
+
+## Reference lines
+
+Give each reference its own `style` (`solid`, `dashed`, or `dotted`) and optional
+semantic `tone` (`neutral`, `info`, `success`, `warning`, or `danger`). Leaving
+both out keeps the existing dashed line. The tone also colors its label; use a
+label and line style so color is not the only distinction. This works for both
+axes of line and scatter charts, and for references on bars, histograms and box plots.
+
+```tsx
+<Chart.Line
+  series={[{ data: [{ x: 1, y: 12 }, { x: 2, y: 21 }] }]}
+  references={[
+    { value: 14, label: "Target", style: "solid", tone: "success" },
+    { value: 18, label: "Forecast", style: "dashed", tone: "info" },
+    { value: 20, label: "Limit", style: "dotted", tone: "danger" },
+  ]}
+/>
+```
+
 ## A legend above a line chart
 
 For `kind="line"`, combine `legend` with `legendPlacement="top-start"`
@@ -146,11 +221,11 @@ All kinds accept these wrapper props:
 | `tooltip` | Synchronous `(selection: ChartSelection) => ChartTooltip`. Customizes the always-on tooltip. Omit for the built-in tooltip. Does not accept JSX, HTML, or a promise. |
 | `onSelect` | Optional synchronous `(selection: ChartSelection) => void`. Click, tap, and Enter emit selection; hover and focus do not. Use `selected` for a controlled highlight. |
 
-Do not pass `width`, `height`, or stdlib's `inspect`: the wrapper owns them.
+Do not pass `width`, `height`, or `inspect`: the wrapper owns them.
 Do not invent `dataKey`, `xKey`, `yKey`, `onClick`, or `renderTooltip` props.
 Convert application records into the payload for the selected kind.
 
-Except for `sparkline` and `stateTimeline`, stdlib options also include
+Except for `sparkline` and `stateTimeline`, core renderer options also include
 `className?: string` (on the SVG, distinct from wrapper `class`),
 `title?: string`, `subtitle?: string`, and
 `padding?: number | { top?: number; right?: number; bottom?: number; left?: number }`.
@@ -159,7 +234,7 @@ bottom 32, left 40. Support for header/padding layout varies with the renderer;
 use surrounding HTML for a consistent card title.
 `sparkline` supports `className` but has no title, axes, or padding prop.
 The UI-owned `stateTimeline` contract supports only its options below plus the
-wrapper props; it does not inherit the raw stdlib timeline options.
+wrapper props; it does not inherit the raw core timeline options.
 
 ### Data and options by kind
 
@@ -318,8 +393,9 @@ type ChartTooltip = {
 type ChartTooltipFormatter = (selection: ChartSelection) => ChartTooltip;
 ```
 
-`ChartDatum` is exported by `@k2b/stdlib`; `ChartSelection` and the tooltip
-types are exported by `@k2b/ui`. Its shape is:
+`ChartDatum`, `ChartSelection`, and the tooltip types are exported by
+`@k2b/ui/charts/core`; the component types remain available from `@k2b/ui`.
+The datum shape is:
 
 ```ts
 type ChartDatum = {
@@ -446,9 +522,9 @@ Tooltips, keyboard inspection and navigation require browser code. Render charts
 
 ## Inspection without Solid
 
-Use `@k2b/ui/chart-inspection` when your host renders stdlib chart SVG itself,
+Use `@k2b/ui/chart-inspection` when your host renders core chart SVG itself,
 for example in a sandboxed HTML document that cannot load a framework.
-Raw stdlib renderers are allowed only with `inspectChart`; the `chart-rendering` check enforces this with a file allow-list.
+Raw SVG renderers are allowed only with `inspectChart`; the `chart-rendering` check enforces this with a file allow-list.
 The module contains no Solid. The base stylesheet styles chart tooltips in HTML apps.
 It keeps `<table class="k2b-chart__table" hidden>` after a chart hidden on screen
 and prints it below the chart, breaking between rows with the header repeated.
@@ -466,7 +542,7 @@ Optional `select(selection)` receives click, tap, or Enter selections.
 Optional `cursor` links line charts; import `createChartCursor` from the same module.
 
 ```ts
-import { charts } from "@k2b/stdlib";
+import { charts } from "@k2b/ui/charts/core";
 import { inspectChart } from "@k2b/ui/chart-inspection";
 
 const data = [{ label: "Jobs", value: 42 }];
@@ -488,7 +564,7 @@ inspection.invalidate();
 inspection.destroy();
 ```
 
-The markup must come from the stdlib renderer with `inspect: true`.
+The markup must come from a core renderer with `inspect: true`.
 Only valid `data-chart-datum` metadata participates. Tooltip content is inserted
 as text. Inspection uses the same keyboard, pointer, pin, and close behavior as
 `Chart`; see [Accessibility](#accessibility). The host gives the container its

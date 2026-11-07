@@ -13,6 +13,7 @@ import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
 import { emitWorkflowEvent, notifyWorkflowWorker, WorkflowEventTooLargeError } from "@k2b/cloud/workflows/store";
 import type { JobContext, JobFailureDecision, Worker } from "@k2b/sync";
+import { publishMessageReceived } from "../app-events";
 import { withShortIdDb } from "../lib/short-id";
 import { truncateUtf8 } from "../lib/utf8";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
@@ -985,6 +986,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
   if (!newlyInserted) await retireKeptCopyPlacements(params.db, [{ messageId: messageContentId, remoteRefId: remoteRef.id }]);
 
   const emitMessageReceived = async (): Promise<void> => {
+    await publishMessageReceived(params.db, messageContentId, params.mailboxId, remoteRef.id);
     const deliveryKey = `message:${remoteRef.id}`;
     const snapshot = await getWorkflowSnapshot({
       mailboxId: params.mailboxId,

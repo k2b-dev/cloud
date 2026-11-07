@@ -38,6 +38,8 @@ export type InvocationProvenance = {
   mandateRevision?: number;
   workloadType?: string;
   workloadId?: string;
+  /** Read-only visibility check for a currently claimed resource event. */
+  workloadEvent?: string;
 };
 
 export type UserRequestActor = {
