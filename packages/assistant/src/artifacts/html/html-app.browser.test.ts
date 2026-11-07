@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser, settled } from "../../../../ui/test/browser";
-import { ChunkName, chunkSource } from "../runtime/chunks";
+import { ChunkName, chunkSource } from "../../chat-code/runtime/chunks";
 import { buildBaseCss, buildChartModule, buildPrelude } from "./build-assets";
 import type { AppFiles } from "./compose";
 

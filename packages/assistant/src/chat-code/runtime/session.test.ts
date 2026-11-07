@@ -1,16 +1,16 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import { LIMITS } from "../contracts";
-import * as host from "./host";
+import type * as host from "./host";
 import { createArtifactSession, type SessionOptions } from "./session";
 
 function session(options: Partial<SessionOptions> = {}) {
   const dom = createDomTestHarness();
   let hooks: host.RuntimeHooks | undefined;
-  const start = spyOn(host, "startArtifactRun").mockImplementation((_container, _source, value) => {
+  const start: Parameters<typeof createArtifactSession>[3] = (value) => {
     hooks = value;
     return { stop: async () => {}, stopped: false };
-  });
+  };
   // The mocked host owns the container; requests exercise the real session boundary.
   const run = createArtifactSession(
     dom.root,
@@ -23,6 +23,7 @@ function session(options: Partial<SessionOptions> = {}) {
         throw new Error("Unexpected read");
       },
     },
+    start,
   );
   const request = (method: string, args: unknown[]) => {
     if (!hooks) throw new Error("Host not initialized");
@@ -34,7 +35,6 @@ function session(options: Partial<SessionOptions> = {}) {
     hooks: () => hooks,
     cleanup: async () => {
       await run.stop();
-      start.mockRestore();
       dom.cleanup();
     },
   };
@@ -74,14 +74,15 @@ test("session host preserves output limits and missing input/hook errors", async
 test("session host reports a manifest input whose bytes are missing as not_found", async () => {
   const dom = createDomTestHarness();
   let hooks: host.RuntimeHooks | undefined;
-  const start = spyOn(host, "startArtifactRun").mockImplementation((_container, _source, value) => {
+  const start: Parameters<typeof createArtifactSession>[3] = (value) => {
     hooks = value;
     return { stop: async () => {}, stopped: false };
-  });
+  };
   const run = createArtifactSession(
     dom.root,
     { runtime: "", code: "" },
     { changed() {}, inputFiles: [{ name: "missing.csv", size: 1, type: "text/csv" }] },
+    start,
   );
   try {
     if (!hooks) throw new Error("Host not initialized");
@@ -89,7 +90,6 @@ test("session host reports a manifest input whose bytes are missing as not_found
     await expect(hooks.request("ui.modal", [{ title: "Gone" }], new AbortController().signal)).rejects.toMatchObject({ code: "invalid" });
   } finally {
     await run.stop();
-    start.mockRestore();
     dom.cleanup();
   }
 });

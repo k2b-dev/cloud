@@ -1,13 +1,8 @@
+import { HttpRequest, type HttpScope } from "../chat-code/http-contracts";
+import type { HttpApproval, HttpHost } from "../chat-code/http-host";
 import { artifactClient } from "./client";
-import { HttpRequest, type HttpReview, type HttpScope, type SecretMetadata } from "./http-contracts";
 
-export type HttpApproval = HttpReview & { type: "http"; name: string };
-export type HttpHost = {
-  approve: (request: HttpApproval, signal: AbortSignal) => Promise<boolean>;
-  /** Whether a remembered website approval already allows the request; checked before `approve` asks. */
-  allowed?: (request: HttpApproval, signal: AbortSignal) => Promise<boolean>;
-  secret?: (scope: HttpScope, input: SecretMetadata, signal: AbortSignal) => Promise<{ configured: boolean; name: string }>;
-};
+export type { HttpApproval, HttpHost } from "../chat-code/http-host";
 export async function runHttp(request: unknown, scope: HttpScope, host: HttpHost, signal: AbortSignal) {
   signal.throwIfAborted();
   const call = { id: crypto.randomUUID(), createdAt: Date.now(), scope, request: HttpRequest.parse(request) };

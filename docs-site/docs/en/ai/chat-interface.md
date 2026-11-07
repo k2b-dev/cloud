@@ -346,10 +346,10 @@ order:
    one-off routine keeps its run, but its run history then shows **No run
    history**. A routine older than 90 days without a newer run shows **No runs
    in the last 90 days** instead of **No occurrences yet**.
-2. **Results.** Presented files and code views, `code_present` apps, charts, cards, and
+2. **Results.** Presented files and native code views, charts, cards, and
    capability tables in the order they were made. A later result with the same
-   target, the same file path for `present` or the same title for
-   `code_present`, replaces the earlier one at its place. A running delivery
+   target, such as the same file path for `present`, replaces the earlier one
+   at its place. A running delivery
    takes a place once its arguments have arrived, so a new version never shows
    a frame of its own first. A capability table shows the summary and links of
    its result above it. An approved call or a Cloud action that returns a table
@@ -822,31 +822,23 @@ runtime monitoring and production checks.
 
 ## Advertise connected client tools
 
-Every turn with the default tool source offers the server-run code tools
-`code_run`, `code_action`, `code_inspect`, `code_stop`, `code_export`, and
-`code_present`, and `code_check`, whichever client submits it: the web app,
-`cld assistant` with or without `--detach`, an API client, or a routine.
-Cloud runs them in an Assistant-owned host, so they need no client.
+Every turn with the default tool source offers server-run `code_run`,
+`code_inspect`, `code_stop` and `code_export`, including detached CLI and
+routine turns. They use Assistant's runner host and need no connected client.
+Studio authoring, HTML checks, app opening, actions and HTML presentations are
+not advertised in chat. Lasting Code's `code_read`, `code_write` and
+`code_check` accept Code inputs only.
 
-Only tools that a client must run wait for that client. A frontend handler alone
-does not advertise them to the model. Pass `clientToolIds` to
-`createAiChatController` and register matching `frontendTools`. The controller
-forwards only IDs that have a handler. The client-run tools are `code_open` and
-`code_secret`, which need a client with a code host: the web app, or
-`cld assistant` while it watches the turn. Entering a secret through
-`code_secret` still needs the web app; in the CLI the call fails with that
-hint. The local client tools `local_bash`, `local_list`, `local_read`,
-`local_upload`, `local_download`, `local_write`, `local_move`, and
-`load_local_skill` also need a client that declares and handles them.
-See [local client tools](/en/docs/ai/tools-and-approvals#run-an-optional-tool-in-a-local-cli)
-for execution and approval boundaries. Detached CLI
-turns, API clients without a code host, and routines never get `code_open` or
-`code_secret`. The other code tool names are still accepted in `clientToolIds`
-and have no effect. Unknown names are ignored so older clients keep working
-after a tool is retired. Turn and draft submissions accept at most 64 distinct
-names, each 1 to 64 ASCII letters, digits, underscores, or hyphens (the tool-name
-limit model providers share). Duplicates, too many names, and malformed names
-are rejected. Clients without an execution host should omit this option.
+Only tools a client must execute wait for that client. Register matching
+`frontendTools` and `clientToolIds` with `createAiChatController`. Chat
+`code_secret` needs the trusted web UI; CLI and unattended turns can use existing
+chat secrets but do not offer secret entry. Local CLI tools also need a
+client that declares and handles them; see
+[local client tools](/en/docs/ai/tools-and-approvals#run-an-optional-tool-in-a-local-cli).
+
+Unknown client tool names are ignored. Turn and draft submissions accept at
+most 64 distinct names, each 1 to 64 ASCII letters, digits, underscores or
+hyphens. Duplicates, excessive counts and malformed names are rejected.
 
 Handlers receive `name`, `args`, `callId`, `turnId`, and `conversationId`. Capture
 that conversation identity for asynchronous work instead of using whichever
@@ -864,26 +856,28 @@ returns a call that did not complete as `CodeToolFailure`
 (`{failed: true, error, guidance?}`, from `@k2b/cloud/ai/browser`); server-run
 code tools report it to the model as a tool error.
 
-`code_run` accepts a saved script `id` or one-off `code` and optional chat
-`inputPaths`, takes a fixed snapshot of current source, and returns a run ID and
-compact state. There is no required source revision. An app whose interface is
-`index.html` does not run there; `code_open` and `code_present` show it.
-Managed `code_run` runs in the Code runner (workerd), including background
-turns. It keeps the person's turn approvals and routine HTTP grants. Studio
-RSQL database grants are unavailable on this path. See
-[One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs) for limits:
+`code_run` accepts inline JavaScript/TypeScript `code` and optional current-chat
+`inputPaths`, and returns a run ID and compact state. Saved Studio `id`,
+`version`, and `resourceId` contexts are unavailable on this chat path.
+Runs execute in the Code runner (workerd), including background turns, with
+the person's turn approvals and routine HTTP grants. Studio RSQL database
+grants and app storage are unavailable; use application capabilities and
+chat/Project file tools. `code_secret` opens trusted secret entry in the chat
+UI; it does not start a browser execution host.
+See [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs) for limits:
 the runner's deadline includes approval waits and its bridge limits also
 apply to selected files and exports.
 `code_run` and `code_inspect` also return `views`: paths and chart, group, table, stats, details or explorer
 summaries without values. Present each view with `present({path})`.
 `code_inspect` returns status, progress, logs, output and captured files, and can
 wait for background work with `waitMs`.
-Inspection also reports the tested source revision. `code_open` never starts the visible
-app. `code_export` copies a captured file into the originating chat.
+`code_export` copies a captured file into the originating chat.
 
-### Check an HTML app before showing it
+### Legacy Studio HTML checks
 
-Write `index.html`, optional styles/modules, and `steps.json`. Call
+These direct Studio host APIs remain for Studio until its separate removal;
+they are not offered in chat. Write `index.html`, optional styles/modules,
+and `steps.json`. Call
 `code_check({id})` for saved source or `code_check({files})` for a one-off app.
 Fix the findings, call `view_image` with the report's `review.prompt` for every
 path in `review.paths`, and check again. The prompt asks for visible defects:
@@ -1095,7 +1089,7 @@ Its test runs are separate from visible apps and persistent user data. Assistant
 uses the Code runner for one-off run/inspect/stop/export operations. Closing
 or freezing the user's tab does not suspend these operations.
 Calls, results and ordered approvals are persisted; a lost host is not replayed.
-Only `code_open` and `code_secret` require the user interface. Assistant retains
+Secret entry with `code_secret` requires the trusted web interface. Assistant retains
 up to eight turn hosts; runner slots independently bound execution. Foreground
 chat runs and scheduled turns have separate hosts.
 Foreground hosts without an active turn expire after two idle minutes.
@@ -1109,13 +1103,9 @@ Chromium for these paths; managed `code_run` does not require it.
 
 ### Assistant apps and browser work
 
-An app, calculator, converter, timer, form or other tool a person asks for is a
-saved Studio app, even when it keeps no data: the `code_create` prompt hint and
-tool descriptions route it there, so it appears in the Studio catalog. Charts,
-tables, key figures and explorers of a one-off result stay views. A small app
-takes one `code_create` with its first `html` and `steps`, one `code_check` with
-its screenshot review, and `code_open`. `code_present` with `files` shows a
-throwaway card only when the person asks for a preview they do not want to keep.
+Chat offers one-off native views and lasting Code authoring. Studio app
+creation and presentation tools are unavailable in chat. The standalone
+Studio UI and its direct APIs remain available until the separate Studio cut.
 
 The Assistant **Studio** navigation opens its app catalog on hover or click;
 its search button opens global search filtered to Studio apps. Use-level users
@@ -1292,7 +1282,7 @@ Studio browser startup is bounded to 45 seconds, with a 10-second event-loop
 heartbeat deadline. A lost host or runner attempt is reported without replaying
 an uncertain operation.
 
-### Working plan and compact Studio context
+### Working plan and chat context
 
 Assistant shows the current working plan above its composer. The collapsible
 list uses the portable, controlled `Chat.Tasks` component from `@k2b/ui`.
@@ -1303,13 +1293,11 @@ Symbols and text provide the same information without color. Cancelled tasks
 are counted separately. The current step remains visible after stopping; it is
 only described as in progress while its turn is actually running.
 
-Compact context entries use one line and consistent icon alignment. One-off
-runs appear only in the Studio count, not as preview rows. The Studio tab reuses
-the gallery's application cards and permission-aware menus. Start opens the app
-in a workspace tab; the external-link action opens its standalone runner in a
-new browser tab. Opening a context preview still does not start an app. The
-Studio tab also shows the latest 20 one-off runs in a compact log table, with
-the full count stated separately. Exports do not overwrite a known run status.
+Compact context entries use one line and consistent icon alignment. Working
+files include the latest one-off script runs and their full count. The chat
+workspace opens files, sources and knowledge; it does not mount Studio app or
+routine tabs. Routine details remain in dialogs until routine retirement.
+Standalone Studio apps retain their own management and runner pages.
 
 Secrets management uses a list with an empty-state action. Adding or replacing
 a secret opens a separate dialog. Validation errors appear at their fields;

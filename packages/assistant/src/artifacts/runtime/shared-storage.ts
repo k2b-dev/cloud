@@ -1,6 +1,6 @@
 import { z } from "zod";
+import { CloudError } from "../../chat-code/runtime/errors";
 import { artifactClient } from "../client";
-import { CloudError } from "./errors";
 
 export const RuntimeStorage = z
   .object({

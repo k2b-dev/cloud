@@ -689,7 +689,7 @@ error, and x strings must be ISO dates as documented. Chart groups and the
 additional chart kinds need no configuration or data migration. Studio and
 one-off HTML app charts show tooltips on hover, keyboard focus and tap without
 additional configuration. See
-[Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
+[Code Mode charts](/en/docs/ai/chat-interface#legacy-studio-html-checks).
 
 App-frame builds include `assistant-chart-module.js` alongside the prelude and
 base stylesheet. The app-assets response embeds that module with the frame;
@@ -2346,7 +2346,7 @@ its own pinned CSP hash; normal app mounts omit inspection code. No separate
 network asset or service is needed. Existing host admission and execution budgets
 apply, and each user holds at most 16 disposable check copies at a time. Disposable scopes are removed after checks; the service sweep reclaims
 scopes left by crashed hosts and queues unreachable database namespaces for deletion.
-See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
+See [HTML app checks](/en/docs/ai/chat-interface#legacy-studio-html-checks)
 for data-copy and output limits. No new configuration is required.
 
 ### Browser map images in PDF

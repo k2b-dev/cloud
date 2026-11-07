@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { money } from "@k2b/stdlib";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { chart } from "../chat-code/runtime/lib";
 import { lintApp } from "./html/compose";
 import { compileArtifact } from "./runtime/compile";
-import { chart } from "./runtime/lib";
 
 test("money reference computes tax and preserves the allocated total", async () => {
   const document = await Bun.file(new URL("../skills/assistant-code-mode/references/money.md", import.meta.url)).text();
@@ -188,9 +188,9 @@ test("database setup examples use the Manage tool and expose write rules without
 });
 
 test("the CSV view example converts through the real runtime and validates every stored spec", async () => {
-  const { createViews } = await import("./runtime/views");
+  const { createViews } = await import("../chat-code/runtime/views");
   const { checkCloudAiView, cloudAiViewSummary } = await import("@k2b/cloud/ai/browser");
-  const { parseCsv } = await import("./runtime/sheet-lib");
+  const { parseCsv } = await import("../chat-code/runtime/sheet-lib");
   const examples = await blocks("views.md");
   expect(examples).toHaveLength(3);
   const specs: unknown[] = [];
@@ -272,11 +272,11 @@ test("the CSV view example converts through the real runtime and validates every
 });
 
 test("W1 view examples compile, preserve CSV numbers and page the actual task capability contract", async () => {
-  const { createViews } = await import("./runtime/views");
+  const { createViews } = await import("../chat-code/runtime/views");
   const { checkCloudAiView, cloudAiViewSummary } = await import("@k2b/cloud/ai/browser");
   const { capabilityResultSchema } = await import("@k2b/cloud/contracts");
   const { TaskFocusInputSchema, TaskFocusDataSchema } = await import("../../../spaces/src/capability-work-contracts");
-  const { parseCsv } = await import("./runtime/sheet-lib");
+  const { parseCsv } = await import("../chat-code/runtime/sheet-lib");
   const examples = (await blocks("views.md")).filter(({ code }) => code.includes("Offers overview") || code.includes("spaces.task.focus"));
   expect(examples).toHaveLength(2);
   const specs: import("@k2b/cloud/ai/browser").CloudAiView[] = [];

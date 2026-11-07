@@ -157,13 +157,8 @@ const createContext = (
   return { ctx, stdout, stderr };
 };
 
-/** What interactive cld offers in ask mode without local Skills: Bash, the file tools, and the two code tools it runs. */
-const LOCAL_CLIENT_TOOL_IDS = [
-  "local_bash",
-  ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill"),
-  "code_open",
-  "code_secret",
-];
+/** Ask mode offers Bash, file tools and Studio opening; secret entry belongs to the trusted web UI. */
+const LOCAL_CLIENT_TOOL_IDS = ["local_bash", ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill"), "code_open"];
 
 /** Interactive sessions read AGENTS.md and Skills from the working and home folders; run them where both are empty. */
 const inEmptyFolders = async <T>(run: () => Promise<T>): Promise<T> => {
@@ -1187,6 +1182,7 @@ describe("assistant CLI", () => {
 
     expect(await inEmptyFolders(() => runInteractiveAssistant(ctx, { allowBash: true }, reader))).toBe(0);
     expect(turnBody?.clientToolIds).toEqual(LOCAL_CLIENT_TOOL_IDS);
+    expect(turnBody?.clientToolIds).not.toContain("code_secret");
     expect(actionBody).toEqual({
       type: "tool_result",
       result: {

@@ -33,7 +33,7 @@ test("URL selection preserves conversation and encodes file identity without exe
     fileTab("chat", "/report name.csv"),
     sourceTab("app", "main.ts"),
     appTab("app", "app"),
-    contextTab("chat", "apps", "apps"),
+    contextTab("chat", "sources", "sources"),
   ]) {
     const href = workspaceSelectionHref("/app/assistant?conversation=chat", tab);
     expect(href).toContain("conversation=chat");

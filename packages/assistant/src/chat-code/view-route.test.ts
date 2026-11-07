@@ -3,8 +3,8 @@ import type { AiConversation, AiTurn } from "@k2b/cloud/ai";
 import * as ai from "@k2b/cloud/ai";
 import type { AuthContext } from "@k2b/cloud/server";
 import { Hono } from "hono";
-import { hostFetch } from "./agent-host";
-import { createArtifactServiceRoutes } from "./api";
+import { createChatCodeServiceRoutes } from "./api";
+import { hostFetch } from "./host-fetch";
 import { testIdentity } from "./test-identity";
 
 const identity = testIdentity("00000000-0000-4000-8000-000000000001");
@@ -51,7 +51,7 @@ const router = () =>
       c.set("accessSubject", identity.accessSubject);
       await next();
     })
-    .route("/", createArtifactServiceRoutes());
+    .route("/", createChatCodeServiceRoutes());
 const request = (value: unknown = body) =>
   router().request("/runtime/views", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(value) });
 
@@ -118,7 +118,7 @@ test("view route maps contract, conflict and storage errors and rejects extra bo
   }
 });
 
-test("managed Chromium host reaches the view route as the user's actor", async () => {
+test("managed runner host reaches the view route as the user's actor", async () => {
   const context = { ...identity, conversationId: conversation.id, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
   const session: Parameters<typeof hostFetch>[1] = {
     phase: "running",
@@ -152,7 +152,7 @@ test("managed Chromium host reaches the view route as the user's actor", async (
   const chat = spyOn(ai.aiConversations, "getConversation").mockResolvedValue(conversation);
   const save = spyOn(ai, "createAiConversationView").mockResolvedValue(ref);
   try {
-    const response = await hostFetch(context, session, "/api/assistant/artifacts/runtime/views", {
+    const response = await hostFetch(context, session, "/api/assistant/chat-code/runtime/views", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),

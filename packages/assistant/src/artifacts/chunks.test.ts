@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
+import { chunkSource } from "../chat-code/runtime/chunks";
 import { createArtifactServiceRoutes } from "./api";
 import { createRunnerRoutes } from "./runner-api";
-import { chunkSource } from "./runtime/chunks";
 
 for (const [label, makeRoutes, path] of [
   ["runtime", createArtifactServiceRoutes, "/runtime/chunks/csv"],

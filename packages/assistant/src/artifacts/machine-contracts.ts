@@ -1,7 +1,7 @@
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import { z } from "zod";
+import { HttpsUrl, SecretName } from "../chat-code/http-contracts";
 import { LIMITS } from "./contracts";
-import { HttpsUrl, SecretName } from "./http-contracts";
 
 const DataRight = z.enum(["none", "read", "write"]);
 export const MachineRights = z

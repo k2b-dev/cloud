@@ -12,7 +12,7 @@ const replacedTerms = [
   /\b(?:KI|Chat)-Aufgaben?\b/i,
 ];
 
-const catalogs = ["frontend/ui-copy.ts", "frontend/chat-sidebar-messages.ts", "frontend/messages.ts", "artifacts/messages.ts"];
+const catalogs = ["frontend/ui-copy.ts", "frontend/chat-sidebar-messages.ts", "frontend/messages.ts", "chat-code/messages.ts"];
 
 /** Every quoted or template string in a source file: the text a catalog can show, without code comments. */
 const stringLiterals = (source: string): string[] =>
