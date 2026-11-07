@@ -160,7 +160,6 @@ test("key figures, grid widths, section symbols and number formats are data on t
       {
         label: "Received",
         value: 128,
-        icon: "ti ti-package",
         delta: { value: 0.123, better: "up" },
         compare: { label: "Last week", value: 114 },
         trend: [92, 101, 128],
@@ -215,6 +214,7 @@ test("key figures, grid widths, section symbols and number formats are data on t
     page([{ kind: "Stats", items: [{ label: "x", value: 1, delta: { value: 0.1, unit: "percent" } }] }]),
     page([{ kind: "Stats", items: [{ label: "x", value: 1, format: { style: "currency" } }] }]),
     page([{ kind: "Stats", items: [{ label: "x", value: Number.NaN }] }]),
+    page([{ kind: "Stats", items: [{ label: "x", value: 1, icon: "ti ti-package" }] }]),
     page([{ kind: "Chart", title: "Without anything to say" }]),
     page([{ kind: "Chart", empty: "Nothing" }]),
     page([{ ...section.children[0], title: "Two titles" }]),

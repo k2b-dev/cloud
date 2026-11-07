@@ -818,13 +818,16 @@ app.get("/object", c => c.page({
   for (const runtime of ["solid-js", "hono", "react/jsx-runtime"]) expect(result.bundle).not.toContain(runtime);
 }, 30000);
 test("TSX refuses intrinsic HTML and handler props", async () => {
-  for (const child of ["<div>HTML</div>", "<Text onClick={() => {}}>Handler</Text>"]) {
+  // A chart is either drawn from a description or empty with a reason; a bare title is neither.
+  for (const child of ["<div>HTML</div>", "<Text onClick={() => {}}>Handler</Text>", '<Chart title="Orders" />']) {
     const result = await checkCode(
       {
         ...base,
         entry: "code.tsx",
         limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 },
-        files: { "code.tsx": `import { app, jsx, Page, Text } from "@sdk"; app.get("/",c=>c.page(<Page title="Bad">${child}</Page>));` },
+        files: {
+          "code.tsx": `import { app, jsx, Page, Text, Chart } from "@sdk"; app.get("/",c=>c.page(<Page title="Bad">${child}</Page>));`,
+        },
       },
       host,
     );

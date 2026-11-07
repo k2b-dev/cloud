@@ -69,7 +69,6 @@ const stat = z.strictObject({
   label,
   value: z.union([z.number().finite(), label, z.null()]),
   format: numberFormat.optional(),
-  icon: icon.optional(),
   /** Change since the comparison: a share (0.082 is 8.2 %) or, with `unit: "points"`, percentage points. */
   delta: z
     .strictObject({ value: z.number().finite(), unit: z.literal("points").optional(), better: z.enum(["up", "down"]).optional() })

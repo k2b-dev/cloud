@@ -277,6 +277,8 @@ function CodeDetail(props: { item: Extract<CodePageNode, { kind: "Detail" }>; le
 }
 
 type Stat = Extract<CodePageNode, { kind: "Stats" }>["items"][number];
+/** One tile per figure in a row; the contract allows one to six. */
+const statColumns = (count: number) => (count <= 1 ? 1 : count === 2 ? 2 : count === 3 ? 3 : count === 4 ? 4 : count === 5 ? 5 : 6);
 /** Key figures in one row of tiles: value first, then how it changed against what. */
 function CodeStats(props: { item: Extract<CodePageNode, { kind: "Stats" }> }) {
   const locale = useLocale();
@@ -299,7 +301,7 @@ function CodeStats(props: { item: Extract<CodePageNode, { kind: "Stats" }> }) {
   };
   return (
     <div class="col-span-6 min-w-0" data-code-block="Stats">
-      <StatGrid columns={Math.min(4, props.item.items.length) as 1 | 2 | 3 | 4}>
+      <StatGrid columns={statColumns(props.item.items.length)}>
         <For each={props.item.items}>
           {(stat) => (
             <StatCell
@@ -308,6 +310,11 @@ function CodeStats(props: { item: Extract<CodePageNode, { kind: "Stats" }> }) {
               sub={stat.compare ? `${stat.compare.label} ${format(stat, stat.compare.value)}` : undefined}
               accent={change(stat)}
               trend={stat.trend}
+              // The trend speaks the figure's own format: 92 %, not 0.92.
+              trendTooltip={({ datum }) => {
+                const y = datum.values.find((field) => field.key === "y")?.value;
+                return { rows: [{ label: stat.label, value: typeof y === "number" ? format(stat, y) : String(y ?? "") }] };
+              }}
             />
           )}
         </For>

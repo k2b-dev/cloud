@@ -117,7 +117,7 @@ the whole row.
 `Stats` shows up to six key figures in one row. Each item has a `label` and a
 `value` (number, text or `null` for not counted), and optionally a `format`
 (the chart number format: `style`, `currency`, `unit`, `decimals`, `compact`),
-an `icon`, a `delta` with the change since the comparison (`value` is a share,
+a `delta` with the change since the comparison (`value` is a share,
 `0.082` for 8.2 %; with `unit: "points"` it is percentage points), its
 `better` direction (`up` or `down`, which colours the change), a `compare`
 with `label` and `value`, and a `trend` of up to 60 numbers. A column

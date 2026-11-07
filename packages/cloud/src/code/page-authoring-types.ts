@@ -24,11 +24,15 @@ export declare const Notice: CodePageComponent<CodeNodeProps<"Notice">>;
 type CodeChartProps<K> = CodeChartDescription extends infer D
   ? D extends { kind: infer Kind }
     ? K extends Kind
-      ? Omit<D, "kind"> & Omit<CodeNodeProps<"Chart">, "description">
+      ? Omit<D, "kind"> & CodeChartLayout
       : never
     : never
   : never;
-export declare const Chart: CodePageComponent<CodeNodeProps<"Chart">> & {
+type CodeChartLayout = Pick<CodeNodeProps<"Chart">, "width" | "empty">;
+/** A drawn chart, or, with nothing to draw yet, its title and why it is empty. */
+type CodeChartNodeProps = Pick<CodeNodeProps<"Chart">, "width"> &
+  ({ description: CodeChartDescription; title?: never; empty?: string } | { description?: never; title: string; empty: string });
+export declare const Chart: CodePageComponent<CodeChartNodeProps> & {
   Bar: CodePageComponent<CodeChartProps<"bar">>;
   Line: CodePageComponent<CodeChartProps<"line">>;
   Scatter: CodePageComponent<CodeChartProps<"scatter">>;
