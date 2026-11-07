@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { SyncEvent } from "@k2b/sync";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { flushSyncTraceEvents, observeSyncEvent, trace, traceSyncEvent } from "./trace";
 
 /** Reported as skipped rather than silently passing when the backing service is absent. */
@@ -150,7 +150,8 @@ suite("logging.trace", () => {
         }),
       );
       const midway = await trace.list({ page: 1, perPage: 10, offset: 0 }, { filter: { source: resource } });
-      expect(midway.spans[0]).toMatchObject({ status: "error", endedAt: null });
+      expect(midway.spans[0]).toMatchObject({ status: "error" });
+      expect(midway.spans[0]?.endedAt).not.toBeNull();
 
       await traceSyncEvent(syncEvent({ type: "handler_started", resource, kind: "job", detail: { id: jobId, key: "task:1", attempt: 2 } }));
       await traceSyncEvent(
@@ -228,7 +229,7 @@ suite("logging.trace", () => {
           type: "handler_settled",
           resource: scheduler,
           kind: "scheduler",
-          detail: { id: runId, key: "nightly", attempt: 1, status: "success", durationMs: 12 },
+          detail: { id: runId, key: "nightly", attempt: 1, status: "success", durationMs: 30_000 },
         }),
       );
       const schedules = await trace.list({ page: 1, perPage: 10, offset: 0 }, { filter: { source: scheduler } });
@@ -256,7 +257,7 @@ suite("logging.trace", () => {
           type: "pump_run_settled",
           resource,
           kind: "pump",
-          detail: { key, status: "completed", dispatched: 2, failureCount: 0, durationMs: 20 },
+          detail: { key, status: "completed", dispatched: 2, failureCount: 0, durationMs: 30_000 },
         }),
       );
 

@@ -120,7 +120,12 @@ test("profiles lock their own verified plugin versions and share identical ones"
   expect(skill).toContain("cld <app> reference");
   expect(await readFile(join(skills, "cloud-cli", "references", "echo", "1.0.0", "index.md"), "utf8")).toBe("# Echo 1.0.0\n");
   expect(await readFile(join(skills, "cloud-cli", "references", "echo", "2.0.0", "index.md"), "utf8")).toBe("# Echo 2.0.0\n");
-  expect((await readdir(join(skills, "cloud-cli", "references"))).sort()).toEqual(["echo", "plugins.md", "sign-in.md"]);
+  expect((await readdir(join(skills, "cloud-cli", "references"))).sort()).toEqual([
+    "administration.md",
+    "echo",
+    "plugins.md",
+    "sign-in.md",
+  ]);
   expect((await cli.run(["skills", "list"])).stdout.trim()).toBe(join(skills, "cloud-cli"));
 
   // Cloud A moves to v2: list shows the update, update installs it, and the

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { migrateActivity } from "./data/activity-migration";
 import { migrateActivityObservations } from "./data/activity-observations-migration";
 import { migrateHomeProvisioning } from "./data/home-provisioning";

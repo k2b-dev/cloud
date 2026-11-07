@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import { projectDocumentTemplates } from "../api/documents-api-shared";
 import { toPublicField } from "../api/public-dto";

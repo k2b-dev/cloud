@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import * as registry from "../_internal/registry";
+import { sql } from "../runtime/clients";
 import { mandates } from "../services/mandates";
 import { toAiChatTaskView } from "./chat-task-contracts";
 import { chatTaskReasonSentence } from "./chat-task-reasons";

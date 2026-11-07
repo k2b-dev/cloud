@@ -67,19 +67,25 @@ Die Einstellung betrifft nur das Löschen und Sperren ganzer Notizen. Personen u
 
 Für diese Personen bleiben **Löschen** und **Notiz sperren** im Notizmenü sichtbar, sind aber ausgeschaltet. Sie erklären, dass in diesem Notizbuch nur Personen mit Zugriff **Verwalten** Notizen löschen oder sperren können. Die API, `cld notebooks rm` und `cld notebooks lock` lehnen mit demselben Grund ab. Eine gesperrte Notiz behält ihre Versionen lesbar. Du kannst sie nicht bearbeiten oder eine Version an ihrer Stelle wiederherstellen. Du kannst eine Version aber als Kopie wiederherstellen.
 
+## Sehen, wer Zugriff hat {icon="lock-access"}
+
+Öffne die Notizdetails und dann **Mehr zu dieser Notiz → Zugriff**. Die Liste zeigt alle Personen, Gruppen und Dienste mit Zugriff auf das Notizbuch und ihre Rolle. Du kannst dort nichts ändern. Mit Zugriff **Verwalten** öffnet **Zugriff verwalten** die Einstellungen.
+
+Alle mit eigenem Zugriff sehen diese Liste, auch über eine Gruppe oder **Alle Angemeldeten**. Wer ein Notizbuch nur über den öffentlichen Link liest, sieht die Liste nicht.
+
 ## Einer Integration oder einem Agenten Zugriff geben {icon="key"}
 
-Füge das eigenständige Dienstkonto oder den Agenten unter **Freigabe → Zugriff** hinzu. Der Eintrag zeigt Name und Kontoart. Mit Zugriff **Verwalten** und dem Token-Scope `admin` kann das Konto Freigaben über die API verwalten. Ein Token mit dem Scope `read` kann keine Freigaben ändern.
+Füge den Agenten unter **Freigabe → Zugriff** hinzu. Der Eintrag zeigt Name und Kontoart. Mit Zugriff **Verwalten** und dem Token-Scope `admin` kann das Konto Freigaben über die API verwalten. Ein Token mit dem Scope `read` kann keine Freigaben ändern.
 
-Gib dem neuen Konto zuerst Zugriff **Verwalten**, bevor du deinen eigenen Zugriff herabsetzt oder entfernst. Ein Agent oder eigenständiges Dienstkonto kann als einziges verwaltendes Konto verbleiben. Den letzten verwaltenden Eintrag kannst du nicht entfernen; füge vorher einen weiteren hinzu. Ressourcenbezogene API-Schlüssel zählen dafür nicht und bleiben auf ihr Notizbuch beschränkt.
+Gib dem neuen Konto zuerst Zugriff **Verwalten**, bevor du deinen eigenen Zugriff herabsetzt oder entfernst. Ein Agent kann als einziges verwaltendes Konto verbleiben. Den letzten verwaltenden Eintrag kannst du nicht entfernen; füge vorher einen weiteren hinzu. Ressourcenbezogene API Keys zählen dafür nicht und bleiben auf ihr Notizbuch beschränkt.
 
 ## Den richtigen Bereich der Einstellungen finden {icon="settings"}
 
 :::reference
 - **Notizbuch → Allgemein:** Name, Symbol, Beschreibung, Startseite und die Liquid-Vorlage für die H1 neuer leerer Notizen. Prüfe die Fußleiste und speichere oder verwirf dann deine Änderungen.
 - **Notizbuch → Ansicht und Verhalten:** Personen mit Zugriff **Verwalten** wählen die gemeinsame Standardansicht. Unter **Nur für dich** speichert dieser Browser deine persönlichen Einstellungen, und sie gelten sofort: **Volle Breite** auf großen Bildschirmen und die Wahl für die Tab-Taste.
-- **Freigabe → Zugriff:** Braucht Zugriff **Verwalten**. Ändere, wer Zugriff hat, und lege fest, wer Notizen löschen und sperren darf. Änderungen werden sofort gespeichert.
-- **Freigabe → API-Schlüssel:** Braucht Zugriff **Verwalten**. API-Schlüssel für Integrationen, die nur mit diesem Notizbuch arbeiten. Änderungen werden sofort gespeichert, und Notebooks zeigt einen neuen Schlüssel nur einmal.
+- **Freigabe → Zugriff:** Braucht Zugriff **Verwalten**. Wähle **Zugriff bearbeiten**, um zu ändern, wer Zugriff hat, und dann **Speichern**, um die Änderungen zu übernehmen. Du legst dort auch fest, wer Notizen löschen und sperren darf; diese Änderung wird sofort gespeichert.
+- **Freigabe → API Keys:** Braucht Zugriff **Verwalten**. API Keys für Integrationen, die nur mit diesem Notizbuch arbeiten. Änderungen werden sofort gespeichert, und Notebooks zeigt einen neuen Schlüssel nur einmal.
 - **Daten → Export und Snapshots:** Braucht Zugriff **Verwalten**. Übertragbare ZIP-Exporte, die Einrichtung von S3-Snapshots, manuelle Uploads und die letzten Snapshot-Läufe. Speichere die Snapshot-Einrichtung über die Fußleiste.
 - **Verwaltung → Endgültig löschen:** Braucht Zugriff **Verwalten**. Aktionen, die Daten zerstören, etwa das Löschen des Notizbuchs und seiner Notizen.
 :::

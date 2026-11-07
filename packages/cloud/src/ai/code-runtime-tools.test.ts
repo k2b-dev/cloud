@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { defineTool, type InboundEvent, nessi, type Provider, type StoreEntry } from "@k2b/nessi";
-import { sql } from "bun";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import * as registry from "../_internal/registry";
+import { sql } from "../runtime/clients";
 import { IDENTITY_REFRESH_TIMEOUT_MS } from "../services/identity/constants";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import * as issuer from "../services/identity/issue-invocation";
@@ -12,6 +13,8 @@ import { CODE_CAPABILITY_TOKEN_HEADER } from "./code-capability-transport";
 import * as codeExecution from "./code-execution";
 import { runManagedCodeTool, waitForManagedCodeCall } from "./code-runtime-tools";
 import { aiConversations } from "./store";
+
+useUnitClients();
 
 // Broker authorization is covered at its own seam; these tests exercise host protocol and retries.
 beforeEach(() => {
@@ -26,24 +29,26 @@ test("two managed approvals retain their Nessi action IDs across two suspended a
     { id: "22222222-2222-4222-8222-222222222222", message: "Second HTTP request", decision: null as boolean | null },
   ];
   const decisions: string[] = [];
-  const tool = defineTool({ name: "code_run", description: "Run", inputSchema: z.object({}) }).server(async (_input, context) =>
-    waitForManagedCodeCall(
-      async ({ decision }) => {
-        if (decision) {
-          const approval = approvals.find((item) => item.id === decision.id)!;
-          expect(approval.decision).toBeNull();
-          approval.decision = decision.approved;
-          decisions.push(decision.id);
-        }
-        const done = approvals.every((item) => item.decision !== null);
-        return {
-          status: done ? "done" : "running",
-          result: done ? { executed: 1 } : undefined,
-          approvals: approvals.slice(0, approvals[0]!.decision === null ? 1 : 2).map((item) => ({ ...item })),
-        };
-      },
-      { ...context, requestRelayedApproval: context.requestApproval },
-    ),
+  // Cloud prepares its tools as safe to run again; a resumed attempt re-enters the waiting call (see prepareAiTools).
+  const tool = defineTool({ name: "code_run", description: "Run", inputSchema: z.object({}), replay: "safe" }).server(
+    async (_input, context) =>
+      waitForManagedCodeCall(
+        async ({ decision }) => {
+          if (decision) {
+            const approval = approvals.find((item) => item.id === decision.id)!;
+            expect(approval.decision).toBeNull();
+            approval.decision = decision.approved;
+            decisions.push(decision.id);
+          }
+          const done = approvals.every((item) => item.decision !== null);
+          return {
+            status: done ? "done" : "running",
+            result: done ? { executed: 1 } : undefined,
+            approvals: approvals.slice(0, approvals[0]!.decision === null ? 1 : 2).map((item) => ({ ...item })),
+          };
+        },
+        { ...context, requestRelayedApproval: context.requestApproval },
+      ),
   );
   let requests = 0;
   const provider: Provider = {
@@ -51,9 +56,6 @@ test("two managed approvals retain their Nessi action IDs across two suspended a
     family: "openai-compatible",
     model: "fixture",
     capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-    async complete() {
-      throw new Error("Unexpected completion");
-    },
     async *stream() {
       requests++;
       if (requests === 1) {
@@ -186,9 +188,6 @@ test("a failed code call reaches the model as a tool error, while a failed run s
     family: "openai-compatible",
     model: "fixture",
     capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-    async complete() {
-      throw new Error("Unexpected completion");
-    },
     async *stream() {
       requests++;
       if (requests === 1) {

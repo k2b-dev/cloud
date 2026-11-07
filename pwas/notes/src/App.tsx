@@ -1,4 +1,5 @@
 import { createEffect, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { AdminPage } from "../admin/AdminPage";
 import { isDark, preferences } from "./prefs";
 import { linkClick, navigate, route } from "./router";
 import { app, t } from "./state";
@@ -69,6 +70,9 @@ export function App() {
   return (
     <>
       <Switch>
+        <Match when={route().name === "admin"}>
+          <AdminPage />
+        </Match>
         <Match when={route().name === "home"}>
           <Show when={app.ready()} fallback={<Overview />}>
             <Show when={!welcoming()}>

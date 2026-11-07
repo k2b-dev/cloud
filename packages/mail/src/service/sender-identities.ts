@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { audit } from "@k2b/cloud/services";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import {
   type CreateSenderIdentityInput,
@@ -83,7 +83,7 @@ const pendingVerification = (columns: Bun.SQL.Query<unknown>) => sql`
     AND verification.target ->> 'senderIdentityId' = si.id::text
 `;
 
-const identityColumns = sql`
+const identityColumns = () => sql`
   si.id,
   si.mailbox_id,
   si.label,
@@ -404,7 +404,7 @@ export const createSenderIdentity = async (params: {
           ${isDefault},
           'unverified'
         )
-        RETURNING ${identityColumns}
+        RETURNING ${identityColumns()}
       `,
       );
       const [row] = rows;
@@ -417,7 +417,7 @@ export const createSenderIdentity = async (params: {
       });
       if (!signature.ok) throw signature.error;
       const [created] = await tx<DbIdentity[]>`
-        SELECT ${identityColumns}
+        SELECT ${identityColumns()}
         FROM mail.sender_identities si
         WHERE si.id = ${row.id}::uuid
       `;
@@ -453,7 +453,7 @@ export const listSenderIdentities = async (context: MailRequestContext, mailboxI
   const allowed = await requireMailboxAccess(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<DbIdentity[]>`
-    SELECT ${identityColumns}
+    SELECT ${identityColumns()}
     FROM mail.sender_identities si
     WHERE si.mailbox_id = ${mailboxId}::uuid AND si.status <> 'disabled'
     ORDER BY si.is_default DESC, lower(si.label), si.id
@@ -474,7 +474,7 @@ export const updateSenderIdentity = async (params: {
       const permission = await requireLockedMailboxAdmin(params.context, params.mailboxId, tx);
       if (!permission.ok) return permission;
       const [current] = await tx<DbIdentity[]>`
-        SELECT ${identityColumns}
+        SELECT ${identityColumns()}
         FROM mail.sender_identities si
         WHERE si.id = ${params.senderIdentityId}::uuid
           AND si.mailbox_id = ${params.mailboxId}::uuid
@@ -590,11 +590,11 @@ export const updateSenderIdentity = async (params: {
           status = CASE WHEN ${providerRelevantChanged} THEN 'unverified' ELSE status END,
           last_provider_rejection = CASE WHEN ${providerRelevantChanged} THEN NULL ELSE last_provider_rejection END
         WHERE si.id = ${current.id}::uuid
-        RETURNING ${identityColumns}
+        RETURNING ${identityColumns()}
       `;
       if (!updated) return fail(err.internal("Sender identity update returned no row"));
       const [reloaded] = await tx<DbIdentity[]>`
-        SELECT ${identityColumns}
+        SELECT ${identityColumns()}
         FROM mail.sender_identities si
         WHERE si.id = ${updated.id}::uuid
       `;
@@ -735,7 +735,7 @@ export const setupDefaultSender = async (params: {
   const sentFolderId = sent?.ok ? sent.data.id : null;
   const draftsFolderId = drafts.ok ? drafts.data.id : null;
   const [existing] = await sql<DbIdentity[]>`
-    SELECT ${identityColumns}
+    SELECT ${identityColumns()}
     FROM mail.sender_identities si
     WHERE si.mailbox_id = ${params.mailboxId}::uuid
       AND lower(si.from_address) = lower(${binding.email})
@@ -787,7 +787,7 @@ export const setupDefaultSender = async (params: {
 
 const loadIdentity = async (mailboxId: string, senderIdentityId: string): Promise<Result<SenderIdentity>> => {
   const [row] = await sql<DbIdentity[]>`
-    SELECT ${identityColumns}
+    SELECT ${identityColumns()}
     FROM mail.sender_identities si
     WHERE si.id = ${senderIdentityId}::uuid AND si.mailbox_id = ${mailboxId}::uuid
   `;

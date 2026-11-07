@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
 import { collectPages, descending, fixtureKeys } from "../../../../scripts/fixtures/stable-paging";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { accountLifecycle } from "./account-lifecycle";
 import { accountsAppService } from "./accounts";
 import { logging } from "./logging";

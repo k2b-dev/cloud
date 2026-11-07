@@ -1,4 +1,3 @@
-import { sql } from "bun";
 import { accountCategory } from "../../contracts/account-categories";
 import type { PersonAvatar } from "../../contracts/avatar";
 import type {
@@ -14,6 +13,7 @@ import type {
   UserProfile,
   UserProvider,
 } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import type { ServiceAccountRequestActor } from "../../server/middleware/auth";
 import {
   err,
@@ -627,7 +627,7 @@ export const accountsAppService = {
         appLog.warn("Account created, but administrator notice could not be rendered", { userId: created.user.id });
       }
       return audit.recordResultAfterSideEffect({
-        action: "accounts.user.create",
+        action: created.reactivated ? "accounts.user.reactivate" : "accounts.user.create",
         actor: auditActor(config.actor),
         target: userTarget(created.user),
         metadata: {
@@ -1387,6 +1387,13 @@ export const accountsAppService = {
         total,
         hasNext: page * perPage < total,
       };
+    },
+    /** Open requests for the administration's badge; counts without reading rows. */
+    countPending: async (): Promise<number> => {
+      const [row] = await sql<{ total: number }[]>`
+        SELECT COUNT(*)::int AS total FROM auth.account_requests WHERE status = 'pending'
+      `;
+      return row?.total ?? 0;
     },
     get: async (config: { id: string; access: { userId: string; isAdmin: boolean } }) => {
       const rows: DbRow[] = await sql`

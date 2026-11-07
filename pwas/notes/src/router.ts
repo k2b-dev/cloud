@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 
 export type Route =
   | { name: "home" }
+  | { name: "admin" }
   | { name: "note"; id: string }
   | { name: "shared"; linkId: string }
   | { name: "legal"; page: "datenschutz" | "nutzungsbedingungen" | "impressum" }
@@ -10,6 +11,7 @@ export type Route =
 const LINK_ID = /^[0-9A-Za-z]{16,32}$/;
 
 export function parseRoute(pathname: string): Route {
+  if (pathname === "/admin") return { name: "admin" };
   if (pathname === "/" || pathname === "") return { name: "home" };
   const note = pathname.match(/^\/n\/([0-9A-Za-z_-]{1,64})$/);
   if (note?.[1]) return { name: "note", id: note[1] };

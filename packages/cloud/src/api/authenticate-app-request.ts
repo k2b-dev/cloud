@@ -106,6 +106,7 @@ export const authenticateSignedAppRequest = async (
     await touchAppKey(verified.identity, dependencies.db);
     return {
       appId: verified.identity.appId,
+      keyId: verified.identity.keyId,
       serviceAccountId: verified.key.serviceAccountId,
       credentialId: verified.identity.keyId,
       scope: "identity:invoke",

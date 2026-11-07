@@ -1,7 +1,7 @@
 import { beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { z } from "zod";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import * as registry from "../_internal/registry";
 import * as capabilities from "../api/capabilities";

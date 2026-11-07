@@ -1,11 +1,11 @@
 import type { AppAccessEditorProps } from "@k2b/cloud/access/ui";
 import type { AppDetails } from "@k2b/cloud/contracts";
 import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
-import { AppWorkspace, ButtonLink, NoticeCard, Placeholder, StatusBadge, ViewTabs } from "@k2b/ui";
+import { AppWorkspace, ButtonLink, DescriptionList, IconButtonLink, NoticeCard, Placeholder, StatusBadge, ViewTabs } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import Access from "./Access.island";
 import AddApp from "./AddApp.island";
-import AppRowMenu from "./AppRowMenu.island";
+import AppsTable, { type AppsTableRow } from "./AppsTable.island";
 import Domains, { type DomainsProps } from "./Domains.island";
 import DomainsAdd from "./DomainsAdd.island";
 import { domainsMessages } from "./domains-messages";
@@ -21,11 +21,13 @@ import {
   type AppHint,
   type AppStatusKind,
   type AppStatusWindow,
+  type AppsListState,
   type AppsQuery,
   type AppView,
   appsHref,
   countStatuses,
   HINT_PRESENTATION,
+  hasProblem,
   routeSummary,
   WINDOWS,
 } from "./model";
@@ -41,6 +43,11 @@ export type AppPageData = {
   details: AppDetails | null;
   /** Name of the newest revoked key, for the "key revoked" hint. */
   revokedKeyName: string | null;
+  /**
+   * Whether a key exists that Core would take at the next start: active and not the refused one (for a refusal while
+   * background access was off, any active key). Null when the keys could not be read; counts then stand in.
+   */
+  startKeyReady: boolean | null;
   /** Providers that did not answer for this app. */
   providerFailures: readonly string[];
   /** The app's access rule as one phrase, for a rule the app fixes itself. */
@@ -124,14 +131,6 @@ export type AppsViewData = {
   detail: DetailData | null;
 };
 
-const LINK_ICON: Record<string, string> = {
-  logs: "ti ti-list-details",
-  metrics: "ti ti-chart-dots",
-  routes: "ti ti-route",
-  capabilities: "ti ti-plug-connected",
-  other: "ti ti-external-link",
-};
-
 const STATUS_TONE: Record<AppStatusKind, "ok" | "warning" | "error" | "neutral"> = {
   ok: "ok",
   warn: "warning",
@@ -142,9 +141,18 @@ const STATUS_TONE: Record<AppStatusKind, "ok" | "warning" | "error" | "neutral">
 const statusLabel = (t: AppsPageMessages, status: AppStatusKind) =>
   ({ ok: t.statusOk, warn: t.statusWarn, error: t.statusError, idle: t.statusIdle })[status];
 
-/** The app's state as a dot and a word, never as colour alone. */
+const STATUSES: AppStatusKind[] = ["ok", "warn", "error", "idle"];
+
+/** The app's state as a dot and a word, never as colour alone; the dot keeps one place in every row. */
 function Status(props: { t: AppsPageMessages; status: AppStatusKind }) {
-  return <StatusBadge variant="dot" tone={STATUS_TONE[props.status]} label={statusLabel(props.t, props.status)} />;
+  return (
+    <StatusBadge
+      variant="dot"
+      tone={STATUS_TONE[props.status]}
+      label={statusLabel(props.t, props.status)}
+      labels={STATUSES.map((status) => statusLabel(props.t, status))}
+    />
+  );
 }
 
 function Tile(props: { icon: string; accent: string | null }) {
@@ -162,6 +170,8 @@ function Tile(props: { icon: string; accent: string | null }) {
 /** The one-line version of a hint, for the list. */
 function hintShort(t: AppsPageMessages, f: AppsFormat, hint: AppHint): string {
   switch (hint.kind) {
+    case "startRejected":
+      return t.hintStartRejectedShort({ reason: hint.reason });
     case "notRunning":
       return t.hintNotRunningShort({ since: hint.since ? f.moment(hint.since) : t.unknown });
     case "providerOnly":
@@ -192,11 +202,38 @@ const noteTone = (hint: AppHint): "neutral" | "warning" | "danger" =>
 
 // ── Level 1 ──────────────────────────────────────────────────────────────────
 
+/** The list's rows, worded on the server so list and detail say the same. */
+function tableRows(t: AppsPageMessages, f: AppsFormat, apps: readonly AppEntry[]): AppsTableRow[] {
+  return apps.map((app) => {
+    const routes = routeSummary(app.routes);
+    const first = app.hints[0];
+    return {
+      id: app.id,
+      name: app.name,
+      icon: app.icon,
+      accent: app.accent,
+      status: app.status,
+      release: app.neverStarted ? null : app.release,
+      routes: app.neverStarted
+        ? app.firstKnownAt
+          ? t.addedOn({ date: f.date(app.firstKnownAt) })
+          : t.statusIdle
+        : app.routes.length
+          ? `${routes.shown}${routes.more ? ` +${routes.more}` : ""}`
+          : t.noRoutes,
+      problem: first
+        ? `${hintShort(t, f, first)}${app.hints.length > 1 ? ` · ${t.moreHints({ count: app.hints.length - 1 })}` : ""}`
+        : null,
+      problemTone: first ? noteTone(first) : null,
+      problematic: hasProblem(app),
+    };
+  });
+}
+
 function AppList(props: { data: AppsViewData; t: AppsPageMessages }) {
   const t = props.t;
-  const f = props.data.format;
   return (
-    <div class="flex flex-col gap-1">
+    <div class="flex flex-col gap-3 pb-6">
       <Show when={props.data.query.moved}>
         {(moved) => <MovedNotice text={moved() === "gateway" ? t.movedGateway : t.movedCredentials} closeLabel={t.closeHint} />}
       </Show>
@@ -208,7 +245,7 @@ function AppList(props: { data: AppsViewData; t: AppsPageMessages }) {
             align="left"
             description={t.listFailed}
             action={
-              <ButtonLink size="sm" variant="secondary" href={appsHref({ app: props.data.query.app })}>
+              <ButtonLink size="sm" variant="secondary" href={appsHref({ app: props.data.query.app, list: props.data.query.list })}>
                 <i class="ti ti-refresh" aria-hidden="true" />
                 {t.retry}
               </ButtonLink>
@@ -216,87 +253,39 @@ function AppList(props: { data: AppsViewData; t: AppsPageMessages }) {
           />
         }
       >
-        {(list) => {
-          const counts = countStatuses(list().apps);
-          return (
-            <>
-              <Show when={list().issues.length > 0}>
-                <NoticeCard tone="danger" icon="ti ti-alert-circle" class="mb-1">
-                  <span>
-                    <b>{t.rejected({ count: list().issues.length })}</b>{" "}
-                    {list()
-                      .issues.map((issue) => `${issue.key} – ${issue.reason}`)
-                      .join(" · ")}
-                    . {t.rejectedHint}
-                  </span>
-                  <Show when={list().logsHref}>
-                    {(href) => (
-                      <a class="mt-1 block underline" href={href()}>
-                        {t.showLogs}
-                      </a>
-                    )}
-                  </Show>
-                </NoticeCard>
+        {(list) => (
+          <>
+            <Show when={list().issues.length > 0}>
+              <NoticeCard tone="danger" icon="ti ti-alert-circle">
+                <span>
+                  <b>{t.rejected({ count: list().issues.length })}</b>{" "}
+                  {list()
+                    .issues.map((issue) => `${issue.key} – ${issue.reason}`)
+                    .join(" · ")}
+                  . {t.rejectedHint}
+                </span>
+                <Show when={list().logsHref}>
+                  {(href) => (
+                    <a class="mt-1 block underline" href={href()}>
+                      {t.showLogs}
+                    </a>
+                  )}
+                </Show>
+              </NoticeCard>
+            </Show>
+            <Show when={list().apps.length > 0} fallback={<Placeholder icon="ti ti-apps" description={t.empty} align="left" />}>
+              <Show when={list().unchecked > 0}>
+                <p class="text-xs text-dimmed">{t.unchecked({ count: list().unchecked })}</p>
               </Show>
-              <Show when={list().apps.length > 0} fallback={<Placeholder icon="ti ti-apps" description={t.empty} variant="compact" />}>
-                <p class="px-2 pb-1 text-[13px] text-dimmed tabular-nums" data-apps-summary>
-                  {t.summary({ total: list().apps.length, ...counts })}
-                  <Show when={list().unchecked > 0}>
-                    <span class="block">{t.unchecked({ count: list().unchecked })}</span>
-                  </Show>
-                </p>
-                <nav aria-label={t.apps}>
-                  <For each={list().apps}>
-                    {(app) => {
-                      const routes = routeSummary(app.routes);
-                      const description = app.neverStarted
-                        ? app.firstKnownAt
-                          ? t.addedOn({ date: f.date(app.firstKnownAt) })
-                          : t.statusIdle
-                        : [app.release, app.routes.length ? `${routes.shown}${routes.more ? ` +${routes.more}` : ""}` : t.noRoutes]
-                            .filter(Boolean)
-                            .join(" · ");
-                      const first = app.hints[0];
-                      return (
-                        <AppWorkspace.SidebarItem
-                          variant="object"
-                          href={appsHref({ app: app.id })}
-                          active={props.data.query.app === app.id}
-                          description={description}
-                          note={
-                            first
-                              ? `${hintShort(t, f, first)}${app.hints.length > 1 ? ` · ${t.moreHints({ count: app.hints.length - 1 })}` : ""}`
-                              : undefined
-                          }
-                          noteTone={first ? noteTone(first) : undefined}
-                          meta={<Status t={t} status={app.status} />}
-                          metaVisibility="always"
-                          actions={
-                            <AppWorkspace.SidebarItemActions visibility="hover">
-                              <AppRowMenu
-                                app={{ id: app.id, name: app.name }}
-                                adminHref={app.adminHref}
-                                logsHref={app.logsHref}
-                                removable={app.removable}
-                                neverStarted={app.neverStarted}
-                              />
-                            </AppWorkspace.SidebarItemActions>
-                          }
-                          data={{ app: app.id }}
-                        >
-                          <AppWorkspace.SidebarItemIcon>
-                            <Tile icon={app.icon} accent={app.accent} />
-                          </AppWorkspace.SidebarItemIcon>
-                          <AppWorkspace.SidebarItemLabel>{app.name}</AppWorkspace.SidebarItemLabel>
-                        </AppWorkspace.SidebarItem>
-                      );
-                    }}
-                  </For>
-                </nav>
-              </Show>
-            </>
-          );
-        }}
+              <AppsTable
+                rows={tableRows(t, props.data.format, list().apps)}
+                selected={props.data.app?.entry.id ?? null}
+                view={props.data.detail ? props.data.query.view : null}
+                list={props.data.query.list}
+              />
+            </Show>
+          </>
+        )}
       </Show>
     </div>
   );
@@ -305,7 +294,7 @@ function AppList(props: { data: AppsViewData; t: AppsPageMessages }) {
 // ── Level 2 ──────────────────────────────────────────────────────────────────
 
 /** One hint: its cause in words and exactly one way out. */
-function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hint: AppHint }) {
+function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hint: AppHint; list: AppsListState }) {
   const t = props.t;
   const f = props.f;
   const entry = props.app.entry;
@@ -325,6 +314,21 @@ function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hin
   } => {
     const hint = props.hint;
     switch (hint.kind) {
+      case "startRejected": {
+        // The refusal stays until the next successful start, so its cause may be gone in Core by now. The way out
+        // follows what still blocks a start: background access, then a key Core would accept.
+        const off = entry.keys.accountStatus === "disabled";
+        const keyReady =
+          props.app.startKeyReady ??
+          (hint.reason === "disabled" ? entry.keys.active > 0 : entry.keys.active > (hint.reason === "connections_not_permitted" ? 1 : 0));
+        const next = off ? "reenable" : keyReady ? "restart" : "newKey";
+        const lead = t.hintStartRejectedLead({ name: entry.name, live: entry.live });
+        const text = `${t.hintStartRejectedText({ reason: hint.reason, when: f.relative(hint.at), off })} ${t.hintStartRejectedNext({ next })}`;
+        const docs = { docs: props.app.docs.recover, docsLabel: t.docsWhatNow };
+        if (next === "reenable") return { lead, text, action: t.actReenable, primary: true };
+        if (next === "restart") return { lead, text, action: t.actKeysShow, ...docs };
+        return { lead, text, action: t.actNewKey, create: true, primary: true, ...docs };
+      }
       case "notRunning": {
         const since = hint.since ? f.moment(hint.since) : t.unknown;
         return { lead: t.hintNotRunningLead({ since }), text: t.hintNotRunningText({ name: entry.name }), action: t.actErrors };
@@ -352,9 +356,9 @@ function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hin
       case "envStart":
         return {
           lead: t.hintEnvStartLead,
-          text: t.hintEnvStartText({ name: entry.name }),
-          action: t.actKeys,
-          create: true,
+          text: hint.hasKey ? t.hintEnvStartKeyText({ name: entry.name }) : t.hintEnvStartText({ name: entry.name }),
+          action: hint.hasKey ? t.actKeysShow : t.actKeys,
+          create: !hint.hasKey,
           docs: props.app.docs.migrate,
           docsLabel: t.docsMigration,
         };
@@ -394,7 +398,7 @@ function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hin
           <ButtonLink
             size="sm"
             variant={text().primary ? "primary" : "secondary"}
-            href={appsHref({ app: entry.id, view: presentation().target as AppView, create: text().create })}
+            href={appsHref({ app: entry.id, view: presentation().target as AppView, create: text().create, list: props.list })}
           >
             <Show when={text().create}>
               <i class="ti ti-plus" aria-hidden="true" />
@@ -414,71 +418,38 @@ function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hin
   );
 }
 
-function GroupTitle(props: { children: string }) {
-  return <p class="mt-3 mb-0.5 px-2 text-xs font-semibold text-dimmed first:mt-1">{props.children}</p>;
-}
+/** One fact of the app: its value, a link to its view where it has one. */
+type Fact = { label: string; value?: JSX.Element; view?: AppView | null; href?: string; external?: boolean; action?: JSX.Element };
 
-/** A row of the app page: label left, value right; it opens its column when it has one. */
-function Row(props: {
-  icon: string;
-  label: string;
-  value?: JSX.Element;
-  view?: AppView | null;
-  app: string;
-  selected?: AppView | null;
-  href?: string;
-  external?: boolean;
-  tone?: "danger";
-  muted?: boolean;
-}) {
-  const href = () => props.href ?? (props.view ? appsHref({ app: props.app, view: props.view }) : undefined);
+/** A group of the detail: a title and label | value rows; a value with a view of its own links there. */
+function Facts(props: { title: string; facts: readonly (Fact | false | null | undefined)[]; app: string; list: AppsListState }) {
+  const href = (fact: Fact) => fact.href ?? (fact.view ? appsHref({ app: props.app, view: fact.view, list: props.list }) : undefined);
   return (
-    <Show
-      when={href()}
-      fallback={
-        // A fact without a column of its own: the same metrics as the rows around it, but no link and no hover.
-        <div
-          class="flex min-h-11 items-center gap-2.5 px-[0.5625rem] py-1.5 text-[13px] leading-[1.125rem]"
-          classList={{ "text-dimmed": props.muted }}
-          data-row={props.label}
-        >
-          <span class="inline-flex size-8 shrink-0 items-center justify-center text-base text-(--k2b-text-muted)" aria-hidden="true">
-            <i class={props.icon} />
-          </span>
-          <span class="whitespace-nowrap text-[13px] font-semibold" classList={{ "font-normal": props.muted }}>
-            {props.label}
-          </span>
-          <span class="min-w-0 flex-1 truncate text-right text-[13px] tabular-nums" classList={{ "text-dimmed": !props.muted }}>
-            {props.value}
-          </span>
-          <span class="w-[1em] shrink-0" aria-hidden="true" />
-        </div>
-      }
-    >
-      {(link) => (
-        // Object rows: the 44 px row group of the approved keys mockup, with a plain glyph instead of a tile.
-        <AppWorkspace.SidebarItem
-          variant="object"
-          href={link()}
-          active={Boolean(props.view) && props.selected === props.view}
-          tone={props.tone}
-          meta={
-            <span class="flex items-center gap-2 text-[13px] font-normal text-(--k2b-text-muted) tabular-nums">
-              {/* The value gives way before the label: it truncates, the label keeps its line. */}
-              <span class="max-w-[12.5rem] truncate">{props.value}</span>
-              <i class={`ti ${props.external ? "ti-arrow-up-right" : "ti-chevron-right"} text-dimmed`} aria-hidden="true" />
-            </span>
-          }
-          metaVisibility="always"
-          data={{ row: props.label }}
-        >
-          <AppWorkspace.SidebarItemIcon>
-            <i class={`${props.icon} text-(--k2b-text-muted)`} />
-          </AppWorkspace.SidebarItemIcon>
-          <AppWorkspace.SidebarItemLabel>{props.label}</AppWorkspace.SidebarItemLabel>
-        </AppWorkspace.SidebarItem>
-      )}
-    </Show>
+    <section class="flex flex-col gap-1">
+      <h3 class="text-sm font-semibold">{props.title}</h3>
+      <DescriptionList
+        layout="rows"
+        items={props.facts
+          .filter((fact): fact is Fact => Boolean(fact))
+          .map((fact) => ({
+            term: fact.label,
+            action: fact.action,
+            description: (() => {
+              const link = href(fact);
+              return link ? (
+                <a href={link} class="inline-flex max-w-full items-center gap-1 tabular-nums hover:underline" data-row={fact.label}>
+                  <span class="truncate">{fact.value ?? fact.label}</span>
+                  <i class={`ti ${fact.external ? "ti-arrow-up-right" : "ti-chevron-right"} shrink-0 text-dimmed`} aria-hidden="true" />
+                </a>
+              ) : (
+                <span class="tabular-nums" data-row={fact.label}>
+                  {fact.value}
+                </span>
+              );
+            })(),
+          }))}
+      />
+    </section>
   );
 }
 
@@ -488,6 +459,7 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
   const entry = props.app.entry;
   const details = props.app.details;
   const selected = props.data.query.view;
+  const list = props.data.query.list;
   const neverStarted = entry.neverStarted;
   const providerOnly = !entry.coreKnows && !entry.live;
   const unavailable = props.app.providerFailures.length > 0 || entry.numbersUnavailable;
@@ -561,7 +533,7 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
         </>
       );
     if (keys.revoked + keys.expired > 0) return <span class="text-(--k2b-danger-text)">{t.keysNoValid}</span>;
-    return entry.live ? t.keysEnv : t.keysNone;
+    return entry.live && entry.startsWithEnv !== false ? t.keysEnv : t.keysNone;
   };
   const eventsValue = (): JSX.Element => {
     if (neverStarted || providerOnly) return "–";
@@ -584,6 +556,7 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
     "mail:send": d.permissionMailSend,
     "mail:read": d.permissionMailRead,
     "resources:readers": d.permissionResourceReaders,
+    "geo:query": d.permissionGeoQuery,
   };
   const services = () => {
     if (neverStarted || providerOnly) return "–";
@@ -594,11 +567,11 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
   // Routes and capabilities have their place in the columns; the rest of the providers' links sit under "More".
   const links = entry.numbers.flatMap((item) => item.links).filter((link) => link.kind !== "routes" && link.kind !== "capabilities");
   return (
-    <div class="flex flex-col pb-6">
+    <div class="flex flex-col pb-6" data-detail-app={entry.id}>
       <Show when={entry.hints.some((hint) => hint.kind !== "rotation") || props.app.providerFailures.length > 0 || !details}>
-        <div class="mb-2 flex flex-col gap-1.5" data-app-hints>
+        <div class="mb-4 flex flex-col gap-1.5" data-app-hints>
           <For each={entry.hints.filter((hint) => hint.kind !== "rotation")}>
-            {(hint) => <Hint t={t} f={f} app={props.app} hint={hint} />}
+            {(hint) => <Hint t={t} f={f} app={props.app} hint={hint} list={list} />}
           </For>
           <For each={props.app.providerFailures}>
             {(provider) => (
@@ -618,7 +591,7 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
                 <b>{t.detailsFailedLead}</b> {t.detailsFailedText}
               </span>
               <span class="mt-1.5 block">
-                <ButtonLink size="sm" variant="secondary" href={appsHref({ app: entry.id, view: selected })}>
+                <ButtonLink size="sm" variant="secondary" href={appsHref({ app: entry.id, view: selected, list })}>
                   <i class="ti ti-refresh" aria-hidden="true" />
                   {t.reload}
                 </ButtonLink>
@@ -627,100 +600,70 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
           </Show>
         </div>
       </Show>
-      <GroupTitle>{t.groupState}</GroupTitle>
-      <Row
-        icon="ti ti-server-2"
-        label={t.runtime}
-        value={runtimeValue()}
-        view={neverStarted ? null : "runtime"}
-        app={entry.id}
-        selected={selected}
-      />
-      <Row
-        icon="ti ti-route"
-        label={t.routes}
-        value={entry.routes.length ? `${routes.shown}${routes.more ? ` +${routes.more}` : ""}` : "–"}
-        view={neverStarted ? null : "routes"}
-        app={entry.id}
-        selected={selected}
-      />
-      <Row icon="ti ti-chart-line" label={t.traffic} value={trafficValue()} view={neverStarted ? null : "routes"} app={entry.id} />
-      <Row
-        icon="ti ti-alert-triangle"
-        label={t.errors}
-        value={errorsValue()}
-        view={neverStarted || providerOnly ? null : "errors"}
-        app={entry.id}
-        selected={selected}
-      />
-      <GroupTitle>{t.groupOverview}</GroupTitle>
-      <Row
-        icon="ti ti-lock"
-        label={t.access}
-        value={accessValue()}
-        view={neverStarted || providerOnly ? null : "access"}
-        app={entry.id}
-        selected={selected}
-      />
-      <Row
-        icon="ti ti-key"
-        label={t.keys}
-        value={props.app.keysSupported ? keysValue() : "–"}
-        view={providerOnly || !props.app.keysSupported ? null : "keys"}
-        app={entry.id}
-        selected={selected}
-      />
-      <Show when={props.app.domains}>
-        {(domains) => (
-          <Row icon="ti ti-world" label={t.domains} value={domainsValue(domains())} view="domains" app={entry.id} selected={selected} />
-        )}
-      </Show>
-      <Row
-        icon="ti ti-broadcast"
-        label={t.events}
-        value={eventsValue()}
-        view={neverStarted || providerOnly || !details ? null : "events"}
-        app={entry.id}
-        selected={selected}
-      />
-      <Row
-        icon="ti ti-bell"
-        label={t.notifications}
-        value={
-          neverStarted || providerOnly ? (
-            "–"
-          ) : details ? (
-            t.kinds({ count: details.totals.notifications })
-          ) : (
-            <span class="text-dimmed">{t.notLoaded}</span>
-          )
-        }
-        app={entry.id}
-      />
-      <Row icon="ti ti-plug-connected" label={t.platformServices} value={services()} app={entry.id} />
-      <GroupTitle>{t.groupMore}</GroupTitle>
-      <Show when={entry.adminHref}>
-        {(href) => <Row icon="ti ti-settings" label={t.adminOf({ name: entry.name })} href={href()} external app={entry.id} />}
-      </Show>
-      <For each={links}>
-        {(link) => (
-          <Row
-            icon={LINK_ICON[link.kind ?? "other"] ?? "ti ti-external-link"}
-            label={link.label}
-            href={link.href}
-            external
-            app={entry.id}
-          />
-        )}
-      </For>
-      <Show
-        when={entry.removable && !neverStarted}
-        fallback={
-          <Row icon="ti ti-trash" label={t.removeOff} value={neverStarted ? t.removeOffNever : t.removeOffValue} app={entry.id} muted />
-        }
-      >
-        <RemoveApp app={{ id: entry.id, name: entry.name }} variant="row" label={t.remove} />
-      </Show>
+      <div class="flex flex-col gap-6">
+        <Facts
+          title={t.groupState}
+          app={entry.id}
+          list={list}
+          facts={[
+            { label: t.runtime, value: runtimeValue(), view: neverStarted ? null : "runtime" },
+            {
+              label: t.routes,
+              value: entry.routes.length ? `${routes.shown}${routes.more ? ` +${routes.more}` : ""}` : "–",
+              view: neverStarted ? null : "routes",
+            },
+            { label: t.traffic, value: trafficValue(), view: neverStarted ? null : "routes" },
+            { label: t.errors, value: errorsValue(), view: neverStarted || providerOnly ? null : "errors" },
+          ]}
+        />
+        <Facts
+          title={t.groupOverview}
+          app={entry.id}
+          list={list}
+          facts={[
+            { label: t.access, value: accessValue(), view: neverStarted || providerOnly ? null : "access" },
+            {
+              label: t.keys,
+              value: props.app.keysSupported ? keysValue() : "–",
+              view: providerOnly || !props.app.keysSupported ? null : "keys",
+            },
+            props.app.domains && { label: t.domains, value: domainsValue(props.app.domains), view: "domains" },
+            { label: t.events, value: eventsValue(), view: neverStarted || providerOnly || !details ? null : "events" },
+            {
+              label: t.notifications,
+              value:
+                neverStarted || providerOnly ? (
+                  "–"
+                ) : details ? (
+                  t.kinds({ count: details.totals.notifications })
+                ) : (
+                  <span class="text-dimmed">{t.notLoaded}</span>
+                ),
+            },
+            { label: t.platformServices, value: services() },
+          ]}
+        />
+        <Facts
+          title={t.groupMore}
+          app={entry.id}
+          list={list}
+          facts={[
+            ...(entry.adminHref
+              ? [{ label: t.settingsTerm, value: t.adminOf({ name: entry.name }), href: entry.adminHref, external: true }]
+              : []),
+            ...links.map((link) => ({ label: link.label, value: t.open, href: link.href, external: true })),
+            {
+              label: t.removeTerm,
+              value:
+                entry.removable && !neverStarted ? (
+                  <RemoveApp app={{ id: entry.id, name: entry.name }} variant="row" label={t.remove} />
+                ) : (
+                  <span class="text-dimmed">{neverStarted ? t.removeOffNever : t.removeOffValue}</span>
+                ),
+            },
+          ]}
+        />
+      </div>
     </div>
   );
 }
@@ -935,7 +878,13 @@ function ExpandList<T>(props: {
   );
 }
 
-function RoutesColumn(props: { t: AppsPageMessages; f: AppsFormat; detail: Extract<DetailData, { view: "routes" }>; app: AppEntry }) {
+function RoutesColumn(props: {
+  t: AppsPageMessages;
+  f: AppsFormat;
+  detail: Extract<DetailData, { view: "routes" }>;
+  app: AppEntry;
+  list: AppsListState;
+}) {
   const t = props.t;
   const f = props.f;
   const misrouted = () => (props.detail.tables[0]?.rows ?? []).filter((row) => row.router === "missing");
@@ -947,7 +896,7 @@ function RoutesColumn(props: { t: AppsPageMessages; f: AppsFormat; detail: Extra
         items={WINDOWS.map((window) => ({
           id: window,
           label: t.windowLabel({ window }),
-          href: appsHref({ app: props.app.id, view: "routes", window }),
+          href: appsHref({ app: props.app.id, view: "routes", window, list: props.list }),
         }))}
       />
       <For each={props.detail.failures}>
@@ -955,7 +904,11 @@ function RoutesColumn(props: { t: AppsPageMessages; f: AppsFormat; detail: Extra
           <NoticeCard tone="neutral" icon="ti ti-cloud-off">
             <span>{t.providerDownRoutes({ provider })}</span>
             <span class="mt-1.5 block">
-              <ButtonLink size="sm" variant="secondary" href={appsHref({ app: props.app.id, view: "routes", window: props.detail.window })}>
+              <ButtonLink
+                size="sm"
+                variant="secondary"
+                href={appsHref({ app: props.app.id, view: "routes", window: props.detail.window, list: props.list })}
+              >
                 <i class="ti ti-refresh" aria-hidden="true" />
                 {t.retry}
               </ButtonLink>
@@ -1147,7 +1100,13 @@ function RuntimeColumn(props: { t: AppsPageMessages; f: AppsFormat; detail: Extr
   );
 }
 
-function ErrorsColumn(props: { t: AppsPageMessages; f: AppsFormat; detail: Extract<DetailData, { view: "errors" }>; app: AppPageData }) {
+function ErrorsColumn(props: {
+  t: AppsPageMessages;
+  f: AppsFormat;
+  detail: Extract<DetailData, { view: "errors" }>;
+  app: AppPageData;
+  list: AppsListState;
+}) {
   const t = props.t;
   const f = props.f;
   const d = props.detail;
@@ -1161,7 +1120,7 @@ function ErrorsColumn(props: { t: AppsPageMessages; f: AppsFormat; detail: Extra
             {t.deliveriesFailed}
           </div>
           <div class="mt-1.5">
-            <ButtonLink size="sm" variant="secondary" href={appsHref({ app: props.app.entry.id, view: "events" })}>
+            <ButtonLink size="sm" variant="secondary" href={appsHref({ app: props.app.entry.id, view: "events", list: props.list })}>
               {t.showEvents}
             </ButtonLink>
           </div>
@@ -1248,117 +1207,138 @@ export function AppsView(props: { data: AppsViewData }) {
   const data = props.data;
   const app = data.app;
   const detail = data.detail;
-  const level = detail ? "detail" : app ? "app" : "apps";
+  const list = data.query.list;
   const known = data.list.state === "ok" ? data.list.apps.map((entry) => ({ id: entry.id, name: entry.name })) : [];
+  // The list is the page; the open app and each of its views share one column beside it, a view stepping back to its app.
   return (
-    <AppWorkspace.Main level={level}>
+    <AppWorkspace.Main level={app ? "app" : "apps"}>
       <AppWorkspace.MainPane
         id="apps"
         label={t.apps}
-        href="/admin/apps"
-        defaultSize={328}
-        minSize={280}
-        maxSize={420}
+        heading="page"
+        description={
+          data.list.state === "ok" && data.list.apps.length > 0 ? (
+            <span data-apps-summary>{t.summary({ total: data.list.apps.length, ...countStatuses(data.list.apps) })}</span>
+          ) : undefined
+        }
+        href={appsHref({ list })}
+        defaultSize={app ? 560 : undefined}
+        minSize={360}
         actions={<AddApp known={known} />}
       >
         <AppList data={data} t={t} />
       </AppWorkspace.MainPane>
       {app ? (
-        <AppWorkspace.MainPane
-          id="app"
-          label={app.entry.name}
-          lead={<Tile icon={app.entry.icon} accent={app.entry.accent} />}
-          description={app.entry.description || undefined}
-          actions={<Status t={t} status={app.entry.status} />}
-          href={appsHref({ app: app.entry.id })}
-          defaultSize={384}
-          minSize={320}
-          maxSize={480}
-        >
-          <AppOverview data={data} app={app} t={t} />
-        </AppWorkspace.MainPane>
-      ) : null}
-      {app && detail ? (
-        (() => {
-          const open = () => ({ app, detail });
-          const view = detail.view as AppView;
-          const name = app.entry.name;
-          const columnData = detail;
-          return (
-            <AppWorkspace.MainPane
-              id="detail"
-              label={detailTitle(t, view, name)}
-              actions={
-                columnData.view === "keys" ? (
-                  <KeysCreate
-                    app={columnData.keys.app}
-                    active={(columnData.keys.initialKeys ?? []).filter((key) => key.status === "active").length}
-                    disabledAccount={columnData.keys.accountStatus === "disabled"}
-                    neverStarted={columnData.keys.neverStarted}
-                  />
-                ) : columnData.view === "domains" ? (
-                  <DomainsAdd app={columnData.domains.app} initial={columnData.domains.initial ?? []} />
-                ) : undefined
-              }
-              description={
-                view === "routes" && columnData.view === "routes" && columnData.avgMs !== null
-                  ? t.avgLatency({ ms: data.format.ms(columnData.avgMs) })
-                  : view === "errors"
-                    ? t.errorsSub
-                    : undefined
-              }
-            >
-              <div class="pb-6" data-detail={view}>
-                {/* The column's sentence may wrap, so it stays in the body instead of the one-line level head. */}
-                {(() => {
-                  const sentence =
-                    columnData.view === "keys" ? (
-                      <>
-                        {keysMessages.resolve([data.locale]).t.sentence}{" "}
-                        {columnData.keys.docsHref ? (
-                          <a class="underline underline-offset-3" href={columnData.keys.docsHref}>
-                            {keysMessages.resolve([data.locale]).t.howItWorks}
-                          </a>
-                        ) : null}
-                      </>
+        detail ? (
+          (() => {
+            const view = detail.view as AppView;
+            const name = app.entry.name;
+            const columnData = detail;
+            return (
+              <AppWorkspace.MainPane
+                id="app"
+                label={detailTitle(t, view, name)}
+                back={
+                  // An app added a moment ago has no page until its first key; its keys step back to the list.
+                  data.list.state === "ok" && !data.list.apps.some((entry) => entry.id === app.entry.id)
+                    ? { href: appsHref({ list }), label: t.apps }
+                    : { href: appsHref({ app: app.entry.id, list }), label: name }
+                }
+                minSize={360}
+                actions={
+                  <>
+                    {columnData.view === "keys" ? (
+                      <KeysCreate
+                        app={columnData.keys.app}
+                        active={(columnData.keys.initialKeys ?? []).filter((key) => key.status === "active").length}
+                        disabledAccount={columnData.keys.accountStatus === "disabled"}
+                        neverStarted={columnData.keys.neverStarted}
+                      />
                     ) : columnData.view === "domains" ? (
-                      domainsMessages.resolve([data.locale]).t.sentence
-                    ) : columnData.view === "events" ? (
-                      t.eventsSub({ name })
-                    ) : columnData.view === "access" && columnData.editor ? (
-                      t.accessSub({ name })
-                    ) : null;
-                  return sentence ? <p class="mb-3 max-w-[40rem] px-2 text-[13px] text-dimmed">{sentence}</p> : null;
-                })()}
-                {columnData.view === "access" ? (
-                  <AccessColumn
-                    t={t}
-                    detail={columnData}
-                    name={name}
-                    unmanaged={open().app.entry.hints.some((hint) => hint.kind === "accessUnmanaged")}
-                  />
-                ) : columnData.view === "keys" ? (
-                  <Keys {...columnData.keys} />
-                ) : columnData.view === "domains" ? (
-                  <Domains {...columnData.domains} />
-                ) : columnData.view === "events" ? (
-                  <EventsColumn t={t} f={data.format} app={open().app} locale={data.locale} />
-                ) : columnData.view === "routes" ? (
-                  <RoutesColumn t={t} f={data.format} detail={columnData} app={open().app.entry} />
-                ) : columnData.view === "runtime" ? (
-                  <RuntimeColumn t={t} f={data.format} detail={columnData} app={open().app.entry} />
-                ) : (
-                  <ErrorsColumn t={t} f={data.format} detail={columnData} app={open().app} />
-                )}
-              </div>
-            </AppWorkspace.MainPane>
-          );
-        })()
-      ) : (
-        <AppWorkspace.MainPane id="fill" label="">
-          {app ? null : <p class="mt-10 px-4 text-center text-[13.5px] text-dimmed">{t.pick}</p>}
-        </AppWorkspace.MainPane>
-      )}
+                      <DomainsAdd app={columnData.domains.app} initial={columnData.domains.initial ?? []} />
+                    ) : null}
+                    <CloseDetail t={t} list={list} />
+                  </>
+                }
+                description={
+                  view === "routes" && columnData.view === "routes" && columnData.avgMs !== null
+                    ? t.avgLatency({ ms: data.format.ms(columnData.avgMs) })
+                    : view === "errors"
+                      ? t.errorsSub
+                      : name
+                }
+              >
+                <div class="pb-6" data-detail={view}>
+                  {/* The column's sentence may wrap, so it stays in the body instead of the one-line level head. */}
+                  {(() => {
+                    const sentence =
+                      columnData.view === "keys" ? (
+                        <>
+                          {keysMessages.resolve([data.locale]).t.sentence}{" "}
+                          {columnData.keys.docsHref ? (
+                            <a class="underline underline-offset-3" href={columnData.keys.docsHref}>
+                              {keysMessages.resolve([data.locale]).t.howItWorks}
+                            </a>
+                          ) : null}
+                        </>
+                      ) : columnData.view === "domains" ? (
+                        domainsMessages.resolve([data.locale]).t.sentence
+                      ) : columnData.view === "events" ? (
+                        t.eventsSub({ name })
+                      ) : columnData.view === "access" && columnData.editor ? (
+                        t.accessSub({ name })
+                      ) : null;
+                    return sentence ? <p class="mb-3 max-w-[40rem] px-2 text-[13px] text-dimmed">{sentence}</p> : null;
+                  })()}
+                  {columnData.view === "access" ? (
+                    <AccessColumn
+                      t={t}
+                      detail={columnData}
+                      name={name}
+                      unmanaged={app.entry.hints.some((hint) => hint.kind === "accessUnmanaged")}
+                    />
+                  ) : columnData.view === "keys" ? (
+                    <Keys {...columnData.keys} />
+                  ) : columnData.view === "domains" ? (
+                    <Domains {...columnData.domains} />
+                  ) : columnData.view === "events" ? (
+                    <EventsColumn t={t} f={data.format} app={app} locale={data.locale} />
+                  ) : columnData.view === "routes" ? (
+                    <RoutesColumn t={t} f={data.format} detail={columnData} app={app.entry} list={list} />
+                  ) : columnData.view === "runtime" ? (
+                    <RuntimeColumn t={t} f={data.format} detail={columnData} app={app.entry} />
+                  ) : (
+                    <ErrorsColumn t={t} f={data.format} detail={columnData} app={app} list={list} />
+                  )}
+                </div>
+              </AppWorkspace.MainPane>
+            );
+          })()
+        ) : (
+          <AppWorkspace.MainPane
+            id="app"
+            label={app.entry.name}
+            lead={<Tile icon={app.entry.icon} accent={app.entry.accent} />}
+            description={<Status t={t} status={app.entry.status} />}
+            minSize={360}
+            actions={<CloseDetail t={t} list={list} />}
+          >
+            <AppOverview data={data} app={app} t={t} />
+          </AppWorkspace.MainPane>
+        )
+      ) : null}
     </AppWorkspace.Main>
+  );
+}
+
+/** Closes the detail and leaves the list as it was. */
+function CloseDetail(props: { t: AppsPageMessages; list: AppsListState }) {
+  // On a phone the detail is its own page and its back step is the way out.
+  return (
+    <span class="hidden md:contents">
+      <IconButtonLink href={appsHref({ list: props.list })} label={props.t.closeDetail} size="sm" variant="ghost">
+        <i class="ti ti-x" aria-hidden="true" />
+      </IconButtonLink>
+    </span>
   );
 }

@@ -1,5 +1,4 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { DslQueryExecuteBodySchema } from "../contracts";
 import { canonicalizeDslQuery } from "../query-dsl/canonical";
 import type { DslQueryContextInput } from "../query-dsl/parameters";
@@ -15,6 +14,7 @@ import { documentServiceText } from "./document-messages";
 import { toPublicGqlResponse } from "./gql-public-result";
 import { buildTrustedGqlResolverContext } from "./gql-resolver-context";
 import { projectPublicIds } from "./public-resource-ids";
+import { resultTransaction } from "./transaction-rollback";
 
 export type WorkflowQueryBinding = { source: string; schemaHash: string };
 
@@ -196,7 +196,7 @@ export const captureWorkflowQueryData = async (
   // on the writer's transaction. Ordinary captures retain a repeatable snapshot;
   // it is not READ ONLY because machine authority takes FOR SHARE locks in it.
   if (transactionClient) return capture(transactionClient);
-  return sql.begin(async (client) => {
+  return resultTransaction(async (client) => {
     await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
     return capture(client);
   });

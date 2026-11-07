@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
 
 export const migrateAiModelAccess = async (): Promise<void> => {
   await sql.begin(async (tx) => {

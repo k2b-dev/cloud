@@ -1,7 +1,7 @@
-import { sql } from "bun";
 import { z } from "zod";
 import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
 import { CapabilityActionReviewPresentationSchema, CapabilitySemanticLinkSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { openRequests } from "../services/approvals/content";
 import { logger } from "../services/logging";
 import { reviewShortText, toolActionCard, toolBlockReview } from "./chat/action-card";
@@ -60,10 +60,16 @@ const ownedRequests = (ownerUserId: string) => sql`
       AND c.created_by_user_id=${ownerUserId}::uuid
   )`;
 
+/** How many questions wait for their owner's answer, such as a badge on the Assistant; the same rows as the list. */
+export const countAiOpenQuestions = async (ownerUserId: string): Promise<number> => {
+  const [counts] = await sql<{ count: number }[]>`
+    SELECT count(*)::int AS count FROM (${ownedRequests(ownerUserId)}) r`;
+  return counts?.count ?? 0;
+};
+
 /** One bounded, owner-scoped snapshot, using exactly the chat's stored question card. */
 export const listAiOpenQuestions = async (input: { ownerUserId: string; locale: string; timeZone: string }): Promise<AiOpenQuestions> => {
-  const [counts] = await sql<{ count: number }[]>`
-    SELECT count(*)::int AS count FROM (${ownedRequests(input.ownerUserId)}) r`;
+  const count = await countAiOpenQuestions(input.ownerUserId);
   const rows = await sql<QuestionRow[]>`
     WITH page AS (
       SELECT * FROM (${ownedRequests(input.ownerUserId)}) r
@@ -90,7 +96,7 @@ export const listAiOpenQuestions = async (input: { ownerUserId: string; locale: 
     ORDER BY r.created_at DESC, r.id DESC`;
 
   return {
-    count: counts?.count ?? 0,
+    count,
     items: rows.map((row) => openQuestionFromRow(row, input)),
   };
 };

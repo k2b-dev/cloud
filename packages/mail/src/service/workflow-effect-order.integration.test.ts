@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import { encryptSecret } from "@k2b/cloud/services";
 import { deleteWorkflowScope, dispatchPendingWorkflowEvents, getWorkflowRun, wakeExpiredWorkflowRuns } from "@k2b/cloud/workflows/store";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { workflowEffectBudgetSchema } from "../contracts";
 import { newShortId } from "../lib/short-id";

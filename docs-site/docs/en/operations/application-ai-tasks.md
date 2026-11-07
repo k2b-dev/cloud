@@ -49,7 +49,7 @@ used for `runApplicationAiTask()`. Pass the application's Postgres transaction
 as the second argument so the release commits together with the domain result:
 
 ```ts
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { releaseApplicationAiTask } from "@k2b/cloud/ai";
 
 await sql.begin(async (tx) => {

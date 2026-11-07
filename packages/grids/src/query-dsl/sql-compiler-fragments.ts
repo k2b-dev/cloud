@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 export const joinFragments = (parts: unknown[], separator: unknown): unknown => {
   if (parts.length === 0) return sql``;

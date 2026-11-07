@@ -1,7 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import type { z } from "zod";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { aiMemories } from "./memories";
 import { learnAiMemoriesFromPrivateChats, listAiMemoryLearningCandidates } from "./memory-learning";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
@@ -35,9 +35,6 @@ const learningTestModel: AiResolvedModel = {
     family: "openai-compatible",
     model: "test",
     capabilities: { streaming: false, tools: false, images: false, thinking: false, usage: false },
-    async complete() {
-      throw new Error("Must use the structured fixture");
-    },
     async *stream() {
       throw new Error("Must use the structured fixture");
     },

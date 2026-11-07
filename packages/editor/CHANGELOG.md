@@ -1,5 +1,156 @@
 # Changelog
 
+## [0.6.5](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.4...npm-editor-v0.6.5) (2026-11-06)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.48.0 to 0.49.0
+
+## [0.6.4](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.3...npm-editor-v0.6.4) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.47.0 to 0.48.0
+
+## [0.6.3](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.2...npm-editor-v0.6.3) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.46.0 to 0.47.0
+
+## [0.6.2](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.1...npm-editor-v0.6.2) (2026-11-03)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.45.0 to 0.46.0
+
+## [0.6.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.0...npm-editor-v0.6.1) (2026-11-02)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.44.0 to 0.45.0
+
+## [0.6.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.5.1...npm-editor-v0.6.0) (2026-11-02)
+
+
+### Features
+
+* **platform:** run on Bun 1.4.4 and Alpine 3.24 so isolated test runs stop segfaulting ([f551aa6](https://github.com/k2b-dev/cloud/commit/f551aa683f43dbf51c709973292649c18e729292))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.43.0 to 0.44.0
+
+## [0.5.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.5.0...npm-editor-v0.5.1) (2026-11-02)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.42.0 to 0.43.0
+
+## [0.5.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.4.0...npm-editor-v0.5.0) (2026-11-01)
+
+
+### Features
+
+* **notes:** the slash menu and table formulas work as in Notebooks ([#2363](https://github.com/k2b-dev/cloud/issues/2363)) ([a9a277f](https://github.com/k2b-dev/cloud/commit/a9a277ff1136d972d00ae95ec930d18f436a036f))
+
+
+### Bug Fixes
+
+* **editor:** a checked box shows its check under a strict content policy ([#2370](https://github.com/k2b-dev/cloud/issues/2370)) ([0c67781](https://github.com/k2b-dev/cloud/commit/0c67781d3268793a5d4f3027fa814d26acbf6dd9))
+* **notes:** dialogs and block controls look finished ([#2362](https://github.com/k2b-dev/cloud/issues/2362)) ([10c328d](https://github.com/k2b-dev/cloud/commit/10c328daca5b801d75f0227b5441c1c7f3fe4673))
+* **ui:** checked checkboxes keep their rounded corners ([#2360](https://github.com/k2b-dev/cloud/issues/2360)) ([781668c](https://github.com/k2b-dev/cloud/commit/781668c6622074a2b901ffcc42b6b62caa607070))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.41.0 to 0.42.0
+
+## [0.4.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.3.1...npm-editor-v0.4.0) (2026-11-01)
+
+
+### Features
+
+* **ui:** live dictation building blocks for composers and editors ([#2296](https://github.com/k2b-dev/cloud/issues/2296)) ([a45cb4f](https://github.com/k2b-dev/cloud/commit/a45cb4f94bf86a533e08e4dbfe32bee626d19c6c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.40.0 to 0.41.0
+
+## [0.3.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.3.0...npm-editor-v0.3.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **editor:** show other people's carets where they are ([#2234](https://github.com/k2b-dev/cloud/issues/2234)) ([06aeab4](https://github.com/k2b-dev/cloud/commit/06aeab4efe052f49d1d2a4437e297734413dcfc0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.39.0 to 0.40.0
+
+## [0.3.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.2.0...npm-editor-v0.3.0) (2026-10-31)
+
+
+### Features
+
+* **editor:** polish table editing with outside grips, scoped menus and full-height cells ([#2226](https://github.com/k2b-dev/cloud/issues/2226)) ([10d326e](https://github.com/k2b-dev/cloud/commit/10d326e35fc4ca35b9c6909d79dc24ee09e1b3c3))
+
+
+### Bug Fixes
+
+* **editor:** give every toolbar icon the same size ([#2235](https://github.com/k2b-dev/cloud/issues/2235)) ([6f992b4](https://github.com/k2b-dev/cloud/commit/6f992b414ce01117b937aeb18c3e82eacb9829b4))
+* **editor:** keep the note still while its column is resized ([#2232](https://github.com/k2b-dev/cloud/issues/2232)) ([579a17b](https://github.com/k2b-dev/cloud/commit/579a17bfe0263e99166048cb8bff20e4003b0361))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.38.1 to 0.39.0
+
+## [0.2.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.1.1...npm-editor-v0.2.0) (2026-10-31)
+
+
+### Features
+
+* **editor:** show block anchors as quiet labels in Notebooks and the notes site ([#2186](https://github.com/k2b-dev/cloud/issues/2186)) ([a81989c](https://github.com/k2b-dev/cloud/commit/a81989c55bd7c4f78646ffa11e6347136053a9cc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.38.0 to 0.38.1
+
 ## [0.1.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.1.0...npm-editor-v0.1.1) (2026-10-31)
 
 

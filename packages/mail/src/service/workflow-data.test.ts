@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { extractMessageProtocolFacts } from "./message-protocol";
 import type { MailWorkflowTargetSnapshot } from "./workflow-data";
 import { getWorkflowSnapshot, getWorkflowSnapshots, mailWorkflowEventContext, normalizeWorkflowKeywords } from "./workflow-data";
@@ -115,3 +116,5 @@ test("hydrated snapshot contexts omit bodies and preserve the view's own xid and
     }
   }
 });
+
+useUnitClients();

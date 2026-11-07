@@ -44,8 +44,9 @@ export const keyCreationSupport = async (): Promise<"ok" | "insecure" | "no-ed25
   try {
     await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"]);
     return "ok";
-  } catch {
-    return "no-ed25519";
+  } catch (error) {
+    // An engine without Ed25519 rejects the name; an OperationError refuses only this pair, and creating tries again (#2286).
+    return error instanceof DOMException && error.name === "OperationError" ? "ok" : "no-ed25519";
   }
 };
 

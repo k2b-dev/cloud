@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeLocale, normalizeTimeZone } from "@k2b/cloud/shared";
@@ -6,7 +7,6 @@ import { workflowPathKey } from "@k2b/cloud/workflows";
 import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
 import type { Result } from "@k2b/stdlib";
 import type { QueueMessage, Worker } from "@k2b/sync";
-import { sql } from "bun";
 import type { FilterTree } from "../contracts";
 import type { GridsWorkflow } from "../workflows/contracts";
 import { listByTable as listFields } from "./fields";
@@ -23,7 +23,7 @@ import {
   recordEventWorkQueue,
   requeueRecordEventWork,
 } from "./record-events";
-import { listRecordEventWorkflows } from "./workflow-definitions";
+import { getRecordEventActiveSince, listRecordEventWorkflows } from "./workflow-definitions";
 import { machineWorkflowOwnerPrincipal } from "./workflow-machine-authority";
 import { type GridsWorkflowPrincipal, loadWorkflowUserGroupIds } from "./workflow-values";
 
@@ -262,6 +262,21 @@ export const processWorkflowRecordEventDelivery = async (
 
 export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
   let worker: Worker | undefined;
+  let activeSince: number | undefined;
+  let wakeRequested = false;
+  let waking: Promise<void> | undefined;
+  // Runtime hints, the safety reconcile and shutdown can overlap. Never start
+  // a replacement while the previous partition readers are still draining.
+  let transition = Promise.resolve();
+  const serialize = (apply: () => Promise<void>): Promise<void> => {
+    const next = transition.then(apply);
+    transition = next.catch(() => {});
+    return next;
+  };
+  const stop = async (): Promise<void> => {
+    await worker?.drain({ timeoutMs: RECORD_EVENT_WORK_LEASE_MS });
+    worker = undefined;
+  };
 
   const dispatch = async (event: GridsRecordEvent): Promise<void> => {
     const name = eventName(event);
@@ -322,16 +337,54 @@ export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
     if (failures.length > 0) throw new AggregateError(failures, "Workflow record event dispatch failed");
   };
 
+  const reconcile = (): Promise<void> =>
+    serialize(async () => {
+      const activation = await getRecordEventActiveSince();
+      if (!activation) {
+        await stop();
+        activeSince = undefined;
+        return;
+      }
+      activeSince = activation.getTime();
+      // Preserve durable partition cursors and per-record ordering across idle.
+      worker ??= await recordEventWorkQueue().process({ concurrency: RECORD_EVENT_WORK_PARTITIONS }, (delivery) =>
+        processWorkflowRecordEventDelivery(delivery, async (event) => {
+          // A newly committed activation may not be in our cached minimum yet.
+          // Never skip a recently published event (including a delayed outbox or
+          // manual replay) just because its occurrence predates that minimum.
+          if (activeSince !== undefined && Date.parse(event.occurredAt) < activeSince && delivery.publishedAt.getTime() < activeSince)
+            return;
+          await dispatch(event);
+        }),
+      );
+    });
+
+  // Runtime hints must not block the topic reader behind a partition drain.
+  // One pending refresh coalesces bursts; shutdown joins the owned task.
+  const wake = (): void => {
+    wakeRequested = true;
+    waking ??= Promise.resolve().then(async () => {
+      try {
+        do {
+          wakeRequested = false;
+          await reconcile();
+        } while (wakeRequested);
+      } catch (error) {
+        log.warn("Workflow record event reconciliation failed", { error: error instanceof Error ? error.message : String(error) });
+      } finally {
+        waking = undefined;
+      }
+    });
+  };
+
   return {
     dispatch,
-    reconcile: async (): Promise<void> => {
-      worker ??= await recordEventWorkQueue().process({ concurrency: RECORD_EVENT_WORK_PARTITIONS }, (delivery) =>
-        processWorkflowRecordEventDelivery(delivery, dispatch),
-      );
-    },
+    reconcile,
+    wake,
     stop: async (): Promise<void> => {
-      await worker?.drain({ timeoutMs: RECORD_EVENT_WORK_LEASE_MS });
-      worker = undefined;
+      wakeRequested = false;
+      await waking;
+      await serialize(stop);
     },
   };
 };

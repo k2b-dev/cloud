@@ -10,6 +10,8 @@ updated: 2026-10-30
 
 # Background authority mandates
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 A mandate records what one durable workload may ask Core to do later for a
 current user or resource service account. It is not a bearer token, does not
 grant resource access, and cannot be sent to a target application by itself.

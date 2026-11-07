@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite, testInfra, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import {
   listCapabilityExecutions,
   migrateCloudCapabilities,

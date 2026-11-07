@@ -262,3 +262,40 @@ test("new invocation mutation routes inherit OAuth scope limits and declared que
     }
   }
 });
+
+test("an unavailable resource access check returns retryable 503 without entering the invocation handler", async () => {
+  const { bindResourceAppAccess } = await import("../../_internal/app-access-resources");
+  const { appAccess, compileAppAccess } = await import("../../contracts/app-access");
+  const declaration = appAccess.resources({
+    adapters: {
+      workspace: {
+        hasAnyRight: async () => {
+          throw new Error("unavailable");
+        },
+      },
+    },
+  });
+  const stop = bindResourceAppAccess("demo", declaration);
+  const server = new Hono<AuthContext>()
+    .use(
+      requireInvocation(expected, {
+        getApp: async () => ({ id: "demo", access: compileAppAccess(declaration) }),
+        verify: async () => claims,
+        resolve: async () => ({
+          actor: { kind: "user", user },
+          accessSubject: { type: "user", userId: user.id },
+          credentialKind: "invocation",
+          scopes: ["read"],
+        }),
+      }),
+    )
+    .get("/", (c) => c.text("private invocation"));
+  try {
+    const response = await server.request("/", { headers: { authorization: `Bearer ${invocationCandidate}` } });
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("1");
+    expect(await response.json()).toMatchObject({ code: "app_access_unavailable", app: "demo" });
+  } finally {
+    stop();
+  }
+});

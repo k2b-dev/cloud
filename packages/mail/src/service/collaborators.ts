@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { type AccessUser, listUsersWithAccess, recursiveServiceAccountGroupIdsSubquery } from "@k2b/cloud/server";
-import { sql } from "bun";
 
 type SqlClient = typeof sql;
 

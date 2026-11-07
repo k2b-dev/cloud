@@ -150,12 +150,25 @@ test("all four formats preserve the same private key and --all needs an explicit
   await seedState(outDir);
   expect(renderAppKeyArtifact("inventory", privateKey, "file")).toBe(privateKey + "\n");
   expect(renderAppKeyArtifact("inventory", privateKey, "env")).toBe(`CLOUD_APP_KEY=${privateKey}\n`);
-  expect(renderAppKeyArtifact("inventory", privateKey, "compose")).toContain(`CLOUD_APP_KEY: "${privateKey}"`);
-  expect(renderAppKeyArtifact("inventory", privateKey, "k8s-secret")).toContain(`stringData:\n  CLOUD_APP_KEY: "${privateKey}"`);
+  expect(renderAppKeyArtifact("inventory", privateKey, "compose")).toContain("CLOUD_APP_KEY_FILE: /run/secrets/inventory.key");
+  expect(renderAppKeyArtifact("inventory", privateKey, "compose")).not.toContain(privateKey);
+  expect(renderAppKeyArtifact("inventory", privateKey, "k8s-secret")).toContain(`stringData:\n  app.key: "${privateKey}"`);
   for (const format of ["env", "compose", "k8s-secret"] as const) {
     const result = await enrollAppKey({ ...input(outDir), format });
     expect((await stat(result.file)).mode & 0o777).toBe(0o600);
-    expect(await readFile(result.file, "utf8")).toBe(renderAppKeyArtifact("inventory", privateKey, format));
+    expect(await readFile(result.file, "utf8")).toBe(renderAppKeyArtifact("inventory", privateKey, format, result.keyFile));
+    if (format === "compose") {
+      const compose = Bun.YAML.parse(await readFile(result.file, "utf8")) as {
+        services: Record<string, { environment: Record<string, string>; secrets: { source: string; target: string }[] }>;
+        secrets: Record<string, { file: string }>;
+      };
+      const service = compose.services["app-inventory"]!;
+      const mount = service.secrets[0]!;
+      expect(service.environment.CLOUD_APP_KEY_FILE).toBe(`/run/secrets/${mount.target}`);
+      expect(compose.secrets[mount.source]!.file).toBe(join(outDir, "inventory.key"));
+      expect(await readFile(compose.secrets[mount.source]!.file, "utf8")).toBe(privateKey + "\n");
+      expect((await stat(join(outDir, "inventory.key"))).mode & 0o777).toBe(0o600);
+    }
   }
   expect(await resolveAppKeyApps(["inventory", "oauth", "inventory"], false)).toEqual(["inventory", "oauth"]);
   expect(await resolveAppKeyApps([], true, "inventory,oauth")).toEqual(["inventory", "oauth"]);
@@ -234,4 +247,47 @@ test("create accepts explicit issuance or no grants, defaults to none, and rejec
   await expect(invoke({ grant: "oauth:issue", "no-grant": true })).rejects.toThrow("Choose either");
   await expect(invoke({ grant: "unknown" })).rejects.toThrow();
   expect(requests.length).toBe(before);
+});
+
+test("key list renders a refusal once in text and preserves it in structured output", async () => {
+  const module = defineCliCommands({ name: "admin", summary: "App keys", commands: appKeyCommands });
+  const rejection = { at: "2030-01-02T03:04:05.000Z", reason: "revoked", keyId: KEY_ID };
+  for (const output of ["text", "json"] as const) {
+    for (const lastRejectedStart of [null, rejection]) {
+      const lines: unknown[] = [];
+      const json: unknown[] = [];
+      const tables: unknown[] = [];
+      const result = { installationId: INSTALLATION_ID, items: [], lastRejectedStart };
+      const ctx: CloudCliContext = {
+        args: ["apps", "keys", "list", "inventory"],
+        flags: {},
+        options: { profile: "test", server: "https://cloud.example.test", token: "fixture", output },
+        getDefault: async () => undefined,
+        setDefault: async () => {},
+        createApiClient: () => {
+          throw new Error("Unused");
+        },
+        fetch: async () => Response.json(result),
+        readJson: async (response) => response.json(),
+        print: (line) => {
+          lines.push(line);
+        },
+        write: async () => {},
+        error: () => {},
+        json: (value) => {
+          json.push(value);
+        },
+        jsonLine: () => {},
+        table: (rows) => {
+          tables.push(rows);
+        },
+      };
+      await module.run(ctx);
+      expect(json).toEqual(output === "json" ? [result] : []);
+      expect(tables).toEqual(output === "text" ? [[]] : []);
+      expect(lines).toEqual(
+        output === "text" && lastRejectedStart ? [`Last rejected start: ${rejection.at} · revoked · key ${KEY_ID}`] : [],
+      );
+    }
+  }
 });

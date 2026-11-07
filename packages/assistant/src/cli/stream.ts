@@ -18,11 +18,35 @@ export type AssistantTurnStreamResult = {
   text: string;
   messages: AiStoredMessage[];
   pending?: { type: "approval" | "client_tool"; callId: string; name: string };
+  /** The chat title in the newest saved state this stream received. */
+  title?: string;
+};
+
+/**
+ * What this client did with each local call, by `conversationId:turnId:callId`. It outlives one stream, so a later
+ * prompt that follows the same turn sends the earlier result again instead of running the call twice.
+ */
+type ClientCallReceipt = { state: "running" } | { state: "ran"; result: unknown } | { state: "delivered" };
+export type ClientCallReceipts = Map<string, ClientCallReceipt>;
+/**
+ * Delivered receipts kept per process. A finished turn may still reach another stream as an older snapshot, so its
+ * receipts stay until far more calls than one session runs in that time; receipts still to deliver always stay.
+ */
+export const CLIENT_CALL_RECEIPTS_MAX = 1_000;
+export const keepClientCallReceipt = (receipts: ClientCallReceipts, key: string, receipt: ClientCallReceipt) => {
+  receipts.delete(key);
+  receipts.set(key, receipt);
+  if (receipts.size <= CLIENT_CALL_RECEIPTS_MAX) return;
+  for (const [oldest, kept] of receipts) {
+    if (receipts.size <= CLIENT_CALL_RECEIPTS_MAX) break;
+    if (kept.state === "delivered") receipts.delete(oldest);
+  }
 };
 
 export type AssistantClientTools = {
   names: ReadonlySet<string>;
   run: (call: { name: string; args: unknown; callId: string }, signal: AbortSignal) => Promise<unknown>;
+  receipts: ClientCallReceipts;
 };
 
 type PrintedBlock = { id?: string; text: string; jsonLinks?: ReturnType<typeof createCloudLinkRewriter> };
@@ -36,7 +60,6 @@ export type AssistantTurnOutput = {
   renderedTables: Set<string>;
   namedFiles: Set<string>;
   printedPlans: Set<string>;
-  executedClientCalls: Set<string>;
 };
 
 export const createAssistantTurnOutput = (): AssistantTurnOutput => ({
@@ -47,7 +70,6 @@ export const createAssistantTurnOutput = (): AssistantTurnOutput => ({
   renderedTables: new Set(),
   namedFiles: new Set(),
   printedPlans: new Set(),
-  executedClientCalls: new Set(),
 });
 
 const norm = (text: string): string => text.trimStart();
@@ -73,6 +95,19 @@ const presentedPath = (name: string, result: unknown): string | null =>
 const isTerminalStatus = (status: string): status is "completed" | "failed" | "aborted" =>
   status === "completed" || status === "failed" || status === "aborted";
 
+/** A consumer that stopped reading must not keep a Stop from ending the stream. */
+const untilDrainedOrStopped = (drained: Promise<void> | undefined, signal: AbortSignal): Promise<void> | undefined =>
+  drained &&
+  new Promise<void>((resolve) => {
+    const done = () => {
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    signal.addEventListener("abort", done, { once: true });
+    if (signal.aborted) done();
+    void drained.then(done, done);
+  });
+
 export const streamAssistantTurn = async (input: {
   ctx: CloudCliContext;
   conversationId: string;
@@ -86,6 +121,8 @@ export const streamAssistantTurn = async (input: {
   onToolBlock?: (block: Extract<AiTurnBlock, { kind: "tool" }>) => void;
   onThinkingDelta?: (delta: string) => void;
   waitingApprovals?: ReadonlySet<string>;
+  /** Awaited after every event, so a consumer that falls behind pauses reading instead of queueing without bound. */
+  drain?: () => Promise<void> | undefined;
 }): Promise<AssistantTurnStreamResult> => {
   const { ctx, conversationId } = input;
   const approvedTools = new Set(input.approveTools ?? []);
@@ -106,6 +143,7 @@ export const streamAssistantTurn = async (input: {
   const output = input.output ?? createAssistantTurnOutput();
   const { blocks: printedBlocks, ids, toolStatuses, renderedTables, namedFiles } = output;
   const blocks = new Map<string, AiTurnBlock>();
+  let title: string | undefined;
   const writeText = (text: string) => {
     output.links ??= createCloudLinkRewriter(ctx.options.server);
     const rewritten = output.links.push(text);
@@ -251,14 +289,19 @@ export const streamAssistantTurn = async (input: {
         output.closed = true;
       }
     }
-    return { ...result, text: rewriteText(result.text), messages: rewriteMessages(result.messages) };
+    return {
+      ...result,
+      text: rewriteText(result.text),
+      messages: rewriteMessages(result.messages),
+      ...(title !== undefined ? { title } : {}),
+    };
   };
 
   const handleToolBlock = async (block: Extract<AiTurnBlock, { kind: "tool" }>): Promise<AssistantTurnStreamResult | null> => {
-    input.onToolBlock?.(block);
     const previous = toolStatuses.get(block.callId);
     // A resumed attempt replays finished calls as running first; a settled call never goes back.
     if ((previous === "completed" || previous === "failed" || previous === "rejected") && block.status === "running") return null;
+    input.onToolBlock?.(block);
     const changed = previous !== block.status;
     if (changed && ctx.options.output === "text") flushLinks();
     const inline = input.clientTools?.names.has(block.name) === true;
@@ -320,19 +363,29 @@ export const streamAssistantTurn = async (input: {
       };
     }
     if (block.status === "awaiting_client" && inline && input.clientTools) {
-      if (output.executedClientCalls.has(block.callId)) return null;
-      output.executedClientCalls.add(block.callId);
-      let result: unknown;
-      try {
-        result = await input.clientTools.run({ name: block.name, args: block.args, callId: block.callId }, abort.signal);
-      } catch (error) {
-        const errorText = (error instanceof Error ? error.message : String(error)).slice(0, 2000);
-        result =
-          block.name === "local_bash"
-            ? { status: "failed", exitCode: null, stdout: "", stderr: errorText, truncated: false }
-            : block.name === "local_move"
-              ? { status: "failed", moved: [], conflicts: [], error: errorText }
-              : { status: "failed", error: errorText };
+      const { receipts } = input.clientTools;
+      const key = `${conversationId}:${targetTurnId}:${block.callId}`;
+      let receipt = receipts.get(key);
+      // Sent already, or another prompt of this process runs it and sends its result.
+      if (receipt?.state === "delivered" || receipt?.state === "running") return null;
+      if (receipt) {
+        if (ctx.options.output === "text") ctx.error(terminalSafeText(`${block.name}: already ran, sending its result again`));
+      } else {
+        keepClientCallReceipt(receipts, key, { state: "running" });
+        let result: unknown;
+        try {
+          result = await input.clientTools.run({ name: block.name, args: block.args, callId: block.callId }, abort.signal);
+        } catch (error) {
+          const errorText = (error instanceof Error ? error.message : String(error)).slice(0, 2000);
+          result =
+            block.name === "local_bash"
+              ? { status: "failed", exitCode: null, stdout: "", stderr: errorText, truncated: false }
+              : block.name === "local_move"
+                ? { status: "failed", moved: [], conflicts: [], error: errorText }
+                : { status: "failed", error: errorText };
+        }
+        receipt = { state: "ran", result };
+        keepClientCallReceipt(receipts, key, receipt);
       }
       if (abort.signal.aborted)
         return {
@@ -343,12 +396,14 @@ export const streamAssistantTurn = async (input: {
           text: emittedText,
           messages: [],
         };
+      // Cloud accepts the same result again, so a failed delivery is retried later, never the call.
       await ctx.readJson(
         await ctx.fetch(
           `${AI_API}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(targetTurnId!)}/actions/${encodeURIComponent(block.callId)}`,
-          jsonRequest("POST", { type: "tool_result", result }),
+          jsonRequest("POST", { type: "tool_result", result: receipt.result }),
         ),
       );
+      keepClientCallReceipt(receipts, key, { state: "delivered" });
       return null;
     }
     if (block.status === "awaiting_client" && CODE_RUNTIME_TOOL_NAMES.some((name) => name === block.name)) {
@@ -394,6 +449,7 @@ export const streamAssistantTurn = async (input: {
 
   const handleEvent = async (event: AiStreamSseEvent): Promise<AssistantTurnStreamResult | null> => {
     if (event.type === "state") {
+      title = event.conversation?.title ?? title;
       if (!targetTurnId) {
         targetTurnId = event.activeTurn?.turnId ?? null;
         if (!targetTurnId) {
@@ -457,7 +513,15 @@ export const streamAssistantTurn = async (input: {
       const currentText = existing && (existing.kind === "text" || existing.kind === "thinking") ? existing.text : "";
       const block = { id: event.blockId, kind: event.blockKind, text: currentText + event.delta };
       blocks.set(event.blockId, block);
-      if (event.blockKind === "text") emitLiveText(block.id, block.text);
+      const printed = event.blockKind === "text" ? ids.get(block.id) : undefined;
+      // The common case continues the last printed block: append the delta without comparing the whole text again.
+      if (printed && printed === printedBlocks.at(-1) && printed.text === currentText) {
+        if (!event.delta) return null;
+        printed.text = block.text;
+        emittedText += event.delta;
+        if (ctx.options.output === "text") writeText(event.delta);
+        if (printed.id !== undefined) emitJsonText(printed, event.delta);
+      } else if (event.blockKind === "text") emitLiveText(block.id, block.text);
       else {
         input.onThinkingDelta?.(event.delta);
         emitJsonLine({ type: "thinking_delta", blockId: event.blockId, delta: event.delta });
@@ -538,6 +602,7 @@ export const streamAssistantTurn = async (input: {
           if (next.done) break;
           const event = next.value;
           const result = await handleEvent(event);
+          await untilDrainedOrStopped(input.drain?.(), abort.signal);
           if (result) {
             if (result.status !== "needs_attention") {
               abort.abort();

@@ -1,6 +1,6 @@
 import SettingsSaveOutcome from "@k2b/cloud/ssr/SettingsSaveOutcome";
 import { createSettingsDraft, SaveRejected, saveFailure } from "@k2b/cloud/ssr/settings-draft";
-import { Checkbox, NoticeCard, TagsInput, TextInput, useLocale } from "@k2b/ui";
+import { Checkbox, NoticeCard, SettingsField, TagsInput, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { responseErrorMessage } from "../../frontend/health-webhook-queries";
@@ -67,7 +67,7 @@ export default function HealthCheckForm(props: { values: HealthCheckValues; unre
     form.update(patch);
   };
   return (
-    <div class="flex max-w-2xl flex-col gap-4 px-[var(--ui-space-shell)] pb-[var(--ui-space-shell)]">
+    <div class="flex flex-col gap-4 pb-[var(--ui-space-shell)]">
       <SettingsSaveOutcome outcome={form.outcome()} onRetry={() => void form.save()} />
       <Show when={keys.some((key) => unreadable()[key])}>
         <NoticeCard tone="warning" title={g().unreadableTitle} detail={g().unreadableDetail}>
@@ -83,25 +83,35 @@ export default function HealthCheckForm(props: { values: HealthCheckValues; unre
           </For>
         </NoticeCard>
       </Show>
-      <TextInput
-        label={t().checkSchedule}
-        description={t().checkScheduleHelp}
-        icon="ti ti-calendar-time"
-        value={() => form.draft().schedule}
-        onValueChange={(schedule) => update({ schedule })}
-        error={() => form.errors().schedule ?? refused().schedule}
-        disabled={disabled("schedule")}
-        required
-      />
-      <TagsInput
-        label={t().webhookTargets}
-        description={t().webhookTargetsHelp}
-        placeholder={t().webhookTargetsPlaceholder}
-        value={() => form.draft().targets}
-        onValueChange={(targets) => update({ targets })}
-        error={() => refused().targets}
-        disabled={disabled("targets")}
-      />
+      <div class="flex flex-col">
+        <SettingsField label={t().checkSchedule} description={t().checkScheduleHelp} error={undefined} width="medium">
+          {(control) => (
+            <TextInput
+              aria-label={t().checkSchedule}
+              aria-describedby={control.describedBy()}
+              icon="ti ti-calendar-time"
+              value={() => form.draft().schedule}
+              onValueChange={(schedule) => update({ schedule })}
+              error={() => form.errors().schedule ?? refused().schedule}
+              disabled={disabled("schedule")}
+              required
+            />
+          )}
+        </SettingsField>
+        <SettingsField label={t().webhookTargets} description={t().webhookTargetsHelp} error={undefined}>
+          {(control) => (
+            <TagsInput
+              aria-label={t().webhookTargets}
+              aria-describedby={control.describedBy()}
+              placeholder={t().webhookTargetsPlaceholder}
+              value={() => form.draft().targets}
+              onValueChange={(targets) => update({ targets })}
+              error={() => refused().targets}
+              disabled={disabled("targets")}
+            />
+          )}
+        </SettingsField>
+      </div>
     </div>
   );
 }

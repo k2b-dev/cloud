@@ -206,14 +206,18 @@ domTest("one app opens straight into its folders; Save waits for a writable fold
   }
 });
 
-domTest("several apps start at the list of places to save, and Cancel resolves nothing", async () => {
+domTest("several apps sit beside the first one's folders, a click opens another, and Cancel resolves nothing", async () => {
   const dom = createDomTestHarness();
+  const { fetch } = provider();
   try {
     const vault = { ...drive, appId: "vault", name: "Vault" };
-    const { result, row, saving, button } = await open(dom, [drive, vault]);
+    const { result, row, saving, button } = await open(dom, [drive, vault], fetch);
     expect(saving.label("en", { all: true })).toBe("Save all to…");
-    expect(row("Drive")).toBeDefined();
-    expect(row("Vault")).toBeDefined();
+    expect(button("Drive")?.getAttribute("aria-current")).toBe("true");
+    expect(button("Vault")?.getAttribute("aria-current")).toBeNull();
+    expect(row("Home")).toBeDefined();
+    button("Vault")?.click();
+    expect(button("Vault")?.getAttribute("aria-current")).toBe("true");
     expect(button("Save")?.disabled).toBe(true);
     button("Cancel")?.click();
     expect(await result).toEqual([]);
@@ -240,7 +244,8 @@ domTest("a catalog that refused the page is asked again, so a renewed session fi
     const { fetch } = provider();
     const saving = createFileSaving(list, () => ({ locale: "en", fetch }));
     const result = saving.saveFiles([{ name: "a.txt", content: new Blob(["a"]) }]);
-    for (let attempt = 0; attempt < 20 && !dom.document.querySelector("dialog[open] [role='gridcell']"); attempt++) await settle();
+    // Bounded by the test's timeout: the lazy chunk and the refreshed catalog decide when the folder shows.
+    while (!dom.document.querySelector("dialog[open] [role='gridcell']")) await Bun.sleep(10);
     const dialog = dom.document.querySelector("dialog[open] .cloud-file-chooser");
     expect(loads).toBe(2);
     expect(dialog?.textContent).not.toContain("No app can store files for you");

@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import {
   type CreateTaskChecklistEntry,
   MAX_TASK_CHECKLIST_ENTRIES,
@@ -75,6 +76,18 @@ export const list = async (params: { itemId: string }): Promise<SpaceTaskCheckli
     LIMIT ${MAX_TASK_CHECKLIST_ENTRIES}
   `;
   return rows.map(mapEntry);
+};
+
+/** Checked and total entries of each task's checklist, in one query; tasks without a checklist are absent. */
+export const progress = async (params: { itemIds: readonly string[] }): Promise<Map<string, { done: number; total: number }>> => {
+  if (params.itemIds.length === 0) return new Map();
+  const rows = await sql<{ item_id: string; done: number; total: number }[]>`
+    SELECT entry.item_id, COUNT(*) FILTER (WHERE entry.completed)::int AS done, COUNT(*)::int AS total
+    FROM spaces.item_checklist_entries entry
+    WHERE entry.item_id = ANY(${toPgUuidArray([...params.itemIds])}::uuid[])
+    GROUP BY entry.item_id
+  `;
+  return new Map(rows.map((row) => [row.item_id, { done: row.done, total: row.total }]));
 };
 
 export const create = async (params: {

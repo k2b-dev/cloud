@@ -15,11 +15,11 @@ import {
   aiProviderTypeLabel,
   formatAiTime,
 } from "./presentation";
-import { HeaderRows } from "./provider-dialogs";
+import { BoundaryHelp, HeaderRows } from "./provider-dialogs";
 import { AiProviderNotice } from "./provider-notice";
 import { AiProviderDetailSchema } from "./read-shapes";
 
-type Draft = { label: string; baseUrl: string; dataBoundary: "hosted" | "private" };
+type Draft = { label: string; baseUrl: string; dataBoundary: AiProvider["dataBoundary"] };
 type Header = { name: string; value: string; stored?: boolean };
 const draftOf = (provider: AiProvider): Draft => ({
   label: provider.label,
@@ -162,7 +162,11 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
             fields={[
               { key: "label", label: t().name },
               { key: "baseUrl", label: t().baseUrl },
-              { key: "dataBoundary", label: t().dataBoundary, format: (value) => (value === "private" ? t().private : t().hosted) },
+              {
+                key: "dataBoundary",
+                label: t().dataBoundary,
+                format: (value) => (value === "private" ? t().private : value === "restricted" ? t().boundaryRestricted : t().hosted),
+              },
             ]}
             base={draftOf(base())}
             mine={draft()}
@@ -236,22 +240,33 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
         </Show>
         <div class="grid gap-1.5">
           <span class="text-sm font-medium">{t().dataBoundary}</span>
-
-          <span class="inline-flex">
-            <SegmentedControl
-              ariaLabel={t().dataBoundary}
-              value={() => draft().dataBoundary}
-              onValueChange={(dataBoundary) => update({ dataBoundary })}
-              disabled={saving()}
-              options={[
-                { value: "hosted", label: t().hosted, icon: "ti ti-world" },
-                { value: "private", label: t().private, icon: "ti ti-lock" },
-              ]}
-            />
-          </span>
-          <p class="text-xs text-(--k2b-text-muted)">
-            {draft().dataBoundary === "private" ? t().boundaryHelpPrivate : t().boundaryHelpHosted}
-          </p>
+          <Show
+            when={base().dataBoundary !== "restricted"}
+            fallback={
+              <>
+                <span class="inline-flex items-center gap-2 text-sm">
+                  <i class="ti ti-shield-off text-(--k2b-warning-text)" aria-hidden="true" />
+                  {t().boundaryRestricted}
+                </span>
+                <p class="text-xs text-(--k2b-warning-text)">{t().boundaryHelpRestricted}</p>
+                <p class="text-xs text-(--k2b-text-muted)">{t().boundaryFixed}</p>
+              </>
+            }
+          >
+            <span class="inline-flex">
+              <SegmentedControl
+                ariaLabel={t().dataBoundary}
+                value={() => draft().dataBoundary}
+                onValueChange={(dataBoundary) => update({ dataBoundary })}
+                disabled={saving()}
+                options={[
+                  { value: "hosted", label: t().hosted, icon: "ti ti-world" },
+                  { value: "private", label: t().private, icon: "ti ti-lock" },
+                ]}
+              />
+            </span>
+            <BoundaryHelp t={t()} boundary={draft().dataBoundary} options={["hosted", "private"]} />
+          </Show>
         </div>
         <Show when={info().headers}>
           <HeaderRows t={t()} headers={headers()} onChange={setHeaders} disabled={saving()} />

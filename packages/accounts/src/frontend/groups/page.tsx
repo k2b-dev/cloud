@@ -41,12 +41,7 @@ export default ssr<AuthContext>(async (c) => {
       provider: listState.provider || undefined,
     },
   });
-  const pendingRequestsPage = isAdmin
-    ? await accountsService.accountRequest.list({
-        access: { userId: sessionUser.id, isAdmin: true },
-        filter: { status: "pending" },
-      })
-    : { total: 0 };
+  const pendingRequests = isAdmin ? await accountsService.accountRequest.countPending() : 0;
   const totalPages = Math.max(1, Math.ceil(groupsPage.total / perPage));
   // Deleting a group, or an old link, can leave the requested page past the end; open the last page instead.
   if (listState.page > totalPages) return c.redirect(buildGroupsUrl({ ...listState, page: totalPages }, { defaultScope }));
@@ -64,7 +59,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.groups }]}>
-      <AccountsWorkspace active="groups" isAdmin={isAdmin} pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-groups">
+      <AccountsWorkspace active="groups" isAdmin={isAdmin} pendingRequests={pendingRequests} scrollPreserveKey="accounts-groups">
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-groups-title">
             <h1 class="text-base font-semibold text-primary">{t.groups}</h1>

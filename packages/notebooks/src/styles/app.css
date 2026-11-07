@@ -126,8 +126,16 @@
 .k2b-ui .notebook-sidebar-chip.k2b-button {
   flex: none;
 }
-.k2b-ui .notebook-sidebar-chip.k2b-button:focus-visible {
-  outline-offset: calc(-1 * var(--k2b-focus-width));
+/* Quick filters read like FilterChip: the field edge at rest, drawn as the button's 1 px border plus a 1 px inset of
+   the same colour, so a state never changes the chip's size. Focus turns the edge blue inside the chip. */
+.k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button {
+  --k2b-edge-color: var(--k2b-edge);
+  border-color: var(--k2b-edge-color);
+  box-shadow: inset 0 0 0 1px var(--k2b-edge-color);
+}
+.k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:focus-visible {
+  --k2b-edge-color: var(--k2b-edge-focus);
+  outline: none;
 }
 .notebook-sidebar-chip > span {
   max-width: 8rem;
@@ -137,12 +145,22 @@
   color: var(--k2b-text-muted);
   font-size: 0.625rem;
 }
-/* A chosen filter and the list header it opened share the navigation fill of an active filter chip. */
-.k2b-ui .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]),
-.k2b-ui .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]):not(:disabled):hover,
+/* A chosen filter and the list header it opened take the selected edge and fill of an active filter chip. */
+.k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]) {
+  --k2b-edge-color: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
+  color: var(--k2b-app-workspace-active);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+}
+.k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]):not(:disabled):hover {
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-hover-fill), var(--k2b-surface));
+}
+.k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]):focus-visible {
+  --k2b-edge-color: var(--k2b-edge-focus);
+}
 .notebook-sidebar-filter {
   color: var(--k2b-app-workspace-active);
-  background: var(--k2b-app-workspace-selected);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
 }
 .notebook-sidebar-filter {
   display: flex;
@@ -181,6 +199,11 @@
 @media (forced-colors: active) {
   .k2b-ui .notebook-sidebar-chip.k2b-button:is([aria-pressed="true"], [aria-current="true"]) {
     outline: 1px solid Highlight;
+  }
+
+  .k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:focus-visible {
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: calc(-1 * var(--k2b-focus-width));
   }
 }
 
@@ -307,21 +330,15 @@
     --notebook-measure: 100%;
   }
 }
-/* The button that hides or shows the navigation sidebar beside the editor
-   and the graph: the sidebar is a column from a 64 rem app host. Below that
-   the workspace head's button opens it as an overlay, so this button only
-   brings a hidden navigation back (from 48 rem). Phones keep the header's
-   menu. */
+/* The navigation button in the editor's and the graph's toolbar: those pages
+   draw no workspace head, so from 48 rem it opens the overlay navigation below
+   a 64 rem app host and shows or hides the column from there. Phones keep the
+   header's menu. */
 .notebooks-navigation-toggle {
   display: none;
   flex-shrink: 0;
 }
 @media (min-width: 48rem) {
-  .notebooks-navigation-toggle[data-navigation-hidden] {
-    display: flex;
-  }
-}
-@container k2b-app-area (min-width: 64rem) {
   .notebooks-navigation-toggle {
     display: flex;
   }
@@ -932,7 +949,6 @@
   min-height: 2rem;
   align-items: center;
   gap: 0.625rem;
-  margin-inline-start: -1.875rem;
 }
 
 .k2b-ui .notebook-activity-skeleton > span {
@@ -970,7 +986,6 @@
   min-height: 2rem;
   align-items: center;
   gap: 0.625rem;
-  margin-inline-start: -1.875rem;
   color: var(--k2b-text-secondary);
   font-size: 0.75rem;
 }
@@ -1783,9 +1798,6 @@
   font-size: 0.78125rem;
   white-space: nowrap;
 }
-.k2b-ui .notebook-graph__list .k2b-data-table__row[data-selected="true"] {
-  background: var(--k2b-row-selected);
-}
 .notebook-graph__list-title {
   color: inherit;
   font-weight: 600;
@@ -1979,9 +1991,6 @@
   height: 2.25rem;
   align-items: flex-end;
   padding: 0 0 0.375rem calc(var(--notebook-graph-lane) + 1.125rem);
-  color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
-  font-weight: 600;
   white-space: nowrap;
 }
 /* Fixed height and weight: hover, focus, highlight and search change only colours, so no row ever moves. */
@@ -2227,15 +2236,17 @@
   font-size: 14px;
   line-height: 1.6;
 }
-.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) > * { margin-block: 0; }
-.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) > h1 {
+/* Its blocks ask their siblings, not the content its children: a `:has()` before a part that names nothing
+   restyles the whole page on every DOM change (#2419). */
+.notebook-book-content:not(.cm-query-block-preview) > :is(:has(~ figure.notebook-map:not([data-map-print])), figure.notebook-map:not([data-map-print]), figure.notebook-map:not([data-map-print]) ~ *) { margin-block: 0; }
+.notebook-book-content:not(.cm-query-block-preview) > h1:is(:has(~ figure.notebook-map:not([data-map-print])), figure.notebook-map:not([data-map-print]) ~ h1) {
   margin-block: 6px 2px;
   font-size: 28px;
   font-weight: 700;
   line-height: 1.45;
   letter-spacing: -.01em;
 }
-.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) > h2 {
+.notebook-book-content:not(.cm-query-block-preview) > h2:is(:has(~ figure.notebook-map:not([data-map-print])), figure.notebook-map:not([data-map-print]) ~ h2) {
   margin-top: 14px;
   font-size: 19px;
   font-weight: 700;
@@ -2847,4 +2858,47 @@
   align-self: flex-start;
   margin-bottom: 0.25rem;
   font-size: 0.8125rem;
+}
+
+/* Templates below the title of an empty note. They lie over the empty page, out of the text flow, so the note never
+   moves when they appear or leave; the editor places them under the title line. */
+.notebook-empty-templates {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  max-width: min(100%, 22rem);
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-top: 1rem;
+  padding-inline: 0.25rem;
+  /* Only the buttons take presses; elsewhere a press reaches the page and places the caret as before. */
+  pointer-events: none;
+}
+.notebook-empty-templates button {
+  pointer-events: auto;
+}
+.notebook-empty-templates__label,
+.notebook-empty-templates__status {
+  display: flex;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-empty-templates__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.notebook-empty-templates__row {
+  width: 100%;
+  color: var(--k2b-text-muted);
+}
+.notebook-empty-templates__row:hover,
+.notebook-empty-templates__row:focus-visible {
+  color: inherit;
 }

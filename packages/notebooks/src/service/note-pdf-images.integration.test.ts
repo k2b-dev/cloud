@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { request } from "node:http";
+import { sql } from "@k2b/cloud";
 import { requestPublicHttps, resolvePublicNetworkAddresses } from "@k2b/cloud/services";
 import * as pdfModule from "@k2b/cloud/services/pdf";
 import { type GotenbergConfig, preparePdfImage } from "@k2b/cloud/services/pdf";
-import { sql } from "bun";
 import sharp from "sharp";
 import { startGotenbergTrap } from "../../../../scripts/fixtures/gotenberg-trap";
 import { pdfImages, pdfText } from "../../../../scripts/fixtures/pdf-info";

@@ -1,5 +1,4 @@
 import { afterAll } from "bun:test";
-import { sql } from "bun";
 import { createMigratedDatabase, initializeTestPlatform, requireInfra, testInfra } from "../../../scripts/fixtures/test-infra";
 import { deleteTestNamespace } from "../../../scripts/fixtures/test-sync";
 import { closePlatformClients } from "../../cloud/src/runtime/clients";
@@ -39,7 +38,6 @@ if (testInfra.database && testInfra.nats) {
       await deleteTestNamespace(namespace);
     } finally {
       await closePlatformClients();
-      await sql.close().catch(() => undefined);
       await database.drop();
     }
   });

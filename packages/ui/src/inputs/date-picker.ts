@@ -121,6 +121,19 @@ export const toDateTimeValue = (date: string, time: string, context?: DateContex
   return local;
 };
 
+/**
+ * The value an applied draft commits. An untouched draft keeps the exact value: the panel shows minutes in the
+ * picker's zone, and a wall time that a daylight-saving change repeats names two instants, so rebuilding it could
+ * move the value by an hour or drop its seconds.
+ */
+export const draftDateTimeValue = (value: string | null | undefined, date: string, time: string, context?: DateContext): string | null => {
+  if (value) {
+    const current = splitDateTime(value, context);
+    if (current.date === date && current.time === time) return value;
+  }
+  return toDateTimeValue(date, time, context);
+};
+
 export const formatDateTimeValue = (value: string | null | undefined, context?: DateContext): string =>
   value ? dates.formatDateTime(value, pickerContext(context)) : "";
 

@@ -1,6 +1,4 @@
 import type { z } from "zod";
-import type { AppPwaActor } from "../../app-pwa/contracts";
-import type { AccessSubject, CapabilityExecutionContext, RequestActor } from "../../contracts";
 import {
   GeoAutocompleteDataSchema,
   type GeoAutocompleteInput,
@@ -26,28 +24,10 @@ import { cutGeoWindow, decodePolyline6, locateOnGeoLine, simplifyGeoLine } from 
 import { createGeoRouteService } from "./route-service";
 import { type GeoConfig, geoPlan, readGeoConfig } from "./settings";
 
-export type GeoContext = Partial<Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale" | "signal" | "requestId">>;
-/** Internal, narrow App-PWA autocomplete adapter; never a RequestActor or capability caller. */
-export type AppPwaGeoContext = { actor: AppPwaActor; locale?: string; signal?: AbortSignal; requestId?: string };
-type GeoCallContext = GeoContext | AppPwaGeoContext;
-export const geoIdentity = (context: GeoContext): { actor: RequestActor; accessSubject: AccessSubject } => {
-  const { actor, accessSubject } = context;
-  if (
-    !actor ||
-    !accessSubject ||
-    !(actor.kind === "user" ? actor.user?.id : actor.kind === "service_account" ? actor.serviceAccount?.id : undefined) ||
-    !(accessSubject.type === "user" ? accessSubject.userId : accessSubject.serviceAccountId)
-  )
-    throw new GeoError("GEO_FORBIDDEN");
-  return { actor, accessSubject };
-};
-const geoCallIdentity = (context: GeoCallContext): { actor: RequestActor | AppPwaActor; accessSubject: AccessSubject } => {
-  if (context.actor?.kind === "device" || context.actor?.kind === "visit") {
-    if (!context.actor.ownerUserId) throw new GeoError("GEO_FORBIDDEN");
-    return { actor: context.actor, accessSubject: { type: "user", userId: context.actor.ownerUserId } };
-  }
-  return geoIdentity({ actor: context.actor, accessSubject: "accessSubject" in context ? context.accessSubject : undefined });
-};
+export { type AppPwaGeoContext, type GeoContext, geoIdentity } from "./identity";
+
+import { type AppPwaGeoContext, type GeoCallContext, type GeoContext, geoCallIdentity, geoIdentity } from "./identity";
+
 const bound = (name: string, value: number, min: number, max: number, integer = false) => {
   if (!Number.isFinite(value) || value > max || value < min || (integer && !Number.isInteger(value)))
     limitExceeded(name, value < min ? min : max, value);
@@ -90,7 +70,6 @@ export const createGeoService = (
   const budgets = (settings: GeoConfig) => ({
     timezone: settings.timezone,
     monthlyCredits: settings.monthlyCredits,
-    personDailyCredits: settings.personDailyCredits,
   });
   const recordTransition = async (
     event: "monthly_budget_exhausted" | "provider_key_rejected" | "route_cost_overrun",
@@ -129,8 +108,6 @@ export const createGeoService = (
     const identity = geoCallIdentity(context);
     const locale = context.locale ?? "en";
     const key = geoCacheKey(fn, cacheInput, locale);
-    const hit = await cache.get(key, schema);
-    if (hit !== null) return hit;
     const deadline = AbortSignal.timeout(GEO_TIMEOUT_MS[fn]);
     const signal = context.signal ? AbortSignal.any([context.signal, deadline]) : deadline;
     const release = await bucket.acquire(fn, geoPlan(settings).rps);
@@ -138,6 +115,8 @@ export const createGeoService = (
     let settlementAttempted = false;
     const reference = geoReferenceCost({ fn, limit });
     try {
+      const hit = await cache.get(key, schema);
+      if (hit !== null) return hit;
       // A canceled request which has not been sent never reserves provider credit.
       signal.throwIfAborted();
       reserved = await ledger.reserve(
@@ -216,6 +195,9 @@ export const createGeoService = (
       geoIdentity(context);
       return autocomplete(input, context);
     },
+    // The internal-only Core route supplies no person or application authority.
+    autocompleteAnonymous: (input: GeoAutocompleteInput, context: Pick<GeoContext, "locale" | "signal" | "requestId">) =>
+      autocomplete(input, context),
     // Only the App-PWA service calls this after locking the pairing and optional visit authority.
     autocompleteForAppPwa: (input: GeoAutocompleteInput, context: AppPwaGeoContext) => autocomplete(input, context),
     async geocode(input: GeoGeocodeInput, context: GeoContext) {

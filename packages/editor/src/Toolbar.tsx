@@ -1,7 +1,21 @@
 import { EditorView } from "@codemirror/view";
-import { Dropdown, type DropdownPosition, IconButton, Tooltip, Toolbar as UiToolbar, useLocale } from "@k2b/ui";
-import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import {
+  createDictation,
+  type DictationAlternative,
+  DictationBar,
+  DictationButton,
+  type DictationSource,
+  Dropdown,
+  type DropdownPosition,
+  dictationBarShown,
+  IconButton,
+  Tooltip,
+  Toolbar as UiToolbar,
+  useLocale,
+} from "@k2b/ui";
+import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { ariaShortcut, shortcutLabel } from "./actions";
+import { dictationTarget } from "./dictation";
 import type { EditorAction, EditorHandle } from "./editor-state";
 import { editorMessages } from "./messages";
 
@@ -42,6 +56,12 @@ export type ToolbarProps = {
    * and give up the same height in the page above it, so the caret line stays visible.
    */
   liftAboveKeyboard?: boolean;
+  /**
+   * Live dictation as the first control after the action row, so it never scrolls away. While it runs, the dictation
+   * bar stands in for the action row in the same line; on a phone it fills the line. Without a source there is no
+   * microphone.
+   */
+  dictation?: { source: DictationSource; alternative?: DictationAlternative };
 };
 
 const isMenu = (item: ToolbarItem): item is ToolbarMenu => "kind" in item && item.kind === "menu";
@@ -114,6 +134,22 @@ export function Toolbar(props: ToolbarProps) {
   const [coarse, setCoarse] = createSignal(false);
   const [lift, setLift] = createSignal(0);
   let root!: HTMLDivElement;
+  const dictation = createDictation({
+    source: {
+      start: (options) => props.dictation!.source.start(options),
+      devices: () => props.dictation?.source.devices() ?? Promise.resolve([]),
+    },
+    get alternative() {
+      return props.dictation?.alternative;
+    },
+    target: dictationTarget(props.editor),
+    disabled: () => !props.dictation || !props.editor.state() || Boolean(props.editor.state()?.readOnly),
+  });
+  // A note that turns read-only, or a host that drops the source, ends dictation; the words so far stay.
+  // A memo compares the value, so ordinary edits never end it.
+  const dictationScope = createMemo(() => `${Boolean(props.dictation)}:${Boolean(props.editor.state()?.readOnly)}`);
+  createEffect(on(dictationScope, () => dictation.end(), { defer: true }));
+  const dictating = () => Boolean(props.dictation) && dictationBarShown(dictation);
 
   onMount(() => {
     const pointer = window.matchMedia("(pointer: coarse)");
@@ -171,34 +207,42 @@ export function Toolbar(props: ToolbarProps) {
     <div
       ref={root}
       class={props.class ?? "k2b-editor-toolbar flex min-w-0 items-center gap-2 text-dimmed"}
+      // The stylesheet sizes every control's icon here, the host's start and end controls included.
+      data-k2b-editor-toolbar=""
+      data-dictating={dictating() ? "" : undefined}
       style={{ "margin-bottom": lift() ? `${lift()}px` : undefined }}
       on:mousedown={(event) => event.preventDefault()}
     >
       {props.start}
-      <UiToolbar label={props.label ?? t().formatting} class={props.toolsClass ?? "no-scrollbar min-w-0 flex-1 overflow-x-auto"}>
-        <For each={props.groups}>
-          {(group, index) => (
-            <>
-              <UiToolbar.Group label={group.label} class={group.class ?? "shrink-0"}>
-                <For each={group.items}>
-                  {(item) =>
-                    isCustom(item) ? (
-                      item.render()
-                    ) : isMenu(item) ? (
-                      <ToolbarMenuButton editor={props.editor} menu={item} coarse={coarse()} />
-                    ) : (
-                      <ToolbarButton editor={props.editor} action={item} />
-                    )
-                  }
-                </For>
-              </UiToolbar.Group>
-              <Show when={index() < props.groups.length - 1}>
-                <UiToolbar.Separator class={group.separatorClass} />
-              </Show>
-            </>
-          )}
-        </For>
-      </UiToolbar>
+      <Show when={!dictating()} fallback={<DictationBar dictation={dictation} />}>
+        <UiToolbar label={props.label ?? t().formatting} class={props.toolsClass ?? "no-scrollbar min-w-0 flex-1 overflow-x-auto"}>
+          <For each={props.groups}>
+            {(group, index) => (
+              <>
+                <UiToolbar.Group label={group.label} class={group.class ?? "shrink-0"}>
+                  <For each={group.items}>
+                    {(item) =>
+                      isCustom(item) ? (
+                        item.render()
+                      ) : isMenu(item) ? (
+                        <ToolbarMenuButton editor={props.editor} menu={item} coarse={coarse()} />
+                      ) : (
+                        <ToolbarButton editor={props.editor} action={item} />
+                      )
+                    }
+                  </For>
+                </UiToolbar.Group>
+                <Show when={index() < props.groups.length - 1}>
+                  <UiToolbar.Separator class={group.separatorClass} />
+                </Show>
+              </>
+            )}
+          </For>
+        </UiToolbar>
+      </Show>
+      <Show when={props.dictation && !dictating()}>
+        <DictationButton dictation={dictation} size="xs" class="text-dimmed" />
+      </Show>
       {props.end}
     </div>
   );

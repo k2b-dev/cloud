@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { app } from "../config";
 
 let getBodyLimit: ReturnType<typeof spyOn<typeof app.settings, "get">>;
@@ -7,9 +8,9 @@ beforeEach(() => {
 });
 afterEach(() => getBodyLimit.mockRestore());
 
+import { sql } from "@k2b/cloud";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { readWorkflowValuePath } from "@k2b/cloud/workflows/language";
-import { sql } from "bun";
 import { MAIL_WORKFLOW_ACTIONS } from "../workflows/actions";
 import * as publicResources from "./public-resources";
 import {
@@ -335,3 +336,5 @@ test("the next AI body resolution observes a changed administrator limit", async
   getBodyLimit.mockResolvedValue(200);
   expect(await resolve("inputs.message.bodyText", ["steps", 0, "aiClassify", "input"])).toMatchObject({ state: "resolved" });
 });
+
+useUnitClients();

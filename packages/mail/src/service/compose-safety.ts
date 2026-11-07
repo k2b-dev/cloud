@@ -1,6 +1,7 @@
 import { domainToASCII } from "node:url";
+import { sql } from "@k2b/cloud";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { DraftSendReview } from "../contracts";
 import {
   type ComposeSafetyApproval,

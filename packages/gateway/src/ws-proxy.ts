@@ -139,6 +139,8 @@ export const tryUpgradeWebSocket = (
   // Applications refuse a session-authenticated socket from another origin.
   const origin = req.headers.get("origin");
   if (origin) forwardedHeaders.Origin = origin;
+  const site = req.headers.get("sec-fetch-site");
+  if (site) forwardedHeaders["Sec-Fetch-Site"] = site;
   if (publicTarget) forwardedHeaders[PUBLIC_HOST_HEADER] = publicTarget.authority;
   forwardedHeaders["X-Forwarded-Host"] = publicTarget?.authority ?? url.host;
   forwardedHeaders["X-Forwarded-Proto"] = publicTarget?.scheme ?? url.protocol.replace(":", "");

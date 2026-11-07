@@ -1,10 +1,11 @@
 import { expect, spyOn } from "bun:test";
 import { memoryStore, nessi, type Provider } from "@k2b/nessi";
-import { sql } from "bun";
 import { z } from "zod";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import { logger, trace } from "../services/logging";
+import { streamAnswer } from "./answer-stream.test-fixture";
 import { createAiProvider } from "./provider";
 import { withProviderErrors } from "./provider-errors";
 import { inferenceProvider } from "./quota-provider";
@@ -43,13 +44,13 @@ for (const kind of ["provider-message", "provider-body", "nested-error", "schema
     if (kind === "nested-error" || kind === "schema")
       provider = withProviderErrors({
         ...provider,
-        complete: async () => {
+        async *stream() {
           if (kind === "nested-error")
             throw Object.assign(new Error(marker, { cause: { input: marker } }), { name: marker, code: marker, stack: marker });
-          return {
+          yield* streamAnswer({
             message: { role: "assistant", content: [{ type: "text", text: JSON.stringify({ number: { invalid: marker } }) }] },
             finishReason: "stop",
-          };
+          });
         },
       });
     const output: unknown[] = [];

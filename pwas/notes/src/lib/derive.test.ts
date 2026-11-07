@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { deriveLines, deriveMeta } from "./derive";
 
+test("removed markup keeps words separated in titles and excerpts", () => {
+  const meta = deriveMeta("# first<br>second\n\nleft</p><p>right");
+  expect(meta.title).toBe("first second");
+  expect(meta.excerpt).toBe("left right");
+});
+
 describe("deriveMeta", () => {
   test("title, ordered unicode tags, headings and code exclusions", () => {
     const text =

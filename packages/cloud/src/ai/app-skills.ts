@@ -1,5 +1,6 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
+import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import { AI_SKILL_CATALOG_MAX_CHARS, aiSkillCatalogChars } from "./skill-catalog";
 import { type AiSkillContent, canonicalHash, contentHash, validateSkillContent } from "./skill-content";

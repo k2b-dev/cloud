@@ -367,7 +367,13 @@ describe("Filesv2 CLI integration", () => {
     const { tokenConfigured: _, ...input } = configuration;
     const secret = "private-filegate-backend-token";
     await writeFile(file, JSON.stringify({ ...input, token: secret }), { mode: 0o600 });
-    const saved = await run(["--json", "filesv2", "admin", "configuration", "set", "--input-file", file], { server: server.url.href });
+    const unconfirmed = await run(["filesv2", "admin", "configuration", "set", "--input-file", file], { server: server.url.href });
+    expect(unconfirmed.exitCode).not.toBe(0);
+    expect(unconfirmed.stderr).toContain("--yes");
+    expect(payloads).toEqual([]);
+    const saved = await run(["--json", "filesv2", "admin", "configuration", "set", "--yes", "--input-file", file], {
+      server: server.url.href,
+    });
     expect(saved.exitCode, saved.stderr).toBe(0);
     expect(JSON.parse(saved.stdout)).toEqual({ saved: true });
     expect(saved.stdout + saved.stderr).not.toContain(secret);
@@ -382,7 +388,7 @@ describe("Filesv2 CLI integration", () => {
       { ...input, cloud: { ...input.cloud, autoCreate: true, autoArchive: false } },
       { ...input, freeipa: { ...input.freeipa, autoCreate: true } },
     ]) {
-      const result = await run(["--jsonl", "filesv2", "admin", "configuration", "set", "--stdin"], {
+      const result = await run(["--jsonl", "filesv2", "admin", "configuration", "set", "--yes", "--stdin"], {
         server: server.url.href,
         stdin: JSON.stringify(value),
       });
@@ -391,13 +397,13 @@ describe("Filesv2 CLI integration", () => {
       expect(payloads.at(-1)).toEqual(value);
     }
     const count = payloads.length;
-    const malformed = await run(["filesv2", "admin", "configuration", "set", "--stdin"], {
+    const malformed = await run(["filesv2", "admin", "configuration", "set", "--yes", "--stdin"], {
       server: server.url.href,
       stdin: `{"token":"${secret}`,
     });
     expect(malformed.exitCode).not.toBe(0);
     expect(malformed.stdout + malformed.stderr).not.toContain(secret);
-    const invalid = await run(["filesv2", "admin", "configuration", "set", "--stdin"], {
+    const invalid = await run(["filesv2", "admin", "configuration", "set", "--yes", "--stdin"], {
       server: server.url.href,
       stdin: JSON.stringify({ ...input, cloud: { ...area, enabled: secret } }),
     });

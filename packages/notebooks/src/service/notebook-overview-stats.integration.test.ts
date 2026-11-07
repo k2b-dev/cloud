@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { overviewStats } from "./notebooks";

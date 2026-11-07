@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { SignJWT } from "jose";
 import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
+import { sessionOriginGuard } from "../server/middleware/session-origin";
 import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
 import { prepareIdentitySigner } from "../services/identity/key-ring";
@@ -120,7 +121,7 @@ suite("live routes", () => {
       pod.server = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
-        fetch: new Hono().route("/live", pod.routes).fetch,
+        fetch: new Hono().use(sessionOriginGuard()).route("/live", pod.routes).fetch,
         websocket: recordedWebsocket,
       });
     }
@@ -340,7 +341,7 @@ suite("live routes", () => {
     }
   }, 60_000);
 
-  test("a missing or ended session, another origin, and an OAuth token without read are refused on the socket with 1008; no origin is served", async () => {
+  test("a missing or ended session, another origin, missing Origin and an OAuth token without read are refused on the socket with 1008", async () => {
     const hal = await person("Hal Example");
     // Behind the gateway the browser never sees a refused handshake, only a retryable close.
     const refusal = async (headers: Record<string, string>) => {
@@ -357,13 +358,12 @@ suite("live routes", () => {
 
     expect(await refusal({ origin, ...address() })).toEqual(refused("login_required"));
     expect(await refusal({ ...hal.headers, origin: "https://elsewhere.example" })).toEqual(refused("forbidden_origin"));
-    // Browsers always send Origin; a client without one (or a gateway from before it forwarded Origin) is served.
-    allow("no-origin", hal);
-    const withoutOrigin = await open(0, { cookie: hal.headers.cookie, ...address() });
-    withoutOrigin.sub("s", "item", { key: "no-origin" });
-    await until(() => withoutOrigin.of("s").length === 1);
-    expect(withoutOrigin.of("s")[0]?.t).toBe("ready");
-    withoutOrigin.socket.close();
+    for (const rejected of [undefined, "null", "https://sibling.example"]) {
+      const headers: Record<string, string> = { cookie: hal.headers.cookie, ...address() };
+      if (rejected) headers.origin = rejected;
+      expect(await refusal(headers)).toEqual(refused("forbidden_origin"));
+    }
+    expect(await refusal({ ...hal.headers, "sec-fetch-site": "same-site" })).toEqual(refused("forbidden_origin"));
 
     const clientId = `live-${crypto.randomUUID()}`;
     await sql`INSERT INTO oauth.clients (name, client_id, redirect_uris) VALUES ('Live test', ${clientId}, ARRAY['https://client.example/callback'])`;

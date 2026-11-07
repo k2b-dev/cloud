@@ -228,9 +228,10 @@ describe("sidebar row label room", () => {
         results["swap hovered with a wider group"] = await room(page, "swap");
         // The label stays at least half opaque until its own 0.75rem fade and the row's 0.5rem gap before the first
         // control at the row's end, and never reaches under it. Before the fix, a label beside a count gave up the
-        // room of the revealed pin a second time and ended about 3.5rem before it.
+        // room of the revealed pin a second time and ended about 3.5rem before it. At rest the hidden actions take no
+        // room and the label ends at the row's 0.5625rem end inset, 7px before the actions' 0.125rem.
         const misses = Object.entries(results)
-          .filter(([, { reach, end }]) => end - reach < 0 || end - reach > 20)
+          .filter(([state, { reach, end }]) => end - reach < 0 || end - reach > 20 + (state.endsWith("at rest") ? 7 : 0))
           .map(([state, { reach, end }]) => `${state}: label reaches ${reach}, first control at ${end}`);
         expect(misses).toEqual([]);
       } finally {

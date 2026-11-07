@@ -51,13 +51,15 @@ export type AppAdminNavigationLink = {
 };
 
 /** Platform admin areas an app can contribute to with `adminNav[].section`. */
-export const APP_ADMIN_AREAS = ["ai", "observability"] as const;
+export const APP_ADMIN_AREAS = ["ai", "observability", "people"] as const;
 export type AppAdminArea = (typeof APP_ADMIN_AREAS)[number];
 
 export type AppAdminNavigationGroup = {
   /**
    * Contribute links to a platform admin area instead of a separate group. The admin sidebar shows the area as one
    * entry; the owner renders the area's columns itself. `"ai"` is the AI area, `"observability"` the Observability area.
+   * `"people"` places the page of an app that manages accounts and groups under Operations; its link may lead to that
+   * app's own page outside `/admin`.
    */
   section?: AppAdminArea;
   /** Stable key used only to localize this presentation group. */
@@ -120,6 +122,8 @@ export type AppPwaPart = {
   badge?: string;
   /** Same-origin path of a `GET` route returning a `PwaPartSummary`, the line under the part on the app's Start. */
   summary?: string;
+  /** Position in the mobile app: parts with an order come first, ascending; the rest follow by localized name. */
+  order?: number;
 };
 
 /** One same-origin panel page contributed by an application. Routes and services still authorize. */

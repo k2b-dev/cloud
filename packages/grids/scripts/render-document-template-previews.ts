@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { mkdir, readdir, unlink } from "node:fs/promises";
+import { sql } from "@k2b/cloud";
 import { type GotenbergConfig, getGotenbergConfig } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { DocumentTemplate } from "../src/contracts";
 import { DOCUMENT_TEMPLATE_STARTERS, type DocumentTemplateStarter, documentTemplateStarterById } from "../src/document-template-starters";
 import { gridsService } from "../src/service";

@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { createAuthRoutes } from "../../api/auth";
+import { sql } from "../../runtime/clients";
 import * as settings from "../settings";
 import type { AuthNotificationSender } from "./notification-sender";
 

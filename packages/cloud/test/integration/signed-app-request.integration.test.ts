@@ -4,7 +4,7 @@ import type { AppKey } from "@k2b/cloud/app-key";
 import { mandates } from "@k2b/cloud/services";
 import { authenticateBootstrap } from "@k2b/cloud/services/app-bootstrap";
 import { appKeys, getActiveAppKey } from "@k2b/cloud/services/app-keys";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
 import { Hono } from "hono";
 import { createLocalJWKSet, decodeJwt, exportJWK, generateKeyPair } from "jose";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
@@ -20,6 +20,7 @@ import { migrate as migrateRailShortcuts } from "../../../core/src/migrate/core/
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import { migrate as migrateOAuth } from "../../../oauth/src/migrate";
 import { BOOTSTRAP_PATH, signAppProof, signBootstrapProof } from "../../src/runtime/bootstrap-protocol";
+import { sql } from "../../src/runtime/clients";
 import { verifyAccessToken } from "../../src/services/oauth-tokens";
 
 const NOW = Date.UTC(2030, 0, 2, 3, 4, 5);

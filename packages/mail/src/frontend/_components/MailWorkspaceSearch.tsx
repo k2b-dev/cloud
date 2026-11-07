@@ -1,5 +1,6 @@
-import { Button, FilterChip, IconButton, TextInput, Tooltip, useLocale } from "@k2b/ui";
+import { Button, Dropdown, type DropdownItem, FilterChip, FilterToggle, IconButton, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, Show } from "solid-js";
+import { mailFolderNames } from "../../folder-names";
 import { DEFAULT_MAIL_QUICK_SEARCH_FIELDS } from "../../search-url";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { type createMailboxSearch, isDefaultQuickSearch } from "./mailbox-search";
@@ -86,8 +87,74 @@ export function MailSearchInput(props: { search: Search; mailboxName: string }) 
 export function MailSearchOptions(props: { search: Search; count: number }) {
   const locale = useLocale();
   const text = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
+  const folderName = createMemo(() => mailFolderNames(locale()));
+  const scopeFolderName = () => {
+    const folder = props.search.scopeFolder();
+    return folder ? folderName()(folder) : props.search.scopeFolderId()!;
+  };
+  const placeOptions = () => [
+    { value: "", label: text().wholeMailbox },
+    ...(props.search.scopeFolderId() && props.search.scopeFolderId() !== props.search.originFolder()?.id
+      ? [{ value: props.search.scopeFolderId()!, label: text().onlyFolder({ name: scopeFolderName() }) }]
+      : []),
+    ...(props.search.originFolder()
+      ? [{ value: props.search.originFolder()!.id, label: text().onlyFolder({ name: folderName()(props.search.originFolder()!) }) }]
+      : []),
+  ];
+  const placeLabel = () => (props.search.scopeFolderId() ? text().onlyFolder({ name: scopeFolderName() }) : text().wholeMailbox);
+  const summary = () => text().searchSummary({ fields: props.search.searchFieldsLabel(), place: placeLabel() });
+  const phoneItems = (): DropdownItem[] => [
+    {
+      sectionLabel: text().searchIn,
+      items: props.search.quickSearchFieldOptions().map((option) => ({
+        choice: "checkbox" as const,
+        label: option.label,
+        checked: () => props.search.searchFields().some((field) => field === option.value),
+        closeOnSelect: false,
+        action: () => {
+          const fields: string[] = [...props.search.searchFields()];
+          props.search.updateSearchFields(
+            fields.includes(option.value) ? fields.filter((field) => field !== option.value) : [...fields, option.value],
+          );
+        },
+      })),
+    },
+    {
+      sectionLabel: text().place,
+      items: placeOptions().map((option) => ({
+        choice: "radio" as const,
+        label: option.label,
+        checked: () => (props.search.scopeFolderId() ?? "") === option.value,
+        closeOnSelect: false,
+        action: () => props.search.updateScope(option.value || null),
+      })),
+    },
+    {
+      items: [
+        {
+          label: text().moreFiltersEllipsis,
+          icon: "ti ti-adjustments-search",
+          action: () => void props.search.openAdvancedSearch(),
+        },
+      ],
+    },
+  ];
   return (
     <span class="contents" data-mail-head-search-options>
+      {/* Phones: "Search in" and "Place" share one menu, with the way to more filters. */}
+      <Dropdown.Root position="bottom-left" width="18rem" items={phoneItems()} label={text().searchOptions}>
+        <Dropdown.Trigger
+          appearance="plain"
+          class="k2b-filter-chip mail-search-phone-options"
+          data-active={!isDefaultQuickSearch(props.search.searchFields()) || props.search.scopeFolderId() ? "true" : undefined}
+          label={`${text().searchOptions}: ${summary()}`}
+          data-mail-search-phone-options
+        >
+          <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
+          <span class="k2b-filter-chip__label">{summary()}</span>
+          <i class="ti ti-chevron-down k2b-filter-chip__chevron" aria-hidden="true" />
+        </Dropdown.Trigger>
+      </Dropdown.Root>
       <FilterChip
         label={text().searchInValue({ value: props.search.searchFieldsLabel() })}
         icon="ti ti-filter-search"
@@ -97,55 +164,33 @@ export function MailSearchOptions(props: { search: Search; count: number }) {
         isActive={!isDefaultQuickSearch(props.search.searchFields())}
         onValueChange={props.search.updateSearchFields}
         position="bottom-right"
+        class="mail-search-wide-option"
       />
       <FilterChip
-        label={text().placeValue({
-          value: props.search.scopeFolderId()
-            ? text().onlyFolder({ name: props.search.scopeFolder()?.name ?? props.search.scopeFolderId()! })
-            : text().wholeMailbox,
-        })}
+        label={text().placeValue({ value: placeLabel() })}
         icon="ti ti-map-pin"
         options={[
           {
             label: text().place,
-            options: [
-              { value: "", label: text().wholeMailbox },
-              ...(props.search.scopeFolderId() && props.search.scopeFolderId() !== props.search.originFolder()?.id
-                ? [
-                    {
-                      value: props.search.scopeFolderId()!,
-                      label: text().onlyFolder({ name: props.search.scopeFolder()?.name ?? props.search.scopeFolderId()! }),
-                    },
-                  ]
-                : []),
-              ...(props.search.originFolder()
-                ? [{ value: props.search.originFolder()!.id, label: text().onlyFolder({ name: props.search.originFolder()!.name }) }]
-                : []),
-            ],
+            options: placeOptions(),
           },
         ]}
         value={[props.search.scopeFolderId() ?? ""]}
         defaultValue={[""]}
         isActive={Boolean(props.search.scopeFolderId())}
         onValueChange={(values) => props.search.updateScope(values[0] || null)}
+        class="mail-search-wide-option"
       />
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        class="mail-search-advanced"
-        aria-label={text().searchFilters}
-        tooltip={text().searchFilters}
-        aria-haspopup="dialog"
-        aria-pressed={Boolean(props.search.structuredSummary())}
-        aria-busy={props.search.searchBuilderLoading() ? "true" : undefined}
+      {/* Wide, More filters is a chip with its name beside the other two; phones reach it in the combined menu. */}
+      <FilterToggle
+        class="mail-search-advanced mail-search-wide-option"
+        label={text().moreFilters}
+        icon={props.search.searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-adjustments-search"}
+        active={Boolean(props.search.structuredSummary())}
+        opensDialog
+        busy={props.search.searchBuilderLoading()}
         onClick={() => void props.search.openAdvancedSearch()}
-      >
-        <i class={props.search.searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-adjustments-search"} aria-hidden="true" />
-        <span class="mail-search-advanced-label" aria-hidden="true">
-          {text().advancedSearch}
-        </span>
-      </Button>
+      />
       <Show when={props.search.searchValue().trim()}>
         <span class="text-xs text-muted whitespace-nowrap" aria-live="polite">
           {text().matches({ count: props.count })}

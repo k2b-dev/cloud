@@ -1,6 +1,6 @@
 import { beforeAll } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
-import { sql } from "bun";
 import { testInfra } from "../../../scripts/fixtures/test-infra";
 import { migrate } from "../../core/src/migrate/core/events";
 

@@ -1,10 +1,9 @@
 import "../../test/integration-preload";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { type ProcessSync, startProcessSync } from "@k2b/cloud";
+import { type ProcessSync, sql, startProcessSync } from "@k2b/cloud";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
 import { createAccountIdentityService } from "@k2b/cloud/services/accounts/identities";
 import { Filegate, FilegateError } from "@k2b/filegate";
-import { sql } from "bun";
 import { databaseSuite, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { assertPrivateDatabase, localFilegateToken } from "../../test/private-database";

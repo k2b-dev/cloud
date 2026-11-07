@@ -1,13 +1,16 @@
 import { expect, spyOn, test } from "bun:test";
-import { redis } from "bun";
 import { Hono } from "hono";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { appAccess } from "../contracts/app-access";
 import { PUBLIC_HOST_HEADER, PUBLIC_SURFACE_PREFIX } from "../contracts/app-domains";
+import { redis } from "../runtime/clients";
 import { clientIp, rateLimit } from "../server";
 import { type AppDefinition, defineApp } from "./define-app";
 import { inventory, publishedEntry } from "./define-app.test-fixture";
 import { createPublicSurfaceHandler } from "./public-surface";
 import { validateAppRegistryEntry } from "./registry-validation";
+
+useUnitClients();
 
 const surface = (router: Pick<Hono, "fetch"> | undefined, development = false) =>
   new Hono()
@@ -132,6 +135,30 @@ test("public declaration reaches the registry; the separate router bypasses Clou
   expect(validateAppRegistryEntry(entry)).toBeNull();
   expect(validateAppRegistryEntry({ ...entry, public: false })).toContain("public");
   expect((await publishedEntry(inventory)).public).toBeUndefined();
+});
+
+test("public POSTs cannot inherit an attached Cloud session, while Cloud routes keep the origin guard", async () => {
+  await publishedEntry(
+    { ...inventory, access: appAccess.roles(["admin"]), public: true },
+    async (server) => {
+      for (const origin of [undefined, "https://site.example.test", "null"]) {
+        const requestHeaders: Record<string, string> = {
+          ...headers,
+          cookie: "session_token=foreign; pwa_session=foreign; site_session=own",
+          "sec-fetch-site": "same-site",
+        };
+        if (origin) requestHeaders.origin = origin;
+        const response = await server.fetch(
+          new Request(`http://upstream${PUBLIC_SURFACE_PREFIX}/submit`, { method: "POST", headers: requestHeaders }),
+        );
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ cookie: "site_session=own" });
+        const cloud = await server.fetch(new Request("http://upstream/api/inventory", { method: "POST", headers: requestHeaders }));
+        expect(cloud.status).toBe(403);
+      }
+    },
+    (app) => app.public.post("/submit", (c) => c.json({ cookie: c.req.header("cookie") })),
+  );
 });
 
 test("adding routes without public: true fails before starting services; reserved prefixes cannot be declared", async () => {

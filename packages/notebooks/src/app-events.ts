@@ -1,5 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { appEvents } from "@k2b/cloud/events";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import type { notebooksCapabilities } from "./capabilities";
 

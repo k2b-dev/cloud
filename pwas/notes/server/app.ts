@@ -1,17 +1,25 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { NotesError } from "./errors";
+import { fileDisposition, fileKey, readUpload } from "./files";
 import { boundedJson, requireOrigin, snapshotBytes } from "./http";
 import { limits, requestIp } from "./limits";
+import { mountModeration } from "./moderation";
 import type { NotesService } from "./service";
 
 export type NotesBindings = { peerIp?: string };
-export type HttpOptions = { origin: string; trustedProxy?: string };
+export type HttpOptions = { origin: string; trustedProxy?: string; adminPasswordHash?: string };
 const createPad = z.strictObject({
   snapshot: z.string().max(Math.ceil(limits.stateBytes / 3) * 4),
   accepted: z.literal(true),
   title: z.string().max(200).optional(),
 });
+
+const presenceQuery = z.strictObject({ readIds: z.array(z.string().regex(/^[0-9A-Za-z]{22}$/)).max(limits.presencePads) });
+
+/** Also served by the browser test, so the SPA is tested under the policy it ships with. */
+export const contentSecurityPolicy = (origin?: string) =>
+  `default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'${origin ? ` ${origin.replace(/^http/, "ws")}` : ""}; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`;
 
 export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesService, options?: HttpOptions) => {
   const app = new Hono<{ Bindings: NotesBindings }>();
@@ -20,11 +28,8 @@ export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesSer
     c.header("Referrer-Policy", "no-referrer");
     c.header("X-Robots-Tag", "noindex, nofollow");
     c.header("X-Content-Type-Options", "nosniff");
-    c.header("Cache-Control", "private, no-store");
-    c.header(
-      "Content-Security-Policy",
-      "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
-    );
+    if (!c.res.headers.has("Cache-Control")) c.header("Cache-Control", "private, no-store");
+    c.header("Content-Security-Policy", contentSecurityPolicy(options?.origin));
   });
   app.onError((error, c) => {
     if (error instanceof NotesError) return c.json({ code: error.code, ...(error.reason ? { reason: error.reason } : {}) }, error.status);
@@ -43,6 +48,7 @@ export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesSer
       if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) requireOrigin(c.req.raw, options.origin);
       await next();
     });
+    mountModeration(app, service, options, ip);
     app.get("/api/status", async (c) => {
       const status = await service.store.status();
       return c.json({
@@ -57,6 +63,12 @@ export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesSer
         },
       });
     });
+    app.post("/api/presence", async (c) => {
+      service.rates.take("presence", ip(c), limits.presencePerMinute, 60_000);
+      const parsed = presenceQuery.safeParse(await boundedJson(c.req.raw, limits.presencePads * 25 + 64));
+      if (!parsed.success) throw new NotesError("invalid_presence");
+      return c.json(await service.presence(parsed.data.readIds));
+    });
     app.post("/api/pads", async (c) => {
       service.rates.take("create_request", ip(c), limits.createPerHour, 3_600_000);
       const input = createPad.safeParse(await boundedJson(c.req.raw, Math.ceil(limits.stateBytes / 3) * 4 + 1024));
@@ -64,6 +76,34 @@ export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesSer
       return c.json(await service.create(snapshotBytes(input.data.snapshot), ip(c)), 201);
     });
     app.get("/api/pads/:id", async (c) => c.json(await service.read(c.req.param("id"), ip(c))));
+    let transferring = 0;
+    const transfer = async <T>(run: () => Promise<T>): Promise<T> => {
+      if (transferring >= service.options.maxOpenPads) throw new NotesError("transfers_full", 503);
+      transferring++;
+      try {
+        return await run();
+      } finally {
+        transferring--;
+      }
+    };
+    app.post("/api/pads/:id/files", async (c) =>
+      transfer(async () => {
+        service.rates.take("upload", ip(c), limits.uploadPerHour, 3_600_000);
+        await service.store.editablePad(c.req.param("id"));
+        return c.json(await service.upload(c.req.param("id"), await readUpload(c.req.raw)), 201);
+      }),
+    );
+    app.get("/api/pads/:id/files/:key", async (c) =>
+      transfer(async () => {
+        service.rates.take("download", ip(c), limits.files * limits.peersPerPad, 3_600_000);
+        const key = fileKey.safeParse(c.req.param("key"));
+        if (!key.success) throw new NotesError("not_found", 404);
+        const file = await service.store.getFile(c.req.param("id"), key.data);
+        return new Response(file.bytes, {
+          headers: { "Content-Type": file.type, "Content-Disposition": fileDisposition(file) },
+        });
+      }),
+    );
     app.post("/api/pads/:id/opened", async (c) => {
       await service.humanOpen(c.req.param("id"), ip(c));
       return c.body(null, 204);

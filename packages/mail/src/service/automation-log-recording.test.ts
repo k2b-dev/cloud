@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { projectAutomationAudit } from "./automation-log-recording";
 
 test("a secondary conversation receives only its effects, without another conversation's AI evidence", async () => {
@@ -47,3 +48,5 @@ test("an executed non-AI condition is recorded alongside its comparison", async 
   expect(audit.reasons).toContainEqual(expect.objectContaining({ kind: "comparison", met: true }));
   expect(audit.reasons).toContainEqual(expect.objectContaining({ kind: "condition" }));
 });
+
+useUnitClients();

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { connect, createServer, type Socket } from "node:net";
-import { RedisClient, sql } from "bun";
+import { RedisClient } from "bun";
 import { initializeTestPlatform } from "../../../../../scripts/fixtures/platform";
+import { sql } from "../../../src/runtime/clients";
 
 // Runs in its own process (see outage.integration.test.ts) because the request
 // cache client is a module singleton that must connect through the proxy below.

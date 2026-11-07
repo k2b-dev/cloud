@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
-import { publishRailPreferences, RAIL_PREFERENCES_EVENT, readRailContext } from "./rail-context";
+import "../../../ui/test/solid-ssr-preload";
+
+const { publishRailPreferences, RAIL_PREFERENCES_EVENT, readRailContext } = await import("./rail-context");
 
 test("saving and resetting personal preferences preserves managed shortcuts in the shared launcher snapshot", () => {
   const managedShortcuts = [{ id: "global", kind: "link" as const, title: "Global <link>", href: "/global", icon: "ti ti-link" }];

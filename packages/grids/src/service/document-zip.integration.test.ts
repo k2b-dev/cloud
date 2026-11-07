@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { sql } from "@k2b/cloud";
 import { err } from "@k2b/stdlib";
-import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { localVerificationUrl } from "../../scripts/verification";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";

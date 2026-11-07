@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
+import { sql } from "../packages/cloud/src/runtime/clients";
 import { suiteFor } from "../scripts/fixtures/test-infra";
 import "../scripts/fixtures/authorization-preload";
 import { createAppApprovalRoutes } from "../packages/cloud/src/api/app-approval";

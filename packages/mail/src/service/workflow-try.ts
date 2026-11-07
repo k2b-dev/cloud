@@ -1,9 +1,9 @@
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { type WorkflowDiagnostic, type WorkflowIr, type WorkflowJsonValue, workflowPathKey } from "@k2b/cloud/workflows";
 import { compileWorkflow } from "@k2b/cloud/workflows/language";
 import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import { type TryWorkflowInput, tryWorkflowInputSchema, type WorkflowTryResult } from "../contracts";
 import { bindMailWorkflow } from "../workflows/binder";

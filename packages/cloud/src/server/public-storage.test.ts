@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { connect } from "node:net";
-import { redis } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { redis } from "../runtime/clients";
+
 import * as store from "../services/settings/store";
 import { servePublicStorage } from "./public-storage";
+
+useUnitClients();
 
 let calls: { method: string; path: string }[];
 let type: string;

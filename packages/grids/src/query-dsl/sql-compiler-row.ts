@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { RecordQuery } from "../contracts";
 import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
 import { containsDocumentMetadata } from "../service/document-query-expression";

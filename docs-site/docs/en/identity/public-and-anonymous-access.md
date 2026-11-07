@@ -10,6 +10,8 @@ updated: 2026-10-31
 
 # Public and anonymous access
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Public access needs both an open route and an explicit domain rule.
 
 Opening a route does not make every resource public.

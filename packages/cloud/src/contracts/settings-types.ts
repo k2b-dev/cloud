@@ -38,6 +38,8 @@ type CommonDef = {
   envFallback?: EnvResolver;
   /** Environment name for migration diagnostics; values are never returned. */
   envVariable?: string;
+  /** Keep administrator writes on the owning API, including environment-backed settings. */
+  adminWrite?: "application";
   /** Discard these stored settings when this normalized value changes. */
   resetOnChange?: readonly string[];
   /** Additional server-side validation after kind normalization. */

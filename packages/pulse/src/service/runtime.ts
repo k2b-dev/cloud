@@ -1,7 +1,6 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { trace } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { pulseStoreConfigured } from "../store/service";
 import { registerAlertSchedules } from "./alert-runtime";
 import { startPulseBaseJobs, stopPulseBaseJobs } from "./base-lifecycle";

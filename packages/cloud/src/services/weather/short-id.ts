@@ -1,5 +1,6 @@
 import { crypto } from "@k2b/stdlib";
-import { sql } from "bun";
+import { sql } from "../../runtime/clients";
+
 import { isUniqueViolation } from "../postgres";
 
 export const WEATHER_LOCATION_SHORT_ID_PATTERN = /^[0-9A-Za-z]{6}$/;

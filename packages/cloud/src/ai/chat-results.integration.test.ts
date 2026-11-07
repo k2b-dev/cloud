@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { __aiExecutorTest } from "./executor";
 import { aiFileStore, loadAiConversationFileOverview } from "./files-store";
 import { migrateCloudAi } from "./migrate";

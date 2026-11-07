@@ -10,6 +10,29 @@ import { closePlatformClients } from "./clients";
 afterAll(closePlatformClients);
 
 suiteFor("database", "valkey")("native platform clients", () => {
+  test("preserves native JSON and binary parameter encoding on shared and owned pools", async () => {
+    await initializeTestPlatform("native-test");
+    const reference = new SQL(connections().database.url);
+    const owned = createSql({ max: 1 });
+    const document = { source: "native-parity", nested: { count: 2 }, tags: ["one", "two"] };
+    const bytes = new Uint8Array([0, 1, 127, 255]);
+    const query = (client: SQL) => client`
+      SELECT ${document}::jsonb AS document,
+        ${JSON.stringify(document)}::text::jsonb AS text_document,
+        ${bytes}::bytea AS bytes
+    `;
+    try {
+      const expected = await query(reference);
+      expect(expected[0]).toEqual({ document, text_document: document, bytes });
+      expect(await query(sql)).toEqual(expected);
+      expect(await query(owned)).toEqual(expected);
+      expect(await sql.begin(query)).toEqual(expected);
+    } finally {
+      await owned.close();
+      await reference.close();
+    }
+  });
+
   test("supports query helpers, transactions, reservations, file queries, listeners, native options and setters", async () => {
     await initializeTestPlatform("native-test");
     const reference = new SQL({ url: connections().database.url });

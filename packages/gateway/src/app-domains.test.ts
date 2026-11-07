@@ -1,15 +1,18 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { brotliCompressSync, brotliDecompressSync, gunzipSync } from "node:zlib";
+import { redis as platformRedis } from "@k2b/cloud";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import { domainCheckKey } from "@k2b/cloud/contracts/app-domains";
 import { type AuthContext, clientIp, rateLimit } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
-import { redis } from "bun";
 import { Hono } from "hono";
+import { useUnitClients } from "../../../scripts/fixtures/unit-clients";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
 import { createGatewayHandler } from "./handler";
 import { createProxyStats } from "./proxy";
 import { buildRouteTable } from "./trie";
+
+useUnitClients();
 
 const app = (baseUrl: string): AppRegistryEntry => ({
   id: "site",
@@ -233,6 +236,9 @@ test("Cloud credential cookies are stripped and app cookies survive", async () =
 test.each([
   [{ Origin: "https://other.test" }, 403],
   [{ Origin: "null" }, 403],
+  [{ Origin: "null", "Sec-Fetch-Site": "same-origin" }, 200],
+  [{ Origin: "null", "Sec-Fetch-Site": "cross-site" }, 403],
+  [{ Origin: "https://other.test", "Sec-Fetch-Site": "same-origin" }, 403],
   [{ Origin: "https://site.test" }, 200],
   [{ "Sec-Fetch-Site": "same-site" }, 403],
   [{ "Sec-Fetch-Site": "cross-site" }, 403],
@@ -523,6 +529,8 @@ test.each([
   [{ Origin: "https://foreign.test" }, 403],
   [{ Origin: "https://site.test", "Sec-Fetch-Site": "same-site" }, 403],
   [{ "Sec-Fetch-Site": "cross-site" }, 403],
+  // Only a page's own form posts may carry Origin: null; a handshake always has the real Origin.
+  [{ Origin: "null", "Sec-Fetch-Site": "same-origin" }, 403],
 ])("WebSocket GET rejects foreign origins and sites: %j", async (headers, status) => {
   const response = await fixture().request("/socket", { headers: { Upgrade: "websocket", ...headers } });
   expect(response.status).toBe(status);
@@ -531,7 +539,8 @@ test.each([
 test("public application clientIp and rateLimit use the trusted visitor instead of forged headers", async () => {
   const clock = spyOn(Date, "now").mockReturnValue(1_793_404_800_000);
   const counts = new Map<string, number>();
-  const send = spyOn(redis, "send").mockImplementation(async (_command, args) => {
+  // Cloud rate limiting uses the platform Valkey client, not Bun's global one.
+  const send = spyOn(platformRedis, "send").mockImplementation(async (_command, args) => {
     const key = String(args[2]);
     const count = (counts.get(key) ?? 0) + 1;
     counts.set(key, count);
@@ -616,4 +625,32 @@ test.each(["cloud.test", "cloud-gateway-cloud.test", "internal.test"])("assignme
   expect(response.headers.get("X-Gateway-App")).toBe("core");
   expect((await response.json()).path).toBe("/_cloud/app-access");
   expect(f.rates).toEqual([]);
+});
+
+test("anonymous Geo autocomplete never crosses Cloud or assigned-domain ingress", async () => {
+  const f = fixture();
+  for (const host of ["cloud.test", "site.test"]) {
+    for (const path of [
+      "/api/_internal/geo/v1/autocomplete",
+      "/api/%5finternal/geo/v1/autocomplete",
+      "/api//_internal/geo/v1/autocomplete",
+    ]) {
+      const response = await f.request(
+        path,
+        {
+          method: "POST",
+          headers: {
+            "x-forwarded-host": "core.internal",
+            "x-forwarded-proto": "http",
+            "x-forwarded-for": "127.0.0.1",
+            forwarded: "host=core.internal;proto=http",
+          },
+          body: JSON.stringify({ text: "Orle" }),
+        },
+        host,
+      );
+      expect(response.status).toBe(404);
+    }
+  }
+  expect(f.requests).toHaveLength(0);
 });

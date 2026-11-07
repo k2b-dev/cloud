@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { CompiledClause } from "./filter-compiler";
 import { type FormulaSqlExpression, requireValidCalculationSql } from "./formula-sql-values";
 

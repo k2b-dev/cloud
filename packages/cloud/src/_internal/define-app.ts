@@ -1,6 +1,7 @@
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
 import { createOwnedAppAccessRoutes } from "../api/app-access";
 import { createAppEventDeliveryRoutes } from "../api/app-event-delivery";
+import { APP_MIGRATION_TRIGGER_PATH, createAppMigrationTriggerRoutes } from "../api/app-migration-trigger";
 import { createResourceAppAccessRoutes } from "../api/app-resource-access";
 import { createSettingsOpsRoutes, settingsInvocationOperation } from "../api/settings-ops";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
@@ -13,6 +14,7 @@ import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
 import { appAccessManagementPath } from "./app-access-path";
 import { bindResourceAppAccess, RESOURCE_ACCESS_PATH } from "./app-access-resources";
+import { createAppCapabilityRoutes } from "./app-capabilities";
 import { createAppQueryRoutes } from "./app-queries";
 import { registerApplicationPackage, resolveApplicationPackage } from "./application-package";
 import { invokeCapabilityStream } from "./capability-streams";
@@ -25,7 +27,7 @@ import { bindProcessApplicationId, clearProcessApplicationId } from "./process-i
  * Returns `{ ssr, plugin, config, meta, start }`.
  */
 
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HtmlFn, SsrConfig, SsrOptions } from "@k2b/ssr";
 import { createConfig as createSsrConfig } from "@k2b/ssr";
@@ -69,10 +71,13 @@ import { getLocale, resolveLocale } from "../server/locale";
 import { requireAppAccess, stopAppAccessConnections } from "../server/middleware/app-access";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
+import { sessionOriginGuard } from "../server/middleware/session-origin";
 import { createPublicSurfaceHandler, validatePublicSurfaceRoutes } from "./public-surface";
 import "../events/app-access";
 import { createNestedCapabilityQuery } from "../capabilities/nested";
+import { PWA_ASSET_MANIFEST_PATH } from "../contracts/pwa-assets";
 import { connections } from "../runtime/connections";
+import { DEPENDENCY_STARTUP_BUDGET_MS } from "../runtime/startup-budget";
 import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-template";
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { preloadLayoutAnnouncements, settings as settingsMiddleware } from "../server/middleware/settings";
@@ -113,11 +118,11 @@ import { createHttpDrain } from "./http-drain";
 import { createInstallableRoutes } from "./installable-assets";
 import { installableHead, installableThemeScript } from "./installable-head";
 import { createPageResponses } from "./page-responses";
-import { configurePostgresApplicationName } from "./postgres-application-name";
 import { getProcessSync, startProcessSync } from "./process-sync";
+import { readPwaStaticAssets } from "./pwa-assets";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
-import { canonicalRoute, isOwnAppPath } from "./registry-validation";
+import { canonicalRoute, isOwnAppPath, validateAppRegistryEntry } from "./registry-validation";
 import { ensureRuntimeWatcher, getCurrentRuntime, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
 import { runSetupExclusively } from "./setup-lock";
 import { publicFileVersion, servePublicAsset, sharedStylesheetVersion, versionedPublicHref } from "./static-assets";
@@ -253,6 +258,12 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
      * part has no `badge`. It may be the badge's route. It must be one of the app's own paths.
      */
     summary?: string;
+    /**
+     * Position of the part in the tab bar, sidebar and Start: parts with an order come first, ascending, so the
+     * most-used parts keep their place in every language; parts without one follow, sorted by localized name. A
+     * positive integer; equal orders also sort by name.
+     */
+    order?: number;
   };
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
@@ -277,6 +288,14 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
    * /app/<id> ownership and the reserved /pwa paths.
    */
   routes: readonly string[];
+  /**
+   * Narrow protocol paths authenticated by their own credential (for example
+   * WOPI access_token or a signed webhook). The runtime removes web and app
+   * session cookies before ANY handler on these paths, on every method.
+   * This never grants access: the handler must validate its own credential.
+   * Ordinary publicRoutes retain the mandatory cookie Origin guard.
+   */
+  sessionlessRoutes?: readonly string[];
   /** Platform services requested by this application, visible to administrators. */
   platformPermissions?: readonly PlatformPermission[];
   /**
@@ -429,7 +448,10 @@ const validateAppPwaPart = (opts: Pick<AppOptions, "id" | "routes" | "pwa">): Ap
   if (!isPwaPartId(opts.id)) {
     throw new Error(`App "${opts.id}" cannot declare pwa; a part needs a plain id other than pwa, settings and offline`);
   }
-  const { badge, summary } = opts.pwa;
+  const { badge, summary, order } = opts.pwa;
+  if (order !== undefined && !(Number.isSafeInteger(order) && order > 0)) {
+    throw new Error(`App "${opts.id}" declares pwa.order ${order}; it must be a positive integer`);
+  }
   for (const [field, path] of [
     ["badge", badge],
     ["summary", summary],
@@ -443,6 +465,7 @@ const validateAppPwaPart = (opts: Pick<AppOptions, "id" | "routes" | "pwa">): Ap
     requiresRoles: opts.pwa.requiresRoles ? [...opts.pwa.requiresRoles] : undefined,
     ...(badge ? { badge } : {}),
     ...(summary ? { summary } : {}),
+    ...(order !== undefined ? { order } : {}),
   };
 };
 
@@ -492,7 +515,6 @@ export const defineApp = <
   const publicRouter = new Hono();
   const appSkills = opts.skills ? validateAppSkillCatalog(opts.skills) : undefined;
   const skillsManifestHash = appSkills ? appSkillManifestHash(appSkills) : undefined;
-  configurePostgresApplicationName(opts.id);
   const isDevelopment = env.IS_DEVELOPMENT;
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
   const cliModules = validateAppCliModules(opts.id, opts.cli);
@@ -563,7 +585,8 @@ export const defineApp = <
         ? installableHead(pageInstallable, resolved)
         : pwa
           ? {
-              html: canvas ? ` style="background-color:${canvas}"` : "",
+              // PwaLayout renders a MobileShell: the document says so from the first paint (see `observeMobileShell`).
+              html: ` data-k2b-mobile-shell=""${canvas ? ` style="background-color:${canvas}"` : ""}`,
               viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
               app: `${
                 canvas
@@ -600,7 +623,6 @@ export const defineApp = <
     ${head.app}
     <link rel="icon" href="${appFaviconHref(opts.id, faviconVersion)}">
     <style data-cloud-css-layers>@layer properties, theme, base, components, utilities;</style>
-    <link rel="preload" href="/public/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>
     ${FONT_PRELOAD_LINKS}
     <link rel="stylesheet" href="${versionedPublicHref("/public/fonts.css", sharedVersion)}">
     <link rel="stylesheet" href="${versionedPublicHref("/public/tabler-icons.css", sharedVersion)}">
@@ -728,7 +750,10 @@ export const defineApp = <
 
     // One NATS connection and one Sync instance per process. Ready before
     // anything registers, so a discoverable app can always serve sync work.
+    const dependencyStart = performance.now();
     const processSync = await startProcessSync({ application: meta.id });
+    // Recovery waits share one allowance; application setup retains its lifecycle.
+    const settingsStartupBudget = Math.max(0, Math.floor(DEPENDENCY_STARTUP_BUDGET_MS - (performance.now() - dependencyStart)));
     const cleanup: Array<() => void | Promise<void>> = [() => processSync.stop()];
     let cleanupPromise: Promise<void> | undefined;
     const stopStartedResources = (): Promise<void> =>
@@ -769,7 +794,7 @@ export const defineApp = <
         access: meta.access,
         name: meta.name,
         icon: meta.icon,
-        description: meta.description,
+        description: meta.description ?? "",
         presentation: meta.presentation,
         appearance: meta.appearance,
         baseUrl,
@@ -810,6 +835,7 @@ export const defineApp = <
               requiresRoles: meta.pwa.requiresRoles ? [...meta.pwa.requiresRoles] : undefined,
               ...(meta.pwa.badge ? { badge: meta.pwa.badge } : {}),
               ...(meta.pwa.summary ? { summary: meta.pwa.summary } : {}),
+              ...(meta.pwa.order !== undefined ? { order: meta.pwa.order } : {}),
             }
           : undefined,
         installable: meta.installable,
@@ -827,6 +853,9 @@ export const defineApp = <
         openapi: advertiseOpenapi ? opts.openapi : undefined,
         cliModules: cliModules.length > 0 ? cliModules : undefined,
       };
+
+      const registryError = validateAppRegistryEntry(entry);
+      if (registryError) throw new Error(`Invalid app registry entry: ${registryError}`);
 
       // Both shared entries follow one process membership; creating it touches no Sync resources.
       const membership = createRegistryMembership(meta.id, {
@@ -911,11 +940,25 @@ export const defineApp = <
       // island chunk would land in telemetry as its own route.
       const invocationApp = { getApp: async (id: string) => (id === meta.id ? meta : null) };
       const publicSurface = createPublicSurfaceHandler(opts.public ? publicRouter : undefined, isDevelopment);
+      // A process serves one immutable production build; hash its final public output once, lazily.
+      let pwaAssets: ReturnType<typeof readPwaStaticAssets> | undefined;
       const server = new Hono<AuthContext>()
+        .use("*", sessionOriginGuard(opts.sessionlessRoutes))
         .all(PUBLIC_SURFACE_PREFIX, publicSurface)
         .all(`${PUBLIC_SURFACE_PREFIX}/*`, publicSurface)
         .use("*", routeTemplate)
         .get(APP_READINESS_PATH, () => appReadinessResponse(meta.id))
+        .get(PWA_ASSET_MANIFEST_PATH, async (c) => {
+          c.header("Cache-Control", "no-store");
+          if (isDevelopment) return c.json([]);
+          try {
+            pwaAssets ??= readPwaStaticAssets(dirname(Bun.main), meta.id, ssrMountPath, buildMetadata.release);
+            return c.json(await pwaAssets);
+          } catch (error) {
+            pwaAssets = undefined;
+            throw error;
+          }
+        })
         .route(ssrMountPath, routes(config))
         .all(`${ssrMountPath}/*`, (c) => c.notFound())
         .all("/public/*", servePublicAsset(isDevelopment, sharedStylesheetVersion(buildMetadata.release)))
@@ -930,7 +973,9 @@ export const defineApp = <
             invocationApp,
           ),
         )
-        .use("/_internal/sync/*", auth.requireOAuthScope("admin"))
+        .use("/_internal/sync/*", (c, next) =>
+          auth.requireOAuthScope(...(c.req.method === "GET" || c.req.method === "HEAD" ? ["read", "admin"] : ["admin"]))(c, next),
+        )
         .use("/_internal/sync/*", async (c, next) => {
           if (!c.get("user")?.roles.includes("admin")) return c.json({ message: "Insufficient permissions" }, 403);
           return next();
@@ -956,6 +1001,7 @@ export const defineApp = <
 
       if (compiledCapabilities) {
         server.route("/api/_internal/capabilities/v1/app-queries", createAppQueryRoutes(compiledCapabilities));
+        server.route("/api/_internal/capabilities/v1/app-capabilities", createAppCapabilityRoutes(compiledCapabilities));
         const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") =>
           withCapabilityRequestTimeout(c, kind, async () => {
             // Framework-owned endpoints run before the app's settings middleware,
@@ -1119,13 +1165,18 @@ export const defineApp = <
 
       cleanup.push(bindResourceAppAccess(meta.id, opts.access));
       server.route(RESOURCE_ACCESS_PATH, createResourceAppAccessRoutes(meta));
+      if (meta.id !== "core" && meta.id !== "gateway") server.route(APP_MIGRATION_TRIGGER_PATH, createAppMigrationTriggerRoutes(meta.id));
       cleanup.push(() => stopAppAccessConnections());
       if (meta.access?.kind === "grants") {
         server.route(appAccessManagementPath(meta), createOwnedAppAccessRoutes(meta, opts.access?.canManage));
       }
       server.use(
         "*",
-        requireAppAccess(meta, (c) => ssr.appAccessDenied(c, meta)),
+        requireAppAccess(
+          meta,
+          (c) => ssr.appAccessDenied(c, meta),
+          (c) => ssr.error(c, 503, { layout: "minimal" }),
+        ),
       );
 
       if (opts.cli && cliModules.length > 0) server.route(CLOUD_CLI_PLUGIN_ROUTE, createCliPluginRoutes(meta.id, opts.cli));
@@ -1198,7 +1249,7 @@ export const defineApp = <
       // Core creates it in its own setup, so it starts publishing after that.
       if (meta.id !== "core") await startOutbox();
 
-      cleanup.push(await startLinksRuntime());
+      cleanup.push(await startLinksRuntime(meta.id));
 
       if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {
         log.info(`Setup: ${meta.id}`);
@@ -1209,7 +1260,7 @@ export const defineApp = <
 
       stopNotificationRegistration = await startNotificationDefinitionRegistration(meta.id, notifications);
 
-      await loadSettingsCache();
+      await loadSettingsCache(AbortSignal.timeout(settingsStartupBudget));
 
       // The instance can obtain its credential before workers run; routes remain undiscoverable.
       await membership.register();

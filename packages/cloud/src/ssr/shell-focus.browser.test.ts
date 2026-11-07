@@ -16,6 +16,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 setDefaultTimeout(30_000);
 const railSnapshot = await import("../services/rail-snapshot");
 const settingsMiddleware = await import("../server/middleware/settings");
+const help = await import("./help");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
 const { server } = await import("./shell-focus.browser-harness");
 
@@ -42,10 +43,13 @@ const measure = () => {
     sidebar: box(".k2b-app-workspace__sidebar"),
     header: box(".layout-header"),
     area: box(".layout-shell-content"),
+    logo: box(".layout-rail-logo"),
+    apps: box(".layout-rail [data-cloud-rail-apps] .rail-item"),
+    avatar: box(".layout-rail .layout-profile-preferences"),
   };
 };
 type Rect = { x: number; y: number; width: number; height: number; top: number; bottom: number; left: number; right: number };
-type Boxes = Record<"rail" | "workspace" | "main" | "sidebar" | "header" | "area", Rect>;
+type Boxes = Record<"rail" | "workspace" | "main" | "sidebar" | "header" | "area" | "logo" | "apps" | "avatar", Rect>;
 const boxes = (page: Page): Promise<Boxes> => page.evaluate(measure);
 const initialBoxes = (page: Page): Promise<Boxes> => page.evaluate("window.initialBoxes");
 const settle = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
@@ -99,6 +103,7 @@ beforeAll(async () => {
   spies.push(
     spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
   );
   const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
   if (!build.success) throw new AggregateError(build.logs, "Could not compile the global stylesheet");
@@ -174,6 +179,14 @@ afterAll(async () => {
 
 const hide = '[data-cloud-shell-focus-toggle="hide"]';
 const show = '[data-cloud-shell-focus-toggle="show"]';
+const apple = (page: Page) => page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent));
+// With a mouse the avatar's hover menu holds the entry. The harness hydrates no island, so on a touch screen,
+// where the avatar opens a dropdown island, the shortcut stands in for it.
+const hideSidebar = async (page: Page, touch: boolean) => {
+  if (touch) return page.keyboard.press((await apple(page)) ? "Meta+Backslash" : "Control+Backslash");
+  await page.locator(".layout-rail .layout-profile-preferences__link").hover();
+  await page.locator(hide).click();
+};
 for (const [width, height, touch, inset] of [
   [1194, 834, true, 6],
   [834, 1194, true, 8],
@@ -194,13 +207,22 @@ for (const [width, height, touch, inset] of [
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await page.goto(`${origin}/app/focus`);
-      await settle(page);
+      await settled(page);
       const original = await boxes(page);
       expect(original.rail.width).toBe(width < 1024 ? 60 : 56);
-      await page.locator(hide).click();
-      await settle(page);
+      // No sidebar button above the apps: the first app follows Home at the rail's gap.
+      const gap = await page.locator(".layout-rail").evaluate((rail) => parseFloat(getComputedStyle(rail).rowGap));
+      expect(original.apps.top).toBe(original.logo.bottom + gap);
+      await hideSidebar(page, touch);
+      await settled(page);
       const hidden = await boxes(page);
       expect(hidden.rail.width).toBe(0);
+      // The avatar floats where the show button was, at the bottom start corner.
+      expect([hidden.avatar.width, hidden.avatar.height]).toEqual([44, 44]);
+      expect(hidden.avatar.left).toBe(width >= 1024 ? inset + 12 : 20);
+      expect(hidden.avatar.bottom).toBeLessThanOrEqual(hidden.workspace.bottom);
+      expect(await page.locator(".layout-rail .layout-profile-preferences").isVisible()).toBe(true);
+      expect(await page.locator(".layout-rail .rail-item").first().isVisible()).toBe(false);
       expect(hidden.workspace.left).toBe(inset);
       if (width >= 1024) {
         expect(hidden.sidebar.width).toBe(0);
@@ -221,21 +243,43 @@ for (const [width, height, touch, inset] of [
         expect(hidden[name].top).toBe(original[name].top);
         expect(hidden[name].bottom).toBe(original[name].bottom);
       }
-      expect(await page.locator(show).evaluate((element) => element === document.activeElement)).toBe(true);
+      // A pointer closes the menu; after the shortcut the avatar takes the lost focus.
+      expect(
+        await page.evaluate(() =>
+          document.activeElement === document.body ? "body" : document.activeElement?.hasAttribute("data-cloud-shell-focus-return"),
+        ),
+      ).toBe(touch ? true : "body");
       expect((await storedCookie(page, "cloud_shell_focus"))?.value).toBe("1");
       await page.reload();
       await settle(page);
       expect(await initialBoxes(page)).toEqual(hidden);
       expect(await boxes(page)).toEqual(hidden);
       if (width >= 1024) await expectClearCorners(page);
-      const apple = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent));
-      await page.keyboard.press(apple ? "Meta+Backslash" : "Control+Backslash");
+      if (!touch) {
+        // The floating avatar's menu offers the way back.
+        await page.locator(".layout-rail .layout-profile-preferences__link").hover();
+        expect(await page.locator(show).isVisible()).toBe(true);
+        expect(await page.locator(hide).isVisible()).toBe(false);
+        await page.mouse.move(width / 2, height / 2);
+        await settled(page);
+        expect(await page.locator(show).isVisible()).toBe(false);
+        // The floating avatar keeps a visible focus ring beside its shadow.
+        await page.locator(".layout-rail .layout-profile-preferences__link").focus();
+        await page.keyboard.press("Shift+Tab");
+        await page.keyboard.press("Tab");
+        await settled(page);
+        expect(
+          await page.locator(".layout-rail .layout-profile-preferences__link").evaluate((avatar) => getComputedStyle(avatar).boxShadow),
+        ).toContain("inset");
+        await page.locator(".layout-rail .layout-profile-preferences__link").blur();
+      }
+      await page.keyboard.press((await apple(page)) ? "Meta+Backslash" : "Control+Backslash");
       await page.waitForFunction(() => !document.querySelector(".cloud-app-canvas")?.hasAttribute("data-shell-focus"));
       await settle(page);
       expect(await boxes(page)).toEqual(original);
       expect(await storedCookie(page, "cloud_shell_focus")).toBeUndefined();
       if (touch) {
-        await page.locator(hide).click();
+        await hideSidebar(page, touch);
         const coarse = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
         // Linux WebKit's device emulation may retain a fine pointer despite
         // hasTouch. Chromium must expose the coarse pointer strip and hit test it.
@@ -282,7 +326,7 @@ test("1194x834: an island-wrapped Main hides its navigation pane with the sideba
     await settle(page);
     const pane = page.locator('.k2b-app-workspace__main-pane[data-surface="navigation"]');
     expect(await pane.isVisible()).toBe(true);
-    await page.locator(hide).click();
+    await hideSidebar(page, false);
     await settle(page);
     expect(await pane.isVisible()).toBe(false);
     expect(await page.locator(".k2b-app-workspace__sidebar").isVisible()).toBe(false);

@@ -10,6 +10,7 @@ import { notebookHelp } from "./help";
 import { migrate } from "./migrate";
 import { notebooksService, reindexRuntime, snapshotRuntime, yjsSnapshotWorker } from "./service";
 import { snapshotAllowlist } from "./service/backup";
+import { workspaceOutbox } from "./service/workspace-events";
 import { drainNotebookConnections } from "./ws";
 
 const router = new Hono<AuthContext>()
@@ -38,6 +39,7 @@ const result = await app.start({
       try {
         await reindexRuntime.start();
         await snapshotRuntime.start();
+        workspaceOutbox.start();
       } catch (error) {
         await snapshotRuntime.stop();
         await reindexRuntime.stop();
@@ -50,6 +52,8 @@ const result = await app.start({
       await snapshotRuntime.stop();
       await reindexRuntime.stop();
       await yjsSnapshotWorker.stop();
+      await workspaceOutbox.notify();
+      await workspaceOutbox.stop();
       await notebooksService.note.annotations.close();
     },
   },

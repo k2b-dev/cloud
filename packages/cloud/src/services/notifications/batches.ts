@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { lazySync } from "../../_internal/process-sync";
 import { type MailMessage, MailMessageSchema, type MailStatus, MailStatusSchema } from "../../contracts/outgoing-mail";
+import { sql } from "../../runtime/clients";
 import { markdown } from "../../shared/markdown";
 import { type AuditActor, audit } from "../audit";
 import { logger, trace } from "../logging";

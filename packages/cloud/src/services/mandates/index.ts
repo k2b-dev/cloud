@@ -1,8 +1,9 @@
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import type { CapabilityActionPolicy } from "../../contracts/capabilities";
 import { CapabilityAppIdSchema } from "../../contracts/capabilities";
+import { sql } from "../../runtime/clients";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { audit } from "../audit";
 import { requireRegisteredAppAccess, resolveIssuanceAuthority } from "../identity/issue-invocation";

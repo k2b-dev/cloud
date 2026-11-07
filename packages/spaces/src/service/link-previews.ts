@@ -1,6 +1,6 @@
+import { redis } from "@k2b/cloud";
 import { ratelimit } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { redis } from "bun";
 import { z } from "zod";
 import type { SpaceItemLink, SpaceItemLinkPreview } from "@/contracts";
 import { type GitHubLinkTarget, parseGitHubLink } from "@/lib/link-targets";

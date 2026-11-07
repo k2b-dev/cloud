@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { getAiChatQuotas, personalAiModelPolicy, resolveAiModel, runApplicationAiTask, selectAssistantAiModel } from "@k2b/cloud/ai";
 import type { AccessSubject } from "@k2b/cloud/server";
 import { getWorkflowAiBudget } from "@k2b/cloud/workflows/ai";
-import { sql } from "bun";
 import { convert } from "html-to-text";
 import { z } from "zod";
 import { app } from "../config";

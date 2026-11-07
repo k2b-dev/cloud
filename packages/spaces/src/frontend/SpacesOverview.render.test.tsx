@@ -52,6 +52,7 @@ const render = (initialActivityError: string | null = null, locale = "en") =>
                 deadlineAllDay: false,
                 startsAt: null,
                 endsAt: null,
+                canWrite: true,
               },
             ],
             counts: { mine: 1, today: 0, upcoming: 0 },

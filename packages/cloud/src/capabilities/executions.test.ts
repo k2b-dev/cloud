@@ -1,6 +1,10 @@
 import { expect, jest, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { sql } from "../runtime/clients";
 import { type CapabilityExecutionInput, recordCapabilityExecution } from "./executions";
+
+useUnitClients();
 
 const input: CapabilityExecutionInput = {
   requestId: "recording-deadline-test",

@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../../runtime/clients";
+
 import { ConfigConflict } from "../config-conflict";
 import { SETTINGS_MAP } from "./defaults";
 import { readKeyState } from "./store";

@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { assertCapabilityReview } from "@k2b/cloud/capabilities/testing";
 import { CapabilityActionReviewDataSchema, type CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { accounts, encryptSecret } from "@k2b/cloud/services";
 import { approvalReviewDigest, approvals } from "@k2b/cloud/services/approvals";
 import { workflowEffectKey } from "@k2b/cloud/workflows/store";
 import { unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { mailCapabilities } from "../capabilities";

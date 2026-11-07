@@ -339,7 +339,14 @@ Schedule a send with an ISO timestamp that includes its UTC offset:
 cld --json mail send <draft-id> --schedule 2026-10-01T08:00:00+02:00 --undo 0
 ```
 
-Scheduled delivery is observable independently from the command journal:
+The **Outbox** view and this command list sends waiting for delivery, including
+immediate sends in the waiting queue after their undo window and sends scheduled
+for later. Sends stay out while Undo or its dispatch grace is still running.
+The list and total include only sends you may read. Text output prints the total,
+for example `290 waiting`; `--json` keeps the page object with `items`, `nextCursor`, and `total`. The requested delivery time
+is present even when the send command has `scheduledAt: null`.
+
+Inspect waiting sends independently from the command journal:
 
 ```bash
 cld --json mail scheduled list --limit 50
@@ -352,7 +359,7 @@ cld --json mail scheduled cancel <scheduled-send-id> --yes
 cld --json mail scheduled cancel <scheduled-send-id> --discard --yes
 ```
 
-After successful delivery, the item leaves the scheduled list and becomes normal sent mail.
+Once processing begins, the item leaves the waiting list and can no longer be cancelled there. Successful delivery becomes normal sent mail.
 
 ## When content changes before sending
 

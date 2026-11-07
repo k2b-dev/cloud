@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { z } from "zod";
+import { sql } from "../runtime/clients";
 import { recursiveGroupIdsSubquery } from "../services/accounts/group-sql";
 import { toPgTextArray } from "../services/postgres";
 import { type AiDeleteModelInput, type AiModel, type AiModelSlot, type AiProvider, aiReplacementProblem } from "../shared/ai-models";
@@ -13,6 +13,8 @@ export const validateAiReplacement = (source: AiProvider, target: AiProvider, or
   const problem = aiReplacementProblem(source, target, original, replacement);
   if (problem === "private_boundary")
     throw new AiConfigError("invalid_configuration", "A private model cannot be replaced with a hosted model.");
+  if (problem === "restricted_boundary")
+    throw new AiConfigError("restricted_boundary", "A model without a data-protection commitment cannot be a replacement.");
   if (problem === "incompatible_model")
     throw new AiConfigError(
       "invalid_configuration",
@@ -224,11 +226,7 @@ export const deleteAiCatalogEntry = async (
           !modelIds.includes(rule.scope),
       );
       await db`UPDATE ai.cost_config SET rules=${JSON.stringify(rules)}::text::jsonb,revision=revision+1 WHERE singleton`;
-      await aiModelAccess.syncModels(
-        (await aiModelCatalog.models(db)).map((model) => model.id),
-        [],
-        db,
-      );
+      await aiModelAccess.syncModels(await aiModelCatalog.accessModels(db), [], db);
     }
     return { deleted: true };
   });

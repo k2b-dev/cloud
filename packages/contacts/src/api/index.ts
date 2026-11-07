@@ -1,6 +1,7 @@
 import { cliAmbiguityText, localizeCloudCliText } from "@k2b/cloud/cli";
 import {
   AccessEntrySchema,
+  AccessMemberSchema,
   createPagination,
   ErrorResponseSchema,
   GrantAccessSchema,
@@ -549,6 +550,23 @@ const projectContactPage = async (items: Contact[], favoriteKeys: string[]) => {
 
 const adminApi = new Hono<AuthContext>()
   .use(auth.requireRole("admin"))
+  .get(
+    "/books",
+    auth.requireOAuthScope("read", "admin"),
+    v("query", PaginationQuerySchema.extend({ search: z.string().max(200).optional() })),
+    async (c) => {
+      c.header("Cache-Control", "private, no-store");
+      const query = c.req.valid("query");
+      const filter = { query: query.search };
+      const [books, summary] = await Promise.all([
+        contactsService.book.admin.list({ actor: c.get("actor"), pagination: parsePagination(query), filter }),
+        contactsService.book.admin.summary({ actor: c.get("actor"), filter }),
+      ]);
+      if (!books.ok) return respond(c, books);
+      if (!summary.ok) return respond(c, summary);
+      return respond(c, ok({ ...books.data, items: await projectBooks(books.data.items), summary: summary.data }));
+    },
+  )
   .get("/books/:bookId/access", async (c) => {
     const bookId = c.req.param("bookId") ?? "";
     const internalBookId = await resolvePublicId("books", bookId);
@@ -1071,6 +1089,30 @@ const app = new Hono<AuthContext>()
         bookId: internalBookId!,
       });
       return respond(c, entries.ok ? ok(entries.data.items) : entries);
+    },
+  )
+
+  // List who has access, read-only
+  .get(
+    "/books/:bookId/access/members",
+    documentRoute({
+      tags: ["Contacts"],
+      summary: "List who has access",
+      description:
+        "Names and roles of everyone with access to a book, read-only. Requires read access of one's own: public access alone does not show who else has access.",
+      ...requiresAuth,
+      responses: {
+        ...bookScopedResponses,
+        200: jsonResponse(z.array(AccessMemberSchema), "Who has access"),
+      },
+    }),
+    async (c) => {
+      const internalBookId = await resolvePublicId("books", c.req.param("bookId") ?? "");
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
+      return respond(
+        c,
+        await contactsService.book.access.members({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), bookId: internalBookId }),
+      );
     },
   )
 

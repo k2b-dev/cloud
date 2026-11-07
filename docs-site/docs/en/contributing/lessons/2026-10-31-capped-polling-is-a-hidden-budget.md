@@ -1,0 +1,6 @@
+### A polling loop with a fixed attempt count was a hidden 2 s budget
+
+- **What happened:** The Spaces item detail browser test "editing a property saves it in place, and the blocker list adds and removes" expected two writes and saw one, in the merge queue of #2190 and #2202 (#2204). The second save arrived after 2 s.
+- **Root cause:** `writesReach` polled 100 × 20 ms for the expected number of writes and then asserted. The attempt count, not the save, decided the outcome. A loaded runner took longer than the 2 s these attempts add up to. The `test-waits` rule caught single sleeps of at least 1 s, but not this loop, and it did not scan `*.browser-suite.ts` files.
+- **Error class:** A polling loop whose fixed attempt count decides the outcome hides a wall-clock budget.
+- **Guard:** The suite's fake server wakes every wait when it records a write, so `writesReach` waits for the save itself, bounded only by the test's timeout. `test-waits` now also rejects a `for` loop whose condition joins a fixed attempt count with another condition and whose body awaits a sleep, and it scans browser suites. The 120 findings of the extended rule that existed before this change are recorded in `scripts/checks/test-waits.baseline` and can only decrease.

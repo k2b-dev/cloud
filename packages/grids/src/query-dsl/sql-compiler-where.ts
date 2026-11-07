@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { compileFilter, renderClause } from "../service/filter-compiler";
 import { compileFormulaPredicateAstToSql, type FormulaSqlExpression, type FormulaSqlFieldResolver } from "../service/formula-sql-compiler";
 import { requireValidCalculationSql } from "../service/formula-sql-values";

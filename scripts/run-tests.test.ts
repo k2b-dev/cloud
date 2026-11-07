@@ -10,6 +10,7 @@ import {
   planShards,
   runTestCommand,
   selectSuites,
+  shardTimeNotice,
   suiteWeight,
   type TestSuite,
   type TestWeights,
@@ -23,7 +24,8 @@ describe("root test orchestration", () => {
     const suites = await discoverTestSuites(workspaceRoot);
     const byName = new Map(suites.map((suite) => [suite.name, suite]));
 
-    expect(byName.get("@k2b/ui")?.command).toEqual(["bun", "run", "test"]);
+    expect(byName.get("@k2b/ui")).toBeUndefined();
+    expect(byName.get("@k2b/ui rest")?.command).toEqual(["bun", "run", "test:part:rest"]);
     expect(byName.get("@k2b/cloud-app-pulse")?.command).toEqual(["bun", "run", "test"]);
     expect(byName.get("@k2b/cloud-app-accounts")?.command).toEqual(["bun", "run", "test"]);
     expect(byName.get("@k2b/cloud-app-tools")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
@@ -117,6 +119,23 @@ describe("root test orchestration", () => {
     expect(run.exitCode).toBe(2);
     expect(run.stderr.toString()).toContain("--browser selected no test file");
     expect(run.stdout.toString()).not.toContain("passed");
+  });
+
+  test("a failed browser warm-up stops the run before any suite starts", () => {
+    const run = Bun.spawnSync(
+      ["bun", "--no-env-file", join(workspaceRoot, "scripts", "run-tests.ts"), "--browser", "--filter", "touch-targets"],
+      {
+        cwd: workspaceRoot,
+        // An unknown engine makes the warm-up's launcher throw before it starts a browser.
+        env: { ...process.env, CLOUD_HEAVY_LOCK: "held", TEST_BROWSER: "no-such-engine" },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expect(run.exitCode).not.toBe(0);
+    expect(run.stdout.toString()).toContain("=== browser warm-up ===");
+    expect(run.stdout.toString()).not.toContain("touch-targets");
+    expect(run.stderr.toString()).toContain("browser warm-up failed");
   });
 
   const makeSuites = (names: string[]): TestSuite[] =>
@@ -380,9 +399,10 @@ test("keeps the Mail workflow kernel in Cloud's isolated CI integration suites w
       command: ["bun", "test", "--preload", preload, "--timeout", "30000", "test/integration/mail-workflow-kernel.integration.test.ts"],
     },
   ]);
-  expect(await Bun.file(join(suites[0]!.cwd, suites[0]!.command.at(-1)!)).text()).toContain(
-    'import "../../../mail/test/integration-preload";',
-  );
+  const source = await Bun.file(join(suites[0]!.cwd, suites[0]!.command.at(-1)!)).text();
+  const mailPreload = 'await import("../../../mail/test/integration-preload");';
+  expect(source).toContain(mailPreload);
+  expect(source.indexOf(mailPreload)).toBeLessThan(source.indexOf('await import("../../../mail/src/'));
 });
 
 for (const mode of ["unit", "webkit", "integration"] as const) {
@@ -427,6 +447,31 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
     expect(workflow.jobs.gate.needs).toContain(mode);
   });
 }
+
+test("a shard's time asks for fresh weights before it fails", () => {
+  expect(shardTimeNotice("shard 1/5", 14.9, 20)).toBeUndefined();
+  expect(shardTimeNotice("shard 1/5", 16, undefined)).toBeUndefined();
+  const warning = shardTimeNotice("shard 1/5", 15.1, 20);
+  expect(warning).toStartWith("::warning title=Test shard above its target::shard 1/5 took 15.1 min");
+  expect(warning).toContain("bun scripts/test-weights.ts --run <id>");
+  expect(shardTimeNotice("shard 1/5", 20.1, 20)).toStartWith("::error title=Test shard over its time limit::");
+});
+
+test("a package's test parts run every file: the rest part excludes exactly what the other parts name", async () => {
+  for (const [workspace, part, name] of [
+    ["packages/cloud", "test:part:ssr-ai", "@k2b/cloud"],
+    ["packages/ui", "test:part:layout-content", "@k2b/ui"],
+  ] as const) {
+    const { scripts } = (await Bun.file(join(workspaceRoot, workspace, "package.json")).json()) as { scripts: Record<string, string> };
+    const directories = /test [^&]*'\*\*\/\*\.behavior\.test\.\*' ([^&]+?)\s*$/.exec(scripts[part]!)?.[1]?.split(" ") ?? [];
+    expect(directories.length).toBeGreaterThan(0);
+    for (const directory of directories) expect(scripts["test:part:rest"]).toContain(`--path-ignore-patterns '${directory}/**'`);
+    expect(scripts["test:part:rest"]!.match(/--path-ignore-patterns 'src\//g)?.length).toBe(directories.length);
+    const suites = await discoverTestSuites(workspaceRoot, { integration: false, filters: [workspace] });
+    expect(suites.map((suite) => suite.name)).not.toContain(name);
+    expect(suites.map((suite) => suite.name)).toContain(`${name} rest`);
+  }
+});
 
 test("integration --list prints the exact selection without a target, heavy slot or bootstrap", async () => {
   const args = ["--integration", "--exclude", "grids", "--shard", "2/3", "--list"];

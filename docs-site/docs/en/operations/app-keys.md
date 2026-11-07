@@ -5,7 +5,7 @@ section: Operations
 order: 1144
 description: Enroll, export, rotate and revoke an application's Ed25519 key without sending its private seed to Core.
 tags: [operations, identity, credentials, cli]
-updated: 2026-10-31
+updated: 2026-11-05
 ---
 
 # App keys
@@ -23,6 +23,32 @@ enrolling a key alone does not configure or start an application.
 You need a Cloud administrator credential. OAuth credentials also need `write`
 or `admin` scope for creation and revocation. Use HTTPS when talking to Core
 across machines.
+
+## App-paid capability calls
+
+Applications may use the same enrolled key to call capabilities explicitly
+offered for app authority. The application declares each required platform
+permission; Core enforces it per capability. No service account token needs
+to be created or distributed for this path. See
+[Call as the application](/en/docs/platform/capabilities#call-as-the-application).
+
+The existing `security.rate_limit_per_second` setting bounds aggregate calls
+per application across keys, in addition to signed ingress and per-key limits.
+Geo callers share `geo.monthly_budget_credits` and the installation-wide
+provider-plan request rate. There is no per-person or per-app daily allowance.
+Address autocomplete can also run anonymously from an app server through
+`geoClient.autocomplete(input)`, with only `CLOUD_CORE_INTERNAL_ORIGIN` configured.
+That internal-only entry needs no app key; the gateway refuses its route.
+Other app-authority calls continue to require the enrolled key and declaration.
+
+Capability execution history adds nullable `actor_app_id` and `actor_key_id`
+columns on migration. These identify the application and enrolled key without
+assigning user grants. Revocation is checked on every signed transmission and
+again at the provider before execution, including previously issued app
+invocations. Operators can stop one app's access by revoking its enrolled
+keys. Platform permissions are declared by the application author; there is
+no separate operator approval toggle. Removing a permission from that
+declaration takes effect at the next Core admission.
 
 ## Create keys with cld
 
@@ -47,11 +73,12 @@ formats are:
 | `--format` | File | Contents |
 | --- | --- | --- |
 | `env` | `<app>.env` | `CLOUD_APP_KEY=<private key>` |
-| `compose` | `<app>.compose.yaml` | A service environment fragment with `CLOUD_APP_KEY` |
-| `k8s-secret` | `<app>.secret.yaml` | A Kubernetes Secret with `stringData.CLOUD_APP_KEY` |
+| `compose` | `<app>.compose.yaml` and `<app>.key` | An override for service `app-<app>` with a Docker secret mount and the Core origin; the companion key path is absolute |
+| `k8s-secret` | `<app>.secret.yaml` | A Kubernetes Secret with `stringData.app.key` (mount as a file) |
 
 These files use the deployment names `CLOUD_APP_KEY` and `CLOUD_APP_KEY_FILE`;
-they do not replace the existing runtime configuration in this release.
+use the [upgrade guide](/en/docs/operations/app-key-upgrade) before replacing
+an existing runtime environment block.
 The Kubernetes Secret is named `<app>-app-key`; long app IDs use a shortened
 name with a stable hash suffix. Secret files, including YAML, are private
 material. Keep them out of Git and deployment logs.
@@ -85,11 +112,20 @@ so the application user can read it. Do not supply both key sources: that
 stops startup. The key's app ID must match the built or development app ID.
 Core and Gateway keep their infrastructure environment values and refuse keys.
 
-**Keep infrastructure environment values until the platform-client import
-migration is complete.** Key-only production operation is not yet supported;
-remaining Bun-global SQL/Redis imports still read `DATABASE_URL` and
-`REDIS_URL` from the environment. The bootstrap initializer itself supports a
-key and Core origin, but that does not migrate application imports.
+Cloud releases 0.56.0–0.65.0 refuse resource-principal reads signed with an app key, including
+Chat readability checks. Keep `CLOUD_APP_KEY` and `CLOUD_APP_KEY_FILE` unset on
+those releases. Enable them only after Core and all applications run a release
+containing the resource-principal read fix ([#2377](https://github.com/k2b-dev/cloud/issues/2377)).
+With that fix, these checks accept app keys with the same `resources:readers`
+admission as legacy workload credentials. A key identifies the application;
+it grants no person or resource authority. Revocation and expiry are checked
+again before the provider runs the check.
+
+Key-only operation also requires the release containing the complete platform-client
+and signed-request migration. Retain infrastructure values on older releases
+and for third-party apps with old Bun-global clients. Use the
+[checked upgrade path](/en/docs/operations/app-key-upgrade) to change an
+existing installation.
 
 The platform requests its connections once before loading application code.
 Explicit environment values win per value; Core supplies missing values.
@@ -168,9 +204,17 @@ fingerprint or public key and revokes it. Keys created in the browser carry no i
 create an issuer key with `cld … --grant oauth:issue` (see
 [Background and OAuth authority](#background-and-oauth-authority)).
 
-The Apps list and the app page show the key state of each app. A running app
-without any key still **starts with its environment**; its page links to
-**Create key** and to [Use the key at start](#use-the-key-at-start). An app with
+The Apps list and the app page show the key state of each app. An app whose
+running instances took their connections from their own environment still
+**starts with its environment**, also when it already has a key; the registry
+reports how each instance started. Its page links to **Create key**, or to the
+keys when one exists, and to [Use the key at start](#use-the-key-at-start). When
+Core recorded a refused start (`lastRejectedStart`), **Start refused** and its
+reason lead the list row and the app page until the next successful start. The
+way out follows what still blocks the next start: **Turn on again** while
+background access is off, **Create new key** while no other valid key exists,
+and otherwise the deployment and a restart. The keys column marks
+the refused key with the time of the refusal. An app with
 only revoked or expired keys has **no valid key**: its running instances keep
 working, the next start fails, and **Create new key** is the page's one filled
 action next to [Rotate or recover a key](#rotate-or-recover-a-key). Two active
@@ -192,6 +236,16 @@ account prevents authentication with all its keys. Successful bootstrap updates
 `lastUsedAt`; a key that has never authenticated has a null value. Lists accept `--page` and `--per-page`
 (default 100, maximum 500).
 
+The per-app key list also reports `lastRejectedStart`: the time, key ID and
+reason (`revoked`, `expired`, `disabled`, or `connections_not_permitted`) of the
+last refused bootstrap whose signature and request claims were verified against
+that app's stored key. A successful bootstrap of the app clears it. Unknown
+keys, unverified proofs, and proofs already used successfully are not recorded
+because they do not prove a new start by that app. `cld` shows the rejection on
+one line when set.
+Core adds `auth.app_start_rejections` on migration, keeping at most one row per
+app; operators need no new configuration.
+
 Revocation is idempotent. Retrying enrollment of a revoked or expired public
 key returns its original ID and never reactivates it. Generate a new pair to
 replace it. Disabling the app's service account remains a separate app-wide
@@ -207,9 +261,14 @@ Core's endpoints require administrator authorization:
 | Method and path | Request or response |
 | --- | --- |
 | `POST /api/admin/apps/:appId/keys` | `{ publicKey, name?, expiresAt?, grants? }` → `{ keyId, installationId, fingerprint, status, accountStatus }` |
-| `GET /api/admin/apps/:appId/keys` | `{ installationId, items, page, perPage, total, hasNext }` with public-key metadata |
+| `GET /api/admin/apps/:appId/keys` | `{ installationId, items, lastRejectedStart, page, perPage, total, hasNext }` with public-key metadata |
 | `DELETE /api/admin/apps/:appId/keys/:keyId` | Revoke that app's exact key; repeated revocation succeeds |
 | `GET /api/admin/apps/keys` | `{ installationId, items, page, perPage, total, hasNext }`; each item has `appId`, `accountStatus`, `totalKeys`, `activeKeys` |
+
+`lastRejectedStart` is `null` when no verified refusal is recorded, or
+`{ at: "2030-01-02T03:04:05.000Z", reason: "revoked", keyId: "<uuid>" }`.
+`at` is an ISO 8601 timestamp; `keyId` is a UUID or `null`. The field belongs
+to the app and is returned on every page of its key list.
 
 Both GET endpoints accept `page` and `perPage` with the same limits as `cld`.
 The overview includes apps with revoked keys, even when the app is not running.
@@ -300,7 +359,7 @@ Follow the affected service's credential-rotation procedure; changing
 `@k2b/cloud/app-key` has no server imports and works in Bun and browsers with
 WebCrypto Ed25519. Browser generation requires a secure context.
 
-- `generateAppKeyPair()` returns `{ seed, publicKey }` through WebCrypto JWK export.
+- `generateAppKeyPair()` returns `{ seed, publicKey }` through WebCrypto JWK export. When the engine refuses a generation with an `OperationError`, as WebKit on Linux does about once in a hundred, it draws a new pair, up to three attempts.
 - `deriveAppPublicKey(seed)` derives the public key from a 32-byte seed.
 - `importAppKeySeed(seed)` and `importAppPublicKey(publicKey)` return WebCrypto keys for signing or verification.
 - `formatAppKey({ installationId, appId, keyId, seed })` and `parseAppKey(value)` validate the private string; IDs are canonical lowercase UUIDs.
@@ -331,3 +390,9 @@ same public key is what makes lost responses safe. Core-owned consumers read
 `getInstallationId`, `getActiveAppKey`, and `touchAppKey` from
 `@k2b/cloud/services/app-keys`; the active-key read goes directly to Postgres
 and checks account status, revocation, and expiry without a cache.
+
+Key metadata keeps its stored lifecycle `status` and reports `usable` separately.
+A key is usable only while it and its account are active and the runtime accepts
+its public key. Restored public development fixtures therefore report
+`usable: false` outside development and are excluded from the app overview’s
+`activeKeys` count.

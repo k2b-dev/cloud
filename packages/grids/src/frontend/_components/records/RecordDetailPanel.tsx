@@ -1,8 +1,10 @@
+import { accessMemberEntries } from "@k2b/cloud/access/ui";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   Button,
   DescriptionList,
+  DetailAccess,
   DetailPanel,
   Dropdown,
   type DropdownItem,
@@ -36,9 +38,10 @@ import RecordDocumentsSection from "./RecordDocumentsSection";
 import RecordFileField from "./RecordFileField";
 import RecordHistorySection from "./RecordHistorySection";
 import RecordReadView from "./RecordReadView";
-import RecordReferencedBy from "./RecordReferencedBy";
+import { RecordLinks } from "./RecordReferencedBy";
 import { openRecordUpsertDialog, RecordSaveConflictError } from "./RecordUpsertDialog";
 import RecordVersions from "./RecordVersions";
+import type { RecordAccess } from "./record-access";
 import { CorrectionDraftInvocationError, createCorrectionDraft } from "./record-correction";
 import { recordDisplayTitle } from "./record-display";
 
@@ -77,6 +80,10 @@ type Props = {
   onRemoved: () => void;
   recordActionLaunchers: WorkspaceRecordLauncher[];
   onOpenRecord: (recordId: string) => void;
+  /** Who has access to the base, read-only; it loads once the first record opens. */
+  access?: RecordAccess;
+  /** The viewer, marked as "You" among the people with access. */
+  currentUserId?: string;
 };
 
 const recordLauncherIntent = (launcher: WorkspaceRecordLauncher): CorrectionDraftIntent =>
@@ -84,6 +91,7 @@ const recordLauncherIntent = (launcher: WorkspaceRecordLauncher): CorrectionDraf
 
 export default function RecordDetailPanel(props: Props) {
   const locale = useLocale();
+  createEffect(() => props.access?.load());
   const t = () => recordMessages.resolve([locale()]).t;
   const retryToast = createRetryToasts();
   let disposed = false;
@@ -765,10 +773,20 @@ export default function RecordDetailPanel(props: Props) {
                   </Show>
                 </>
               }
-              relationsAfter={
-                <Show when={mode() === "live" && props.detail() && !props.detail()?.combinedOrigin}>
-                  <RecordReferencedBy baseId={props.baseId} tableId={props.tableId} recordId={rec.id} />
-                </Show>
+              links={
+                mode() === "live" && !props.detail()?.combinedOrigin
+                  ? (outgoing) => (
+                      <RecordLinks
+                        baseId={props.baseId}
+                        tableId={props.tableId}
+                        recordId={rec.id}
+                        outgoing={outgoing()}
+                        ready={props.detail()?.recordId === rec.id}
+                        initialPage={props.detail()?.referencedBy}
+                        revision={props.detail()}
+                      />
+                    )
+                  : undefined
               }
               attachmentsAfter={documents.documents}
               discussion={
@@ -781,10 +799,22 @@ export default function RecordDetailPanel(props: Props) {
               }
               more={
                 <>
+                  {/* Read-only for everyone who reads the base. */}
+                  <Show when={props.access}>
+                    {(access) => (
+                      <DetailAccess
+                        entries={accessMemberEntries(access().members, { currentUserId: props.currentUserId, locale: locale() })}
+                        state={access().state}
+                        onRetry={access().retry}
+                        note={t().accessWholeBase}
+                      />
+                    )}
+                  </Show>
                   <Show when={props.detail()?.combinedOrigin}>
                     {(origin) => (
                       <DetailPanel.Section
                         title={t().combinedSource}
+                        icon="ti ti-git-merge"
                         collapsible
                         summary={`${origin().source.baseName} · ${origin().source.tableName}`}
                       >

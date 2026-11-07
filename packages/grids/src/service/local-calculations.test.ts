@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { planLocalCalculations } from "./local-calculations";
 import type { Field } from "./types";
+
+useUnitClients();
 
 const field = (name: string, type: Field["type"], config: Field["config"] = {}): Field => ({
   id: `${name}-id`,

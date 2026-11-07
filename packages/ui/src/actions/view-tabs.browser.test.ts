@@ -21,13 +21,18 @@ export function Fixture(props) {
     en: [{label:"Focus",count:12}, {label:"Needs action",count:12}, {label:"Assigned to me",count:5}, {label:"Waiting for a customer reply",count:2}, {label:"Not assigned",count:4}, {label:"Done"}],
     de: [{label:"Fokus",count:12}, {label:"Wartet auf Antwort",count:2}, {label:"Nicht zugewiesen",count:4}, {label:"Mir zugewiesen",count:5}, {label:"Erledigt"}],
     short: [{label:"List"}, {label:"Board"}],
+    three: [{label:"Waiting for a customer reply",count:2}, {label:"Assigned to someone else",count:4}, {label:"Recently answered by the team",count:9}],
   };
-  const items = labels[props.scenario.labels || "en"].map((item, index) => ({...item, id:String(index+1), href:"?view="+(index+1)}));
+  const items = [
+    ...labels[props.scenario.labels || "en"].map((item, index) => ({...item, id:String(index+1), href:"?view="+(index+1)})),
+    ...(props.scenario.pinned === "true" ? [{ id: "events", label: "Events", href: "?view=events", pinned: true }] : []),
+  ];
+  const fit = props.scenario.fit === "true";
   const [current, setCurrent] = createSignal(props.scenario.current || "1");
   if (typeof window !== "undefined") window.setView = setCurrent;
   return <LocaleProvider locale={props.scenario.labels === "de" ? "de" : "en"}>
     <AppWorkspace>
-      <AppWorkspace.Head views={<ViewTabs label="Views" items={items} current={current()} />}
+      <AppWorkspace.Head views={<ViewTabs label="Views" items={items} current={current()} fit={fit} max={fit ? items.length : undefined} />}
         primary={props.scenario.primary === "true" ? { label: "New conversation", icon: "ti ti-plus" } : undefined}
         actions={props.scenario.actions === "false" ? undefined : <>
           <IconButton label="List type"><i class="ti ti-list" aria-hidden="true" /></IconButton>
@@ -192,6 +197,7 @@ const snapshot = (page: Page, id?: string, focused = false) =>
         leftInset: fade === "top" || fade === "both" ? 16 : 0,
         rightInset: fade === "bottom" || fade === "both" ? 16 : 0,
         outline: getComputedStyle(current).outlineStyle,
+        edge: getComputedStyle(current).boxShadow,
         boxes: Array.from(list.querySelectorAll(".k2b-view-tabs__tab"))
           .filter((tab) => tab.getClientRects().length > 0)
           .map((tab) => {
@@ -398,7 +404,9 @@ for (const dir of ["ltr", "rtl"]) {
         await settled(page);
         const focused = await snapshot(page, undefined, true);
         expect(focused.id).toBe(id);
-        expect(focused.outline).not.toBe("none");
+        // Focus turns the tab's own inset edge blue, inside the tab where the strip cannot clip it.
+        expect(focused.edge).toContain("inset");
+        expect(focused.edge).not.toContain("rgba(0, 0, 0, 0)");
         expectVisible(focused);
       }
     } finally {
@@ -502,6 +510,116 @@ test("resizing a narrow workspace host keeps the focused More trigger visible", 
     const resized = await snapshot(page, undefined, true);
     expect(resized.id).toBe(moreLabel);
     expectVisible(resized);
+  } finally {
+    await page.close();
+  }
+});
+
+/** What a fitting strip shows: no overflow, the views on screen, and the count under More. */
+const fitState = (page: Page) =>
+  page.evaluate(() => {
+    const list = document.querySelector<HTMLElement>(".k2b-view-tabs__list")!;
+    const shown = (element: Element) => element.getClientRects().length > 0;
+    const items = Array.from(list.querySelectorAll<HTMLElement>(":scope > .k2b-view-tabs__item"));
+    const more = list.querySelector<HTMLElement>(":scope > .k2b-view-tabs__more");
+    const count = more && shown(more) ? Array.from(more.querySelectorAll(".k2b-view-tabs__more-count")).find(shown)?.textContent : null;
+    const current = list.querySelector<HTMLElement>('[aria-current="page"]')!.getBoundingClientRect();
+    const bounds = list.getBoundingClientRect();
+    return {
+      // The shown entries against the strip's inner room; a phone strip keeps a small scroll overhang of its padding.
+      overflow: (() => {
+        const boxes = Array.from(list.children)
+          .filter(shown)
+          .map((child) => child.getBoundingClientRect());
+        const style = getComputedStyle(list);
+        const room = list.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+        return Math.max(...boxes.map((box) => box.right)) - Math.min(...boxes.map((box) => box.left)) - room;
+      })(),
+      shown: items.filter(shown).map((item) => item.dataset.viewTab),
+      flowing: items.filter((item) => !item.hasAttribute("data-pinned")).length,
+      count: count ? Number(count.replace("+", "")) : 0,
+      currentInside: current.left >= bounds.left - 0.5 && current.right <= bounds.right + 0.5,
+    };
+  });
+
+for (const [host, width] of [
+  ["1440 px host", "1440"],
+  ["900 px host", "900"],
+  ["640 px host", "640"],
+] as const)
+  for (const hydrate of [false, true])
+    test(`a fitting strip in a ${host} ${hydrate ? "after" : "before"} hydration shows only views that fit and counts the rest in More`, async () => {
+      const page = await browser!.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+      try {
+        await load(page, { fit: "true", pinned: "true", current: "5", width }, hydrate);
+        const state = await fitState(page);
+        expect(state.overflow).toBeLessThanOrEqual(1);
+        expect(state.currentInside).toBe(true);
+        // Pinned Events and the open view stay; every other view is on screen or counted under More.
+        expect(state.shown).toContain("events");
+        expect(state.shown).toContain("5");
+        expect(state.shown.filter((id) => id !== "events").length + state.count).toBe(state.flowing);
+        if (host === "1440 px host") expect(state.count).toBe(0);
+        if (host === "640 px host") expect(state.count).toBeGreaterThan(0);
+        if (hydrate && state.count > 0) {
+          // More lists exactly the views that left the strip.
+          await page.locator(".k2b-view-tabs__more-trigger").click();
+          await page.locator('[role="menu"]').waitFor({ state: "visible" });
+          expect(await page.locator('[role="menu"] [role="menuitem"]').count()).toBe(state.count);
+        }
+      } finally {
+        await page.close();
+      }
+    });
+
+test("a fitting strip brings views back when its host widens and lets them go when it narrows", async () => {
+  const page = await browser!.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  try {
+    await load(page, { fit: "true", pinned: "true", width: "640" });
+    const narrow = await fitState(page);
+    expect(narrow.count).toBeGreaterThan(0);
+    await page.locator("#app").evaluate((app) => (app.style.width = "1440px"));
+    await settled(page);
+    const wide = await fitState(page);
+    expect(wide.count).toBe(0);
+    expect(wide.shown.length).toBeGreaterThan(narrow.shown.length);
+    await page.locator("#app").evaluate((app) => (app.style.width = "640px"));
+    await settled(page);
+    expect(await fitState(page)).toEqual(narrow);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a strip without fit keeps scrolling its views", async () => {
+  const page = await browser!.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  try {
+    await load(page, { width: "640", current: "5" });
+    expect(await page.locator(".k2b-view-tabs__item[data-fit-hidden]").count()).toBe(0);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a fitting strip keeps the phone's scrolling head row", async () => {
+  const page = await browser!.newPage(phone);
+  try {
+    await load(page, { fit: "true", pinned: "true", current: "5" });
+    expect(await page.locator(".k2b-view-tabs__item[data-fit-hidden]").count()).toBe(0);
+    expectVisible(await snapshot(page));
+  } finally {
+    await page.close();
+  }
+});
+
+test("a fitting strip with three views still moves one that does not fit under More", async () => {
+  const page = await browser!.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  try {
+    await load(page, { fit: "true", labels: "three", width: "520", current: "1" });
+    const state = await fitState(page);
+    expect(state.overflow).toBeLessThanOrEqual(1);
+    expect(state.shown.length + state.count).toBe(state.flowing);
+    expect(state.count).toBeGreaterThan(0);
   } finally {
     await page.close();
   }

@@ -1,11 +1,15 @@
 import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { audit, SettingUnreadableError, settings } from "@k2b/cloud/services";
 import * as settingsCache from "@k2b/cloud/services/settings";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { testActor, testCall } from "../../test/files-call";
 import { app } from "../config";
 import * as maintenance from "../maintenance-schedule";
 import { readConfiguration, resetConfiguration, writeConfiguration } from "./configuration";
+
+useUnitClients();
 
 function storedString(value: unknown): string {
   if (typeof value !== "string") throw new Error("Expected a serialized configuration");

@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { sql } from "bun";
 import {
   type AvatarConfig,
   type AvatarKind,
@@ -12,6 +11,7 @@ import {
 } from "../../contracts/avatar";
 import { MAX_AVATAR_BYTES, MAX_AVATAR_DATA_URL_LENGTH } from "../../contracts/profile";
 import type { MutationResult } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { AVATAR_RENDERER_REVISION, renderAvatarSvg } from "../../shared/avatar-art";
 import { stripImageMetadata } from "../image-metadata";
 

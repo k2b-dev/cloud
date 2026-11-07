@@ -3,6 +3,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import type { Context } from "hono";
 import { stubConnections } from "../../../../scripts/fixtures/platform";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import type { Table } from "../contracts";
 import * as parser from "../query-dsl/parser";
 import * as preview from "../query-dsl/preview";
@@ -12,6 +13,8 @@ import { gridsService } from "../service";
 import * as querySettings from "../service/query-settings";
 import type { GqlRuntimeTraceEnd } from "./gql-observability";
 import { executeRecordQuery } from "./gql-runtime";
+
+useUnitClients();
 
 // Exercise real admission and runtime logic with process configuration supplied locally.
 let restoreQuerySettings: () => void;

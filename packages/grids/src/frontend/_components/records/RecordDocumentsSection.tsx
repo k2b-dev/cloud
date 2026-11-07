@@ -170,7 +170,7 @@ export default function RecordDocumentsSection(props: {
               subtitle={t().snapshotFrom({ date: formatRecordRelativeTime(snapshot.createdAt) })}
               more={
                 <>
-                  <DetailPanel.Section title={t().metadata} collapsible summary={t().snapshotSummary}>
+                  <DetailPanel.Section title={t().metadata} icon="ti ti-info-square" collapsible summary={t().snapshotSummary}>
                     <DescriptionList
                       layout="rows"
                       size="sm"
@@ -182,7 +182,12 @@ export default function RecordDocumentsSection(props: {
                       ]}
                     />
                   </DetailPanel.Section>
-                  <DetailPanel.Section title={t().rawSnapshotData} collapsible summary={`${t().rootRecord}, ${t().recordGraph}`}>
+                  <DetailPanel.Section
+                    title={t().rawSnapshotData}
+                    icon="ti ti-braces"
+                    collapsible
+                    summary={`${t().rootRecord}, ${t().recordGraph}`}
+                  >
                     <div class="flex flex-col gap-3">
                       <StructuredDataPreview
                         title={t().rootRecord}
@@ -256,6 +261,7 @@ export default function RecordDocumentsSection(props: {
     <Show when={generatedDocuments().length > 0 || (props.live && props.canWrite && availableTemplates().length > 0)}>
       <DetailPanel.Section
         title={t().documents}
+        icon="ti ti-file-text"
         count={hasMoreDocuments() || generatedDocuments().length === 0 ? undefined : generatedDocuments().length}
         meta={hasMoreDocuments() ? `${generatedDocuments().length}+` : undefined}
         actions={
@@ -325,6 +331,7 @@ export default function RecordDocumentsSection(props: {
     <Show when={props.live || manualSnapshots().length > 0}>
       <DetailPanel.Section
         title={t().snapshots}
+        icon="ti ti-camera"
         count={manualSnapshots().length || undefined}
         collapsible
         summary={

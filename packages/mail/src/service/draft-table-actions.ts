@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import { encodeTableFocus, type TextTableIntent } from "@k2b/cloud/browser/shared-text";
 import {
   planTableAction,
@@ -10,7 +11,6 @@ import {
 } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { ConflictError } from "@k2b/sync";
-import { sql } from "bun";
 import * as Y from "yjs";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { type DraftDocumentSave, lockDraftDocumentInTransaction, mailDraftDocumentLog } from "./draft-documents";

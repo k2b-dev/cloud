@@ -1,12 +1,12 @@
 import { beforeAll, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import type { Provider } from "@k2b/nessi";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../../src/runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import { aiLive, aiLiveChannels } from "../../src/ai/live";
 import { aiModelAccess } from "../../src/ai/model-access";
@@ -46,13 +46,10 @@ const profile: AiModelProfile = {
 };
 const provider: Provider = {
   name: "fixture",
-  family: "ollama",
+  family: "openai-compatible",
   model: "fixture",
   contextWindow: 1000,
   capabilities: { streaming: true, tools: false, thinking: false, images: false, usage: true },
-  async complete() {
-    throw new Error("The OpenAI-compatible API serves every request through stream()");
-  },
   async *stream() {
     yield { type: "block_start", blockId: "text", index: 0, kind: "text" };
     yield { type: "block_delta", blockId: "text", delta: "Completed" };
@@ -405,8 +402,10 @@ for (const kind of ["standalone", "agent"] as const) {
           await coreSettings.set("ai.openai_api_max_concurrent_requests", previousLimit);
         }
         await clear();
-        // An intentionally broad grant counts as explicit access.
+        // All signed-in people are people: a machine key needs its own grant on the model.
         await grant(model.id, { type: "authenticated" });
+        expect((await call()).status).toBe(404);
+        await grant(model.id, machineSubject);
         expect((await call()).status).toBe(200);
         await serviceAccounts.setStatus({ id: machineId, status: "disabled" });
         expect((await call()).status).toBe(401);

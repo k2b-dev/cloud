@@ -10,6 +10,8 @@ updated: 2026-10-06
 
 # Resource API keys
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Cloud uses service accounts for credentials that are not browser sessions.
 
 Your application receives the resulting actor. Cloud stores the service

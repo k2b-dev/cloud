@@ -1,9 +1,10 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import { env } from "../config/env";
 import { APP_LOGIN_CONTEXT_BROWSERS, APP_LOGIN_CONTEXT_OSES } from "../contracts/app-approval";
+import { sql } from "../runtime/clients";
 import { type BrowserCode, type OsCode, truncateUtf8 } from "../server/request-context";
 import { logger } from "./logging";
 

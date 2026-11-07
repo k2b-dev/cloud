@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import { type AccessSubject, buildAccessPrincipalCondition, createAccess } from "../server/services/access";
 import { toPgTextArray } from "../services/postgres";
 import type { AiModelAccessDraft } from "../shared/ai-models";
@@ -122,20 +122,28 @@ export const aiModelAccess = {
   },
 
   /** Called in the catalog transaction. Existing grants survive edits that omit the ACL draft. */
-  syncModels: async (modelIds: readonly string[], changes: readonly AiModelAccessChange[], db: typeof sql): Promise<void> => {
+  syncModels: async (
+    models: readonly { id: string; restricted: boolean }[],
+    changes: readonly AiModelAccessChange[],
+    db: typeof sql,
+  ): Promise<void> => {
     // Serialize lifecycle changes (including a previously absent model) with catalog saves.
     await db`LOCK TABLE ai.model_access_resources IN SHARE ROW EXCLUSIVE MODE`;
     const current = await db<{ model_id: string; revision: number | string }[]>`SELECT model_id, revision FROM ai.model_access_resources`;
     const revisions = new Map(current.map((row) => [row.model_id, Number(row.revision)]));
-    const keep = new Set(modelIds);
+    const keep = new Set(models.map((model) => model.id));
+    // People never use models without a data-protection commitment, so they get no chat access.
+    const restricted = new Set(models.filter((model) => model.restricted).map((model) => model.id));
     for (const change of changes) {
       if (!keep.has(change.modelId)) throw new Error("Permissions reference an unknown model.");
       if ((revisions.get(change.modelId) ?? null) !== change.expectedRevision) throw new AiModelAccessConflict();
+      if (restricted.has(change.modelId) && change.entries.length)
+        throw new AiModelAccessInvalid("Models without a data-protection commitment cannot be shared for chat.");
     }
     for (const modelId of keep) {
       if (revisions.has(modelId)) continue;
       await db`INSERT INTO ai.model_access_resources (model_id) VALUES (${modelId})`;
-      await grant(modelId, { type: "authenticated" }, db);
+      if (!restricted.has(modelId)) await grant(modelId, { type: "authenticated" }, db);
     }
     for (const change of changes) {
       await db`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE model_id = ${change.modelId})`;

@@ -29,8 +29,8 @@ import { closeSync, openSync } from "node:fs";
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { connections, createSql, sql } from "@k2b/cloud";
 import { jetstreamManager } from "@nats-io/jetstream";
-import { SQL, sql } from "bun";
 import { assertVerificationReport, localVerificationUrl, selectPhases } from "./verification";
 import { verificationPhases } from "./verification-phases";
 
@@ -43,10 +43,10 @@ const option = (name: string): string | undefined => {
 
 if (argv.includes("--bootstrap")) {
   // Callers (this script and scripts/diagnostics.ts) pass the isolated database as DATABASE_URL.
-  const databaseUrl = localVerificationUrl("PostgreSQL", process.env.DATABASE_URL);
-  if (!/^\/grids_verify_[a-f0-9]{16,32}(?:_test)?$/.test(databaseUrl.pathname)) throw new Error("Unexpected verification database");
   const { initializeTestPlatform } = await import("../../../scripts/fixtures/platform");
   await initializeTestPlatform("grids");
+  const databaseUrl = localVerificationUrl("PostgreSQL", connections().database.url);
+  if (!/^\/grids_verify_[a-f0-9]{16,32}(?:_test)?$/.test(databaseUrl.pathname)) throw new Error("Unexpected verification database");
   // Match the shared integration bootstrap: real identity and session fixtures
   // depend on Core's complete, ordered setup rather than an app-owned subset.
   const { runCoreSetup } = await import(`${root}/packages/core/src/runtime-helpers.ts`);
@@ -72,7 +72,7 @@ if (argv.includes("--bootstrap")) {
   if (phases.some((phase) => phase.pdftotext) && !Bun.which(pdftotext)) {
     throw new Error("Grids verification requires Poppler pdftotext on PATH or an executable PDFTOTEXT path");
   }
-  const admin = new SQL(adminUrl, { connectionTimeout: 5 });
+  const admin = createSql({ connectionTimeout: 5, url: adminUrl });
   let isolated: Awaited<ReturnType<typeof createDisposableDatabase>> | undefined;
   let current: Bun.Subprocess | undefined;
   const interrupted = (signal: NodeJS.Signals) => {

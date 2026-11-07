@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { redis } from "@k2b/cloud";
 import * as settings from "@k2b/cloud/services/settings";
-import { redis } from "bun";
+import { useUnitClients } from "../../../scripts/fixtures/unit-clients";
 import { checkPublicRate, PUBLIC_HOST_BUDGET_FACTOR } from "./public-protections";
+
+useUnitClients();
 
 beforeEach(() => {
   spyOn(Date, "now").mockReturnValue(1_793_404_800_000);

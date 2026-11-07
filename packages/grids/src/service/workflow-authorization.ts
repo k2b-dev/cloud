@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { AccessSubject, PermissionLevel } from "@k2b/cloud/server";
 import {
@@ -7,7 +8,6 @@ import {
   serviceAccountCredentials,
   serviceAccounts,
 } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { GridsWorkflowCredential, GridsWorkflowCredentialBinding, GridsWorkflowPrincipal } from "../workflows/contracts";
 import {
   hasAtLeast,

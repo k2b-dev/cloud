@@ -1,6 +1,5 @@
 import { afterEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
@@ -13,11 +12,13 @@ import { createSearchRoutes } from "../api/search";
 import { appAccess, compileAppAccess } from "../contracts/app-access";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "../contracts/capabilities";
 import type { AppRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import { requireAppAccess } from "../server/middleware/app-access";
 import type { AuthContext, RequestAuthority } from "../server/middleware/auth";
 import * as authMiddleware from "../server/middleware/auth";
 import { buildAccessPrincipalCondition } from "../server/services/access";
 import { discoverableApps } from "./app-discovery";
+import { prepareFanoutIssuance } from "./identity/issue-invocation";
 import * as settings from "./settings";
 
 const suite = databaseSuite();
@@ -149,6 +150,8 @@ suite("resource-derived app entry and discovery", () => {
         withActiveSigner: async (_purpose, callback) => callback(signer, sql),
         signInvocation: async (params) =>
           (await import("./identity/invocation-token")).signInvocationToken({ ...params, signer, issuer: "https://cloud.test" }),
+        // The fixture's principal is the issuing authority; the batch still decides resource entry per target.
+        prepareFanout: (params, options) => prepareFanoutIssuance(params, { ...options, resolve: async () => current }),
         fetch: async () => {
           searchCalls++;
           return Response.json({ data: [] });

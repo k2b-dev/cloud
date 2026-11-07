@@ -87,7 +87,7 @@ domTest("Add image or video chooses through the shared chooser and uploads like 
     await Bun.sleep(10);
     expect(choices).toEqual([
       // Nineteen attachments are left, so files from a Cloud app may hold at most that many attachments' worth.
-      { accept: "image/*,.svg,video/*,.mov,.m4v", multiple: true, maxBytes: 19 * MAX_TASK_ATTACHMENT_SIZE_BYTES },
+      { accept: "image/*,.svg,video/*,.mov,.m4v", multiple: true, maxFiles: 19, maxTotalBytes: 19 * MAX_TASK_ATTACHMENT_SIZE_BYTES },
     ]);
     expect(uploads).toEqual([]);
 

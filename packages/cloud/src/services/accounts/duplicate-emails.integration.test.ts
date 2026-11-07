@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { listDuplicateEmails } from "./duplicate-emails";
 
 // Minimal schema in a dedicated disposable database; never touch the development database.

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { IPA_ACTIVE_CONFLICT, IPA_IDENTITY_CONFLICT, IPA_MISSING_CONFLICT } from "@k2b/cloud/services/ipa/reactivation";
 import { accountsApiErrorMessage, accountsApiMessages, checkAccountsApiMessages } from "./messages";
 
 describe("Accounts API messages", () => {
@@ -33,4 +34,15 @@ test("explains POSIX failures in the request locale without exposing raw codes",
   expect(accountsApiErrorMessage(409, "en", "setup_disabled", "setup_disabled")).toContain("disabled");
   expect(accountsApiErrorMessage(409, "de", "range_exhausted", "range_exhausted")).toContain("keine IDs mehr frei");
   expect(accountsApiErrorMessage(409, "de", "group_conflict", "group_conflict")).toContain("Namenskonflikt");
+});
+
+test("explains FreeIPA identity conflicts in the request locale", () => {
+  const english = accountsApiMessages("en");
+  expect(english.ipaIdentityConflict).toBe(IPA_IDENTITY_CONFLICT);
+  expect(english.ipaActiveConflict).toBe(IPA_ACTIVE_CONFLICT);
+  expect(english.ipaMissingConflict).toBe(IPA_MISSING_CONFLICT);
+  expect(accountsApiErrorMessage(409, "de", IPA_MISSING_CONFLICT)).toContain("ursprüngliche FreeIPA-Konto fehlt");
+  expect(accountsApiErrorMessage(409, "de-CH", english.ipaIdentityConflict)).toContain("Identität zu prüfen");
+  expect(accountsApiErrorMessage(409, "de", english.ipaActiveConflict)).toContain("ist aktiv");
+  expect(accountsApiErrorMessage(409, "en", english.ipaIdentityConflict)).toBe(english.ipaIdentityConflict);
 });

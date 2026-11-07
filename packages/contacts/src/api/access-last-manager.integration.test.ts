@@ -1,7 +1,7 @@
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { ensureManagerRemains } from "@k2b/cloud/server";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { inLockOrder } from "../../../../scripts/fixtures/lock-order";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";

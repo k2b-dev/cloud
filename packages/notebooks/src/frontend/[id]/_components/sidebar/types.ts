@@ -1,4 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
+import type { PageTemplateSummary } from "@/lib/page-templates";
 import type { NoteDeletePermission } from "../../../../lib/note-delete-permission";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { SidebarFilter } from "../../../../lib/sidebar-filter";
@@ -46,6 +47,8 @@ export type NotebookContext = {
   favoriteNoteIds: string[];
   /** Tag summaries for the sidebar's tag filter. */
   tags: TagSummary[];
+  /** The notebook's own page templates, then the built-in ones. */
+  pageTemplates: PageTemplateSummary[];
   /** Workspace event cursor captured before the SSR snapshot was loaded. */
   workspaceCursor: string | null;
   dateConfig: DateContext;

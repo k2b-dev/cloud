@@ -1,6 +1,6 @@
-import { sql } from "bun";
 import { parseStoredReviewContent } from "../../capabilities/review-storage";
 import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "../../contracts/capabilities";
+import { sql } from "../../runtime/clients";
 
 // Start with this person's indexed pending rows; a Studio page alone cannot continue a chat.
 export const openRequests = (approverUserId: string, id?: string) => sql`SELECT r.* FROM approvals.requests r
@@ -24,7 +24,7 @@ export const readApprovalContent = async (input: { id: string; approverUserId: s
     SELECT r.details->'content' AS content FROM (${openRequests(input.approverUserId, input.id)}) r
     WHERE r.review_digest=${input.digest}
       AND octet_length((r.details->'content')::text) <= ${2 * CAPABILITY_MAX_REVIEW_CONTENT_BYTES + 2} LIMIT 1`;
-  const abort = () => query.cancel();
+  const abort = () => void query.cancel().catch(() => {});
   input.signal?.addEventListener("abort", abort, { once: true });
   if (input.signal?.aborted) abort();
   let rows: { content: unknown }[];

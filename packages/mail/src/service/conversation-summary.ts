@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { ActorRef, UpdateConversationSummary } from "../contracts";
 import { requireMailboxAccess, requireVisibleConversation } from "./access";
 import { type MailRequestContext, userBackedActor } from "./auth";

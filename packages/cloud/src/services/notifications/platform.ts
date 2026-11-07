@@ -1,4 +1,3 @@
-import { sql } from "bun";
 import type { output, ZodType } from "zod";
 import { isNotificationGroup, notificationGroupTag } from "../../contracts/notification-group";
 import type {
@@ -10,6 +9,7 @@ import type {
   NotificationSendInput,
 } from "../../contracts/notification-types";
 import { validateNotificationTargetHref } from "../../contracts/notification-types";
+import { sql } from "../../runtime/clients";
 import { normalizeLocale } from "../../shared/locale";
 import { logger } from "../logging";
 import { encryptSecret } from "../secrets";

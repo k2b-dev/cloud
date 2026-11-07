@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../../runtime/clients";
+
 import type { ServiceAccountRequestActor } from "../../server/middleware/auth";
 import { err, fail, ok, type Result } from "../../server/services";
 import { audit } from "../audit";

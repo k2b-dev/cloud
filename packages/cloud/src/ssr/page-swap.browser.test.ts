@@ -216,10 +216,10 @@ test("20 regular/fullPage swaps keep the slot, provider, draft, pending work and
       const frame = slot?.querySelector("iframe");
       if (!slot || !frame?.contentWindow) throw new Error("Provider missing");
       Reflect.set(window, "fixtureSlot", slot);
+      Reflect.set(window, "fixtureProviderDocument", frame.contentDocument);
       Reflect.set(frame, "fixtureIdentity", "kept");
       return {
         token: Reflect.get(frame.contentWindow, "fixtureProviderToken"),
-        timeOrigin: frame.contentWindow.performance.timeOrigin,
         context: JSON.parse(frame.contentDocument?.getElementById("provider-context")?.textContent ?? "null"),
       };
     });
@@ -242,11 +242,12 @@ test("20 regular/fullPage swaps keep the slot, provider, draft, pending work and
           sameSlot: slot === Reflect.get(window, "fixtureSlot"),
           frame: Reflect.get(frame, "fixtureIdentity"),
           token: Reflect.get(frame.contentWindow, "fixtureProviderToken"),
-          timeOrigin: frame.contentWindow.performance.timeOrigin,
+          sameDocument: frame.contentDocument === Reflect.get(window, "fixtureProviderDocument"),
           context: JSON.parse(frame.contentDocument?.getElementById("provider-context")?.textContent ?? "null"),
         };
       });
-      expect(state).toMatchObject({ sameSlot: true, frame: "kept", token: initial.token, timeOrigin: initial.timeOrigin });
+      // Document identity is stable; WebKit may round timing values differently between reads.
+      expect(state).toMatchObject({ sameSlot: true, sameDocument: true, frame: "kept", token: initial.token });
       expect(state.context).toMatchObject({
         app: "fixture",
         help: [`help-${name.toLowerCase()}`],
@@ -267,13 +268,12 @@ test("20 regular/fullPage swaps keep the slot, provider, draft, pending work and
   }
 });
 
-test("rail, phone bar, title and trail follow swaps and Back/Forward", async () => {
+test("rail, title and trail follow swaps and Back/Forward", async () => {
   const f = await fixture(390);
   try {
     const check = async (name: string) => {
       await column(f.page, name);
       expect(await f.page.locator(`.layout-rail .rail-item[href='/app/fixture/${name}'][aria-current=page]`).count()).toBe(1);
-      expect(await f.page.locator(`.cloud-tab-bar a[href='/app/fixture/${name}'][aria-current=page]`).count()).toBe(1);
       const title = name === "B" ? "Full page B" : "Regular page A";
       expect(await f.page.title()).toBe(title);
       expect(await f.page.locator("script[data-k2b-page-trail]").textContent()).toContain(title);
@@ -294,20 +294,14 @@ test("rail, phone bar, title and trail follow swaps and Back/Forward", async () 
 /** The shell's rectangles; a swapped page must lay out exactly as a reload of it. */
 const shellGeometry = (page: Page) =>
   page.evaluate(() =>
-    [
-      ".cloud-app-canvas",
-      ".layout-rail",
-      ".layout-shell-content",
-      ".layout-page-head",
-      "main.layout-content-main",
-      "#cloud-panel",
-      ".cloud-tab-bar",
-    ].map((selector) => {
-      const element = document.querySelector(selector);
-      if (!element) return [selector, null];
-      const { x, y, width, height } = element.getBoundingClientRect();
-      return [selector, element.checkVisibility(), x, y, width, height];
-    }),
+    [".cloud-app-canvas", ".layout-rail", ".layout-shell-content", ".layout-page-head", "main.layout-content-main", "#cloud-panel"].map(
+      (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return [selector, null];
+        const { x, y, width, height } = element.getBoundingClientRect();
+        return [selector, element.checkVisibility(), x, y, width, height];
+      },
+    ),
   );
 for (const width of [390, 1440]) {
   test(`${width}px: a regular and a full page swapped in lay out as their reload`, async () => {

@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../runtime/clients";
 import { ensureSchema } from "../services/postgres";
 import builtInAppIds from "./built-in-app-ids.json";
 

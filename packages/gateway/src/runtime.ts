@@ -1,4 +1,4 @@
-import { buildRuntimeFromRegistry, type ProcessSync, readAppRegistrySnapshot, startProcessSync, watchAppRegistry } from "@k2b/cloud";
+import { buildRuntimeFromRegistry, type ProcessSync, readAppRegistrySnapshot, sql, startProcessSync, watchAppRegistry } from "@k2b/cloud";
 import { env } from "@k2b/cloud/config";
 import { readAppDomains } from "@k2b/cloud/contracts/app-domains";
 import type { EnvSettingStatus } from "@k2b/cloud/contracts/settings-env";
@@ -8,10 +8,10 @@ import {
   publishGatewayRouteSnapshot,
   removeGatewayRouteSnapshot,
   superviseRuntimeTask,
+  watchGatewayDomainChanges,
 } from "@k2b/cloud/services";
 import { get } from "@k2b/cloud/services/settings";
 import { readEnvSettingsStatus } from "@k2b/cloud/services/settings/env-status";
-import { sql } from "bun";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
 import { gatewayRouter } from "./config";
 import { type AppRouteWarning, buildAppRoutesDetailed } from "./routes";
@@ -41,10 +41,9 @@ let lastRouteWarnings: AppRouteWarning[] = [];
 let watcherAbort: AbortController | null = null;
 let watcherTask: Promise<void> | null = null;
 let processSync: ProcessSync | null = null;
-// Keep the 30-second presence lease and request counters fresh even when no
-// application registry entries change. Also reconcile routing if a registry
-// watcher misses a restart notification.
-const SNAPSHOT_INTERVAL_MS = 5_000;
+// Renew the 90-second presence lease and reconcile missed hints every 30 seconds.
+const SNAPSHOT_INTERVAL_MS = 30_000;
+let domainWatcherTask: Promise<void> | null = null;
 let snapshotTimer: ReturnType<typeof setInterval> | null = null;
 let snapshotTask: Promise<void> | null = null;
 const startedAt = Date.now();
@@ -191,6 +190,20 @@ export const gatewayRuntime = {
 
   start: async (): Promise<void> => {
     startRegistryWatcher();
+    domainWatcherTask ??= superviseRuntimeTask({
+      name: "Gateway domain watcher",
+      signal: watcherAbort!.signal,
+      run: (signal) =>
+        watchGatewayDomainChanges({
+          signal,
+          onChange: async () => {
+            // A hint during a read can describe a commit newer than that read's snapshot.
+            await domainTask;
+            await refreshDomains();
+          },
+        }),
+      onError: ({ error }) => log.error("Domain watcher failed; restarting", { error: String(error) }),
+    });
     snapshotTimer ??= setInterval(() => {
       void refreshDomains();
       if (snapshotTask) return;
@@ -206,7 +219,8 @@ export const gatewayRuntime = {
     if (snapshotTimer) clearInterval(snapshotTimer);
     snapshotTimer = null;
     watcherAbort?.abort();
-    await watcherTask;
+    await Promise.all([watcherTask, domainWatcherTask]);
+    domainWatcherTask = null;
     watcherAbort = null;
     watcherTask = null;
     await snapshotTask;

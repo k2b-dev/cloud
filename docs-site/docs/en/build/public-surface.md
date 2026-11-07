@@ -153,6 +153,38 @@ Valkey limiter, returns 429 with `Retry-After` when exhausted, and needs no
 Cloud session or request context. An explicit `limitPerSecond` defines the
 route budget; omitted limits use the installation setting.
 
+## Call platform capabilities without a person
+
+Geo address autocomplete can run from an app server without a session, app key,
+or `platformPermissions` declaration. Configure `CLOUD_CORE_INTERNAL_ORIGIN` and call:
+
+```ts
+import { geoClient, rateLimit } from "@k2b/cloud/server";
+
+app.public.get("/address-suggestions", rateLimit({ keyBy: "ip" }), async (c) => {
+  const result = await geoClient.autocomplete({ text: c.req.query("text") ?? "" });
+  if (!result.ok && result.error.retryAfterMs)
+    c.header("Retry-After", String(Math.ceil(result.error.retryAfterMs / 1000)));
+  const response = c.json(result.ok ? result.data : { code: result.error.code, message: result.error.message });
+  return new Response(response.body, { status: result.ok ? 200 : result.error.status, headers: response.headers });
+});
+```
+
+This anonymous call reaches only Core's private internal origin. The gateway
+refuses its internal route on both Cloud and assigned public domains. Do not
+expose Core directly. Core records no person or app subject for this call.
+
+All callers share `geo.monthly_budget_credits` and the installation-wide Geo
+request rate from the selected provider plan (`geo.custom_rps` for Custom).
+There is no per-person or per-app daily allowance. Cache hits cost no credits
+and still consume request-rate admission. Handle 429 and preserve `Retry-After`.
+Rate-limit the public form with `rateLimit({ keyBy: "ip" })`; use `clientIp(c)`
+for additional app-owned controls.
+
+Other platform capabilities still require their documented caller authority.
+Existing person and `appCaller()` Geo calls continue to work. See
+[App capabilities](/en/docs/platform/capabilities#call-as-the-application).
+
 ## Keep the normal app lifecycle
 
 `public: true` adds the public router and registry declaration. The app keeps
@@ -184,7 +216,10 @@ registry. A stopped app can receive a domain; a typo fails with
 `APP_DOMAIN_UNKNOWN_APP`. `active` means the app currently has a live registry
 entry with `public: true`. Assignments survive app downtime. A new domain is
 checked in the background, so DNS and TLS do not delay the creation response.
-Gateway routing refreshes within five seconds.
+Committed domain changes send a hint that refreshes gateway routing immediately.
+If the hint is lost, the next reconciliation applies the change within 30 seconds.
+During a mixed-version rollout with an older Core that does not publish hints,
+every domain change waits for reconciliation, up to 30 seconds.
 
 Hosts normalize to lowercase ASCII/IDNA without a trailing dot. Do not supply
 a scheme, path, port, IP address or wildcard. The Cloud host cannot be

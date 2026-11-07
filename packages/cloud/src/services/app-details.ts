@@ -1,4 +1,4 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { getApp, listCapabilities } from "../_internal/registry";
 import {
@@ -9,9 +9,10 @@ import {
 } from "../contracts/app-details";
 import { type NotificationDefinitionPresentationCatalog, resolveNotificationDefinitionPresentation } from "../contracts/notification-types";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
-import { AppAccessManagementError, appAccessGrantCounts, canRepairAppAccess } from "./app-access-management";
+import { AppAccessManagementError, appAccessGrantCounts, canReadAppAdministration } from "./app-access-management";
 import type { StoredDeclaration } from "./app-events/declarations";
 
 type SubscriptionRow = {
@@ -48,9 +49,9 @@ type Dependencies = {
 
 /** Core-owned administration read shared by SSR and HTTP; app access is not administrator authority. */
 export function createAppDetailsService(dependencies: Dependencies = {}) {
-  const db = dependencies.db ?? sql;
   return async (appId: string, options: { authority: RequestAuthority; locale?: string }): Promise<AppDetails | null> => {
-    if (!canRepairAppAccess(options.authority))
+    const db = dependencies.db ?? sql;
+    if (!canReadAppAdministration(options.authority))
       throw new AppAccessManagementError("FORBIDDEN", "Cloud administration authority is required.");
     const locale = options.locale ?? "en";
     const [app, known] = await Promise.all([

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import * as registry from "../_internal/registry";
 import * as claims from "../capabilities/claims";
 import type { User } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import * as issuer from "../services/identity/issue-invocation";
 import * as identity from "../services/identity/key-ring";
@@ -12,6 +13,8 @@ import * as codeExecution from "./code-execution";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createCodeSourceTool } from "./code-source-tools";
 import { aiConversations } from "./store";
+
+useUnitClients();
 
 // Broker authorization is covered at its own seam; these tests exercise host protocol and retries.
 beforeEach(() => {

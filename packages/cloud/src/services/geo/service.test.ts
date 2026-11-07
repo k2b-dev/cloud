@@ -57,7 +57,7 @@ test("unreadable monthly budget refuses paid work and reports not configured wit
     "geo.custom_rps": geoTestConfig.customRps,
     "geo.custom_daily_credits": geoTestConfig.customDailyCredits,
     "geo.monthly_budget_credits": geoTestConfig.monthlyCredits,
-    "geo.person_daily_credits": geoTestConfig.personDailyCredits,
+
     "app.timezone": geoTestConfig.timezone,
   };
   spyOn(settingsStore, "readStates").mockImplementation(
@@ -565,4 +565,21 @@ test("App-PWA autocomplete uses owner budget without constructing an employee ac
   expect(fixture.fetch).toHaveBeenCalledTimes(1);
   expect(actor.kind).toBe("visit");
   expect("user" in actor).toBe(false);
+});
+
+test("app-paid requests use an app budget subject without a grant-bearing access subject", async () => {
+  const fixture = setup();
+  const context = {
+    actor: { kind: "app" as const, appId: "vendor-web", keyId: "22222222-2222-4222-8222-222222222222" },
+    accessSubject: { type: "none" as const },
+    locale: "de",
+  };
+  await fixture.service.autocomplete({ text: "Orle" }, context);
+  expect(fixture.reserve).toHaveBeenCalledWith(
+    { type: "app", appId: "vendor-web" },
+    expect.objectContaining({ monthlyCredits: geoTestConfig.monthlyCredits }),
+    expect.any(Number),
+    "address",
+    GEO_TEST_NOW,
+  );
 });

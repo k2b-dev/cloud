@@ -102,6 +102,11 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Control: hover feedback of a pressed formatting toolbar button.",
   },
   {
+    file: "packages/editor/src/styles.css",
+    subject: '.cm-block-source-toggle .k2b-button[aria-pressed="true"] { background }',
+    reason: "Control: pressed switch between a block's preview and its source.",
+  },
+  {
     file: "packages/cloud/src/styles/global.css",
     subject: ".dark .cloud-app-canvas { --cloud-shell-selected }",
     reason: "Shell frame: owned by shell-soft-white-canvas.",
@@ -140,11 +145,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     file: "packages/cloud/src/styles/utilities-navigation.css",
     subject: ".dark .rail-item-active:hover { color }",
     reason: "Shell frame: owned by shell-soft-white-canvas.",
-  },
-  {
-    file: "packages/core/src/styles/app.css",
-    subject: ".k2b-ui .ai-usage-filter--active .k2b-choice-trigger { background }",
-    reason: "Control: the trigger of a select that shows its applied filter value; select controls keep the platform fill.",
   },
   {
     file: "packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx",

@@ -60,12 +60,13 @@ import { oauthScopeByOperation } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
 import { hasOAuthScope } from "../server/oauth-scope";
 import { ratelimit } from "../server/ratelimit";
-import { appAccessAuthority, canUseApp } from "../services/app-access";
+import { AppAccessUnavailableError, appAccessAuthority, canUseApp } from "../services/app-access";
+import { bootstrapRateLimit } from "../services/app-bootstrap";
 import { discoverableApps } from "../services/app-discovery";
 import { authorityFromParentInvocation, invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
 import type { CloudInvocationClaims, InvocationAuthority } from "../services/identity/invocation-token";
-import { normalizeInvocationRequestId, signAppQueryInvocation } from "../services/identity/invocation-token";
+import { normalizeInvocationRequestId, signAppCapabilityInvocation, signAppQueryInvocation } from "../services/identity/invocation-token";
 import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import {
@@ -128,6 +129,7 @@ export type CapabilityRouteDependencies = {
   withMandateIssueAuthority?: typeof withMandateIssueAuthority;
   queryTimeoutMs?: number;
   actionTimeoutMs?: number;
+  checkAppCapabilityRate?: (appId: string) => Promise<{ limited: boolean; resetIn: number }>;
   checkAppQueryRate?: (appId: string) => Promise<{ limited: boolean }>;
   reviewTimeoutMs?: number;
   appUrl?: () => Promise<string>;
@@ -135,6 +137,7 @@ export type CapabilityRouteDependencies = {
 
 export type CapabilityDispatchDependencies = Pick<
   CapabilityRouteDependencies,
+  | "checkAppCapabilityRate"
   | "checkAppQueryRate"
   | "getApp"
   | "getCapability"
@@ -268,6 +271,7 @@ const capabilityJsonResponse = (body: unknown, status: number): Response => {
     headers: {
       "content-type": "application/json",
       ...(limited?.success ? { "retry-after": String(limited.data.details.retryAfter) } : {}),
+      ...(status === 503 && bodyErrorCode(body) === "app_access_unavailable" ? { "retry-after": "1" } : {}),
     },
   });
 };
@@ -293,6 +297,8 @@ export type CapabilityDispatchParams = {
   deadline?: number;
   /** Core-only authenticated workload. Never populated from request JSON. */
   workload?: AuthenticatedWorkload;
+  /** Verified Ed25519 app identity, separate from person and legacy workload authority. */
+  appCaller?: { appId: string; keyId: string };
   mandate?: MandatedCapabilityAuthority;
   callingAppId?: string;
   /** Internal observation only: called immediately before attempting the app request. */
@@ -363,6 +369,39 @@ const runCapabilityDispatch = async (
   }
   if ("appOnly" in operation && operation.appOnly !== undefined && !params.workload)
     return errorResponse("FORBIDDEN", "App authority required for this query", 403);
+  if (params.appCaller) {
+    if (
+      params.authority ||
+      params.workload ||
+      params.mandate ||
+      params.parentInvocation ||
+      params.review ||
+      !operation.appPermission ||
+      operation.stream
+    )
+      return errorResponse("FORBIDDEN", "This capability does not accept app authority", 403);
+    try {
+      const app = params.appCaller;
+      const caller = await deadline.wait(() => (params.dependencies?.getApp ?? getApp)(app.appId));
+      if (!caller) return errorResponse("APP_UNAVAILABLE", "Calling app registry entry unavailable", 503);
+      if (!caller.platformPermissions?.includes(operation.appPermission))
+        return errorResponse("APP_CAPABILITY_NOT_ADMITTED", `App caller does not declare ${operation.appPermission}`, 403);
+      // Same operator-owned per-second budget as signed app ingress; shared by all keys of the app.
+      const rate = await deadline.wait(() =>
+        (
+          params.dependencies?.checkAppCapabilityRate ??
+          (async (appId) => ratelimit({ id: "app-capabilities", limit: await bootstrapRateLimit() }).check(appId))
+        )(app.appId),
+      );
+      if (rate.limited)
+        return errorResponse("RATE_LIMITED", "App capability rate limit reached", 429, {
+          retryAfter: Math.max(1, Math.ceil(rate.resetIn / 1000)),
+        });
+    } catch {
+      deadline.check();
+      return errorResponse("APP_UNAVAILABLE", "App capability admission unavailable", 503);
+    }
+  }
   if (params.workload) {
     if (
       params.authority ||
@@ -544,6 +583,36 @@ const runCapabilityDispatch = async (
           });
         })()
       : await (async () => {
+          if (params.appCaller && operation.appPermission) {
+            const app = params.appCaller;
+            const permission = operation.appPermission;
+            return deadline.wait(() =>
+              (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)(
+                "invocation",
+                async (signer) => {
+                  deadline.check();
+                  const signed = await signAppCapabilityInvocation({
+                    app,
+                    permission,
+                    kind: params.kind === "queries" ? "query" : "action",
+                    targetAppId: params.appId,
+                    capabilityId: params.capabilityId,
+                    schemaHash: operation.schemaHash,
+                    input: input.data,
+                    requestId,
+                    signer,
+                  });
+                  observed.invocationId = signed.claims.jti;
+                  return new Headers({
+                    "content-type": "application/json",
+                    accept: "application/json",
+                    authorization: `Bearer ${signed.token}`,
+                  });
+                },
+                { signal, timeoutMs: deadline.remainingMs() },
+              ),
+            );
+          }
           if (params.workload) {
             const workload = params.workload;
             return deadline.wait(() =>
@@ -609,6 +678,8 @@ const runCapabilityDispatch = async (
         })();
   } catch (error) {
     if (error instanceof AppAccessDeniedError) return { body: appAccessDeniedBody(error.app), status: 403 };
+    if (error instanceof AppAccessUnavailableError)
+      return { body: { code: error.code, app: error.app.id, message: error.message }, status: 503 };
     if (error instanceof MandateDispatchError) {
       const denied = errorResponse(
         error.status === 409 ? "MANDATE_REVISION_CHANGED" : "MANDATE_FORBIDDEN",
@@ -675,7 +746,11 @@ const runCapabilityDispatch = async (
       ? {
           appId: params.appId,
           capability: `${params.appId}.${params.capabilityId}`,
-          principal: claimPrincipal ? `${claimPrincipal.type}:${claimPrincipal.id}` : "anonymous",
+          principal: params.appCaller
+            ? `app:${params.appCaller.appId}`
+            : claimPrincipal
+              ? `${claimPrincipal.type}:${claimPrincipal.id}`
+              : "anonymous",
           keyHash: capabilityIdempotencyKeyHash(idempotencyKey.data),
         }
       : null;
@@ -749,7 +824,7 @@ const runCapabilityDispatch = async (
     params.onUpstreamAttempt?.();
     const fetchResponse = () =>
       fetchUpstream(
-        `${entry.endpoint}/${params.workload ? "app-queries" : params.kind}/${encodeURIComponent(params.capabilityId)}${params.review ? "/review" : ""}`,
+        `${entry.endpoint}/${params.appCaller ? `app-capabilities/${params.kind}` : params.workload ? "app-queries" : params.kind}/${encodeURIComponent(params.capabilityId)}${params.review ? "/review" : ""}`,
         {
           method: "POST",
           headers,
@@ -986,13 +1061,15 @@ export const dispatchCapability = async (params: CapabilityDispatchParams): Prom
         origin: params.origin,
         invocationId: observed.invocationId,
         parentInvocationId: params.parentInvocation?.jti,
-        viaAppId: params.workload?.appId ?? (params.parentInvocation ? params.callingAppId : undefined),
+        viaAppId: params.appCaller?.appId ?? params.workload?.appId ?? (params.parentInvocation ? params.callingAppId : undefined),
         appId: params.appId,
         capability: `${params.appId}.${params.capabilityId}`,
         kind: params.kind === "queries" ? "query" : "action",
         destructive: observed.destructive,
-        actorKind: params.workload ? "app" : (principal?.type ?? null),
+        actorKind: params.appCaller || params.workload ? "app" : (principal?.type ?? null),
         actorId: principal?.id ?? null,
+        actorAppId: params.appCaller?.appId ?? params.workload?.appId,
+        actorKeyId: params.appCaller?.keyId,
         userId: actor?.kind === "user" ? actor.user.id : (actor?.delegatedUser?.id ?? (principal?.type === "user" ? principal.id : null)),
         accessSubject: subject && subject.id !== principal?.id ? subject : null,
         status: executionStatus(outcome.status, errorCode),
@@ -1116,7 +1193,13 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
         const appId = c.req.param("appId");
         const apps = await (dependencies.listApps ?? listApps)();
         const target = apps.find((app) => app.id === appId);
-        if (target && !(await canUseApp(appAccessAuthority(c), target))) return c.json(appAccessDeniedBody(target), 403);
+        try {
+          if (target && !(await canUseApp(appAccessAuthority(c), target))) return c.json(appAccessDeniedBody(target), 403);
+        } catch (error) {
+          if (!(error instanceof AppAccessUnavailableError)) throw error;
+          c.header("Retry-After", "1");
+          return c.json({ code: error.code, app: error.app.id, message: error.message }, 503);
+        }
         const entry = await (dependencies.getCapability ?? getCapability)(appId);
         const command = entry?.manifest.commands.find((command) => command.localId === c.req.param("capabilityId"));
         if (!command)

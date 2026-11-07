@@ -16,7 +16,8 @@
  * that lost its lease writes with a stale generation and every one of its
  * updates matches zero rows. Nothing here trusts wall-clock ordering.
  */
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 import type { WorkflowBoundPlan, WorkflowDependency, WorkflowInvocationMode, WorkflowJsonValue, WorkflowRunState } from "../contracts";
 import type {
   WorkflowCoordinatorFinishState,

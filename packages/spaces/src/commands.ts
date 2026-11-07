@@ -7,6 +7,9 @@ export const SpaceComposeInputSchema = z
   .object({
     spaceId: ResourceShortIdSchema.optional().describe("Optional destination Space; otherwise the user chooses."),
     source: CloudResourceRefSchema.optional().describe("Optional source resource to link visibly in the form."),
+    templateId: ResourceShortIdSchema.optional().describe(
+      "Optional template of the destination Space to start from; a template that no longer exists opens the form blank.",
+    ),
   })
   .strict();
 export const SpaceInvitationInputSchema = z

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, spyOn } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { err } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { z } from "zod";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { PublicDocumentSchema } from "../api/document-public-contracts";

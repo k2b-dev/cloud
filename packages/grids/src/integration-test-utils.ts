@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { type SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import type { SQL } from "bun";
 import { testFor } from "../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../scripts/fixtures/test-short-id";
 

@@ -1,6 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { type AppPwaCommandContext, AppPwaError, type AppPwaVisitContext, appPwaCommand, appPwaQuery } from "@k2b/cloud/app-pwa";
 import { parseSignature } from "@k2b/ui";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { MAX_SIGNATURE_BYTES, SUBJECT_ID } from "./constants";
 import { VisitViewSchema } from "./model";

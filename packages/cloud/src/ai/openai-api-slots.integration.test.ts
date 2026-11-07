@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { redis } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { redis } from "../runtime/clients";
 import { acquire } from "./openai-api-slots";
 
 suiteFor("valkey")("OpenAI API distributed slots", () => {

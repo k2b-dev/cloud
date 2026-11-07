@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 
 let pulseCapabilities: typeof import("./capabilities")["pulseCapabilities"];

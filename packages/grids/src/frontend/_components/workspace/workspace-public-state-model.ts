@@ -13,6 +13,7 @@ import type {
   PublicTable,
   PublicView,
 } from "../../../api/public-dto";
+import type { PublicReferencedByPage } from "../../../api/referenced-by";
 import type {
   PublicGridsWorkflowLauncherSchema,
   PublicGridsWorkflowRunSchema,
@@ -78,6 +79,8 @@ export type PublicWorkspaceRecordDetail = {
   snapshots: PublicRecordSnapshotSummary[];
   auditEntries: PublicRecordHistoryEntry[];
   combinedOrigin: CombinedRecordOrigin | null;
+  /** The first page of records that reference this one; `null` when the browser loads it. */
+  referencedBy: PublicReferencedByPage | null;
 };
 
 export type PublicWorkspaceRecordsRoute = {

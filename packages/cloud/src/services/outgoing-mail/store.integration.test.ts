@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { smtpSink } from "../../../../../scripts/fixtures/smtp-sink";
 import { suiteFor, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
@@ -7,6 +6,7 @@ import { migrate } from "../../../../core/src/migrate/core/outgoing-mail";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../../_internal/process-identity";
 import * as registry from "../../_internal/registry";
 import type { AppRegistryEntry } from "../../contracts/registry";
+import { sql } from "../../runtime/clients";
 import { parseNetworkAllowlist } from "../../shared/network-address";
 import { audit } from "../audit";
 import * as settings from "../settings";

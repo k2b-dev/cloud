@@ -2,6 +2,8 @@ import type { SQL, TransactionSQL } from "bun";
 import * as Y from "yjs";
 import { decodeDocument } from "./document";
 import { NotesError } from "./errors";
+import type { CheckedFile } from "./files";
+import { limits } from "./limits";
 import { hash, randomId, validId } from "./tokens";
 
 type Transaction = TransactionSQL;
@@ -16,7 +18,16 @@ export type PadRow = {
   deleted_at: Date | null;
   status_reason: string | null;
 };
-export const costs = { pad: 1024, update: 256, file: 512, preview: 512, report: 1024, session: 256, decision: 512 } as const;
+export const costs = {
+  pad: 1024,
+  tombstone: 256,
+  update: 256,
+  file: 512,
+  preview: 512,
+  report: 1024,
+  session: 256,
+  decision: 512,
+} as const;
 export const textBytes = (value: string): number => Buffer.byteLength(value, "utf8");
 
 export class NotesStore {
@@ -61,7 +72,9 @@ export class NotesStore {
     }
   }
   private async measure(): Promise<void> {
-    const [row] = await this.db<{ bytes: string }[]>`SELECT COALESCE(SUM(size_bytes),0)::text AS bytes FROM pads`;
+    const [row] = await this.db<
+      { bytes: string }[]
+    >`SELECT ((SELECT COALESCE(SUM(size_bytes),0) FROM pads)+(SELECT COALESCE(SUM(storage_bytes),0) FROM reports)+(SELECT COALESCE(SUM(storage_bytes),0) FROM moderation_log)+(SELECT COALESCE(SUM(storage_bytes),0) FROM admin_sessions))::text AS bytes`;
     this.usedBytes = Number(row!.bytes);
   }
   private async reconcile(): Promise<void> {
@@ -75,6 +88,10 @@ export class NotesStore {
       this.recovery = undefined;
     });
     await this.recovery;
+  }
+  async auditStorage(): Promise<void> {
+    this.uncertain = true;
+    await this.reconcile();
   }
   async ownsDatabase(): Promise<boolean> {
     if (!this.lease) return false;
@@ -115,9 +132,9 @@ export class NotesStore {
       this.inflight.delete(pending);
     }
   }
-  async reserve(tx: Transaction, delta: number, kind: "new" | "existing" = "existing"): Promise<void> {
+  async reserve(tx: Transaction, delta: number, kind: "new" | "existing" | "admin" = "existing"): Promise<void> {
     const threshold = kind === "new" ? Math.floor(this.storageBytes * 0.9) : this.storageBytes;
-    if (delta > 0 && this.usedBytes + delta > threshold) throw new NotesError("storage_full", 507);
+    if (kind !== "admin" && delta > 0 && this.usedBytes + delta > threshold) throw new NotesError("storage_full", 507);
     const reservation = this.releases.get(tx);
     if (!reservation) throw new Error("reservation_outside_transaction");
     if (delta > 0) {
@@ -141,6 +158,13 @@ export class NotesStore {
     >`SELECT read_id, edit_id_hash=${hash(token)} AS can_edit FROM pads WHERE read_id=${token} OR edit_id_hash=${hash(token)}`;
     if (!row) throw new NotesError("not_found", 404);
     return { readId: row.read_id, access: row.can_edit ? "edit" : "read" };
+  }
+  async editablePad(token: string): Promise<PadAccess> {
+    const access = await this.resolve(token);
+    if (access.access !== "edit") throw new NotesError("read_only", 403);
+    const [row] = await this.db<PadRow[]>`SELECT blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${access.readId}`;
+    this.assertActive(row);
+    return access;
   }
   assertActive(row: Pick<PadRow, "blocked_at" | "deleted_at" | "status_reason"> | undefined): void {
     if (!row) throw new NotesError("not_found", 404);
@@ -225,6 +249,42 @@ export class NotesStore {
       await tx`DELETE FROM pad_updates WHERE read_id=${readId} AND id<=${through}`;
     });
   }
+  async putFile(readId: string, file: CheckedFile): Promise<{ key: string }> {
+    return this.transaction(async (tx) => {
+      const [pad] = await tx<PadRow[]>`SELECT blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${readId} FOR UPDATE`;
+      this.assertActive(pad);
+      const [previous] = await tx<{ bytes: Uint8Array }[]>`SELECT bytes FROM pad_files WHERE read_id=${readId} AND key=${file.key}`;
+      if (previous) {
+        if (!Buffer.from(previous.bytes).equals(file.bytes)) throw new NotesError("file_key_conflict", 409);
+        return { key: file.key };
+      }
+      const [row] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM pad_files WHERE read_id=${readId}`;
+      if (row!.count >= limits.files) throw new NotesError("too_many_files", 409);
+      const cost =
+        costs.file +
+        file.bytes.byteLength +
+        textBytes(file.name) +
+        textBytes(file.key) +
+        textBytes(file.type) +
+        textBytes(file.declaredType);
+      await this.reserve(tx, cost, "new");
+      await tx`INSERT INTO pad_files(read_id,key,name,bytes,type,checked_type) VALUES(${readId},${file.key},${file.name},${Buffer.from(file.bytes)},${file.declaredType},${file.type})`;
+      await tx`UPDATE pads SET size_bytes=size_bytes+${cost} WHERE read_id=${readId}`;
+      return { key: file.key };
+    });
+  }
+  async getFile(token: string, key: string): Promise<{ bytes: Uint8Array<ArrayBuffer>; name: string; type: string }> {
+    const access = await this.resolve(token);
+    return this.db.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (tx) => {
+      const [pad] = await tx<PadRow[]>`SELECT blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${access.readId}`;
+      this.assertActive(pad);
+      const [file] = await tx<
+        { bytes: Uint8Array<ArrayBuffer>; name: string; type: string }[]
+      >`SELECT bytes,name,checked_type AS type FROM pad_files WHERE read_id=${access.readId} AND key=${key}`;
+      if (!file) throw new NotesError("not_found", 404);
+      return file;
+    });
+  }
   async humanOpen(readId: string): Promise<void> {
     await this.transaction(async (tx) => {
       const [row] = await tx<PadRow[]>`SELECT blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${readId} FOR UPDATE`;
@@ -236,26 +296,50 @@ export class NotesStore {
     return this.transaction(async (tx) => {
       const rows =
         kind === "expire"
-          ? await tx`UPDATE pads SET deleted_at=now(),status_reason='expired' WHERE read_id=${readId} AND deleted_at IS NULL AND blocked_at IS NULL AND last_human_open_on<=(${today}::date-interval '6 months') RETURNING read_id`
-          : await tx`UPDATE pads SET blocked_at=CASE WHEN ${kind}='block' THEN now() ELSE blocked_at END,deleted_at=CASE WHEN ${kind}='delete' THEN now() ELSE deleted_at END,status_reason=COALESCE(status_reason,${reason}) WHERE read_id=${readId} AND deleted_at IS NULL AND blocked_at IS NULL RETURNING read_id`;
-      return rows.length === 1;
+          ? await tx<
+              { size_bytes: string; status_reason: string }[]
+            >`UPDATE pads SET deleted_at=now(),status_reason='expired' WHERE read_id=${readId} AND deleted_at IS NULL AND blocked_at IS NULL AND last_human_open_on<=(${today}::date-interval '6 months') RETURNING size_bytes::text,status_reason`
+          : await tx<
+              { size_bytes: string; status_reason: string }[]
+            >`UPDATE pads SET blocked_at=CASE WHEN ${kind}='block' THEN now() ELSE blocked_at END,deleted_at=CASE WHEN ${kind}='delete' THEN now() ELSE deleted_at END,status_reason=COALESCE(status_reason,${reason}) WHERE read_id=${readId} AND deleted_at IS NULL AND blocked_at IS NULL RETURNING size_bytes::text,status_reason`;
+      if (!rows.length) return false;
+      const auditBytes = costs.decision + textBytes(reason);
+      const tombstoneBytes = costs.tombstone + textBytes(rows[0]!.status_reason);
+      await this.reserve(tx, tombstoneBytes - Number(rows[0]!.size_bytes) + auditBytes, "admin");
+      await tx`INSERT INTO moderation_log(read_id,action,reason,storage_bytes) VALUES(${readId},${kind === "expire" ? "expire" : kind},${reason},${auditBytes})`;
+      await tx`DELETE FROM pad_updates WHERE read_id=${readId}`;
+      await tx`DELETE FROM pad_files WHERE read_id=${readId}`;
+      await tx`DELETE FROM pad_previews WHERE read_id=${readId}`;
+      await tx`UPDATE pads SET snapshot=''::bytea,content_md='',size_bytes=${tombstoneBytes} WHERE read_id=${readId}`;
+      return true;
     });
   }
   async cleanup(readId: string): Promise<void> {
     await this.transaction(async (tx) => {
-      const [pad] = await tx<PadRow[]>`SELECT size_bytes::text,blocked_at,deleted_at FROM pads WHERE read_id=${readId} FOR UPDATE`;
+      const [pad] = await tx<
+        PadRow[]
+      >`SELECT size_bytes::text,blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${readId} FOR UPDATE`;
       if (!pad || (!pad.blocked_at && !pad.deleted_at)) throw new NotesError("invalid_cleanup");
-      await this.reserve(tx, -Number(pad.size_bytes) + costs.pad);
+      const tombstoneBytes = costs.tombstone + textBytes(pad.status_reason ?? "");
+      await this.reserve(tx, -Number(pad.size_bytes) + tombstoneBytes, "admin");
       await tx`DELETE FROM pad_updates WHERE read_id=${readId}`;
       await tx`DELETE FROM pad_files WHERE read_id=${readId}`;
       await tx`DELETE FROM pad_previews WHERE read_id=${readId}`;
-      await tx`UPDATE pads SET snapshot=''::bytea,content_md='',size_bytes=${costs.pad} WHERE read_id=${readId}`;
+      await tx`UPDATE pads SET snapshot=''::bytea,content_md='',size_bytes=${tombstoneBytes} WHERE read_id=${readId}`;
+    });
+  }
+  async pruneSessions(fingerprint: string): Promise<void> {
+    await this.transaction(async (tx) => {
+      const rows = await tx<
+        { storage_bytes: string }[]
+      >`DELETE FROM admin_sessions WHERE id_hash IN (SELECT id_hash FROM admin_sessions WHERE expires_at<=${new Date()} OR password_fingerprint<>${fingerprint} ORDER BY expires_at LIMIT 50) RETURNING storage_bytes::text`;
+      await this.reserve(tx, -rows.reduce((sum, row) => sum + Number(row.storage_bytes), 0));
     });
   }
   async pendingCleanup(batch: number): Promise<string[]> {
     const rows = await this.db<
       { read_id: string }[]
-    >`SELECT read_id FROM pads WHERE (deleted_at IS NOT NULL OR blocked_at IS NOT NULL) AND (size_bytes<>${costs.pad} OR octet_length(snapshot)>0) ORDER BY read_id LIMIT ${batch}`;
+    >`SELECT read_id FROM pads WHERE (deleted_at IS NOT NULL OR blocked_at IS NOT NULL) AND (size_bytes<>${costs.tombstone}+octet_length(COALESCE(status_reason,'')) OR octet_length(snapshot)>0) ORDER BY read_id LIMIT ${batch}`;
     return rows.map((row) => row.read_id);
   }
   async expired(today: string, batch: number): Promise<string[]> {

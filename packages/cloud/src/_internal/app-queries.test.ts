@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import {
   type CapabilityDispatchDependencies,
   createCapabilityRoutes,
@@ -20,10 +20,13 @@ import {
 } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { LocalUserSchema } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import { signAppQueryInvocation, verifyAppQueryInvocation, verifyInvocationToken } from "../services/identity/invocation-token";
 import { compileCapabilities, invokeCompiledCapability, parseCapabilityManifest } from "./capabilities";
 
 import * as resourcePrincipals from "./resource-principals";
+
+useUnitClients();
 
 let activePrincipals: ReturnType<typeof spyOn<typeof resourcePrincipals, "activeResourcePrincipals">>;
 beforeEach(() => {

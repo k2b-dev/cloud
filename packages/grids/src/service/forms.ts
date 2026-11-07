@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { stripImageDataUrlMetadata } from "@k2b/cloud/services/image-metadata";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import {
   type FilterTree,
   FilterTreeSchema,
@@ -142,7 +142,8 @@ export const toPublicRenderableForm = (form: Form): PublicRenderableForm => ({
   config: renderConfig(form.config),
 });
 
-const COLS = sql`id, short_id, table_id, name, config, public_token, is_active, owner_user_id, position, deleted_at, created_at, updated_at`;
+const COLS = () =>
+  sql`id, short_id, table_id, name, config, public_token, is_active, owner_user_id, position, deleted_at, created_at, updated_at`;
 
 /**
  * Normalises a raw FormFieldEntry, defaulting `kind` to "user_input"
@@ -451,7 +452,7 @@ export const create = async (input: CreateFormInput, actorId: string | null, loc
           ${actorId}::uuid,
           COALESCE((SELECT MAX(position) + 1 FROM grids.forms WHERE table_id = ${input.tableId}::uuid AND deleted_at IS NULL), 0)
         )
-        RETURNING ${COLS}
+        RETURNING ${COLS()}
       `;
       if (!r) throw err.internal(t.insertFailed);
       return r;
@@ -511,7 +512,7 @@ export const update = async (id: string, input: UpdateFormInput, actorId: string
           position = CASE WHEN ${input.position !== undefined} THEN ${input.position ?? 0} ELSE position END,
           updated_at = now()
       WHERE id = ${id}::uuid AND deleted_at IS NULL
-      RETURNING ${COLS}
+      RETURNING ${COLS()}
     `;
     if (!row) return null;
     const updated = mapRow(row);
@@ -554,7 +555,7 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
     const [row] = await tx<DbRow[]>`
       UPDATE grids.forms SET deleted_at = NULL, updated_at = now()
       WHERE id = ${id}::uuid
-      RETURNING ${COLS}
+      RETURNING ${COLS()}
     `;
     if (!row) return null;
     await logAudit({ tableId: existing.tableId, userId: actorId, action: "restored" }, tx);

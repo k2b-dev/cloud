@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import { captureTableAction, fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import type { Result } from "@k2b/stdlib";
 import { findTables, gridLine, inspectTableStructure } from "@k2b/ui/text-editor/model";
-import { sql } from "bun";
 import * as Y from "yjs";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
@@ -16,7 +16,15 @@ import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, mailDraftDoc
 import { draftProviderContentSchema } from "./draft-provider-mime";
 import { queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { applyDraftTableAction } from "./draft-table-actions";
-import { discardDraft, getDraft, persistDraftDocument, recoverDraftDocumentRest, restoreDraftRecoveryCopy, updateDraft } from "./drafts";
+import {
+  discardDraft,
+  getDraft,
+  listDraftFolder,
+  persistDraftDocument,
+  recoverDraftDocumentRest,
+  restoreDraftRecoveryCopy,
+  updateDraft,
+} from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { storeReadableBlob } from "./message-blobs";
 import { loadSendContent } from "./send-content";
@@ -99,6 +107,32 @@ suite("Mail document lifecycle boundaries", () => {
       await db`UPDATE mail.drafts SET state='scheduled' WHERE id=${target.draftId}::uuid`;
       return frozen;
     });
+
+  test("the Drafts folder lists what its rows need to delete a draft, and a scheduled draft stays out and cannot be discarded", async () => {
+    const listed = await draft("Folder body");
+    const blob = await storeReadableBlob(Readable.from([Buffer.from("Folder fixture attachment")]));
+    blobs.push(blob.id);
+    await sql`INSERT INTO mail.draft_attachments
+      (short_id,draft_id,blob_id,filename,content_type,byte_length,content_hash,position)
+      VALUES (${newShortId()},${listed.draftId}::uuid,${blob.id}::uuid,'folder.txt','text/plain',${blob.byteLength},${blob.contentHash},0)`;
+    const scheduled = await draft("Scheduled body");
+    await sql`UPDATE mail.drafts SET state = 'scheduled' WHERE id = ${scheduled.draftId}::uuid`;
+    const current = value(await getDraft(context, mailboxId, listed.draftId));
+    const page = value(await listDraftFolder({ context, mailboxId }));
+    expect(page.items.find((item) => item.id === listed.draftId)).toMatchObject({ revision: current.revision, attachmentCount: 1 });
+    expect(page.items.some((item) => item.id === scheduled.draftId)).toBe(false);
+    // Waiting for delivery: the list never offers it, and the delete path refuses it even with its current revision.
+    const waitingState = async () =>
+      (await sql<{ revision: string; state: string }[]>`SELECT revision, state FROM mail.drafts WHERE id = ${scheduled.draftId}::uuid`)[0]!;
+    const refused = await discardDraft({ ...scheduled, expectedRevision: Number((await waitingState()).revision) });
+    expect(refused.ok).toBe(false);
+    expect((await waitingState()).state).toBe("scheduled");
+    // A list row deletes the revision it shows; a stale one is refused and the draft stays.
+    const stale = await discardDraft({ ...listed, expectedRevision: current.revision + 1 });
+    expect(stale.ok ? null : stale.error.code).toBe("CONFLICT");
+    expect(value(await discardDraft({ ...listed, expectedRevision: current.revision })).state).toBe("discarded");
+    expect(value(await listDraftFolder({ context, mailboxId })).items.some((item) => item.id === listed.draftId)).toBe(false);
+  });
 
   test("send marker excludes later input; Rest retains the device's whole deletion and is idempotent", async () => {
     const target = await draft("Old body");

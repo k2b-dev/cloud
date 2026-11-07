@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-10-31
+updated: 2026-11-05
 ---
 
 # Runtime configuration
@@ -18,6 +18,77 @@ For the services and optional integrations needed by each app, start with
 
 Cloud validates settings when it reads them. Values stored in Postgres are
 encrypted with `APP_SECRET`.
+
+## Anonymous internal Geo autocomplete
+
+Deploy Core and the gateway behind the private application network. Core's
+listener must not be exposed directly; the gateway blocks the reserved
+`/api/_internal/geo/v1/autocomplete` route on every public host. Set
+`CLOUD_CORE_INTERNAL_ORIGIN` to Core's private origin for Core and its calling
+apps. Core checks the configured internal host without trusting forwarding headers.
+This Host check is not authentication: private network placement and the
+gateway path block enforce the boundary. TLS termination may change the scheme
+but must preserve the internal host.
+
+After upgrading Core, app servers can use `geoClient.autocomplete(input)`
+without a session or enrolled app key. Other capability operations retain
+their authentication requirements. All Geo callers share the monthly budget
+and provider-plan rate. Review `geo.monthly_budget_credits` and `geo.plan`
+(`geo.custom_rps` for Custom) before rollout; the former
+`geo.person_daily_credits` setting no longer limits anyone. Stored values are
+ignored, so no data migration or secret rotation is required. Daily usage
+continues to appear in administration. Anonymous executions have no actor or
+access subject. Budget exhaustion returns 429 `GEO_BUDGET_EXHAUSTED` with
+`Retry-After` until the next calendar month in `app.timezone`.
+
+## Upgrade settings and short-lived links
+
+Update every application, including independently deployed third-party apps,
+to a build using the fixed `@k2b/cloud` package before completing this upgrade.
+Older application processes can still write plaintext settings into Valkey.
+Stop those processes before starting updated applications: the first startup
+for the new cache format removes existing `settings:*` entries and records a
+shared completion marker. Later starts skip that scan. Cleanup must succeed
+before continuing; losing the marker safely repeats it.
+Updated processes cache secret-kind settings only in encrypted form. Do not
+leave older application images running or available for automatic restart.
+Every application makes a settings startup attempt, then retries temporary Valkey
+failures using the remainder of its five-minute NATS and settings recovery
+allowance. If Valkey still fails after that allowance, startup stops. The gateway
+keeps HTTP closed while retrying temporary database or Valkey failures within
+its existing five-minute settings startup budget.
+
+Pending email sign-in links, administrator-issued account sign-in links,
+password-reset links and proxy return links issued before the upgrade become
+invalid. Request a fresh link after the rollout. Existing browser sessions and
+stored settings are unchanged. Rolling back restores the old cache and link
+behavior; links issued by this release do not work on the older release.
+
+If untrusted parties could access Valkey, rotate the secret settings whose
+values were stored there. The cleanup removes live cache entries; it does not
+remove plaintext from existing Valkey persistence files, replicas that have
+not applied the deletions, or backups. Handle those copies under the
+installation's incident-response and backup policy before considering the
+upgrade complete.
+
+## Registered App-PWA staff push
+
+Applications may opt in to staff pushes to registered devices with
+`registeredDevices: { push: "staff" }`. The default pairing and takeover
+behavior stays unchanged. See [App-PWA sessions](/en/docs/identity/app-pwa-sessions#send-a-visit-without-a-qr)
+for authorization, request shapes, and the rule for existing uses.
+
+Application `setup()` adds the `visit_only` boolean column to its reserved
+`_cloud_pwa_devices` table, defaulting existing rows to `false`. Run the normal
+application startup migration before serving the new protocol. The existing
+application database backup contract covers the column; no new infrastructure,
+configuration variable, or polling write is needed.
+
+Before enabling the option, update all replicas of that application to this
+package version. Older processes do not enforce visit-only access. To roll back,
+stop the application and revoke its visit-only carriers before starting older
+code; otherwise those rows could resume ordinary device access. Keep the
+column in place and leave the persistent browser registrations intact.
 
 ## Platform connection startup
 
@@ -45,11 +116,11 @@ Applications can authenticate at startup with `CLOUD_APP_KEY` or
 query, fragment or embedded credentials. The public gateway blocks this
 internal route.
 
-**Keep the application's infrastructure environment values for now.**
-Key-only production operation is not supported until the platform-client import
-migration is complete: remaining Bun-global SQL and Redis consumers still read
-those values from the environment. Enrollment and bootstrap do not complete
-that migration. See [Use the key at start](/en/docs/operations/app-keys#use-the-key-at-start).
+In this release, follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
+before removing app infrastructure values. Use the Compose template from that
+release; Core and Gateway retain their infrastructure environment. A
+third-party app with old Bun-global clients needs an explicit environment
+exception until its author migrates it.
 
 A present key must have the `cloud-app-key-v1` format and match the app ID
 embedded by the build or selected by the development preload. Invalid,
@@ -134,7 +205,7 @@ Core now accepts locally generated Ed25519 public keys through administrator
 APIs and `cld admin apps keys`. The installation ID lives in Core’s database.
 Enrollment alone does not change application startup. Supplying a key enables
 the startup protocol above; keep existing infrastructure environment values
-until the import migration is complete. See [App keys](/en/docs/operations/app-keys) for creation,
+only for third-party apps that have not migrated their imports. Built-in apps use the platform handles. See [App keys](/en/docs/operations/app-keys) for creation,
 resumable CLI output, rotation, and revocation.
 
 ## Replace the legacy Weather geo configuration
@@ -604,3 +675,49 @@ reported problems, then remove the legacy environment entries. Follow the
 
 Remove `GATEWAY_INSTANCE_ID` to use a random per-process identity. An explicit
 legacy value is still honored for this release and logs a startup warning.
+
+## Live dictation
+
+In **Administration → AI → Models**, add a `vllm-realtime` provider with its
+HTTP(S) base URL including `/v1` and an optional API key. Add a model with
+`kind: "live-transcription"` and assign its standard variant to `liveAudio`.
+Only live transcription models can fill that slot. Grant the model to the
+people who may dictate and enable AI. Emptying the slot turns live dictation
+off without changing the existing audio recording path.
+
+In **Administration → AI → General**, set these registered admin values;
+there are no environment variables for them:
+
+| Value | Setting key | Default | Valid range |
+| --- | --- | --- | --- |
+| `liveDictationConcurrency` | `ai.live_dictation_concurrency` | 4 | Integer, 1–1024 |
+| `liveDictationMinutesPerDay` | `ai.live_dictation_minutes_per_day` | 60 | Integer, 1–1440 (24 hours) |
+
+Concurrency is shared across Core replicas. Each session opens one model
+connection and may queue at most 64,000 PCM bytes in Cloud. The concurrency
+ceiling bounds these application PCM queues to about 64 MiB; model capacity
+will usually require a much lower value. Run a short load test against the
+actual model endpoint before increasing concurrency. Observe latency and
+`overloaded`/`provider_failed` outcomes, including the two-second provider
+backpressure boundary. No automatic reconnect hides overload.
+
+Valkey holds a token-owned person lease (15 seconds, renewed every five
+seconds), a shared semaphore, and per-person daily seconds. Local midnight
+uses `app.timezone`, including daylight-saving changes. A lost lease aborts
+the model; a late release cannot remove a newer lease. The daily dictation
+allowance is independent of chat budgets. Usage reports show audio minutes
+per person and app, without audio or transcript content.
+
+Core serves `/api/ai/dictation/status` and `/api/ai/dictation/live` through its
+registered `/api/ai` prefix; the gateway's registry-based WebSocket proxy
+forwards the socket. See [Live dictation](/en/docs/ai/live-dictation) for the
+protocol, cancellation contract, privacy, and recovery behavior. Verify real
+microphones on Safari/iOS before enabling the feature broadly.
+
+### Discover platform retention settings
+
+Use `cld admin settings show logs.trace_retention_days --json` without `--app`
+to inspect the platform setting's presence and readability. The platform catalog
+also includes `logs.retention_days`; list, show and set use that same catalog.
+Neither list nor show prints stored or default values. `--app core` restricts
+the catalog to Core settings; other application IDs select their owning API.

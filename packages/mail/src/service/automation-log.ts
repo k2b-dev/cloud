@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import type {
   ActorCommandInput,
@@ -62,14 +62,16 @@ type LogRow = {
   undo_kept: NonNullable<AutomationLogItem["undo"]["kept"]>;
   undo_reverted: AutomationLogItem["effects"];
 };
-const rowColumns = sql.unsafe(`log.*, log.created_at::text AS cursor_at,
+const rowColumns = () =>
+  sql.unsafe(`log.*, log.created_at::text AS cursor_at,
   (assignment.run_id = log.run_id AND assignment.user_id = log.assignment_user_id AND assignment.changed_at IS NULL
    AND (SELECT count(*) FROM mail.conversation_assignees current WHERE current.conversation_id = log.conversation_id) = 1
    AND EXISTS (SELECT 1 FROM mail.conversation_assignees current WHERE current.conversation_id = log.conversation_id AND current.principal_id = log.assignment_user_id)) AS provenance_current,
   assignment.changed_by_id, assignment.changed_by_name, assignment.changed_at`);
-const rowFrom = sql.unsafe(
-  `FROM mail.automation_log log LEFT JOIN mail.automation_assignment assignment ON assignment.conversation_id = log.conversation_id`,
-);
+const rowFrom = () =>
+  sql.unsafe(
+    `FROM mail.automation_log log LEFT JOIN mail.automation_assignment assignment ON assignment.conversation_id = log.conversation_id`,
+  );
 // Stored snapshots predate undo.at; all undo state is derived from the authoritative columns.
 const storedItemSchema = automationLogItemSchema.omit({ undo: true });
 const itemFromRow = async (row: LogRow, db: typeof sql = sql): Promise<AutomationLogItem> => {
@@ -152,7 +154,7 @@ export const listAutomationLog = async (
         count(*) FILTER (WHERE ${filterCondition("skipped")})::int AS skipped,
         count(*) FILTER (WHERE ${filterCondition("manual")})::int AS manual
       FROM mail.automation_log log WHERE ${where}`;
-    const rows = await tx<LogRow[]>`SELECT ${rowColumns} ${rowFrom} WHERE ${where} AND ${filterCondition(query.filter)}
+    const rows = await tx<LogRow[]>`SELECT ${rowColumns()} ${rowFrom()} WHERE ${where} AND ${filterCondition(query.filter)}
       AND (${cursor.data?.at ?? null}::timestamptz IS NULL OR (log.created_at, log.id) < (${cursor.data?.at ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid))
       ORDER BY log.created_at DESC, log.id DESC LIMIT ${query.limit + 1}`;
     const page = rows.slice(0, query.limit),
@@ -173,7 +175,9 @@ export const getAutomationLogItem = async (
 ): Promise<Result<AutomationLogDetail>> => {
   const allowed = await requireMailboxAccess(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
-  const [row] = await sql<LogRow[]>`SELECT ${rowColumns} ${rowFrom} WHERE log.mailbox_id = ${mailboxId}::uuid AND log.id = ${itemId}::uuid
+  const [row] = await sql<
+    LogRow[]
+  >`SELECT ${rowColumns()} ${rowFrom()} WHERE log.mailbox_id = ${mailboxId}::uuid AND log.id = ${itemId}::uuid
     AND ${conversationVisibleTo(allowed.data, sql`log.conversation_id`)}`;
   if (!row) return fail(err.notFound("Automation log entry"));
   const item = await itemFromRow(row);
@@ -202,7 +206,7 @@ export const getConversationAutomationTrace = async (
   if (!visible?.visible) return fail(err.notFound("Conversation"));
   const rows = await sql<
     LogRow[]
-  >`SELECT ${rowColumns} ${rowFrom} WHERE log.mailbox_id = ${mailboxId}::uuid AND log.conversation_id = ${conversationId}::uuid ORDER BY log.created_at DESC, log.id DESC LIMIT 10`;
+  >`SELECT ${rowColumns()} ${rowFrom()} WHERE log.mailbox_id = ${mailboxId}::uuid AND log.conversation_id = ${conversationId}::uuid ORDER BY log.created_at DESC, log.id DESC LIMIT 10`;
   return ok({ items: await Promise.all(rows.map((row) => itemFromRow(row))) });
 };
 
@@ -249,7 +253,7 @@ export const changeAutomationLogEffects = async (
         : [];
       const [row] = await tx<
         LogRow[]
-      >`SELECT ${rowColumns} ${rowFrom} WHERE log.id = ${itemId}::uuid AND log.mailbox_id = ${mailboxId}::uuid FOR UPDATE OF log`;
+      >`SELECT ${rowColumns()} ${rowFrom()} WHERE log.id = ${itemId}::uuid AND log.mailbox_id = ${mailboxId}::uuid FOR UPDATE OF log`;
       if (!row) return fail(err.notFound("Automation log entry"));
       const item = await itemFromRow(row, tx);
       if (!target.conversation_id || !conversation) return cannotUndo("conversation_gone", item);
@@ -426,7 +430,7 @@ export const changeAutomationLogEffects = async (
       };
       await tx`INSERT INTO mail.automation_log (id, mailbox_id, conversation_id, item, created_at)
         VALUES (${operationId}::uuid, ${mailboxId}::uuid, ${conversationId}::uuid, ${operationItem}, ${operationItem.at}::timestamptz)`;
-      const [updated] = await tx<LogRow[]>`SELECT ${rowColumns} ${rowFrom} WHERE log.id = ${itemId}::uuid`;
+      const [updated] = await tx<LogRow[]>`SELECT ${rowColumns()} ${rowFrom()} WHERE log.id = ${itemId}::uuid`;
       if (!updated) throw new Error("Updated automation log disappeared");
       return ok({ item: await itemFromRow(updated, tx) });
     });

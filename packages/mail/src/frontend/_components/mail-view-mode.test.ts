@@ -1,11 +1,37 @@
 import { expect, test } from "bun:test";
-import { mailDayGroup, mailDayGroupStarts, resolveMailLargeLayout, toggleMailLargeView } from "./mail-view-mode";
+import { dates } from "@k2b/stdlib";
+import {
+  mailDayGroup,
+  mailDayGroupStarts,
+  mailTimeColumnSamples,
+  mailTimeColumnSizer,
+  resolveMailLargeLayout,
+  resolveMailListPresence,
+  toggleMailLargeView,
+} from "./mail-view-mode";
 
 test("auto shows columns until a conversation opens, then the list beside the reader", () => {
   expect(resolveMailLargeLayout("auto", false)).toEqual({ rows: "columns", list: "full", reader: false });
   expect(resolveMailLargeLayout("auto", true)).toEqual({ rows: "lines", list: "pane", reader: true });
   expect(resolveMailLargeLayout("columns", true)).toEqual({ rows: "columns", list: "hidden", reader: true });
   expect(resolveMailLargeLayout("split", false)).toEqual({ rows: "lines", list: "pane", reader: true });
+});
+
+test("the list hides only beside the reader; without it beside the reader, × and Escape lead back", () => {
+  const presence = (view: "auto" | "columns" | "split", open: boolean, collapsed: boolean) =>
+    resolveMailListPresence(resolveMailLargeLayout(view, open), open, collapsed);
+  // Reading beside the list: the switch works and the list shows until it is hidden.
+  expect(presence("auto", true, false)).toEqual({ open: true, hideable: true, away: false });
+  expect(presence("split", true, false)).toEqual({ open: true, hideable: true, away: false });
+  expect(presence("auto", true, true)).toEqual({ open: false, hideable: true, away: true });
+  expect(presence("split", true, true)).toEqual({ open: false, hideable: true, away: true });
+  // Always columns opens a mail over the full width: nothing to hide, and the way back is × or Escape.
+  expect(presence("columns", true, false)).toEqual({ open: false, hideable: false, away: true });
+  expect(presence("columns", true, true)).toEqual({ open: false, hideable: false, away: true });
+  // Without an open conversation there is no reader beside the list, and a stored choice waits for the next one.
+  expect(presence("auto", false, true)).toEqual({ open: false, hideable: false, away: false });
+  expect(presence("split", false, true)).toEqual({ open: true, hideable: false, away: false });
+  expect(presence("columns", false, false)).toEqual({ open: false, hideable: false, away: false });
 });
 
 test("V switches to the view that is not on screen", () => {
@@ -51,4 +77,24 @@ test("a heading goes before the first item of every group", () => {
     [3, "week"],
     [4, "earlier"],
   ]);
+});
+
+test("the time column samples hold the longest relative times and dates the locale shows", () => {
+  const samples = mailTimeColumnSamples({ locale: "de", timeZone: zone }, now);
+  expect(samples).toContain("vor 23 Stunden");
+  expect(samples).toContain("vor 59 Sekunden");
+  expect(samples).toContain("28. Sept. 2026");
+  expect(samples).not.toContain("gestern");
+  expect(mailTimeColumnSamples({ locale: "en", timeZone: zone }, now)).toContain("23 hours ago");
+});
+
+test("the time column sizer is one CSS string with one sample per line", () => {
+  expect(mailTimeColumnSizer(["vor 23 Stunden", 'a "quoted" \\ value'])).toBe('"vor 23 Stunden\\A a \\"quoted\\" \\\\ value"');
+});
+
+test("the time column samples hold the longest plural form, which need not be the largest count", () => {
+  // Scottish Gaelic says "10 uairean a thìde air ais" but "23 uair a thìde air ais".
+  const samples = mailTimeColumnSamples({ locale: "gd", timeZone: zone }, now);
+  const hours = dates.formatDateTimeRelative(new Date(now.getTime() - 10 * 3_600_000), { locale: "gd", base: now });
+  expect(samples).toContain(hours);
 });

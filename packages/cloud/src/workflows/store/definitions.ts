@@ -9,7 +9,8 @@
  * edit, and an activation that pins one cannot be left pointing at a plan that
  * no longer exists.
  */
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 import type { WorkflowBoundPlan, WorkflowDiagnostic, WorkflowJsonValue } from "../contracts";
 import { validateWorkflowEffectBudget } from "./budget";
 import { withTransaction } from "./transaction";

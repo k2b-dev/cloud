@@ -3,15 +3,16 @@ import { ok } from "@k2b/stdlib";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { decodeJwt, generateKeyPair } from "jose";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { type FixtureCorpus, fixtureHelpReader } from "../../test/help-reader";
 import { compileCapabilities } from "../_internal/capabilities";
 import { appAccess } from "../contracts/app-access";
 import { CAPABILITY_MAX_RESULT_BYTES, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, type RequestActor, type RequestAuthority } from "../server";
 import { issueInvocationToken } from "../services/identity/issue-invocation";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
@@ -20,6 +21,8 @@ import { buildProjectedUser } from "../services/session/user";
 import { createCapabilityRoutes } from "./capabilities";
 import { createHelpRoutes } from "./help";
 import { cloudMcpResourceUri, createMcpProtectedResourceRoutes, createMcpRoutes as createMcpRoutesBase } from "./mcp";
+
+useUnitClients();
 
 // The dispatcher records executions and idempotency claims through the store.
 // This suite is a unit test of the dispatch path: keep it away from any database.

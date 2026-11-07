@@ -1,6 +1,6 @@
 import { isPromise } from "node:util/types";
 import type { ReservedSQL, SQL, TransactionSQL } from "bun";
-import * as bun from "bun";
+import { createSql } from "../runtime/clients";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { boundTransaction } from "./authority";
 import { AppPwaError } from "./contracts";
@@ -22,8 +22,9 @@ const cancellationPool = (db: SQL) => {
   const connection: Record<string, string | number> = {};
   for (let index = 0; index + 1 < parts.length; index += 2) connection[parts[index]!] = parts[index + 1]!;
   connection.statement_timeout = requestBudget;
-  return new bun.SQL(`postgres://localhost?sslmode=${modes[sslMode]}`, {
+  return createSql({
     ...options,
+    adapter: "postgres",
     // Bun adds SNI to normalized prefer options. Passing that generated object
     // back as explicit TLS upgrades prefer to require. Recreate its default SNI
     // from hostname instead; explicit verification options remain unchanged.
@@ -35,6 +36,7 @@ const cancellationPool = (db: SQL) => {
     maxLifetime: REQUEST_IDLE_TIMEOUT_SECONDS,
     onconnect: undefined,
     onclose: undefined,
+    url: `postgres://localhost?sslmode=${modes[sslMode]}`,
   });
 };
 
@@ -167,7 +169,7 @@ export const withAppPwaTransactionLease = async <T>(
     open = false;
     for (const query of queries) {
       try {
-        query.cancel();
+        void Promise.resolve(query.cancel()).catch(() => {});
       } catch {
         /* Transaction recovery owns a failed cancellation. */
       }
@@ -249,14 +251,14 @@ export const withAppPwaTransaction = async <T>(
       closeConnection();
     } finally {
       await control?.close({ timeout: 0 });
-      // Pool close(timeout:0) is graceful in this Bun; a positive bound is required.
+      // A running cancellation gets the request bound to finish.
       await pool?.close({ timeout: REQUEST_IDLE_TIMEOUT_SECONDS });
     }
   };
   const abort = () => {
     startRecoveryTimer();
-    // Query.cancel() does not send PostgreSQL cancellation on Bun 744846f84.
-    // Keep this reservation until the independent cancellation has settled.
+    // Cancel by backend, which also reaches a statement sent outside `run` and reports failure so recovery
+    // can discard the connection. Keep this reservation until that cancellation has settled.
     if (!recovering) cancellation ??= cancelBackend().catch(closeConnection);
   };
   requestSignal.addEventListener("abort", abort, { once: true });
@@ -284,7 +286,9 @@ export const withAppPwaTransaction = async <T>(
       // Discount that precision as well as the clock query's round trip.
       authorityEnd = Math.min(authorityEnd, started + deadline.getTime() - time.getTime() - 1);
       clearTimeout(expiryTimer);
-      expiryTimer = setTimeout(() => expiry.abort(), Math.max(0, authorityEnd - performance.now()));
+      // The request budget bounds the transaction. A later authority needs no timer, and
+      // timer delays above 2^31-1 ms (about 24.8 days) would fire at once.
+      if (authorityEnd < requestEnd) expiryTimer = setTimeout(() => expiry.abort(), Math.max(0, authorityEnd - performance.now()));
     }
     check();
   };

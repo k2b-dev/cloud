@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { redis, type Server, sql } from "bun";
+import type { Server } from "bun";
 import { Hono } from "hono";
 import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { redis, sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import adminSettings from "../api/admin-core-settings";
 import { createAuthRoutes } from "../api/auth";

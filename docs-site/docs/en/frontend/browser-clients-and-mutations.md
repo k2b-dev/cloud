@@ -49,6 +49,10 @@ The repeat therefore applies a change at most once. When the phone is no
 longer paired, the app opens its pairing view instead. On the web, a `401` is
 returned as it is.
 
+On Cloud app pages, pending writes also hold automatic version-update reloads,
+including a session renewal and retry. GET reads do not. See
+[Pick up updates](/en/docs/frontend/mobile-app-pages#pick-up-updates).
+
 Do not use raw `fetch()` for an application JSON API when its typed route is
 available.
 

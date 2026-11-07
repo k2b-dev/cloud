@@ -43,7 +43,7 @@ export const recipeFixtures: RecipeFixture[] = [
   },
   {
     page: "platform/capabilities.md",
-    fixtures: ["platform-capabilities.ts", "platform-capabilities-app.ts", "browser-navigation.ts"],
+    fixtures: ["platform-capabilities.ts", "platform-capabilities-app.ts", "platform-app-caller.ts", "browser-navigation.ts"],
   },
   {
     page: "platform/cli-modules.md",

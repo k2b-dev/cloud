@@ -10,7 +10,8 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
-import { browserName, keptThrough, launchBrowser } from "../../../../../../ui/test/browser";
+import { checkFixtureSessionOrigin } from "../../../../../../../scripts/fixtures/session-origin";
+import { browserName, keptThrough, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
 // Whether a property row keeps its boxes while hovered, edited, or open, and whether the claim ring and labels line up,
@@ -135,6 +136,7 @@ const serverBody = (scenario: Scenario) =>
       initialDetail: detail(scenario.item ?? task, scenario.attachments),
       dateConfig: { locale: scenario.locale, timeZone: "Europe/Berlin" },
       canWrite: scenario.canWrite ?? true,
+      accessVisible: false,
       mailIntegrationAvailable: false,
     }),
   );
@@ -143,6 +145,8 @@ let css = "";
 let server: ReturnType<typeof Bun.serve>;
 const pages = new Map<string, string>();
 const writes: Array<{ method: string; path: string; body: unknown }> = [];
+/** Wakes each wait for a write: the server records one, so a test waits for the save itself, not a fixed time (#2204). */
+const writeWaiters = new Set<() => void>();
 /** What the server holds: saved properties come back with the next detail snapshot, as from the real route. */
 let stored: SpaceItem = task;
 let browser: Browser;
@@ -163,6 +167,8 @@ beforeAll(async () => {
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
+      const refused = await checkFixtureSessionOrigin(request);
+      if (refused) return refused;
       const url = new URL(request.url);
       if (url.pathname.startsWith("/_ssr/")) return new Response(Bun.file(join(root, url.pathname)));
       if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(join(ui, url.pathname.slice(4))));
@@ -197,8 +203,10 @@ beforeAll(async () => {
       if (url.pathname === "/api/capabilities/v1/catalog") return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
       if (url.pathname.startsWith("/api/")) {
         if (request.method === "GET") return Response.json([]);
+        expect(request.headers.get("cookie")).toContain("session_token=fixture-session");
         const body = request.headers.get("content-type")?.includes("json") ? await request.json() : null;
         writes.push({ method: request.method, path: url.pathname, body });
+        for (const wake of writeWaiters) wake();
         const itemPath = `/api/spaces/${spaceId}/items/Item01`;
         if (url.pathname === `${itemPath}/claim` && request.method === "POST") {
           stored = {
@@ -224,20 +232,25 @@ beforeAll(async () => {
         }
         if (url.pathname === `${itemPath}/progress` && request.method === "POST") return Response.json({ message: "ok" });
         if (url.pathname === itemPath && request.method === "PATCH") {
-          const { assigneeIds, claimId, force, ...patch } = body as Partial<SpaceItem> & {
+          const { assigneeIds, addAssigneeIds, removeAssigneeIds, claimId, force, ...patch } = body as Partial<SpaceItem> & {
             assigneeIds?: string[];
+            addAssigneeIds?: string[];
+            removeAssigneeIds?: string[];
             claimId?: string;
             force?: boolean;
           };
+          const nextAssigneeIds = new Set(assigneeIds ?? stored.assignees?.map((person) => person.id) ?? []);
+          for (const id of addAssigneeIds ?? []) nextAssigneeIds.add(id);
+          for (const id of removeAssigneeIds ?? []) nextAssigneeIds.delete(id);
           const claim = stored.claim;
-          const removesWorker = assigneeIds && claim?.actor.kind === "user" && !assigneeIds.includes(claim.actor.id);
+          const removesWorker = claim?.actor.kind === "user" && !nextAssigneeIds.has(claim.actor.id);
           if (removesWorker && (claimId !== claim.id || (claim.actor.id !== me && !force))) {
             return Response.json({ message: "Task claim is no longer active" }, { status: 409 });
           }
           stored = {
             ...stored,
             ...patch,
-            ...(assigneeIds ? { assignees: assigneeIds.map((id) => [lena, tom].find((person) => person.id === id)!) } : {}),
+            assignees: [...nextAssigneeIds].map((id) => [lena, tom, ...(stored.assignees ?? [])].find((person) => person.id === id)!),
             ...(removesWorker ? { claim: null } : {}),
           };
           return Response.json(stored);
@@ -246,7 +259,12 @@ beforeAll(async () => {
       }
       const html = pages.get(url.searchParams.get("case") ?? "");
       return html
-        ? new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } })
+        ? new Response(html, {
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+              "set-cookie": "session_token=fixture-session; Path=/; HttpOnly; SameSite=Lax",
+            },
+          })
         : new Response("Not found", { status: 404 });
     },
   });
@@ -411,6 +429,8 @@ const PROPERTY_ROWS = ".k2b-detail-panel__body > section.k2b-detail-panel__secti
 const planningRow = (page: Page, term: string) =>
   page.locator(PROPERTY_ROWS, { has: page.locator("dt", { hasText: new RegExp(`^${term}$`) }) });
 const clickLabel = async (page: Page, term: string) => {
+  // A saved change reloads the panel and a closing menu still moves; the label is measured where it rests.
+  await settled(page);
   const label = (await planningRow(page, term).locator("dt").boundingBox())!;
   await page.mouse.click(label.x + 4, label.y + label.height / 2);
 };
@@ -422,8 +442,16 @@ const surface = (page: Page, term: string) =>
     return control ? getComputedStyle(control, "::before").backgroundColor : "none";
   });
 const transparent = "rgba(0, 0, 0, 0)";
+/** Waits until the server has recorded `count` writes, bounded by the test's own timeout, then checks there are no more. */
 const writesReach = async (count: number) => {
-  for (let attempt = 0; attempt < 100 && writes.length < count; attempt += 1) await Bun.sleep(20);
+  while (writes.length < count)
+    await new Promise<void>((wake) => {
+      const once = () => {
+        writeWaiters.delete(once);
+        wake();
+      };
+      writeWaiters.add(once);
+    });
   expect(writes.length).toBe(count);
 };
 const shot = (page: Page, name: string) =>
@@ -509,7 +537,7 @@ describe("Spaces item detail in a browser", () => {
         {
           method: "PATCH",
           path: `/api/spaces/${spaceId}/items/Item01`,
-          body: { assigneeIds: [tom.id], claimId: task.claim!.id, force: true },
+          body: { addAssigneeIds: [], removeAssigneeIds: [lena.id], claimId: task.claim!.id, force: true },
         },
       ]);
       expect(await peopleRows(page).count()).toBe(1);
@@ -704,20 +732,23 @@ describe("Spaces item detail in a browser", () => {
           expect(type.unit).toBeNull();
           expect(type.input).toEqual({ size: view.touch ? "16px" : type.due, opacity: "0" });
 
-          // No section has an icon: every heading, the "More about this task" title and its collapsed rows included,
-          // starts on the same text edge.
-          const headings = await page.evaluate(() =>
-            Array.from(
-              window.document.querySelectorAll(
-                ".k2b-detail-panel__section-header h3, .k2b-detail-panel__section-summary .k2b-detail-panel__section-title, .k2b-detail-panel__group-title, .k2b-discussion h3",
-              ),
-            )
-              .filter((element) => !element.closest("[hidden]"))
-              .map((element) => Math.round(element.getBoundingClientRect().left)),
-          );
-          expect(headings.length).toBeGreaterThan(4);
-          expect(new Set(headings).size).toBe(1);
-          expect(await page.locator(".k2b-detail-panel__section-icon").count()).toBe(0);
+          // Every section has an icon (UI-27), so every heading, the closed rows under "More about this task" and the
+          // comments included, starts on one text edge after it.
+          const outline = await page.evaluate(() => {
+            const visible = (selector: string) =>
+              Array.from(window.document.querySelectorAll(selector)).filter((element) => !element.closest("[hidden]"));
+            const headings = visible(
+              ".k2b-detail-panel__section-header h3, .k2b-detail-panel__section-summary .k2b-detail-panel__section-title, .k2b-discussion h3",
+            );
+            return {
+              edges: headings.map((element) => Math.round(element.getBoundingClientRect().left)),
+              sections: visible(".k2b-detail-panel__section, .k2b-discussion").length,
+              icons: visible(".k2b-detail-panel__section-icon i, .k2b-discussion__icon i").length,
+            };
+          });
+          expect(outline.edges.length).toBeGreaterThan(4);
+          expect(new Set(outline.edges).size).toBe(1);
+          expect(outline.icons).toBe(outline.sections);
 
           // Hovering a row paints its quiet surface and moves nothing; the blocker's remove button only fades in.
           for (const term of ["Fällig", "Schätzung", "Priorität", "Tags"]) {
@@ -1009,8 +1040,8 @@ describe("Spaces item detail in a browser", () => {
         const picked = page.waitForEvent("filechooser");
         await page.getByText(locale === "de" ? "Bild oder Video hinzufügen" : "Add image or video").click();
         // The page learns while idle that no app offers files, and then the click opens the device's dialog. A click
-        // before that opens the source chooser, whose first source, This device, opens the same dialog.
-        const thisDevice = page.locator('dialog[open] [role="gridcell"]').first();
+        // before that opens the chooser on This device, whose source opens the same dialog.
+        const thisDevice = page.locator('dialog[open] .cloud-file-dialog__source[aria-current="true"]');
         const chooserOpened = thisDevice.waitFor().then(
           () => true,
           () => false,

@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { SQL } from "bun";
 import { connectTestNats, requireDatabaseUrl, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 
 const databaseName = process.env.NOTEBOOKS_SNAPSHOT_DB_CHILD;

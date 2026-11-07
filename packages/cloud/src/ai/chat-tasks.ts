@@ -1,7 +1,8 @@
 import type { Message } from "@k2b/nessi";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { getCapability } from "../_internal/registry";
 import { type CapabilityActionPolicy, capabilityActionPolicy } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import {
   createMandate,

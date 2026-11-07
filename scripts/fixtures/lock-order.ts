@@ -13,7 +13,7 @@
  *   every change decides on the state from before all of them, which is the
  *   race the lock exists to prevent.
  */
-import { sql } from "bun";
+import { sql } from "../../packages/cloud/src/runtime/clients";
 
 type Holder = Awaited<ReturnType<typeof sql.reserve>>;
 

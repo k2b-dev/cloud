@@ -207,6 +207,13 @@ describe("Pulse administration tabs in a browser", () => {
       const { page, release } = await open(view, { view: "bases", policy, page: basesPage }, { locale: "de" });
       try {
         await page.getByText("ClickHouse wird geprüft …").waitFor();
+        await page.getByRole("columnheader", { name: "Profil", exact: true }).waitFor();
+        expect(
+          await page
+            .getByRole("row", { name: /Betrieb/ })
+            .getByText("Normal", { exact: true })
+            .count(),
+        ).toBe(1);
         const waiting = await layout(page);
         release();
         await page.getByText("verwaist", { exact: true }).waitFor();
@@ -282,6 +289,12 @@ describe("Pulse administration tabs in a browser", () => {
         limits: { valuesPerMinute: number };
       };
       expect(saved.limits.valuesPerMinute).toBe(5000);
+      expect(
+        await page
+          .getByRole("row", { name: /Betrieb/ })
+          .getByText("Large", { exact: true })
+          .count(),
+      ).toBe(1);
     } finally {
       await page.close();
     }

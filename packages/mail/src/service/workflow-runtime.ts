@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import { env } from "@k2b/cloud/config";
 import { createRuntimeLifecycle, logger } from "@k2b/cloud/services";
 import {
@@ -16,7 +17,6 @@ import {
   type WorkflowRunClaim,
   wakeExpiredWorkflowRuns,
 } from "@k2b/cloud/workflows/store";
-import { sql } from "bun";
 import { authorizeMailWorkflowExecution, MAIL_WORKFLOW_ACTIONS } from "../workflows/actions";
 import { MAIL_WORKFLOW_APP_ID } from "../workflows/events";
 import { mailWorkflows } from "../workflows/module";

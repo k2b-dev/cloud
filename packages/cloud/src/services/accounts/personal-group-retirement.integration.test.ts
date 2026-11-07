@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { suiteFor, useMigratedDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { createAccess, getEffectivePermission, updateAccess } from "../../server/services/access";
 import { accountLifecycle } from "../account-lifecycle";

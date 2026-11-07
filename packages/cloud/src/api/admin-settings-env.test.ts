@@ -1,17 +1,22 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { generateKeyPair } from "jose";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import * as registry from "../_internal/registry";
 import type { EnvSettingStatus } from "../contracts/settings-env";
+import { sql } from "../runtime/clients";
 import * as gateways from "../services/gateway";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import * as issuer from "../services/identity/issue-invocation";
 import * as keyRing from "../services/identity/key-ring";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
+import "../services/logging";
 import * as diagnostics from "../services/settings/env-status";
+import * as settingStore from "../services/settings/store";
 import { adminSettingsEnvRoutes } from "./admin-settings-env";
 import { settingsInvocationOperation } from "./settings-ops";
+
+useUnitClients();
 
 const now = Date.parse("2026-10-30T01:00:00Z");
 const row: EnvSettingStatus = {
@@ -118,4 +123,28 @@ test("application checks use operation-bound invocations and sanitize remote fie
     needsAttention: true,
     processes: [{ appId: "core" }, { appId: "mail", status: "unavailable", settings: [] }, { appId: "gateway" }],
   });
+});
+
+test("omitted app exposes platform settings to CLI show; explicit core stays scoped", async () => {
+  const states = spyOn(settingStore, "readStates").mockImplementation(
+    async (keys) => new Map(keys.map((key) => [key, { value: "must-not-leak", stored: "none" as const }])),
+  );
+  const request = (path: string) => adminSettingsEnvRoutes.request(path, { headers: { cookie: "session_token=test" } });
+  const response = await request("/catalog");
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body.settings).toContainEqual({
+    key: "logs.trace_retention_days",
+    kind: "number",
+    group: "logs",
+    stored: "none",
+    storedValuePresent: false,
+    envBacked: false,
+  });
+  expect(body.settings.some((setting: { key: string }) => setting.key === "logs.retention_days")).toBe(true);
+  expect(JSON.stringify(body)).not.toContain("must-not-leak");
+  const core = await request("/catalog?app=core");
+  expect(core.status).toBe(200);
+  expect((await core.json()).settings.some((setting: { key: string }) => setting.key.startsWith("logs."))).toBe(false);
+  expect(states).toHaveBeenCalled();
 });

@@ -1953,6 +1953,93 @@ review. App tests may compile a declaration without importing Cloud internals:
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 ```
 
+### Call as the application
+
+Use `appCaller()` from `@k2b/cloud/server` when the application itself is
+responsible for the call, including a public website or a background job with
+no signed-in person. It works with `invokeCapabilityWithDataSchema()` and
+typed clients such as `geoClient`:
+
+```ts
+import { appCaller, geoClient } from "@k2b/cloud/server";
+
+// In defineApp: platformPermissions: ["geo:query"]
+const result = await geoClient.autocomplete({ text: "Orleans" }, appCaller());
+```
+
+Create the caller after `app.start()` has bound the process identity, including
+for workers running in that application process. A separate data process
+started only with `@k2b/cloud/start` has no bound application identity. Its
+optional `locale`, `requestId` and `signal` carry request metadata and
+cancellation. The configured Ed25519 app key signs every transmission to
+Core; this path accepts no legacy workload token or interactive credential.
+Built-in and third-party app IDs follow the same rules.
+
+A provider explicitly offers an app handler on each Query or Action:
+
+```ts
+address: {
+  title: "Suggest addresses", description: "Suggest addresses within the geo budget.",
+  input: addressInput, data: addressData, openWorld: true,
+  run: (input, context) => suggestAddresses(input, context),
+  app: {
+    permission: "geo:query",
+    run: (input, context) => suggestAddressesForApp(input, context),
+  },
+},
+```
+
+`app.permission` uses the platform permission catalog, and `app.run` returns
+the same result schema as `run`. Core exposes it as `appPermission` in the
+live manifest and checks it against the calling app's current
+`platformPermissions`. Missing declarations return 403
+`APP_CAPABILITY_NOT_ADMITTED`; a capability without an app handler refuses
+app authority. Providers receive `actor: { kind: "app", appId, keyId }`,
+`accessSubject: { type: "none" }`, and `user: null`. The app handler owns app
+admission and effects; person-owned resource access still needs an interactive
+caller or a [mandate](/en/docs/identity/background-mandates). App callers
+cannot review person approvals, discover person catalogs, nest a person
+invocation, or use binary streams. Actions keep their declared idempotency
+and bounded result contract.
+
+Core checks the app signature, current key and declaration on each request.
+The provider checks the key again immediately before execution; revoking the
+key rejects even an already-issued invocation. Execution history stores
+`actorKind: "app"`, `actorAppId` and `actorKeyId`, alongside the request ID.
+App IDs never occupy the UUID principal field.
+
+Core limits aggregate calls per app, across all its keys and target
+capabilities, using the existing `security.rate_limit_per_second` operational
+limit. Signature ingress and per-key admission remain in force. Limit
+exhaustion returns 429 `RATE_LIMITED` with `Retry-After`; unavailable admission
+fails closed with 503. Paid providers also enforce their existing durable cost
+budgets. All Geo callers share `geo.monthly_budget_credits` and the
+installation-wide provider-plan request rate (`geo.custom_rps` for Custom).
+There is no daily allowance per person, service account or app.
+`GEO_BUDGET_EXHAUSTED` and `GEO_BUSY` return 429 with `Retry-After` and
+structured recovery details.
+
+Address autocomplete also has a narrowly scoped anonymous server entry:
+`geoClient.autocomplete(input)` needs no caller, session, app key or
+`geo:query` declaration. It requires `CLOUD_CORE_INTERNAL_ORIGIN` and calls
+`POST /api/_internal/geo/v1/autocomplete` on Core. The body is the autocomplete
+input; the result uses the same capability envelope. That route accepts only
+the configured internal host and never trusts forwarding headers.
+The gateway refuses the route before proxying, on Cloud and assigned domains.
+Keep Core's listener private; the origin check is not network authentication.
+No other Geo operation or public capability route becomes anonymous.
+Execution history records `origin: "app"` with null actor and access subject;
+monthly-budget audit transitions carry `caller: "anonymous", internal: true`.
+Anonymous executions cannot identify the calling application.
+
+Omitting the caller argument selects anonymous access. Supplying a caller keeps
+the authenticated capability path, even when its credentials are missing.
+Existing authenticated and app callers remain supported. They use their
+normal authority paths and admission checks, plus the same global Geo limits.
+For public forms, apply `rateLimit({ keyBy: "ip" })` and app-owned controls
+using `clientIp(c)` before calling Core; see
+[Public site](/en/docs/build/public-surface#call-platform-capabilities-without-a-person).
+
 A durable worker uses the same server helper with an app workload credential
 and its persisted mandate ID/revision. The helper sends both only to Core;
 Core validates the current mandate, signs and dispatches the exact capability,

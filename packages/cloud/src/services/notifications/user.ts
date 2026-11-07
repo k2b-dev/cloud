@@ -1,4 +1,3 @@
-import { sql } from "bun";
 import {
   isSafeNotificationTargetHref,
   type NotificationDefinitionPresentationCatalog,
@@ -11,6 +10,7 @@ import type {
   UserNotificationPreference,
   UserNotificationPreferencesResponse,
 } from "../../contracts/user-notifications";
+import { sql } from "../../runtime/clients";
 import { normalizeLocale } from "../../shared/locale";
 import { toPgTextArray } from "../postgres";
 import { listNotificationChannels } from "./channels";

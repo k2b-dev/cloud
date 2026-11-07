@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import meApp from "../api/me";
 import { type AuthContext, auth } from "../server/middleware/auth";

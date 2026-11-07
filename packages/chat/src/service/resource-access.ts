@@ -1,3 +1,4 @@
+import { redis } from "@k2b/cloud";
 import { type CapabilityCaller, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import {
   CapabilitySemanticLinkSchema,
@@ -5,7 +6,6 @@ import {
   CloudResourceRefSchema,
   DiscussionContainersDataSchema,
 } from "@k2b/cloud/contracts";
-import { redis } from "bun";
 import { z } from "zod";
 import type { ChatContext } from "./access";
 import {

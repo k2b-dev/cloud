@@ -238,8 +238,8 @@ describe("grids help", () => {
     expect(permissions).toContain("Cloud administrators are not automatic Grids superusers");
     expect(permissions).toContain("Read the complete schema and every record");
     expect(permissions).toContain("Hiding a control in the browser is not authorization");
-    expect(permissions).toContain("You can give access to users, groups, service accounts");
-    expect(permissions).toContain("a standalone or agent account");
+    expect(permissions).toContain("You can give access to users, groups, agents, service accounts");
+    expect(permissions).toContain("an agent account");
     expect(permissions).toContain("Resource-bound credentials cannot open Grids Apps");
     for (const resource of ["Base", "Grids App"]) {
       expect(permissions, `missing permission resource ${resource}`).toContain(resource);

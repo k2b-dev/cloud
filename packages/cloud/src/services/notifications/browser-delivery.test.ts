@@ -32,7 +32,7 @@ test("browser delivery carries localized previews, namespaces groups, and preser
     globalThis.notificationBrowserSql = sql;
     Bun.plugin({ name: "notification-browser-sql", setup(build) {
       build.onLoad({ filter: /[\\/]notifications[\\/](?:browser|platform)\\.ts$/ }, async ({ path }) => ({
-        contents: (await Bun.file(path).text()).replace('import { sql } from "bun";', 'const sql = globalThis.notificationBrowserSql;'), loader: "ts",
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.notificationBrowserSql;'), loader: "ts",
       }));
     }});
     mock.module("web-push", () => ({ default: { setVapidDetails: () => {} } }));
@@ -41,6 +41,12 @@ test("browser delivery carries localized previews, namespaces groups, and preser
         get: async key => key === "app.url" ? "https://cloud.example.org" : "configured",
         read: async key => ({ value: key === "app.url" ? "https://cloud.example.org" : "configured", stored: "readable" }),
       },
+    }));
+    // VAPID initialization reads its keys on the lock-owning transaction, not through coreSettings.
+    const settingsStore = await import(${JSON.stringify(new URL("../settings/store.ts", import.meta.url).pathname)});
+    mock.module(${JSON.stringify(new URL("../settings/store.ts", import.meta.url).pathname)}, () => ({
+      ...settingsStore,
+      readKeyState: async () => ({ value: "configured", stored: "readable" }),
     }));
     mock.module(${JSON.stringify(new URL("./web-push-transport.ts", import.meta.url).pathname)}, () => ({
       sendPinnedWebPush: async (subscription, payload, options) => { sent.push({ subscription, payload, options }); },

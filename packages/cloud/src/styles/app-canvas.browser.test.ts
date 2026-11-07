@@ -87,7 +87,7 @@ const loadShell = async (width: number, height: number, workspace = false, authe
     <div ${authenticated ? 'data-layout-authenticated="true"' : ""} class="cloud-app-canvas relative flex w-full min-h-dvh md:h-dvh md:overflow-hidden">
       ${
         authenticated
-          ? `<aside class="layout-rail hidden w-14 shrink-0 flex-col md:flex">
+          ? `<aside class="layout-rail w-14 shrink-0 flex-col max-md:hidden md:flex">
         <div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center">
           <a href="/" aria-label="Home"><span class="block h-5 w-5"></span></a>
         </div>

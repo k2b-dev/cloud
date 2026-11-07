@@ -1,8 +1,8 @@
 import { afterAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { type PersonAvatar, robotAvatarFromSeed } from "@k2b/cloud/contracts/avatar";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { renderAvatarSvg } from "@k2b/cloud/shared";
-import { sql } from "bun";
 import { tinyJpeg } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";

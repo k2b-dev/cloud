@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
@@ -14,8 +15,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
+import { dates, err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import { annotationActions, annotationQueries } from "./annotation-capabilities";
 import { notebooksEvents } from "./app-events";
@@ -50,6 +50,8 @@ import {
   NoteSummaryDataSchema,
   NoteTreeDataSchema,
   NoteTreeInputSchema,
+  PageTemplateListDataSchema,
+  PageTemplateListInputSchema,
   TagListDataSchema,
   TagListInputSchema,
   TagNotesDataSchema,
@@ -70,6 +72,7 @@ import type { Notebook, NotebookWithPermission } from "./service/notebooks";
 import * as notebookStore from "./service/notebooks";
 import type { Note, NotePlacement } from "./service/notes";
 import * as noteStore from "./service/notes";
+import * as pageTemplateStore from "./service/page-templates";
 import * as noteSearch from "./service/search";
 import * as noteTags from "./service/tags";
 
@@ -919,6 +922,52 @@ const noteMutationResult = async (result: MutationResult<Note>, notebook: Notebo
   });
 };
 
+/** `{{date}}` in the installation's zone, as notes made through capabilities title themselves, and the caller's name. */
+const pageTemplatePlaceholders = async (context: CapabilityExecutionContext) => ({
+  date: dates.formatDateKey(new Date(), await noteStore.defaultDateConfig()),
+  author:
+    context.actor.kind === "user"
+      ? context.actor.user.displayName || context.actor.user.uid
+      : (context.user?.displayName ?? context.actor.serviceAccount.name),
+});
+
+/** The filled-in template for a writable notebook, through the same service rule as the API. */
+const draftPageTemplate = async (
+  notebookId: string,
+  templateId: string,
+  permission: PermissionLevel,
+  context: CapabilityExecutionContext,
+): Promise<Result<{ name: string; contentMd: string }>> => {
+  const drafted = await pageTemplateStore.draft({
+    notebookId,
+    templateId,
+    permission,
+    placeholders: await pageTemplatePlaceholders(context),
+    locale: context.locale,
+  });
+  return drafted.ok || drafted.error.status !== 404 ? drafted : capabilityNotFound(capabilityMessages(context).pageTemplateNotFound);
+};
+
+const runPageTemplateList = async (input: z.infer<typeof PageTemplateListInputSchema>, context: CapabilityExecutionContext) => {
+  const access = await requireNotebookByShortId(input.notebookId, context);
+  if (!access.ok) return access;
+  const listed = await pageTemplateStore.list({
+    notebookId: access.data.notebook.id,
+    permission: access.data.permission,
+    locale: context.locale,
+  });
+  if (!listed.ok) return listed;
+  return ok({
+    data: listed.data.map((template) => ({
+      id: template.id,
+      name: template.name,
+      description: template.description,
+      builtIn: template.builtIn,
+    })),
+    refs: [notebookRef(access.data.notebook)],
+  });
+};
+
 const runNoteCreate = async (input: z.infer<typeof NoteCreateInputSchema>, context: CapabilityExecutionContext) => {
   const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
   const access = await requireNotebookByShortId(input.notebookId, context, "write");
@@ -929,6 +978,12 @@ const runNoteCreate = async (input: z.infer<typeof NoteCreateInputSchema>, conte
     if (!parent.ok || parent.data.note.notebookId !== access.data.notebook.id) return capabilityNotFound(t.parentNotFound);
     parentId = parent.data.note.id;
   }
+  let contentMd = input.content;
+  if (input.templateId) {
+    const drafted = await draftPageTemplate(access.data.notebook.id, input.templateId, access.data.permission, context);
+    if (!drafted.ok) return drafted;
+    contentMd = drafted.data.contentMd;
+  }
   return audited(actionAudit(context, "note.create", "notebook", access.data.notebook.id), async () =>
     noteMutationResult(
       await noteStore.create({
@@ -936,7 +991,7 @@ const runNoteCreate = async (input: z.infer<typeof NoteCreateInputSchema>, conte
           notebookId: access.data.notebook.id,
           parentId,
           position: input.position,
-          contentMd: input.content,
+          contentMd,
         },
         creatorId: context.user?.id ?? null,
         actor: activityActor(context),
@@ -1325,6 +1380,15 @@ export const notebooksCapabilities = defineCapabilities({
       openWorld: false,
       run: runCommentRead,
     },
+    "template.list": {
+      title: "List page templates",
+      description:
+        "List the page templates of one known notebook: its own ones by name, then the built-in ones. Use a returned id as templateId with note.create.",
+      input: PageTemplateListInputSchema,
+      data: PageTemplateListDataSchema,
+      openWorld: false,
+      run: runPageTemplateList,
+    },
     "tag.list": {
       title: "List notebook tags",
       description:
@@ -1414,7 +1478,8 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "note.create": {
       title: "Create note",
-      description: "Create one Markdown note in an explicitly selected writable notebook.",
+      description:
+        "Create one Markdown note in an explicitly selected writable notebook, from content or from a templateId returned by template.list.",
       input: NoteCreateInputSchema,
       data: NoteSummaryDataSchema,
       destructive: false,
@@ -1431,7 +1496,11 @@ export const notebooksCapabilities = defineCapabilities({
           if (!parent.ok || parent.data.note.notebookId !== access.data.notebook.id) return capabilityNotFound(t.parentNotFound);
           parentTitle = parent.data.note.title;
         }
-        const content = input.content ?? "";
+        const template = input.templateId
+          ? await draftPageTemplate(access.data.notebook.id, input.templateId, access.data.permission, context)
+          : null;
+        if (template && !template.ok) return template;
+        const content = template?.data.contentMd ?? input.content ?? "";
         const previewLimit = 9_000;
         const truncated = content.length > previewLimit;
         return ok({
@@ -1440,7 +1509,14 @@ export const notebooksCapabilities = defineCapabilities({
             { label: t.notebook, value: access.data.notebook.name },
             { label: t.parent, value: parentTitle },
             ...(input.position === undefined ? [] : [{ label: t.position, value: String(input.position) }]),
-            ...(input.content === undefined
+            // The preview may be cut; the hash of the whole filled-in text makes a changed template ask again.
+            ...(template
+              ? [
+                  { label: t.pageTemplate, value: template.data.name },
+                  { label: t.pageTemplateContentHash, value: noteContentHash(content) },
+                ]
+              : []),
+            ...(input.content === undefined && !template
               ? []
               : [
                   {

@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
-import { AiModelAccessConflict, aiModelAccess } from "../../src/ai/model-access";
+import { AiModelAccessConflict, AiModelAccessInvalid, aiModelAccess } from "../../src/ai/model-access";
 import { migrateAiModelAccess } from "../../src/ai/model-access-migrate";
 import type { Principal } from "../../src/contracts/shared";
+import { sql } from "../../src/runtime/clients";
 
 const suite = databaseSuite();
 const draft = <T extends Principal>(principal: T) => ({ principal, permission: "read" as const });
@@ -22,7 +22,13 @@ suite("Assistant model grants using normal Cloud access", () => {
     await fresh?.drop();
   });
   const sync = (ids: string[], changes: Parameters<typeof aiModelAccess.syncModels>[1] = []) =>
-    sql.begin((tx) => aiModelAccess.syncModels(ids, changes, tx));
+    sql.begin((tx) =>
+      aiModelAccess.syncModels(
+        ids.map((id) => ({ id, restricted: id === "apps-only" })),
+        changes,
+        tx,
+      ),
+    );
 
   beforeAll(async () => {
     fresh = await useFreshDatabase("model_access");
@@ -117,7 +123,10 @@ suite("Assistant model grants using normal Cloud access", () => {
       sql.begin(async (tx) => {
         await tx`INSERT INTO settings.entries (key, value) VALUES ('model_access_rollback_probe', 'changed')`;
         await aiModelAccess.syncModels(
-          ["open", "limited"],
+          [
+            { id: "open", restricted: false },
+            { id: "limited", restricted: false },
+          ],
           [{ modelId: "open", expectedRevision: before.open!.revision, entries: [draft({ type: "user", userId: crypto.randomUUID() })] }],
           tx,
         );
@@ -162,6 +171,20 @@ suite("Assistant model grants using normal Cloud access", () => {
     await sync([]);
     expect(await aiModelAccess.listForAdmin()).toEqual({});
     for (const id of ids) expect(await sql`SELECT id FROM auth.access WHERE id = ${id}::uuid`).toHaveLength(0);
+  });
+
+  test("models without a data-protection commitment get no chat access and refuse grants", async () => {
+    await sync(["open", "limited", "apps-only"]);
+    const state = await aiModelAccess.listForAdmin();
+    expect(state["apps-only"]!.entries).toEqual([]);
+    expect(await aiModelAccess.filterModels([{ id: "apps-only", modelId: "apps-only" }], subject())).toHaveLength(0);
+    await expect(
+      sync(
+        ["open", "limited", "apps-only"],
+        [{ modelId: "apps-only", expectedRevision: state["apps-only"]!.revision, entries: [draft({ type: "authenticated" })] }],
+      ),
+    ).rejects.toBeInstanceOf(AiModelAccessInvalid);
+    await sync(["open", "limited"]);
   });
 
   test("deleted and recreated model cannot reuse its old permission revision", async () => {

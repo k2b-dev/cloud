@@ -1,13 +1,14 @@
 import { afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { person } from "../_internal/define-app.test-fixture";
 import * as executions from "../capabilities/executions";
 import { createNestedCapabilityQuery } from "../capabilities/nested";
 import { appAccess } from "../contracts/app-access";
+import { sql } from "../runtime/clients";
 import { auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
 import type { InvocationPrincipalClaims, ResolvedInvocationAuthority } from "../services/identity/invocation-actor";
@@ -18,6 +19,8 @@ import { type NestedInvocationLease, nestedInvocationLeases } from "../services/
 import { type MandatePolicyV1, mandatePolicyAllows } from "../services/mandates";
 import { dispatchCapability } from "./capabilities";
 import { createIdentityChildInvocationRoutes } from "./identity-child-invocation";
+
+useUnitClients();
 
 const now = new Date("2026-10-26T10:00:00Z");
 const issuer = "https://cloud.test";

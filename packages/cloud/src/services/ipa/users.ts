@@ -1,16 +1,18 @@
 import { password } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { MutationResult, UserProfile } from "../../contracts/shared";
 import { coreUserEventPublisher } from "../../events/core-user-created";
+import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { writeDeletedAccountAudit } from "../account-lifecycle/audit";
 import { resolveProviderProfile } from "../accounts/base-user";
 import { emailAlreadyUsed, findAccountsByEmail, lockAccountEmail, normalizeAccountEmail } from "../accounts/email-write";
+import { getFreeIpaConfig } from "../freeipa-config";
 import { logger } from "../logging";
 import { session } from "../session";
 import * as settings from "../settings";
 import { ensureFreeIpaMutationAvailable, getIpaUrl } from "./guard";
 import { mirrorIpaPosix } from "./posix";
+import { IPA_IDENTITY_CONFLICT, IPA_MISSING_CONFLICT, ipaEntryId, reactivationConflict } from "./reactivation";
 
 type CreateUser = {
   email: string;
@@ -39,6 +41,8 @@ type IpaPatchData = {
 };
 
 type DbRow = Record<string, unknown>;
+const isIpaEntry = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
 
 const log = logger("auth:ipa");
 
@@ -227,6 +231,7 @@ export type AddIpaResult = {
   accountExpires: string | null;
   /** The temporary password - only for internal use (email sending), not exposed to client */
   _temporaryPassword: string;
+  reactivated: boolean;
 };
 
 /**
@@ -244,7 +249,8 @@ export const addIpa = async (params: {
   const { ipaSession, data } = params;
   const { givenname, sn } = data;
   let promotedUserId: string | undefined;
-  const result = await sql.begin(async (tx): Promise<MutationResult<AddIpaResult>> => {
+  let restoreAccess: (() => Promise<void>) | undefined;
+  const promotion = sql.begin(async (tx): Promise<MutationResult<AddIpaResult>> => {
     await lockAccountEmail(tx, data.email);
     const targetProfile = params.profile ?? "user";
 
@@ -255,6 +261,13 @@ export const addIpa = async (params: {
     // Preserve an exact legacy match; otherwise promotion must identify one account.
     const local = locals.find((row) => row.mail === data.email) ?? (locals.length === 1 ? locals[0] : undefined);
     if (!local && matches.length > 0) return emailAlreadyUsed();
+    if (local) {
+      // This row lock prevents promotion from overwriting a concurrent email edit.
+      // NO KEY UPDATE remains compatible with the independent claim's FK KEY SHARE lock.
+      const [current] = await tx<{ provider: string; mail: string }[]>`
+        SELECT provider, mail FROM auth.users WHERE id=${local.id}::uuid FOR NO KEY UPDATE`;
+      if (!current || current.provider !== "local" || current.mail !== local.mail) return emailAlreadyUsed();
+    }
     const existingLocalRows = local ? [local] : [];
     const email = local?.mail ?? normalizeAccountEmail(data.email);
 
@@ -279,6 +292,52 @@ export const addIpa = async (params: {
       return { ok: false, error: `UID '${uid}' already exists`, status: 400 };
     }
 
+    const directoryUrl = await getIpaUrl();
+    const remote = await freeipa.client.call({ url: directoryUrl, ipaSession, method: "user_show", args: [uid], options: { all: true } });
+    // Only FreeIPA's exact NotFound response establishes absence. Denied/unavailable lookups never permit creation.
+    if (remote.error && !(remote.error.kind === "rpc" && remote.error.code === 4001 && remote.error.name === "NotFound")) {
+      return { ok: false, error: remote.error.message, status: freeipa.util.mapIpaErrorCode(remote.error.code) };
+    }
+    const [retry] = local
+      ? await tx<
+          { directory_url: string; uid: string; mail: string; remote_id: string; previous_expiry: Date | null; was_disabled: boolean }[]
+        >`
+      SELECT directory_url, uid, mail, remote_id, previous_expiry, was_disabled FROM auth.ipa_reactivations WHERE user_id = ${local.id}::uuid`
+      : [];
+    const [posix] = local
+      ? await tx<{ uid_number: number | null }[]>`
+      SELECT uid_number FROM auth.user_posix WHERE user_id = ${local.id}::uuid AND managed_by = 'ipa'`
+      : [];
+    if (retry && remote.error) return { ok: false, error: IPA_IDENTITY_CONFLICT, status: 409 };
+    if (remote.error && posix?.uid_number !== null && posix?.uid_number !== undefined) {
+      return { ok: false, error: IPA_MISSING_CONFLICT, status: 409 };
+    }
+    const reactivated = !remote.error;
+    let remoteEntry: Record<string, unknown> | undefined;
+    if (reactivated) {
+      const entry = remote.result?.result;
+      if (!local || !isIpaEntry(entry)) {
+        return { ok: false, error: IPA_IDENTITY_CONFLICT, status: 409 };
+      }
+      remoteEntry = entry;
+      const conflict = reactivationConflict({
+        entry: remoteEntry,
+        uid,
+        mail: email,
+        uidNumber: posix?.uid_number ?? null,
+        retry,
+        directoryUrl,
+        now: new Date(),
+      });
+      if (conflict) return { ok: false, error: conflict, status: 409 };
+      // Deliberately outside tx: this identity claim must survive failure after user_mod/user_enable.
+      // The email lock serializes approvals; the user row lock permits the independent FK check.
+      await sql`INSERT INTO auth.ipa_reactivations(user_id, directory_url, uid, mail, remote_id, previous_expiry, was_disabled)
+        VALUES (${local.id}::uuid, ${directoryUrl}, ${uid}, ${email}, ${ipaEntryId(remoteEntry)!},
+          ${freeipa.util.parseGeneralizedTime(remoteEntry.krbprincipalexpiration)}, ${freeipa.util.str(remoteEntry.nsaccountlock).toLowerCase() === "true"})
+        ON CONFLICT(user_id) DO NOTHING`;
+    }
+
     const temporaryPassword = generateFreeIpaPassword();
     const accountExpiry = params.accountExpires === undefined ? await calculateAccountExpiration() : params.accountExpires;
     const now = new Date();
@@ -291,13 +350,22 @@ export const addIpa = async (params: {
       mail: email,
       userpassword: temporaryPassword,
     };
-    if (accountExpiry) {
+    // Reusing an entry must preserve its additional directory email addresses.
+    if (reactivated) delete ipaOpts.mail;
+    if (!reactivated && accountExpiry) {
       ipaOpts.krbprincipalexpiration = freeipa.util.toGeneralizedTime(accountExpiry);
     }
 
-    const response = await freeipa.client.call({ url: await getIpaUrl(), ipaSession, method: "user_add", args: [uid], options: ipaOpts });
+    const response = await freeipa.client.call({
+      url: directoryUrl,
+      ipaSession,
+      method: reactivated ? "user_mod" : "user_add",
+      args: [uid],
+      options: ipaOpts,
+    });
     if (response.error) {
       const code = response.error.code;
+      if (code === 4001 && response.error.name === "NotFound") return { ok: false, error: IPA_IDENTITY_CONFLICT, status: 409 };
       if (code === 4001)
         return {
           ok: false,
@@ -317,8 +385,74 @@ export const addIpa = async (params: {
       };
     }
 
-    // Extract uidNumber from IPA response
-    const ipaResult = response.result?.result as Record<string, unknown> | undefined;
+    if (reactivated) {
+      const config = await getFreeIpaConfig();
+      const groups = new Set([...config.groupsBaseSync, ...(targetProfile === "user" ? config.groupsBaseIpaRealm : [])]);
+      for (const group of groups) {
+        const membership = await freeipa.client.call({
+          url: directoryUrl,
+          ipaSession,
+          method: "group_add_member",
+          args: [group],
+          options: { user: [uid] },
+        });
+        if (membership.error)
+          return { ok: false, error: membership.error.message, status: freeipa.util.mapIpaErrorCode(membership.error.code) };
+        const added = membership.result?.result;
+        // FreeIPA can report membership failures inside a successful RPC response. Verify already-members on retry.
+        if (!isIpaEntry(added) || !Array.isArray(added.member_user) || !added.member_user.includes(uid)) {
+          const shown = await freeipa.client.call({ url: directoryUrl, ipaSession, method: "group_show", args: [group] });
+          const entry = shown.result?.result;
+          if (shown.error || !isIpaEntry(entry) || !Array.isArray(entry.member_user) || !entry.member_user.includes(uid)) {
+            return { ok: false, error: "FreeIPA group membership could not be restored. Retry the approval.", status: 500 };
+          }
+        }
+      }
+    }
+
+    if (reactivated) {
+      const isDisabled = freeipa.util.str(remoteEntry?.nsaccountlock).toLowerCase() === "true";
+      const wasDisabled = retry?.was_disabled ?? isDisabled;
+      const previousExpiry = retry ? retry.previous_expiry : freeipa.util.parseGeneralizedTime(remoteEntry?.krbprincipalexpiration);
+      restoreAccess = async () => {
+        try {
+          if (wasDisabled) {
+            const disabled = await freeipa.client.call({ url: directoryUrl, ipaSession, method: "user_disable", args: [uid] });
+            if (disabled.error) throw new Error(disabled.error.message);
+          }
+          const restored = await freeipa.client.call({
+            url: directoryUrl,
+            ipaSession,
+            method: "user_mod",
+            args: [uid],
+            options: { krbprincipalexpiration: previousExpiry ? freeipa.util.toGeneralizedTime(previousExpiry) : "" },
+          });
+          if (restored.error) throw new Error(restored.error.message);
+        } catch (error) {
+          log.error("FreeIPA access rollback failed. Keep the request pending and retry reactivation.", {
+            uid,
+            userId: local?.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      };
+      // Restore access only after password and group work succeeds. A local failure compensates this change.
+      const renewed = await freeipa.client.call({
+        url: directoryUrl,
+        ipaSession,
+        method: "user_mod",
+        args: [uid],
+        options: { krbprincipalexpiration: accountExpiry ? freeipa.util.toGeneralizedTime(accountExpiry) : "" },
+      });
+      if (renewed.error) return { ok: false, error: renewed.error.message, status: freeipa.util.mapIpaErrorCode(renewed.error.code) };
+      if (isDisabled) {
+        const enabled = await freeipa.client.call({ url: directoryUrl, ipaSession, method: "user_enable", args: [uid] });
+        if (enabled.error) return { ok: false, error: enabled.error.message, status: freeipa.util.mapIpaErrorCode(enabled.error.code) };
+      }
+    }
+
+    // user_mod may omit unchanged POSIX fields: preserve the verified user_show snapshot.
+    const ipaResult = reactivated ? remoteEntry : (response.result?.result as Record<string, unknown> | undefined);
     const uidNumber = ipaResult ? freeipa.util.num(ipaResult.uidnumber) : null;
 
     let id: string;
@@ -386,7 +520,7 @@ export const addIpa = async (params: {
           await coreUserEventPublisher().publish(tx, "user.created", { subject: id, data: { userId: id, provider: "ipa" } });
       }
     } catch (dbError) {
-      log.error("CRITICAL: FreeIPA user created but local DB update failed. Manual reconciliation needed.", {
+      log.error("FreeIPA account changed but local DB update failed. Retry promotion to reconcile reactivation.", {
         uid,
         email,
         userId: existingLocalRows.length > 0 ? (existingLocalRows[0]!.id as string) : null,
@@ -397,16 +531,24 @@ export const addIpa = async (params: {
       throw dbError;
     }
 
+    if (reactivated) await tx`DELETE FROM auth.ipa_reactivations WHERE user_id = ${id}::uuid`;
+
     return {
       ok: true,
       data: {
         id,
         uid,
+        reactivated,
         accountExpires: accountExpiry ? accountExpiry.toISOString() : null,
         _temporaryPassword: temporaryPassword,
       },
     };
   });
+  const result = await promotion.catch(async (error: unknown) => {
+    await restoreAccess?.();
+    throw error;
+  });
+  if (!result.ok) await restoreAccess?.();
   if (result.ok && promotedUserId) await session.revokeAllForUser(promotedUserId);
   return result;
 };

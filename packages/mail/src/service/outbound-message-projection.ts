@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import { toPgTextArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
 import { normalizeEmailAddress } from "./address-normalization";
 import { sha256Json } from "./canonical";

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
+import { sql as defaultSql } from "@k2b/cloud";
 import type { RenderHtmlToPdfResult } from "@k2b/cloud/services";
 import { notifyWorkflowWorker, wakeWorkflowRunsWaitingOn } from "@k2b/cloud/workflows/store";
 import { type DateContext, err, fail, ok, type Result, type ServiceError } from "@k2b/stdlib";
-import { sql as defaultSql, type SQL } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { type Document, type DocumentArtifact, type DocumentTemplate, DocumentTemplateSchema } from "../contracts";
 import type { DocumentProfileReference, PrimaryDocumentArtifact } from "../document-profile-contracts";
@@ -414,7 +415,7 @@ const profileInputFor = async (template: DocumentTemplate, renderData: Record<st
 };
 
 export const createDocumentIssuanceService = (options: { profiles?: readonly DocumentProfile[]; db?: SQL } = {}) => {
-  const db = options.db ?? defaultSql;
+  const db = () => options.db ?? defaultSql;
   const profiles = profileRegistry(options.profiles ?? documentProfiles);
   const queryProfiles = profileRegistry([...(options.profiles ?? documentProfiles), ...financialQueryProfiles, zipDocumentProfile]);
 
@@ -468,8 +469,8 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
   };
 
   const getDocument = async (id: string): Promise<Document | null> => {
-    const rows = await db<DocumentDbRow[]>`SELECT * FROM grids.documents WHERE id = ${id}::uuid`;
-    const [document] = await hydrateDocuments(rows, db);
+    const rows = await db()<DocumentDbRow[]>`SELECT * FROM grids.documents WHERE id = ${id}::uuid`;
+    const [document] = await hydrateDocuments(rows, db());
     return document ?? null;
   };
 
@@ -477,7 +478,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
   // snapshots cannot opt out; a different run or actor cannot allocate again.
   const operationIdentity = async (
     request: Pick<RecordDocumentRequest, "baseId" | "tableId" | "recordId" | "templateId" | "idempotencyKey" | "dateConfig">,
-    client: SQL = db,
+    client: SQL = db(),
   ) => {
     const t = documentServiceText(request.dateConfig?.locale);
     const [binding] = await client<
@@ -508,7 +509,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     snapshot: Pick<RecordSnapshotDraft, "baseId" | "tableId" | "graph">,
     authorize: SnapshotTableReadAuthorizer | undefined,
     locale?: string,
-    client: SQL = db,
+    client: SQL = db(),
   ) => {
     const t = documentServiceText(locale);
     if (!authorize) throw err.forbidden(t.workflowQueryAccessDenied);
@@ -524,7 +525,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     receipt: IssuanceRow,
     authorize: SnapshotTableReadAuthorizer | undefined,
     locale?: string,
-    client: SQL = db,
+    client: SQL = db(),
   ) => {
     if (!receipt.document_id) return authorizeSnapshot(parseFrozenRequest(receipt.frozen_request).snapshot, authorize, locale, client);
     // Completed receipts release their temporary request; the immutable snapshot
@@ -817,7 +818,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
   ): Promise<Result<{ document: Document; artifacts: DocumentArtifact[]; replayed: boolean }>> => {
     const t = documentServiceText(input.dateConfig?.locale);
     try {
-      const receipt = await db.begin(async (tx) => {
+      const receipt = await db().begin(async (tx) => {
         const reserved = await reserveDocumentInTransaction(tx, input, requestIdentity);
         if (!reserved.ok) throw reserved.error;
         return reserved.data;
@@ -885,7 +886,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const snapshotHash = frozen.profileInput ? canonicalDocumentJson(frozen.profileInput, input.dateConfig?.locale).sha256 : null;
       const templateData = templateSnapshot(frozen.template);
       const templateRevision = canonicalDocumentJson(templateData, input.dateConfig?.locale).sha256;
-      const finalized = await db.begin(async (tx) => {
+      const finalized = await db().begin(async (tx) => {
         // Rendering runs outside the transaction. Re-check authority here;
         // workflow callers also fence and lock their run through this callback.
         // Take that lock before the receipt lock, as during reservation.
@@ -986,7 +987,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     const profile = queryProfiles.get(profileKey(`grids.${pendingRequest.output.kind}`, 1));
     if (!profile) return fail(err.badInput(t.unknownProfile({ profile: `grids.${pendingRequest.output.kind}@1` })));
     try {
-      await authorize([], db);
+      await authorize([], db());
       const captured = await loadWorkflowQueryData(
         {
           baseId: pendingRequest.baseId,
@@ -995,7 +996,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           sha256: pendingRequest.data.sha256,
           locale,
         },
-        db,
+        db(),
       );
       if (!captured.ok) return captured;
       const request = QueryDocumentRequestSchema.parse({
@@ -1006,21 +1007,21 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         return fail(err.conflict(t.workflowQueryIntegrityFailed));
       }
       const tableIds = captured.data.payload.tableIds;
-      await authorize(tableIds, db);
+      await authorize(tableIds, db());
       if (request.associatedData) {
         const associated = await loadWorkflowQueryData(
           { baseId: request.baseId, runId: request.runId, id: request.associatedData.id, sha256: request.associatedData.sha256, locale },
-          db,
+          db(),
         );
         if (!associated.ok) return associated;
         if (canonicalJson(associated.data.reference, locale).sha256 !== canonicalJson(request.associatedData, locale).sha256)
           return fail(err.conflict(t.workflowQueryIntegrityFailed));
-        await authorize(associated.data.payload.tableIds, db);
+        await authorize(associated.data.payload.tableIds, db());
         if (capturedDocumentRecords(associated.data.payload) === null) return fail(err.badInput(t.associatedDataNotRowQuery));
       }
       const operationHash = sha256Hex(idempotencyKey);
       const requestHash = canonicalJson(request, locale).sha256;
-      const receipt = await db.begin(async (tx) => {
+      const receipt = await db().begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:document-issuance:${request.baseId}:${operationHash}`}, 0))`;
         await authorize(tableIds, tx);
         const [existing] = await tx<QueryIssuanceRow[]>`
@@ -1128,7 +1129,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           throw normalized && !normalized.ok ? normalized.error : err.conflict(t.workflowQueryIntegrityFailed);
         if (!receipt.confirmed_at)
           return ok({ kind: "confirmationRequired", receiptId: receipt.document_short_id, sha256: receipt.confirmation_hash });
-        const concurrentDocument = await db.begin(async (tx) => {
+        const concurrentDocument = await db().begin(async (tx) => {
           await authorize(tableIds, tx);
           if (canonicalJson(await financialRunBinding(frozen.baseId, frozen.runId, tx, locale), locale).sha256 !== financial.runBindingHash)
             throw err.conflict(t.financialConfirmationRequired);
@@ -1186,7 +1187,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           : {}),
       };
       const template = { renderer: { kind: "profile", id: profile.id, version: profile.version }, output: frozen.output };
-      return await db.begin(async (tx) => {
+      return await db().begin(async (tx) => {
         await authorize([...tableIds, ...(frozen.archive?.tableIds ?? [])], tx);
         let sources = await resolveCapturedDocumentRecords(captured.data.payload, frozen.baseId, tx);
         if (frozen.associatedData) {
@@ -1333,7 +1334,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
   const inspectQueryDocumentConfirmation = async (input: QueryDocumentConfirmationInput) => {
     try {
       return ok(
-        await db.begin(async (tx) => {
+        await db().begin(async (tx) => {
           await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
           const { receipt, confirmationHash, frozen, version, normalized, capture } = await loadQueryDocumentConfirmation(input, tx, false);
           const preview = {
@@ -1377,7 +1378,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     if (!/^[a-f0-9]{64}$/.test(input.sha256)) return fail(err.badInput(t.requestInvalidJson));
     try {
       validateConfirmationInput(input);
-      await db.begin(async (tx) => {
+      await db().begin(async (tx) => {
         await input.authorize([], tx);
         // Same run-before-receipt lock order as the issuing worker, including
         // replay of a completed confirmation whose run is already terminal.
@@ -1429,7 +1430,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
   };
 
   const getDocumentArtifact = (documentId: string, key: string, locale?: string): Promise<Result<DocumentArtifactContent>> =>
-    readDocumentArtifact(documentId, key, db, locale);
+    readDocumentArtifact(documentId, key, db(), locale);
 
   const issueRecordDocument = async (
     request: RecordDocumentRequest,
@@ -1446,7 +1447,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     }
     try {
       const operation = await operationIdentity(request);
-      const [receipt] = await db<IssuanceRow[]>`
+      const [receipt] = await db()<IssuanceRow[]>`
       SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
       FROM grids.document_issuances
       WHERE base_id = ${request.baseId}::uuid AND operation_key_hash = ${operation.hash}

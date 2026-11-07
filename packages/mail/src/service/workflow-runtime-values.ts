@@ -1,8 +1,8 @@
+import { sql } from "@k2b/cloud";
 import type { WorkflowIrStep, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { readWorkflowValuePath } from "@k2b/cloud/workflows/language";
 import { WorkflowValueError, type WorkflowValueResolverPort } from "@k2b/cloud/workflows/runtime";
 import type { WorkflowRunClaim } from "@k2b/cloud/workflows/store";
-import { sql } from "bun";
 import { app } from "../config";
 import { mailMessageTextLength } from "./message-text";
 import { resolveMailboxPublicId } from "./public-resources";

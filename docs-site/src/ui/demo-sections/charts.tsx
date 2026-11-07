@@ -1,4 +1,5 @@
 import { Chart, type ChartKind, type ChartProps, type ChartSelection, type ChartTooltipFormatter, RangePicker } from "@k2b/ui";
+import { CountryMap } from "@k2b/ui/country-map";
 import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 
@@ -496,5 +497,29 @@ export const BarChartStatesDemo = () => (
         )}
       </For>
     </div>
+  </DemoCard>
+);
+
+const visitorsByCountry = [
+  { code: "DE", value: 12840 },
+  { code: "US", value: 7310 },
+  { code: "FR", value: 3920 },
+  { code: "GB", value: 2760 },
+  { code: "BR", value: 1480 },
+  { code: "JP", value: 1120 },
+  { code: "IN", value: 960 },
+  { code: "AU", value: 540 },
+  { code: "ZA", value: 310 },
+  { code: "SG", value: 120 },
+];
+
+export const CountryMapDemo = () => (
+  <DemoCard
+    id="charts-country-map"
+    chip={{ kind: "component", name: "CountryMap", from: "@k2b/ui/country-map" }}
+    description="A world map shaded by one value per country, with a ranked list of the same numbers. Point at or tap a country."
+    code={`<CountryMap label="Visitors by country" data={[{ code: "DE", value: 12840 }, { code: "US", value: 7310 }]} />`}
+  >
+    <CountryMap label="Visitors by country" data={visitorsByCountry} />
   </DemoCard>
 );

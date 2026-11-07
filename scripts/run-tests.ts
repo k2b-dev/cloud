@@ -39,6 +39,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { describeDatabaseActivity } from "./fixtures/database-activity";
 import { closeMigratedDatabaseTemplate, integrationSchemaHash, retainMigratedDatabaseTemplate } from "./fixtures/test-database-template";
 import { applyTestRuntimeEnv, dotenvLeak, hasIntegrationTarget, noEnvFile, readTestTarget } from "./fixtures/test-infra-env";
 import { runUnderHeavyLock } from "./heavy-lock";
@@ -76,10 +77,29 @@ const ignoredTestPaths = ["node_modules/", "dist/", "build/", "_ssr/"];
 const testFiles = new Bun.Glob("**/*.{test,spec}.{ts,tsx,js,jsx}");
 const integrationImport = /scripts\/fixtures\/test-infra/;
 const browserImport = /\/test\/browser["']/;
+/** A fresh WebKit needs seconds for this, so this budget only catches an engine that hangs; a suite's own limits stay untouched. */
+const browserWarmupMs = 120_000;
 /** Browser behavior tests, which this runner runs with browser conditions and the Solid DOM preload. */
 export const behaviorTest = /\.behavior\.test\.tsx?$/;
 /** Leaves browser behavior tests out of a package's own `bun test` run; the runner runs them in browser mode. */
 export const behaviorIgnore = "--path-ignore-patterns=**/*.behavior.test.*";
+
+/** The prediction a CI shard is planned to; the time between this and its budget is the margin for slow runners. */
+const shardTargetMinutes = 15;
+
+/** A shard over its budget fails; one above the target stays green and asks for fresh weights before it fails. */
+export const shardTimeNotice = (label: string, minutes: number, maxMinutes: number | undefined): string | undefined => {
+  if (maxMinutes === undefined) return undefined;
+  const refresh = "refresh scripts/test-weights.json with `bun scripts/test-weights.ts --run <id>` or add a shard";
+  if (minutes > maxMinutes)
+    return `::error title=Test shard over its time limit::${label} took ${minutes.toFixed(1)} min, over its ${maxMinutes}-min limit; ${refresh}`;
+  if (minutes > shardTargetMinutes)
+    return `::warning title=Test shard above its target::${label} took ${minutes.toFixed(1)} min, above the ${shardTargetMinutes}-min target and close to its ${maxMinutes}-min limit; ${refresh}`;
+  return undefined;
+};
+
+/** Package scripts that split its unit suite for CI shards. */
+export const testPartPrefix = "test:part:";
 
 const readPackageJson = (path: string): PackageJson => JSON.parse(readFileSync(path, "utf8")) as PackageJson;
 
@@ -114,7 +134,13 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
 
   const behaviorCommand = (paths: string[]) => ["bun", "--no-env-file", `--cwd=${workspaceRoot}`, "test", ...preload, ...browser, ...paths];
 
-  const add = async (name: string, cwd: string, packageCommand: string[] | null, integrationCommand: string[] | null) => {
+  const add = async (
+    name: string,
+    cwd: string,
+    packageCommand: string[] | null,
+    integrationCommand: string[] | null,
+    parts: string[] = [],
+  ) => {
     if (options.browser) {
       for (const file of await listBrowserFiles(cwd)) {
         const command = behaviorTest.test(file) ? behaviorCommand([join(cwd, file)]) : ["bun", "test", ...preload, file];
@@ -137,7 +163,10 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
     }
     const files = await listTestFiles(cwd);
     const behavior = files.filter((path) => behaviorTest.test(path));
-    if (packageCommand) suites.push({ name, cwd, command: packageCommand });
+    // A package too slow for one shard names its parts; together they run what its `test` script runs.
+    if (parts.length > 0) {
+      for (const part of parts) suites.push({ name: `${name} ${part.slice(testPartPrefix.length)}`, cwd, command: ["bun", "run", part] });
+    } else if (packageCommand) suites.push({ name, cwd, command: packageCommand });
     else if (files.length > behavior.length) suites.push({ name, cwd, command: ["bun", "test", ...preload, behaviorIgnore] });
     if (behavior.length > 0) {
       suites.push({ name: `${name} behavior`, cwd, command: behaviorCommand(behavior.map((path) => join(cwd, path))) });
@@ -152,6 +181,7 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
       cwd,
       pkg.scripts?.test ? ["bun", "run", "test"] : null,
       pkg.scripts?.["test:integration"] ? ["bun", "run", "test:integration"] : null,
+      Object.keys(pkg.scripts ?? {}).filter((script) => script.startsWith(testPartPrefix)),
     );
   }
   await add("workspace root tests", join(workspaceRoot, "tests"), null, null);
@@ -258,6 +288,10 @@ export const parseArgs = (argv: string[]): Options => {
   return options;
 };
 
+/** How long a stopped suite's descendants get to exit after SIGKILL, and how often that is checked. */
+const descendantExitMs = 2_000;
+const descendantPollMs = 25;
+
 /** Stop a timed-out suite and its descendants before GitHub cancels the job without a runner error. */
 export const runTestCommand = async (suite: TestSuite, env: Record<string, string | undefined>, timeoutMs?: number): Promise<number> => {
   if (timeoutMs !== undefined && timeoutMs <= 0) throw new Error("test run exceeded its time budget");
@@ -311,6 +345,28 @@ export const runTestCommand = async (suite: TestSuite, env: Record<string, strin
       }
     }
   };
+  /**
+   * Waits until every recorded descendant has exited (a zombie counts as gone). SIGKILL is delivered, not awaited, so
+   * a check right after kill() can still see a dying process (#2208). Returns the PIDs still running after the wait.
+   */
+  const descendantsGone = async (waitMs: number): Promise<number[]> => {
+    const deadline = performance.now() + waitMs;
+    for (;;) {
+      const result = Bun.spawnSync(["ps", "-eo", "pid=,stat=,lstart="], { stdout: "pipe", stderr: "pipe" });
+      const running = result.stdout
+        .toString()
+        .trim()
+        .split("\n")
+        .flatMap((line) => {
+          const match = /^\s*(\d+)\s+(\S+)\s+(.+)$/.exec(line);
+          if (!match || match[2]!.startsWith("Z")) return [];
+          const pid = Number(match[1]);
+          return descendants.get(pid) === match[3] ? [pid] : [];
+        });
+      if (running.length === 0 || performance.now() > deadline) return running;
+      await Bun.sleep(descendantPollMs);
+    }
+  };
   const stop = (signal: NodeJS.Signals) => {
     kill(signal);
     force ??= setTimeout(() => kill("SIGKILL"), 5_000);
@@ -335,7 +391,9 @@ export const runTestCommand = async (suite: TestSuite, env: Record<string, strin
     if (expired || interrupted) {
       // The direct child can exit before a descendant that ignored SIGTERM.
       kill("SIGKILL");
-      throw new Error(interrupted ? `test run interrupted by ${interrupted}` : "test run exceeded its time budget");
+      const survivors = grouped ? await descendantsGone(descendantExitMs) : [];
+      const reason = interrupted ? `test run interrupted by ${interrupted}` : "test run exceeded its time budget";
+      throw new Error(survivors.length ? `${reason}; descendants still running after SIGKILL: ${survivors.join(", ")}` : reason);
     }
     return code;
   } finally {
@@ -438,6 +496,16 @@ Example: bun run test --filter packages/core --filter packages/cloud`);
       }
     }
 
+    if (options.browser) {
+      console.log("\n=== browser warm-up ===");
+      const warmup = await runTestCommand(
+        { name: "browser warm-up", cwd: join(workspaceRoot, "packages", "ui"), command: ["bun", join("test", "browser-warmup.ts")] },
+        env,
+        Math.min(remainingMs() ?? browserWarmupMs, browserWarmupMs),
+      );
+      if (warmup !== 0) throw new Error("browser warm-up failed");
+    }
+
     for (const suite of suites) {
       console.log(`\n=== ${suite.name} ===`);
       const started = performance.now();
@@ -446,7 +514,11 @@ Example: bun run test --filter packages/core --filter packages/cloud`);
         suite.command[1] === "run" ? { ...env, BUN_OPTIONS: [env.BUN_OPTIONS, preload].filter(Boolean).join(" ") } : env,
         remainingMs(),
       );
-      if (code !== 0) failed.push(suite.name);
+      if (code !== 0) {
+        failed.push(suite.name);
+        // Read it at once: CI Postgres drops a statement of a lost client after client_connection_check_interval.
+        if (options.integration && env.CLOUD_TEST_DATABASE_URL) console.log(await describeDatabaseActivity(env.CLOUD_TEST_DATABASE_URL));
+      }
       console.log(`=== ${suite.name}: ${((performance.now() - started) / 1000).toFixed(1)}s`);
     }
 
@@ -460,11 +532,8 @@ Example: bun run test --filter packages/core --filter packages/cloud`);
     const limit = options.maxMinutes === undefined ? "" : ` (limit ${options.maxMinutes} min)`;
     console.log(`\n${label} took ${minutes.toFixed(1)} min${limit}`);
     const overLimit = options.maxMinutes !== undefined && minutes > options.maxMinutes;
-    if (overLimit) {
-      console.log(
-        `::error title=Test shard over its time limit::${label} took ${minutes.toFixed(1)} min, over its ${options.maxMinutes}-min limit; refresh scripts/test-weights.json with \`bun scripts/test-weights.ts --run <id>\` or add a shard`,
-      );
-    }
+    const notice = shardTimeNotice(label, minutes, options.maxMinutes);
+    if (notice) console.log(notice);
     if (failed.length > 0) {
       console.error(`\nFailed test suites (${failed.length}): ${failed.join(", ")}`);
       process.exitCode = 1;

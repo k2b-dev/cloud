@@ -4,12 +4,13 @@ import * as encoding from "lib0/encoding";
 import * as sync from "y-protocols/sync";
 import * as Y from "yjs";
 import { ackFrame, frame, message, rejectFrame } from "../protocol";
-import { SocketAwareness } from "./awareness";
+import { type PresencePerson, SocketAwareness } from "./awareness";
 import { validateDocument } from "./document";
 import { NotesError } from "./errors";
+import type { CheckedFile } from "./files";
 import { limits, RateLimits } from "./limits";
 import type { NotesStore } from "./store";
-import { hash } from "./tokens";
+import { hash, validId } from "./tokens";
 
 const read = <T>(decode: () => T): T => {
   try {
@@ -39,7 +40,7 @@ export type Connection = {
   pendingBytes: number;
   rates: RateLimits;
 };
-export type NotesOptions = { storageBytes: number; maxConnections: number; maxOpenPads: number };
+export type NotesOptions = { storageBytes: number; maxConnections: number; maxOpenPads: number; adminPasswordHash?: string };
 
 export class NotesService {
   readonly rates = new RateLimits();
@@ -51,11 +52,14 @@ export class NotesService {
   private readonly padConnections = new Map<string, number>();
   private loadingRooms = 0;
   private reading = 0;
+  private polling = 0;
   private nextAwarenessId = randomInt(2 ** 32, 2 ** 48);
   private stopping = false;
   private timer?: ReturnType<typeof setInterval>;
   private maintenance?: Promise<void>;
   maintenanceError: string | null = null;
+  private lastMeasured = Date.now();
+  private storageState = "normal";
   constructor(
     store: NotesStore,
     readonly options: NotesOptions,
@@ -77,7 +81,7 @@ export class NotesService {
     }, limits.heartbeatMs);
     this.timer.unref();
   }
-  private enqueue<T>(readId: string, run: () => Promise<T>): Promise<T> {
+  enqueue<T>(readId: string, run: () => Promise<T>): Promise<T> {
     let queue = this.queues.get(readId);
     if (!queue) {
       queue = { tail: Promise.resolve(), pending: 0 };
@@ -145,6 +149,32 @@ export class NotesService {
       this.reading--;
       loaded?.doc.destroy();
     }
+  }
+  async presence(readIds: string[]): Promise<Record<string, PresencePerson[]>> {
+    if (readIds.length > limits.presencePads || !readIds.every(validId)) throw new NotesError("invalid_presence");
+    if (this.stopping) throw new NotesError("unavailable", 503);
+    if (this.polling >= this.options.maxOpenPads) throw new NotesError("overloaded", 429);
+    this.polling++;
+    try {
+      if (!(await this.store.ownsDatabase()) || this.stopping) throw new NotesError("unavailable", 503);
+      // Only read capabilities index existing rooms. Polling never opens a room or extends retention.
+      return Object.fromEntries(
+        [...new Set(readIds)].map((readId) => [
+          readId,
+          [...(this.rooms.get(readId)?.peers ?? [])].flatMap((peer) =>
+            !peer.released && peer.access === "edit" && peer.awareness.person ? [{ ...peer.awareness.person }] : [],
+          ),
+        ]),
+      );
+    } finally {
+      this.polling--;
+    }
+  }
+  async upload(token: string, file: CheckedFile): Promise<{ key: string }> {
+    if (this.stopping) throw new NotesError("unavailable", 503);
+    const access = await this.store.resolve(token);
+    if (access.access !== "edit") throw new NotesError("read_only", 403);
+    return this.enqueue(access.readId, () => this.store.putFile(access.readId, file));
   }
   async humanOpen(token: string, ip: string): Promise<void> {
     this.rates.take("open", ip, limits.createPerHour * limits.peersPerIp, 3_600_000);
@@ -413,7 +443,7 @@ export class NotesService {
     if (access.access !== "edit") throw new NotesError("read_only", 403);
     await this.removeReadId(access.readId, "delete", "deleted");
   }
-  private invalidate(readId: string, reason = "resync_required"): void {
+  invalidate(readId: string, reason = "resync_required"): void {
     const room = this.rooms.get(readId);
     for (const peer of [...(room?.peers ?? [])]) this.disconnect(peer, 1013, reason);
     room?.doc.destroy();
@@ -421,9 +451,13 @@ export class NotesService {
   }
   async removeReadId(readId: string, kind: "delete" | "block" | "expire", reason: string, today?: string): Promise<void> {
     await this.enqueue(readId, async () => {
-      if (!(await this.store.mark(readId, kind, reason, today))) return;
-      this.invalidate(readId, kind === "block" ? "blocked" : kind === "expire" ? "expired" : "deleted");
-      await this.store.cleanup(readId);
+      let marked = false;
+      try {
+        marked = await this.store.mark(readId, kind, reason, today);
+      } finally {
+        // A failed COMMIT response may still have committed the removal.
+        this.invalidate(readId, marked ? (kind === "block" ? "blocked" : kind === "expire" ? "expired" : "deleted") : "resync_required");
+      }
     });
   }
   async tick(now = Date.now()): Promise<void> {
@@ -432,6 +466,14 @@ export class NotesService {
       throw new NotesError("unavailable", 503);
     }
     this.rates.prune();
+    if (now - this.lastMeasured >= 3_600_000) {
+      await this.store.auditStorage();
+      this.lastMeasured = now;
+    }
+    const status = await this.store.status();
+    const state = status.full ? "storage_full" : status.sharingPaused ? "sharing_paused" : "normal";
+    if (state !== this.storageState && state !== "normal") console.error(`[notes] ${state}`);
+    this.storageState = state;
     for (const connection of this.connections) {
       if (now - connection.lastPong >= limits.heartbeatMs * 2) {
         this.disconnect(connection, 1013, "heartbeat_timeout");
@@ -452,6 +494,7 @@ export class NotesService {
         console.error("[notes] maintenance_item_failed");
       }
     };
+    await maintain(() => this.store.pruneSessions(this.options.adminPasswordHash ? hash(this.options.adminPasswordHash) : ""));
     for (const [readId] of this.rooms)
       await maintain(() =>
         this.enqueue(readId, async () => {

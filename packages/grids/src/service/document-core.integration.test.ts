@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, spyOn } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { AuthContext } from "@k2b/cloud/server";
 import { err, fail, ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { snapshotTableReadAuthorizer } from "../api/documents-api-shared";
@@ -82,6 +82,19 @@ describe("public Document capture and replay", () => {
     } finally {
       preview.mockRestore();
       warn.mockRestore();
+    }
+  });
+
+  postgresTest("a source query that aborts the capture transaction still returns the source error", async () => {
+    const { input } = await fixture();
+    const preview = spyOn(queryPreview, "previewDslQuery").mockImplementation(async (_plan, options) => {
+      if (options.client) await options.client`SELECT 1/0`.catch(() => undefined);
+      return fail(err.badInput("Failed"));
+    });
+    try {
+      expect(await createDocumentForRecord(input)).toEqual(fail(err.badInput("The GQL source could not be executed.")));
+    } finally {
+      preview.mockRestore();
     }
   });
 

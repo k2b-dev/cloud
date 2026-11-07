@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
-import { redis } from "bun";
 import { Hono } from "hono";
 import { valkeySuite } from "../../../../../scripts/fixtures/test-infra";
+import { redis } from "../../runtime/clients";
 import { clientIpBucket } from "../client-ip";
 import { rateLimit } from "./rate-limit";
 
