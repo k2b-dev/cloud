@@ -39,6 +39,23 @@ test("bounded chart schemas export to JSON Schema for generated consumers", () =
   expect(exported.safeParse(invalid).success).toBeFalse();
 });
 
+test("chart validation retains discriminator and field paths", () => {
+  const cases = [
+    [{ kind: "unknown" }, ["kind"]],
+    [{ kind: "bar", title: "Bar", data: [{ label: "A", value: "bad" }] }, ["data", 0, "value"]],
+    [{ kind: "stat", title: "Stat", value: "bad" }, ["value"]],
+    [{ kind: "heatmap", title: "Grid", data: [{ x: "A", y: "B", value: "bad" }] }, ["data", 0, "value"]],
+    [{ kind: "heatmap", title: "Calendar", layout: "calendar", data: [["2026-11-07", "bad"]], scale: "sequential" }, ["data", 0, 1]],
+    [{ kind: "heatmap", title: "Unknown layout", layout: "other", data: [] }, ["layout"]],
+  ] as const;
+  for (const [input, path] of cases) {
+    const result = schema.safeParse(input);
+    expect(result.success).toBeFalse();
+    if (result.success) throw new Error("Expected invalid chart");
+    expect(result.error.issues[0]?.path).toEqual([...path]);
+  }
+});
+
 describe("chart table", () => {
   test("has the same labels in every locale", () => {
     expect(checkChartLabels()).toEqual([]);

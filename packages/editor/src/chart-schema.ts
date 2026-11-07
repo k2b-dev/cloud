@@ -153,7 +153,7 @@ export const chartKinds = (limits?: ChartLimits) => {
   } = chartParts(limits);
   const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
   const numberFormat = chartNumberFormatSchema();
-  return z.union([
+  return z.discriminatedUnion("kind", [
     z
       .object({
         kind: z.literal("area"),
@@ -253,7 +253,7 @@ export const chartKinds = (limits?: ChartLimits) => {
       yAxis: ChartAxis.optional(),
       references: ChartReferences.optional(),
     }),
-    z.union([
+    z.discriminatedUnion("layout", [
       z
         .object({
           kind: z.literal("heatmap"),
@@ -290,7 +290,8 @@ export const chartKinds = (limits?: ChartLimits) => {
       z.object({
         kind: z.literal("heatmap"),
         ...ChartKindCommon,
-        layout: z.never().optional(),
+        // An empty enum accepts no layout, exports as never, and lets optional() enumerate the absent discriminator.
+        layout: z.enum([]).optional(),
         data: list(ChartCell, 1, limits?.maxMarks),
         format: numberFormat.optional(),
         showValues: z.boolean().optional(),
