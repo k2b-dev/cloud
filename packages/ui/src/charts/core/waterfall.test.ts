@@ -83,3 +83,20 @@ test("responsive waterfall emits desktop labels and amounts with actual-width gu
   expect(svg).toContain("data-waterfall-min-width=");
   expect(svg).not.toMatch(/NaN|Infinity/);
 });
+
+test("the closing label survives phone thinning in pure and responsive waterfalls", () => {
+  const month = {
+    ...spec,
+    steps: Array.from({ length: 5 }, (_, index) => ({ label: `Change ${index}`, value: -2 })),
+    end: { label: "31 Oct" },
+    ...size,
+    displayWidth: 296,
+  };
+  for (const responsive of [false, true]) {
+    const svg = renderWaterfallSvg(month, responsive);
+    const ending = svg.match(/<text[^>]*>31 Oct<\/text>/)?.[0];
+    expect(ending).toBeDefined();
+    expect(ending).toContain('text-anchor="end"');
+    expect(ending).not.toContain("data-waterfall-min-width");
+  }
+});

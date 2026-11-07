@@ -97,6 +97,8 @@ export function renderWaterfallSvg(
   const cssSlot = g.slot / g.ratio;
   const longest = Math.max(1, ...g.bars.map((b) => Math.min(18, b.label.length))) * 6;
   const stride = Math.max(1, Math.ceil((longest + 8) / Math.max(1, cssSlot)));
+  const endLimit = Math.max(1, Math.min(18, Math.floor((g.right - g.left) / g.ratio / 12) - 1));
+  const endLength = Math.min(endLimit, spec.end.label.length);
   g.bars.forEach((bar, index) => {
     const center = g.left + (index + 0.5) * g.slot;
     const width = Math.min(56, g.slot * 0.62);
@@ -146,21 +148,26 @@ export function renderWaterfallSvg(
       parts.push(
         `<line class="k2b-waterfall-connector" x1="${f(center + width / 2)}" x2="${f(center + g.slot - width / 2)}" y1="${f(g.project(bar.to))}" y2="${f(g.project(bar.to))}" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="3 3"/>`,
       );
-    if (responsive || index % stride === 0) {
+    const ending = index === g.bars.length - 1;
+    const endClearance = (Math.min(18, bar.label.length) * 3 + endLength * 6 + 8) / Math.max(1, g.right - center);
+    if (ending || responsive || (index % stride === 0 && (index === 0 || endClearance * g.ratio <= 1))) {
       // Power-of-two subsets keep adjacent labels at least one visible slot apart at every container width.
       let spacing = 1;
       if (index > 0) while (index % (spacing * 2) === 0) spacing *= 2;
-      const minimumWidth = index === 0 ? 0 : ((longest + 8) * spec.width) / (g.slot * spacing);
-      const limit = responsive
-        ? 18
-        : Math.max(1, Math.floor(Math.min(cssSlot * stride - 8, (2 * Math.min(center, spec.width - center)) / g.ratio) / 6) - 1);
+      const minimumWidth =
+        index === 0 || ending ? 0 : Math.max(((longest + 8) * spec.width) / (g.slot * spacing), endClearance * spec.width);
+      const limit = ending
+        ? endLimit
+        : responsive
+          ? 18
+          : Math.max(1, Math.floor(Math.min(cssSlot * stride - 8, (2 * Math.min(center, spec.width - center)) / g.ratio) / 6) - 1);
       const label = bar.label.length > limit ? `${bar.label.slice(0, Math.max(0, limit - 1))}…` : bar.label;
       parts.push(
         text(
-          center,
+          ending ? g.right : center,
           g.bottom + 20,
           label,
-          "middle",
+          ending ? "end" : "middle",
           `class="stdlib-chart-tick-label stdlib-chart-category-label "${visibility(minimumWidth)}`,
         ),
       );

@@ -1095,7 +1095,7 @@ Totals rest on zero in a neutral colour. Inflows use `--k2b-flow-in-mark`
 and ↙; outflows use `--k2b-flow-out-mark` and ↗. Without flow tokens,
 the pure renderer retains turquoise and violet fallback colours. Connectors join running balances.
 Tooltips name the direction (In/Out), show the unsigned amount and the balance
-after each step. Opening and closing totals show only Balance, using the inherited locale. Phone labels are thinned;
+after each step. Opening and closing totals show only Balance, using the inherited locale. Phone labels are thinned, while the closing label always remains visible inside the right plot edge;
 every complete label remains in inspection and the data table.
 
 `renderWaterfallSvg({ ...options, width, height, inspect: true })` and

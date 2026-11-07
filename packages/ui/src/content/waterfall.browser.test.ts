@@ -220,6 +220,7 @@ test("the Solid waterfall uses its drawn width for every desktop label and amoun
   await settled(page);
   expect(await chart.locator(".k2b-chart__svg").innerHTML()).toBe(drawing);
   expect(await chart.locator(".k2b-waterfall-value:visible").count()).toBe(0);
+  expect(await chart.locator(".stdlib-chart-category-label:visible").last().textContent()).toBe(waterfallFixture.end.label);
   const boxes = await chart.locator(".stdlib-chart-category-label:visible").evaluateAll((nodes) =>
     nodes.map((node) => {
       const r = node.getBoundingClientRect();
