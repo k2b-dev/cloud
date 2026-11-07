@@ -1733,9 +1733,18 @@
 }
 
 .ui-charts-cards {
+  container: ui-charts-cards / inline-size;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+  grid-auto-flow: row dense;
   gap: 1rem;
+}
+
+/* A kind that needs more width than one column takes two once the overview has two; a smaller card fills the gap. */
+@container ui-charts-cards (min-width: 39rem) {
+  .ui-charts-card[data-span="2"] {
+    grid-column: span 2;
+  }
 }
 
 .ui-charts-card {

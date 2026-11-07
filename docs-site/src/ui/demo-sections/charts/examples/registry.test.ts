@@ -128,6 +128,23 @@ test("every showcase page has non-empty TSX and JSON, generated from the same de
   expect(specToTsx({ block: "table", columns: [{ id: "a", label: "A" }], rows: [] })).toContain("<DataTable");
 });
 
+test("a dashboard panel draws as soon as an example of its kind draws", () => {
+  // A slot only waits for a kind or option that is not in this build; a mistake in the panel's own data must not hide it.
+  const kindOf = (spec: unknown) => {
+    const object = (spec ?? {}) as Record<string, unknown>;
+    return String(object.kind ?? object.block ?? "");
+  };
+  const drawn = new Set(
+    chartShowcaseExamples.filter((example) => resolveDrawing(example.spec).mode !== "slot").map((example) => kindOf(example.spec)),
+  );
+  for (const dashboard of showcaseDashboards)
+    for (const panel of dashboard.sections.flatMap((section) => section.panels)) {
+      if (!drawn.has(kindOf(panel.spec))) continue;
+      const drawing = resolveDrawing(panel.spec);
+      expect(drawing.mode === "slot" ? drawing.reason : "draws", `${dashboard.slug} ${panel.id}`).toBe("draws");
+    }
+});
+
 test("dashboard panels have unique ids and say what each slot stands for", () => {
   for (const dashboard of showcaseDashboards) {
     const ids = dashboard.sections.flatMap((section) => section.panels.map((panel) => panel.id));

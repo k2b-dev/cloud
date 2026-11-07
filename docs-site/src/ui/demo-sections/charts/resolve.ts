@@ -166,12 +166,13 @@ export function resolveDrawing(spec: JsonValue, locale = "en"): ShowcaseDrawing 
   if (!parsed.success) {
     // The kind exists when the schema complains about fields rather than about the kind itself.
     const known = !parsed.error.issues.some((issue) => issue.path.length === 0 || issue.path[0] === "kind");
-    const fields = [...new Set(parsed.error.issues.map((issue) => issue.path[0]).filter((key): key is string => typeof key === "string"))];
+    // Name the exact paths: a value this build rejects is either a later option or a mistake in the description.
+    const paths = [...new Set(parsed.error.issues.map((issue) => issue.path.join(".")).filter(Boolean))];
     return {
       mode: "slot",
       kind,
       reason: known
-        ? `Its options ${fields.length ? fields.join(", ") : "in this form"} arrive with their catalog step.`
+        ? `This build does not accept ${paths.length ? paths.slice(0, 3).join(", ") : "this form"} yet.`
         : "The kind arrives with its catalog step.",
     };
   }

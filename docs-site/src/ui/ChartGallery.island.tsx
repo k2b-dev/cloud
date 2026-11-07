@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js";
 import { chartShowcaseKinds, chartShowcaseQuestions, plannedChartSlots } from "./demo-sections/charts/examples";
-import { ShowcaseCardChart } from "./demo-sections/charts/ShowcaseCard";
+import { cardSpan, ShowcaseCardChart } from "./demo-sections/charts/ShowcaseCard";
 
 /** The overview: one group per question, each card a live chart that opens its kind's page. */
 export default function ChartGallery(props: { base: string }) {
@@ -38,7 +38,7 @@ export default function ChartGallery(props: { base: string }) {
                     const example = kind.examples[0]!;
                     const height = () => Math.min(example.height ?? 168, 168);
                     return (
-                      <article class="ui-charts-card k2b-ui">
+                      <article class="ui-charts-card k2b-ui" data-span={cardSpan(example)}>
                         <header>
                           <h3>
                             <a href={`${props.base}/${kind.slug}`}>{kind.title}</a>
