@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { chartKinds } from "./chart-schema";
 import { chartMarks, chartRenderOptions, chartTable } from "./charts";
+import { notebookChartHeight } from "./markdown/lib/chart-blocks";
 
 const schema = chartKinds();
 const base = {
@@ -49,8 +50,7 @@ test("all-null totals are gaps and localized total headers agree with inspection
   expect(schema.safeParse({ ...base, xAxis: { ordered: true } }).success).toBe(true);
 });
 
-test("Notebook horizontal rows reserve their growing drawing height", async () => {
-  const { notebookChartHeight } = await import("./markdown/lib/chart-blocks");
+test("Notebook horizontal rows reserve their growing drawing height", () => {
   const input = schema.parse({
     kind: "hbar",
     title: "Rows",
