@@ -18,7 +18,7 @@ import {
   replaceCodePolicyCoverage,
   updateCodePolicy,
 } from "./policy";
-import { type CodePolicyDefinition, type CodePolicyRow, codePolicyPreset } from "./policy-contracts";
+import { CODE_POLICY_ROWS, type CodePolicyDefinition, type CodePolicyRow, codePolicyPreset } from "./policy-contracts";
 import { effective } from "./policy-effective";
 import { codePolicyPauseOutbox } from "./policy-outbox";
 import { readCode } from "./store";
@@ -172,7 +172,7 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     const current = await readCodePolicySnapshot();
     expect((await effectiveCodePolicy({}, ctx(ownerId))).rows.find((row) => row.row === "read")?.value).toBe("never");
     await updateCodePolicy({ revision: current.revision, definition: codePolicyPreset("open") }, admin);
-    expect((await readCodePolicySnapshot()).definition.rules).toHaveLength(14);
+    expect((await readCodePolicySnapshot()).definition.rules).toHaveLength(CODE_POLICY_ROWS.length);
   });
   test("the Action review contains the complete localized proposal at the reviewed revision", async () => {
     const current = await readCodePolicySnapshot();
@@ -332,7 +332,7 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     expect((await readCode(codeId(82), ctx(ownerId))).code.state).toBe("active");
   });
   test("own views cannot impersonate another owner; policy mutations reject ordinary users, narrow scopes and phone sessions", async () => {
-    expect((await effectiveCodePolicy({}, ctx(ownerId))).rows).toHaveLength(14);
+    expect((await effectiveCodePolicy({}, ctx(ownerId))).rows).toHaveLength(CODE_POLICY_ROWS.length);
     await expect(effectiveCodePolicy({ owner: { kind: "person", userId: otherId } }, ctx(ownerId))).rejects.toThrow("administration");
     const previous = await readCodePolicySnapshot();
     const input = { revision: previous.revision, definition: codePolicyPreset("off") };

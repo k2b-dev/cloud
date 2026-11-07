@@ -1,3 +1,4 @@
+import type { CodeRouteResponse } from "@k2b/cloud/code";
 import type { RunnerBridge, RunnerCallResponse, RunnerConfig, RunnerLease, RunnerLeaseProof, RunnerOutcome } from "@k2b/cloud/code/runner";
 import {
   RunnerCallError,
@@ -176,6 +177,7 @@ export class Runner {
   async #execute(lease: RunnerLease) {
     const controller = new AbortController();
     let outcome: RunnerOutcome = "failed";
+    let response: CodeRouteResponse | undefined;
     let expiresAt = lease.leaseExpiresAt;
     let heartbeat: ReturnType<typeof setTimeout> | undefined;
     let expiry: ReturnType<typeof setTimeout> | undefined;
@@ -255,7 +257,10 @@ export class Runner {
       );
       controller.signal.throwIfAborted();
       const result = await this.engine.run(lease, controller.signal);
-      if (!controller.signal.aborted) outcome = result;
+      if (!controller.signal.aborted) {
+        outcome = typeof result === "string" ? result : result.outcome;
+        if (typeof result !== "string" && lease.kind === "request") response = result.response;
+      }
     } catch (error) {
       this.#isolationFailure(error);
       if (error instanceof RunnerLeaseLostError && !controller.signal.aborted) outcome = "lease_lost";
@@ -272,7 +277,10 @@ export class Runner {
       }
     }
     try {
-      await this.bridge.complete({ ...proof(lease), outcome }, AbortSignal.timeout(this.#config.transportMs));
+      await this.bridge.complete(
+        { ...proof(lease), outcome, ...(response ? { response } : {}) },
+        AbortSignal.timeout(this.#config.transportMs),
+      );
     } catch {
       this.log("runner_completion_unavailable"); /* Core's lease reconciler owns recovery. */
     }

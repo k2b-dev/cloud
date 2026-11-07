@@ -518,7 +518,7 @@ test("rejects duplicate event/place subscriptions even though events also report
   });
 });
 
-test.each(["get", "post", "put", "delete", "all", "nav", "webhook", "on", "fetch"])("reports Phase 2/3 for app.%s", async (method) => {
+test.each(["nav", "webhook", "on", "fetch"])("reports Phase 2/3 for app.%s", async (method) => {
   const result = await check(`import { app as application } from "@sdk"; application.${method}("/", () => {});`);
   expect(result).toMatchObject({
     ok: false,
@@ -644,3 +644,28 @@ test("a titled schedule runs by its stable identifier and a title change changes
   expect(changed.manifest.hashes.source).not.toBe(result.manifest.hashes.source);
   expect(changed.manifest.hashes.bundle).not.toBe(result.manifest.hashes.bundle);
 });
+
+test("checked route bundles execute the selected request handler without a web framework", async () => {
+  const result = await check(`import { app } from "@sdk";
+app.get("/hello/:name", c => c.json({ person: c.user?.id ?? null, name: c.req.param("name") }));
+app.post("/save", c => c.redirect("/hello/saved"));`);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  expect(result.manifest.entrypoints[0]).toMatchObject({ kind: "route", route: { method: "GET", path: "/hello/:name", public: false } });
+  const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
+  expect(
+    await module["route:GET:/hello/:name"](
+      {
+        method: "GET",
+        path: "/hello/Valentin",
+        query: "",
+        params: { name: "Valentin" },
+        contentType: "text/plain",
+        body: "",
+        user: { id: "visitor", groups: [] },
+      },
+      { call: async () => null },
+    ),
+  ).toEqual({ kind: "json", status: 200, body: JSON.stringify({ person: "visitor", name: "Valentin" }) });
+  expect(result.bundle).not.toContain("hono");
+}, 30_000);

@@ -58,7 +58,13 @@ export const ManifestSchema = z.object({
   secrets: z.array(z.object({ name: z.string(), binding_revision: z.string(), origin: z.string() })).optional(),
   internet: CodeInternetOriginsSchema.optional(),
   entrypoints: z.array(
-    z.object({ kind: z.enum(["schedule", "manual"]), entrypoint: z.string(), title: z.string().optional(), cron: z.string().nullable() }),
+    z.object({
+      kind: z.enum(["schedule", "manual", "route"]),
+      route: z.object({ method: z.string(), path: z.string(), public: z.boolean() }).optional(),
+      entrypoint: z.string(),
+      title: z.string().optional(),
+      cron: z.string().nullable(),
+    }),
   ),
   permissions: z.array(PermissionSchema),
 });
@@ -230,7 +236,8 @@ export type CodePageAutomation = {
   entrypoint: string;
   /** Reviewed human title; absent on older versions. */
   title?: string;
-  kind: "schedule" | "manual";
+  kind: "schedule" | "manual" | "route";
+  route?: { method: string; path: string; public: boolean };
   cron: string | null;
   /** Only the waiting version has it. */
   isNew: boolean;

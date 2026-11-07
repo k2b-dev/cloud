@@ -14,6 +14,7 @@ export const app = defineApp({
   // These routes keep their own authentication, including workload and models-only credentials.
   access: appAccess.signedIn({
     publicRoutes: [
+      "/code/:codeId/*",
       "/_internal/apps/bootstrap",
       "/_internal/code/runner/call",
       "/_internal/code/runner/config",
@@ -164,6 +165,7 @@ export const app = defineApp({
     "/cli",
     "/me",
     "/open",
+    "/code",
     "/admin",
     "/legal/privacy",
     "/legal/terms",

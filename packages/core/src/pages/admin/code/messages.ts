@@ -19,6 +19,7 @@ const ROW_EN: Record<CodePolicyRow, [string, string]> = {
   ask_app_asks: ["App asks", "the app asks for confirmation"],
   ai: ["AI use", "classifying text, writing a reply"],
   internet: ["Internet", "calling addresses outside Cloud"],
+  public_routes: ["Public routes", "returning Code data to people without signing in"],
 };
 const ROW_DE: Record<CodePolicyRow, [string, string]> = {
   read: ["Lesen", "Mails, Zeilen, Dateien und Termine lesen"],
@@ -35,6 +36,7 @@ const ROW_DE: Record<CodePolicyRow, [string, string]> = {
   ask_app_asks: ["App fragt nach", "Die App verlangt eine Rückfrage"],
   ai: ["KI-Nutzung", "Text einordnen, Antwort schreiben"],
   internet: ["Ins Internet", "Adressen außerhalb von Cloud aufrufen"],
+  public_routes: ["Öffentliche Routen", "Code-Daten ohne Anmeldung zurückgeben"],
 };
 
 export const codeAdminMessages = i18n.define({
@@ -43,6 +45,8 @@ export const codeAdminMessages = i18n.define({
     en: {
       area: "Code",
       automations: "Automations",
+      routePublic: "Public · no sign-in",
+      routePrivate: "Sign-in required",
       areaSub: "Everything that runs as Code in Cloud",
       approvals: "Approvals",
       allCode: "Code in this Cloud",
@@ -378,6 +382,8 @@ export const codeAdminMessages = i18n.define({
     de: {
       area: "Code",
       automations: "Automationen",
+      routePublic: "Öffentlich · ohne Anmeldung",
+      routePrivate: "Anmeldung erforderlich",
       areaSub: "Alles, was als Code in Cloud läuft",
       approvals: "Freigaben",
       allCode: "Code in dieser Cloud",

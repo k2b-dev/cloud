@@ -10,17 +10,23 @@ export type CodeHandle<Type extends string, Id extends string = string> = {
   readonly type: Type;
   readonly id: Id;
 };
-/** Core resolves the current person and groups before dispatching a future route. */
+/** Visitor identity is presentation and handler input, never the authority for SDK data calls. */
 export type CodeUser = { id: string; groups: string[] };
 /** Basic request helpers for future routes. No middleware system is part of Code. */
-export type CodeRequest = { raw: Request; param(name: string): string; query(name: string): string | undefined; json(): Promise<unknown> };
+export type CodeRequest = {
+  raw: Request;
+  param(name: string): string;
+  query(name: string): string | undefined;
+  json(): Promise<unknown>;
+  text(): Promise<string>;
+  formData(): Promise<FormData>;
+};
 /** Authenticated route context. */
 export type CodeContext = {
   req: CodeRequest;
-  user: CodeUser;
+  user: CodeUser | null;
   json(value: unknown, status?: number): Response;
   text(value: string, status?: number): Response;
-  html(value: unknown, status?: number): Response;
   redirect(location: string, status?: number): Response;
 };
 /** A webhook is anonymous and must verify its request explicitly. */
@@ -89,12 +95,12 @@ export type CodeApp = {
   /** Phase 3; check reports code_phase_unavailable. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
+  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
   /** Phase 2; check reports code_phase_unavailable. */
-  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
-  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
-  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
-  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
-  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
   nav(handler: (user: CodeUser) => CodeNavigationItem[] | Promise<CodeNavigationItem[]>): CodeApp;
   /** Phase 3; check reports code_phase_unavailable. */
   webhook(path: string, handler: (c: CodeWebhookContext) => Response | Promise<Response>): CodeApp;
@@ -112,12 +118,14 @@ export declare const http: CodeHttp;
 exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: runtime 1`] = `
 "// Generated from Cloud capability manifests. Do not edit.
 const __codeSdk = (() => {
-const manifest = {"appMethods":{"all":2,"delete":2,"fetch":2,"get":2,"nav":2,"on":3,"post":2,"put":2,"schedule":1,"webhook":3},"apps":[{"exportName":"work_shop"}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":["app"],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.workshop.read","idempotency":"none","kind":"query","methodPath":["workshop","read"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["item","inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}}};
+const manifest = {"appMethods":{"all":1,"delete":1,"fetch":2,"get":1,"nav":2,"on":3,"post":1,"put":1,"schedule":1,"webhook":3},"apps":[{"exportName":"work_shop"}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":["app"],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.workshop.read","idempotency":"none","kind":"query","methodPath":["workshop","read"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["item","inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}}};
 const RESOURCE_ID_MAX = 512;
 
 const handles = new WeakMap();
 let bridge;
 const schedules = [];
+const routes = [];
+const routeResponses = new WeakMap();
 const diagnostics = [];
 const node = () => Object.create(null);
 function setPath(root, path, value) {
@@ -205,7 +213,15 @@ app.schedule = (cron, fn, options) => {
   schedules.push({ entrypoint, cron, ...(title === undefined ? {} : { title }), handler: fn });
   return app;
 };
-for (const method of Object.keys(manifest.appMethods).filter(name => name !== "schedule")) app[method] = () => unavailable(method);
+for (const method of Object.keys(manifest.appMethods).filter(name => manifest.appMethods[name] !== 1)) app[method] = () => unavailable(method);
+for (const method of ["get", "post", "put", "delete", "all"]) app[method] = (path, handler, options) => {
+  if (typeof path !== "string" || typeof handler !== "function") throw new Error("code_sdk_invalid_route");
+  const route = { method: method.toUpperCase(), path, public: options?.public === true };
+  const entrypoint = "route:" + route.method + ":" + path;
+  if (routes.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_route");
+  routes.push({ entrypoint, route, handler });
+  return app;
+};
 Object.freeze(app);
 const secrets = new Proxy(node(), {
   get(_target, name) {
@@ -228,9 +244,31 @@ const __codeSdk = Object.freeze({
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
     bridge = cloud;
   },
-  entries: () => schedules.map(({ entrypoint, cron, title }) => ({ kind: "schedule", entrypoint, cron, ...(title === undefined ? {} : { title }) })),
+  entries: () => [...schedules.map(({ entrypoint, cron, title }) => ({ kind: "schedule", entrypoint, cron, ...(title === undefined ? {} : { title }) })),
+    ...routes.map(({ entrypoint, route }) => ({ kind: "route", entrypoint, route, cron: null }))],
   diagnostics: () => diagnostics.map(value => ({ ...value })),
-  async run(entrypoint) {
+  async run(entrypoint, input) {
+    const registered = routes.find(value => value.entrypoint === entrypoint);
+    if (registered) {
+      const raw = new Request("https://code.invalid" + input.path + input.query, {
+        method: input.method, headers: { "Content-Type": input.contentType },
+        ...(input.method === "GET" || input.method === "HEAD" ? {} : { body: input.body }),
+      });
+      const output = (value) => { const response = new Response(null); routeResponses.set(response, value); return response; };
+      const status = (value) => { if (!Number.isInteger(value) || value < 200 || value > 599) throw new Error("code_invalid_response"); return value; };
+      const c = {
+        user: registered.route.public ? null : input.user,
+        req: { raw, param: name => input.params[name] ?? "", query: name => new URL(raw.url).searchParams.get(name) ?? undefined,
+          json: () => raw.json(), text: () => raw.text(), formData: () => raw.formData() },
+        json: (value, code = 200) => output({ kind: "json", status: status(code), body: JSON.stringify(value) }),
+        text: (value, code = 200) => output({ kind: "text", status: status(code), body: String(value) }),
+        redirect: (location, code = 303) => output({ kind: "redirect", status: code, location }),
+      };
+      const response = await registered.handler(c);
+      const result = routeResponses.get(response);
+      if (!result) throw new Error("code_invalid_response");
+      return result;
+    }
     const schedule = schedules.find(value => value.entrypoint === entrypoint);
     if (!schedule) throw new Error("code_sdk_missing_entrypoint");
     return schedule.handler();
@@ -251,14 +289,14 @@ export const app = __codeSdk.app;
 exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: manifest 1`] = `
 {
   "appMethods": {
-    "all": 2,
-    "delete": 2,
+    "all": 1,
+    "delete": 1,
     "fetch": 2,
-    "get": 2,
+    "get": 1,
     "nav": 2,
     "on": 3,
-    "post": 2,
-    "put": 2,
+    "post": 1,
+    "put": 1,
     "schedule": 1,
     "webhook": 3,
   },

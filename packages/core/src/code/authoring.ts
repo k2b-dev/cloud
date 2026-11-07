@@ -86,6 +86,7 @@ async function describeCheck(
   if (!result.ok) return { version: 1, result, manifest: null, permissions: [] };
   const policyRows = new Set<CodePolicyRow>();
   if (result.manifest.ai) policyRows.add("ai");
+  if (result.manifest.entrypoints.some((entry) => entry.route?.public)) policyRows.add("public_routes");
   if (result.manifest.internet?.length) policyRows.add("internet");
   const permissions: CodeAuthoringPermission[] = [];
   const catalogs = new Map<string, Awaited<ReturnType<typeof getCapabilityCatalogApp>>>();

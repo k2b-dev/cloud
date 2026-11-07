@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CodeInternetOriginsSchema } from "./code-internet";
+import { CodeRouteSchema } from "./code-routes";
 import { CodeSecretVersionBindingSchema } from "./code-secrets";
 
 /** Automation display title: the Code title's 200-character budget, one line of escaped plain text. */
@@ -30,6 +31,7 @@ export const CODE_POLICY_ROWS = [
   "ask_app_asks",
   "ai",
   "internet",
+  "public_routes",
 ] as const;
 export const CodePolicyRowSchema = z.enum(CODE_POLICY_ROWS);
 /** Stable call classification shared by checker, activation, dispatcher and administration. */
@@ -79,14 +81,19 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
     .array(
       z
         .object({
-          kind: z.enum(["schedule", "manual"]).describe("Scheduled or manually invoked entrypoint."),
+          kind: z.enum(["schedule", "manual", "route"]).describe("Scheduled, manually invoked or HTTP entrypoint."),
+          route: CodeRouteSchema.optional().describe("Checked method, path and public declaration for a route handler."),
           entrypoint: z.string().min(1).describe("Named ESM export selected by the runner."),
           title: CodeAutomationTitleSchema.optional().describe("Optional reviewed display title; entrypoint remains the stable key."),
           cron: z.string().nullable().describe("Five-field schedule expression, or null for manual execution."),
           file: z.string().min(1).describe("Relative source file containing this declaration or operation."),
           line: z.number().int().positive().describe("One-based source line."),
         })
-        .strict(),
+        .strict()
+        .refine(
+          (entry) => (entry.kind === "route") === (entry.route !== undefined),
+          "Routes require a route descriptor; other entrypoints forbid it",
+        ),
     )
     .describe("All named executable entrypoints detected by the checker."),
   permissions: z.array(CodeVersionPermissionSchema).describe("Every detected operation and target with its source location."),
@@ -104,6 +111,8 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
 })
   .strict()
   .superRefine((manifest, ctx) => {
+    if (manifest.entrypoints.some((entry) => entry.route?.public) && !manifest.policyRows.includes("public_routes"))
+      ctx.addIssue({ code: "custom", message: "Public route classification missing from policyRows" });
     if (manifest.internet?.length && !manifest.policyRows.includes("internet"))
       ctx.addIssue({ code: "custom", message: "Internet classification missing from policyRows" });
     if (manifest.secrets?.length && !manifest.policyRows.includes("internet"))

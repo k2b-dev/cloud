@@ -43,7 +43,7 @@ export type CodeApprovalReviewProps = {
   newer: { number: number; author: string; href: string } | null;
   why: string[];
   rights: CodeApprovalRight[];
-  automations?: Array<{ entrypoint: string; title?: string }>;
+  automations?: Array<{ entrypoint: string; title?: string; route?: { public: boolean } }>;
   internet: string[];
   secrets: CodeSecretVersionBinding[];
   diffHeader: string;
@@ -209,6 +209,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
                 {(entry) => (
                   <li>
                     <bdi>{entry.title ?? entry.entrypoint}</bdi>
+                    <Show when={entry.route}> · {entry.route?.public ? t().routePublic : t().routePrivate}</Show>
                     <Show when={entry.title}>
                       <code class="ml-2 text-xs text-dimmed">{entry.entrypoint}</code>
                     </Show>

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CodeInternetOriginsSchema } from "../contracts/code-internet";
+import { CodeRouteSchema } from "../contracts/code-routes";
 import { CodeAutomationTitleSchema } from "../contracts/code-version";
 import type { GeneratedCodeSdk } from "./types";
 
@@ -58,14 +59,19 @@ export const CodeVersionManifestSchema = z
     entrypoints: z.array(
       z
         .object({
-          kind: z.enum(["schedule", "manual"]),
+          kind: z.enum(["schedule", "manual", "route"]),
+          route: CodeRouteSchema.optional(),
           entrypoint: z.string().min(1),
           title: CodeAutomationTitleSchema.optional(),
           cron: z.string().nullable(),
           file: z.string().min(1),
           line: z.number().int().positive(),
         })
-        .strict(),
+        .strict()
+        .refine(
+          (entry) => (entry.kind === "route") === (entry.route !== undefined),
+          "Routes require a route descriptor; other entrypoints forbid it",
+        ),
     ),
     permissions: z.array(CodePermissionSchema),
     ai: z.boolean(),
