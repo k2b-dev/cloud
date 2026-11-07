@@ -1,5 +1,8 @@
 import { highlight } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
+import { CommandList, commandListKey, commandOptionId, createCommandNavigator } from "../../actions/CommandList";
+import type { CommandItem, CommandSource } from "../../actions/command-items";
+import { useCommandMessages } from "../../actions/command-messages";
 import { Tooltip } from "../../feedback/Tooltip";
 import { createFieldMeta, Field, fieldControlAria } from "../../internal/field";
 import { useLocale } from "../../intl/locale";
@@ -18,6 +21,7 @@ import {
   type Suggestion,
 } from "../completion";
 import { useCompletionMessages } from "../completion-messages";
+import { replaceTextareaRange } from "../editor-dom";
 import type { ValueFieldProps } from "../field-contract";
 import { resolveMaybeAccessor } from "../field-contract";
 import { computeActiveFormats } from "./active-formats";
@@ -37,6 +41,12 @@ export type MarkdownEditorProps = ValueFieldProps<string> & {
   textareaRef?: (element: HTMLTextAreaElement) => void;
   abbreviations?: Record<string, string>;
   completions?: readonly Completion[];
+  /**
+   * Commands behind `/` at the start of a line or after a space: a list of actions, snippets, and second lists. The
+   * typed word filters them by label, hint, and keywords; choosing one replaces the typed `/query`. `CommandMenu`
+   * takes the same entries for a "+" button or a chip.
+   */
+  commands?: CommandSource;
   showStats?: boolean;
   variant?: "default" | "paper" | "embedded";
   fill?: boolean;
@@ -60,6 +70,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
   const messages = useUiMessages();
   const markdownEditorMessages = useMarkdownEditorMessages();
   const completionMessages = useCompletionMessages();
+  const commandMessages = useCommandMessages();
   const locale = useLocale();
   const formatCount = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const meta = createFieldMeta(props.id);
@@ -90,8 +101,39 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     return current?.suggestions[current.selectedIndex] ?? null;
   };
 
+  // The slash commands ride the completion detection: this entry only finds the typed `/query`.
+  const commandCompletion: Completion = { trigger: "/", suggest: () => [] };
+  const [commandContext, setCommandContext] = createSignal<QueryContext | null>(null);
+  /** Where Escape closed the commands; they stay closed while the caret stays in that `/query`. */
+  let commandsDismissedAt: number | null = null;
+  const commandListId = `${listboxId}-commands`;
+  const commands = createCommandNavigator({
+    items: () => props.commands ?? [],
+    query: () => commandContext()?.query ?? "",
+    onPick: (item) => pickCommand(item),
+    // A second list starts with an empty query: the typed word gives way to the bare `/`.
+    onStep: () => {
+      const context = commandContext();
+      if (textarea && context && context.text !== "/") replaceTextareaRange(textarea, context.start, context.end, "/");
+    },
+  });
+  const commandsOpen = createMemo(() => commandContext() !== null && (commands.step() !== undefined || commands.entries().length > 0));
+  const closeCommands = (): void => {
+    setCommandContext(null);
+    commands.reset();
+  };
+  const pickCommand = (item: CommandItem): void => {
+    const context = commandContext();
+    if (!textarea || !context) return;
+    const { text, onSelect } = item;
+    closeCommands();
+    replaceTextareaRange(textarea, context.start, context.end, text ?? "");
+    if (text === undefined) onSelect?.();
+  };
+
   const mergedCompletions = createMemo<readonly Completion[] | undefined>(() => {
     const merged: Completion[] = [];
+    if (props.commands) merged.push(commandCompletion);
     if (props.abbreviations && Object.keys(props.abbreviations).length > 0) {
       merged.push(abbreviationsCompletion(props.abbreviations));
     }
@@ -127,7 +169,9 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
             text: active.text.slice(current.context.text.length),
           }
         : undefined;
-    const anchor = current && !ghost ? { at: current.context.end } : undefined;
+    const command = commandContext();
+    // The commands hang at their `/`, so typing does not move them.
+    const anchor = current && !ghost ? { at: current.context.end } : command && commandsOpen() ? { at: command.start } : undefined;
     renderPendingOverlay = () => {
       if (!preview) return;
       preview.innerHTML = renderWithOverlay(value, (text) => highlight.markdown(text, { knownLabels: labels }), { ghost, anchor });
@@ -161,7 +205,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     setDropdownOpen(false);
   };
 
-  const clearCompletion = (): void => {
+  const resetSuggestions = (): void => {
     completionAbort?.abort();
     completionAbort = null;
     if (completionTimer) clearTimeout(completionTimer);
@@ -169,6 +213,10 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     setState(null);
     setLoading(false);
     setCompletionError(null);
+  };
+
+  const clearCompletion = (): void => {
+    resetSuggestions();
     closeDropdown();
   };
 
@@ -178,7 +226,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     }
     const anchor = preview.querySelector<HTMLElement>("[data-completion-anchor]");
     const rect = anchor?.getBoundingClientRect() ?? textarea.getBoundingClientRect();
-    const maxHeight = 260;
+    const maxHeight = commandsOpen() ? 320 : 260;
     const spaceBelow = window.innerHeight - rect.bottom;
     const openAbove = spaceBelow < maxHeight && rect.top > spaceBelow;
     if (openAbove) {
@@ -282,6 +330,20 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     const context = detectQuery(textarea, mergedCompletions(), {
       isExcluded: isInCodeZone,
     });
+    if (context?.completion !== commandCompletion || context.start !== commandContext()?.start) {
+      if (context?.completion !== commandCompletion || context.start !== commandsDismissedAt) commandsDismissedAt = null;
+      if (commandContext()) closeCommands();
+    }
+    if (context?.completion === commandCompletion) {
+      // The suggestions' popover element is gone once the commands show; closing it would close theirs.
+      if (commandContext()) resetSuggestions();
+      else clearCompletion();
+      if (commandsDismissedAt !== context.start) {
+        setCommandContext(context);
+        queueMicrotask(positionDropdown);
+      }
+      return;
+    }
     if (!context) {
       clearCompletion();
       return;
@@ -418,6 +480,19 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     ) {
       event.preventDefault();
       return;
+    }
+    const command = commandContext();
+    if (command && commandsOpen()) {
+      if (commandListKey(commands, event, command.query)) {
+        event.preventDefault();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        commandsDismissedAt = command.start;
+        closeCommands();
+        return;
+      }
     }
     const current = state();
     const dropdownCompletion = current?.context.completion.dropdown === true;
@@ -582,6 +657,8 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
               if (next && dropdown?.contains(next)) return;
               completionBehavior.reset();
               clearCompletion();
+              closeCommands();
+              commandsDismissedAt = null;
             }}
             disabled={props.disabled}
             required={props.required}
@@ -590,8 +667,16 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
             {...fieldControlAria(meta, props)}
             aria-haspopup="listbox"
             aria-autocomplete="list"
-            aria-controls={dropdownOpen() ? listboxId : undefined}
-            aria-activedescendant={dropdownOpen() && state() ? optionId(state()!.selectedIndex) : undefined}
+            aria-controls={commandsOpen() ? commandListId : dropdownOpen() ? listboxId : undefined}
+            aria-activedescendant={
+              commandsOpen()
+                ? commands.entries().length
+                  ? commandOptionId(commandListId, commands.active())
+                  : undefined
+                : dropdownOpen() && state()
+                  ? optionId(state()!.selectedIndex)
+                  : undefined
+            }
           />
         </div>
         <Show when={(props.showStats ?? true) && !props.disabled}>
@@ -601,7 +686,18 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
             <span>{markdownEditorMessages().editorCharacters({ count: stats().chars, value: formatCount(stats().chars) })}</span>
           </div>
         </Show>
-        <Show when={state() || loading() || completionError()}>
+        <Show when={commandsOpen()}>
+          <div ref={dropdown} popover="manual" class="k2b-autocomplete__options" data-commands="" role="presentation">
+            <CommandList
+              navigator={commands}
+              id={commandListId}
+              label={commandMessages().commands}
+              stepHint
+              query={() => commandContext()?.query ?? ""}
+            />
+          </div>
+        </Show>
+        <Show when={!commandsOpen() && (state() || loading() || completionError())}>
           <div
             ref={dropdown}
             popover="manual"

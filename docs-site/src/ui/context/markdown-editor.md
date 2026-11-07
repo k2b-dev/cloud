@@ -42,6 +42,7 @@ or continues a line.
 | `showStats` | `boolean` | `true` | Shows line, word, and character counts. Suppressed entirely while `disabled`. |
 | `variant` | `"default" \| "paper" \| "embedded"` | `"default"` | Matches the editor surface to its parent. `embedded` removes the outer border, radius, and shadow for an existing workspace surface. |
 | `fill` | `boolean` | `false` | Fills the available parent height instead of using `lines`. |
+| `commands` | `CommandItem[] \| (query) => CommandItem[]` | none | Opens [slash commands](#slash-commands) on `/`. |
 
 Native form and accessibility properties include `name`, `id`, `"aria-label"`,
 `"aria-describedby"`, `required`, plus the shared `label`, `description`, and
@@ -81,6 +82,25 @@ navigation, Enter acceptance, Escape dismissal, and retryable loading and error
 states. A new query aborts stale asynchronous work. Completions do not expand
 inside inline code or fenced code blocks.
 
+## Slash commands
+
+`commands` takes the same `CommandItem[]` as [CommandMenu](/en/ui/actions/command-menu): actions, text snippets, and
+second lists such as people or tags. Typing `/` at the start of a line or after a space opens them at the slash; the
+typed word filters them by label, hint, and keywords, without regard to case or accents. A `/` inside a word, as in
+`and/or`, opens nothing.
+
+- An entry with `onSelect` removes the typed `/query` from the text, then runs.
+- An entry with `text` puts its text in place of `/query`.
+- An entry with `next` opens its list in the same popover; the typed word gives way to a bare `/`, and typing filters
+  the second list. <kbd>Esc</kbd>, or <kbd>Backspace</kbd> after the bare `/`, goes back.
+- <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Home</kbd> <kbd>End</kbd> mark entries while the list is open, <kbd>Enter</kbd> and
+  <kbd>Tab</kbd> choose, and <kbd>Esc</kbd> in the first list closes it and keeps the text. It stays closed until
+  the next `/`.
+- A word without matches closes the list, so <kbd>Enter</kbd> starts a new line as usual.
+
+The list hangs at the slash and keeps a fixed width, so typing and second lists move neither the list nor the editor.
+`commands` and `completions` work side by side; give `/` to only one of them.
+
 ## Editing behavior
 
 The editor keeps a native textarea as the input surface. A synchronized presentation layer provides markdown highlighting without replacing browser selection, composition, or undo behavior.
@@ -105,7 +125,9 @@ their native hyphenated names.
 The toolbar uses one tab stop plus Left, Right, Home, and End navigation.
 Formatting buttons expose active state through `aria-pressed`. The textarea
 uses combobox semantics when completions are configured; an open dropdown is a
-linked listbox with an active descendant and selected options. Loading uses a
+linked listbox with an active descendant and selected options. Slash commands use
+the same pattern: their groups are labeled by their headings, and an unavailable
+entry is `aria-disabled` with its reason in its name. Loading uses a
 status, failures use an alert, and the presentation layer is hidden from
 assistive technology.
 
