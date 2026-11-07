@@ -69,6 +69,7 @@ export const chartMessages = i18n.define({
           errX: "X error",
           errXHigh: "Upper X error",
           errXLow: "Lower X error",
+          group: "Group",
         };
         return labels[key] ?? key;
       },
@@ -144,6 +145,7 @@ export const chartMessages = i18n.define({
           errX: "X-Fehler",
           errXHigh: "Oberer X-Fehler",
           errXLow: "Unterer X-Fehler",
+          group: "Bereich",
         };
         return labels[key] ?? key;
       },
@@ -155,3 +157,5 @@ export const chartMessages = i18n.define({
     },
   },
 });
+
+export const resolveChartMessages = (locale: string) => chartMessages.resolve([locale]).t;

@@ -806,7 +806,7 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | --- | --- |
 | `title`, `data`, `columns` | Required heading, `ChartExplorerData<T>` or `{ rows }`, and nonempty columns with unique nonempty IDs. Without a prepared `chart`, `children` draws the chart view, such as a live `<Chart>`; the table and Copy data still come from the typed rows. |
 | `request`, `asOf`, `range`, `onRetry` | Optional [frame states](#frame-states): the latest read, kept apart from the rows on screen. |
-| `inset` | Optional padding of the frame around the explorer, such as `"1rem"`. The table view then reaches the frame's left, right and bottom edges without its own border, and the frame keeps its height. Pair it with `renderDetails={false}`. |
+| `inset` | Optional padding of the frame around the explorer, such as `"1rem"`, or block and inline as in CSS `padding`, such as `"14px 16px"` for a dashboard panel. The table view then reaches the frame's left, right and bottom edges without its own border, and the frame keeps its height. Pair it with `renderDetails={false}`. |
 | `selectedKey`, `onSelectedKeyChange` | Optional controlled row selection. Omit key for local selection. A missing local row never clears a sibling's controlled selection. |
 | `view`, `onViewChange` | Optional controlled `"chart" \| "table"`. Otherwise, `defaultView` initializes local view; default `"chart"`. |
 | `charts`, `chart`, `onChartChange` | Optional `{ id, label }[]` for several charts of the same rows. The switcher then lists each chart and the table instead of Diagram and Table. `chart` names the chart that `data` holds; a pick calls `onChartChange(id)` and switches `view` to `"chart"`, and the owner passes that chart's data. Keep `data.rows` the same rows for every chart so selection, sorting and Copy data stay put while switching. |
@@ -1107,6 +1107,22 @@ Values print when bars have at least 46 CSS pixels and the text fits its slot. S
 so server, PDF and app-frame hosts do not require `.k2b-ui` to see them.
 Portable JSON accepts `format: { style: "currency", currency: "EUR", decimals: 0 }`;
 the component and renderer accept a `format(value)` function.
+## Calendar heatmaps
+
+`Chart.Calendar` (or `Chart.Heatmap` with `layout="calendar"`) accepts `data: ["YYYY-MM-DD", number | null][]`
+and `scale="sequential" | "diverging"`. Existing categorical heatmaps keep
+their `{x,y,value}` data unchanged. Dates must be valid and unique; missing
+days and null values remain gaps. The date span is limited to three years. Weeks are columns; the locale sets the first weekday, with Monday as the fallback.
+
+The color scale includes every observation. Diverging values use turquoise
+for positive and violet for negative values, with zero neutral. Phone charts
+scroll to the newest weeks. Month names use a separate year row, so short partial months do not hide the next month. Left/right inspect a week; up/down inspect a day.
+Home/End jump, Enter pins and Escape dismisses. The exact date and value are
+also available in the table. Optional `locale` takes precedence over the UI
+provider, and `format` formats values. `label` names their unit. Diverging values read “more in” or “more out” without a sign. Square cells use the available height. Weekday labels stay visible while the weeks scroll, and partially visible month names are hidden. Month and weekday labels use explicit short Intl formats; full dates use explicit long parts and a shared date pattern. Older engines use the US Sunday and other-locale Monday week-start fallback. Print output scales uniformly to the page. Measured hosts pass `displayWidth`. Plain SVG hosts mount `mountCalendarScroll` from `@k2b/ui/charts`, pass `nav: calendarInspectionNavigation` to `inspectChart`, and dispose both cleanups.
+
+Keep loading, empty, error/retry and stale feedback in the host's fixed-height
+frame. The newsletter example shows daily opens across a complete year.
 ## Stacked and 100 % area charts
 
 Use `kind="area" layout="stacked"` for nonnegative parts of a changing total.

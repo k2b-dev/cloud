@@ -1,7 +1,7 @@
 import { useLocale } from "../intl/locale";
 import { chartMessages } from "./chart-message-catalog";
 
-export { chartMessages } from "./chart-message-catalog";
+export { chartMessages, resolveChartMessages } from "./chart-message-catalog";
 
 export type ChartMessages = ReturnType<(typeof chartMessages)["resolve"]>["t"];
 

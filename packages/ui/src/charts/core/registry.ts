@@ -1,6 +1,7 @@
 import { renderBarChartSvg } from "../../content/chart-bar";
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
+import { renderHeatmapSvg } from "./calendar";
 import { charts } from "./svg";
 import { renderWaterfallSvg } from "./waterfall";
 
@@ -20,7 +21,7 @@ export const chartRenderers = {
   gauge: charts.gauge,
   barGauge: charts.barGauge,
   stat: charts.stat,
-  heatmap: charts.heatmap,
+  heatmap: renderHeatmapSvg,
   map: charts.map,
   stateTimeline: renderStateTimelineSvg,
 };

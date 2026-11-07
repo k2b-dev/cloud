@@ -7,20 +7,25 @@ export type AppFrameAssets = {
   preludeHash: string;
   /** @k2b/ui base stylesheet with Plex as data URLs; also the stylesheet of cloud.pdf.render. */
   baseCss: string;
+  /** Offline ESM source; separate from the executable prelude. */
+  chartModule: string;
 };
 
 let assets: Promise<AppFrameAssets> | undefined;
 /** Production reads the files that build-extras wrote next to the server bundle; development builds them once. */
 export function appFrameAssets(): Promise<AppFrameAssets> {
   assets ??= (async () => {
-    const [prelude, baseCss] =
+    const [prelude, baseCss, chartModule] =
       env.NODE_ENV === "production"
         ? await Promise.all([
             Bun.file(new URL("./assistant-app-prelude.js", import.meta.url)).text(),
             Bun.file(new URL("./assistant-app-base.css", import.meta.url)).text(),
+            Bun.file(new URL("./assistant-chart-module.js", import.meta.url)).text(),
           ])
-        : await import("./build-assets").then(({ buildPrelude, buildBaseCss }) => Promise.all([buildPrelude(), buildBaseCss()]));
-    return { prelude, preludeHash: `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'`, baseCss };
+        : await import("./build-assets").then(({ buildPrelude, buildBaseCss, buildChartModule }) =>
+            Promise.all([buildPrelude(), buildBaseCss(), buildChartModule()]),
+          );
+    return { prelude, preludeHash: `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'`, baseCss, chartModule };
   })().catch((error) => {
     assets = undefined;
     throw error;

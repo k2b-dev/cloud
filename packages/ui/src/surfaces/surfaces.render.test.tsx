@@ -588,12 +588,14 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(cell({ status: "error" })).not.toContain("<button");
     expect(cell({ stale: "As of 09:12 · not current", onRetry: () => undefined })).toContain("Reload");
     expect(cell({ value: null, sub: "Nothing counted in this period" })).toMatch(/data-empty="true"[^>]*>–</);
+    // An empty tile draws no trend, so it keeps the height of the tile with data and of the loading tile.
+    expect(cell({ value: null, sub: "Nothing counted in this period", trend: [1, 2, 3] })).not.toContain("k2b-stat-cell__trend");
     // A link tile is no link while it loads or failed.
     expect(cell({ href: "/orders", status: "loading" })).not.toContain('href="/orders"');
     // A stale tile with "Reload" is no link, so the button never sits inside an anchor.
     expect(cell({ href: "/orders", stale: "As of 09:12", onRetry: () => undefined })).not.toContain('href="/orders"');
     expect(cell({ href: "/orders", stale: "As of 09:12" })).toContain('href="/orders"');
-    expect(parityCss).toContain('.k2b-ui .k2b-stat-cell[data-size="lg"]:not([data-wrap]) { height: 8.5rem; }');
+    expect(parityCss).toContain('.k2b-ui .k2b-stat-cell[data-size="lg"]:not([data-wrap]) { min-height: 8.5rem; }');
   });
 
   test("ships focus, responsive, dark, and reduced-motion parity hooks", () => {
