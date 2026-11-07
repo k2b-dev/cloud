@@ -21,8 +21,8 @@ import * as sparklineExamples from "./sparkline";
 import * as statExamples from "./stat";
 import * as stateTimelineExamples from "./stateTimeline";
 import * as statsExamples from "./stats";
-import * as treemapExamples from "./treemap";
 import * as tableExamples from "./table";
+import * as treemapExamples from "./treemap";
 
 export const exampleModules: Record<string, unknown>[] = [
   areaExamples,
