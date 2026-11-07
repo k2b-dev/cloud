@@ -13,7 +13,18 @@ import {
 } from "@k2b/cloud/ai/app-frame";
 // Named renderers, not the `charts` namespace, so app frames leave out the map and state timeline renderers.
 import { money } from "@k2b/stdlib";
-import { barChartLayout, donut, escapeXml, isChartDatum, line, pie, renderBarChartSvg, sparkline, stat } from "@k2b/ui/charts/core";
+import {
+  barChartLayout,
+  calendarLayout,
+  donut,
+  escapeXml,
+  isChartDatum,
+  line,
+  pie,
+  renderBarChartSvg,
+  sparkline,
+  stat,
+} from "@k2b/ui/charts/core";
 import type { ChartDrawing } from "./chart-renderer-types";
 import { loadChartRenderer, rareChartSvg } from "./chart-renderers-rare";
 import { CloudError } from "./errors";
@@ -145,7 +156,10 @@ function drawChart(
     );
     // stdlib embeds an unlayered <style> with fixed colors; the base stylesheet owns those rules instead.
     svg = svg.replace(/<style>[\s\S]*?<\/style>/, "");
-    return { svg: KEEP_ASPECT.has(mapped.kind) ? svg : responsive(svg), table: rows.table() };
+    return {
+      svg: KEEP_ASPECT.has(mapped.kind) || (mapped.kind === "heatmap" && mapped.layout === "calendar") ? svg : responsive(svg),
+      table: rows.table(),
+    };
   } catch (error) {
     throw new CloudError("invalid", `cloud.chart: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -206,7 +220,15 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
   const { svg, table } = drawChart(prepared, locale, width, height);
   // Bar rows take the height their labels need; the box reserves it.
   const drawnHeight = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || height;
-  const stretch = !KEEP_ASPECT.has(input.kind);
+  const calendar = input.kind === "heatmap" && input.layout === "calendar";
+  // Only sizing stays eager; the calendar renderer itself belongs to the offline module.
+  let calendarWidth = calendar ? Number(/data-chart-min-width="([\d.]+)"/.exec(svg ?? "")?.[1]) || width : width;
+  if (calendar && svg === undefined) {
+    const mapped = cloudAiChartRenderOptions(input, locale);
+    if (mapped.kind === "heatmap" && mapped.layout === "calendar")
+      calendarWidth = calendarLayout({ ...mapped, width, height, title: prepared.title, subtitle: input.subtitle }).width;
+  }
+  const stretch = !calendar && !KEEP_ASPECT.has(input.kind);
   const title = prepared.title ?? "";
   const subtitle = input.subtitle ?? "";
   const caption = [title, subtitle].filter(Boolean).join(" — ") || `${input.kind} chart`;
@@ -222,14 +244,14 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
         .join("")}</tbody></table>`
     : "";
   let id = "";
-  if ((stretch && measure) || svg === undefined) {
+  if (((stretch || calendar) && measure) || svg === undefined) {
     id = `c${++chartSeq}`;
     if (svg === undefined) pendingChartOptions.set(id, prepared);
     else chartOptions.set(id, prepared);
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${stretch && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${svg === undefined ? `aspect-ratio:${width}/${drawnHeight};` : ""}--k2b-chart-width:${width}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${(stretch || calendar) && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendar ? `min-width:${calendarWidth}px;width:${calendarWidth}px;` : ""}${svg === undefined ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
   );
 }
 

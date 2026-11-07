@@ -1,6 +1,6 @@
 // One lazy kind-switch. Script/PDF workers import this synchronously; the frame
 // build replaces this module with chart-renderers-frame and ships this separately.
-import { barGauge, boxplot, gauge, heatmap, histogram, renderAreaSvg, scatter } from "@k2b/ui/charts/core";
+import { barGauge, boxplot, gauge, histogram, renderAreaSvg, renderHeatmapSvg, scatter } from "@k2b/ui/charts/core";
 import type { RareChartRenderer } from "./chart-renderer-types";
 
 export const rareChartSvg: RareChartRenderer = (mapped, common) => {
@@ -18,7 +18,7 @@ export const rareChartSvg: RareChartRenderer = (mapped, common) => {
     case "barGauge":
       return barGauge({ ...mapped, ...common });
     case "heatmap":
-      return heatmap({ ...mapped, ...common });
+      return renderHeatmapSvg({ ...mapped, ...common });
   }
 };
 

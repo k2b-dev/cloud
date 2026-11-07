@@ -809,3 +809,9 @@ test("explorer infers and preserves reference columns shared with table conversi
     rows: [{ item: { type: "spaces.item", id: "item-1", title: "Product" }, name: "Product", stock: 2 }],
   });
 });
+
+test("calendar pairs convert Date values to the run's day", () => {
+  expect(
+    normalizeChartDates({ kind: "heatmap", layout: "calendar", data: [[new Date("2026-01-01T23:30:00Z"), 5]] }, "Europe/Berlin"),
+  ).toMatchObject({ data: [["2026-01-02", 5]] });
+});

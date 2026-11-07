@@ -8,12 +8,13 @@ import {
   barGauge,
   boxplot,
   type ChartDatum,
+  calendarWords,
   type charts,
   computeDomain,
   donut,
   extendDomainToNice,
   gauge,
-  heatmap,
+  type HeatmapChartOptions,
   histogram,
   line,
   niceLogTicks,
@@ -21,6 +22,7 @@ import {
   pie,
   renderAreaSvg,
   renderBarChartSvg,
+  renderHeatmapSvg,
   scatter,
   sparkline,
   stat,
@@ -33,11 +35,13 @@ export * from "./chart-schema";
 type RenderOptions = {
   [K in ChartInput["kind"]]: { kind: K } & (K extends "area"
     ? AreaOptions
-    : K extends "bar"
-      ? BarChartOptions
-      : K extends keyof typeof charts
-        ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-        : never);
+    : K extends "heatmap"
+      ? HeatmapChartOptions
+      : K extends "bar"
+        ? BarChartOptions
+        : K extends keyof typeof charts
+          ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+          : never);
 }[ChartInput["kind"]];
 
 /**
@@ -251,8 +255,11 @@ const formattedValues = (input: ChartInput): number[] => {
       return [...input.data.map((item) => item.value), ...chartReferenceValues(input, "y")];
     case "pie":
     case "donut":
-    case "heatmap":
       return input.data.map((item) => item.value);
+    case "heatmap":
+      return input.layout === "calendar"
+        ? input.data.flatMap((item) => (item[1] === null ? [] : [item[1]]))
+        : input.data.map((item) => item.value);
     case "barGauge":
       return [...input.data.flatMap((item) => [item.value, item.min, item.max]), input.min, input.max].filter(
         (value) => value !== undefined,
@@ -347,6 +354,7 @@ export function chartRenderOptions(
     formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string };
   } = {},
 ): RenderOptions {
+  if (input.kind === "heatmap" && input.layout === "calendar") locale = input.locale ?? locale;
   const defaults = formats(input, locale);
   // Function formats must be measured with the same text the renderer will print.
   const format = {
@@ -483,6 +491,17 @@ export function chartRenderOptions(
         thresholds: input.thresholds,
       };
     case "heatmap":
+      if (input.layout === "calendar")
+        return {
+          kind: "heatmap",
+          layout: "calendar",
+          data: input.data,
+          scale: input.scale,
+          label: input.label,
+          locale: input.locale ?? locale,
+          format: format.value,
+          displayWidth: options.width,
+        };
       return {
         kind: "heatmap",
         data: input.data,
@@ -549,7 +568,7 @@ export const drawChart = (options: RenderOptions): string => {
     case "stat":
       return stat({ ...options, ...common });
     case "heatmap":
-      return heatmap({ ...options, ...common });
+      return renderHeatmapSvg({ ...options, ...common });
     case "sparkline":
       return sparkline({ ...options, ...common });
   }
@@ -608,6 +627,7 @@ export function chartRows(
   locale: string,
   options: { formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string } } = {},
 ) {
+  if (input.kind === "heatmap" && input.layout === "calendar") locale = input.locale ?? locale;
   const t = labels.resolve([locale]).t;
   const format = formats(input, locale);
   const valueFormat = input.tooltip?.format
@@ -645,7 +665,8 @@ export function chartRows(
         input.kind === "bar" || input.kind === "pie" || input.kind === "donut" || input.kind === "boxplot" || input.kind === "barGauge"
           ? input.data[datum.role === "outlier" ? (datum.seriesIndex ?? 0) : datum.index]?.label
           : datum.label;
-      if (label) cell("label", t.category, label, label);
+      if (label)
+        cell("label", input.kind === "heatmap" && input.layout === "calendar" ? calendarWords(locale).day : t.category, label, label);
     }
     for (const field of datum.values) {
       const value = field.value;
@@ -681,9 +702,17 @@ export function chartRows(
       } else if (field.key === "value")
         cell(
           "value",
-          input.tooltip?.label ?? (input.kind === "bar" ? input.yAxis?.label : undefined) ?? t.value,
+          input.tooltip?.label ??
+            (input.kind === "bar"
+              ? input.yAxis?.label
+              : input.kind === "heatmap" && input.layout === "calendar"
+                ? input.label
+                : undefined) ??
+            t.value,
           value,
-          `${valueFormat(value)}${unit}`,
+          input.kind === "heatmap" && input.layout === "calendar"
+            ? (field.formatted ?? valueFormat(value))
+            : `${valueFormat(value)}${unit}`,
         );
       else if (field.key === "delta") cell("delta", t.delta, value, `${value > 0 ? "+" : ""}${valueFormat(value)}`);
       else if (field.key === "q1" || field.key === "q2" || field.key === "q3" || field.key === "whiskerLow" || field.key === "whiskerHigh")

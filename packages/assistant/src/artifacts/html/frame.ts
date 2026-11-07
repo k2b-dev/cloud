@@ -6,6 +6,7 @@ import "./no-eval";
 import "./no-hints";
 import { cloudAiChartMarkKey } from "@k2b/cloud/ai/app-frame";
 import { type ChartInspection, type ChartTooltip, inspectChart, isChartDatum } from "@k2b/ui/chart-inspection";
+import { calendarInspectionNavigation, mountCalendarScroll } from "@k2b/ui/charts";
 import { LIMITS } from "../contracts";
 import { createBridge } from "../runtime/bridge";
 import { configureChartModule, loadChartRenderer } from "../runtime/chart-renderers-frame";
@@ -292,7 +293,8 @@ const charts = new ResizeObserver((entries) => {
   for (const entry of entries) {
     const element = entry.target as HTMLElement;
     const options = chartOptions.get(element.dataset.chartId ?? "");
-    const width = Math.round(entry.contentRect.width);
+    const calendar = element.querySelector("svg[data-calendar]");
+    const width = Math.round(calendar ? (element.parentElement?.clientWidth ?? entry.contentRect.width) : entry.contentRect.width);
     if (element.hasAttribute("data-chart-pending")) continue;
     if (!options || width < 120 || Math.abs((drawn.get(element) ?? 0) - width) < 8) continue;
     drawn.set(element, width);
@@ -300,6 +302,12 @@ const charts = new ResizeObserver((entries) => {
     element.style.setProperty("--k2b-chart-width", `${width}px`);
     element.innerHTML = chartSvg(options, config.context.locale, width, height);
     // Bar rows at a new width can wrap their labels differently and take another height.
+    const intrinsicWidth = Number(element.querySelector("svg[data-calendar]")?.getAttribute("data-chart-min-width"));
+    if (intrinsicWidth) {
+      element.style.width = `${intrinsicWidth}px`;
+      element.style.minWidth = `${intrinsicWidth}px`;
+      element.style.setProperty("--k2b-chart-width", `${intrinsicWidth}px`);
+    }
     const drawnHeight = element.querySelector("svg")?.viewBox.baseVal.height;
     if (drawnHeight) element.style.setProperty("--k2b-chart-height", `${drawnHeight}px`);
     const chart = element.closest(".k2b-chart");
@@ -330,7 +338,12 @@ async function paintChart(element: HTMLElement) {
     if (!options) throw new Error("The chart expired. Draw it again.");
     const measure = element.hasAttribute("data-chart-measure");
     const width =
-      (measure && Math.round(element.getBoundingClientRect().width)) ||
+      (measure &&
+        Math.round(
+          options.input.kind === "heatmap" && options.input.layout === "calendar"
+            ? (element.parentElement?.clientWidth ?? element.getBoundingClientRect().width)
+            : element.getBoundingClientRect().width,
+        )) ||
       Number.parseFloat(element.style.getPropertyValue("--k2b-chart-width")) ||
       480;
     const height = Number.parseFloat(element.style.getPropertyValue("--k2b-chart-height")) || 280;
@@ -395,17 +408,23 @@ new MutationObserver((records) => {
         ? "Interaktives Diagramm. Mit den Pfeiltasten Werte ansehen, mit Escape schließen."
         : "Interactive chart. Use arrow keys to inspect values, Escape to dismiss.",
     );
-    inspections.set(
-      chart,
-      inspectChart(chart, {
-        kind,
-        locale: config.context.locale,
-        format: ({ datum }) => {
-          const key = cloudAiChartMarkKey(datum);
-          return chartTooltips.get(chart)?.get(key) ?? readChartTooltips(chart).get(key) ?? { rows: [] };
-        },
-      }),
-    );
+    const unmountCalendar = chart.querySelector("svg[data-calendar]") ? mountCalendarScroll(chart) : () => {};
+    const inspection = inspectChart(chart, {
+      kind,
+      nav: chart.querySelector("svg[data-calendar]") ? calendarInspectionNavigation : undefined,
+      locale: config.context.locale,
+      format: ({ datum }) => {
+        const key = cloudAiChartMarkKey(datum);
+        return chartTooltips.get(chart)?.get(key) ?? readChartTooltips(chart).get(key) ?? { rows: [] };
+      },
+    });
+    inspections.set(chart, {
+      ...inspection,
+      destroy() {
+        unmountCalendar();
+        inspection.destroy();
+      },
+    });
   }
   for (const element of document.querySelectorAll(".k2b-chart__svg[data-chart-id]:not([data-cloud-observed])")) {
     element.setAttribute("data-cloud-observed", "");
