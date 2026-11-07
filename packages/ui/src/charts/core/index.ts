@@ -12,6 +12,7 @@ export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
 export * from "./calendar";
 export * from "./inspection";
+export * from "./pareto";
 export * from "./render";
 export * from "./snapshot";
 export {
@@ -63,6 +64,8 @@ export {
   stepPathD,
   svgRoot,
 } from "./svg";
+
+export * from "./treemap";
 export {
   type ChartDateFormat,
   type ChartDatum,

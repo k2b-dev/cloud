@@ -123,6 +123,8 @@ const flatChartSchema = () => {
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
+    groups: z.array(ChartLabel).max(CLOUD_AI_CHART_MAX_SERIES).optional().describe("treemap: group names."),
+    labels: z.array(ChartLabel).length(2).optional().describe("pareto: current and previous period labels."),
     layout: z.enum(["stacked", "calendar"]).optional().describe("area: stacked; heatmap: calendar."),
     scale: z.enum(["sequential", "diverging"]).optional().describe("Calendar heatmap color scale; domain includes all days."),
     locale: chartLocaleSchema().optional(),
@@ -134,6 +136,8 @@ const flatChartSchema = () => {
             z.object({
               label: ChartLabel.optional(),
               value: z.number().optional(),
+              group: ChartLabel.optional(),
+              prev: z.number().optional(),
               values: z.array(z.number()).min(1).optional(),
               x: ChartLabel.optional(),
               y: ChartLabel.optional(),

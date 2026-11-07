@@ -19,13 +19,17 @@ import {
   line,
   niceLogTicks,
   niceStep,
+  type ParetoOptions,
   pie,
   renderAreaSvg,
   renderBarChartSvg,
   renderHeatmapSvg,
+  renderParetoSvg,
+  renderTreemapSvg,
   scatter,
   sparkline,
   stat,
+  type TreemapOptions,
 } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTime, chartKinds } from "./chart-schema";
@@ -35,13 +39,17 @@ export * from "./chart-schema";
 type RenderOptions = {
   [K in ChartInput["kind"]]: { kind: K } & (K extends "area"
     ? AreaOptions
-    : K extends "heatmap"
-      ? HeatmapChartOptions
-      : K extends "bar"
-        ? BarChartOptions
-        : K extends keyof typeof charts
-          ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-          : never);
+    : K extends "treemap"
+      ? TreemapOptions
+      : K extends "pareto"
+        ? ParetoOptions
+        : K extends "heatmap"
+          ? HeatmapChartOptions
+          : K extends "bar"
+            ? BarChartOptions
+            : K extends keyof typeof charts
+              ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+              : never);
 }[ChartInput["kind"]];
 
 /**
@@ -57,6 +65,10 @@ const labels = /* @__PURE__ */ i18n.define({
     en: {
       category: "Category",
       series: "Series",
+      group: "Group",
+      previous: "Previous",
+      change: "Change",
+      cumulative: "Cumulative",
       value: "Value",
       share: "Share",
       position: "Position",
@@ -75,6 +87,10 @@ const labels = /* @__PURE__ */ i18n.define({
     de: {
       category: "Kategorie",
       series: "Datenreihe",
+      group: "Bereich",
+      previous: "Vorher",
+      change: "Änderung",
+      cumulative: "Kumuliert",
       value: "Wert",
       share: "Anteil",
       position: "Position",
@@ -253,6 +269,8 @@ const formattedValues = (input: ChartInput): number[] => {
       return [...input.series.flatMap((series) => series.data.map((point) => point.y)), ...chartReferenceValues(input, "y")];
     case "bar":
       return [...input.data.map((item) => item.value), ...chartReferenceValues(input, "y")];
+    case "treemap":
+    case "pareto":
     case "pie":
     case "donut":
       return input.data.map((item) => item.value);
@@ -354,7 +372,7 @@ export function chartRenderOptions(
     formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string };
   } = {},
 ): RenderOptions {
-  if (input.kind === "heatmap" && input.layout === "calendar") locale = input.locale ?? locale;
+  if ("locale" in input && input.locale) locale = input.locale;
   const defaults = formats(input, locale);
   // Function formats must be measured with the same text the renderer will print.
   const format = {
@@ -367,6 +385,25 @@ export function chartRenderOptions(
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
   switch (input.kind) {
+    case "treemap":
+      return {
+        kind: "treemap",
+        legend: input.legend,
+        groups: input.groups,
+        data: input.data,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
+    case "pareto":
+      return {
+        kind: "pareto",
+        labels: input.labels,
+        data: input.data,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
     case "area":
       return {
         kind: "area",
@@ -545,6 +582,10 @@ const decode = (value: string) =>
 export const drawChart = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
+    case "treemap":
+      return renderTreemapSvg({ ...options, ...common });
+    case "pareto":
+      return renderParetoSvg({ ...options, ...common });
     case "area":
       return renderAreaSvg({ ...options, ...common });
     case "bar":
@@ -627,7 +668,7 @@ export function chartRows(
   locale: string,
   options: { formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string } } = {},
 ) {
-  if (input.kind === "heatmap" && input.layout === "calendar") locale = input.locale ?? locale;
+  if ("locale" in input && input.locale) locale = input.locale;
   const t = labels.resolve([locale]).t;
   const format = formats(input, locale);
   const valueFormat = input.tooltip?.format
@@ -678,6 +719,18 @@ export function chartRows(
         cell(field.key, field.key.toUpperCase(), value, value);
         continue;
       }
+      if (input.kind === "treemap" && field.key === "group" && typeof value === "string") {
+        cell("group", t.group, value, value);
+        continue;
+      }
+      if (
+        input.kind === "pareto" &&
+        (field.key === "previous" || field.key === "change" || field.key === "cumulative") &&
+        typeof value === "number"
+      ) {
+        cell(field.key, field.key === "previous" ? input.labels[1] : t[field.key], value, field.formatted ?? valueFormat(value));
+        continue;
+      }
       if (typeof value !== "number" || field.key === "total") continue;
       if (field.key === "x") {
         const header =
@@ -703,11 +756,13 @@ export function chartRows(
         cell(
           "value",
           input.tooltip?.label ??
-            (input.kind === "bar"
-              ? input.yAxis?.label
-              : input.kind === "heatmap" && input.layout === "calendar"
-                ? input.label
-                : undefined) ??
+            (input.kind === "pareto"
+              ? input.labels[0]
+              : input.kind === "bar"
+                ? input.yAxis?.label
+                : input.kind === "heatmap" && input.layout === "calendar"
+                  ? input.label
+                  : undefined) ??
             t.value,
           value,
           input.kind === "heatmap" && input.layout === "calendar"
@@ -745,6 +800,8 @@ export function chartTable(input: ChartInput, locale: string): ChartTable {
 /** Input values count against the budget, including observations summarized into boxes or bins. */
 export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
+    case "pareto":
+      return input.data.length * 3;
     case "area":
       return input.series.reduce((sum, s) => sum + s.data.length, 0);
     case "line":

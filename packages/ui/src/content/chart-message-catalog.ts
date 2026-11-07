@@ -35,6 +35,10 @@ export const chartMessages = i18n.define({
         const labels: Record<string, string> = {
           x: "X",
           y: "Y",
+
+          previous: "Previous",
+          change: "Change",
+          cumulative: "Cumulative",
           value: "Value",
           percent: "Share",
           total: "Total",
@@ -106,6 +110,10 @@ export const chartMessages = i18n.define({
         const labels: Record<string, string> = {
           x: "X",
           y: "Y",
+
+          previous: "Vorher",
+          change: "Änderung",
+          cumulative: "Kumuliert",
           value: "Wert",
           percent: "Anteil",
           total: "Gesamt",

@@ -36,7 +36,23 @@ export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
 export const chartKindSchema = () =>
-  z.enum(["area", "bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
+  z.enum([
+    "area",
+    "bar",
+    "line",
+    "scatter",
+    "pie",
+    "donut",
+    "histogram",
+    "gauge",
+    "sparkline",
+    "boxplot",
+    "heatmap",
+    "barGauge",
+    "stat",
+    "treemap",
+    "pareto",
+  ]);
 
 export const chartParts = (limits?: ChartLimits) => {
   const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
@@ -319,6 +335,35 @@ export const chartKinds = (limits?: ChartLimits) => {
       better: z.enum(["up", "down"]).optional(),
       sparkline: list(ChartNumber, 2, limits?.maxValues).optional(),
     }),
+    z
+      .object({
+        kind: z.literal("treemap"),
+        ...ChartKindCommon,
+        groups: list(ChartLabel, 1, limits?.maxSeries),
+        data: list(z.object({ label: ChartLabel, group: ChartLabel, value: z.number().nonnegative() }), 1, limits?.maxMarks),
+        legend: z.boolean().optional(),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (!Number.isFinite(spec.data.reduce((sum, d) => sum + d.value, 0)))
+          ctx.addIssue({ code: "custom", message: "Treemap total must be finite." });
+        if (spec.data.some((d) => !spec.groups.includes(d.group)))
+          ctx.addIssue({ code: "custom", message: "Treemap groups must contain every item group." });
+      }),
+    z
+      .object({
+        kind: z.literal("pareto"),
+        ...ChartKindCommon,
+        labels: z.tuple([ChartLabel, ChartLabel]),
+        data: list(z.object({ label: ChartLabel, value: z.number().nonnegative(), prev: z.number().nonnegative() }), 1, limits?.maxValues),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (!Number.isFinite(spec.data.reduce((sum, d) => sum + d.value, 0)))
+          ctx.addIssue({ code: "custom", message: "Pareto total must be finite." });
+      }),
   ]);
 };
 
