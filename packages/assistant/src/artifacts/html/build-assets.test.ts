@@ -6,7 +6,7 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   const [normal, check] = await Promise.all([buildPrelude(), buildCheckPrelude()]);
   // Slice 3 measured 248 KB. cloud.chart() drawing through the chat's chart mapping, with four more chart kinds and
   // its app contract, brought normal mounts to 279 KB: allow 10% growth over that, not the 851 KB app-check bundle.
-  // Area plus distribution renderers/schemas: measured 329,524 B; synchronous offline drawing keeps a 330 KB ceiling.
+  // Area plus distribution renderers/schemas: measured 329,885 B; synchronous offline drawing keeps a 330 KB ceiling.
   expect(Buffer.byteLength(normal)).toBeLessThan(330_000);
   expect(normal).toContain("k2b-area-layer");
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).
