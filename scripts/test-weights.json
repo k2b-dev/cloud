@@ -373,6 +373,7 @@
     "@k2b/ui src/surfaces/resource-card.browser.test.ts": 8.3,
     "@k2b/ui src/surfaces/single-frame.browser.test.ts": 5,
     "@k2b/ui src/surfaces/stat-tiles.browser.test.ts": 7.7,
+    "@k2b/ui src/surfaces/wide-rows.browser.test.ts": 1.6,
     "@k2b/ui src/text-editor/clipboard-loading.browser.test.ts": 4.2,
     "@k2b/ui src/text-editor/text-editor-component.browser.test.ts": 36.8,
     "@k2b/ui src/text-editor/text-editor.browser.test.ts": 27.3,
