@@ -219,6 +219,31 @@ describe("shared speedtest", () => {
     expect(fake.downloadCalls()).toBe(0);
     expect(clock.tasks.size).toBe(0);
   });
+  test("a capacity refusal at the last phase boundary never becomes a successful result", async () => {
+    const clock = new FakeClock();
+    const fake = fixture(clock, { slowPing: true, unstable: true });
+    fake.transport.verify = async () => {
+      throw new SpeedtestError("capacity", "budget", 503, 1);
+    };
+    const failure = runSpeedtest({ server, transport: fake.transport, clock, timestamp }).catch((error: unknown) => error);
+    await clock.advance(14_000);
+    expect(await failure).toMatchObject({ code: "capacity" });
+    expect(clock.tasks.size).toBe(0);
+  });
+  test("server verification stays within the whole-test deadline", async () => {
+    const clock = new FakeClock();
+    const fake = fixture(clock, { slowPing: true, unstable: true });
+    fake.transport.verify = () => new Promise(() => {});
+    let finished = 0;
+    const failure = runSpeedtest({ server, transport: fake.transport, clock, timestamp }).catch((error: unknown) => {
+      finished = clock.now();
+      return error;
+    });
+    await clock.advance(14_000);
+    expect(await failure).toMatchObject({ code: "slow_server" });
+    expect(finished).toBe(14_000);
+    expect(clock.tasks.size).toBe(0);
+  });
   test("server selection never silently falls back or carries credentials", () => {
     expect(normalizeServer("http://127.0.0.1:8080/")).toBe("http://127.0.0.1:8080");
     for (const url of ["invalid", "http://example.org", "https://user:pass@example.org", "https://example.org/?token=secret"])

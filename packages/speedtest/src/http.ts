@@ -50,6 +50,17 @@ export function createHttpTransport(
         .then((response) => response.body?.cancel())
         .catch(() => {});
     },
+    async verify(signal) {
+      const response = await request(`${base}/session`, { signal, headers: sessionHeaders(), credentials: "omit", cache: "no-store" });
+      if (!response.ok) {
+        await response.body?.cancel();
+        checkResponse(response);
+      }
+      const status: unknown = await response.json();
+      if (!status || typeof status !== "object" || !("limited" in status) || typeof status.limited !== "boolean")
+        throw new SpeedtestError("network", "Invalid server verification");
+      if (status.limited) throw new SpeedtestError("capacity", "Server bandwidth budget exceeded", 503, 1);
+    },
     async ping(signal) {
       const response = await request(`${base}/ping`, { signal, headers: sessionHeaders(), cache: "no-store", credentials: "omit" });
       try {

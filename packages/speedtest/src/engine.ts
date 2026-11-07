@@ -14,6 +14,7 @@ export type Phase = "ping" | "download" | "upload";
 export interface Transport {
   begin?(mode: Mode, signal: AbortSignal): Promise<void>;
   end?(): void;
+  verify?(signal: AbortSignal): Promise<void>;
   ping(signal: AbortSignal): Promise<void>;
   download(bytes: number, count: (bytes: number) => void, signal: AbortSignal): Promise<void>;
   upload(bytes: number, count: (bytes: number) => void, signal: AbortSignal): Promise<void>;
@@ -196,7 +197,7 @@ export async function runSpeedtest(options: {
     const stop = () => local.abort(completed);
     const propagate = () => local.abort(root.signal.reason);
     root.signal.addEventListener("abort", propagate, { once: true });
-    const phaseCap = Math.max(0, Math.min(plan[phase], totalCap - (clock.now() - start)));
+    const phaseCap = Math.max(0, Math.min(plan[phase], totalCap - (clock.now() - start) - (options.transport.verify ? 250 : 0)));
     const stopDeadline = clock.schedule(stop, phaseCap);
     const emit = () => {
       if (local.signal.aborted) return;
@@ -273,6 +274,29 @@ export async function runSpeedtest(options: {
     };
     const download = await transfer("download");
     const upload = await transfer("upload");
+    if (options.transport.verify) {
+      const verification = new AbortController();
+      const propagate = () => verification.abort(root.signal.reason);
+      root.signal.addEventListener("abort", propagate, { once: true });
+      if (root.signal.aborted) propagate();
+      const stop = clock.schedule(
+        () => verification.abort(new SpeedtestError("slow_server", "Server verification timed out")),
+        Math.max(0, Math.min(250, totalCap - (clock.now() - start))),
+      );
+      try {
+        await Promise.race([
+          options.transport.verify(verification.signal),
+          new Promise<never>((_, reject) => {
+            if (verification.signal.aborted) reject(verification.signal.reason);
+            else verification.signal.addEventListener("abort", () => reject(verification.signal.reason), { once: true });
+          }),
+        ]);
+      } finally {
+        stop();
+        root.signal.removeEventListener("abort", propagate);
+        verification.abort();
+      }
+    }
     return {
       server,
       mode,
