@@ -86,6 +86,7 @@ export {
   formatFileViewSize,
   getFileViewPreviewKind,
 } from "./FileView";
+export { BalanceSummary, type BalanceSummaryProps } from "./BalanceSummary";
 export { FlowAmount, type FlowAmountDirection, type FlowAmountProps, flowDirection } from "./FlowAmount";
 export type { KbdProps } from "./Kbd";
 export { Kbd } from "./Kbd";

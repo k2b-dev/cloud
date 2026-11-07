@@ -24,8 +24,9 @@ export type {
   PlaceholderVariant,
 } from "./Placeholder";
 export { default as Placeholder } from "./Placeholder";
-export type { ProgressBarProps, ProgressBarTone } from "./ProgressBar";
-export { ProgressBar } from "./ProgressBar";
+export type { ProgressBarPart, ProgressBarProps, ProgressBarSegment, ProgressBarTone } from "./ProgressBar";
+export { ProgressBar, progressBarParts } from "./ProgressBar";
+export { type BudgetItem, type BudgetLevel, BudgetList, type BudgetListProps, budgetState } from "./BudgetList";
 export type { ProgressRingProps, ProgressRingTone } from "./ProgressRing";
 export { ProgressRing } from "./ProgressRing";
 export { PERSON_COLORS, personColor } from "./person-color";
