@@ -74,8 +74,12 @@ export const createCommandNavigator = (options: {
     shownAt = Date.now();
     if (next.state === "success") outcomeTimer = setTimeout(clearOutcome, COMMAND_OUTCOME_SUCCESS_MS);
   };
-  onCleanup(() => clearTimeout(outcomeTimer));
   let running: AbortController | undefined;
+  // A list that goes away forgets its run, as `reset` does: a late result reports nothing and starts no timer.
+  onCleanup(() => {
+    clearTimeout(outcomeTimer);
+    running = undefined;
+  });
   const run = (item: CommandItem, path: readonly CommandItem[], again = false) => {
     const controller = new AbortController();
     running = controller;
@@ -96,9 +100,11 @@ export const createCommandNavigator = (options: {
             retry: () => runAgain(item, path),
           }
         : report;
-      options.afterRun(next !== undefined);
+      // The outcome takes its place before the host closes the list, so the container and its live regions stay and
+      // their text changes, which is what a screen reader announces.
       if (next) showOutcome(next);
       else clearOutcome();
+      options.afterRun(next !== undefined);
     };
     let result: unknown;
     try {
@@ -132,10 +138,8 @@ export const createCommandNavigator = (options: {
       (error: unknown) => settle({ error }),
     );
   };
-  const runAgain = (item: CommandItem, path: readonly CommandItem[]) => {
-    clearOutcome();
-    run(item, path, true);
-  };
+  // The error stays until the retry's own state replaces it, so a host never sees the outcome go in between.
+  const runAgain = (item: CommandItem, path: readonly CommandItem[]) => run(item, path, true);
   const [steps, setSteps] = createSignal<readonly CommandItem[]>([]);
   const step = () => steps().at(-1);
   // A source that returns a promise: each request has a token, and only the latest one's result reaches the list. A new
@@ -322,8 +326,12 @@ export const createCommandNavigator = (options: {
       changeStep(steps().slice(0, -1));
       return true;
     },
-    /** Forgets steps, mark, and status. A running command goes on, but its result no longer reaches the list. */
+    /**
+     * Forgets steps, mark, and status. A running command goes on, but its result no longer reaches the list, so a
+     * retry's running line goes too; a reported outcome stays until it clears.
+     */
     reset: () => {
+      if (outcome()?.state === "running") clearOutcome();
       running = undefined;
       pending?.abort();
       pending = undefined;
@@ -543,10 +551,16 @@ function CommandOutcomeLine(props: {
           class="k2b-command-outcome"
           data-state={current().state}
           tabIndex={-1}
-          // Keys on the outcome itself are the person moving on, as typing in the text is.
           onKeyDown={(event) => {
-            if (event.target !== event.currentTarget || ["Escape", "Tab", "Shift"].includes(event.key)) return;
-            props.navigator.typedOn();
+            if (event.key === "Tab") {
+              // Tab moves between Retry and Close inside the line; only leaving it reaches the menu, which closes.
+              const buttons = Array.from(event.currentTarget.querySelectorAll("button"));
+              const next = buttons.indexOf(document.activeElement as HTMLButtonElement) + (event.shiftKey ? -1 : 1);
+              if (next >= 0 && next < buttons.length) event.stopPropagation();
+              return;
+            }
+            // Keys on the outcome itself are the person moving on, as typing in the text is.
+            if (event.target === event.currentTarget && !["Escape", "Shift"].includes(event.key)) props.navigator.typedOn();
           }}
         >
           <i

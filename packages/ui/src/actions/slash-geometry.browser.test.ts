@@ -54,6 +54,13 @@ render(
         { label: "Trödelplatz", image: "/logo/slow.svg", onSelect: () => {} },
         { label: "Antikmarkt", image: { light: "/logo/light.svg", dark: "/logo/dark.svg" }, onSelect: () => {} },
         { label: "Mara Brandt", leading: avatar, onSelect: () => {} },
+        // The first try fails; Retry waits until the test releases it.
+        ...(report ? [{ label: "Kunstbörse", onSelect: () => {
+          globalThis.tries = (globalThis.tries ?? 0) + 1;
+          return globalThis.tries === 1
+            ? Promise.reject(new Error("Kunstbörse ist nicht erreichbar"))
+            : new Promise((resolve) => { globalThis.releaseRetry = resolve; });
+        } }] : []),
       ],
       get children() {
         return createComponent(CommandMenu.Trigger, { label: "Hinzufügen", children: "+" });
@@ -251,8 +258,8 @@ describe("command outcomes", () => {
       await page.keyboard.press("Enter");
       const line = page.locator(".k2b-command-outcome[data-state='success']");
       await line.waitFor();
-      // settled: the docked container is measured, which the dock placed before the line faded in; the moment right
-      // after it showed is the subject, since typing on at once must not clear it.
+      // The container keeps its place and fades to green; it is measured once that settled.
+      await settled(page);
       const state = await boxes(page);
       expect(await line.textContent()).toContain("Valentin Brandt zugewiesen");
       expect(state.line.outcome).toBe("success");
@@ -275,6 +282,24 @@ describe("command outcomes", () => {
     }
   });
 
+  test("Retry in the + menu keeps the menu open and runs in the error's place until it finishes", async () => {
+    const { page, release } = await load(undefined, "bottom", "#report");
+    try {
+      const menu = page.locator(".k2b-command-menu");
+      await page.getByRole("option", { name: /Kunstbörse/ }).click();
+      await menu.locator(".k2b-command-outcome[data-state='error']").waitFor();
+      expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-command-outcome"))).toBe(true);
+      await page.getByRole("button", { name: "Retry" }).click();
+      await menu.locator(".k2b-command-outcome[data-state='running']").waitFor();
+      expect(await menu.evaluate((element) => element.matches(":popover-open"))).toBe(true);
+      await page.evaluate(() => (globalThis as unknown as { releaseRetry: () => void }).releaseRetry());
+      await page.waitForFunction(() => !document.querySelector(".k2b-command-menu:popover-open"));
+    } finally {
+      release();
+      await page.close();
+    }
+  });
+
   test("a failed command turns red with Retry and stays; Escape clears it; reduced motion has no animation", async () => {
     const { page, release } = await load(undefined, "bottom", "#report");
     try {
@@ -284,6 +309,7 @@ describe("command outcomes", () => {
       await page.keyboard.press("Enter");
       const line = page.locator(".k2b-command-outcome[data-state='error']");
       await line.waitFor();
+      await settled(page);
       expect(await page.getByRole("alert").textContent()).toBe("Kunstbörse ist nicht erreichbar");
       expect(await page.getByRole("button", { name: "Retry" }).isVisible()).toBe(true);
       expect((await boxes(page)).line.background).toBe("rgb(254, 242, 242)");

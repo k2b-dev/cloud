@@ -490,6 +490,186 @@ describe("command outcomes", () => {
   });
 });
 
+describe("command outcomes: edges", () => {
+  beforeEach(() => jest.useFakeTimers({ now: new Date("2026-11-07T20:00:00Z") }));
+  afterEach(() => jest.useRealTimers());
+  const anchor = { getBoundingClientRect: () => ({ left: 0, top: 0, right: 10, bottom: 10 }) as DOMRect };
+  /** Every open state the menu reported, so a test sees a close that leaves its element in the page. */
+  let changes: boolean[] = [];
+  const mountMenu = async (items: CommandItem[], target?: HTMLTextAreaElement) => {
+    const { CommandMenu } = await import("../src/actions/CommandMenu");
+    let open!: (anchor: { getBoundingClientRect: () => DOMRect }) => void;
+    changes = [];
+    dispose = render(
+      () =>
+        createComponent(CommandMenu, {
+          items,
+          label: "Hinzufügen",
+          search: "Suchen",
+          target,
+          onOpenChange: (open) => changes.push(open),
+          openAt: (fn) => {
+            open = fn;
+          },
+        }),
+      dom.root,
+    );
+    open(anchor);
+    dom.document.querySelector<HTMLInputElement>(".k2b-dropdown__search > input")!.focus();
+  };
+  const pick = (label: string) =>
+    Array.from(dom.document.querySelectorAll<HTMLElement>("[role='option']"))
+      .find((element) => element.textContent?.includes(label))!
+      .click();
+  const flush = async () => {
+    for (let index = 0; index < 4; index++) await Promise.resolve();
+  };
+
+  test("Retry in CommandMenu keeps the menu open and shows the retry running in the error's place", async () => {
+    const second = deferred();
+    let attempts = 0;
+    await mountMenu([
+      {
+        label: "Kunstbörse",
+        onSelect: () => {
+          attempts++;
+          return attempts === 1 ? Promise.reject(new Error("Nicht erreichbar")) : second.promise;
+        },
+      },
+    ]);
+    pick("Kunstbörse");
+    await flush();
+    expect(outcome()?.dataset.state).toBe("error");
+    button("Retry")!.click();
+    expect(attempts).toBe(2);
+    expect(outcome()?.dataset.state).toBe("running");
+    expect(changes).not.toContain(false);
+    second.resolve();
+    await flush();
+    expect(outcome()).toBeNull();
+  });
+
+  test("Tab moves between Retry and Close inside the menu's outcome without closing the menu", async () => {
+    await mountMenu([{ label: "Kunstbörse", onSelect: () => Promise.reject(new Error("Nicht erreichbar")) }]);
+    pick("Kunstbörse");
+    await flush();
+    const line = outcome()!;
+    expect(dom.document.activeElement).toBe(line);
+    const tab = (from: HTMLElement, shiftKey = false) => {
+      from.focus();
+      from.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true }));
+    };
+    tab(line);
+    expect(outcome()).not.toBeNull();
+    tab(button("Retry")!);
+    expect(outcome()).not.toBeNull();
+    tab(button("Close")!, true);
+    expect(outcome()).not.toBeNull();
+    expect(changes).not.toContain(false);
+  });
+
+  test("leaving the text while a retry runs leaves no spinner behind", async () => {
+    const second = deferred();
+    let attempts = 0;
+    const { textarea } = await mount([
+      {
+        label: "Kunstbörse",
+        onSelect: () => {
+          attempts++;
+          return attempts === 1 ? Promise.reject(new Error("Nicht erreichbar")) : second.promise;
+        },
+      },
+    ]);
+    await type(textarea, "/");
+    key(textarea, "Enter");
+    await flush();
+    button("Retry")!.click();
+    expect(outcome()?.dataset.state).toBe("running");
+    textarea.blur();
+    expect(outcome()).toBeNull();
+    second.resolve();
+    await flush();
+    expect(outcome()).toBeNull();
+  });
+
+  test("a command that finishes after its list went away reports nothing and starts no timer", async () => {
+    const run = deferred();
+    const { textarea } = await mount([
+      {
+        label: "Zuweisen",
+        onSelect: async ({ success }) => {
+          await run.promise;
+          success("Zugewiesen");
+        },
+      },
+    ]);
+    await type(textarea, "/");
+    key(textarea, "Enter");
+    dispose?.();
+    dispose = undefined;
+    run.resolve();
+    await flush();
+    expect(outcome()).toBeNull();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test("the live region that announces a confirmation is the list's own, so its text changes in place", async () => {
+    const { textarea } = await mount([{ label: "Zuweisen", onSelect: ({ success }) => success("Valentin Brandt zugewiesen") }]);
+    await type(textarea, "/");
+    const region = dom.document.querySelector("[data-commands] [role='status']");
+    expect(region).not.toBeNull();
+    key(textarea, "Enter");
+    expect(dom.document.querySelector("[data-commands] [role='status']")).toBe(region);
+    expect(region?.textContent).toBe("Valentin Brandt zugewiesen");
+  });
+
+  test("a / typed in the target gives the slash list the place at once, even within the menu outcome's least time", async () => {
+    const { SlashCommands } = await import("../src/inputs/markdown/SlashCommands");
+    const { MarkdownEditor } = await import("../src/inputs/markdown/MarkdownEditor");
+    const { CommandMenu } = await import("../src/actions/CommandMenu");
+    const [value, setValue] = createSignal("");
+    const [element, setElement] = createSignal<HTMLTextAreaElement>();
+    let open!: (anchor: { getBoundingClientRect: () => DOMRect }) => void;
+    const items: CommandItem[] = [
+      { label: "Datum", onSelect: ({ success }) => success("Datum eingefügt") },
+      { label: "Telefonat", onSelect: () => {} },
+    ];
+    dispose = render(
+      () => [
+        createComponent(MarkdownEditor, { label: "Nachricht", value, onValueChange: setValue, textareaRef: setElement }),
+        createComponent(SlashCommands, {
+          get textarea() {
+            return element();
+          },
+          items,
+        }),
+        createComponent(CommandMenu, {
+          items,
+          label: "Hinzufügen",
+          search: "Suchen",
+          get target() {
+            return element();
+          },
+          openAt: (fn) => {
+            open = fn;
+          },
+        }),
+      ],
+      dom.root,
+    );
+    const textarea = dom.root.querySelector("textarea")!;
+    open(anchor);
+    dom.document.querySelector<HTMLInputElement>(".k2b-command-menu .k2b-dropdown__search > input")!.focus();
+    pick("Datum");
+    expect(dom.document.querySelector(".k2b-command-menu .k2b-command-outcome")).not.toBeNull();
+    expect(dom.document.activeElement).toBe(textarea);
+    await type(textarea, "/");
+    await flush();
+    expect(dom.document.querySelector(".k2b-command-menu .k2b-command-outcome")).toBeNull();
+    expect(dom.document.querySelector("[data-commands] [role='listbox']")).not.toBeNull();
+  });
+});
+
 describe("dynamic entries", () => {
   const labels = () =>
     Array.from(

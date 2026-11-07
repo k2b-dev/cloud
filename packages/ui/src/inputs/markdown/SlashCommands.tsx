@@ -348,8 +348,9 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
                     if (commandListKey(nav, event, search())) event.preventDefault();
                   }}
                   onBlur={(event) => {
-                    // Leaving the list, other than to the text by this part itself, closes it.
-                    if (moving || (event.relatedTarget instanceof Node && popover?.contains(event.relatedTarget))) return;
+                    // Leaving the list, other than to the text by this part itself, closes it. An outcome that took the
+                    // list's place removed this field; the finished command puts the focus back in the text.
+                    if (moving || nav.outcome() || (event.relatedTarget instanceof Node && popover?.contains(event.relatedTarget))) return;
                     close();
                   }}
                 />

@@ -83,7 +83,9 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
       // the focus elsewhere itself, leaves it there. An outcome keeps the menu open in the list's place: the person
       // writes on in the target, or, without one, the focus rests on the outcome until it clears.
       afterRun: (outcome) => {
-        const inside = Boolean(menu?.contains(document.activeElement));
+        // An outcome replaces the search field before this runs, which leaves the focus on the page's body.
+        const focused = document.activeElement;
+        const inside = !focused || focused === document.body || Boolean(menu?.contains(focused));
         if (!outcome) return shell.close(inside);
         focusInMenu = inside && !props.target;
         if (inside && props.target) props.target.focus({ preventScroll: true });
@@ -112,11 +114,18 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
         { defer: true },
       ),
     );
-    // Typing on in the target clears an outcome once it showed long enough; keys on the outcome itself do too.
+    // Typing on in the target clears an outcome once it showed long enough; keys on the outcome itself do too. When
+    // the typing opened another list for the target, such as its slash commands, the outcome gives way at once.
     createEffect(() => {
       const target = props.target;
       if (!target || !nav.outcome()) return;
-      const typed = () => nav.typedOn();
+      const typed = () => {
+        nav.typedOn();
+        queueMicrotask(() => {
+          const controls = target.getAttribute("aria-controls");
+          if (controls && controls !== listId) nav.clearOutcome();
+        });
+      };
       target.addEventListener("input", typed);
       onCleanup(() => target.removeEventListener("input", typed));
     });
