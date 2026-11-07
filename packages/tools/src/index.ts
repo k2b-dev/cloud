@@ -1,6 +1,7 @@
 import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { createToolsApiRouter } from "./api";
+import adminSettingsRoutes from "./api/admin-settings";
 import documentMarkdownRoutes from "./api/document-markdown";
 import markdownPdfRoutes from "./api/markdown-pdf";
 import speedtestRoutes from "./api/speedtest";
@@ -17,6 +18,7 @@ export type { ApiType } from "./api";
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
+  .route("/tools/api/admin/settings", adminSettingsRoutes)
   .route("/tools/api/speedtest", speedtestRoutes)
   .route("/tools/api/documents", documentMarkdownRoutes)
   .route("/tools/api/markdown", markdownPdfRoutes)

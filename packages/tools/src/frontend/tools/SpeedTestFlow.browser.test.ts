@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import { buildHarness, uiRoot } from "./image-intake/browser-harness";
 
 const harness = await buildHarness(new URL("./SpeedTestFlow.browser-harness.tsx", import.meta.url));
@@ -43,8 +43,9 @@ const open = async (scenario: string, width = 390, lang = "de") => {
   await page.locator(".tools-speedtest").waitFor();
   return page;
 };
-const geometry = (page: Awaited<ReturnType<typeof open>>) =>
-  page.evaluate(() =>
+const geometry = async (page: Awaited<ReturnType<typeof open>>) => {
+  await settled(page);
+  return page.evaluate(() =>
     [".tools-speedtest-gauge", ".tools-speedtest-status", ".tools-speedtest-chart", ".tools-speedtest-terminal", ".k2b-stat-grid"].map(
       (selector) => {
         const rect = document.querySelector(selector)!.getBoundingClientRect();
@@ -52,6 +53,7 @@ const geometry = (page: Awaited<ReturnType<typeof open>>) =>
       },
     ),
   );
+};
 
 test("real shared-engine run preserves slots, shows remaining time, copies JSON and cancels cleanly", async () => {
   for (const width of [1440, 390]) {
@@ -60,6 +62,7 @@ test("real shared-engine run preserves slots, shows remaining time, copies JSON 
       const initial = await geometry(page);
       await page.getByRole("button", { name: "Test starten", exact: true }).click();
       await page.clock.runFor(1_000);
+      await settled(page);
       expect(await page.locator('[role="status"]').textContent()).toMatch(/noch ca\. \d+ s/);
       expect(await page.locator(".tools-speedtest-terminal").textContent()).toMatch(/noch ca\. \d+ s/);
       expect(await geometry(page)).toEqual(initial);
@@ -73,6 +76,7 @@ test("real shared-engine run preserves slots, shows remaining time, copies JSON 
         }),
       ).toBe(true);
       await page.clock.runFor(14_000);
+      await settled(page);
       expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("done");
       expect(await geometry(page)).toEqual(initial);
       const gaugeFonts = await page.locator(".tools-speedtest-gauge").evaluate((element) =>
@@ -138,8 +142,7 @@ test("offline, disabled, network retry and 429 keep feedback visible and control
 
 test("delayed browser callbacks keep every plotted sample inside the fixed time axis", async () => {
   const page = await open("delayed");
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   try {
     await page.clock.runFor(15_000);
     expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("error");

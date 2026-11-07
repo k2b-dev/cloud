@@ -228,6 +228,18 @@ loopback. Credentials, query strings and fragments are rejected. Set
 installation's settings. The separate server has its own lifecycle; disabling
 Tools does not stop that service or independently targeted CLI commands.
 
+Administrators can also change these settings through the owning Tools API:
+
+```sh
+cld --profile example admin settings set tools.speedtest_server --app tools --value '"https://speedtest.example.com"' --yes
+cld --profile example admin settings set tools.speedtest_enabled --app tools --value false --yes
+```
+
+The CLI sends `PUT /tools/api/admin/settings/:key`. This endpoint requires a
+current Cloud administrator and write scope, validates the registered setting,
+and records the administrator in the audit trail. An unreadable saved value
+requires an explicit `--replace-unreadable` whole-value replacement.
+
 The public `GET /tools/api/speedtest/config` returns only `{server, enabled}`
 with no-store caching. SSR uses the same settings before rendering the island.
 Cloud CLI reads this endpoint from its Cloud profile (at most two seconds for
