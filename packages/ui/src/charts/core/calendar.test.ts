@@ -4,6 +4,7 @@ import { heatmap } from "./svg";
 
 const spec = {
   layout: "calendar" as const,
+  locale: "en-GB",
   scale: "diverging" as const,
   data: [
     ["2026-11-02", 100],
@@ -45,4 +46,41 @@ test("calendar core headers reserve space without changing observation geometry"
   const svg = renderCalendarSvg({ ...spec, title: "Opens", subtitle: "Fictional" });
   expect(svg).toContain("stdlib-chart-title");
   expect(svg).toContain("Fictional");
+});
+
+test("calendar gaps, square cells, locale weeks, months and complete scale legend", () => {
+  const s = calendarLayout({
+    ...spec,
+    data: [
+      ["2026-01-01", null],
+      ["2026-02-01", -5],
+      ["2026-03-01", 0],
+    ],
+    scale: "sequential",
+  });
+  expect(s.cells).toHaveLength(2);
+  expect(s.cellWidth).toBe(s.cell);
+  expect(s.cells[1]!.intensity).toBeGreaterThan(s.cells[0]!.intensity);
+  expect(calendarLayout({ ...spec, locale: "en-US" }).weekStart).toBe(0);
+  expect(calendarLayout({ ...spec, locale: "de-DE" }).weekStart).toBe(1);
+  const svg = renderCalendarSvg({
+    ...spec,
+    data: [
+      ["2026-01-01", 1],
+      ["2026-05-01", 2],
+    ],
+  });
+  for (const month of ["Jan 2026", "Feb", "Mar", "Apr", "May"]) expect(svg).toContain(month);
+  expect(svg).toContain("more out");
+  expect(svg).toContain("more in");
+  expect(renderCalendarSvg({ ...spec, scale: "sequential" })).toContain("less");
+  expect(() =>
+    calendarLayout({
+      ...spec,
+      data: [
+        ["2020-01-01", 1],
+        ["2026-01-01", 2],
+      ],
+    }),
+  ).toThrow("three years");
 });

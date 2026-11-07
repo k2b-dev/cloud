@@ -1035,17 +1035,17 @@ Use `format` for units and `limit` to change how many countries the list names.
 
 ## Calendar heatmaps
 
-`Chart.Heatmap` accepts `layout="calendar"`, `data: ["YYYY-MM-DD", number][]`
+`Chart.Calendar` (or `Chart.Heatmap` with `layout="calendar"`) accepts `data: ["YYYY-MM-DD", number | null][]`
 and `scale="sequential" | "diverging"`. Existing categorical heatmaps keep
 their `{x,y,value}` data unchanged. Dates must be valid and unique; missing
-days remain gaps. Weeks are columns and Monday is the first row.
+days and null values remain gaps. The date span is limited to three years. Weeks are columns; the locale sets the first weekday, with Monday as the fallback.
 
 The color scale includes every observation. Diverging values use turquoise
 for positive and violet for negative values, with zero neutral. Phone charts
 scroll to the newest weeks. Left/right inspect a week; up/down inspect a day.
 Home/End jump, Enter pins and Escape dismisses. The exact date and value are
 also available in the table. Optional `locale` takes precedence over the UI
-provider, and `format` formats values. Measured hosts pass `displayWidth`.
+provider, and `format` formats values. `label` names their unit. Diverging values read “more in” or “more out” without a sign. Cells stay square; print output scales uniformly to the page. Measured hosts pass `displayWidth`.
 
 Keep loading, empty, error/retry and stale feedback in the host's fixed-height
 frame. The newsletter example shows daily opens across a complete year.

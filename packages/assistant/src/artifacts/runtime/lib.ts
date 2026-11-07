@@ -17,7 +17,6 @@ import {
   barChartLayout,
   barGauge,
   boxplot,
-  calendarLayout,
   donut,
   escapeXml,
   gauge,
@@ -218,12 +217,10 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
   const prepared = { input, ...stored, height, title: typeof options.title === "string" ? options.title : undefined };
   const { svg, table } = drawChart(prepared, locale, width, height);
   // Bar rows take the height their labels need; the box reserves it.
-  const calendar =
-    input.kind === "heatmap" && input.layout === "calendar"
-      ? calendarLayout({ ...input, format: undefined, displayWidth: width })
-      : undefined;
+  const calendar = input.kind === "heatmap" && input.layout === "calendar";
+  const calendarWidth = calendar ? Number(/data-chart-min-width="([\d.]+)"/.exec(svg)?.[1]) || width : width;
   const drawnHeight = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg)?.[1]) || height;
-  const stretch = !KEEP_ASPECT.has(input.kind);
+  const stretch = !calendar && !KEEP_ASPECT.has(input.kind);
   const title = typeof options.title === "string" ? options.title : "";
   const subtitle = typeof options.subtitle === "string" ? options.subtitle : "";
   const caption = [title, subtitle].filter(Boolean).join(" — ") || `${input.kind} chart`;
@@ -239,13 +236,13 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
         .join("")}</tbody></table>`
     : "";
   let id = "";
-  if (stretch && !logicalWidth) {
+  if ((stretch || calendar) && !logicalWidth) {
     id = `c${++chartSeq}`;
     chartOptions.set(id, prepared);
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto;direction:rtl"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="${calendar ? `min-width:${calendar.minWidth}px;direction:ltr;` : ""}--k2b-chart-width:${calendar?.width ?? width}px;--k2b-chart-height:${drawnHeight}px">${svg}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="${calendar ? `min-width:${calendarWidth}px;width:${calendarWidth}px;` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg}</div></div>${values}`,
   );
 }
 

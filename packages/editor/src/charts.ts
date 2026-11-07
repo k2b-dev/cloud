@@ -7,6 +7,7 @@ import {
   barGauge,
   boxplot,
   type ChartDatum,
+  calendarWords,
   type charts,
   computeDomain,
   donut,
@@ -246,7 +247,9 @@ const formattedValues = (input: ChartInput): number[] => {
     case "donut":
       return input.data.map((item) => item.value);
     case "heatmap":
-      return input.layout === "calendar" ? input.data.map((item) => item[1]) : input.data.map((item) => item.value);
+      return input.layout === "calendar"
+        ? input.data.flatMap((item) => (item[1] === null ? [] : [item[1]]))
+        : input.data.map((item) => item.value);
     case "barGauge":
       return [...input.data.flatMap((item) => [item.value, item.min, item.max]), input.min, input.max].filter(
         (value) => value !== undefined,
@@ -471,6 +474,7 @@ export function chartRenderOptions(
           layout: "calendar",
           data: input.data,
           scale: input.scale,
+          label: input.label,
           locale: input.locale ?? locale,
           format: format.value,
           displayWidth: options.width,
@@ -622,7 +626,8 @@ export function chartRows(
         input.kind === "bar" || input.kind === "pie" || input.kind === "donut" || input.kind === "boxplot" || input.kind === "barGauge"
           ? input.data[datum.role === "outlier" ? (datum.seriesIndex ?? 0) : datum.index]?.label
           : datum.label;
-      if (label) cell("label", t.category, label, label);
+      if (label)
+        cell("label", input.kind === "heatmap" && input.layout === "calendar" ? calendarWords(locale).day : t.category, label, label);
     }
     for (const field of datum.values) {
       const value = field.value;
@@ -648,9 +653,17 @@ export function chartRows(
       } else if (field.key === "value")
         cell(
           "value",
-          input.tooltip?.label ?? (input.kind === "bar" ? input.yAxis?.label : undefined) ?? t.value,
+          input.tooltip?.label ??
+            (input.kind === "bar"
+              ? input.yAxis?.label
+              : input.kind === "heatmap" && input.layout === "calendar"
+                ? input.label
+                : undefined) ??
+            t.value,
           value,
-          `${valueFormat(value)}${unit}`,
+          input.kind === "heatmap" && input.layout === "calendar"
+            ? (field.formatted ?? valueFormat(value))
+            : `${valueFormat(value)}${unit}`,
         );
       else if (field.key === "delta") cell("delta", t.delta, value, `${value > 0 ? "+" : ""}${valueFormat(value)}`);
       else if (field.key === "q1" || field.key === "q2" || field.key === "q3" || field.key === "whiskerLow" || field.key === "whiskerHigh")

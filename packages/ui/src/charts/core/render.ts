@@ -53,8 +53,7 @@ export const renderChartSvg = (
   mapViewport?: MapViewport,
   timelineViewport?: StateTimelineDomain,
 ): string => {
-  if (props.kind === "heatmap" && props.layout === "calendar")
-    return responsiveChartSvg(chartRenderers.heatmap({ ...props, width, height, inspect: true }));
+  if (props.kind === "heatmap" && props.layout === "calendar") return chartRenderers.heatmap({ ...props, width, height, inspect: true });
   const {
     kind,
     zoomFocus: _zoomFocus,

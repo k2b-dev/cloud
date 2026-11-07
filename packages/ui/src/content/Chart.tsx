@@ -166,7 +166,8 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   let lineAnchorRef: HTMLSpanElement | undefined;
   // One deterministic coordinate space on the server and client. CSS fits the
   // SVG to its box; hydration must never replace it with measured geometry.
-  const calendar = () => (props.kind === "heatmap" && props.layout === "calendar" ? calendarLayout(props) : undefined);
+  const calendar = () =>
+    props.kind === "heatmap" && props.layout === "calendar" ? calendarLayout({ ...props, locale: props.locale ?? locale() }) : undefined;
   const size = () => ({
     width: calendar()?.width ?? 480,
     height: chartRenderHeight(props),
@@ -451,9 +452,11 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
             : undefined),
         rows: selection.datum.values.map((field) => ({
           label:
-            selection.kind === "line" && field.key === "y"
-              ? (selection.datum.label ?? labels().series ?? chartMessages().series)
-              : fields({ key: field.key }),
+            props.kind === "heatmap" && props.layout === "calendar" && field.key === "value" && props.label
+              ? props.label
+              : selection.kind === "line" && field.key === "y"
+                ? (selection.datum.label ?? labels().series ?? chartMessages().series)
+                : fields({ key: field.key }),
           value:
             field.formatted ??
             (field.key === "upperInclusive"
@@ -575,7 +578,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
         </Show>
         <div
           class="k2b-chart__svg"
-          data-stretch={!preservesAspectRatio(props.kind) ? "true" : undefined}
+          data-stretch={!calendar() && !preservesAspectRatio(props.kind) ? "true" : undefined}
           style={{
             "min-width": calendar() ? `${calendar()!.minWidth}px` : undefined,
             "--k2b-chart-width": `${size().width}px`,
@@ -629,5 +632,8 @@ const chartComponent =
 const components = Object.fromEntries(
   Object.entries(chartKinds).map(([name, kind]) => [name, chartComponent(kind)]),
 ) as unknown as ChartComponents;
-const Chart = Object.assign(ChartRoot, components);
+const Chart = Object.assign(ChartRoot, components, {
+  Calendar: (props: Omit<Extract<ChartProps, { kind: "heatmap"; layout: "calendar" }>, "kind" | "layout">) =>
+    ChartRoot(mergeProps(props, { kind: "heatmap" as const, layout: "calendar" as const })),
+});
 export default Chart;

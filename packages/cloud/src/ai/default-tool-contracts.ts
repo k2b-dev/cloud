@@ -122,6 +122,7 @@ const flatChartSchema = () => {
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
+    layout: z.literal("calendar").optional(),
     scale: z.enum(["sequential", "diverging"]).optional().describe("Calendar heatmap color scale; domain includes all days."),
     locale: chartLocaleSchema().optional(),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
@@ -143,7 +144,7 @@ const flatChartSchema = () => {
           .max(CLOUD_AI_VIEW_MAX_MARKS),
         z.array(z.number()).min(1).max(CLOUD_AI_CHART_MAX_VALUES),
         z
-          .array(z.array(z.union([z.string(), z.number()])).length(2))
+          .array(z.array(z.union([z.string(), z.number(), z.null()])).length(2))
           .min(1)
           .max(CLOUD_AI_VIEW_MAX_MARKS),
       ])
@@ -206,6 +207,17 @@ const chartInputSchema = () => {
         return;
       }
       if (value.charts !== undefined) {
+        value.charts.forEach((chart, index) => {
+          if (
+            (chart.layout === "calendar" && chart.kind !== "heatmap") ||
+            (chart.locale !== undefined && !(chart.kind === "heatmap" && chart.layout === "calendar"))
+          )
+            context.addIssue({
+              code: "custom",
+              message: "calendar layout and locale belong to calendar heatmaps.",
+              path: ["charts", index],
+            });
+        });
         const parsed = groupSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });
@@ -218,6 +230,10 @@ const chartInputSchema = () => {
       } else {
         if (value.linkX !== undefined || (value.layout !== undefined && value.layout !== "calendar"))
           context.addIssue({ code: "custom", message: "linkX and layout belong to groups." });
+        if (value.locale !== undefined && !(value.kind === "heatmap" && value.layout === "calendar"))
+          context.addIssue({ code: "custom", message: "locale is supported by calendar heatmaps." });
+        if (value.layout === "calendar" && value.kind !== "heatmap")
+          context.addIssue({ code: "custom", message: "calendar layout belongs to heatmaps." });
         const parsed = ChartSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });

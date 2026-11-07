@@ -1,4 +1,4 @@
-import { calendarDay } from "@k2b/ui/charts/core";
+import { CALENDAR_MAX_DAYS, calendarDay } from "@k2b/ui/charts/core";
 import { z } from "zod";
 
 /** Optional caller policy. Rendering itself has no AI input budget. */
@@ -257,16 +257,21 @@ export const chartKinds = (limits?: ChartLimits) => {
                   return false;
                 }
               }, "Invalid ISO calendar day."),
-              z.number(),
+              ChartNumber.nullable(),
             ]),
             1,
             limits?.maxMarks,
           ),
           scale: z.enum(["sequential", "diverging"]),
+          label: ChartLabel.optional(),
           format: numberFormat.optional(),
           locale: chartLocaleSchema().optional(),
         })
         .superRefine((spec, ctx) => {
+          if (ctx.issues.length) return;
+          const times = spec.data.map(([day]) => calendarDay(day));
+          if (times.length && (Math.max(...times) - Math.min(...times)) / 86400000 >= CALENDAR_MAX_DAYS)
+            ctx.addIssue({ code: "custom", message: "Calendar span must not exceed three years." });
           if (new Set(spec.data.map(([day]) => day)).size !== spec.data.length)
             ctx.addIssue({ code: "custom", message: "Calendar dates must be unique." });
         }),

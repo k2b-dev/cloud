@@ -9,6 +9,7 @@ import { renderCalendarSvg } from "./core/calendar";
 const root = resolve(import.meta.dir, "../..");
 const spec = {
   kind: "heatmap" as const,
+  locale: "en-GB",
   layout: "calendar" as const,
   scale: "sequential" as const,
   data: Array.from({ length: 420 }, (_, i): [string, number] => [
@@ -35,8 +36,15 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
             contents: `
  import {createComponent,createSignal} from 'solid-js';import {render} from 'solid-js/web';
  import Chart from ${JSON.stringify(resolve(root, "dist/browser/content/Chart.js"))};
- const spec=${JSON.stringify(spec)};const [selected,setSelected]=createSignal(null); render(()=>createComponent(Chart,{...spec,get selected(){return selected()},onSelect:s=>setSelected(s.datum)}),document.querySelector('#mount'));
- document.querySelectorAll('[data-state]').forEach(button=>button.onclick=()=>{const state=button.dataset.state;document.querySelector('#mount').style.visibility=state!=='data'&&state!=='stale'?'hidden':'visible';document.querySelector('#status').textContent=state==='loading'?'Loading':state==='empty'?'No observations in this period.':state==='error'?'Could not load observations.':'';document.querySelector('#retry').hidden=state!=='error';document.querySelector('#subtitle').textContent=state==='stale'?'Previous data':'November 2026';});
+ import {ChartExplorer} from ${JSON.stringify(resolve(root, "dist/browser/content/ChartExplorer.js"))};
+ import {prepareChartSnapshot} from ${JSON.stringify(resolve(root, "dist/browser/charts/core/snapshot.js"))};
+ const spec=${JSON.stringify(spec)}; render(()=>createComponent(Chart,{...spec,title:'Daily opens',style:{height:'224px'}}),document.querySelector('#titled'));const [selected,setSelected]=createSignal(null); render(()=>createComponent(Chart,{...spec,get selected(){return selected()},onSelect:s=>setSelected(s.datum)}),document.querySelector('#mount'));
+ const [state,setState]=createSignal('data');
+ const snapshot=prepareChartSnapshot(spec,{key:s=>String(s.datum.index),tooltip:s=>({title:s.datum.label,rows:s.datum.values.map(v=>({label:'Value',value:v.formatted}))})});
+ const populated={chart:snapshot,rows:snapshot.marks.map(m=>({key:m.key}))};
+ const empty={chart:{...snapshot,svg:'',marks:[]},rows:[]};
+ render(()=>createComponent(ChartExplorer,{title:'Calendar states',height:'280px',renderDetails:false,get data(){return ['data','stale'].includes(state())?populated:empty},columns:[{id:'day',label:'Day',value:r=>r.key}],get empty(){return state()==='loading'?'Loading':state()==='error'?'Could not load observations.':'No observations in this period.'}}),document.querySelector('#explorer'));
+ document.querySelectorAll('[data-state]').forEach(button=>button.onclick=()=>{setState(button.dataset.state);document.querySelector('#retry').hidden=state()!=='error';document.querySelector('#subtitle').textContent=state()==='stale'?'Previous data':'November 2026';});
  document.querySelector('#retry').onclick=()=>document.querySelector('[data-state=data]').click();
  `,
           }));
@@ -54,7 +62,7 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
       try {
         const errors = pageErrors(page);
         await page.setContent(
-          `<html><head><style>${css}body{padding:20px;margin:0}article{max-width:900px;border:1px solid #e4e4e7;border-radius:12px;padding:16px}h2{margin:0}#subtitle{height:20px}#frame{height:280px;position:relative}#mount{height:100%}#status{pointer-events:none;position:absolute;inset:60px 0;text-align:center}</style></head><body><section class="k2b-ui"><article><h2>Opens per day</h2><div id="subtitle">November 2026</div><div id="frame"><div id="mount">${server}</div><p id="status"></p><button id="retry" hidden>Retry</button></div></article><button data-state="data">Data</button><button data-state="loading">Loading</button><button data-state="empty">Empty</button><button data-state="error">Error</button><button data-state="stale">Stale</button></section><div id="standalone">${renderCalendarSvg({ ...spec, inspect: true })}</div></body></html>`,
+          `<html><head><style>${css}body{padding:20px;margin:0}article{max-width:900px;border:1px solid #e4e4e7;border-radius:12px;padding:16px}h2{margin:0}#subtitle{height:20px}#frame{height:280px;position:relative}#mount{height:100%}#status{pointer-events:none;position:absolute;inset:60px 0;text-align:center}</style></head><body><section class="k2b-ui"><article><h2>Opens per day</h2><div id="subtitle">November 2026</div><div id="frame"><div id="mount">${server}</div><p id="status"></p><button id="retry" hidden>Retry</button></div></article><div id="explorer"></div><div id="titled"></div><button data-state="data">Data</button><button data-state="loading">Loading</button><button data-state="empty">Empty</button><button data-state="error">Error</button><button data-state="stale">Stale</button></section><div id="standalone">${renderCalendarSvg({ ...spec, inspect: true })}</div></body></html>`,
         );
         await settled(page);
         const before = await page.locator("#mount .k2b-chart__svg > svg").evaluate((e) => e.outerHTML);
@@ -62,9 +70,18 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         await page.addScriptTag({ content: bundle });
         await settled(page);
         expect(await page.locator("#mount .k2b-chart__svg > svg").evaluate((e) => e.outerHTML)).toBe(before);
-        const frame = page.locator("#frame");
-        const box = await frame.boundingBox();
-        const realBox = await page.locator("#mount .k2b-chart").boundingBox();
+        const titled = page.locator("#titled .k2b-chart");
+        const headerBox = await titled.locator(".stdlib-chart-title").boundingBox();
+        const titledBox = await titled.boundingBox();
+        expect(headerBox!.x).toBeGreaterThanOrEqual(titledBox!.x);
+        expect(headerBox!.x + headerBox!.width).toBeLessThanOrEqual(titledBox!.x + titledBox!.width);
+        const frame = page.locator("#explorer .k2b-chart-explorer__viewport");
+        const documentBox = (e: Element) => {
+          const b = e.getBoundingClientRect();
+          return { x: b.x + window.scrollX, y: b.y + window.scrollY, width: b.width, height: b.height };
+        };
+        const box = await frame.evaluate(documentBox);
+        const realBox = await page.locator("#mount .k2b-chart").evaluate(documentBox);
         const lightText = await page
           .locator("#mount text")
           .first()
@@ -76,14 +93,14 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         expect(last!.x + last!.width).toBeLessThanOrEqual(visible!.x + visible!.width + 1);
         await chart.focus();
         await settled(page);
-        expect(await chart.locator("[data-inspected]").getAttribute("data-chart-datum")).toContain("Sunday, March 1, 2026");
+        expect(await chart.locator("[data-inspected]").getAttribute("data-chart-datum")).toContain("Sunday, 1 March 2026");
         await page.keyboard.press("Home");
         await page.keyboard.press("ArrowRight");
         await settled(page);
-        expect(await chart.locator("[data-inspected]").getAttribute("data-chart-datum")).toContain("Monday, January 13, 2025");
+        expect(await chart.locator("[data-inspected]").getAttribute("data-chart-datum")).toContain("Monday, 13 January 2025");
         await page.keyboard.press("ArrowDown");
         await settled(page);
-        expect(await chart.locator("[data-inspected]").getAttribute("data-chart-datum")).toContain("Tuesday, January 14, 2025");
+        expect(await chart.locator("[data-inspected]").getAttribute("data-chart-datum")).toContain("Tuesday, 14 January 2025");
         const anchorError = await chart.evaluate((e) => {
           const m = e.querySelector<SVGGraphicsElement>("[data-inspected]"),
             anchor = e.querySelector(".k2b-chart__anchor"),
@@ -101,9 +118,13 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         await page.keyboard.press("Enter");
         await settled(page);
         expect(await chart.locator("[data-selected]").count()).toBe(1);
-        expect(await chart.locator("[data-selected] rect").evaluate((e) => getComputedStyle(e).strokeWidth)).toBe("1.5px");
+        expect(await chart.locator("[data-selected] rect").evaluate((e) => getComputedStyle(e).strokeWidth)).toBe("2.5px");
         await page.keyboard.press("Escape");
-        const mark = chart.locator("[data-chart-datum]").last().locator("rect");
+        await chart.evaluate((e) => (e.scrollLeft = 0));
+        await settled(page);
+        await chart.evaluate((e) => e.blur());
+        const mark = chart.locator("[data-chart-datum]").first().locator("rect");
+        const beforeTap = await chart.evaluate((e) => e.scrollLeft);
         await mark.hover();
         await settled(page);
         expect(await chart.locator("[data-inspected]").count()).toBe(1);
@@ -111,6 +132,10 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         await page.keyboard.press("Escape");
         await mark.tap();
         await settled(page);
+        expect(await chart.evaluate((e) => e.scrollLeft)).toBe(beforeTap);
+        expect(await chart.locator("[data-selected]").getAttribute("data-chart-datum")).toContain('"index":0');
+        const square = await mark.boundingBox();
+        expect(Math.abs(square!.width - square!.height)).toBeLessThan(0.2);
         expect(await chart.locator("[data-inspected]").count()).toBe(1);
         const scroll = await chart.evaluate((e) => ({ visible: e.clientWidth, full: e.scrollWidth }));
         if (width === 390) expect(scroll.full).toBeGreaterThan(scroll.visible);
@@ -123,8 +148,8 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         for (const state of ["loading", "empty", "error", "stale", "data"]) {
           await page.locator(`[data-state=${state}]`).click();
           await settled(page);
-          expect(await frame.boundingBox()).toEqual(box);
-          expect(await chart.boundingBox()).toEqual(realBox);
+          expect(await frame.evaluate(documentBox)).toEqual(box);
+          expect(await chart.evaluate(documentBox)).toEqual(realBox);
           if (state === "error") {
             await page.locator("#retry").click();
             await settled(page);
@@ -140,6 +165,8 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
             .evaluate((e) => getComputedStyle(e).fill),
         ).not.toBe(lightText);
         await page.locator("section.k2b-ui").evaluate((e) => e.setAttribute("data-theme", "light"));
+        await settled(page);
+        await chart.evaluate((e) => (e.scrollLeft = e.scrollWidth));
         await settled(page);
         if (process.env.CHART_SCREENSHOTS) {
           mkdirSync(process.env.CHART_SCREENSHOTS, { recursive: true });

@@ -185,7 +185,6 @@ export function createChartInspector(options: {
     if (active === entry && tooltip.matches(":popover-open")) return;
     clearHighlight();
     active = entry;
-    if (container.querySelector("svg[data-calendar]")) entry.element.scrollIntoView({ block: "nearest", inline: "nearest" });
     highlighted = options.kind() === "line" ? records().filter((candidate) => rawX(candidate) === rawX(entry)) : [entry];
     for (const item of highlighted) {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
@@ -379,11 +378,14 @@ export function createChartInspector(options: {
       } else close();
     });
   };
+  let pointerFocusing = false;
   const down = (event: PointerEvent) => {
+    pointerFocusing = true;
     pointerStart = { x: event.clientX, y: event.clientY };
     moved = false;
   };
   const click = (event: MouseEvent) => {
+    pointerFocusing = false;
     if (!options.enabled() || moved || (event.target instanceof Element && event.target.closest("button,a"))) return;
     const entry = nearest(event.clientX, event.clientY, event.target instanceof Element ? event.target : null);
     if (!entry) {
@@ -396,6 +398,10 @@ export function createChartInspector(options: {
   };
   const focus = (event: FocusEvent) => {
     if (event.target !== options.container() || !options.enabled()) return;
+    if (pointerFocusing && options.container()?.querySelector("svg[data-calendar]")) {
+      pointerFocusing = false;
+      return;
+    }
     const nodes = visibleRecords();
     const first = options.container()?.querySelector("svg[data-calendar]")
       ? nodes.at(-1)
@@ -467,7 +473,9 @@ export function createChartInspector(options: {
         )[0];
       if (next) index = nodes.indexOf(next);
     } else index += event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
-    show(nodes[Math.max(0, Math.min(nodes.length - 1, index))]!);
+    const next = nodes[Math.max(0, Math.min(nodes.length - 1, index))]!;
+    if (options.container()?.querySelector("svg[data-calendar]")) next.element.scrollIntoView({ block: "nearest", inline: "nearest" });
+    show(next);
     return true;
   };
   return {
@@ -512,6 +520,31 @@ export function closeChartInspectionOnOutside(options: {
   };
 }
 
+/** A calendar starts at the newest week. Pointer inspection never resets its scroll position. */
+export function mountCalendarScroll(container: HTMLElement): () => void {
+  const drawing = container.querySelector(".k2b-chart__svg");
+  if (!drawing) return () => {};
+  const header = () => {
+    const svg = drawing.querySelector<SVGSVGElement>("svg[data-calendar]");
+    const group = svg?.querySelector("[data-calendar-header]");
+    const scale = 1 / (svg?.getScreenCTM()?.a || 1);
+    if (group) container.style.setProperty("--k2b-calendar-header-x", `${container.scrollLeft * scale}px`);
+  };
+  const reset = () => {
+    if (!drawing.querySelector("svg[data-calendar]")) return;
+    container.scrollLeft = container.scrollWidth;
+    header();
+  };
+  reset();
+  const observer = new MutationObserver(reset);
+  observer.observe(drawing, { childList: true });
+  container.addEventListener("scroll", header, { passive: true });
+  return () => {
+    observer.disconnect();
+    container.removeEventListener("scroll", header);
+  };
+}
+
 export type InspectChartOptions = {
   kind: ChartKind;
   format: ChartTooltipFormatter;
@@ -537,6 +570,7 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
     tooltip.id = `k2b-chart-tooltip-${++tooltipId}`;
   } while (document.getElementById(tooltip.id));
   container.append(anchor, tooltip);
+  const removeCalendarScroll = mountCalendarScroll(container);
   const addedTabindex = !container.hasAttribute("tabindex");
   if (addedTabindex) container.setAttribute("tabindex", "0");
 
@@ -578,6 +612,7 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
       container.removeEventListener("focusout", inspector.close);
       container.removeEventListener("keydown", inspector.key);
       removeOutside();
+      removeCalendarScroll();
       unlinkCursor();
       inspector.destroy();
       for (const element of container.querySelectorAll<SVGGraphicsElement>("[data-chart-datum]")) {

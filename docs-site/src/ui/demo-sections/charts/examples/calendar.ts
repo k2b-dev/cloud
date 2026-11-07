@@ -25,7 +25,11 @@ export const calendarExamples = [
     ],
     options: [
       { name: "layout", type: '"calendar"', description: "Additive to the existing heatmap kind." },
-      { name: "data", type: "[ISO day,number][]", description: "Unique valid YYYY-MM-DD days; missing days are gaps." },
+      {
+        name: "data",
+        type: "[ISO day,number | null][]",
+        description: "Unique valid YYYY-MM-DD days across at most three years; missing and null days are gaps.",
+      },
       { name: "scale", type: '"sequential" | "diverging"', description: "Colors use every observation, including scrolled-out weeks." },
     ],
   },

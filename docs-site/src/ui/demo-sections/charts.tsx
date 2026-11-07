@@ -559,13 +559,11 @@ export function CalendarHeatmapDemo() {
   return (
     <DemoCard
       id="charts-calendar-heatmap"
-      chip={{ kind: "component", name: "Chart.Heatmap", from: "@k2b/ui" }}
+      chip={{ kind: "component", name: "Chart.Calendar", from: "@k2b/ui" }}
       description="Weeks as columns; scroll to the newest observations on a phone."
-      code={'<Chart kind="heatmap" layout="calendar" scale="sequential" data={observations} />'}
+      code={'<Chart.Calendar scale="sequential" data={observations} />'}
     >
-      <Chart
-        kind="heatmap"
-        layout="calendar"
+      <Chart.Calendar
         scale="sequential"
         style={{ height: "14rem" }}
         data={Array.from({ length: 365 }, (_, i): [string, number] => [
