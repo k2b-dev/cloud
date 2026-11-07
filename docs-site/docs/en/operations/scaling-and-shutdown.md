@@ -35,6 +35,45 @@ bun run --cwd packages/ui build
 bun --no-env-file scripts/scale-acceptance.ts
 ```
 
+## Upgrade Help and Skill publication
+
+Core 0.68 introduces registry-based catalog retention. Upgrade Core first to
+reduce catalog writes immediately. Third-party applications may also update
+`@k2b/cloud` before the operator upgrades Core: their publishers automatically
+keep the legacy once-per-minute timestamp renewals while the retention column
+is absent. This prevents old Core from deleting healthy catalogs after six
+minutes and avoids repeatedly rebuilding their Help search documents.
+
+Each renewal checks for the new column. Once Core's schema upgrade adds it,
+the process automatically returns to publication at startup, on content
+changes, on replica takeover, and when repairing missing sources. Unchanged
+heartbeats then perform indexed existence reads without catalog writes; no
+application restart is needed to leave legacy mode. Core before 0.68 still
+uses timestamp expiry, so upgrade all Core replicas together before completing
+the rollout of the new retention behavior.
+
+Rolling Core back to a release before 0.68 keeps the added column, so updated
+publishers stay in registry mode while old Core expires catalogs by timestamp.
+Each publisher's heartbeat finds its missing source and publishes it again, so
+Help and Skills can be missing for up to one heartbeat at a time until Core is
+upgraded again. Core also reconciles all catalogs once a day, so a catalog that
+a failed startup published without registering is removed after its day of
+grace.
+
+New Core accepts the existing catalog tables and renewal statements from
+older applications, including published `@k2b/cloud 0.55.0`. Their
+minute-by-minute writes remain compatible. It retains the registered app/hash
+pair indefinitely. Other hashes
+and sources of removed apps receive one day of grace before bounded deletion,
+including all localized Help documents. An older replica taking over rewrites
+its sources before advertising them. A returning publisher clears pending
+deletion in its publication transaction, before Core sees its registration.
+
+A missing source produces a publisher warning and is restored on its next
+heartbeat. Restarting the application republishes immediately. Catalog cleanup
+uses registry changes and pending deletion deadlines; an early timer firing
+re-arms the remaining grace period.
+
 ## Allow synchronous capability responses
 
 Synchronous capability Queries now have a shared 45-second dispatch budget,
