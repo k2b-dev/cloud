@@ -61,6 +61,16 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       CHECK (ended_at IS NULL OR ended_at >= created_at),
       CHECK (octet_length(input::text) <= payload_bytes AND (output IS NULL OR octet_length(output::text) <= 262144))
     )`.simple();
+    // AI migrates after Code; receipts follow Code run retention without an AI-table dependency.
+    await tx`CREATE TABLE IF NOT EXISTS code.chat_runs (
+      run_id UUID NOT NULL REFERENCES code.runs(id) ON DELETE CASCADE,
+      key TEXT NOT NULL CHECK (char_length(key) BETWEEN 1 AND 200),
+      request_hash TEXT NOT NULL,
+      conversation_id UUID NOT NULL,
+      turn_id UUID NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (run_id,key), UNIQUE(turn_id)
+    )`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_code_history ON code.runs(code_id,created_at DESC,id DESC)`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_retention ON code.runs(ended_at,id) WHERE ended_at IS NOT NULL`.simple();
     await tx`ALTER TABLE code.runs

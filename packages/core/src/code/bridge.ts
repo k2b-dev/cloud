@@ -88,7 +88,10 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
 }
 async function authorizeCall(call: CodeBridgeCall, db: SQL): Promise<"core" | "runner"> {
   const { code, version, manifest } = await lockCall(call, db);
-  const row = codePolicyRow(call.call.capability.startsWith("core.ai.") ? "ai" : call.kind, call.policy);
+  const row = codePolicyRow(
+    call.call.capability.startsWith("core.ai.") && call.call.capability !== "core.ai.chat.run.read" ? "ai" : call.kind,
+    call.policy,
+  );
   if (row === "ask_sends" || manifest.policyRows.includes("ask_sends")) denied("code_sends_not_yet");
   if (
     manifest.policyRows.some((row) => row.startsWith("ask_")) ||
@@ -191,7 +194,7 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
           (async (id) => ratelimit({ id: "code-bridge", limit: await codeSettings.get("core.code.calls_per_second") }).check(id))
         )(call.claims.codeId);
         if (rate.limited) denied("code_rate_limited");
-        if (call.call.capability.startsWith("core.ai.")) {
+        if (call.call.capability.startsWith("core.ai.") && !["core.ai.chat.run", "core.ai.chat.run.read"].includes(call.call.capability)) {
           aiProfiles = (await readAiSettingsState()).profiles;
           aiReservation = await sql.begin(async (tx) => {
             // Resolve current group policy before reserving; issuance rechecks it before the model is called.
