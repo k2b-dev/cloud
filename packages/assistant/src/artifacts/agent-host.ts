@@ -80,18 +80,25 @@ const keyOf = (turnId: string, callId: string) => `${turnId}:${callId}`;
 
 async function closeSession(session: Session) {
   if (sessions.get(session.key) === session) sessions.delete(session.key);
-  for (const resolve of session.decisions.values()) resolve(false);
-  session.decisions.clear();
-  for (const check of session.checks.values()) check.controller.abort();
-  await session.host.then(
-    (host) => host.close(),
-    () => {},
-  );
-  // Also recover a start response lost when its caller disconnected.
-  for (const id of session.checkScopes) await appChecks.discard(id, session.context);
-  session.checkScopes.clear();
-  await sql`UPDATE assistant.artifact_agent_calls SET status='lost',updated_at=now()
-    WHERE host_id=${session.id}::uuid AND status='running'`;
+  try {
+    // Fence persistence before resolving approvals or draining the host: a
+    // stopped runner call can return normally while close() is still waiting.
+    await sql`UPDATE assistant.artifact_agent_calls SET status='lost',updated_at=now()
+      WHERE host_id=${session.id}::uuid AND status='running'`;
+  } finally {
+    // Even a failed persistence fence must stop the host. Its missing local
+    // ownership prevents late completion; a later poll marks the row lost.
+    for (const resolve of session.decisions.values()) resolve(false);
+    session.decisions.clear();
+    for (const check of session.checks.values()) check.controller.abort();
+    await session.host.then(
+      (host) => host.close(),
+      () => {},
+    );
+    // Also recover a start response lost when its caller disconnected.
+    for (const id of session.checkScopes) await appChecks.discard(id, session.context);
+    session.checkScopes.clear();
+  }
 }
 
 async function authorize(context: CodeToolContext, turnId: string) {
@@ -510,6 +517,7 @@ export const agentHost = {
             ),
           )
           .then(async (result) => {
+            if (sessions.get(owned.key) !== owned) return;
             await sql`UPDATE assistant.artifact_agent_calls SET status='done',result=(${JSON.stringify(result)}::text)::jsonb,updated_at=now() WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND host_id=${owned.id}::uuid AND status='running'`;
           })
           .catch(async () => {

@@ -4132,13 +4132,16 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       turn.mockResolvedValue({ ...active, turn: { ...active.turn, cancelRequestedAt: new Date().toISOString() } });
       await expect(agentHost.call(cancelled, context)).rejects.toThrow("no longer authorized");
       await agentHost.sweep();
-      expect(
-        (await sql`SELECT status FROM assistant.artifact_agent_calls WHERE turn_id=${turnId}::uuid AND call_id='cancelled-run'`)[0]?.status,
-      ).toBe("lost");
+      const [cancelledCall] = await sql<{ status: string; result: unknown }[]>`
+        SELECT status,result FROM assistant.artifact_agent_calls WHERE turn_id=${turnId}::uuid AND call_id='cancelled-run'`;
+      expect(cancelledCall?.status).toBe("lost");
+      expect(cancelledCall?.result).toBeNull();
       turn.mockResolvedValue(active);
       await agentHost.close();
       const executions = start.mock.calls.length;
-      await sql`UPDATE assistant.artifact_agent_calls SET status='running' WHERE turn_id=${turnId}::uuid AND call_id=${call.callId}`;
+      // Simulate losing the host after execution but before its result committed.
+      await sql`UPDATE assistant.artifact_agent_calls SET status='running',result=NULL WHERE turn_id=${turnId}::uuid AND call_id=${call.callId}`;
+      expect(await wait(call)).toMatchObject({ status: "lost" });
       expect(await wait(call)).toMatchObject({ status: "lost" });
       expect(start).toHaveBeenCalledTimes(executions);
     } finally {
