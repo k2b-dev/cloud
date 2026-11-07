@@ -935,7 +935,14 @@ test("table reference cells retain optional card facts", () => {
 test("portable nodes keep saved view envelopes and Cloud-only cells intact", () => {
   const legacy = [
     { view: "chart", kind: "bar", title: "Saved", data: [{ label: "A", value: 4 }] },
-    { view: "group", title: "Saved", charts: [{ kind: "bar", title: "A", data: [{ label: "A", value: 4 }] }] },
+    {
+      view: "group",
+      title: "Saved",
+      charts: [
+        { kind: "bar", title: "A", data: [{ label: "A", value: 4 }] },
+        { kind: "bar", title: "B", data: [{ label: "B", value: 2 }] },
+      ],
+    },
     {
       view: "table",
       title: "Saved",
@@ -966,7 +973,7 @@ test("portable nodes keep saved view envelopes and Cloud-only cells intact", () 
   for (const fixture of legacy) {
     const saved = JSON.stringify(fixture);
     const view = parseCloudAiView(JSON.parse(saved));
-    expect(view).toBeDefined();
+    expect(view, fixture.view).toBeDefined();
     if (!view) throw new Error("Invalid legacy fixture");
     const node = cloudAiViewDescription(view);
     expect("view" in node).toBe(false);
