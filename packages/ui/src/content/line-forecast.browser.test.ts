@@ -113,6 +113,14 @@ for (const width of [1440, 390]) {
         return svg.outerHTML === host.querySelector(".k2b-chart__svg > svg")?.outerHTML;
       }, expected),
     ).toBe(true);
+    await settled(page);
+    const labelsFit = await chart.evaluate((node) => {
+      const box = node.getBoundingClientRect();
+      return [...node.querySelectorAll(".stdlib-chart-tick-label[text-anchor=end]")].every(
+        (label) => label.getBoundingClientRect().left >= box.left,
+      );
+    });
+    expect(labelsFit).toBe(true);
     const earlyEnding = page.locator(".early-ending [data-chart-kind=line]");
     expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("—");
     await earlyEnding.focus();
@@ -219,6 +227,7 @@ test("line values follow the cursor in Pulse, Core AI, Gateway Ops, Chat and Not
     const legend = page.locator(`[data-line-host="${host}"] [data-chart-legend-value]`);
     const initial = await legend.allTextContents();
     expect(initial.every((value) => value.length > 0)).toBe(true);
+    if (host === "chat" || host === "notebook") expect(initial.every((value) => value.includes("€"))).toBe(true);
     await chart.focus();
     await page.keyboard.press("Home");
     const first = await legend.allTextContents();

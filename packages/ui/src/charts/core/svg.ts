@@ -1583,13 +1583,16 @@ export const line = (opts: LineOptions): string => {
   const legendHeight = legendItems.length > 2 ? 40 : legendItems.length ? 20 : 0;
   const finitePoints = opts.series.flatMap((s) => s.data).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
   if (finitePoints.length === 0) return emptyChart(width, height, opts.className);
-  const area = computePlotArea(width, height, padding, !!opts.xAxis?.label, !!opts.yAxis?.label, header.height, legendHeight);
   const xAxis = computeAxisScale([...collectAxisValues(opts.series, "x"), ...(opts.marker ? [opts.marker.at] : [])], opts.xAxis);
   const bandValues = forecast.flatMap((p) => (Number.isFinite(p.y) && p.lo !== undefined && p.hi !== undefined ? [p.lo, p.hi] : []));
   const yAxis = computeAxisScale(
     [...collectAxisValues(opts.series, "y"), ...bandValues, ...(opts.zero ? [0] : []), ...(opts.threshold ? [opts.threshold.value] : [])],
     opts.yAxis,
   );
+  const labelRoom = Math.max(...yAxis.ticks.map((tick) => (opts.yAxis?.format?.(tick) ?? String(tick)).length * 6 + 12));
+  if ((opts.forecast || opts.zero || opts.threshold || opts.marker) && typeof opts.padding !== "number" && opts.padding?.left === undefined)
+    padding.left = Math.max(padding.left, labelRoom);
+  const area = computePlotArea(width, height, padding, !!opts.xAxis?.label, !!opts.yAxis?.label, header.height, legendHeight);
   const xMap = pickMapper(xAxis.scale),
     yMap = pickMapper(yAxis.scale);
   const x = (value: number) => xMap(value, xAxis.domain, [area.x0, area.x1]);
@@ -1784,7 +1787,15 @@ export const line = (opts: LineOptions): string => {
       );
     });
   }
-  return svgRoot({ width, height, className: opts.className }, header.svg + body.join("") + legend.join(""));
+  const svg = svgRoot({ width, height, className: opts.className }, header.svg + body.join("") + legend.join(""));
+  if (!(opts.forecast || opts.zero || opts.threshold || opts.marker)) return svg;
+  // CSS adds only the physical room missing in a narrow host. Its SVG transform is
+  // visible to the shared inspector, and the server emits the same geometry.
+  const fraction = Math.min(0.8, Math.max(0, area.x0 / width));
+  return svg.replace(
+    "<svg ",
+    `<svg data-line-axis-room style="--k2b-line-label-room:${labelRoom}px;--k2b-line-axis-fraction:${fraction};--k2b-line-axis-expand:${1 / (1 - fraction)}" `,
+  );
 };
 
 // ==========================

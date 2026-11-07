@@ -14,7 +14,7 @@ const portable = {
   ...lineForecastFixture,
   kind: "line",
   title: "Studio cash outlook",
-  format: { style: "currency", currency: "EUR", decimals: 0 },
+  yAxis: { format: { style: "currency", currency: "EUR", decimals: 0 } },
 };
 const sql = sqlResultChart(
   {
