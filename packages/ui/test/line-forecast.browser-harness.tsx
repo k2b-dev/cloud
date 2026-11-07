@@ -67,7 +67,7 @@ render(
             request={{ status: state() === "loading" ? "loading" : state() === "error" || state() === "stale" ? "error" : "idle" }}
             asOf="09:12"
             onRetry={() => setState("data")}
-            data={{ chart: snapshot, rows: state() === "data" || state() === "stale" ? snapshotRows : [] }}
+            data={state() === "data" || state() === "stale" ? { chart: snapshot, rows: snapshotRows } : { rows: [] }}
             empty="Noch keine Umsätze."
             columns={[{ id: "amount", label: "Cash", value: (row) => row.amount }]}
             legend={lineForecastFixture.series.map((series, color) => ({ label: series.label, color }))}

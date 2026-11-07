@@ -217,31 +217,33 @@ test("line tap pins at a coordinate; dark and unscoped paths remain painted", as
   expect(fills.every((c) => c !== "rgb(0, 0, 0)" && c !== "none")).toBe(true);
 });
 
-test("line values follow the cursor in Pulse, Core AI, Gateway Ops, Chat and Notebook", async () => {
-  const page = await open(390);
-  pages.push(page);
-  for (const host of ["pulse", "core", "gateway", "chat", "notebook"]) {
-    const charts = page.locator(`[data-line-host="${host}"] [data-chart-kind="line"]`);
-    const chart = host === "core" ? charts.nth(1) : charts.first();
-    expect(await chart.count()).toBe(1);
-    await settled(page);
-    const panelBox = await documentBox(page, `[data-line-host="${host}"]`);
-    const legend = page.locator(`[data-line-host="${host}"] [data-chart-legend-value]`);
-    const initial = await legend.allTextContents();
-    expect(initial.every((value) => value.length > 0)).toBe(true);
-    if (host === "chat" || host === "notebook") expect(initial.every((value) => value.includes("€"))).toBe(true);
-    await chart.focus();
-    await page.keyboard.press("Home");
-    const first = await legend.allTextContents();
-    expect(first.length).toBeGreaterThan(0);
-    await page.keyboard.press("End");
-    expect(await legend.allTextContents()).not.toEqual(first);
-    await page.keyboard.press("Escape");
-    await settled(page);
-    expect(await legend.allTextContents()).toEqual(initial);
-    expect(await documentBox(page, `[data-line-host="${host}"]`)).toEqual(panelBox);
-  }
-});
+for (const width of [1440, 390]) {
+  test(`line at ${width}: values follow the cursor in Pulse, Core AI, Gateway Ops, Chat and Notebook`, async () => {
+    const page = await open(width);
+    pages.push(page);
+    for (const host of ["pulse", "core", "gateway", "chat", "notebook"]) {
+      const charts = page.locator(`[data-line-host="${host}"] [data-chart-kind="line"]`);
+      const chart = host === "core" ? charts.nth(1) : charts.first();
+      expect(await chart.count()).toBe(1);
+      await settled(page);
+      const panelBox = await documentBox(page, `[data-line-host="${host}"]`);
+      const legend = page.locator(`[data-line-host="${host}"] [data-chart-legend-value]`);
+      const initial = await legend.allTextContents();
+      expect(initial.every((value) => value.length > 0)).toBe(true);
+      if (host === "chat" || host === "notebook") expect(initial.every((value) => value.includes("€"))).toBe(true);
+      await chart.focus();
+      await page.keyboard.press("Home");
+      const first = await legend.allTextContents();
+      expect(first.length).toBeGreaterThan(0);
+      await page.keyboard.press("End");
+      expect(await legend.allTextContents()).not.toEqual(first);
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect(await legend.allTextContents()).toEqual(initial);
+      expect(await documentBox(page, `[data-line-host="${host}"]`)).toEqual(panelBox);
+    }
+  });
+}
 
 test("framework-free line markup keeps paint and currency labels with base.css alone", async () => {
   const page = await open(390);
@@ -272,4 +274,19 @@ test("framework-free line markup keeps paint and currency labels with base.css a
       );
     }),
   ).toBe(true);
+});
+
+test("keyboard inspection wins over a pointer frame queued before the key", async () => {
+  const page = await open(390);
+  pages.push(page);
+  const chart = page.locator(".early-ending [data-chart-kind=line]");
+  await chart.focus();
+  await settled(page);
+  await chart.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    node.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: box.right - 5, clientY: box.top + box.height / 2 }));
+    node.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Home" }));
+  });
+  await settled(page);
+  expect(await chart.locator("[data-chart-legend-value]").first().textContent()).toBe("10");
 });

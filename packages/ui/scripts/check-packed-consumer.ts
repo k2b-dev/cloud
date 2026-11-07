@@ -193,7 +193,7 @@ try {
   if (inspectionOutput.includes("solid-js")) {
     throw new Error("packed chart inspection build requires Solid");
   }
-  // The minified single-export inspector measures 15,985 bytes with calm category
+  // The minified single-export inspector measures 16,014 bytes with calm category
   // bands and line cursor values. Keep ~3% headroom for small changes.
   if (inspectionBytes > 16_500) {
     throw new Error(`packed chart inspection browser build is too large: ${inspectionBytes} bytes`);

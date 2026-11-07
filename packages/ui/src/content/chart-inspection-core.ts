@@ -166,6 +166,11 @@ export function createChartInspector(options: {
     }
     highlighted = [];
   };
+  const cancelPendingMove = () => {
+    if (frame !== undefined) cancelAnimationFrame(frame);
+    frame = undefined;
+    pending = undefined;
+  };
   const close = (broadcast = true, cancelPending = true) => {
     const state = linkedCursor?.read();
     if (broadcast && state && state.source !== source) return;
@@ -192,11 +197,7 @@ export function createChartInspector(options: {
         /* Detached during navigation. */
       }
     }
-    if (cancelPending) {
-      if (frame !== undefined) cancelAnimationFrame(frame);
-      frame = undefined;
-      pending = undefined;
-    }
+    if (cancelPending) cancelPendingMove();
   };
   const invalidate = () => {
     options.cursor?.()?.clear(source);
@@ -492,12 +493,14 @@ export function createChartInspector(options: {
       close();
       return;
     }
+    cancelPendingMove();
     pinned = true;
     show(entry);
     options.select({ kind: options.kind(), datum: entry.datum });
   };
   const focus = (event: FocusEvent) => {
     if (event.target !== options.container() || !options.enabled()) return;
+    cancelPendingMove();
     const nodes = visibleRecords();
     const first = options.kind() === "line" ? sortedPoints.at(-1) : nodes[0];
     if (first) show(first);
@@ -509,6 +512,7 @@ export function createChartInspector(options: {
       return true;
     }
     if (event.key === "Enter" && active) {
+      cancelPendingMove();
       if (options.kind() === "map" && !visibleRecords().includes(active)) {
         close();
         return true;
@@ -535,6 +539,7 @@ export function createChartInspector(options: {
       });
     }
     if (!nodes.length) return false;
+    cancelPendingMove();
     event.preventDefault();
     pinned = false;
     let index = active
