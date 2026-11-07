@@ -53,6 +53,7 @@ import { coreUserEvents, coreUserEventTypes } from "@k2b/cloud/services/core-use
 import { principalLabel } from "@k2b/cloud/shared";
 import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { aiChatRunAction, aiChatRunReadQuery } from "./ai-chat-run";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
 import { aiDecisionQuery } from "./ai-decision-capability";
 import { aiGenerationQuery } from "./ai-generation-capability";
@@ -790,6 +791,7 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "ai.chat.run.read": aiChatRunReadQuery,
     "ai.decide": aiDecisionQuery,
     "ai.generate": aiGenerationQuery,
     "code.secret.list": {
@@ -1373,6 +1375,7 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "ai.chat.run": aiChatRunAction,
     "code.run": {
       title: "Run Code",
       description: "Start the active checked Code entrypoint. Reuse the request key to recover its receipt; use a new key to run again.",

@@ -132,6 +132,13 @@ describe("AI memory learning", () => {
           scheduledTask: { taskId: "task1", occurrenceId: "run1", scheduledFor: "2026-08-18T00:00:00Z", trigger: "scheduled" },
         },
       ),
+      stored(
+        6,
+        { role: "user", content: [{ type: "text", text: "Preference invented by scheduled Code." }] },
+        {
+          codeOrigin: { codeId: "c_morning", title: "Morning", runId: "run", requestId: "request", label: "Started by Code Morning" },
+        },
+      ),
     ]);
 
     expect(transcript).toBe("I prefer German.");

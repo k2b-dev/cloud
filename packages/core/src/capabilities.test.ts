@@ -298,6 +298,7 @@ describe("Core AI capabilities", () => {
       "address.reverse",
       "ai.chat.read",
       "ai.chat.resources",
+      "ai.chat.run.read",
       "ai.chat.search",
       "ai.chats.resources",
       "ai.chats.search",
@@ -337,6 +338,7 @@ describe("Core AI capabilities", () => {
     ];
     const actions = [
       "ai.chat.message",
+      "ai.chat.run",
       "ai.skill.access.change",
       "ai.skill.create",
       "ai.skill.delete",
@@ -408,6 +410,7 @@ describe("Core AI capabilities", () => {
       "code.version.reject": { destructive: false, idempotency: "required" },
       "code.version.submit": { destructive: false, idempotency: "required" },
       "ai.chat.message": { destructive: false, idempotency: "required" },
+      "ai.chat.run": { destructive: false, idempotency: "required" },
       "ai.skill.access.change": { destructive: true, idempotency: "required" },
       "ai.skill.create": { destructive: false, idempotency: "required" },
       "ai.skill.delete": { destructive: true, idempotency: "required" },

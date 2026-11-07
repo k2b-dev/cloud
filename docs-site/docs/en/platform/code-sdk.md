@@ -292,6 +292,60 @@ or the recovery window expires. A consumed date does not run again after a resta
 activation. The automation list shows its `at`, `timeZone`, and a null
 `nextRunAt` once consumed or expired.
 
+## Start a Gustav turn in your own chat
+
+Personal Code uses `core.ai.chat.run` when the task needs Gustav to choose and
+use tools. Discover the owner's chat ID and the generated handle first:
+
+```ts
+import { app, core } from "@sdk";
+
+app.schedule(
+  { at: "2026-12-01T09:00:00+01:00", timeZone: "Europe/Berlin" },
+  async () => {
+    const run = await core.ai.chat("Chat23").ai.chat.run({
+      prompt: "Review my open work and prepare a short plan in this chat.",
+      idempotencyKey: "morning-review",
+    });
+    console.log(run.id, run.status);
+  },
+  { name: "morning-review", title: "Review open work" },
+);
+export default app;
+```
+
+`Chat23` is a fictional destination. Keep the routine's actual time zone.
+For recurring routines, use `{ cron, timeZone }` when that schedule form is
+available in the installed SDK. The Action accepts a trimmed prompt of
+1–10,000 characters and optional `context` of at most 10,000 characters.
+Context is source data, not additional authority or trusted instructions.
+
+The result contains `id`, `chatId`, `status`, `reason` and `origin`. It returns
+promptly with `queued`, `running`, `waiting_for_approval`, `waiting_for_input`,
+`completed` or `failed`. A later
+`core.ai.chat("Chat23").ai.chat.run.read({ id: run.id })` reads one current
+snapshot. Finish the Code run when approval is needed; the owner decides in
+the chat, and the ordinary chat worker continues the same turn. Do not poll
+until the owner answers. A busy chat returns `chat_busy`; try a later schedule
+or manual run after its current turn ends.
+
+Only the personal Code owner may target their own active chat. Sharing Code
+with a reader grants no chat authority. Resource- and app-owned Code cannot
+start these turns. Each turn uses the owner's current model grants, tools and
+approval rules, without passing the Code mandate to its tools. Billable
+inference charges the owner's normal Assistant allowance; normal model step
+and turn time limits still apply. The chat and run show “Started by Code
+{name}” (or “Gestartet von Code {name}”). The invoking Code keeps its ordinary
+capability call log.
+
+One stable key identifies one intended turn in a Code run. Repeating it recovers
+the original turn, even after its allowance is exhausted; the admission reply
+may be replayed. Read `ai.chat.run.read` to get the current state.
+Changing the prompt, context or destination under that key returns
+`IDEMPOTENCY_CONFLICT`. A new run can use the same key for its next occurrence.
+See [chat turn capability](/en/docs/platform/capabilities#start-personal-code-chat-turns)
+for the daily admission cap and budget error codes.
+
 ## Name an automation
 
 Give a schedule a stable name for manual execution and an optional readable

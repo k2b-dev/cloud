@@ -1535,6 +1535,54 @@ For a multilingual app, resolve `forms` once from the app's catalog using
 `"{amount} {item} an {to} übergeben"`, with matching running, done, confirm,
 and decline forms.
 
+## Start personal Code chat turns
+
+Core's `core.ai.chat.run` Action targets `core.ai.chat` and takes
+`{ prompt, context? }`. The prompt has 1–10,000 characters after trimming;
+source context has at most 10,000 characters. Invocation metadata supplies a
+required idempotency key. The Action uses `silent: "you"` and accepts only a
+delegated personal Code run whose owner owns the active target chat. Review
+and execution both check that binding. It never selects or creates a chat.
+
+It creates one ordinary durable Assistant turn with the owner's current
+permissions, model grants, loop and step limits, and approval rules. Tool requests that need approval
+wait in the chat. Code receives `{ id, chatId, status, reason, origin }` and an
+open link promptly; it does not wait for a human. `core.ai.chat.run.read`, on
+the same chat target with `{ id }`, returns a current snapshot of that turn.
+States are `queued`, `running`, `waiting_for_approval`, `waiting_for_input`,
+`completed` and `failed`. A failed turn includes its reason. A retry of the
+same Action key recovers the original turn; the dispatcher may replay the
+admission reply. Use `ai.chat.run.read` for its current state. Different
+instructions, context or destination under that key return
+`IDEMPOTENCY_CONFLICT`. A chat with another active turn or pending/failed queued
+messages returns `chat_busy`. A Project change during preparation returns
+`chat_changed`; reread the chat before trying again.
+
+Each admitted turn debits one full `core.code.ai_budget_usd` allowance from the
+Code attempt and the existing `core.code.ai_daily_budget_usd` and
+`core.code.ai_owner_daily_budget_usd` counters. This is a conservative admission
+allocation, not a measured inference charge or a new setting. For example,
+an attempt allowance of 1 and an owner daily allowance of 3 admit at most three
+turns per installation calendar day, across all their Code; other Code AI
+usage reduces the available allowance. Zero disables admission. Partial
+allowances do not admit another turn. Existing budget codes are
+`code_ai_budget_limit`, `code_ai_budget_reserved`, `code_ai_daily_budget_limit`
+and `code_ai_owner_daily_budget_limit`. A retry with a receipt consumes no
+second allocation. Actual model inference independently charges the owner's
+normal Assistant allowance and can refuse with `quota_exhausted`.
+The three Code allowances default to 1 each, so one admitted turn consumes
+the owner's entire Code AI allowance for that day, shared with their other
+Code AI calls. Adjust the existing attempt and daily settings for the intended
+schedule frequency before activation. Model admission can also return
+`ai_disabled`, `ai_no_model` or `model_policy_mismatch` before starting a turn.
+
+Turn creation, its receipt and the admission debit commit together. The
+ordinary AI queue and sweep recover work after a failed queue wake-up. Chat
+history and the turn record retain the Code name, Code run and invocation
+request ID. Code call logging remains the standard bridge log. Read a later
+state once or show the chat link; never keep a Code run polling for approval.
+See the [SDK example](/en/docs/platform/code-sdk#start-a-gustav-turn-in-your-own-chat).
+
 ## Write valid contracts
 
 Cloud validates the declaration at startup:

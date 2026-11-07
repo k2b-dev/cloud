@@ -252,7 +252,13 @@ const storedItems = (
         id: item.id,
         role: "user",
         createdAt: item.entry.createdAt,
-        content: text ? <p class="whitespace-pre-wrap">{text}</p> : undefined,
+        content:
+          text || item.entry.meta?.codeOrigin ? (
+            <>
+              <Show when={item.entry.meta?.codeOrigin}>{(origin) => <p class="text-xs text-dimmed">{origin().label}</p>}</Show>
+              {text ? <p class="whitespace-pre-wrap">{text}</p> : undefined}
+            </>
+          ) : undefined,
         attachments: aiUserMessageAttachments(item.entry, actions),
         actions: createAiUserMessageActions(item.entry, actions, locale),
         actionDisplay: "menu",

@@ -235,7 +235,14 @@ export const buildMemoryLearningTranscript = (messages: AiStoredMessage[]): stri
   messages
     .flatMap((stored) => {
       const message = stored.message;
-      if (stored.kind !== "message" || message.role !== "user" || stored.meta?.agentMessage || stored.meta?.scheduledTask) return [];
+      if (
+        stored.kind !== "message" ||
+        message.role !== "user" ||
+        stored.meta?.agentMessage ||
+        stored.meta?.scheduledTask ||
+        stored.meta?.codeOrigin
+      )
+        return [];
       return message.content.flatMap((part) => {
         if (typeof part === "string") return part.trim() ? [part.trim()] : [];
         if (part.type !== "text") return [];
@@ -262,7 +269,8 @@ const loadTurnEvidence = async (candidate: Candidate): Promise<TurnEvidence> => 
     listAiTurnWorkflowEvidence(candidate.userId, candidate.turnId),
   ]);
   const firstUser = messages.find(
-    (message) => message.message.role === "user" && !message.meta?.agentMessage && !message.meta?.scheduledTask,
+    (message) =>
+      message.message.role === "user" && !message.meta?.agentMessage && !message.meta?.scheduledTask && !message.meta?.codeOrigin,
   );
   return {
     candidate,

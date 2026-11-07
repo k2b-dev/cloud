@@ -44,3 +44,31 @@ tree to 64 KiB, 256 nodes and 12 levels, with 200 rows per table and 40 fields
 per form. Page inputs, trees and visitor identities are transient; the retained
 run records the outcome and timings. Rendering uses Core's assets and only the
 checked description reaches the browser; no Code source runs there.
+
+## Rebuild scheduled Assistant routines
+
+Rebuild an open-ended routine as personal Code with `app.schedule` and
+`core.ai.chat.run`, preserving its prompt, destination and explicit time zone.
+Use `{ at, timeZone }` for one-time work. For recurring work, the installed SDK
+must support `{ cron, timeZone }` before preserving a non-UTC schedule. Review
+and activate the new Code before the cut, then stop the old routine before
+enabling its replacement schedule. Do not run both for the same occurrence.
+Existing routines stay unchanged until that cut.
+
+The replacement starts a normal turn in the owner's chat. Required approvals
+wait there and the Code run ends promptly; this differs from routines that
+refuse approval-needed tools. Owners retain their ordinary AI allowance. Each
+new turn also debits the existing Code per-attempt reference allowance against
+the Code and owner daily admission counters. Review those settings before
+activation; see the [capability contract](/en/docs/platform/capabilities#start-personal-code-chat-turns)
+for states and budget codes. Bounded text tasks can keep `core.ai.generate`
+instead of starting a tool-using turn.
+The attempt, Code daily and owner daily reference allowances default to 1 each:
+one turn consumes the owner's daily Code AI allowance, including the allowance
+shared with their other Code. Review those limits for the schedule frequency.
+
+Core adds `code.chat_runs` without altering routine definitions. Receipts
+follow Code run retention; ordinary chat messages and turns retain their own
+history. Keep the normal AI worker and sweep running so committed queued turns
+recover after a failed wake-up. A waiting turn appears in the chat and remains
+subject to its normal wait and execution limits.
