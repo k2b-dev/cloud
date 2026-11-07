@@ -67,14 +67,22 @@ test("a description with an option this build does not know becomes a slot inste
     ],
   });
   expect(known.mode).toBe("snapshot");
-  const unknown = resolveDrawing({ kind: "line", title: "Balance", series: [{ data: [{ x: 1, y: 2 }, { x: 2, y: 3 }] }], notAnOption: true });
+  const unknown = resolveDrawing({
+    kind: "line",
+    title: "Balance",
+    series: [
+      {
+        data: [
+          { x: 1, y: 2 },
+          { x: 2, y: 3 },
+        ],
+      },
+    ],
+    notAnOption: true,
+  });
   expect(unknown).toMatchObject({ mode: "slot", kind: "line" });
   expect(resolveDrawing({ kind: "notAKind", title: "Flows", nodes: [] })).toMatchObject({ mode: "slot", kind: "notAKind" });
   expect(resolveDrawing({ block: "notABlock", items: [] })).toMatchObject({ mode: "slot", kind: "notABlock" });
-});
-  expect(unknown).toMatchObject({ mode: "slot", kind: "line" });
-  expect(resolveDrawing({ kind: "sankey", title: "Flows", nodes: [], links: [] })).toMatchObject({ mode: "slot", kind: "sankey" });
-  expect(resolveDrawing({ block: "budget", items: [] })).toMatchObject({ mode: "slot", kind: "budget" });
 });
 
 test("TSX is generated from the same description as the JSON", () => {
