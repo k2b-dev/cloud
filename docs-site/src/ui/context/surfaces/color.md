@@ -60,7 +60,12 @@ fill, so the box and the text never move:
 | Disabled | none | `--k2b-surface-muted` |
 
 The focus blue keeps 3:1 against the grey edge it replaces, so focus shows
-without a second width. No field casts a shadow. A control with its own edge
+without a second width. No field casts a shadow, with one approved exception:
+the assistant prompt of `Chat.Composer` takes the AI colour, a light plum edge
+at rest and the full plum edge with a soft glow outside (`--k2b-ai-glow`) on
+focus. The glow lies outside the box, so nothing moves, and the plum focus
+edge keeps 3:1 against the rest edge. Do not extend the glow to other
+controls. A control with its own edge
 reads `--k2b-edge-color`, the colour of the current state, for example a
 stepper that fills to the border. In forced-colors mode the border takes the
 system colour and focus adds the system outline.

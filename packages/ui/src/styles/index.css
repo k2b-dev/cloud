@@ -48,6 +48,10 @@
   --k2b-ai-solid: #8e1b6f;
   --k2b-ai-solid-hover: #701556;
   --k2b-ai-on-solid: #ffffff;
+  /* The assistant composer's edge: light plum at rest (2.1:1 on the surface, 4.0:1 against the accent it turns into
+     on focus) and a soft plum glow outside while it has focus. */
+  --k2b-ai-edge-rest: #d9a3c9;
+  --k2b-ai-glow: 0 0 0 4px rgb(142 27 111 / 0.1), 0 6px 22px rgb(142 27 111 / 0.12);
 
   --k2b-surface-canvas: var(--k2b-neutral-50);
   --k2b-surface: #ffffff;
@@ -354,6 +358,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-ai-solid: #f0abdc;
   --k2b-ai-solid-hover: #f7cdea;
   --k2b-ai-on-solid: #3a0f2e;
+  /* Rest edge 4.7:1 against the focus accent. */
+  --k2b-ai-edge-rest: #6e3a61;
+  --k2b-ai-glow: 0 0 0 4px rgb(240 171 220 / 0.16), 0 6px 22px rgb(240 171 220 / 0.1);
   --k2b-shadow-surface: none;
   --k2b-shadow-frame:
     0 -3px 10px -8px rgb(0 0 0 / 0.32), 0 0 16px -9px rgb(0 0 0 / 0.56), 0 16px 40px -30px rgb(0 0 0 / 0.48), 0 1px 7px rgb(0 0 0 / 0.14);
@@ -13622,7 +13629,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* The field a person types into keeps the shared field edge (see `--k2b-edge`): the card of the assistant prompt and
    the pill of the conversation composer. 2 px drawn inside as a 1 px border plus a 1 px inset in one colour, no drop
    shadow; hover darkens the fill, focus turns the edge blue, an error red, and disabled drops it to a muted well. A
-   state sets only `--k2b-edge-color` or the fill, so the box and the text stay put. */
+   state sets only `--k2b-edge-color` or the fill, so the box and the text stay put. The assistant card takes the AI
+   colour below. */
 .k2b-ui .k2b-chat-composer:not([data-variant="conversation"]),
 .k2b-ui .k2b-chat-composer__field {
   --k2b-edge-color: var(--k2b-edge);
@@ -13640,22 +13648,61 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-edge-hover-bg);
 }
 
-.k2b-ui .k2b-chat-composer[data-invalid="true"]:not([data-variant="conversation"]),
 .k2b-ui .k2b-chat-composer[data-invalid="true"] .k2b-chat-composer__field {
   --k2b-edge-color: var(--k2b-edge-danger);
 }
 
 /* Focus wins over an error, as in every field; the error line stays. */
-.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):focus-within,
 .k2b-ui .k2b-chat-composer .k2b-chat-composer__field:focus-within {
   --k2b-edge-color: var(--k2b-edge-focus);
   background: var(--k2b-surface);
 }
 
-.k2b-ui .k2b-chat-composer[data-disabled="true"]:not([data-variant="conversation"]),
 .k2b-ui .k2b-chat-composer[data-disabled="true"] .k2b-chat-composer__field {
   --k2b-edge-color: transparent;
   background: var(--k2b-surface-muted);
+}
+
+/* The assistant prompt carries the AI colour: a light plum edge at rest and the full plum edge while anything inside
+   has focus, with a soft glow outside. The glow is the one approved exception to "no shadow on controls"; it lies
+   outside the box, so the card, its 2 px edge and the text stay put. Red with an error (focus wins, the error line
+   stays), and a disabled card keeps a quiet grey edge on the muted well. The conversation variant stays neutral. */
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]) {
+  --k2b-edge-color: var(--k2b-ai-edge-rest);
+}
+
+.k2b-ui .k2b-chat-composer[data-invalid="true"]:not([data-variant="conversation"]) {
+  --k2b-edge-color: var(--k2b-edge-danger);
+}
+
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):focus-within {
+  --k2b-edge-color: var(--k2b-ai-accent);
+  background: var(--k2b-surface);
+}
+
+/* The glow is its own layer around the card: it only fades in, so the edge keeps the shared field rule. */
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"])::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  box-shadow: var(--k2b-ai-glow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):focus-within::after {
+  opacity: 1;
+}
+
+.k2b-ui .k2b-chat-composer[data-disabled="true"]:not([data-variant="conversation"]) {
+  --k2b-edge-color: var(--k2b-border);
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-chat-composer[data-disabled="true"]:not([data-variant="conversation"])::after {
+  opacity: 0;
 }
 
 .k2b-ui .k2b-chat-composer-shell { position: relative; display: grid; gap: 0.5rem; min-width: 0; }
