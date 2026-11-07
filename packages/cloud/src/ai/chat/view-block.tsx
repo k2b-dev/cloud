@@ -1,4 +1,15 @@
-import { CopyButton, DataTable, type DataTableSort, DescriptionList, StatCell, StatGrid, type StatGridColumns, useLocale } from "@k2b/ui";
+import {
+  CopyButton,
+  DataTable,
+  type DataTableSort,
+  DataTableTools,
+  DescriptionList,
+  filterRows,
+  StatCell,
+  StatGrid,
+  type StatGridColumns,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, Index, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { type CloudAiChartRow, cloudAiNumberFormatters } from "../chart-block";
 import {
@@ -101,10 +112,30 @@ function CloudTableView(props: { summary: TableSummary; input: CloudTableDescrip
     const order = picked();
     return !value ? [] : order ? sortCloudAiViewRows(value.rows, order, locale()) : value.rows;
   });
+  const [query, setQuery] = createSignal("");
+  const [groupBy, setGroupBy] = createSignal<string | null>(null);
+  // Search matches the cells as they are shown; Copy data keeps every row of the view.
+  const shown = createMemo(() => {
+    const value = table();
+    return value
+      ? filterRows(
+          rows(),
+          value.columns.map((column) => ({ id: column.id, value: (row: CloudAiChartRow) => row.cells[column.id] ?? "" })),
+          query(),
+          locale(),
+        )
+      : [];
+  });
   const copyText = createMemo(() => {
     const value = table();
     return value ? cloudAiTableTsv({ ...value, rows: rows() }) : "";
   });
+  const groups = () =>
+    props.input?.groupBy?.map((group) => ({
+      id: group.id,
+      label: group.label ?? props.input?.columns.find((column) => column.id === group.id)?.label ?? group.id,
+    }));
+  let tools: HTMLDivElement | undefined;
   const number = () => new Intl.NumberFormat(locale());
   const refColumns = createMemo(() => new Set(props.input?.columns.flatMap((column) => (column.type === "ref" ? [column.id] : []))));
   return (
@@ -113,7 +144,25 @@ function CloudTableView(props: { summary: TableSummary; input: CloudTableDescrip
         id={id}
         title={props.input?.title ?? props.summary.title}
         subtitle={props.input ? props.input.subtitle : props.summary.subtitle}
-        actions={<CopyButton text={copyText()} label={t().viewCopyData} iconOnly size="sm" variant="ghost" disabled={!table()} />}
+        actions={
+          <div class="flex min-w-0 flex-wrap items-center gap-2">
+            {/* The summary reserves the tools from the first frame; they wait, disabled, for the rows. */}
+            <Show when={props.summary.search || props.summary.grouped}>
+              <div ref={tools} class="contents">
+                <DataTableTools
+                  label={props.input?.title ?? props.summary.title}
+                  query={query()}
+                  onQueryChange={props.summary.search ? setQuery : undefined}
+                  groups={props.summary.grouped ? (groups() ?? []) : undefined}
+                  groupBy={groupBy()}
+                  onGroupByChange={props.summary.grouped ? setGroupBy : undefined}
+                  disabled={!table()}
+                />
+              </div>
+            </Show>
+            <CopyButton text={copyText()} label={t().viewCopyData} iconOnly size="sm" variant="ghost" disabled={!table()} />
+          </div>
+        }
       />
       <div class="min-w-0" style={{ height: tableHeight(props.summary) }}>
         <Show
@@ -126,10 +175,11 @@ function CloudTableView(props: { summary: TableSummary; input: CloudTableDescrip
         >
           {(value) => (
             <DataTable<CloudAiChartRow>
-              rows={rows().slice(0, VISIBLE_ROWS)}
+              rows={shown().slice(0, VISIBLE_ROWS)}
               columns={value().columns.map((column) => ({
                 id: column.id,
                 header: column.label,
+                priority: props.input?.columns.find((entry) => entry.id === column.id)?.priority,
                 // A wrapped label would make the header taller than the reserved row; the table scrolls sideways instead.
                 headerClass: "whitespace-nowrap",
                 value: (row) => row.cells[column.id] ?? "",
@@ -159,6 +209,12 @@ function CloudTableView(props: { summary: TableSummary; input: CloudTableDescrip
                   : undefined
               }
               ariaLabelledBy={id}
+              groupBy={groupBy() ?? undefined}
+              query={query()}
+              onClearQuery={() => {
+                setQuery("");
+                tools?.querySelector("input")?.focus();
+              }}
               density="compact"
               surface="paper"
               stickyHeader

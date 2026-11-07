@@ -102,6 +102,34 @@ describe("declarative views", () => {
   ])("rejects invalid number format %j", (format, path) => {
     expect(issues({ ...table, columns: [{ id: "price", type: "number", format }] })).toContain(path);
   });
+  test("a table may offer search, grouping and column priorities; its summary reserves the tools", () => {
+    const tools = {
+      ...table,
+      columns: [
+        { id: "price", type: "number", priority: 3 },
+        { id: "name", type: "text" },
+      ],
+      search: true,
+      groupBy: [{ id: "name", label: "Name" }],
+    };
+    const parsed = parseCloudAiView(tools);
+    expect(parsed).toEqual(tools as CloudAiTableView);
+    expect(cloudAiViewSummary(parsed!)).toEqual({
+      view: "table",
+      title: "Prices",
+      rows: 2,
+      columns: 2,
+      footer: false,
+      search: true,
+      grouped: true,
+    });
+    // Older summaries without the tools still read.
+    expect(CloudAiViewSummarySchema.parse({ view: "table", title: "Prices", rows: 2, columns: 2, footer: false })).toBeDefined();
+    expect(issues({ ...tools, groupBy: [{ id: "missing" }] })).toContain("groupBy[0].id: Unknown column id.");
+    expect(issues({ ...tools, groupBy: [{ id: "name" }, { id: "name" }] })).toContain("Group each column once");
+    expect(issues({ ...tools, columns: [{ id: "price", type: "number", priority: 4 }] })).toContain("priority");
+    expect(issues({ ...tools, search: "yes" })).toContain("search");
+  });
   test("formats belong only to number columns", () => {
     expect(issues({ ...table, columns: [{ id: "name", type: "text", format: {} }] })).toContain("Only number columns");
   });
@@ -1007,4 +1035,21 @@ test("stats accept ratio or points changes with comparison values and reject con
   expect(
     parseCloudAiView({ ...fixture, items: [{ label: "State", value: "OK", compare: { label: "Previous", value: 1 } }] }),
   ).toBeUndefined();
+});
+
+test("portable table descriptions retain search, groups and column priorities", () => {
+  const fixture: CloudAiTableView = {
+    ...table,
+    search: true,
+    groupBy: [{ id: "name", label: "Name" }],
+    columns: [
+      { id: "price", type: "number", priority: 3 },
+      { id: "name", type: "text" },
+    ],
+  };
+  const parsed = parseCloudAiView(JSON.parse(JSON.stringify(fixture)));
+  if (parsed?.view !== "table") throw new Error("Invalid table fixture");
+  const { view: _view, ...data } = fixture;
+  expect(cloudAiViewDescription(parsed)).toEqual({ block: "table", ...data });
+  expect(cloudAiViewTable(cloudAiViewDescription(parsed), "en")).toEqual(cloudAiViewTable(parsed, "en"));
 });
