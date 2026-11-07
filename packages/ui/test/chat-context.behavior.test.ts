@@ -49,11 +49,13 @@ else
       action.click();
       action.click();
       expect(calls).toBe(1);
-      expect(action.disabled).toBe(true);
+      // Pending reads as off but stays focusable, so its tooltip can still be read.
+      expect(action.getAttribute("aria-disabled")).toBe("true");
+      expect(action.getAttribute("aria-busy")).toBe("true");
       reject(new Error("provider unavailable"));
       await Bun.sleep(10);
       expect(errors).toBe(1);
-      expect(action.disabled).toBe(false);
+      expect(action.hasAttribute("aria-disabled")).toBe(false);
       action.focus();
       action.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       expect(trigger.getAttribute("aria-expanded")).toBe("false");

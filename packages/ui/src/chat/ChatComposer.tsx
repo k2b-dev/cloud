@@ -70,6 +70,7 @@ import type {
   ChatMention,
   ChatModelOption,
   ChatSubmitInput,
+  ChatUsageSection,
 } from "./types";
 
 const composerMaxInputHeight = 309;
@@ -267,8 +268,14 @@ export type ChatComposerProps = {
   /** Shared surface above the editor; suggestions temporarily replace this content. */
   accessory?: JSX.Element;
   contextUsage?: ChatContextUsageData;
+  /**
+   * Application parts of the usage control, such as a budget. The control keeps one ring right of "+" for the context
+   * and these parts; it shows the highest share.
+   */
+  contextSections?: readonly ChatUsageSection[];
+  /** Small icon controls right after the usage control, such as showing finished tasks again. */
   contextActions?: readonly ChatAction[];
-  /** Optional action inside the context details popup. */
+  /** Optional icon action next to the context share in the usage details, such as summarizing the chat now. */
   contextPopupAction?: ChatAction;
   /** Additional compact controls rendered with the add/model controls. */
   footerTools?: JSX.Element;
@@ -2755,6 +2762,31 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                           {addSearchButton()}
                         </Show>
                         {fileInput()}
+                        <Show when={hasContextUsage() || (props.contextSections?.length ?? 0) > 0}>
+                          <ContextUsage
+                            {...(props.contextUsage ?? {})}
+                            context={hasContextUsage()}
+                            sections={props.contextSections}
+                            action={props.contextPopupAction}
+                            onActionError={props.onError}
+                          />
+                        </Show>
+                        <For each={props.contextActions}>
+                          {(action) => (
+                            <Tooltip.Trigger
+                              type="button"
+                              class="k2b-chat-composer__icon-action"
+                              data-tone={action.variant === "danger" ? "danger" : undefined}
+                              disabled={action.disabled}
+                              aria-pressed={action.pressed}
+                              aria-label={action.label}
+                              content={action.label}
+                              onClick={() => reportChatFailure(() => executeChatAction(action), props.onError)}
+                            >
+                              <i class={action.icon ?? "ti ti-dots"} aria-hidden="true" />
+                            </Tooltip.Trigger>
+                          )}
+                        </For>
                         {formatToggle()}
                         {emojiButton()}
                         <Show when={(props.models?.length ?? 0) > 0}>
@@ -2794,25 +2826,6 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                       </div>
 
                       <div class="k2b-chat-composer__submit">
-                        <For each={props.contextActions}>
-                          {(action) => (
-                            <Tooltip.Trigger
-                              type="button"
-                              class="k2b-chat-composer__icon-action"
-                              data-tone={action.variant === "danger" ? "danger" : undefined}
-                              disabled={action.disabled}
-                              aria-pressed={action.pressed}
-                              aria-label={action.label}
-                              content={action.label}
-                              onClick={() => reportChatFailure(() => executeChatAction(action), props.onError)}
-                            >
-                              <i class={action.icon ?? "ti ti-dots"} aria-hidden="true" />
-                            </Tooltip.Trigger>
-                          )}
-                        </For>
-                        <Show when={hasContextUsage() ? (props.contextUsage ?? {}) : undefined}>
-                          {(usage) => <ContextUsage {...usage()} action={props.contextPopupAction} onActionError={props.onError} />}
-                        </Show>
                         {props.submitTools}
                         <Show when={props.dictation}>
                           <DictationButton dictation={liveDictation} class="k2b-chat-composer__icon-action" cardAnchor={() => shellRef} />

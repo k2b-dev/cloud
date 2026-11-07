@@ -128,9 +128,20 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
         onPointerEnter={clear}
         onPointerLeave={leave}
         onFocusIn={clear}
+        tabIndex={-1}
         onFocusOut={(event) => {
           const next = event.relatedTarget;
-          if (!(next instanceof Node) || (!surface?.contains(next) && next !== trigger)) close();
+          if (next instanceof Node) {
+            if (!surface?.contains(next) && next !== trigger) close();
+            return;
+          }
+          // A control that replaces itself, such as a retry that succeeded, takes the focus with it: keep the details
+          // open and hold the focus in them. Any other loss of focus closes them.
+          const left = event.target;
+          setTimeout(() => {
+            if (left instanceof Node && !left.isConnected && open()) surface?.focus();
+            else if (!surface?.contains(document.activeElement)) close();
+          });
         }}
       >
         {local.content}

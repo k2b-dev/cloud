@@ -66,6 +66,8 @@ type ChatActionBase = {
   icon?: string;
   variant?: "danger";
   disabled?: boolean;
+  /** Why the action is off. An icon-only action shows it as its tooltip while `disabled`. */
+  disabledReason?: string;
   /** Toggle state for persistent message actions such as feedback. */
   pressed?: boolean;
   /** Semantic foreground for selected feedback actions, without a persistent background. */
@@ -108,6 +110,30 @@ export type ChatContextUsageData = {
   loopUsage?: ChatUsage | null;
   contextWindow?: number;
   modelLabel?: string;
+  /** One short line under the context bar, such as what happens when the context is full. */
+  note?: JSX.Element;
+};
+
+/**
+ * One application-owned part of the usage control, such as a budget. The control keeps one ring: it shows the highest
+ * share of all parts and turns to the warning colour once a part reaches its `warnAt`.
+ */
+export type ChatUsageSection = {
+  id: string;
+  /** Heading in the details, such as "Your budget". */
+  title: string;
+  /** Used share in percent, or null while it is not known. */
+  percent?: number | null;
+  /** Share from which this part warns. Defaults to 80. */
+  warnAt?: number;
+  /** Short text after the heading, such as "86% used". */
+  value?: string;
+  /** This part in the trigger's accessible label, such as "Budget 86% used". */
+  summary: string;
+  /** Details below the heading: bars, `dl` rows, `p` notes, and `.k2b-chat-usage__row` lines with a small action. */
+  content?: JSX.Element;
+  /** Runs each time the details open, for example to refresh this part. */
+  onOpen?: () => void;
 };
 
 export type ChatModelOption = {

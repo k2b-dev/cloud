@@ -28,7 +28,6 @@ const { default: Select } = await import("../inputs/Select");
 const { SettingsGroup } = await import("../layout/Settings");
 const { default: SettingsModal } = await import("../layout/SettingsModal");
 const { Chat } = await import("../chat");
-const { ProgressRing } = await import("../surfaces/ProgressRing");
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 // `toast` builds its DOM in the browser, so the page runs the real module.
@@ -724,9 +723,10 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     }
   });
 
-  test("keep the message field's edge above the chat composer footer, and one trigger box for every context state", async () => {
-    // The Assistant's composer: add menu, model, usage indicator, context usage, dictation, and send.
-    const composer = (details: string) =>
+  test("keep the message field's edge above the chat composer footer, and one usage box for every usage state", async () => {
+    // The Assistant's composer: add menu, the usage ring with context and budget, model, dictation, and send.
+    const budget = (percent: number | null) => [{ id: "budget", title: "Budget", percent, summary: `budget ${percent}` }];
+    const composer = (props: Record<string, unknown>) =>
       html(() =>
         createComponent(Chat.Composer, {
           value: "",
@@ -736,26 +736,20 @@ describe("@k2b/ui touch hit areas on a phone", () => {
           models: [{ id: "a", label: "Model A" }],
           selectedModelId: "a",
           onModelChange: () => {},
-          modelDetails: "%details%",
           contextUsage: { usage: { input: 1200, output: 20 }, contextWindow: 128_000 },
           get submitTools() {
             return icon("Dictate");
           },
+          ...props,
         }),
-      ).replace("%details%", details);
-    const popup = (trigger: string) =>
-      html(() => createComponent(Chat.ContextPopup, { "aria-label": "Usage", content: "Usage", children: "%trigger%" })).replace(
-        "%trigger%",
-        trigger,
       );
-    const dashed = `<i class="ti ti-circle-dashed" aria-hidden="true"></i>`;
-    // A reading, a missing or failed reading, unlimited usage, and the placeholder before the first reading.
+    // A quiet reading, a warning, a missing or failed reading, and the budget before the chat has context.
     const states = [
-      popup(html(() => createComponent(ProgressRing, { value: 92, tone: "warning" }))),
-      popup(dashed),
-      popup(`<i class="ti ti-infinity" aria-hidden="true"></i>`),
-      `<span class="k2b-chat-context" aria-hidden="true">${dashed}</span>`,
-    ].map(composer);
+      composer({ contextSections: budget(34) }),
+      composer({ contextSections: budget(92) }),
+      composer({ contextSections: budget(null) }),
+      composer({ contextUsage: undefined, contextSections: budget(34) }),
+    ];
     const page = await browser.newPage(phone);
     try {
       for (const markup of states) expect(await takenPixels(page, markup)).toEqual({});
@@ -765,7 +759,7 @@ describe("@k2b/ui touch hit areas on a phone", () => {
         await show(page, `<main style="width:22rem;padding:2rem">${markup}</main>`);
         boxes.push(
           await page.evaluate(() => {
-            const box = document.querySelector(".k2b-chat-composer__tools .k2b-chat-context")!.getBoundingClientRect();
+            const box = document.querySelector(".k2b-chat-composer__tools .k2b-chat-usage")!.getBoundingClientRect();
             const footer = document.querySelector(".k2b-chat-composer__footer")!.getBoundingClientRect();
             return [box.left, box.top, box.width, box.height, footer.height];
           }),

@@ -67,7 +67,7 @@ The assistant prompt is one card around the field and its footer. It carries the
 
 `Chat.Composer` calls `onSubmit` with an `intent`, untrimmed text, generic attachments, and optional inline mentions. The intent is `send` while idle and `steer` while a response is running. Return `false` or throw to restore the consumed draft, attachments, and mentions; failures are passed to `onError`.
 
-Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu unless `addOpensCommands` opens the command list; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. On touch screens the footer keeps 0.625rem from the message field, so the touch areas of its compact controls never take taps from the field. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
+Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu unless `addOpensCommands` opens the command list. One usage ring sits right of Plus: it holds the context from `contextUsage` and the application parts from `contextSections`, such as a budget, see [Context usage](/en/ui/ai/context-usage). `contextActions` follow the ring as icon controls. `contextPopupAction` places one small icon action next to the context share in the usage details and keeps the ring available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. On touch screens the footer keeps 0.625rem from the message field, so the touch areas of its compact controls never take taps from the field. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
 
 Every structured chat action declares exactly one behavior: `onSelect` for an
 application callback or `copyText` for clipboard content. The same contract is
@@ -232,8 +232,8 @@ type ChatMessageStatus = "pending" | "streaming" | "complete" | "error";
 type ChatActivityTone = "neutral" | "ai" | "success" | "warning" | "danger";
 
 type ChatActionBase = {
-  id: string; label: string; icon?: string; variant?: "danger"; disabled?: boolean; pressed?: boolean;
-  pressedTone?: "success" | "danger";
+  id: string; label: string; icon?: string; variant?: "danger"; disabled?: boolean; disabledReason?: string;
+  pressed?: boolean; pressedTone?: "success" | "danger";
 };
 
 type ChatAction = ChatActionBase &
@@ -585,7 +585,7 @@ type ChatComposerProps = {
   onAttachmentsChange?: (attachments: readonly ChatAttachment[]) => void; fileSelection?: ChatFileSelection;
   onPaste?: ChatPasteHandler; menuActions?: readonly ChatAction[]; addOpensCommands?: boolean; models?: readonly ChatModelOption[];
   selectedModelId?: string | null; onModelChange?: (modelId: string) => void;
-  commands?: readonly ChatCommand[]; contextUsage?: ChatContextUsageData;
+  commands?: readonly ChatCommand[]; contextUsage?: ChatContextUsageData; contextSections?: readonly ChatUsageSection[];
   commandSections?: readonly ChatCommandSection[]; commandScopes?: readonly ChatCommandScope[];
   searchCommands?: (query: string, signal: AbortSignal, search: ChatCommandSearch) => Promise<readonly ChatCommand[]>;
   mentions?: readonly ChatMention[]; onMentionsChange?: (mentions: readonly ChatMention[]) => void;
@@ -728,14 +728,15 @@ A changed `previewUrl` loads the thumbnail again.
 
 ## Application-owned model details
 
-Use `Chat.ContextPopup` in `modelDetails` for a compact button with custom
-details, such as an application's usage indicator. Pass the trigger content as
+For usage, such as a budget, pass a section through `contextSections`; the
+composer keeps one ring for context and budget. Use `Chat.ContextPopup` in
+`modelDetails` only for other compact details after a model selector. Pass the trigger content as
 children, `content` for the panel, and a complete `aria-label` that names the
 state and its value. The button defaults to `type="button"` and to the same
 trigger style as the context indicator; a `class` replaces that style. Hover
 previews the panel; click or keyboard activation pins it open. Escape and
 outside click close it. `onOpen` runs each time the panel opens, which is the
-place to refresh its data instead of offering a refresh button. Interactive
+place to refresh its data. Interactive
 panel content is reachable with Tab. Popup-owned click, pointer-enter/leave and
 ref props are not part of its public props. Applications own data loading and
 authorization.
