@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
-import { aiConversations } from "@k2b/cloud/ai";
+import { type AiStoredMessage, aiConversations } from "@k2b/cloud/ai";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
 import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
@@ -97,10 +97,9 @@ suiteFor("database", "valkey")("personal Code chat delivery capability", () => {
     const messages = await aiConversations.listMessagesPage({ conversationId: chat.id, limit: 20 });
     expect(messages.messages).toHaveLength(1);
     expect(messages.messages[0]).toMatchObject({
-      role: "assistant",
-      message: { content: [{ type: "text", text: "Your morning report." }] },
+      message: { role: "assistant", content: [{ type: "text", text: "Your morning report." }] },
       meta: { codeDelivery: { codeId, runId, effectKey: "summary" } },
-    });
+    } satisfies Partial<AiStoredMessage>);
     expect(await aiConversations.getConversation({ conversationId: chat.id, ownerUserId: owner })).toMatchObject({
       unreadCompletion: true,
     });
