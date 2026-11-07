@@ -606,7 +606,10 @@ export function seriesBarLayout(opts: BarChartOptions, size = { width: 480, heig
     return { label, index, center, current, total: totals[index]!, previous: opts.compare?.data[index] };
   });
   const barWidthPx =
-    Math.min(slot * (opts.layout === "stacked" ? 0.56 : 0.8 / Math.max(1, entries.length)), opts.layout === "stacked" ? 40 : 22) / units;
+    (opts.compare
+      ? Math.min(slot * 0.32, 26)
+      : Math.min(slot * (opts.layout === "stacked" ? 0.56 : 0.8 / Math.max(1, entries.length)), opts.layout === "stacked" ? 40 : 22)) /
+    units;
   return { ...size, columns, totals, scale, left, right, top, bottom, slot, y, format, units, entries, legend, legendLayout, barWidthPx };
 }
 
@@ -703,10 +706,11 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
     };
     if (opts.compare) {
       const bw = Math.min(g.slot * 0.32, 26);
+      const gap = Math.min(1.5, g.slot * 0.08);
       if (column.previous !== null && Number.isFinite(column.previous) && (!g.scale.log || column.previous! > 0))
-        marks += bar(column.previous!, 0, column.center - bw - 1.5, bw, 0, true);
+        marks += bar(column.previous!, 0, column.center - bw - gap, bw, 0, true);
       const value = column.current[0]?.value;
-      if (value != null && (!g.scale.log || value > 0)) marks += bar(value, 0, column.center + 1.5, bw, 0);
+      if (value != null && (!g.scale.log || value > 0)) marks += bar(value, 0, column.center + gap, bw, 0);
     } else
       column.current.forEach((v) => {
         if (v.value === null || (g.scale.log && v.value <= 0)) return;

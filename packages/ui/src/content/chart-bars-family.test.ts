@@ -117,3 +117,21 @@ test("comparison gaps and German percent changes retain their semantics", () => 
   expect(svg).toContain("&quot;key&quot;:&quot;delta&quot;,&quot;value&quot;:&quot;–&quot;");
   expect(svg).not.toMatch(/NaN|Infinity/);
 });
+
+test("dense comparison pairs stay inside their category and budget the actual width", () => {
+  const spec = {
+    x: Array.from({ length: 60 }, (_, i) => `Week ${i + 1}`),
+    series: [{ label: "Now", data: Array<number>(60).fill(2) }],
+    compare: { label: "Before", data: Array<number>(60).fill(1) },
+  };
+  const g = seriesBarLayout(spec);
+  expect(g.barWidthPx).toBeCloseTo(Math.min(g.slot * 0.32, 26) / g.units);
+  const svg = renderBarChartSvg({ ...spec, width: 480, height: 280 });
+  const bars = [...svg.matchAll(/class="stdlib-chart-bar stdlib-chart-series-0" x="([^"]*)"[^>]*width="([^"]*)"/g)];
+  expect(bars).toHaveLength(120);
+  bars.forEach((bar, i) => {
+    const category = g.columns[Math.floor(i / 2)]!;
+    expect(Number(bar[1])).toBeGreaterThanOrEqual(category.center - g.slot / 2);
+    expect(Number(bar[1]) + Number(bar[2])).toBeLessThanOrEqual(category.center + g.slot / 2);
+  });
+});
