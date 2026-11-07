@@ -1447,7 +1447,7 @@ for (const width of [1280, 390])
       const parsed = parseCloudAiView(comparedStats);
       if (!parsed) throw new Error("Invalid stats fixture");
       await page.evaluate((block) => window.show([block]), present(path, cloudAiViewSummary(parsed)));
-      await page.waitForSelector("[data-view-path] .k2b-stat-cell");
+      await page.waitForSelector("[data-view-path] [role=status]");
       await settled(page);
       const first = await boxes(page);
       const response = page.waitForResponse((response) => new URL(response.url()).searchParams.get("path") === path);
@@ -1479,7 +1479,7 @@ test("a failed stats module preserves its frame and offers a reload", async () =
     const parsed = parseCloudAiView(comparedStats);
     if (!parsed) throw new Error("Invalid stats fixture");
     await page.evaluate((block) => window.show([block]), present("/views/compared-12345678.view.json", cloudAiViewSummary(parsed)));
-    await page.waitForSelector("[data-view-path] .k2b-stat-cell");
+    await page.waitForSelector("[data-view-path] [role=status]");
     await settled(page);
     const first = await boxes(page);
     failure.resolve();
