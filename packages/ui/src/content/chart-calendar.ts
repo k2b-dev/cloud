@@ -11,33 +11,20 @@ export const calendarInspectionNavigation: ChartInspectionNavigation = {
 export function mountCalendarScroll(container: HTMLElement): () => void {
   const drawing = container.querySelector(".k2b-chart__svg");
   if (!drawing) return () => {};
+  // row-reverse makes zero the newest end in the server frame too. Older weeks
+  // use negative scrollLeft; only that user-controlled offset needs JavaScript.
   const header = () => {
-    const svg = drawing.querySelector<SVGSVGElement>("svg[data-calendar]");
-    if (!svg) return;
-    container.style.setProperty("--k2b-calendar-header-x", `${container.scrollLeft / (svg.getScreenCTM()?.a || 1)}px`);
+    if (container.scrollLeft) container.style.setProperty("--k2b-calendar-scroll", `${container.scrollLeft}px`);
+    else container.style.removeProperty("--k2b-calendar-scroll");
   };
-  let previousEnd = 0;
-  const reset = () => {
-    if (!drawing.querySelector("svg[data-calendar]")) return;
-    container.scrollLeft = container.scrollWidth;
-    previousEnd = container.scrollWidth - container.clientWidth;
-    header();
-  };
-  reset();
-  const observer = new MutationObserver(reset);
-  observer.observe(drawing, { childList: true });
-  // Keep the newest week visible across responsive resizes, while preserving
-  // an intentionally older scroll position whenever it still fits.
-  const resize = new ResizeObserver(() => {
-    if (container.scrollLeft >= previousEnd - 1) container.scrollLeft = container.scrollWidth;
-    previousEnd = container.scrollWidth - container.clientWidth;
+  const observer = new MutationObserver(() => {
+    container.scrollLeft = 0;
     header();
   });
-  resize.observe(container);
+  observer.observe(drawing, { childList: true });
   container.addEventListener("scroll", header, { passive: true });
   return () => {
     observer.disconnect();
-    resize.disconnect();
     container.removeEventListener("scroll", header);
   };
 }

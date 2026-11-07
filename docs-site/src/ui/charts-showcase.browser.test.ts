@@ -238,13 +238,12 @@ for (const width of [390, 800, 1440, 1920]) {
       const page = await browser!.newPage({ viewport: { width, height: 1000 }, reducedMotion: "reduce" });
       const errors = pageErrors(page);
       try {
-        await page.goto(`${origin}${path}`, { waitUntil: "networkidle" });
+        const response = await page.goto(`${origin}${path}`, { waitUntil: "networkidle" });
         await settled(page);
         const selector = ".k2b-chart__svg > svg[data-calendar]";
-        const response = await page.request.get(`${origin}${path}`);
         const serverSvg = await page.evaluate(
           (html) => new DOMParser().parseFromString(html, "text/html").querySelector(".k2b-chart__svg > svg[data-calendar]")!.outerHTML,
-          await response.text(),
+          await response!.text(),
         );
         expect(
           await page
@@ -262,29 +261,37 @@ for (const width of [390, 800, 1440, 1920]) {
           const drawing = element.querySelector(".k2b-chart__svg")!.getBoundingClientRect();
           const newest = element.querySelectorAll("[data-chart-datum] rect");
           const last = newest[newest.length - 1]!.getBoundingClientRect();
-          const svg = element.querySelector("svg") as SVGSVGElement;
-          const matrix = svg.getScreenCTM()!;
+          const label = element.querySelector("[data-calendar-weekdays] text")!.getBoundingClientRect();
+          const firstVisible = [...newest]
+            .map((e) => e.getBoundingClientRect())
+            .filter((b) => b.left >= label.right - 0.1)
+            .sort((a, b) => a.left - b.left)[0]!;
           return {
             left: element.scrollLeft,
-            end: element.scrollWidth - element.clientWidth,
-            gap: drawing.x + element.scrollLeft - viewport.x,
+            gap: drawing.width > viewport.width ? drawing.right - viewport.right : drawing.left - viewport.left,
             lastRight: last.right - viewport.right,
             lastLeft: last.left - viewport.left,
             cell: last.width,
             square: Math.abs(last.width - last.height),
-            origin: new DOMPoint(32, 0).matrixTransform(matrix).x + element.scrollLeft - viewport.x,
+            labelGap: firstVisible.left - label.right,
+            labelLeft: label.left - viewport.left,
+            railLeft: element.querySelector("[data-calendar-weekdays] > rect")!.getBoundingClientRect().left - viewport.left,
             height: drawing.height,
             viewportHeight: viewport.height,
           };
         });
         expect(Math.abs(geometry.gap), path).toBeLessThan(1);
-        expect(geometry.origin, path).toBeLessThan(75);
-        expect(geometry.left, path).toBe(geometry.end);
+        expect(geometry.labelGap, path).toBeGreaterThanOrEqual(0);
+        expect(geometry.labelGap, path).toBeLessThanOrEqual(8);
+        expect(geometry.labelLeft, path).toBeGreaterThanOrEqual(0);
+        expect(geometry.railLeft, path).toBeLessThanOrEqual(0);
+        expect(geometry.left, path).toBe(0);
         expect(geometry.lastRight, path).toBeLessThanOrEqual(1);
         expect(geometry.lastLeft, path).toBeGreaterThanOrEqual(0);
         expect(geometry.cell, path).toBeLessThanOrEqual(32.1);
         expect(geometry.square, path).toBeLessThan(0.2);
-        expect(Math.abs(geometry.height - geometry.viewportHeight), path).toBeLessThan(1);
+        expect(geometry.viewportHeight - geometry.height, path).toBeGreaterThanOrEqual(-1);
+        expect(geometry.viewportHeight - geometry.height, path).toBeLessThanOrEqual(17);
         expect(errors).toEqual([]);
       } finally {
         await page.close();

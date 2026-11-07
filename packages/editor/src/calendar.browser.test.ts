@@ -48,7 +48,7 @@ for (const width of [390, 800, 1440, 1920])
       expect(Math.abs(cell!.width - cell!.height)).toBeLessThan(0.2);
       expect(cell!.width).toBeGreaterThanOrEqual(13.9);
       expect(cell!.width).toBeLessThanOrEqual(32.1);
-      expect(Math.abs(drawing!.height - firstViewport.height)).toBeLessThan(1);
+      expect(Math.abs(drawing!.height + 16 - firstViewport.height)).toBeLessThan(1);
       await page.emulateMedia({ media: "print" });
       await page
         .locator("section")

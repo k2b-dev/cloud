@@ -17610,25 +17610,58 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-/* Calendar coordinates stay square in every host. */
-.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) { overflow-x: auto; }
+/* Reserve from the viewport's own width, including 16px for a classic scrollbar.
+   Keeping size containment here preserves the explorer's intrinsic header width. */
+.k2b-ui .k2b-chart-explorer__viewport[data-calendar] { container-type: inline-size; display: grid; grid-template-columns: minmax(0, 1fr); }
+.k2b-ui .k2b-chart-explorer__viewport[data-calendar]::before { content: ""; grid-area: 1 / 1; height: var(--k2b-calendar-height); }
+.k2b-ui .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-calendar][data-view="table"] { --k2b-calendar-available: calc(100cqw - 2 * var(--k2b-chart-explorer-inset)); }
+.k2b-ui .k2b-chart-explorer__viewport[data-calendar] > * { grid-area: 1 / 1; min-height: 0; contain: size; }
+/* An optional external legend keeps its own row inside the same reserve. */
+.k2b-ui .k2b-chart-explorer__viewport[data-calendar][data-legend] { grid-template-rows: minmax(0, 1fr) auto; }
+.k2b-ui .k2b-chart-explorer__viewport[data-calendar][data-legend]::before { grid-row: 1 / 3; }
+.k2b-ui .k2b-chart-explorer__viewport[data-calendar][data-legend] > .k2b-chart-legend { grid-area: 2 / 1; height: auto; contain: none; }
+/* The calendar viewport alone owns size queries. Reversed flex starts at the
+   newest week even before JavaScript, without changing tooltip text direction. */
+.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: flex-start;
+  overflow-x: auto;
+  container-type: inline-size;
+}
 .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) {
+  flex: 0 0 100%;
+  margin-right: auto;
   width: 100%;
   height: auto;
-  container-type: inline-size;
-  --k2b-calendar-inverse: tan(atan2(var(--k2b-chart-width), 100cqw));
 }
 .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) rect { vector-effect: non-scaling-stroke; }
-/* Growing cells must not grow their labels. Their positions still follow the SVG. */
-.k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) text {
+/* Geometry stays numeric in the core; these calculations also run in the server frame. */
+.k2b-ui svg[data-calendar] {
+  --k2b-calendar-width: clamp(var(--k2b-calendar-min), 100cqw, var(--k2b-calendar-max));
+  --k2b-calendar-inverse: tan(atan2(var(--k2b-calendar-base), var(--k2b-calendar-width)));
+  --k2b-calendar-overflow: max(0px, calc(var(--k2b-calendar-width) - 100cqw));
+  --k2b-calendar-rail: mod(calc(-1 * (var(--k2b-calendar-overflow) + var(--k2b-calendar-scroll, 0px))), calc(var(--k2b-calendar-step) * var(--k2b-calendar-width)));
+}
+/* Pin headers and the rail in SVG coordinates, before or after mounting. */
+.k2b-ui svg[data-calendar] [data-calendar-pinned] {
+  transform: translateX(calc((var(--k2b-calendar-overflow) + var(--k2b-calendar-scroll, 0px)) * var(--k2b-calendar-inverse)));
+}
+.k2b-ui [data-calendar-weekdays] { transform: translateX(calc(var(--k2b-calendar-rail) * var(--k2b-calendar-inverse))); }
+/* Text blocks keep fixed pixel spacing around their grid/legend anchor. */
+.k2b-ui svg[data-calendar] [data-calendar-fixed] {
+  transform-origin: 0 0;
+  scale: var(--k2b-calendar-inverse);
+}
+.k2b-ui [data-calendar-weekdays] text {
   transform-box: fill-box;
-  transform-origin: left bottom;
+  transform-origin: right center;
   scale: var(--k2b-calendar-inverse);
 }
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-inspected]:not([data-selected]):not([data-chart-role="value"]) > rect { stroke-width: 1.5px; }
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-selected] > rect { stroke-width: 2.5px !important; }
 @media print {
-  .k2b-ui .k2b-chart:has(svg[data-calendar]) { --k2b-calendar-header-x: 0px !important; }
+  .k2b-ui svg[data-calendar] { --k2b-calendar-overflow: 0px !important; --k2b-calendar-scroll: 0px !important; }
   .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { min-width: 0 !important; width: 100%; }
 }
 .k2b-ui .k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }

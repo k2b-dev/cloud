@@ -252,13 +252,18 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
       )}
     </Show>
   );
-  const calendarHeight = () => {
-    const chart = snapshot();
-    return chart?.minWidth && chart.maxWidth
-      ? calendarViewportHeight({ ...chart, minWidth: chart.minWidth, maxWidth: chart.maxWidth })
+  // The first frame owns its reserve, even when requests omit or replace its
+  // snapshot. With no initial geometry, keep the standard frame after loading.
+  const firstChart = snapshot();
+  const calendarHeight =
+    firstChart?.minWidth && firstChart.maxWidth
+      ? calendarViewportHeight(
+          { ...firstChart, minWidth: firstChart.minWidth, maxWidth: firstChart.maxWidth },
+          "var(--k2b-calendar-available,100cqw)",
+        )
       : undefined;
-  };
-  const viewportHeight = () => props.height ?? calendarHeight() ?? "18rem";
+  const autoCalendar = Boolean(calendarHeight);
+  const viewportHeight = () => props.height ?? calendarHeight ?? "18rem";
   // "14px 16px" reads like CSS padding: block first, then inline; one value is both.
   const insetBlock = () => props.inset?.trim().split(/\s+/)[0] ?? "";
   const insetInline = () => props.inset?.trim().split(/\s+/)[1] ?? insetBlock();
@@ -269,14 +274,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
       aria-busy={state() === "loading" || state() === "refreshing" ? "true" : undefined}
       data-state={state()}
       data-inset={props.inset ? "true" : undefined}
-      style={
-        props.inset || calendarHeight()
-          ? {
-              ...(props.inset ? { "--k2b-chart-explorer-inset": insetInline(), "--k2b-chart-explorer-inset-block": insetBlock() } : {}),
-              "container-type": calendarHeight() ? "inline-size" : undefined,
-            }
-          : undefined
-      }
+      style={props.inset ? { "--k2b-chart-explorer-inset": insetInline(), "--k2b-chart-explorer-inset-block": insetBlock() } : undefined}
     >
       <header class="k2b-chart-explorer__header">
         <div>
@@ -348,10 +346,14 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
       <div
         ref={legendHost}
         class="k2b-chart-explorer__viewport"
+        data-calendar={autoCalendar ? "true" : undefined}
         data-view={tableView() ? "table" : undefined}
         data-legend={view() === "chart" && props.legend?.length && data().rows.length > 0 ? "true" : undefined}
         data-capped={tableView() && shownRows().length < rows().length ? "true" : undefined}
-        style={{ height: tableView() && props.inset ? `calc(${viewportHeight()} + ${insetBlock()})` : viewportHeight() }}
+        style={{
+          [autoCalendar ? "--k2b-calendar-height" : "height"]:
+            tableView() && props.inset ? `calc(${viewportHeight()} + ${insetBlock()})` : viewportHeight(),
+        }}
       >
         <Show
           when={state() !== "loading" && state() !== "error" && data().rows.length > 0}
