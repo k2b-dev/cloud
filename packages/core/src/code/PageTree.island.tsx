@@ -1,6 +1,14 @@
 import type { CodeChartDescription, CodePageField, CodePageNode, CodePageTree } from "@k2b/cloud/code";
 import { codeOwnPath } from "@k2b/cloud/contracts";
-import { type ChartRow, chartLegend, chartMarkKey, chartReferenceMark, chartRenderOptions, chartRows, chartTooltip } from "@k2b/editor/charts";
+import {
+  type ChartRow,
+  chartLegend,
+  chartMarkKey,
+  chartReferenceMark,
+  chartRenderOptions,
+  chartRows,
+  chartTooltip,
+} from "@k2b/editor/charts";
 import {
   Button,
   ChartExplorer,
@@ -20,8 +28,8 @@ import {
   QrScanner,
   type QrScannerError,
   Select,
-  type ToastHandle,
   TextInput,
+  type ToastHandle,
   toast,
   useLocale,
 } from "@k2b/ui";
@@ -118,7 +126,14 @@ function CodeTable(props: { item: Extract<CodePageNode, { kind: "Table" }>; leve
 /** Single values and trends need less room than a plot with axes, as in chat charts. */
 const chartHeight = (kind: CodeChartDescription["kind"]) =>
   kind === "sparkline" ? "8rem" : kind === "stat" ? "10rem" : kind === "barGauge" ? "12rem" : "18rem";
-const emptySnapshot = (kind: CodeChartDescription["kind"]): ChartSnapshot => ({ kind, svg: "", width: 480, height: 280, stretch: true, marks: [] });
+const emptySnapshot = (kind: CodeChartDescription["kind"]): ChartSnapshot => ({
+  kind,
+  svg: "",
+  width: 480,
+  height: 280,
+  stretch: true,
+  marks: [],
+});
 
 function CodeChart(props: { description: CodeChartDescription; level: HeadingLevel }) {
   const locale = useLocale();
@@ -144,7 +159,9 @@ function CodeChart(props: { description: CodeChartDescription; level: HeadingLev
         headingLevel={props.level}
         description={props.description.subtitle ? <span class="text-sm text-secondary">{props.description.subtitle}</span> : undefined}
         height={chartHeight(props.description.kind)}
-        data={drawn() ? { chart: drawn()!.snapshot, rows: drawn()!.table.rows } : { chart: emptySnapshot(props.description.kind), rows: [] }}
+        data={
+          drawn() ? { chart: drawn()!.snapshot, rows: drawn()!.table.rows } : { chart: emptySnapshot(props.description.kind), rows: [] }
+        }
         columns={(drawn()?.table.columns ?? []).map((column) => ({
           id: column.id,
           label: column.label,
@@ -163,7 +180,15 @@ function CodeDetail(props: { item: Extract<CodePageNode, { kind: "Detail" }>; le
   const locale = useLocale();
   const t = () => codePageMessages.resolve([locale()]).t;
   const value = (item: Scalar) =>
-    item === null ? "—" : typeof item === "boolean" ? (item ? t().yes : t().no) : typeof item === "number" ? item.toLocaleString(locale()) : item;
+    item === null
+      ? "—"
+      : typeof item === "boolean"
+        ? item
+          ? t().yes
+          : t().no
+        : typeof item === "number"
+          ? item.toLocaleString(locale())
+          : item;
   return (
     <section class="grid min-w-0 gap-3" data-code-block="Detail">
       <Title level={props.level}>{props.item.title}</Title>
@@ -245,7 +270,12 @@ function CodeField(props: { field: CodePageField; changed: () => void }) {
             </PanelDialog>
           ),
           // Back closes the scanner and stops the camera instead of leaving the page.
-          { panelClassName: "k2b-dialog k2b-dialog--full", contentClassName: "k2b-dialog__viewport", ariaLabel: messages.scanTitle, history: true },
+          {
+            panelClassName: "k2b-dialog k2b-dialog--full",
+            contentClassName: "k2b-dialog__viewport",
+            ariaLabel: messages.scanTitle,
+            history: true,
+          },
         );
         if (result && "text" in result) {
           setCameraError(undefined);
@@ -319,27 +349,34 @@ function CodePageContent(props: PageProps) {
 
   let reloading = false;
   let reloadAgain = false;
-  /** Loads the current address again. Several events while one load runs end in exactly one more load. */
+  let forceAgain = false;
+  /** Someone is typing: new data waits for their choice in a toast, which moves nothing on the page. */
+  const offer = () => {
+    if (waiting) return;
+    waiting = toast(t().newData, { duration: 0, action: { label: t().refresh, onClick: () => void reload(true) } });
+    notices.add(waiting);
+  };
+  /**
+   * Loads the current address again. Several events while one load runs end in exactly one more load. `force` comes
+   * from the person (Refresh, Back) and replaces their input; an event never does, also when typing began mid-load.
+   */
   const reload = async (force = false) => {
-    // Someone is typing: new data waits for their choice in a toast, which moves nothing on the page.
-    if (edited() && !force) {
-      if (!waiting) {
-        waiting = toast(t().newData, { duration: 0, action: { label: t().refresh, onClick: () => void reload(true) } });
-        notices.add(waiting);
-      }
+    if (edited() && !force) return offer();
+    if (reloading) {
+      reloadAgain = true;
+      forceAgain ||= force;
       return;
     }
-    if (reloading) return void (reloadAgain = true);
     reloading = true;
     setLoading(true);
     try {
+      let forced = force;
       do {
         reloadAgain = false;
         const answer = await requestCodePage(location.href);
         if (disposed) return;
-        if (answer.kind === "tree") show(answer.tree, answer.csrf, answer.url, "replace");
-        else if (answer.kind === "navigate") return location.assign(answer.url);
-        else if (answer.kind === "failed") {
+        if (answer.kind === "navigate") return location.assign(answer.url);
+        if (answer.kind === "failed") {
           const notice = toast.error(codePageFailure(t(), answer.code, t().refreshFailed), {
             action: {
               label: t().retry,
@@ -352,7 +389,13 @@ function CodePageContent(props: PageProps) {
           notices.add(notice);
           return;
         }
-      } while (reloadAgain && !edited());
+        if (answer.kind === "tree") {
+          if (edited() && !forced && !forceAgain) return offer();
+          show(answer.tree, answer.csrf, answer.url, "replace");
+        }
+        forced = forceAgain;
+        forceAgain = false;
+      } while (reloadAgain);
     } finally {
       reloading = false;
       setLoading(false);

@@ -33,7 +33,8 @@ cld code sdk pull ./code/work-shop/workshop-owner
 cld code check ./code/work-shop/workshop-owner
 ```
  Resource- and app-owned projects start with
-`code.tsx`; personal projects start with a schedule because they cannot host routes.
+`code.tsx`; personal projects start with a schedule and can add routes and pages
+the same way.
 
 Use `c.page(tree)` for a Cloud-rendered document. In a `.tsx` entry file, import
 `jsx` and the description components from `@sdk`. The checker compiles TSX with
@@ -79,11 +80,11 @@ The version 1 allow-list is:
 
 | Node | Description fields |
 | --- | --- |
-| `Page` | `title`, `children`; root only, `version: 1` |
+| `Page` | `title`, `children`, optional `follow`; root only, `version: 1` |
 | `Section` | `title`, `children` |
 | `Text` | `text`; TSX also accepts a text child |
 | `Heading` | `text`, optional `level: 2 \| 3 \| 4` |
-| `Table` | `title`, `columns: [{ key, label }]`, `rows` of scalar values |
+| `Table` | `title`, `columns: [{ key, label }]`, `rows` of scalar values, optional `empty` text |
 | `Form` | `title`, `action`, `fields`, `submit`; always POST |
 | `Detail` | `title`, `items: [{ label, value }]` |
 | `Chart` | `description: { kind, … }`; portable chart data, no callbacks |
@@ -91,19 +92,49 @@ The version 1 allow-list is:
 | `Button`, `Action` | `label`, `action`, optional string `values`; always POST |
 | `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` |
 
-Fields have `name`, `label`, `type`, optional `value` and `required`. Types are
+Fields have `name`, `label`, `type`, optional `value`, `required` and `error`. Types are
 `text`, `email`, `number`, `textarea`, `select`, `checkbox` and `scan`. Only
 `select` takes `options: [{ value, label }]`. Values match the field type.
 Field names are unique; `_csrf` is reserved. Cloud inserts the CSRF token into
 forms and actions and removes it before invoking the handler. Links and POST
 destinations resolve inside `/code/<id>/`; they cannot leave that Code.
 
-The first renderer presents chart descriptions as their data tables and scan
-fields as text inputs. Chart drawings, camera scanning and live subscriptions
-are separate renderer work. Supported chart descriptions are `bar`, `line`,
-`scatter`, `pie`, `donut`, `histogram`, `gauge`, `sparkline`, `boxplot`, `heatmap`,
-`barGauge` and `stat`, with matching `Chart.Bar`, `Chart.Line`, etc. builders.
-The portable chart data contract is exported by `@k2b/editor/chart-schema`.
+Cloud draws every block with its shared components, on the server and again in
+the browser with the same result, in light and dark and at phone width. A chart
+draws its description with the shared chart renderer and can switch to its data
+table. Supported chart descriptions are `bar`, `line`, `scatter`, `pie`, `donut`,
+`histogram`, `gauge`, `sparkline`, `boxplot`, `heatmap`, `barGauge` and `stat`,
+with matching `Chart.Bar`, `Chart.Line`, etc. builders. The portable chart data
+contract is exported by `@k2b/editor/chart-schema`. A table sorts by any column
+and shows `empty`, or a default text, when it has no rows. Neighbouring
+`Button` and `Action` nodes share one row.
+
+A `scan` field is a text field with a **Scan** button. The button opens the
+device camera in Cloud's QR code scanner; the read text goes into the field and
+nothing is sent until the form is submitted. Typing, or a handheld scanner that
+types, works the same way. When the camera cannot start, the field says why.
+
+Forms and actions send without reloading the document. While a POST runs, its
+button shows that it is busy and nothing else on the page moves. A handler
+answers with a page or a redirect:
+
+- `c.page(tree)` replaces the page in place. To report invalid input, return
+  the form again with the submitted values and an `error` on each field.
+- `c.redirect(path)` opens that page of this Code; Back returns to the
+  previous one.
+- `c.json` or `c.text` count as done; Cloud then loads the current page again.
+
+A failed form keeps its input and names the problem beside its button; a failed
+action names it in a notification. Cloud never repeats a POST by itself. Without
+JavaScript, forms and actions submit as normal HTML forms.
+
+`follow` lists up to eight event types, such as `grids.record.changed`, after
+which Cloud loads the page again for its viewer through the same route. Several
+events in a row lead to one load. While the viewer is typing in a form, Cloud
+offers the new data in a notification instead of replacing their input. A
+following page also loads again when its tab becomes visible. Delivery of
+platform events to open pages arrives with the event service; until then only
+the return to the tab reloads a following page.
 
 A tree is limited to 64 KiB, 256 nodes and 12 node levels. A table has at most
 200 rows and 20 columns; a form has at most 40 fields. Portable chart budgets
@@ -214,9 +245,9 @@ unique in the module. Keep the name across versions to identify the same task.
 
 ## Serve routes
 
-Routes currently require resource- or app-owned Code with its own Code account.
-Personal Code cannot register routes. Register routes at module scope with literal paths. Core hosts the active,
-approved version at `/code/<code-id>/…`:
+Resource-, app-owned and personal Code can register routes. Register routes at
+module scope with literal paths. Core hosts the active, approved version at
+`/code/<code-id>/…`:
 
 ```ts
 import { app } from "@sdk";
@@ -242,6 +273,12 @@ Handlers return `c.json(value, status?)`, `c.text(text, status?)` or
 cookies or HTML. `c.req` provides `raw`, `param(name)`, `query(name)`, `json()`,
 `text()` and `formData()`. Core forwards only the request data, never browser
 cookies or credentials.
+
+Personal Code runs its routes with its owner's mandate, like its schedules. Its
+non-public routes therefore open only for that owner; any other signed-in person
+receives `403` with `code_owner_only`. Public routes of personal Code follow the
+same rules as below and still run with the owner's mandate, so return only what
+any visitor may see.
 
 Routes require a signed-in session by default. `c.user` contains that person's
 ID and effective group IDs; check it in the handler when access depends on the

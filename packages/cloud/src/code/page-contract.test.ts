@@ -132,3 +132,24 @@ test("portable chart validation runs before server rendering", () => {
   };
   expect(() => validateCodePage(page([{ kind: "Chart", description }]), codeId)).toThrow();
 });
+test("a page follows a few unique event types and fields carry the Code's validation message", () => {
+  const form = {
+    kind: "Form",
+    title: "Find",
+    action: "/find",
+    submit: "Find",
+    fields: [{ type: "scan", name: "barcode", label: "Barcode", value: "W-1", error: "No item has this code." }],
+  };
+  const table = { kind: "Table", title: "Waiting", columns: [{ key: "item", label: "Item" }], rows: [], empty: "Nothing waits." };
+  const followed = { ...page([form, table]), follow: ["grids.record.changed", "mail.message.received"] };
+  expect<unknown>(validateCodePage(followed, codeId)).toEqual(followed);
+  for (const follow of [
+    ["grids.record.changed", "grids.record.changed"],
+    ["Grids.Record"],
+    ["grids"],
+    ["https://evil.test/event"],
+    Array.from({ length: CODE_PAGE_LIMITS.follow + 1 }, (_, index) => `app.event-${index}`),
+  ])
+    expect(() => validateCodePage({ ...page(), follow }, codeId)).toThrow();
+  expect(() => validateCodePage(page([{ ...form, fields: [{ ...form.fields[0], error: "" }] }]), codeId)).toThrow();
+});

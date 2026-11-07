@@ -24,7 +24,7 @@ app.get("/", c => c.page(
 ));
 export default app;
 `;
-/** Personal Code has no Code account and therefore cannot host routes. */
+/** Personal Code starts with a schedule; it may add routes, which run with its owner's mandate. */
 export function codeInitialFiles(owner: CodeOwner) {
   const entry = owner.kind === "person" ? "code.ts" : "code.tsx";
   return { entry, files: { [entry]: owner.kind === "person" ? CODE_INITIAL_SOURCE : CODE_INITIAL_PAGE_SOURCE } };

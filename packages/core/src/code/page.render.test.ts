@@ -14,6 +14,7 @@ const root = mkdtempSync(join(tmpdir(), "core-code-page-render-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 const { default: Page } = await import("./PageTree.island");
 const { createCodeHostingRoutes } = await import("./hosting");
+const { codePageFixture } = await import("./page.test-fixture");
 const tree = validateCodePage(
   {
     version: 1,
@@ -53,6 +54,26 @@ test("SSR renders escaped content, own links, chart data and usable form control
   expect(html).toContain('href="/code/c_page/next"');
   expect(html).toContain("Count");
   expect(html).toContain("Info");
+});
+test("the server draws every block with shared components, including the chart and the scan control", () => {
+  const full = validateCodePage(codePageFixture, "c_page");
+  const html = renderToString(() => createComponent(Page, { tree: full, codeId: "c_page", csrf: "session-bound", locale: "en" }));
+  for (const kind of ["Notice", "Text", "Section", "Chart", "Table", "Form", "Detail", "Heading", "Actions", "Button", "Action", "Link"])
+    expect(html).toContain(`data-code-block="${kind}"`);
+  // A drawn chart, not only its data table.
+  expect(html).toMatch(/<svg[^>]*stdlib-chart|class="[^"]*k2b-chart/);
+  expect(html).toContain("Items per status");
+  // The empty table names its state; the field shows the Code's validation message.
+  expect(html).toContain("Nothing waits.");
+  expect(html).toContain("No item has this code.");
+  expect(html).toContain('aria-label="Scan"');
+  // Detail values in the reader's language; both actions share one row.
+  expect(html).toContain("1,200");
+  expect(html).toContain("Yes");
+  expect(html.match(/data-code-block="Actions"/g)).toHaveLength(1);
+  const german = renderToString(() => createComponent(Page, { tree: full, codeId: "c_page", csrf: "session-bound", locale: "de" }));
+  expect(german).toContain("1.200");
+  expect(german).toContain('aria-label="Scannen"');
 });
 test("Core hosts a complete page document and rejects invalid trees before rendering", async () => {
   const rate = spyOn(server, "ratelimit").mockImplementation(({ id }) => ({
