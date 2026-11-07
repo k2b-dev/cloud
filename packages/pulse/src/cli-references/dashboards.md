@@ -56,7 +56,10 @@ code and one nonnegative value column; rows with a null or empty country stay
 off the map. Use `"width": "full"` so that the map and its list have room.
 Pulse adds the DB-IP link to map panels and panels whose SQL mentions
 `country` while Cloud uses DB-IP; do not add it to a description. `unit`,
-`threshold`, `section`, and `width` (`third`, `half`, `full`) control display.
+`threshold`, `section`, and `width` (`third`, `half`, `twoThirds`, `full`: 2, 3,
+4, or 6 of six columns) control display. A number panel ignores `width`: with
+a `section` it joins that section's row of key figures, without one it stays in
+the top row.
 Panels in a named section share optional `sectionIcon` (for example
 `ti ti-router`), `sectionDescription` (source and cadence), and `sectionColor`
 (a six-digit hex color). Use identical section presentation on its panels.

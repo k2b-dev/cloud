@@ -21,6 +21,7 @@ import { principalLabel } from "@k2b/cloud/shared";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import type { z } from "zod";
+import { mailEvents } from "./app-events";
 import * as c from "./capability-contracts";
 import { mailCapabilityMessages } from "./capability-messages";
 import { mailCapabilityPresentation } from "./capability-presentation";
@@ -5103,6 +5104,7 @@ export const mailCapabilities = localizeCapabilityErrors(
         icon: "ti ti-mail-forward",
       },
     },
+    events: mailEvents,
     queries: queryDefinitions,
     actions: actionDefinitions,
   }),

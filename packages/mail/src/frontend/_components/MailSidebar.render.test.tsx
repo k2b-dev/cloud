@@ -77,7 +77,7 @@ describe("Mail sidebar", () => {
     expect(await selectHtml(stacked, ".k2b-app-workspace__sidebar-section-content > [data-mailbox]")).not.toHaveLength(0);
   });
 
-  test("phone title navigation lists places, hidden mailboxes and New mailbox without views or tools", () => {
+  test("phone title navigation lists places, hidden mailboxes, New mailbox and Deleted mailboxes without views or tools", () => {
     const html = renderSidebar({
       open: openMailboxFixture({
         folders: [
@@ -110,9 +110,10 @@ describe("Mail sidebar", () => {
       "More",
       "Archive",
       "Customers",
-      "Hidden mailboxes",
+      "Hidden",
       "Hidden box",
       "New mailbox",
+      "Deleted mailboxes",
     ]);
   });
 

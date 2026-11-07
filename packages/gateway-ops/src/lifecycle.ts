@@ -227,7 +227,12 @@ const createTelemetryCleanupSchedule = async (): Promise<void> => {
             getPositiveIntegerSetting("gateway.telemetry_event_retention_days", 14),
             getPositiveIntegerSetting("gateway.telemetry_rollup_retention_days", 90),
           ]);
-          const telemetry = await cleanupTelemetry({ eventsDays, rollupsDays, heartbeat: () => context.heartbeat() });
+          const telemetry = await cleanupTelemetry({
+            eventsDays,
+            rollupsDays,
+            signal: context.signal,
+            heartbeat: () => context.heartbeat(),
+          });
           const summary = { events: telemetry.events, rollups: telemetry.rollups };
           log.info("Observability retention cleanup completed", summary);
           return summary;

@@ -586,33 +586,7 @@ export const wakeExpiredWorkflowRuns = async (limit: number, options: { appId?: 
   return rows.map((row) => row.id);
 };
 
-/** Re-queues every run parked on a dependency that has now been satisfied. */
-export const wakeWorkflowRunsWaitingOn = async (
-  dependency: { appId: string; kind: string; key: string },
-  options: { db?: SQL } = {},
-): Promise<string[]> => {
-  return withTransaction(options.db, async (tx) => {
-    await tx`
-      INSERT INTO workflows.dependency_signal (app_id, kind, key)
-      VALUES (${dependency.appId}, ${dependency.kind}, ${dependency.key})
-      ON CONFLICT (app_id, kind, key) DO UPDATE
-      SET updated_at = now()
-    `;
-    const rows = await tx<{ id: string }[]>`
-      UPDATE workflows.run AS r
-      SET state = 'queued', wake_at = NULL, updated_at = now()
-      FROM workflows.step_outcome AS s
-      WHERE s.run_id = r.id
-        AND s.state = 'waiting'
-        AND s.dependency ->> 'kind' = ${dependency.kind}
-        AND s.dependency ->> 'key' = ${dependency.key}
-        AND r.app_id = ${dependency.appId}
-        AND r.state = 'waiting'
-      RETURNING r.id
-    `;
-    return rows.map((row) => row.id).sort();
-  });
-};
+export { wakeWorkflowRunsWaitingOn } from "../../_internal/workflow-signals";
 
 // ─── Journal ─────────────────────────────────────────────────────────────────
 

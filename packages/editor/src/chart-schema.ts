@@ -1,4 +1,8 @@
-import { autoBin, computeDomain, niceStep } from "@k2b/stdlib";
+import { chartLocaleSchema } from "./chart-locale";
+
+export { chartAcceptsLocale, chartLocaleSchema } from "./chart-locale";
+
+import { autoBin, CALENDAR_MAX_DAYS, calendarDay, computeDomain, niceStep } from "@k2b/ui/charts/core";
 import { z } from "zod";
 
 /** Optional caller policy. Rendering itself has no AI input budget. */
@@ -26,12 +30,13 @@ export const chartNumberFormatSchema = () =>
     });
 const dateFormatSchema = () => z.strictObject({ date: z.enum(["day", "minute", "second"]) });
 export const chartFormatSchema = () => z.union([chartNumberFormatSchema(), dateFormatSchema()]);
+
 export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSchema>>;
 export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
 export const chartKindSchema = () =>
-  z.enum(["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
+  z.enum(["area", "bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
 
 export const chartParts = (limits?: ChartLimits) => {
   const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
@@ -61,7 +66,13 @@ export const chartParts = (limits?: ChartLimits) => {
   });
   // As many lines as series a reader can tell apart.
   const ChartReferences = list(
-    z.object({ value: z.union([z.number(), ChartDate]), axis: z.enum(["x", "y"]).optional(), label: ChartLabel.optional() }),
+    z.object({
+      value: z.union([z.number(), ChartDate]),
+      axis: z.enum(["x", "y"]).optional(),
+      label: ChartLabel.optional(),
+      style: z.enum(["solid", "dashed", "dotted"]).optional(),
+      tone: z.enum(["neutral", "info", "success", "warning", "danger"]).optional(),
+    }),
     0,
     limits?.maxSeries,
     `Use at most ${limits?.maxSeries} references.`,
@@ -143,6 +154,27 @@ export const chartKinds = (limits?: ChartLimits) => {
   const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
   const numberFormat = chartNumberFormatSchema();
   return z.discriminatedUnion("kind", [
+    z
+      .object({
+        kind: z.literal("area"),
+        ...ChartKindCommon,
+        layout: z.literal("stacked"),
+        normalize: z.boolean().optional(),
+        x: list(z.union([z.number(), ChartLabel]), 1, limits?.maxValues),
+        series: list(z.object({ label: ChartLabel, data: list(z.number().min(0).nullable(), 0, limits?.maxValues) }), 1, limits?.maxSeries),
+        legend: z.boolean().optional(),
+        format: numberFormat.optional(),
+      })
+      .superRefine((spec, ctx) => {
+        spec.series.forEach((s, i) => {
+          if (s.data.length !== spec.x.length)
+            ctx.addIssue({ code: "custom", path: ["series", i, "data"], message: "Area series must match x length." });
+        });
+        spec.x.forEach((_, i) => {
+          const sum = spec.series.reduce((sum, s) => sum + (s.data[i] ?? 0), 0);
+          if (!Number.isFinite(sum)) ctx.addIssue({ code: "custom", path: ["x", i], message: "Area totals must be finite." });
+        });
+      }),
     z.object({
       kind: z.literal("bar"),
       ...ChartKindCommon,
@@ -221,15 +253,52 @@ export const chartKinds = (limits?: ChartLimits) => {
       yAxis: ChartAxis.optional(),
       references: ChartReferences.optional(),
     }),
-    z.object({
-      kind: z.literal("heatmap"),
-      ...ChartKindCommon,
-      data: list(ChartCell, 1, limits?.maxMarks),
-      format: numberFormat.optional(),
-      showValues: z.boolean().optional(),
-      min: z.number().optional(),
-      max: z.number().optional(),
-    }),
+    z.discriminatedUnion("layout", [
+      z
+        .object({
+          kind: z.literal("heatmap"),
+          ...ChartKindCommon,
+          layout: z.literal("calendar"),
+          data: list(
+            z.tuple([
+              z.string().refine((day) => {
+                try {
+                  calendarDay(day);
+                  return true;
+                } catch {
+                  return false;
+                }
+              }, "Invalid ISO calendar day."),
+              ChartNumber.nullable(),
+            ]),
+            1,
+            limits?.maxMarks,
+          ),
+          scale: z.enum(["sequential", "diverging"]),
+          label: ChartLabel.optional(),
+          format: numberFormat.optional(),
+          locale: chartLocaleSchema().optional(),
+        })
+        .superRefine((spec, ctx) => {
+          if (ctx.issues.length) return;
+          const times = spec.data.map(([day]) => calendarDay(day));
+          if (times.length && (Math.max(...times) - Math.min(...times)) / 86400000 >= CALENDAR_MAX_DAYS)
+            ctx.addIssue({ code: "custom", message: "Calendar span must not exceed three years." });
+          if (new Set(spec.data.map(([day]) => day)).size !== spec.data.length)
+            ctx.addIssue({ code: "custom", message: "Calendar dates must be unique." });
+        }),
+      z.object({
+        kind: z.literal("heatmap"),
+        ...ChartKindCommon,
+        // An empty enum accepts no layout, exports as never, and lets optional() enumerate the absent discriminator.
+        layout: z.enum([]).optional(),
+        data: list(ChartCell, 1, limits?.maxMarks),
+        format: numberFormat.optional(),
+        showValues: z.boolean().optional(),
+        min: z.number().optional(),
+        max: z.number().optional(),
+      }),
+    ]),
     z.object({
       kind: z.literal("barGauge"),
       ...ChartKindCommon,

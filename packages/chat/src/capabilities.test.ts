@@ -72,6 +72,7 @@ test("publishes exactly five item operations and a required-id message reader", 
     "discussion.post",
     "message.delete",
     "message.edit",
+    "message.post",
     "notifications.set",
     "thread.follow",
   ]);

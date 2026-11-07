@@ -4,7 +4,7 @@ import { CodeInternetOriginSchema } from "../contracts/code-internet";
 import { CodeRouteSchema } from "../contracts/code-routes";
 import { CodeAutomationTitleSchema, CodeOnceScheduleSchema } from "../contracts/code-version";
 import { MANDATE_POLICY_MAX_IDENTIFIERS } from "../services/mandates/policy";
-import { normalizeWorkflowSchedule } from "../workflows/runtime/schedule";
+import { normalizeCronSchedule } from "../shared/cron-schedule";
 import type { CodeCheckDiagnostic, CodeCheckRequest, CodePermission, CodeVersionManifest } from "./checker-contract";
 import { codeSdkPhaseDiagnostic } from "./types";
 
@@ -455,7 +455,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               );
             else {
               try {
-                if (!once?.success) normalizeWorkflowSchedule({ cron: cron![0]!, timezone: timeZone?.[0] ?? "UTC" });
+                if (!once?.success) normalizeCronSchedule({ cron: cron![0]!, timezone: timeZone?.[0] ?? "UTC" });
               } catch {
                 report(
                   node,

@@ -36,6 +36,19 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     });
   }
 
+  test("a sidebar row that shows or hides the rows after it says whether they are shown; a link row never does", () => {
+    for (const expanded of [true, false]) {
+      const html = renderToString(() => createComponent(AppWorkspace.SidebarItem, { expanded, onClick: () => {}, children: "Hidden" }));
+      expect(html).toMatch(new RegExp(`<button[^>]*aria-expanded="${expanded}"`));
+    }
+    expect(renderToString(() => createComponent(AppWorkspace.SidebarItem, { onClick: () => {}, children: "More" }))).not.toContain(
+      "aria-expanded",
+    );
+    expect(
+      renderToString(() => createComponent(AppWorkspace.SidebarItem, { href: "/devices", expanded: true, children: "Devices" })),
+    ).not.toContain("aria-expanded");
+  });
+
   test("renders the page heading and exact-current navigation before hydration", () => {
     const html = renderToString(() =>
       createComponent(PageTrailProvider, {

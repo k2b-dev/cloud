@@ -11,6 +11,7 @@
  * Ingest and retention live in `../../telemetry`; this module only reads.
  */
 import { sql } from "@k2b/cloud";
+import { readQuery } from "@k2b/cloud/services/logging/read";
 import { SLOW_REQUEST_MS } from "../../telemetry";
 import { TELEMETRY_RANGES, type TelemetryRange, type TelemetryRouteScope, type TelemetryRouteSort } from "./contracts";
 
@@ -90,17 +91,18 @@ const scopeFilter = (query: TelemetryQuery) => {
 };
 
 export const getTelemetryOverview = async (query: TelemetryQuery): Promise<TelemetryOverview> => {
-  const [row] = await sql<
-    {
-      requests: number;
-      server_errors: number;
-      client_errors: number;
-      rate_limited: number;
-      slow_requests: number;
-      avg_duration_ms: number | null;
-      max_duration_ms: number | null;
-    }[]
-  >`
+  const [row] = await readQuery(
+    (db) => db<
+      {
+        requests: number;
+        server_errors: number;
+        client_errors: number;
+        rate_limited: number;
+        slow_requests: number;
+        avg_duration_ms: number | null;
+        max_duration_ms: number | null;
+      }[]
+    >`
     SELECT
       COALESCE(SUM(request_count), 0)::int AS requests,
       COALESCE(SUM(request_count) FILTER (WHERE status_code >= 500), 0)::int AS server_errors,
@@ -111,7 +113,8 @@ export const getTelemetryOverview = async (query: TelemetryQuery): Promise<Telem
       MAX(max_duration_ms)::float AS max_duration_ms
     FROM gateway.telemetry_rollups_minute
     WHERE ${rangeFilter(query.range)} AND ${scopeFilter(query)}
-  `;
+  `,
+  );
   return {
     requests: row?.requests ?? 0,
     serverErrors: row?.server_errors ?? 0,
@@ -133,16 +136,17 @@ const bucketedSeries = (range: TelemetryRange) => {
 };
 
 export const getTelemetryTimeseries = async (query: TelemetryQuery): Promise<TelemetryTimeseriesPoint[]> => {
-  const rows = await sql<
-    {
-      at: string;
-      requests: number;
-      errors: number;
-      server_errors: number;
-      avg_duration_ms: number | null;
-      max_duration_ms: number | null;
-    }[]
-  >`
+  const rows = await readQuery(
+    (db) => db<
+      {
+        at: string;
+        requests: number;
+        errors: number;
+        server_errors: number;
+        avg_duration_ms: number | null;
+        max_duration_ms: number | null;
+      }[]
+    >`
     SELECT
       ${bucketedSeries(query.range)}::text AS at,
       COALESCE(SUM(request_count), 0)::int AS requests,
@@ -154,7 +158,8 @@ export const getTelemetryTimeseries = async (query: TelemetryQuery): Promise<Tel
     WHERE ${rangeFilter(query.range)} AND ${scopeFilter(query)}
     GROUP BY 1
     ORDER BY 1 ASC
-  `;
+  `,
+  );
   return rows.map((row) => ({
     at: row.at,
     requests: row.requests,
@@ -206,17 +211,18 @@ export const listTelemetryRoutes = async (
   sort: TelemetryRouteSort,
   scope: TelemetryRouteScope = { errorsOnly: false, slowOnly: false },
 ): Promise<TelemetryRouteRow[]> => {
-  const rows = await sql<
-    {
-      app_id: string;
-      route: string;
-      requests: number;
-      errors: number;
-      slow_requests: number;
-      avg_duration_ms: number | null;
-      max_duration_ms: number | null;
-    }[]
-  >`
+  const rows = await readQuery(
+    (db) => db<
+      {
+        app_id: string;
+        route: string;
+        requests: number;
+        errors: number;
+        slow_requests: number;
+        avg_duration_ms: number | null;
+        max_duration_ms: number | null;
+      }[]
+    >`
     SELECT
       app_id,
       ${ROUTE_EXPR()} AS route,
@@ -231,7 +237,8 @@ export const listTelemetryRoutes = async (
     HAVING ${routeHaving(scope)}
     ORDER BY ${routeOrdering(sort)}
     LIMIT ${RANKING_LIMIT}
-  `;
+  `,
+  );
   return rows.map((row) => ({
     appId: row.app_id,
     route: row.route,
@@ -244,12 +251,14 @@ export const listTelemetryRoutes = async (
 };
 
 export const listTelemetryApps = async (range: TelemetryRange): Promise<string[]> => {
-  const rows = await sql<{ app_id: string }[]>`
+  const rows = await readQuery(
+    (db) => db<{ app_id: string }[]>`
     SELECT DISTINCT app_id
     FROM gateway.telemetry_rollups_minute
     WHERE ${rangeFilter(range)}
     ORDER BY app_id ASC
-  `;
+  `,
+  );
   return rows.map((row) => row.app_id);
 };
 
@@ -261,19 +270,20 @@ export const listTelemetryApps = async (range: TelemetryRange): Promise<string[]
 export const listTelemetryEvents = async (query: TelemetryQuery, limit: number): Promise<TelemetryEventRow[]> => {
   const appId = query.appId?.trim() || null;
   const route = query.route?.trim() || null;
-  const rows = await sql<
-    {
-      id: number;
-      app_id: string;
-      route_prefix: string;
-      route: string;
-      method: string;
-      status_code: number;
-      duration_ms: number;
-      error_kind: string | null;
-      occurred_at: string;
-    }[]
-  >`
+  const rows = await readQuery(
+    (db) => db<
+      {
+        id: number;
+        app_id: string;
+        route_prefix: string;
+        route: string;
+        method: string;
+        status_code: number;
+        duration_ms: number;
+        error_kind: string | null;
+        occurred_at: string;
+      }[]
+    >`
     SELECT
       id, app_id, route_prefix, ${ROUTE_EXPR()} AS route,
       method, status_code, duration_ms, error_kind, occurred_at::text
@@ -283,7 +293,8 @@ export const listTelemetryEvents = async (query: TelemetryQuery, limit: number):
       AND (${route}::text IS NULL OR ${ROUTE_EXPR()} = ${route})
     ORDER BY occurred_at DESC
     LIMIT ${Math.max(1, Math.min(500, Math.floor(limit)))}
-  `;
+  `,
+  );
   return rows.map((row) => ({
     id: Number(row.id),
     appId: row.app_id,
@@ -330,7 +341,8 @@ const emptyTotals = (): TelemetryTotals => ({ requests: 0, errors: 0, slowReques
  */
 const totalsBy = async (column: "app_id" | "route_prefix", range: TelemetryRange): Promise<Map<string, TelemetryTotals>> => {
   const groupBy = column === "app_id" ? sql`app_id` : sql`route_prefix`;
-  const rows = await sql<{ key: string; requests: number; errors: number; slow_requests: number; avg_duration_ms: number | null }[]>`
+  const rows = await readQuery(
+    (db) => db<{ key: string; requests: number; errors: number; slow_requests: number; avg_duration_ms: number | null }[]>`
     SELECT
       ${groupBy}::text AS key,
       COALESCE(SUM(request_count), 0)::int AS requests,
@@ -340,7 +352,8 @@ const totalsBy = async (column: "app_id" | "route_prefix", range: TelemetryRange
     FROM gateway.telemetry_rollups_minute
     WHERE ${rangeFilter(range)}
     GROUP BY ${groupBy}
-  `;
+  `,
+  );
   return new Map(
     rows.map((row) => [
       row.key,

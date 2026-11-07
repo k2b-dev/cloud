@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
 import type { ChartSelection } from "@k2b/ui";
+import { charts } from "@k2b/ui/charts/core";
 import { formatSpeedTestReading, speedTestSparklineTooltip } from "./speed-test-format";
 
 const unescape = (value: string) =>

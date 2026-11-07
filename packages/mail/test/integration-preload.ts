@@ -26,6 +26,9 @@ if (testInfra.database && testInfra.nats) {
   const namespace = `test-mail-${crypto.randomUUID()}`;
   process.env.SYNC_NAMESPACE = namespace;
   await initializeTestPlatform("mail");
+  const { createAppEventTestHarness } = await import("@k2b/cloud/events/testing");
+  const { mailCapabilities } = await import("../src/capabilities");
+  createAppEventTestHarness("mail", mailCapabilities);
   const { startProcessSync } = await import("@k2b/cloud");
   const runtime = await startProcessSync({ application: "mail" }).catch(async (error: unknown) => {
     await database.drop();
@@ -41,7 +44,4 @@ if (testInfra.database && testInfra.nats) {
       await database.drop();
     }
   });
-  const { bindAppEvents } = await import("../../cloud/src/events/app-events");
-  const { mailCapabilities } = await import("../src/capabilities");
-  bindAppEvents("mail", mailCapabilities);
 }

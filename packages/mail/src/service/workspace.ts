@@ -46,6 +46,7 @@ import * as conversationSummaries from "./conversation-summary";
 import { getMailboxDoneTodayCounts } from "./done-today";
 import * as drafts from "./drafts";
 import { localizeMailError } from "./error-messages";
+import { listRowImageAttachments, type RowImages } from "./list-image-attachments";
 import { mailLive } from "./live";
 import type { ConversationLocalTags, LocalTag } from "./local-tags";
 import * as localTags from "./local-tags";
@@ -88,6 +89,10 @@ export type MailListItem = {
   participants?: MailConversationParticipant[];
   /** How many people wrote, only when more wrote than `participants` names. */
   participantCount?: number;
+  /** Up to three of the conversation's image attachments for the columns view; left out when it has none. */
+  imageAttachments?: { messageId: string; attachmentId: string }[];
+  /** How many image attachments the conversation has, only when more than `imageAttachments` names. */
+  imageAttachmentCount?: number;
   messageCount: number;
   workStatus: "needs_action" | "waiting" | "done" | null;
   assigneeUserIds: string[];
@@ -394,7 +399,7 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
 const namesOnlyItsSender = (item: MailListItem, participants: MailConversationParticipants): boolean =>
   participants.count === 1 && !participants.people[0]?.kind && participants.people[0]?.name === item.participantLabels[0];
 
-/** The page's local tags and participants, read for the chosen rows only. */
+/** The page's local tags, participants and image attachments, read for the chosen rows only. */
 const attachRowDetails = async (
   context: MailRequestContext,
   mailboxId: string,
@@ -403,13 +408,14 @@ const attachRowDetails = async (
   rule: Pick<MailListPage, "openOnly" | "expression">,
 ): Promise<MailListPage> => {
   const conversationIds = items.flatMap((item) => (item.conversationId ? [item.conversationId] : []));
-  const [tags, participants] = await Promise.all([
+  const [tags, participants, images] = await Promise.all([
     localTags.listConversationLocalTags({ context, mailboxId, conversationIds }),
     conversationParticipants.listConversationParticipants({
       context,
       mailboxId,
       conversationIds: items.flatMap((item) => (item.selectionKind === "conversation" && item.conversationId ? [item.conversationId] : [])),
     }),
+    loadRowImages(context, mailboxId, items),
   ]);
   if (!tags.ok || !participants.ok) return { items: [], nextCursor: null, error: "load_failed", ...rule };
   return {
@@ -418,8 +424,15 @@ const attachRowDetails = async (
     ...rule,
     items: items.map((item) => {
       const written = item.selectionKind === "conversation" && item.conversationId ? participants.data.get(item.conversationId) : undefined;
+      const shown = images.get(item.id);
       return {
         ...item,
+        ...(shown
+          ? {
+              imageAttachments: shown.imageAttachments,
+              ...(shown.imageAttachmentCount > shown.imageAttachments.length ? { imageAttachmentCount: shown.imageAttachmentCount } : {}),
+            }
+          : {}),
         localTags: item.conversationId ? (tags.data.get(item.conversationId) ?? []) : [],
         ...(written && !namesOnlyItsSender(item, written)
           ? {
@@ -430,6 +443,20 @@ const attachRowDetails = async (
       };
     }),
   };
+};
+
+/** Image attachments of the rows that have attachments; a failed lookup leaves the list working without images. */
+const loadRowImages = async (context: MailRequestContext, mailboxId: string, items: MailListItem[]): Promise<Map<string, RowImages>> => {
+  const rows = items.filter((item) => item.attachmentCount).map(({ id, selectionKind }) => ({ id, selectionKind }));
+  if (!rows.length) return new Map();
+  try {
+    const images = await listRowImageAttachments({ context, mailboxId, rows });
+    if (images.ok) return images.data;
+    log.warn("Failed to load Mail list images", { mailboxId, code: images.error.code });
+  } catch (error) {
+    log.warn("Failed to load Mail list images", { mailboxId, error: error instanceof Error ? error.message : String(error) });
+  }
+  return new Map();
 };
 
 const loadConversationDetails = async (

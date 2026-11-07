@@ -42,3 +42,10 @@ function namespaceTypes() {
   Chart.Gauge(props);
 }
 test("namespace props stay narrowed", () => expect(typeof namespaceTypes).toBe("function"));
+
+test("Calendar is the named calendar heatmap component", () => {
+  const props = { scale: "sequential" as const, data: [["2026-11-02", 5]] as [string, number][] };
+  expect(renderToString(() => createComponent(Chart.Calendar, props))).toBe(
+    renderToString(() => createComponent(Chart, { kind: "heatmap", layout: "calendar", ...props })),
+  );
+});
