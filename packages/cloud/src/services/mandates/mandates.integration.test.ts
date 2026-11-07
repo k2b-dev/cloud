@@ -81,8 +81,8 @@ suite("mandates", () => {
     const created = await mandates.create({
       authority: interactive(),
       subject: { type: "user", id: ownerUserId },
-      ownerAppId: "core",
-      workloadType: "ai.chat-task",
+      ownerAppId: "grids",
+      workloadType: "grids.workflow",
       workloadId: `bounded-${suffix}`,
       policy,
     });
@@ -92,7 +92,7 @@ suite("mandates", () => {
     const input = {
       mandateId: created.data.id,
       expectedRevision: created.data.revision,
-      ownerAppId: "core",
+      ownerAppId: "grids",
       targetAppId: "notebooks",
       operation: "capability.action.run:note.edit",
       capabilityApproval: "rememberable" as const,
@@ -218,8 +218,18 @@ suite("mandates", () => {
     expect(expired.ok ? null : expired.error.code).toBe("FORBIDDEN");
   });
 
-  test("reserves wildcard authority for user-owned Core AI chat tasks", async () => {
+  test("rejects wildcard authority and retired Core AI chat tasks", async () => {
     const wildcardPolicy = { version: 1 as const, apps: "*" as const, operations: "*" as const, actions: "require_approval" as const };
+    const retired = await mandates.create({
+      authority: interactive(),
+      subject: { type: "user", id: ownerUserId },
+      ownerAppId: "core",
+      workloadType: "ai.chat-task",
+      workloadId: `retired-${suffix}`,
+      policy: exactPolicy(),
+    });
+    expect(retired).toMatchObject({ ok: false, error: { code: "FORBIDDEN", message: "Scheduled chat routines are retired" } });
+
     const mail = await mandates.create({
       authority: interactive(),
       subject: { type: "user", id: ownerUserId },
@@ -362,10 +372,15 @@ suite("mandates", () => {
     const created = await mandates.create({
       authority: interactive(),
       subject: { type: "user", id: ownerUserId },
-      ownerAppId: "core",
-      workloadType: "ai.chat-task",
+      ownerAppId: "grids",
+      workloadType: "grids.workflow",
       workloadId: `issue-${suffix}`,
-      policy: { version: 1, apps: "*", operations: "*", actions: "require_approval" },
+      policy: {
+        version: 1,
+        apps: ["spaces"],
+        operations: ["capability.action.run:event.create", "capability.query:space.read"],
+        actions: "require_approval",
+      },
     });
     expect(created.ok).toBe(true);
     if (!created.ok) return;
@@ -373,14 +388,14 @@ suite("mandates", () => {
 
     const denied = await mandates.validateIssueAuthority({
       mandateId: created.data.id,
-      ownerAppId: "core",
+      ownerAppId: "grids",
       targetAppId: "spaces",
       operation: "capability.action.run:event.create",
     });
     expect(denied.ok).toBe(false);
     const allowed = await mandates.validateIssueAuthority({
       mandateId: created.data.id,
-      ownerAppId: "core",
+      ownerAppId: "grids",
       targetAppId: "spaces",
       operation: "capability.action.run:event.create",
       actionApproval: "approved",
@@ -393,7 +408,7 @@ suite("mandates", () => {
       (
         await mandates.validateIssueAuthority({
           mandateId: created.data.id,
-          ownerAppId: "core",
+          ownerAppId: "grids",
           targetAppId: "spaces",
           operation: "capability.query:space.read",
         })
@@ -404,8 +419,8 @@ suite("mandates", () => {
     const revoked = await mandates.revoke({
       mandateId: created.data.id,
       expectedRevision: created.data.revision,
-      authority: { kind: "workload", ownerAppId: "core" },
-      reason: "Task deleted",
+      authority: { kind: "workload", ownerAppId: "grids" },
+      reason: "Workload deleted",
     });
     expect(revoked.ok).toBe(true);
     if (!revoked.ok) return;
@@ -423,7 +438,7 @@ suite("mandates", () => {
     const replay = await mandates.revoke({
       mandateId: revoked.data.id,
       expectedRevision: created.data.revision,
-      authority: { kind: "workload", ownerAppId: "core" },
+      authority: { kind: "workload", ownerAppId: "grids" },
       reason: "Retry",
     });
     expect(replay.ok && replay.data.revision).toBe(revoked.data.revision);
@@ -431,7 +446,7 @@ suite("mandates", () => {
       (
         await mandates.validateIssueAuthority({
           mandateId: revoked.data.id,
-          ownerAppId: "core",
+          ownerAppId: "grids",
           targetAppId: "spaces",
           operation: "capability.query:space.read",
         })

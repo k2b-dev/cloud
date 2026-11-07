@@ -29,7 +29,7 @@ import { aiUserPrefs } from "./prefs";
 import { AI_TURN_LEASE_MS } from "./protocol";
 import { aiQuotas } from "./quotas";
 import { parseAiResourceMarker } from "./resource-markers";
-import { assertInteractiveChatTurn } from "./retired-routines";
+import { assertInteractiveChatTurn, isRetiredRoutineConfig } from "./retired-routines";
 import { isAiVisionModelConfigured, readAiSettingsState } from "./settings";
 import { aiConversations } from "./store";
 import { publishAiWireEvent } from "./stream";
@@ -539,6 +539,8 @@ const processMessage = async (
 };
 
 const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: string }, status: "failed" | "aborted"): Promise<void> => {
+  // A legacy routine shares the conversation, but never owns its interactive stream.
+  if (isRetiredRoutineConfig(await aiConversations.getTurnRunConfig(turn))) return;
   await publishAiWireEvent({
     v: 1,
     conversationId: turn.conversationId,
