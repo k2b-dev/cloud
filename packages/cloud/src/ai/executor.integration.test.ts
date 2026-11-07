@@ -21,14 +21,12 @@ import type { RequestActor } from "../server";
 import { coreSettings } from "../services";
 import { approvals } from "../services/approvals";
 import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
-import { type CapabilityGrant, mandates } from "../services/mandates";
 import { serviceAccounts } from "../services/service-accounts";
 import { createTestSession } from "../services/session/session.test-fixture";
 import { normalizeLocale } from "../shared/locale";
 import { reconcileAppSkills } from "./app-skill-store";
 import { type AppSkillDefinition, skill as appSkill, appSkillManifestHash, registerAppSkills } from "./app-skills";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
-import { buildAiCapabilityCatalog } from "./capabilities";
 import * as capabilityExecution from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { aiTurnErrorText } from "./chat/turn-error";
@@ -721,6 +719,311 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
+  test("offers recurring work as a Skill in interactive chats only while skill-creator is enabled", async () => {
+    const userId = await insertUser();
+    const owner = { type: "user" as const, userId };
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const authority = await capabilityExecution.resolveAiCapabilityActor({
+      conversationId: conversation.id,
+      persistedActor: { kind: "user", user: actorUser(userId) },
+      store: aiConversations,
+    });
+    // Assistant ships skill-creator as an app Skill; install it the same way through the registry catalog.
+    const creatorApp = await installAppSkill(
+      appSkill({
+        markdown: "---\nname: skill-creator\ndescription: Create and improve reusable Assistant Skills.\n---\n\nDraft the Skill.\n",
+      }),
+    );
+    const creator = (await aiSkills.list(userResourceContext(owner), { authority })).find(
+      (candidate) => candidate.name === "skill-creator",
+    );
+    if (!creator?.enabled) throw new Error("Expected the app's skill-creator to be enabled for a new user");
+    const skill = await aiSkills.create({
+      subject: userResourceContext(owner),
+      name: `weekly-report-${crypto.randomUUID().slice(0, 8)}`,
+      description: "Write the weekly sales report.",
+      instructions: "Summarize the week.",
+    });
+    const prompts = new Map<string, string>();
+    const runTurn = async (label: string, turnId: string) => {
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId,
+        leaseOwner: `${label}-skills-exec`,
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      nextCompletion = textCompletion("Done");
+      onCompletionRequest = (body) => {
+        prompts.set(label, JSON.stringify(body));
+      };
+      await createExecutor(`${label}-skills-exec`, undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+    };
+
+    try {
+      const runConfig: AiChatTurnRunConfig = {
+        kind: "chat",
+        input: "Weekly report, like last time",
+        actor: { kind: "user", user: actorUser(userId) },
+        toolSource: { kind: "default" },
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        runConfig,
+        userMessage: userMessage("Weekly report, like last time"),
+      });
+      await runTurn("interactive", turn.id);
+
+      const interactive = prompts.get("interactive") ?? "";
+      expect(interactive).toContain("# Skills");
+      expect(interactive).toContain(skill.name);
+      expect(interactive).toContain("offer to save the approach as a personal Skill");
+      expect(interactive).toContain("load skill-creator and draft from this conversation");
+      // The server notices the reference to earlier work and tells only the followed turn to offer once.
+      expect(interactive).toContain("Offer once at the end: The user refers to earlier work");
+
+      // A user who disabled skill-creator still has load_skill for other Skills, but gets no offer it could not keep.
+      expect(await aiSkills.setEnabled(creator.id, userResourceContext(owner), false, authority)).toBeFalse();
+      const { turn: withoutCreator } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        runConfig,
+        userMessage: userMessage("Weekly report, like last time"),
+      });
+      await runTurn("without-creator", withoutCreator.id);
+      const withoutCreatorPrompt = prompts.get("without-creator") ?? "";
+      expect(withoutCreatorPrompt).toContain("# Skills");
+      expect(withoutCreatorPrompt).toContain(skill.name);
+      expect(withoutCreatorPrompt).not.toContain("save the approach as a personal Skill");
+      expect(withoutCreatorPrompt).not.toContain("Offer once at the end");
+    } finally {
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await aiSkills.delete(skill.id, userResourceContext(owner));
+      await creatorApp.remove();
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+  test("interactive remembered approvals still authorize the exact tool without an open request", async () => {
+    const userId = await insertUser();
+    const approvalContext = { actorUserId: userId };
+    await rememberAiToolApproval(approvalContext, { toolName: "danger", approvalScope: "danger" });
+    try {
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      try {
+        const runConfig: AiChatTurnRunConfig = {
+          kind: "chat",
+          input: "Run the action",
+        };
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelId: MODEL_ID,
+          runConfig,
+          userMessage: userMessage("Run the action"),
+        });
+        const claim = await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner: "approval-test",
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        if (!claim) throw new Error("Expected claimed approval turn");
+        const allowRememberedApprovals = aiTurnAllowsRememberedApprovals(runConfig);
+        const pipeline = new __aiExecutorTest.StreamPipeline({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          attempt: claim.turn.attempt,
+          startSeq: claim.liveSeq,
+          leaseOwner: "approval-test",
+          seedBlocks: [],
+          allowRememberedApprovals,
+        });
+        const prepared: PreparedAiTools = {
+          tools: [],
+          canonicalNames: new Map(),
+          approvalPolicies: new Map([["danger", "always"]]),
+          frontendModes: new Map(),
+        };
+        pipeline.setApprovalPolicies(prepared.approvalPolicies);
+        const pushed: InboundEvent[] = [];
+        const event = {
+          type: "tool_action_request",
+          kind: "approval",
+          callId: "approval-1",
+          name: "danger",
+          args: {},
+          message: "Confirm action",
+          agentId: "cloud",
+          loopId: turn.id,
+          turnId: `${turn.id}:turn:0`,
+          turnIndex: 0,
+        } as Extract<OutboundEvent, { type: "tool_action_request" }>;
+        const suspended = await createExecutor("approval-test")["handleActionRequest"]({
+          signal: new AbortController().signal,
+          event,
+          loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
+          pipeline,
+          conversationId: conversation.id,
+          turnId: turn.id,
+          prepared,
+          approvalContext,
+          allowRememberedApprovals,
+          rememberableCapabilityApprovals: new Map(),
+          capabilityActionReviews: new Map(),
+          approvalTargets: new Map(),
+          linkedApprovals: new Map(),
+        });
+        expect(suspended).toBe(false);
+        expect(pushed).toEqual([{ type: "approval_response", callId: "approval-1", approved: true }]);
+        expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
+      } finally {
+        await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      }
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("answers a display-only chart call in chat without an open request", async () => {
+    const userId = await insertUser();
+    try {
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      try {
+        const runConfig: AiChatTurnRunConfig = {
+          kind: "chat",
+          input: "Chart the orders",
+        };
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelId: MODEL_ID,
+          runConfig,
+          userMessage: userMessage("Chart the orders"),
+        });
+        const claim = await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner: "chart-test",
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        if (!claim) throw new Error("Expected claimed chart turn");
+        const pipeline = new __aiExecutorTest.StreamPipeline({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          attempt: claim.turn.attempt,
+          startSeq: claim.liveSeq,
+          leaseOwner: "chart-test",
+          seedBlocks: [],
+          allowRememberedApprovals: aiTurnAllowsRememberedApprovals(runConfig),
+        });
+        const prepared: PreparedAiTools = {
+          tools: [],
+          canonicalNames: new Map(),
+          approvalPolicies: new Map([["chart", "never"]]),
+          frontendModes: new Map([["chart", "client_view"]]),
+        };
+        pipeline.setFrontendModes(prepared.frontendModes);
+        const statuses: string[] = [];
+        const emitOp = pipeline["emitOp"].bind(pipeline);
+        pipeline["emitOp"] = async (op) => {
+          if (op.type === "block_set" && op.block.kind === "tool") statuses.push(op.block.status);
+          await emitOp(op);
+        };
+        const args = { kind: "bar", title: "Orders", data: [{ label: "North", value: 12 }] };
+        const fields = { agentId: "cloud", loopId: turn.id, turnId: `${turn.id}:turn:0`, turnIndex: 0 };
+        await pipeline.apply({ type: "tool_execution_start", ...fields, callId: "chart-1", name: "chart", args } as OutboundEvent);
+        const pushed: InboundEvent[] = [];
+        const suspended = await createExecutor("chart-test")["handleActionRequest"]({
+          signal: new AbortController().signal,
+          event: { type: "tool_action_request", ...fields, kind: "client_tool", callId: "chart-1", name: "chart", args } as Extract<
+            OutboundEvent,
+            { type: "tool_action_request" }
+          >,
+          loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
+          pipeline,
+          conversationId: conversation.id,
+          turnId: turn.id,
+          prepared,
+          allowRememberedApprovals: false,
+          rememberableCapabilityApprovals: new Map(),
+          capabilityActionReviews: new Map(),
+          approvalTargets: new Map(),
+          linkedApprovals: new Map(),
+        });
+        expect(suspended).toBe(false);
+        expect(pushed).toEqual([{ type: "tool_result", callId: "chart-1", result: { displayed: true } }]);
+        // From running straight to completed: an awaiting_client in between would read as an open request.
+        expect(statuses).toEqual(["running", "completed"]);
+        expect(pipeline.blocks.find((block) => block.kind === "tool")).toMatchObject({ status: "completed", args });
+        expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
+        await pipeline.flush();
+      } finally {
+        await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      }
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("tells the model what the user sees in an interactive turn", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const prompts = new Map<string, string>();
+    const runTurn = async (label: string, turnId: string) => {
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId,
+        leaseOwner: `${label}-exec`,
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      nextCompletion = textCompletion("Done");
+      onCompletionRequest = (body) => {
+        prompts.set(label, JSON.stringify(body));
+      };
+      await createExecutor(`${label}-exec`, undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+    };
+
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Summarize", actor: { kind: "user", user: actorUser(userId) }, toolSource: { kind: "none" } },
+        userMessage: userMessage("Summarize"),
+      });
+      await runTurn("interactive", turn.id);
+
+      const interactive = prompts.get("interactive") ?? "";
+      for (const section of ["# What the user sees", "# Suggestions", "Most replies need no offer."]) {
+        expect(interactive).toContain(section);
+      }
+    } finally {
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("answers a capability question with a summary of the user's recent chats", async () => {
     const userId = await insertUser();
     const earlier = await aiConversations.createConversation({ ownerUserId: userId, title: "Weekly sales report" });

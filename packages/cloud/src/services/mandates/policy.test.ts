@@ -141,6 +141,76 @@ describe("bounded background capability grants", () => {
   });
 });
 
+describe("bounded Code HTTP grants", () => {
+  const policy = parseMandatePolicy({
+    version: 1,
+    apps: ["core"],
+    operations: ["runtime.http"],
+    actions: "preapproved",
+    grants: [{ kind: "http", fixedInput: { origin: "https://api.example.com", method: "GET" } }],
+  });
+  const allows = (input: unknown) =>
+    mandatePolicyAllows(policy, { appId: "core", operation: "runtime.http", actionApproval: "none", codeVersion: true, input });
+
+  test("checks every fixed HTTP field and never borrows a capability grant", () => {
+    expect(allows({ origin: "https://api.example.com", method: "GET", url: "https://api.example.com/invoices" })).toBe(true);
+    for (const input of [
+      { origin: "https://api.example.com.evil.test", method: "GET" },
+      { origin: "https://api.example.com", method: "POST" },
+      { method: "GET" },
+      null,
+    ])
+      expect(allows(input)).toBe(false);
+    expect(
+      mandatePolicyAllows(policy, {
+        appId: "core",
+        operation: "capability.query:read",
+        actionApproval: "none",
+        codeVersion: true,
+        input: {},
+      }),
+    ).toBe(false);
+    expect(
+      mandatePolicyAllows(
+        { ...policy, grants: [{ appId: "core", kind: "query", capabilityId: "read", fixedInput: {} }] },
+        { appId: "core", operation: "runtime.http", actionApproval: "approved", codeVersion: true, input: {} },
+      ),
+    ).toBe(false);
+  });
+
+  test("removing HTTP restrictions is an expansion, while adding them narrows authority", () => {
+    expect(isMandatePolicyNarrowing({ ...policy, grants: undefined }, policy)).toBe(false);
+    expect(isMandatePolicyNarrowing(policy, { ...policy, grants: [{ kind: "http", fixedInput: {} }] })).toBe(false);
+    expect(
+      isMandatePolicyNarrowing(policy, {
+        ...policy,
+        grants: [
+          {
+            kind: "http",
+            fixedInput: {
+              origin: "https://api.example.com",
+              method: "GET",
+              url: "https://api.example.com/one",
+            },
+          },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      mandatePolicyAllows(
+        { ...policy, grants: [] },
+        {
+          appId: "core",
+          operation: "runtime.http",
+          actionApproval: "approved",
+          codeVersion: true,
+          input: {},
+        },
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("capability discovery under a mandate", () => {
   const policy = parseMandatePolicy({
     version: 1,

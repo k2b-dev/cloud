@@ -99,6 +99,11 @@ suite("mandates", () => {
       input: { noteId: "note-a", content: "summary" },
     };
     expect((await mandates.validateIssueAuthority(input)).ok).toBe(true);
+    expect((await mandates.validateIssueAuthority({ ...input, targetAppId: "mail" })).ok).toBe(false);
+    expect((await mandates.validateIssueAuthority({ ...input, operation: "capability.action.run:note.delete" })).ok).toBe(false);
+    expect((await mandates.validateIssueAuthority({ ...input, capabilityPolicy: { ask: "sends" } })).ok).toBe(false);
+    expect((await mandates.validateIssueAuthority({ ...input, capabilityPolicy: { silent: "you", routines: false } })).ok).toBe(false);
+    expect((await mandates.validateIssueAuthority({ ...input, capabilityPolicy: { silent: "you" } })).ok).toBe(true);
     const denied = await mandates.validateIssueAuthority({ ...input, input: { noteId: "note-b" } });
     expect(denied).toMatchObject({
       ok: false,
@@ -402,6 +407,17 @@ suite("mandates", () => {
       expectedRevision: created.data.revision,
     });
     expect(allowed.ok).toBe(true);
+
+    expect(
+      (
+        await mandates.validateIssueAuthority({
+          mandateId: created.data.id,
+          ownerAppId: "grids",
+          targetAppId: "spaces",
+          operation: "capability.query:space.read",
+        })
+      ).ok,
+    ).toBe(true);
 
     await sql`UPDATE auth.users SET account_expires = now() - interval '1 minute' WHERE id = ${ownerUserId}::uuid`;
     expect(

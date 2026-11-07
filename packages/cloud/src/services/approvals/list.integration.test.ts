@@ -218,6 +218,8 @@ databaseSuite()("pending approval lists", () => {
     // Historical delegated turns stay readable, but cannot be made runnable again.
     await sql`UPDATE ai.turns SET status='aborted', completed_at=now(), run_config=run_config || '{"mandate":{}}'::jsonb WHERE id=${turn.id}::uuid`;
     expect(await options(standard)).toEqual({ chat: false, always: false, website: true });
+    expect(await options(confirm)).toEqual({ chat: false, always: false, website: false });
+    await expect(sql`UPDATE ai.turns SET status='running' WHERE id=${turn.id}::uuid`.execute()).rejects.toThrow("routines are retired");
   });
 
   test("reads the pending call's stored review without changing approval details", async () => {
