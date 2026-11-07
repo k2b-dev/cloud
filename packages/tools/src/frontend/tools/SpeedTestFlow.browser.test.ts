@@ -260,7 +260,7 @@ test("finished tests fit their actual time span and leave an unwrapped complete 
         await settled(page);
         const bounds = await page.locator(".tools-speedtest-chart .stdlib-chart-tick-label").evaluateAll((ticks) => {
           const labels = ticks.filter((tick) => tick.textContent?.endsWith(" s"));
-          const svg = labels[0]!.ownerSVGElement!.getBoundingClientRect();
+          const svg = labels[0]!.closest("svg")!.getBoundingClientRect();
           return labels.map((label, index) => {
             const rect = label.getBoundingClientRect();
             return {
