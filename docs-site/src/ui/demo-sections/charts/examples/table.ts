@@ -1,0 +1,66 @@
+/** Showcase entries for the table block (`DataTable` with typed columns); invented data only. */
+export const tableExamples = [
+  {
+    id: "table-campaigns",
+    kind: "table",
+    question: "numbers",
+    title: "Campaigns",
+    summary: "Every campaign with its status, date, reach and revenue; search, group by status and sort any column.",
+    spec: {
+      block: "table",
+      search: true,
+      groupBy: [{ id: "status", label: "Status" }],
+      empty: "No campaign sent yet.",
+      columns: [
+        { id: "name", label: "Campaign", type: "text" },
+        {
+          id: "status",
+          label: "Status",
+          type: "status",
+          states: {
+            sending: { label: "Sending", tone: "running" },
+            delivered: { label: "Delivered", tone: "ok" },
+            scheduled: { label: "Scheduled", tone: "neutral" },
+          },
+        },
+        { id: "date", label: "Sent", type: "date", priority: 3 },
+        { id: "to", label: "Recipients", type: "number", priority: 3 },
+        { id: "open", label: "Opened", type: "bar", format: { style: "percent", decimals: 1 }, max: 0.6 },
+        { id: "click", label: "Clicked", type: "bar", format: { style: "percent", decimals: 1 }, max: 0.6, priority: 2 },
+        { id: "rev", label: "Revenue", type: "amount", format: { style: "currency", currency: "EUR" }, priority: 2 },
+      ],
+      rows: [
+        { name: "Autumn selection", status: "sending", date: "2026-11-06", to: 46900, open: 0.314, click: 0.092, rev: 2140 },
+        { name: "Weekly letter 44", status: "delivered", date: "2026-10-29", to: 46720, open: 0.492, click: 0.198, rev: 4610 },
+        { name: "New in stock", status: "delivered", date: "2026-10-22", to: 46510, open: 0.526, click: 0.221, rev: 6380 },
+        { name: "Trade fair invitation", status: "scheduled", date: "2026-11-12", to: 47000, open: null, click: null, rev: null },
+        { name: "Weekly letter 43", status: "delivered", date: "2026-10-15", to: 46300, open: 0.479, click: 0.187, rev: 3950 },
+        { name: "Weekly letter 42", status: "delivered", date: "2026-10-08", to: 46010, open: 0.468, click: 0.181, rev: 3420 },
+        { name: "Clearance", status: "delivered", date: "2026-10-02", to: 45880, open: 0.503, click: 0.239, rev: 5120 },
+      ],
+    },
+    height: 262,
+    width: "full",
+    useFor: ["Records a reader compares, looks up or sorts", "Exact values next to a chart of the same data"],
+    avoidFor: ["One trend over time (use a line)", "A handful of key figures (use tiles)"],
+    a11y: [
+      "Sortable headers are buttons with aria-sort; pressing one again reverses the order and keeps focus.",
+      "Each group is its own body under a row-group header that says its value and count.",
+      "Below 560 px each row has a details button with aria-expanded that shows the values the width hides.",
+      "With no match the table says so and offers “Clear search”, which returns every row.",
+    ],
+    options: [
+      {
+        name: "columns[].type",
+        type: "text | number | date | status | bar | amount | flow | delta",
+        description: "Alignment, shown text, search and sort; numbers right with equal-width digits.",
+      },
+      { name: "columns[].format", type: "NumberFormat", description: "number, percent or currency, with decimals and compact." },
+      { name: "columns[].states", type: "{ [value]: { label, tone } }", description: "Labels and tones of a status column." },
+      { name: "columns[].max", type: "number", description: "The value a bar column fills its track at." },
+      { name: "columns[].priority", type: "1 | 2 | 3", description: "3 hides below 560 px, 2 below 420 px; details keep them." },
+      { name: "search", type: "true", description: "A search field in the frame's head; the table says when nothing matches." },
+      { name: "groupBy", type: "{ id, label }[]", description: "Columns a reader may group by, one body per group." },
+    ],
+  },
+];

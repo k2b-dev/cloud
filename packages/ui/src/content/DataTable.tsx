@@ -23,7 +23,17 @@ import { useUiMessages } from "../intl/messages";
 import { PanelHeader } from "../layout/PanelHeader";
 import { Paper } from "../surfaces/Paper";
 import Placeholder from "../surfaces/Placeholder";
+import { StatusBadge } from "../surfaces/StatusBadge";
 import type { CollectionSelection } from "./collection-selection";
+import {
+  type DataTableTypedColumn,
+  formatTableNumber,
+  groupRows,
+  isEmptyCell,
+  isNumericColumnType,
+  readTableValue,
+  tableCellText,
+} from "./data-table-columns";
 import { useDataTableMessages } from "./data-table-messages";
 
 export type DataTableColumn<T> = {
@@ -51,6 +61,18 @@ export type DataTableColumn<T> = {
    * rate while another sorts by the absolute count behind it.
    */
   sortable?: boolean | string;
+  /** What the column holds; see `DataTableColumnType`. */
+  type?: DataTableTypedColumn["type"];
+  format?: DataTableTypedColumn["format"];
+  /** Labels and tones of a status column, by stored value. */
+  states?: DataTableTypedColumn["states"];
+  /** The value a bar column fills its track at; defaults to its largest value. */
+  max?: number;
+  /**
+   * How much a narrow table needs the column: 1 (default) always shows; 3 hides below a table width of 560 px,
+   * 2 below 420 px. Hidden values stay one tap away in the row's details.
+   */
+  priority?: 1 | 2 | 3;
 };
 
 export type DataTableSort = { key: string; direction: "asc" | "desc" };
@@ -121,6 +143,17 @@ export type DataTableProps<T> = {
   /** Additional classes for the scrolling region, such as `k2b-detail-trail`. */
   scrollClass?: string;
   scrollPreserveKey?: string | false;
+  /**
+   * The id of the column whose values split the rows into groups, each its own `<tbody>` under a row with the
+   * group's value and count, in the order the groups first appear.
+   */
+  groupBy?: string;
+  /**
+   * The host's search text. With no rows left, the table says that nothing matches it and offers to clear it
+   * through `onClearQuery`, instead of `empty`. Filter the rows with `filterRows`.
+   */
+  query?: string;
+  onClearQuery?: () => void;
 };
 
 export type DataTablePanelProps = {
@@ -336,18 +369,15 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     scrollFromPointer(event, axis);
   };
 
-  const valueOf = (row: T, col: DataTableColumn<T>) => {
-    if (typeof col.value === "function") return col.value(row);
-    if (col.value) return row[col.value];
-    return undefined;
-  };
+  const valueOf = (row: T, col: DataTableColumn<T>) => readTableValue(row, col);
 
   const columnPresentation = createMemo(() => {
     const presentation = new Map<string, { align: NonNullable<DataTableColumn<T>["align"]>; nowrap: boolean }>();
     for (const col of props.columns) {
-      let numeric = false;
-      let date = false;
-      if (col.align === undefined || col.nowrap === undefined) {
+      // A typed column says what it holds; only an untyped one is read from its first value.
+      let numeric = isNumericColumnType(col.type);
+      let date = col.type === "date";
+      if (!col.type && (col.align === undefined || col.nowrap === undefined)) {
         for (const row of props.rows) {
           const value = valueOf(row, col);
           if (value === null || value === undefined || value === "") continue;
@@ -368,6 +398,45 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   };
 
   const nowrapAttr = (col: DataTableColumn<T>) => (columnPresentation().get(col.id)?.nowrap ? "true" : undefined);
+  /** Text columns wrap inside their cell; every other value keeps one line. */
+  const wrapAttr = (col: DataTableColumn<T>) => (col.type === "text" && col.nowrap !== true ? "true" : undefined);
+  const priorityAttr = (col: DataTableColumn<T>) => (col.priority === 2 || col.priority === 3 ? String(col.priority) : undefined);
+  /** The lowest priority present: 3 shows the details toggle below 560 px, 2 below 420 px. */
+  const detailsPriority = createMemo(() => {
+    const priorities = props.columns.map((col) => col.priority ?? 1);
+    return priorities.includes(3) ? "3" : priorities.includes(2) ? "2" : undefined;
+  });
+  const hiddenColumns = () => props.columns.filter((col) => priorityAttr(col));
+  const columnCount = () => props.columns.length + (detailsPriority() ? 1 : 0);
+  const [openDetails, setOpenDetails] = createSignal<ReadonlySet<T>>(new Set());
+  const toggleDetails = (row: T) =>
+    setOpenDetails((open) => {
+      const next = new Set(open);
+      if (!next.delete(row)) next.add(row);
+      return next;
+    });
+  /** A bar column fills its track at `max`, or else at its largest value. */
+  const barMax = createMemo(() => {
+    const max = new Map<string, number>();
+    for (const col of props.columns) {
+      if (col.type !== "bar") continue;
+      if (col.max !== undefined && col.max > 0) {
+        max.set(col.id, col.max);
+        continue;
+      }
+      let largest = 0;
+      for (const row of props.rows) {
+        const value = Number(valueOf(row, col));
+        if (Number.isFinite(value)) largest = Math.max(largest, Math.abs(value));
+      }
+      max.set(col.id, largest);
+    }
+    return max;
+  });
+  const groups = createMemo(() => {
+    const col = props.groupBy ? props.columns.find((entry) => entry.id === props.groupBy) : undefined;
+    return col ? groupRows(props.rows, col, locale()) : null;
+  });
 
   const sortKeyOf = (col: DataTableColumn<T>): string | null =>
     col.sortable === true ? col.id : typeof col.sortable === "string" ? col.sortable : null;
@@ -449,7 +518,28 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
 
   const numberFormat = createMemo(() => new Intl.NumberFormat(locale()));
   const renderValueDefault = (value: unknown) => defaultRender(value, locale(), numberFormat(), messages());
-  const renderCellDefault = (row: T, col: DataTableColumn<T>) => renderValueDefault(valueOf(row, col));
+  /** A typed column shows its value the way its type reads; an untyped one falls back to the plain rendering. */
+  const renderTypedValue = (col: DataTableColumn<T>, value: unknown): JSX.Element => {
+    if (!col.type || isEmptyCell(value)) return renderValueDefault(value);
+    if (col.type === "status") {
+      const state = col.states?.[String(value)];
+      return state ? <StatusBadge tone={state.tone} label={state.label} variant="dot" /> : String(value);
+    }
+    if (col.type === "bar") {
+      const number = Number(value);
+      const max = barMax().get(col.id) ?? 0;
+      if (!Number.isFinite(number)) return String(value);
+      return (
+        <span class="k2b-data-table__bar">
+          {formatTableNumber(number, col, locale())}
+          <span class="k2b-data-table__bar-track" aria-hidden="true">
+            <span style={{ width: `${max > 0 ? Math.min(100, (Math.abs(number) / max) * 100) : 0}%` }} />
+          </span>
+        </span>
+      );
+    }
+    return tableCellText(value, col, locale());
+  };
 
   const onRowKeyDown = (event: KeyboardEvent, row: T) => {
     if (!isInteractive()) return;
@@ -476,6 +566,95 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   const rowClass = (row: T) => {
     if (typeof props.rowClass === "function") return props.rowClass(row) ?? "";
     return props.rowClass ?? "";
+  };
+
+  const cellContent = (row: T, col: DataTableColumn<T>, value: unknown) =>
+    props.renderCell ? props.renderCell({ row, col, value, render: (v) => renderTypedValue(col, v) }) : renderTypedValue(col, value);
+
+  /** `last` marks the final row of its body when details rows follow every row, so the frame keeps the only edge. */
+  const renderRow = (row: T, last: () => boolean) => {
+    const id = () => rowId(row);
+    const isSelected = () =>
+      props.selection ? props.selection.selected().has(id() ?? "") : props.selectedRowId && id() === props.selectedRowId;
+    const detailsId = `k2b-data-table-${createUniqueId()}-details`;
+    const open = () => openDetails().has(row);
+    return (
+      <>
+        <tr
+          ref={(element) => {
+            const key = id();
+            if (key !== undefined) props.selection?.register(key, element);
+          }}
+          class={`k2b-data-table__row ${rowClass(row)}`}
+          data-hover={shouldHoverRows() ? "true" : undefined}
+          data-clickable={shouldHoverRows() && isInteractive() ? "true" : undefined}
+          data-selected={isSelected() ? "true" : undefined}
+          data-details-open={open() ? "true" : undefined}
+          data-last={detailsPriority() && last() ? "true" : undefined}
+          aria-selected={props.selection ? !!isSelected() : undefined}
+          tabIndex={props.selection ? (props.selection.focused() === id() ? 0 : -1) : isInteractive() ? 0 : undefined}
+          onFocus={() => {
+            const key = id();
+            if (key !== undefined) props.selection?.markFocused(key);
+          }}
+          onClick={(event) => onRowClick(event, row)}
+          onDblClick={(event) => onRowDoubleClick(event, row)}
+          onContextMenu={() => props.onRowContextMenu?.(row)}
+          onKeyDown={(e) => onRowKeyDown(e, row)}
+        >
+          <For each={props.columns}>
+            {(col, index) => {
+              const value = () => valueOf(row, col);
+              return (
+                <td
+                  class={`${col.cellClass ?? ""} ${col.class ?? ""}`}
+                  data-nowrap={nowrapAttr(col)}
+                  data-wrap={wrapAttr(col)}
+                  data-align={alignAttr(col)}
+                  data-priority={priorityAttr(col)}
+                  data-valign={props.verticalAlign && props.verticalAlign !== "middle" ? props.verticalAlign : undefined}
+                  data-highlighted={columnHighlighted(index())}
+                  onMouseEnter={() => setHoveredColumnIfEnabled(index())}
+                >
+                  <div class={cellContentClass()}>{cellContent(row, col, value())}</div>
+                </td>
+              );
+            }}
+          </For>
+          <Show when={detailsPriority()}>
+            <td class="k2b-data-table__details-toggle">
+              <button
+                type="button"
+                class="k2b-data-table__details-button"
+                aria-expanded={open()}
+                aria-controls={detailsId}
+                aria-label={dataTableMessages().showDetails}
+                onClick={() => toggleDetails(row)}
+              >
+                <i class={`ti ${open() ? "ti-chevron-up" : "ti-chevron-down"}`} aria-hidden="true" />
+              </button>
+            </td>
+          </Show>
+        </tr>
+        <Show when={detailsPriority()}>
+          {/* Only the values the table's width hides appear here; the rest are in the row above. */}
+          <tr class="k2b-data-table__details" id={detailsId} hidden={!open()}>
+            <td colspan={columnCount()}>
+              <dl>
+                <For each={hiddenColumns()}>
+                  {(col) => (
+                    <div data-priority={priorityAttr(col)}>
+                      <dt>{renderColumnPart(col.header, col)}</dt>
+                      <dd>{cellContent(row, col, valueOf(row, col))}</dd>
+                    </div>
+                  )}
+                </For>
+              </dl>
+            </td>
+          </tr>
+        </Show>
+      </>
+    );
   };
 
   onMount(() => {
@@ -532,6 +711,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
         class={`k2b-table-shell ${props.class ?? ""}`}
         data-surface={surface()}
         data-has-footer={props.footer ? "true" : undefined}
+        data-priorities={detailsPriority()}
         data-overflow-x={scrollbars().x.overflow ? "true" : undefined}
         data-overflow-y={scrollbars().y.overflow ? "true" : undefined}
         data-scrollbar-enhanced={scrollbarEnhanced() ? "true" : undefined}
@@ -565,6 +745,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                       scope="col"
                       class={`${col.headerClass ?? ""} ${col.class ?? ""}`}
                       data-align={alignAttr(col)}
+                      data-priority={priorityAttr(col)}
                       data-highlighted={columnHighlighted(index())}
                       aria-sort={ariaSortFor(col)}
                       onMouseEnter={() => setHoveredColumnIfEnabled(index())}
@@ -573,19 +754,40 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                     </th>
                   )}
                 </For>
+                <Show when={detailsPriority()}>
+                  <th scope="col" class="k2b-data-table__details-toggle">
+                    <span class="k2b-sr-only">{dataTableMessages().details}</span>
+                  </th>
+                </Show>
               </tr>
             </thead>
-            <tbody>
-              <Show
-                when={props.rows.length > 0}
-                fallback={
+            <Show
+              when={props.rows.length > 0}
+              fallback={
+                <tbody>
                   <Show
                     when={props.loading}
                     fallback={
                       <tr>
-                        <td class="k2b-data-table__empty" colspan={props.columns.length}>
-                          <Placeholder description={<>{props.empty ?? dataTableMessages().noRecords}</>} />
-                        </td>
+                        <Show
+                          when={props.query?.trim()}
+                          fallback={
+                            <td class="k2b-data-table__empty" colspan={columnCount()}>
+                              <Placeholder description={<>{props.empty ?? dataTableMessages().noRecords}</>} />
+                            </td>
+                          }
+                        >
+                          {(query) => (
+                            <td class="k2b-data-table__no-match" colspan={columnCount()}>
+                              {dataTableMessages().noMatch({ query: query() })}{" "}
+                              <Show when={props.onClearQuery}>
+                                <button type="button" class="k2b-data-table__clear-query" onClick={() => props.onClearQuery?.()}>
+                                  {dataTableMessages().clearSearch}
+                                </button>
+                              </Show>
+                            </td>
+                          )}
+                        </Show>
                       </tr>
                     }
                   >
@@ -594,86 +796,69 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                         <tr class="k2b-data-table__row" data-loading="true" aria-hidden="true">
                           <For each={props.columns}>
                             {(col) => (
-                              <td data-align={alignAttr(col)}>
+                              <td data-align={alignAttr(col)} data-priority={priorityAttr(col)}>
                                 <span class="k2b-data-table__skeleton" />
                               </td>
                             )}
                           </For>
+                          <Show when={detailsPriority()}>
+                            <td class="k2b-data-table__details-toggle" />
+                          </Show>
                         </tr>
                       )}
                     </For>
                     {/* The spacer takes the spare height while loading too, so rows keep their height when data arrives. */}
                     <Show when={props.fillHeight}>
                       <tr aria-hidden="true">
-                        <td class="k2b-data-table__fill" colspan={props.columns.length} />
+                        <td class="k2b-data-table__fill" colspan={columnCount()} />
                       </tr>
                     </Show>
                   </Show>
+                </tbody>
+              }
+            >
+              <Show
+                when={groups()}
+                fallback={
+                  <tbody>
+                    <For each={props.rows}>{(row, index) => renderRow(row, () => index() === props.rows.length - 1)}</For>
+                    <Show when={props.fillHeight}>
+                      <tr aria-hidden="true">
+                        <td class="k2b-data-table__fill" colspan={columnCount()} />
+                      </tr>
+                    </Show>
+                  </tbody>
                 }
               >
-                <For each={props.rows}>
-                  {(row) => {
-                    const id = () => rowId(row);
-                    const isSelected = () =>
-                      props.selection ? props.selection.selected().has(id() ?? "") : props.selectedRowId && id() === props.selectedRowId;
-                    return (
-                      <tr
-                        ref={(element) => {
-                          const key = id();
-                          if (key !== undefined) props.selection?.register(key, element);
-                        }}
-                        class={`k2b-data-table__row ${rowClass(row)}`}
-                        data-hover={shouldHoverRows() ? "true" : undefined}
-                        data-clickable={shouldHoverRows() && isInteractive() ? "true" : undefined}
-                        data-selected={isSelected() ? "true" : undefined}
-                        aria-selected={props.selection ? !!isSelected() : undefined}
-                        tabIndex={props.selection ? (props.selection.focused() === id() ? 0 : -1) : isInteractive() ? 0 : undefined}
-                        onFocus={() => {
-                          const key = id();
-                          if (key !== undefined) props.selection?.markFocused(key);
-                        }}
-                        onClick={(event) => onRowClick(event, row)}
-                        onDblClick={(event) => onRowDoubleClick(event, row)}
-                        onContextMenu={() => props.onRowContextMenu?.(row)}
-                        onKeyDown={(e) => onRowKeyDown(e, row)}
-                      >
-                        <For each={props.columns}>
-                          {(col, index) => {
-                            const value = () => valueOf(row, col);
-                            return (
-                              <td
-                                class={`${col.cellClass ?? ""} ${col.class ?? ""}`}
-                                data-nowrap={nowrapAttr(col)}
-                                data-align={alignAttr(col)}
-                                data-valign={props.verticalAlign && props.verticalAlign !== "middle" ? props.verticalAlign : undefined}
-                                data-highlighted={columnHighlighted(index())}
-                                onMouseEnter={() => setHoveredColumnIfEnabled(index())}
-                              >
-                                <div class={cellContentClass()}>
-                                  {props.renderCell
-                                    ? props.renderCell({
-                                        row,
-                                        col,
-                                        value: value(),
-                                        render: (v) => renderCellDefault(row, { ...col, value: () => v }),
-                                      })
-                                    : renderValueDefault(value())}
-                                </div>
-                              </td>
-                            );
-                          }}
-                        </For>
-                      </tr>
-                    );
-                  }}
-                </For>
-                <Show when={props.fillHeight}>
-                  <tr aria-hidden="true">
-                    <td class="k2b-data-table__fill" colspan={props.columns.length} />
-                  </tr>
-                </Show>
+                {(list) => (
+                  <>
+                    <For each={list()}>
+                      {(group) => (
+                        <tbody class="k2b-data-table__group">
+                          <tr class="k2b-data-table__group-row">
+                            <th scope="rowgroup" colspan={columnCount()}>
+                              {group.label || "—"}
+                              <span class="k2b-data-table__group-count">
+                                <span aria-hidden="true">{group.rows.length}</span>
+                                <span class="k2b-sr-only">, {dataTableMessages().rowCount({ count: group.rows.length })}</span>
+                              </span>
+                            </th>
+                          </tr>
+                          <For each={group.rows}>{(row, index) => renderRow(row, () => index() === group.rows.length - 1)}</For>
+                        </tbody>
+                      )}
+                    </For>
+                    <Show when={props.fillHeight}>
+                      <tbody aria-hidden="true">
+                        <tr>
+                          <td class="k2b-data-table__fill" colspan={columnCount()} />
+                        </tr>
+                      </tbody>
+                    </Show>
+                  </>
+                )}
               </Show>
-            </tbody>
+            </Show>
             <Show when={props.footer}>
               {(footer) => (
                 <tfoot class="k2b-data-table__foot" data-sticky="true">
@@ -686,16 +871,20 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                             class="k2b-data-table__footer-cell"
                             data-nowrap={nowrapAttr(col)}
                             data-align={alignAttr(col)}
+                            data-priority={priorityAttr(col)}
                             data-highlighted={columnHighlighted(index())}
                             onMouseEnter={() => setHoveredColumnIfEnabled(index())}
                           >
                             {footer().renderCell
-                              ? footer().renderCell!({ col, value: value(), render: renderValueDefault })
-                              : renderValueDefault(value())}
+                              ? footer().renderCell!({ col, value: value(), render: (v) => renderTypedValue(col, v) })
+                              : renderTypedValue(col, value())}
                           </td>
                         );
                       }}
                     </For>
+                    <Show when={detailsPriority()}>
+                      <td class="k2b-data-table__footer-cell k2b-data-table__details-toggle" />
+                    </Show>
                   </tr>
                 </tfoot>
               )}

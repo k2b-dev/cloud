@@ -3,9 +3,11 @@ import {
   Button,
   Chart,
   CodeDisplay,
+  createDataTableView,
   DataTable,
   type DataTableColumn,
   type DataTableSort,
+  DataTableTools,
   DocCode,
   DocConceptGrid,
   DocLead,
@@ -77,6 +79,7 @@ import { batch, createMemo, createSignal, onCleanup, onMount, Show } from "solid
 import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
 import { BarChartStatesDemo, ChartDemo, CountryMapDemo } from "./charts";
+import { tableExamples } from "./charts/examples/table";
 import { FileGridDemo } from "./file-grid";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
@@ -369,6 +372,66 @@ const orderStatus = {
   shipped: { label: "Shipped", tone: "warning" },
   delivered: { label: "Delivered", tone: "ok" },
 } as const;
+
+type Campaign = Record<string, string | number | null>;
+// The showcase entry is the one description: the demo renders the same columns and rows as its JSON.
+const campaignSpec = tableExamples[0]!.spec;
+const campaignColumns: DataTableColumn<Campaign>[] = campaignSpec.columns.map(({ label, ...column }) => ({
+  ...column,
+  header: label,
+  value: column.id,
+  sortable: true,
+})) as DataTableColumn<Campaign>[];
+const TypedTableDemo = () => {
+  const view = createDataTableView<Campaign>({ rows: () => campaignSpec.rows, columns: () => campaignColumns });
+  return (
+    <DemoCard
+      id="tables-typed"
+      chip={[
+        { kind: "component", name: "DataTable", from: "@k2b/ui" },
+        { kind: "component", name: "DataTableTools", from: "@k2b/ui" },
+        { kind: "component", name: "createDataTableView", from: "@k2b/ui" },
+      ]}
+      description="Typed columns: text wraps, numbers and amounts align right, a status shows its badge, a bar its share. Search and group choice sit in the frame's head. Narrow the frame below 560 px: dates and recipients leave, and each row's details button shows them. Search for something absent to see the way back."
+      code={`const view = createDataTableView({ rows: () => campaigns, columns: () => columns });
+
+<DataTableTools label="Campaigns" query={view.query()} onQueryChange={view.setQuery}
+  groups={[{ id: "status", label: "Status" }]} groupBy={view.groupBy()} onGroupByChange={view.setGroupBy} />
+<DataTable surface="plain" columns={columns} rows={view.rows()}
+  sort={view.sort()} onSortChange={view.setSort} groupBy={view.groupBy() ?? undefined}
+  query={view.query()} onClearQuery={() => view.setQuery("")} />`}
+    >
+      <Paper as="section" class="ui-typed-table-demo" aria-labelledby="tables-typed-title">
+        <header class="ui-typed-table-demo__head">
+          <div>
+            <h3 id="tables-typed-title">Campaigns</h3>
+            <p>7 in the period · invented figures</p>
+          </div>
+          <DataTableTools
+            label="Campaigns"
+            query={view.query()}
+            onQueryChange={view.setQuery}
+            groups={campaignSpec.groupBy}
+            groupBy={view.groupBy()}
+            onGroupByChange={view.setGroupBy}
+          />
+        </header>
+        <DataTable
+          surface="plain"
+          ariaLabelledBy="tables-typed-title"
+          columns={campaignColumns}
+          rows={view.rows()}
+          sort={view.sort()}
+          onSortChange={view.setSort}
+          groupBy={view.groupBy() ?? undefined}
+          query={view.query()}
+          onClearQuery={() => view.setQuery("")}
+          empty={campaignSpec.empty}
+        />
+      </Paper>
+    </DemoCard>
+  );
+};
 
 const ProfessionalTableDemo = () => {
   const [query, setQuery] = createSignal("");
@@ -2063,6 +2126,7 @@ const demos: DemoSection = {
   tables: () => (
     <DemoGrid columns="one">
       <TableDemo />
+      <TypedTableDemo />
       <ProfessionalTableDemo />
     </DemoGrid>
   ),
