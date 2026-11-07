@@ -1,15 +1,19 @@
 import { createSignal } from "solid-js";
 
 /**
- * The chat sidebar's presentation is decided by CSS: a column when the chat area has room and the person has not
- * closed it, otherwise a drawer over the chat's edge, and a sheet on phones. Only an explicit close of the column is
- * remembered, in a cookie the page reads, so the server renders the final layout.
+ * The chat details are the workspace's shared Detail: a column where it fits, otherwise a drawer behind Details, and a
+ * page on phones. Only an explicit close of the column is remembered, in a cookie the page reads, so the server
+ * renders the final layout; parking the drawer or the phone page is not.
  */
 export const ASSISTANT_CONTEXT_COOKIE = "assistant_context";
 
-export type ChatSidebarMode = "column" | "drawer" | "sheet";
+/** The chat details' `AppWorkspace.Detail` id. */
+export const CHAT_DETAILS_ID = "assistant-chat-context";
 
-/** Whether the request carries the remembered close of the sidebar column. */
+/** The chat keeps a readable column beside the details; a narrower chat area shows them behind Details. */
+export const CHAT_MAIN_MIN_WIDTH = 480;
+
+/** Whether the request carries the remembered close of the details column. */
 export const assistantContextClosedFromCookie = (value: string | undefined): boolean => value === "closed";
 
 /** Remembers or forgets that the person closed the column, for one year on this browser. */
@@ -19,58 +23,14 @@ export const rememberAssistantContextClosed = (closed: boolean) => {
     : `${ASSISTANT_CONTEXT_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
 };
 
-/** The presentation the layout's container and media queries chose, read from `--assistant-context-mode`. */
-export const chatSidebarMode = (layout: Element): ChatSidebarMode => {
-  const mode = getComputedStyle(layout).getPropertyValue("--assistant-context-mode").trim();
-  return mode === "column" || mode === "sheet" ? mode : "drawer";
-};
-
-/** Opening and closing the chat sidebar in the presentation CSS chose. */
-export const createChatSidebarHost = (options: { initialClosed: boolean; onSheet: () => void }) => {
+/** The remembered visibility of the chat details, for `AppWorkspace.Detail`'s `open`, `onOpen`, and `onClose`. */
+export const createChatSidebarHost = (options: { initialClosed: boolean }) => {
   const [closed, setClosed] = createSignal(options.initialClosed);
-  const [drawerOpen, setDrawerOpen] = createSignal(false);
-  let layout: HTMLElement | undefined;
-  let toggle: HTMLElement | undefined;
-  let heading: HTMLElement | undefined;
-  return {
-    /** The person closed the column; rendered as `data-context="closed"`. */
-    closed,
-    /** The drawer covers the chat's edge; rendered as `data-drawer="open"`. */
-    drawerOpen,
-    layoutRef: (element: HTMLElement) => {
-      layout = element;
-    },
-    toggleRef: (element: HTMLElement) => {
-      toggle = element;
-    },
-    headingRef: (element: HTMLElement) => {
-      heading = element;
-    },
-    /**
-     * Closing the column is remembered; closing the drawer is not, it only covered the chat for a moment. A drawer
-     * opened in a narrow chat that has widened since shows as the column, so closing always ends the drawer too.
-     */
-    close: () => {
-      if (layout && chatSidebarMode(layout) === "column") {
-        setClosed(true);
-        rememberAssistantContextClosed(true);
-      }
-      setDrawerOpen(false);
-      // The toggle shows once the new state reached the DOM.
-      queueMicrotask(() => toggle?.focus());
-    },
-    open: () => {
-      if (!layout) return;
-      const mode = chatSidebarMode(layout);
-      if (mode === "sheet") return options.onSheet();
-      if (mode === "column") {
-        setClosed(false);
-        rememberAssistantContextClosed(false);
-      } else setDrawerOpen(true);
-      queueMicrotask(() => heading?.focus());
-    },
-    closeDrawer: () => setDrawerOpen(false),
+  const remember = (next: boolean) => {
+    setClosed(next);
+    rememberAssistantContextClosed(next);
   };
+  return { closed, open: () => remember(false), close: () => remember(true) };
 };
 
 /**

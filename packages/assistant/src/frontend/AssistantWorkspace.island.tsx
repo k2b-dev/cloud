@@ -51,6 +51,7 @@ import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
+  appWorkspaceDetailElementId,
   Button,
   ButtonLink,
   Chat,
@@ -61,6 +62,7 @@ import {
   NoticeCard,
   openSpotlightSearch,
   Placeholder,
+  parkWorkspaceDetailDrawers,
   prompts,
   reconcileChatMentions,
   useLocale,
@@ -88,7 +90,7 @@ import {
   type ContextView,
   createAssistantChatContextState,
 } from "./AssistantChatContext";
-import { AssistantChatSidebarPanel, type ChatSidebarJump, openAssistantChatSidebarSheet } from "./AssistantChatSidebar";
+import { AssistantChatSidebarPanel, type ChatSidebarJump } from "./AssistantChatSidebar";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
@@ -124,7 +126,7 @@ import { submitAssistantProjectMessage } from "./assistant-project-chat";
 import { assistantSearchOptions } from "./assistant-search";
 import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
-import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
+import { CHAT_DETAILS_ID, CHAT_MAIN_MIN_WIDTH, createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
@@ -1458,6 +1460,8 @@ export default function AssistantWorkspace(props: Props) {
     return projectId ? (projects().find((project) => project.id === projectId) ?? null) : null;
   };
   const emptyChat = () => !chat.loadingConversation() && chat.messages().length === 0 && !chat.activeTurn();
+  // The details describe the open chat; a project, the approvals, or an empty chat have none.
+  const chatDetailsAvailable = () => Boolean(activeConversation()) && !emptyChat() && !approvalsOpen() && !projectView();
 
   // The chat sidebar ("In this chat"): one live snapshot for the column, the drawer, the phone sheet, and the Files tab.
   const contextState = createAssistantChatContextState(
@@ -1473,7 +1477,6 @@ export default function AssistantWorkspace(props: Props) {
     liveHub,
   );
   const workspaceContext = () => contextState.snapshot();
-  const sidebarCopy = () => chatSidebarMessages.resolve([locale()]).t;
   const sidebarActions = () =>
     assistantChatSidebarActions({
       chatId: chat.activeConversationId() ?? "",
@@ -1490,22 +1493,18 @@ export default function AssistantWorkspace(props: Props) {
       onOpenSecrets: openChatSecrets,
       onFileDeleted: (file) => artifactWorkspace.closeFile(file.conversationId, file.path),
     });
-  const contextHost = createChatSidebarHost({
-    initialClosed: props.initialContextClosed === true,
-    onSheet: () =>
-      void openAssistantChatSidebarSheet({
-        state: contextState,
-        actions: sidebarActions(),
-        project: activeConversationProject(),
-        runCount: contextState.snapshot()?.runCount,
-        wrap: (content) => (
-          <LocaleProvider locale={locale()}>
-            <AssistantLiveProvider value={liveHub}>{content()}</AssistantLiveProvider>
-          </LocaleProvider>
-        ),
-      }),
-  });
-  createEffect(on(() => chat.activeConversationId(), contextHost.closeDrawer, { defer: true }));
+  const contextHost = createChatSidebarHost({ initialClosed: props.initialContextClosed === true });
+  // Another chat parks an open drawer or phone page; the column stays.
+  createEffect(
+    on(
+      () => chat.activeConversationId(),
+      () => {
+        const content = document.getElementById(appWorkspaceDetailElementId(CHAT_DETAILS_ID))?.parentElement;
+        if (content) parkWorkspaceDetailDrawers(content);
+      },
+      { defer: true },
+    ),
+  );
   const [emptyProjectId, setEmptyProjectId] = createSignal<string | null>(activeConversation()?.projectId ?? null);
   const [choosingProject, setChoosingProject] = createSignal(false);
   let emptyProjectConversationId: string | null = null;
@@ -2679,7 +2678,7 @@ export default function AssistantWorkspace(props: Props) {
         />
 
         <AppWorkspace.Content>
-          <AppWorkspace.Main scroll={false} mobilePane={artifactWorkspace.mobile()}>
+          <AppWorkspace.Main scroll={false} minWidth={CHAT_MAIN_MIN_WIDTH} mobilePane={artifactWorkspace.mobile()}>
             <AppWorkspace.MainPane id="chat" label={artifactCopy().chat} scroll={false} class="assistant-chat-pane flex min-h-0 flex-col">
               <Show when={props.embedded && !approvalsOpen()}>
                 <AssistantPanelContext
@@ -2718,12 +2717,7 @@ export default function AssistantWorkspace(props: Props) {
                   when={projectView()}
                   fallback={
                     <Chat class="assistant-chat-shell min-h-0 flex-1">
-                      <div
-                        ref={contextHost.layoutRef}
-                        class="assistant-chat-layout"
-                        data-context={contextHost.closed() ? "closed" : "auto"}
-                        data-drawer={contextHost.drawerOpen() ? "open" : undefined}
-                      >
+                      <div class="assistant-chat-layout">
                         <div class="contents">
                           <section class="assistant-chat-messages min-h-0 overflow-hidden" data-scroll-preserve="assistant-messages">
                             <Show
@@ -2831,26 +2825,6 @@ export default function AssistantWorkspace(props: Props) {
                             </div>
                           </Show>
                         </div>
-                        <Show when={activeConversation() && !emptyChat()}>
-                          <DetailsToggle
-                            ref={contextHost.toggleRef}
-                            class="assistant-context-toggle"
-                            size="sm"
-                            label={sidebarCopy().show}
-                            aria-expanded="false"
-                            aria-controls="assistant-chat-context"
-                            onClick={contextHost.open}
-                          />
-                          <AssistantChatSidebarPanel
-                            id="assistant-chat-context"
-                            state={contextState}
-                            actions={sidebarActions()}
-                            project={activeConversationProject()}
-                            runCount={contextState.snapshot()?.runCount}
-                            onClose={contextHost.close}
-                            headingRef={contextHost.headingRef}
-                          />
-                        </Show>
                       </div>
                     </Chat>
                   }
@@ -2910,6 +2884,27 @@ export default function AssistantWorkspace(props: Props) {
               </Show>
             </AppWorkspace.MainPane>
           </AppWorkspace.Main>
+          <AppWorkspace.Detail
+            id={CHAT_DETAILS_ID}
+            phone="page"
+            openOnChoice={false}
+            open={!contextHost.closed()}
+            available={chatDetailsAvailable()}
+            onOpen={contextHost.open}
+            onClose={contextHost.close}
+          >
+            <Show when={chatDetailsAvailable()}>
+              <AssistantChatSidebarPanel
+                detailId={CHAT_DETAILS_ID}
+                state={contextState}
+                actions={sidebarActions()}
+                chatTitle={activeConversation()?.title}
+                project={activeConversationProject()}
+                runCount={contextState.snapshot()?.runCount}
+                onClose={contextHost.close}
+              />
+            </Show>
+          </AppWorkspace.Detail>
         </AppWorkspace.Content>
       </AppWorkspace>
     </AssistantLiveProvider>

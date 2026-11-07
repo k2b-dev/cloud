@@ -6,7 +6,6 @@ packages/assistant/src/artifacts/apps.browser.test.ts | 1
 packages/assistant/src/artifacts/html/html-app.browser.test.ts | 4
 packages/assistant/src/artifacts/sidebar-dropdown.browser.test.ts | 2
 packages/assistant/src/artifacts/workspace.browser.test.ts | 1
-packages/assistant/src/frontend/AssistantChatSidebar.browser.test.ts | 12
 packages/assistant/src/frontend/AssistantProjectView.browser.test.ts | 1
 packages/assistant/src/frontend/AssistantSidebar.browser.test.ts | 1
 packages/assistant/src/frontend/composer-insert.browser.test.ts | 2

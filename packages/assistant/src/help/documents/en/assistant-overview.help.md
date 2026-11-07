@@ -49,7 +49,7 @@ A routine sends a saved prompt back into one chat at the time you chose. If that
 
 A one-time routine uses an exact local time in the Cloud application timezone. A recurring routine uses a five-field cron expression in that same timezone. Ask Assistant to list or read your routines. The CLI calls them tasks: `cld assistant tasks`. A routine that fails moves to **Needs you**. Its notification names the routine and says why it stopped. Deleting a chat also deletes its routines and their run history.
 
-Open **Context** in the sidebar **In this chat** and select a routine to adjust, pause, resume, run, or delete it, or to look at its run history.
+Open **Context** in the details **In this chat** and select a routine to adjust, pause, resume, run, or delete it, or to look at its run history.
 
 **Paused** says why: “Paused by you on Oct 16, 2026, 14:30. What happens meanwhile is not caught up automatically.”, “Paused because the chat is archived.” or “Paused because the account is inactive.”
 

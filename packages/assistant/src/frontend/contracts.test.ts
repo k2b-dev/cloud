@@ -70,7 +70,9 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).toContain("AssistantChatSidebarPanel");
     expect(workspace).toContain('class="assistant-chat-layout"');
     expect(workspace).toContain('class="assistant-chat-messages min-h-0 overflow-hidden"');
-    expect(workspace).not.toContain("<AppWorkspace.Detail");
+    // The chat details are the workspace's shared Detail, not an application column.
+    expect(workspace).toContain("<AppWorkspace.Detail");
+    expect(workspace).toContain('phone="page"');
     expect(context).toContain("AssistantChatContextContent");
     expect(context).toContain("openAssistantContextFiles");
     expect(context).toContain("loadAssistantContextImages");
