@@ -78,6 +78,7 @@ render(
               height={280}
               spec={{
                 kind: "line",
+                title: "Daily October balance",
                 series: [
                   {
                     label: "Balance",

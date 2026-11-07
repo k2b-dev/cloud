@@ -126,8 +126,8 @@ test("only detailed portable date lines select calendar ticks without a rounded 
   const series = [
     { data: Array.from({ length: 31 }, (_, index) => ({ x: `2026-10-${String(index + 1).padStart(2, "0")}`, y: 15_000 + index * 200 })) },
   ];
-  const ordinary = chartKinds().parse({ kind: "line", series });
-  const detailed = chartKinds().parse({ kind: "line", series, marker: { at: "2026-10-15", label: "Today" } });
+  const ordinary = chartKinds().parse({ kind: "line", title: "Daily October", series });
+  const detailed = chartKinds().parse({ kind: "line", title: "Daily October", series, marker: { at: "2026-10-15", label: "Today" } });
   const base = chartRenderOptions(ordinary, "en");
   const mapped = chartRenderOptions(detailed, "en");
   if (base.kind !== "line" || mapped.kind !== "line") throw new Error("Expected line");
@@ -139,6 +139,7 @@ test("only detailed portable date lines select calendar ticks without a rounded 
   ).toEqual(["Oct 5", "Oct 12", "Oct 19", "Oct 26"]);
   const numeric = chartKinds().parse({
     kind: "line",
+    title: "Numeric steps",
     legendValues: true,
     series: [
       {
