@@ -9,8 +9,8 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
   expect(normal).not.toContain("k2b-area-layer");
   const rare = await buildChartModule();
-  // Hbar measured 56,728 B; temporary ~1% headroom, see #2790.
-  expect(Buffer.byteLength(rare)).toBeLessThan(57_300);
+  // Keep main’s offline module budget while adding horizontal bars.
+  expect(Buffer.byteLength(rare)).toBeLessThan(53_000);
   expect(rare).toContain("k2b-area-layer");
   expect(normal).not.toContain("data-calendar-weekdays");
   expect(rare).toContain("data-calendar-weekdays");

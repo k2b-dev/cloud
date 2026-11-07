@@ -1,0 +1,674 @@
+import type { JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
+import { isServer } from "solid-js/web";
+import { IconButton } from "../actions/Button";
+import type { MapViewport } from "../charts/core";
+import { calendarLayout } from "../charts/core/calendar";
+import type { ChartDrawingOptions } from "../charts/core/render";
+import { chartRenderHeight, preservesAspectRatio } from "../charts/core/render-size";
+import { suppressTextSelection } from "../internal/text-selection";
+import { useLocale } from "../intl/locale";
+import { useUiMessages } from "../intl/messages";
+import { calendarInspectionNavigation, mountCalendarScroll } from "./chart-calendar";
+import type { ChartCursor } from "./chart-cursor";
+import { createChartInspection } from "./chart-inspection";
+import {
+  type ChartDatumRef,
+  type ChartKind,
+  type ChartSelection,
+  type ChartTooltipFormatter,
+  closeChartInspectionOnOutside,
+} from "./chart-inspection-core";
+import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
+import { resolveChartMessages, useChartMessages } from "./chart-messages";
+import {
+  panStateTimelineViewport,
+  type StateTimelineDomain,
+  stateTimelineDomain,
+  stateTimelineHeight,
+  zoomStateTimelineViewport,
+} from "./chart-state-timeline";
+import { selectedChartSvg } from "./chart-svg";
+import { useViewportMessages } from "./viewport-messages";
+
+/**
+ * Chart — Solid interaction and sizing around the portable UI chart core.
+ *
+ * **Live-update story.** `charts.<kind>(opts)` returns an SVG string;
+ * Solid's `innerHTML` is reactive, so any time a prop (signal, store
+ * slice, derived value) changes, the SVG re-renders. No manual
+ * subscription, no imperative DOM patching. Trade-off: every change
+ * is a full SVG re-build, not a diff — fine for dashboard cadences
+ * (poll, websocket, store updates). Don't use this for 60fps streaming.
+ *
+ * **Sizing.** The server and browser render the same logical viewBox. CSS
+ * fits Cartesian plots to the container and preserves text/marker sizes;
+ * maps fit the whole world and zoom uniformly across the full plot; pies, donuts and gauges retain
+ * their aspect ratio. No measurement
+ * or hydration redraw is needed. The caller sizes the wrapper, for example
+ * `style={{ height: "14rem" }}`. State timelines derive their default height
+ * from the row count and legend via `stateTimelineHeight()`.
+ *
+ * **Why so thin.** The props are a discriminated union over each
+ * registered core chart renderer — `kind: "line"` brings in exactly the params
+ * `charts.line` expects, `kind: "bar"` brings in `charts.bar`'s, etc.
+ * Options stay aligned with the core renderer without renaming. Every chart provides
+ * renderer-owned inspection, tooltips and optional selection by default.
+ * `interactive` adds bounded pan / zoom and reset controls to maps and state timelines.
+ * When a core renderer gains an option, it is automatically available at every
+ * callsite.
+ *
+ * **Theming.** The core renderers use `currentColor` for axes / ticks /
+ * tick labels — set the wrapping element's `color` and everything
+ * inherits. Series colors come from `--stdlib-chart-c1..c8` CSS
+ * custom properties; override on the parent for per-chart palettes.
+ *
+ * ```tsx
+ * <Chart kind="line" style={{ height: "12rem" }}
+ *        series={[{ data: points() }]}
+ *        yAxis={{ format: v => `€${v}k` }} />
+ *
+ * <Chart kind="donut" style={{ height: "12rem" }} data={slices()} />
+ *
+ * <Chart kind="sparkline" style={{ width: "6rem", height: "1.5rem" }} data={trend()} />
+ *
+ * <Chart kind="map" style={{ height: "16rem" }} series={locations()} interactive />
+ * ```
+ */
+
+/** All registered chart kinds. */
+export type { ChartKind } from "./chart-inspection-core";
+
+export type ChartLabels = Partial<{
+  empty: string;
+  series: string;
+  interactiveMap: string;
+  interactiveTimeline: string;
+  interactiveLine: string;
+  interactiveChart: string;
+  zoomIn: string;
+  zoomOut: string;
+  resetMap: string;
+  resetTimeline: string;
+}>;
+
+/**
+ * Per-kind props: `kind` discriminator + the exact options that
+ * `charts.<kind>` accepts, **minus** `width` / `height` (the wrapper
+ * owns those — CSS fits a stable coordinate space to the box). Solid's
+ * component model handles discriminated unions natively, so callsites
+ * get full type safety.
+ */
+export type ChartProps = {
+  [K in ChartKind]: Extract<ChartDrawingOptions, { kind: K }> & {
+    class?: string;
+    style?: JSX.CSSProperties | string;
+    labels?: ChartLabels;
+    /**
+     * Navigation for maps and state timelines: pan, zoom and reset controls.
+     * Arrows pan; Alt+arrows inspect. Every chart shows tooltips and keyboard
+     * inspection without this prop.
+     */
+    interactive?: boolean;
+    onSelect?: (selection: ChartSelection) => void;
+    /** Controlled highlight; indices belong to this exact input snapshot. */
+    selected?: ChartDatumRef | null;
+    /** Customize the always-on tooltip with a title and labeled text rows. */
+    tooltip?: ChartTooltipFormatter;
+    /** Optional shared X cursor for line charts. */
+    cursor?: ChartCursor;
+  };
+}[ChartKind];
+
+/** Empty-data short-circuit. Kept per-kind because each renderer's payload
+ *  key differs (series vs data vs groups). We're conservative: only
+ *  block on truly empty inputs; partially-filled series get rendered
+ *  as-is and the core handles the gaps. */
+const isEmpty = (props: ChartProps): boolean => {
+  if (props.kind === "area")
+    return (
+      !props.x.length ||
+      !props.series.length ||
+      props.x.every(
+        (_, i) => props.series.some((s) => s.data[i] === null) || (props.normalize && props.series.every((s) => s.data[i] === 0)),
+      )
+    );
+  if (props.kind === "line" || props.kind === "scatter") {
+    return !props.series?.length || props.series.every((s) => !s.data.length);
+  }
+  if (props.kind === "hbar") return !props.rows.length;
+  if (props.kind === "bar")
+    return props.series
+      ? !props.x?.length || !props.series.some((s) => s.data.some((v) => v !== null && Number.isFinite(v)))
+      : !props.data?.length;
+  if (props.kind === "donut" || props.kind === "pie") {
+    return !props.data?.length;
+  }
+  if (props.kind === "histogram" || props.kind === "sparkline") {
+    return !props.data?.length;
+  }
+  if (props.kind === "boxplot") {
+    return !props.groups?.length;
+  }
+  if (props.kind === "stateTimeline") {
+    return !props.rows?.length || props.rows.every((row) => !row.intervals.length);
+  }
+  return false;
+};
+
+export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import("../charts/core/render").renderChartSvg): JSX.Element => {
+  const [, drawingProps] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
+  const messages = useUiMessages();
+  const chartMessages = useChartMessages();
+  const viewportMessages = useViewportMessages();
+  const locale = useLocale();
+  let containerRef: HTMLDivElement | undefined;
+  let chartTooltipRef: HTMLSpanElement | undefined;
+  let lineAnchorRef: HTMLSpanElement | undefined;
+  // One deterministic coordinate space on the server and client. CSS fits the
+  // SVG to its box; hydration must never replace it with measured geometry.
+  const calendar = () =>
+    props.kind === "heatmap" && props.layout === "calendar" ? calendarLayout({ ...props, locale: props.locale ?? locale() }) : undefined;
+  const size = () => ({
+    width: calendar()?.width ?? 480,
+    height: chartRenderHeight(props),
+  });
+  const topLegend = () =>
+    props.kind === "area"
+      ? props.legend !== false
+      : props.kind === "line" && props.legend === true && props.legendPlacement === "top-start";
+  const legendSeries = () => (props.kind === "line" || props.kind === "area" ? props.series : []);
+  const legendValue = (index: number) => {
+    if (props.kind !== "area") return "";
+    const last = props.x.length - 1;
+    const amount = props.series[index]?.data[last];
+    const values = props.series.map((s) => s.data[last]);
+    const total = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+    if (amount == null || values.some((v) => v == null) || (props.normalize && total === 0)) return "—";
+    return props.normalize
+      ? new Intl.NumberFormat(locale(), { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(amount / total)
+      : (props.format?.(amount) ?? new Intl.NumberFormat(locale(), { maximumFractionDigits: 2 }).format(amount));
+  };
+  const dimensions = () => containerRef?.getBoundingClientRect() ?? size();
+  const initialMapViewport = props.kind === "map" ? normalizeMapViewport(props.viewport) : DEFAULT_MAP_VIEWPORT;
+  const [mapViewport, setMapViewport] = createSignal<MapViewport>(initialMapViewport);
+  const initialTimelineViewport =
+    props.kind === "stateTimeline" ? stateTimelineDomain(props.rows, props.domain) : ([0, 1] as StateTimelineDomain);
+  const [timelineViewport, setTimelineViewport] = createSignal<StateTimelineDomain>(initialTimelineViewport);
+  const [dragging, setDragging] = createSignal(false);
+  const chartTooltipId = `k2b-chart-tooltip-${createUniqueId()}`;
+  let timelineViewportLocallyChanged = false;
+  let drag:
+    | {
+        pointerId: number;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        viewport: MapViewport;
+      }
+    | undefined;
+  let timelineDrag:
+    | {
+        pointerId: number;
+        x: number;
+        width: number;
+        viewport: StateTimelineDomain;
+      }
+    | undefined;
+  let pointerFrame: number | undefined;
+  let pendingPointer: { pointerId: number; clientX: number; clientY: number } | undefined;
+
+  const interactiveMap = () => props.kind === "map" && props.interactive === true;
+  const interactiveTimeline = () => props.kind === "stateTimeline" && props.interactive === true;
+  const draggable = () => interactiveMap() || interactiveTimeline();
+  const labels = () => props.labels ?? {};
+  const accessibleName = () => {
+    const override =
+      props.kind === "map"
+        ? labels().interactiveMap
+        : props.kind === "stateTimeline"
+          ? labels().interactiveTimeline
+          : props.kind === "line"
+            ? labels().interactiveLine
+            : labels().interactiveChart;
+    const title = "title" in props && typeof props.title === "string" && props.title.trim() ? props.title : undefined;
+    const valueLabel = (props.kind === "stat" || props.kind === "gauge") && props.label?.trim() ? props.label : undefined;
+    const fallback =
+      props.kind === "map"
+        ? chartMessages().interactiveMap
+        : props.kind === "stateTimeline"
+          ? chartMessages().interactiveTimeline
+          : props.kind === "line"
+            ? chartMessages().interactiveLineChart
+            : chartMessages().interactiveChart;
+    return override ?? title ?? valueLabel ?? fallback;
+  };
+  const timelineFullDomain = (): StateTimelineDomain =>
+    props.kind === "stateTimeline" ? stateTimelineDomain(props.rows, props.domain) : [0, 1];
+
+  createEffect(() => {
+    if (props.kind === "map") {
+      setMapViewport(normalizeMapViewport(props.viewport));
+    }
+  });
+
+  createEffect(() => {
+    if (props.kind === "stateTimeline" && !timelineViewportLocallyChanged) {
+      setTimelineViewport(timelineFullDomain());
+    }
+  });
+
+  const updateTimelineViewport = (update: (current: StateTimelineDomain) => StateTimelineDomain) => {
+    timelineViewportLocallyChanged = true;
+    setTimelineViewport(update);
+  };
+
+  const mapDimensions = () => {
+    const viewportElement = containerRef?.querySelector<SVGSVGElement>(".stdlib-chart-map-viewport");
+    const matrix = viewportElement?.getScreenCTM?.();
+    const box = viewportElement?.viewBox?.baseVal;
+    if (matrix && box?.width && box.height) {
+      return { width: box.width * Math.hypot(matrix.a, matrix.b), height: box.height * Math.hypot(matrix.c, matrix.d) };
+    }
+    const rect = viewportElement?.getBoundingClientRect();
+    if (rect && rect.width > 0 && rect.height > 0) {
+      return { width: rect.width, height: rect.height };
+    }
+    return dimensions();
+  };
+
+  const zoom = (delta: number) => {
+    closeChartTooltip();
+    if (interactiveMap()) {
+      setMapViewport((current) => zoomMapViewport(current, delta, props.kind === "map" ? props.zoomFocus : undefined));
+    } else if (interactiveTimeline()) {
+      updateTimelineViewport((current) => zoomStateTimelineViewport(current, timelineFullDomain(), delta));
+    }
+  };
+
+  const reset = () => {
+    closeChartTooltip();
+    if (interactiveMap() && props.kind === "map") {
+      setMapViewport(normalizeMapViewport(props.viewport));
+    }
+    if (interactiveTimeline()) {
+      timelineViewportLocallyChanged = false;
+      setTimelineViewport(timelineFullDomain());
+    }
+  };
+
+  const handlePointerDown: JSX.EventHandlerUnion<HTMLDivElement, PointerEvent> = (event) => {
+    inspection.down(event);
+    if (!draggable() || event.button !== 0 || (event.target as Element).closest("button, a")) {
+      return;
+    }
+    closeChartTooltip();
+    // The pointer's own pointerup or pointercancel ends the hold.
+    suppressTextSelection(event.pointerId);
+    if (interactiveTimeline()) {
+      timelineDrag = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        width: Math.max(1, event.currentTarget.getBoundingClientRect().width),
+        viewport: timelineViewport(),
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setDragging(true);
+      return;
+    }
+    const dimensions = mapDimensions();
+    drag = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      width: dimensions.width,
+      height: dimensions.height,
+      viewport: mapViewport(),
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragging(true);
+  };
+
+  const flushPointerMove = () => {
+    if (pointerFrame !== undefined) {
+      cancelAnimationFrame(pointerFrame);
+      pointerFrame = undefined;
+    }
+    const sample = pendingPointer;
+    pendingPointer = undefined;
+    if (!sample) return;
+    const start = timelineDrag ?? drag;
+    if (start && Math.hypot(sample.clientX - start.x, sample.clientY - ("y" in start ? start.y : sample.clientY)) <= 6) return;
+    const activeTimelineDrag = timelineDrag;
+    if (activeTimelineDrag?.pointerId === sample.pointerId) {
+      updateTimelineViewport(() =>
+        panStateTimelineViewport(
+          activeTimelineDrag.viewport,
+          timelineFullDomain(),
+          sample.clientX - activeTimelineDrag.x,
+          activeTimelineDrag.width,
+        ),
+      );
+      return;
+    }
+    if (!drag || drag.pointerId !== sample.pointerId) return;
+    setMapViewport(panMapViewport(drag.viewport, sample.clientX - drag.x, sample.clientY - drag.y, drag.width, drag.height));
+  };
+
+  const handlePointerMove: JSX.EventHandlerUnion<HTMLDivElement, PointerEvent> = (event) => {
+    inspection.move(event);
+    if (timelineDrag?.pointerId !== event.pointerId && drag?.pointerId !== event.pointerId) return;
+    pendingPointer = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY };
+    if (pointerFrame !== undefined) return;
+    pointerFrame = requestAnimationFrame(flushPointerMove);
+  };
+
+  const stopDragging: JSX.EventHandlerUnion<HTMLDivElement, PointerEvent> = (event) => {
+    inspection.up();
+    if (pendingPointer?.pointerId === event.pointerId) flushPointerMove();
+    if (timelineDrag?.pointerId === event.pointerId) {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      timelineDrag = undefined;
+      setDragging(false);
+      return;
+    }
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    drag = undefined;
+    setDragging(false);
+  };
+
+  const handleWheel: JSX.EventHandlerUnion<HTMLDivElement, WheelEvent> = (event) => {
+    if (interactiveMap() && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      zoom(event.deltaY < 0 ? 1 : -1);
+      return;
+    }
+    if (!interactiveTimeline()) return;
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      const rect = event.currentTarget.getBoundingClientRect();
+      const anchor = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0.5;
+      updateTimelineViewport((current) => zoomStateTimelineViewport(current, timelineFullDomain(), event.deltaY < 0 ? 1 : -1, anchor));
+    } else if (event.shiftKey) {
+      event.preventDefault();
+      updateTimelineViewport((current) =>
+        panStateTimelineViewport(current, timelineFullDomain(), -event.deltaY, event.currentTarget.getBoundingClientRect().width),
+      );
+    }
+  };
+
+  const handleKeyDown: JSX.EventHandlerUnion<HTMLDivElement, KeyboardEvent> = (event) => {
+    if (inspection.key(event)) return;
+    if (!draggable() || event.target !== containerRef) return;
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      zoom(1);
+      return;
+    }
+    if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      zoom(-1);
+      return;
+    }
+    if (event.key === "0" || event.key === "Home") {
+      event.preventDefault();
+      reset();
+      return;
+    }
+    if (interactiveTimeline() && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+      event.preventDefault();
+      updateTimelineViewport((current) =>
+        panStateTimelineViewport(
+          current,
+          timelineFullDomain(),
+          event.key === "ArrowLeft" ? 80 : -80,
+          event.currentTarget.getBoundingClientRect().width,
+        ),
+      );
+      return;
+    }
+    const delta: readonly [number, number] | undefined = {
+      ArrowLeft: [40, 0],
+      ArrowRight: [-40, 0],
+      ArrowUp: [0, 40],
+      ArrowDown: [0, -40],
+    }[event.key] as readonly [number, number] | undefined;
+    if (!delta) return;
+    event.preventDefault();
+    const dimensions = mapDimensions();
+    setMapViewport((current) => panMapViewport(current, delta[0], delta[1], dimensions.width, dimensions.height));
+  };
+
+  const inspection = createChartInspection({
+    container: () => containerRef,
+    locale,
+    cursor: () => props.cursor,
+    tooltip: () => chartTooltipRef,
+    anchor: () => lineAnchorRef,
+    kind: () => props.kind,
+    nav: () => (props.kind === "heatmap" && props.layout === "calendar" ? calendarInspectionNavigation : undefined),
+    enabled: () => !isEmpty(props),
+    select: (selection) => props.onSelect?.(selection),
+    format: (selection) => {
+      if (props.tooltip) return props.tooltip(selection);
+      const fields =
+        props.kind === "heatmap" && props.layout === "calendar"
+          ? resolveChartMessages(props.locale ?? locale()).chartFields
+          : chartMessages().chartFields;
+      if (selection.kind === "area" && props.kind === "area") {
+        const amount = selection.datum.values.find((f) => f.key === "value")!;
+        const share = selection.datum.values.find((f) => f.key === "percent");
+        return {
+          title: selection.datum.values.find((f) => f.key === "x")?.formatted ?? "",
+          rows: [
+            { label: selection.datum.label ?? chartMessages().series, value: `${share ? `${share.formatted} · ` : ""}${amount.formatted}` },
+          ],
+        };
+      }
+      const format = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 });
+      return {
+        title:
+          selection.datum.label ??
+          (selection.datum.seriesIndex !== undefined
+            ? `${labels().series ?? chartMessages().series} ${selection.datum.seriesIndex + 1}`
+            : undefined),
+        rows: selection.datum.values.map((field) => ({
+          label:
+            props.kind === "heatmap" && props.layout === "calendar" && field.key === "value" && props.label
+              ? props.label
+              : selection.kind === "line" && field.key === "y"
+                ? (selection.datum.label ?? labels().series ?? chartMessages().series)
+                : (props.kind === "bar" || props.kind === "hbar") && field.key.startsWith("series:")
+                  ? ((props.kind === "hbar"
+                      ? props.series[Number(field.key.slice(7))]
+                      : props.series?.[Number(field.key.slice(7))]?.label) ?? fields({ key: field.key }))
+                  : props.kind === "bar" && field.key === "previous"
+                    ? (props.compare?.label ?? fields({ key: field.key }))
+                    : fields({ key: field.key }),
+          value:
+            field.formatted ??
+            (field.key === "upperInclusive"
+              ? field.value === "true"
+                ? messages().yes
+                : messages().no
+              : typeof field.value === "number"
+                ? `${format.format(field.value)}${field.key === "percent" ? "%" : ""}`
+                : field.value),
+        })),
+      };
+    },
+  });
+  const closeChartTooltip = () => inspection.close();
+  const svgMarkup = createMemo(() =>
+    renderChartSvg(
+      props.kind === "heatmap" && props.layout === "calendar"
+        ? { ...props, locale: props.locale ?? locale() }
+        : { ...drawingProps, ...(props.kind === "bar" || props.kind === "hbar" ? { locale: locale() } : {}) },
+      size().width,
+      size().height,
+      interactiveMap() ? mapViewport() : undefined,
+      interactiveTimeline() ? timelineViewport() : undefined,
+      locale(),
+    ),
+  );
+  createEffect(() => {
+    svgMarkup();
+    inspection.invalidate();
+    untrack(() => inspection.selectDatum(props.selected));
+  });
+
+  createEffect(() => inspection.selectDatum(props.selected));
+
+  onCleanup(() => {
+    inspection.close();
+    if (pointerFrame !== undefined) cancelAnimationFrame(pointerFrame);
+    pointerFrame = undefined;
+    pendingPointer = undefined;
+  });
+
+  onMount(() => {
+    if (!containerRef) return;
+    if (props.kind === "heatmap" && props.layout === "calendar") onCleanup(mountCalendarScroll(containerRef));
+    onCleanup(
+      closeChartInspectionOnOutside({
+        container: () => containerRef,
+        tooltip: () => chartTooltipRef,
+        close: closeChartTooltip,
+        keepScroll: () => props.kind === "heatmap" && props.layout === "calendar",
+      }),
+    );
+  });
+
+  const chartStyle = () =>
+    props.style ??
+    (props.kind === "stateTimeline"
+      ? {
+          height: `${stateTimelineHeight(props.rows.length, props.legend !== false)}px`,
+        }
+      : undefined);
+
+  const control = (label: string, shortcut: string, icon: string, action: () => void) => (
+    <IconButton variant="secondary" label={label} tooltip={`${label} (${shortcut})`} onClick={action}>
+      <i class={`ti ${icon}`} aria-hidden="true" />
+    </IconButton>
+  );
+
+  return (
+    <Show
+      when={!isEmpty(props)}
+      fallback={
+        <div ref={containerRef} class={`k2b-chart k2b-chart__empty ${props.class ?? ""}`} style={chartStyle()}>
+          {labels().empty ?? messages().noData}
+        </div>
+      }
+    >
+      {/* CSS fits the server-rendered SVG to the caller's box. Only changes
+          to chart data/options rebuild the SVG; resizing does not. */}
+      <div
+        ref={containerRef}
+        class={`k2b-chart ${props.class ?? ""}`}
+        data-chart-kind={props.kind}
+        data-legend-placement={topLegend() ? "top-start" : undefined}
+        data-drag={draggable() ? (dragging() ? "active" : "idle") : undefined}
+        data-crosshair={!draggable() && props.kind === "line" ? "true" : undefined}
+        data-interactive="true"
+        style={chartStyle()}
+        role="group"
+        aria-label={accessibleName()}
+        aria-description={accessibleName() !== chartMessages().interactiveChart ? chartMessages().interactiveChart : undefined}
+        tabIndex={0}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={stopDragging}
+        onPointerCancel={stopDragging}
+        onClick={inspection.click}
+        onPointerLeave={inspection.leave}
+        onFocusIn={inspection.focus}
+        onFocusOut={closeChartTooltip}
+        onWheel={handleWheel}
+        onKeyDown={handleKeyDown}
+      >
+        <Show when={topLegend()}>
+          <div class="k2b-chart__legend" role="group" aria-label={chartMessages().chartLegend} tabIndex={0}>
+            <For each={legendSeries()}>
+              {(series, index) => (
+                <span class="k2b-chart__legend-item">
+                  {/* Use the renderer's actual series classes/defaults, including consumer palette overrides. */}
+                  <svg
+                    class={`stdlib-chart k2b-chart__legend-swatch ${props.kind === "line" ? (props.className ?? "") : ""}`}
+                    viewBox="0 0 10 10"
+                    width="10"
+                    height="10"
+                    aria-hidden="true"
+                  >
+                    <rect
+                      x="1"
+                      y="1"
+                      width="8"
+                      height="8"
+                      rx="2"
+                      class={`stdlib-chart-series-${index() % 8}`}
+                      fill={`var(--stdlib-chart-c${(index() % 8) + 1}, ${["#2563eb", "#16a34a", "#d97706", "#dc2626", "#a855f7", "#0891b2", "#db2777", "#65a30d"][index() % 8]})`}
+                      stroke="none"
+                    />
+                  </svg>
+                  <span>{series.label && series.label.length > 0 ? series.label : `${chartMessages().series} ${index() + 1}`}</span>
+                  <Show when={props.kind === "area"}>
+                    <b
+                      data-chart-legend-value
+                      data-series-index={index()}
+                      data-field={props.kind === "area" && props.normalize ? "percent" : "value"}
+                      data-default={legendValue(index())}
+                    >
+                      {legendValue(index())}
+                    </b>
+                  </Show>
+                </span>
+              )}
+            </For>
+          </div>
+        </Show>
+        <div
+          class="k2b-chart__svg"
+          data-stretch={!calendar() && !preservesAspectRatio(props.kind) ? "true" : undefined}
+          style={{
+            "min-width": calendar() ? `${calendar()!.minWidth}px` : undefined,
+            "--k2b-chart-width": `${size().width}px`,
+            "--k2b-chart-height": `${size().height}px`,
+            "aspect-ratio": `${size().width} / ${size().height}`,
+          }}
+          innerHTML={isServer ? selectedChartSvg(svgMarkup(), props.selected) : svgMarkup()}
+        />
+        <span ref={lineAnchorRef} class="k2b-chart__anchor" aria-hidden="true" />
+        <span
+          id={chartTooltipId}
+          ref={chartTooltipRef}
+          role="tooltip"
+          popover="manual"
+          data-instant="true"
+          class="k2b-tooltip k2b-chart__tooltip"
+        />
+        <Show when={draggable()}>
+          <div class="k2b-chart__controls">
+            {control(labels().zoomIn ?? viewportMessages().zoomIn, "+", "ti-plus", () => zoom(1))}
+            {control(labels().zoomOut ?? viewportMessages().zoomOut, "-", "ti-minus", () => zoom(-1))}
+            {control(
+              interactiveMap()
+                ? (labels().resetMap ?? chartMessages().resetMapView)
+                : (labels().resetTimeline ?? chartMessages().resetTimelineView),
+              "0",
+              "ti-focus-centered",
+              reset,
+            )}
+          </div>
+        </Show>
+      </div>
+    </Show>
+  );
+};

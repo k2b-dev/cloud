@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.50.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.49.0...npm-ui-v0.50.0) (2026-11-07)
+
+
+### Features
+
+* **mail:** quieter sidebar with a Mailboxes menu for new and deleted mailboxes ([#2752](https://github.com/k2b-dev/cloud/issues/2752)) ([9c24e57](https://github.com/k2b-dev/cloud/commit/9c24e578caf666bedc1867ae1b2e6bd9893be32b))
+* **pulse:** dashboards read in the base's time zone with round time ticks ([#2723](https://github.com/k2b-dev/cloud/issues/2723)) ([ec40dbd](https://github.com/k2b-dev/cloud/commit/ec40dbd740debb312abaf09d40fd07b7670774c0))
+* **pulse:** dashboards show plain icons, framed tables and explorable line charts ([#2721](https://github.com/k2b-dev/cloud/issues/2721)) ([23a7763](https://github.com/k2b-dev/cloud/commit/23a7763e74eef0072616079aea82714bf154f84f))
+* **ui:** AI surfaces use plum instead of cyan ([#2727](https://github.com/k2b-dev/cloud/issues/2727)) ([d623e33](https://github.com/k2b-dev/cloud/commit/d623e3326f0768a50048a34acb3e2fb6a299b61d))
+* **ui:** budgets and balance rows ([#2757](https://github.com/k2b-dev/cloud/issues/2757)) ([0d6fcef](https://github.com/k2b-dev/cloud/commit/0d6fcefd8ec44697155af1994006b986fbe0178e))
+* **ui:** calendar heatmaps ([#2774](https://github.com/k2b-dev/cloud/issues/2774)) ([1687e8e](https://github.com/k2b-dev/cloud/commit/1687e8e343693ae14fc4735f41f5b8b1a4ce2e05))
+* **ui:** chart frames keep their place while loading, empty, failing or stale ([#2731](https://github.com/k2b-dev/cloud/issues/2731)) ([f0f1446](https://github.com/k2b-dev/cloud/commit/f0f1446061f2fa227baa2b3746c609d216eeb670))
+* **ui:** charts draw with the @k2b/ui core instead of stdlib ([#2734](https://github.com/k2b-dev/cloud/issues/2734)) ([f40d118](https://github.com/k2b-dev/cloud/commit/f40d1181d95b98e368c93b367f4d5d137c03242e))
+* **ui:** dashboards share one grid with two-thirds panels and key figures in their sections ([#2770](https://github.com/k2b-dev/cloud/issues/2770)) ([21be97b](https://github.com/k2b-dev/cloud/commit/21be97bd0bc732e18d87b6873d974097a344c828))
+* **ui:** key figures show as single tiles with change and comparison ([#2748](https://github.com/k2b-dev/cloud/issues/2748)) ([4aa167c](https://github.com/k2b-dev/cloud/commit/4aa167cedadd1a677184d7bee8a1059aafc06eca))
+* **ui:** money shows its direction with turquoise in and violet out ([#2754](https://github.com/k2b-dev/cloud/issues/2754)) ([635db06](https://github.com/k2b-dev/cloud/commit/635db0653681babe1c20dfb945cc5fb104b3f6ef))
+* **ui:** stacked and 100 % area charts ([#2763](https://github.com/k2b-dev/cloud/issues/2763)) ([2a1cb51](https://github.com/k2b-dev/cloud/commit/2a1cb5152262132dcb542ad475cb5239144097f2))
+* **ui:** tables format numbers in the reader's language ([#2733](https://github.com/k2b-dev/cloud/issues/2733)) ([e0eb4bc](https://github.com/k2b-dev/cloud/commit/e0eb4bceba486ade4857c5d6b4c696e01b2d086f))
+* **ui:** tables search, group and type their columns ([#2765](https://github.com/k2b-dev/cloud/issues/2765)) ([9028f93](https://github.com/k2b-dev/cloud/commit/9028f9304abf12e40601cf552ea5edeb72cba79a))
+* **ui:** typed chart components and a Solid-free chart core entry ([#2726](https://github.com/k2b-dev/cloud/issues/2726)) ([70526ad](https://github.com/k2b-dev/cloud/commit/70526ad8bbf23b7982d0efee4743309d416b7d96))
+
+
+### Bug Fixes
+
+* **test:** closing a dead browser no longer waits up to 2 s for its profile cleanup ([#2136](https://github.com/k2b-dev/cloud/issues/2136)) ([50c1956](https://github.com/k2b-dev/cloud/commit/50c19560d37a27a360b2562c73c0bfe2189b4748))
+* **ui:** a chosen context-menu entry returns focus, and an open Mail row menu hides the row's tooltip ([#2228](https://github.com/k2b-dev/cloud/issues/2228)) ([f5d903e](https://github.com/k2b-dev/cloud/commit/f5d903e437cfd64d30414b3bd4c89cfde0317f64))
+* **ui:** chart axes finish drawing for every finite value ([#2785](https://github.com/k2b-dev/cloud/issues/2785)) ([391bf9e](https://github.com/k2b-dev/cloud/commit/391bf9e6814cc691cde95279675d285f9cc35570))
+* **ui:** fade workspace head filters at the edge that hides chips ([#1804](https://github.com/k2b-dev/cloud/issues/1804)) ([43393b0](https://github.com/k2b-dev/cloud/commit/43393b0008b5680e61b82782cbc25fcd2947d5c5))
+* **ui:** key figure tiles never cut their value ([#2773](https://github.com/k2b-dev/cloud/issues/2773)) ([cafacd8](https://github.com/k2b-dev/cloud/commit/cafacd815b170c807d96762270ac3f169c7ab835))
+* **ui:** key figures in a row share one line and never cut their comparison ([#2785](https://github.com/k2b-dev/cloud/issues/2785)) ([391bf9e](https://github.com/k2b-dev/cloud/commit/391bf9e6814cc691cde95279675d285f9cc35570))
+
 ## [0.49.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.48.0...npm-ui-v0.49.0) (2026-11-06)
 
 

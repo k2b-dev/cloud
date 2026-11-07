@@ -313,6 +313,16 @@ click. The application confirms destructive work, performs it, and refreshes
 the list. When that removes the focused row, the application moves focus to
 the row that takes its place. Keep further commands in `menuItems`.
 
+When a row carries a state that people toggle without opening it, such as "done"
+for a task, pass `checkbox` with `checked`, an accessible `label`, and
+`onChange`. Name the label after the row, such as `Done: Call Mrs. Weber`. The
+checkbox renders as a sibling control before the row, in the icon column on the
+section's text edge, so the row itself still opens the task. Unlike a secondary
+action, it always shows, because it carries the row's state. Do not use
+`secondaryAction` with a check icon for this: it hides until hover and cannot
+show whether the task is done. The application owns the change and any style of
+a done title, such as a muted color.
+
 ## API reference
 
 ```ts
@@ -384,9 +394,14 @@ type DetailPanelActionSecondary = {
   icon: string; label: string; onClick: () => void; variant?: "danger";
 };
 
+type DetailPanelActionCheckbox = {
+  checked: boolean; label: string; onChange: (checked: boolean) => void; disabled?: boolean;
+};
+
 type DetailPanelActionBaseProps = {
   title: JSX.Element; description?: JSX.Element; leading?: JSX.Element; trailing?: JSX.Element;
-  secondaryAction?: DetailPanelActionSecondary; current?: boolean; wrap?: boolean; class?: string;
+  secondaryAction?: DetailPanelActionSecondary; checkbox?: DetailPanelActionCheckbox;
+  current?: boolean; wrap?: boolean; class?: string;
 };
 
 type DetailPanelActionMenuProps =

@@ -401,9 +401,12 @@ for (const width of [1440, 390])
       await settled(page);
       const gaps = await page.locator("[data-chart-legend-value]").evaluateAll((nodes) =>
         nodes.map((node) => {
-          const value = node.getBoundingClientRect(),
-            label = node.previousElementSibling!.getBoundingClientRect();
-          return value.left - label.right;
+          const label = node.previousElementSibling;
+          if (!(node instanceof SVGTSpanElement) || !(label instanceof SVGTSpanElement)) throw new Error("Legend text runs missing");
+          // Text advances exclude glyph overhang; ink bounding boxes vary with the loaded font.
+          const end = label.getEndPositionOfChar(label.getNumberOfChars() - 1).matrixTransform(label.getScreenCTM()!);
+          const start = node.getStartPositionOfChar(0).matrixTransform(node.getScreenCTM()!);
+          return start.x - end.x;
         }),
       );
       expect(gaps).toHaveLength(3);

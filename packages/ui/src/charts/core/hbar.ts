@@ -1,6 +1,6 @@
 import { barSeriesLegend, chartTextWidth, headerHeight, renderHeader, wrapLabel } from "../../content/chart-bar";
 import { chartMessages } from "../../content/chart-message-catalog";
-import { chartDatumSvg, escapeXml, extendDomainToNice, niceStep, svgRoot } from "./svg";
+import { chartDatumSvg, escapeXml, extendDomainToNice, niceStep, svgRoot } from "./svg-renderers";
 
 export type HorizontalBarOptions = {
   series: string[];

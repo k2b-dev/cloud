@@ -13,7 +13,7 @@ import {
   type ReferenceLine,
   referenceLineAttributes,
   svgRoot,
-} from "../charts/core/svg";
+} from "../charts/core/svg-renderers";
 import { chartMessages } from "./chart-message-catalog";
 
 /**

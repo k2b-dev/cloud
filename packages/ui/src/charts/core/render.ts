@@ -1,16 +1,11 @@
-import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "../../content/chart-bar";
+import { type BarChartOptions, renderBarChartSvg } from "../../content/chart-bar";
 import { lineGapsSvg } from "../../content/chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport } from "../../content/chart-map-viewport";
-import {
-  renderStateTimelineSvg,
-  type StateTimelineChartOptions,
-  type StateTimelineDomain,
-  stateTimelineHeight,
-} from "../../content/chart-state-timeline";
+import { renderStateTimelineSvg, type StateTimelineChartOptions, type StateTimelineDomain } from "../../content/chart-state-timeline";
 import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
 import { type AreaOptions, renderAreaSvg } from "./area";
-import { type HorizontalBarOptions, hbarLayout, renderHbarSvg } from "./hbar";
+import { type HorizontalBarOptions, renderHbarSvg } from "./hbar";
 import { chartRenderers } from "./registry";
 import type { MapViewport } from "./svg";
 import type { ChartKind } from "./types";
@@ -39,15 +34,9 @@ export type ChartDrawingOptions = {
 }[ChartKind];
 export type ChartRenderOptions = RenderOptions<ChartDrawingOptions>;
 
-/** Standard logical height, or compact bar-gauge rows for a host without an explicit height. */
-export const chartRenderHeight = (props: ChartRenderOptions, sizing: { contentHeight?: boolean } = {}): number => {
-  if (props.kind === "stateTimeline") return stateTimelineHeight(props.rows.length, props.legend !== false);
-  if (props.kind === "bar") return barChartLayout(props).height;
-  if (props.kind === "hbar") return hbarLayout(props).height;
-  if (props.kind === "barGauge")
-    return Math.max(sizing.contentHeight ? 80 : 280, (props.title || props.subtitle ? 42 : 16) + props.data.length * 28 + 14);
-  return 280;
-};
+export { chartRenderHeight, preservesAspectRatio } from "./render-size";
+
+import { preservesAspectRatio } from "./render-size";
 
 /** Shared logical SVG renderer; callbacks and browser interaction stay with the Solid host. */
 export const renderChartSvg = (
@@ -125,8 +114,6 @@ const lineTimeDomain = (props: Extract<ChartDrawingOptions, { kind: "line" }>): 
     hi = Math.max(...xs);
   return lo < hi ? [lo, hi] : undefined;
 };
-
-export const preservesAspectRatio = (kind: ChartKind) => kind === "map" || kind === "pie" || kind === "donut" || kind === "gauge";
 
 export type ChartSize = { width: number; height: number };
 export type ChartScene = ChartSize & { kind: ChartKind; svg: string };
