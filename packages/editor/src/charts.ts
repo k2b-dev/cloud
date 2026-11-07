@@ -12,13 +12,14 @@ import {
   donut,
   extendDomainToNice,
   gauge,
-  heatmap,
+  type HeatmapChartOptions,
   histogram,
   line,
   niceLogTicks,
   niceStep,
   pie,
   renderBarChartSvg,
+  renderHeatmapSvg,
   scatter,
   sparkline,
   stat,
@@ -29,9 +30,11 @@ import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTim
 export * from "./chart-schema";
 
 type RenderOptions = {
-  [K in ChartInput["kind"]]: { kind: K } & (K extends "bar"
-    ? BarChartOptions
-    : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+  [K in ChartInput["kind"]]: { kind: K } & (K extends "heatmap"
+    ? HeatmapChartOptions
+    : K extends "bar"
+      ? BarChartOptions
+      : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
 }[ChartInput["kind"]];
 
 /**
@@ -241,8 +244,9 @@ const formattedValues = (input: ChartInput): number[] => {
       return [...input.data.map((item) => item.value), ...chartReferenceValues(input, "y")];
     case "pie":
     case "donut":
-    case "heatmap":
       return input.data.map((item) => item.value);
+    case "heatmap":
+      return input.layout === "calendar" ? input.data.map((item) => item[1]) : input.data.map((item) => item.value);
     case "barGauge":
       return [...input.data.flatMap((item) => [item.value, item.min, item.max]), input.min, input.max].filter(
         (value) => value !== undefined,
@@ -336,6 +340,7 @@ export function chartRenderOptions(
     formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string };
   } = {},
 ): RenderOptions {
+  if (input.kind === "heatmap" && input.layout === "calendar") locale = input.locale ?? locale;
   const defaults = formats(input, locale);
   // Function formats must be measured with the same text the renderer will print.
   const format = {
@@ -460,6 +465,16 @@ export function chartRenderOptions(
         thresholds: input.thresholds,
       };
     case "heatmap":
+      if (input.layout === "calendar")
+        return {
+          kind: "heatmap",
+          layout: "calendar",
+          data: input.data,
+          scale: input.scale,
+          locale: input.locale ?? locale,
+          format: format.value,
+          displayWidth: options.width,
+        };
       return {
         kind: "heatmap",
         data: input.data,
@@ -524,7 +539,7 @@ export const drawChart = (options: RenderOptions): string => {
     case "stat":
       return stat({ ...options, ...common });
     case "heatmap":
-      return heatmap({ ...options, ...common });
+      return renderHeatmapSvg({ ...options, ...common });
     case "sparkline":
       return sparkline({ ...options, ...common });
   }
@@ -574,6 +589,7 @@ export function chartRows(
   locale: string,
   options: { formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string } } = {},
 ) {
+  if (input.kind === "heatmap" && input.layout === "calendar") locale = input.locale ?? locale;
   const t = labels.resolve([locale]).t;
   const format = formats(input, locale);
   const valueFormat = input.tooltip?.format

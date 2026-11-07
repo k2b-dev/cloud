@@ -1,3 +1,4 @@
+import { calendarDay } from "@k2b/ui/charts/core";
 import { z } from "zod";
 
 /** Optional caller policy. Rendering itself has no AI input budget. */
@@ -227,15 +228,46 @@ export const chartKinds = (limits?: ChartLimits) => {
       yAxis: ChartAxis.optional(),
       references: ChartReferences.optional(),
     }),
-    z.object({
-      kind: z.literal("heatmap"),
-      ...ChartKindCommon,
-      data: list(ChartCell, 1, limits?.maxMarks),
-      format: numberFormat.optional(),
-      showValues: z.boolean().optional(),
-      min: z.number().optional(),
-      max: z.number().optional(),
-    }),
+    z.discriminatedUnion("layout", [
+      z
+        .object({
+          kind: z.literal("heatmap"),
+          ...ChartKindCommon,
+          layout: z.literal("calendar"),
+          data: list(
+            z.tuple([
+              z.string().refine((day) => {
+                try {
+                  calendarDay(day);
+                  return true;
+                } catch {
+                  return false;
+                }
+              }, "Invalid ISO calendar day."),
+              z.number(),
+            ]),
+            1,
+            limits?.maxMarks,
+          ),
+          scale: z.enum(["sequential", "diverging"]),
+          format: numberFormat.optional(),
+          locale: z.string().optional(),
+        })
+        .superRefine((spec, ctx) => {
+          if (new Set(spec.data.map(([day]) => day)).size !== spec.data.length)
+            ctx.addIssue({ code: "custom", message: "Calendar dates must be unique." });
+        }),
+      z.object({
+        kind: z.literal("heatmap"),
+        ...ChartKindCommon,
+        layout: z.undefined().optional(),
+        data: list(ChartCell, 1, limits?.maxMarks),
+        format: numberFormat.optional(),
+        showValues: z.boolean().optional(),
+        min: z.number().optional(),
+        max: z.number().optional(),
+      }),
+    ]),
     z.object({
       kind: z.literal("barGauge"),
       ...ChartKindCommon,

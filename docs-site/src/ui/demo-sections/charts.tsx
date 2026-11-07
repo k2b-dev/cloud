@@ -554,3 +554,20 @@ export const ReferenceLineStylesDemo = () => (
     <Chart {...referenceStyleExample} style={{ height: "16rem" }} />
   </DemoCard>
 );
+
+export function CalendarHeatmapDemo() {
+  return (
+    <DemoCard title="Opens per day" description="Weeks as columns; scroll to the newest observations on a phone.">
+      <Chart
+        kind="heatmap"
+        layout="calendar"
+        scale="sequential"
+        style={{ height: "14rem" }}
+        data={Array.from({ length: 365 }, (_, i): [string, number] => [
+          new Date(Date.UTC(2025, 0, 1) + i * 86400000).toISOString().slice(0, 10),
+          (i * 17) % 211,
+        ])}
+      />
+    </DemoCard>
+  );
+}

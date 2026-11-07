@@ -1032,3 +1032,20 @@ every number readable without a pointer. Countries too small for a shape appear
 as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
+
+## Calendar heatmaps
+
+`Chart.Heatmap` accepts `layout="calendar"`, `data: ["YYYY-MM-DD", number][]`
+and `scale="sequential" | "diverging"`. Existing categorical heatmaps keep
+their `{x,y,value}` data unchanged. Dates must be valid and unique; missing
+days remain gaps. Weeks are columns and Monday is the first row.
+
+The color scale includes every observation. Diverging values use turquoise
+for positive and violet for negative values, with zero neutral. Phone charts
+scroll to the newest weeks. Left/right inspect a week; up/down inspect a day.
+Home/End jump, Enter pins and Escape dismisses. The exact date and value are
+also available in the table. Optional `locale` takes precedence over the UI
+provider, and `format` formats values. Measured hosts pass `displayWidth`.
+
+Keep loading, empty, error/retry and stale feedback in the host's fixed-height
+frame. The newsletter example shows daily opens across a complete year.

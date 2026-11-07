@@ -70,6 +70,7 @@ export function ChartSnapshotView(props: {
         class="k2b-chart__svg"
         data-stretch={props.snapshot.stretch ? "true" : undefined}
         style={{
+          "min-width": props.snapshot.minWidth ? `${props.snapshot.minWidth}px` : undefined,
           "--k2b-chart-width": `${props.snapshot.width}px`,
           "--k2b-chart-height": `${props.snapshot.height}px`,
           "aspect-ratio": `${props.snapshot.width}/${props.snapshot.height}`,

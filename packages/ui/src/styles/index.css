@@ -17290,3 +17290,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     transition: none;
   }
 }
+
+.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) { overflow-x: auto; direction: rtl; }
+.k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { direction: ltr; }
+.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-inspected] > rect,
+.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-selected] > rect { stroke-width: 1.5px; }

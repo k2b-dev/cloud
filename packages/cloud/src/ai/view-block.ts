@@ -608,7 +608,7 @@ export const parseCloudAiChartToolView = (args: unknown): CloudAiChartView | Clo
     const parsed = GroupViewSchema.safeParse({ title, subtitle, charts, linkX, layout, view: "group" });
     return parsed.success ? parsed.data : undefined;
   }
-  if (value.linkX !== undefined || value.layout !== undefined) return undefined;
+  if (value.linkX !== undefined || (value.layout !== undefined && value.layout !== "calendar")) return undefined;
   const parsed = ChartViewSchema.safeParse({ ...value, view: "chart" });
   return parsed.success ? parsed.data : undefined;
 };

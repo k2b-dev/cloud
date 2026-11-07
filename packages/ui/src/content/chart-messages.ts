@@ -142,3 +142,5 @@ export const useChartMessages = (): (() => ChartMessages) => {
 };
 
 export const checkChartMessages = () => chartMessages.check();
+
+export const resolveChartMessages = (locale: string) => chartMessages.resolve([locale]).t;

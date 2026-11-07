@@ -121,6 +121,8 @@ const flatChartSchema = () => {
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
+    scale: z.enum(["sequential", "diverging"]).optional().describe("Calendar heatmap color scale; domain includes all days."),
+    locale: z.string().optional(),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
     data: z
       .union([
@@ -139,10 +141,14 @@ const flatChartSchema = () => {
           .min(1)
           .max(CLOUD_AI_VIEW_MAX_MARKS),
         z.array(z.number()).min(1).max(CLOUD_AI_CHART_MAX_VALUES),
+        z
+          .array(z.array(z.union([z.string(), z.number()])).length(2))
+          .min(1)
+          .max(CLOUD_AI_VIEW_MAX_MARKS),
       ])
       .optional()
       .describe(
-        "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value. histogram, sparkline: numbers.",
+        "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value, or calendar [YYYY-MM-DD,number] pairs. histogram, sparkline: numbers.",
       ),
     series: z
       .array(ChartSeries(ChartPoints.min(1)).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }))
@@ -191,7 +197,7 @@ const chartInputSchema = () => {
         .optional()
         .describe(`Groups: 2..${CLOUD_AI_GROUP_MAX_CHARTS} related charts, each with a kind.`),
       linkX: z.boolean().optional().describe("Groups: share the x cursor between line charts with the same kind of x."),
-      layout: z.enum(["stack", "grid"]).optional().describe("Groups: stack (default) or grid."),
+      layout: z.enum(["stack", "grid", "calendar"]).optional().describe("Groups: stack/grid. heatmap: calendar uses ISO date/value pairs."),
     })
     .superRefine((value, context) => {
       if ((value.kind !== undefined) === (value.charts !== undefined)) {
@@ -209,7 +215,7 @@ const chartInputSchema = () => {
           if (issue) context.addIssue({ code: "custom", message: issue, path: ["charts", index] });
         });
       } else {
-        if (value.linkX !== undefined || value.layout !== undefined)
+        if (value.linkX !== undefined || (value.layout !== undefined && value.layout !== "calendar"))
           context.addIssue({ code: "custom", message: "linkX and layout belong to groups." });
         const parsed = ChartSchema.safeParse(value);
         if (!parsed.success) {

@@ -17,15 +17,16 @@ import {
   barChartLayout,
   barGauge,
   boxplot,
+  calendarLayout,
   donut,
   escapeXml,
   gauge,
-  heatmap,
   histogram,
   isChartDatum,
   line,
   pie,
   renderBarChartSvg,
+  renderHeatmapSvg,
   scatter,
   sparkline,
   stat,
@@ -129,7 +130,7 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
         svg = stat({ ...mapped, ...common, label: options.title ?? "" });
         break;
       case "heatmap":
-        svg = heatmap({ ...mapped, ...common });
+        svg = renderHeatmapSvg({ ...mapped, ...common });
         break;
       case "sparkline":
         svg = sparkline({ ...mapped, ...common });
@@ -217,6 +218,10 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
   const prepared = { input, ...stored, height, title: typeof options.title === "string" ? options.title : undefined };
   const { svg, table } = drawChart(prepared, locale, width, height);
   // Bar rows take the height their labels need; the box reserves it.
+  const calendar =
+    input.kind === "heatmap" && input.layout === "calendar"
+      ? calendarLayout({ ...input, format: undefined, displayWidth: width })
+      : undefined;
   const drawnHeight = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg)?.[1]) || height;
   const stretch = !KEEP_ASPECT.has(input.kind);
   const title = typeof options.title === "string" ? options.title : "";
@@ -240,7 +245,7 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="--k2b-chart-width:${width}px;--k2b-chart-height:${drawnHeight}px">${svg}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto;direction:rtl"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="${calendar ? `min-width:${calendar.minWidth}px;direction:ltr;` : ""}--k2b-chart-width:${calendar?.width ?? width}px;--k2b-chart-height:${drawnHeight}px">${svg}</div></div>${values}`,
   );
 }
 

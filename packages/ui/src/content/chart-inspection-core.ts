@@ -185,6 +185,7 @@ export function createChartInspector(options: {
     if (active === entry && tooltip.matches(":popover-open")) return;
     clearHighlight();
     active = entry;
+    if (container.querySelector("svg[data-calendar]")) entry.element.scrollIntoView({ block: "nearest", inline: "nearest" });
     highlighted = options.kind() === "line" ? records().filter((candidate) => rawX(candidate) === rawX(entry)) : [entry];
     for (const item of highlighted) {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
@@ -396,7 +397,11 @@ export function createChartInspector(options: {
   const focus = (event: FocusEvent) => {
     if (event.target !== options.container() || !options.enabled()) return;
     const nodes = visibleRecords();
-    const first = options.kind() === "line" ? sortedPoints.at(-1) : nodes[0];
+    const first = options.container()?.querySelector("svg[data-calendar]")
+      ? nodes.at(-1)
+      : options.kind() === "line"
+        ? sortedPoints.at(-1)
+        : nodes[0];
     if (first) show(first);
   };
   const key = (event: KeyboardEvent): boolean => {
@@ -493,6 +498,7 @@ export function closeChartInspectionOnOutside(options: {
     if (event.target instanceof Node && !options.container()?.contains(event.target)) options.close();
   };
   const scroll = (event: Event) => {
+    if (event.target === options.container() && options.container()?.querySelector("svg[data-calendar]")) return;
     if (event.target instanceof Node && options.tooltip()?.contains(event.target)) return;
     options.close();
   };

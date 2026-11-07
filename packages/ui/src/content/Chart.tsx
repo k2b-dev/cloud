@@ -15,6 +15,7 @@ import {
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
+import { calendarLayout } from "../charts/core/calendar";
 import { chartKinds } from "../charts/core/registry";
 import { type ChartDrawingOptions, chartRenderHeight, preservesAspectRatio, renderChartSvg } from "../charts/core/render";
 import { suppressTextSelection } from "../internal/text-selection";
@@ -30,7 +31,7 @@ import {
   closeChartInspectionOnOutside,
 } from "./chart-inspection-core";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
-import { useChartMessages } from "./chart-messages";
+import { resolveChartMessages, useChartMessages } from "./chart-messages";
 import {
   panStateTimelineViewport,
   type StateTimelineDomain,
@@ -165,8 +166,9 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   let lineAnchorRef: HTMLSpanElement | undefined;
   // One deterministic coordinate space on the server and client. CSS fits the
   // SVG to its box; hydration must never replace it with measured geometry.
+  const calendar = () => (props.kind === "heatmap" && props.layout === "calendar" ? calendarLayout(props) : undefined);
   const size = () => ({
-    width: 480,
+    width: calendar()?.width ?? 480,
     height: chartRenderHeight(props),
   });
   const topLegend = () => props.kind === "line" && props.legend === true && props.legendPlacement === "top-start";
@@ -436,7 +438,10 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     select: (selection) => props.onSelect?.(selection),
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
-      const fields = chartMessages().chartFields;
+      const fields =
+        props.kind === "heatmap" && props.layout === "calendar"
+          ? resolveChartMessages(props.locale ?? locale()).chartFields
+          : chartMessages().chartFields;
       const format = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 });
       return {
         title:
@@ -465,7 +470,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
     renderChartSvg(
-      drawingProps,
+      props.kind === "heatmap" && props.layout === "calendar" ? { ...props, locale: props.locale ?? locale() } : drawingProps,
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,
@@ -572,6 +577,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
           class="k2b-chart__svg"
           data-stretch={!preservesAspectRatio(props.kind) ? "true" : undefined}
           style={{
+            "min-width": calendar() ? `${calendar()!.minWidth}px` : undefined,
             "--k2b-chart-width": `${size().width}px`,
             "--k2b-chart-height": `${size().height}px`,
             "aspect-ratio": `${size().width} / ${size().height}`,
@@ -606,7 +612,8 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   );
 };
 
-export type ChartKindProps<K extends ChartKind> = Omit<Extract<ChartProps, { kind: K }>, "kind">;
+type KindProps<T> = T extends unknown ? Omit<T, "kind"> : never;
+export type ChartKindProps<K extends ChartKind> = KindProps<Extract<ChartProps, { kind: K }>>;
 
 type ChartComponents = {
   [Name in keyof typeof chartKinds]: (props: ChartKindProps<(typeof chartKinds)[Name]>) => JSX.Element;

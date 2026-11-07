@@ -1,5 +1,6 @@
 import { renderBarChartSvg } from "../../content/chart-bar";
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
+import { renderHeatmapSvg } from "./calendar";
 import { charts } from "./svg";
 
 // Add one renderer here: its key defines the discriminator, ChartKind and the capitalized Chart namespace member.
@@ -16,7 +17,7 @@ export const chartRenderers = {
   gauge: charts.gauge,
   barGauge: charts.barGauge,
   stat: charts.stat,
-  heatmap: charts.heatmap,
+  heatmap: renderHeatmapSvg,
   map: charts.map,
   stateTimeline: renderStateTimelineSvg,
 };
