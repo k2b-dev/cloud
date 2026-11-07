@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import { CodePermissionSchema } from "@k2b/cloud/code";
-import { CODE_INITIAL_PAGE_SOURCE, CODE_INITIAL_SOURCE, CodeAuthoringPermissionSchema, codeInitialFiles } from "./authoring-contracts";
+import {
+  CODE_INITIAL_PAGE_SOURCE,
+  CODE_INITIAL_SOURCE,
+  CodeAuthoringPermissionSchema,
+  codeAuthoringContracts,
+  codeInitialFiles,
+} from "./authoring-contracts";
 
 // describeCheck spreads each checker permission into its presentation row, and the row schema is strict:
 // a checker field the row does not declare turns every check that carries it into a refused answer.
@@ -33,4 +39,16 @@ test("init selects a TSX page for Code accounts and a schedule for personal Code
     entry: "code.ts",
     files: { "code.ts": CODE_INITIAL_SOURCE },
   });
+});
+
+// The source simulator remains usable independently of the real-message preview.
+test("simulate accepts the original fixture contract without extra required fields", () => {
+  expect(
+    codeAuthoringContracts.simulate.input.safeParse({
+      codeId: "c_mail0001",
+      entry: "code.ts",
+      files: { "code.ts": "export default {};" },
+      fixture: { version: 1, name: "original", now: 0, seed: 0, mocks: [], runs: [{ entrypoint: "main" }] },
+    }).success,
+  ).toBe(true);
 });

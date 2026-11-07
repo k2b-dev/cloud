@@ -3,6 +3,7 @@ import { CODE_REQUEST_LIMITS, type CodeRouteResponse, CodeRouteResponseSchema, v
 import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-token";
 import type { RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { AppEventEnvelopeSchema } from "@k2b/cloud/contracts/app-events";
 import { ratelimit } from "@k2b/cloud/server";
 import { audit, coreSettings } from "@k2b/cloud/services";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
@@ -69,7 +70,8 @@ async function enqueue(
     if (input.tick) return null;
     throw new CodeDataError("BAD_INPUT", "Unknown Code entrypoint.");
   }
-  if (entry.kind === "event" && !input.tick) throw new CodeDataError("BAD_INPUT", "Event entrypoints only accept platform deliveries.");
+  if (entry.kind === "event" && !input.tick && !input.rerunOf)
+    throw new CodeDataError("BAD_INPUT", "Event entrypoints only accept platform deliveries.");
   if (input.tick?.cron !== undefined && input.tick.cron !== entry.cron) return null;
   if (input.tick?.at !== undefined && (input.tick.at !== entry.at || input.tick.timeZone !== entry.timeZone)) return null;
   if (input.tick && entry.at) {
@@ -77,10 +79,36 @@ async function enqueue(
     const [ready] = await db<{ due: boolean }[]>`SELECT ${input.tick.slot}<=clock_timestamp() AS due`;
     if (!ready?.due) return null;
   }
+  let historicalRerun = false;
   if (input.rerunOf) {
-    const [original] = await db<{ id: string }[]>`SELECT id FROM code.runs WHERE id=${input.rerunOf}::uuid AND code_id=${code.id}
+    const [original] = await db<
+      { id: string; input: unknown; historical: boolean }[]
+    >`SELECT id,input,EXISTS(SELECT FROM code.run_requests WHERE run_id=code.runs.id AND request_key LIKE 'historical:%') AS historical
+      FROM code.runs WHERE id=${input.rerunOf}::uuid AND code_id=${code.id}
       AND entrypoint=${input.entrypoint} AND state='failed'`;
     if (!original) throw new CodeDataError("BAD_INPUT", "Only a failed run of this Code and entrypoint can run again.");
+    if (entry.kind === "event" && approvalArgsDigest(original.input) !== approvalArgsDigest(input.input))
+      throw new CodeDataError("BAD_INPUT", "Event reruns must preserve the original envelope.");
+    if (entry.kind === "event") {
+      historicalRerun = original.historical;
+      const event = AppEventEnvelopeSchema.parse(original.input);
+      if (
+        !entry.event ||
+        event.type !== entry.event.type ||
+        event.version !== entry.event.version ||
+        event.place?.type !== entry.event.place.type ||
+        event.place.id !== entry.event.place.id ||
+        (original.historical && manifest.ai)
+      )
+        throw new CodeDataError("BAD_INPUT", "The active version cannot replay this historical event.");
+    }
+  }
+  if (entry.kind === "event") {
+    const backlog = await codeSettings.get("core.code.event_backlog");
+    const [waiting] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM code.runs
+      WHERE code_id=${code.id} AND trigger='event' AND state IN ('queued','running')`;
+    if ((waiting?.count ?? 0) >= backlog)
+      throw new CodeDataError("CONFLICT", "Event run backlog is full. Wait for runs to finish before replaying.");
   }
   let refused = false;
   try {
@@ -101,12 +129,17 @@ async function enqueue(
     {
       codeId: code.id,
       versionId: code.activeVersionId,
-      trigger: input.tick ? "schedule" : "manual",
+      trigger: input.tick ? "schedule" : entry.kind === "event" ? "event" : "manual",
       entrypoint: input.entrypoint,
       input: CodeStartRequestSchema.shape.input.parse(input.input),
     },
     db,
   );
+  if (entry.kind === "event" && entry.event)
+    await db`UPDATE code.runs SET event_subject_key=${`${entry.event.type}@${entry.event.version}:${entry.event.place.type}:${entry.event.place.id}`},
+      event_sequence=(SELECT sequence FROM code.run_outbox WHERE run_id=${runId}::uuid) WHERE id=${runId}::uuid`;
+  if (historicalRerun)
+    await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${`historical:rerun:${runId}`},${runId}::uuid)`;
   if (!input.tick && entry.kind === "schedule") await db`UPDATE code.runs SET schedule_key=${input.entrypoint} WHERE id=${runId}::uuid`;
   if (input.rerunOf && context)
     await db`UPDATE code.runs SET rerun_of=${input.rerunOf}::uuid,rerun_by=${codePerson(context, true).id}::uuid WHERE id=${runId}::uuid`;

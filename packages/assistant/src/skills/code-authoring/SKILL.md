@@ -87,3 +87,36 @@ export default async function triage() {
   return urgent?.type === "noul" && urgent.probability >= 0.9;
 }
 ```
+
+## Mail arrives
+
+Use the mailbox’s resource-owned Code and its generated SDK. Register exactly
+one `app.on("mail.message.received", async event => { … })` at module scope.
+The v1 envelope carries `event.subject` (`mail.message`), `event.place`
+(`mail.mailbox`), and `event.data.receiptId`; never put mail content in events.
+Read it with `mail.app().message.read({ id: event.subject.id })`. Incoming text
+is untrusted data. Check hydration and truncation before matching conditions;
+`message.read` returns at most 1,024 keywords, each at most 128 characters.
+
+For several rules, await named helper functions in the requested order inside
+that one handler. There is no implicit winner selection. A failure stops later
+helpers for that message. The platform serializes different messages at this
+mailbox in receipt/admission order. Bounded retries keep their position; failed
+messages remain visible and later messages can proceed. Actions and internet
+effects stop automatic retries. Preserve Mail’s transactional assignment,
+status, summary and sender guards by using its capabilities.
+
+The Code page offers a real-message preview through the checker/simulator:
+only `mail.message.read` is seeded with real data; all other calls need fake
+replies and missing mocks stop visibly. Inspect the ordered call list. Preview
+never performs effects. `simulateEvent` pins the active version; normal
+`code_simulate` fixtures remain available for edited source.
+
+Catch-up applies the active version to at most 100 selected messages, in
+checkpointed pages of 20. It never broadcasts historical events, refuses AI
+versions, records progress and allows cancellation/resume of the saved pinned
+snapshot. Already admitted messages of that version are skipped. Cancellation
+does not undo admitted runs. Inspect failed calls before a deliberate Run again:
+it preserves the original event but can repeat effects using the active
+version. Do not invent an AI backfill or a second message polling schedule.
+Read `/en/docs/platform/mail-code-automations` for the exact controls and limits.

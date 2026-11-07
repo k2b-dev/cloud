@@ -6,18 +6,19 @@ export const APP_EVENT_MAX_BYTES = 4096;
 
 export const AppEventEnvelopeSchema = z
   .object({
-    id: z.uuid(),
-    type: CapabilityQualifiedIdSchema,
-    version: z.number().int().positive(),
-    source: CapabilityAppIdSchema,
-    time: z.iso.datetime({ offset: true }),
-    subject: CloudResourceRefSchema,
-    place: CloudResourceRefSchema.optional(),
+    id: z.uuid().describe("Stable event UUID."),
+    type: CapabilityQualifiedIdSchema.describe("Qualified declared event name."),
+    version: z.number().int().positive().describe("Declared event schema version."),
+    source: CapabilityAppIdSchema.describe("Publishing application ID."),
+    time: z.iso.datetime({ offset: true }).describe("Time the event occurred."),
+    subject: CloudResourceRefSchema.describe("Reference to the event subject."),
+    place: CloudResourceRefSchema.optional().describe("Resource that owns the event handler."),
     cause: z
-      .object({ requestId: z.string().min(1).max(256) })
+      .object({ requestId: z.string().min(1).max(256).describe("Originating request identity.") })
       .strict()
-      .optional(),
-    data: z.json(),
+      .optional()
+      .describe("Optional originating request metadata."),
+    data: z.json().describe("Payload matching the declared event schema."),
   })
   .strict();
 
@@ -39,6 +40,8 @@ export type AppEventDefinition<Schema extends z.ZodType = z.ZodType> = {
   place?: string;
   schema: Schema;
   automation?: false;
+  /** Permission-aware query ({ id: subject.id } -> envelope) for one immutable occurrence per subject. */
+  catchup?: string;
 };
 
 export type AppEventSubscriptionDefinition<Schema extends z.ZodType = z.ZodType> = {

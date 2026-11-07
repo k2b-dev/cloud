@@ -20,6 +20,7 @@ import {
   codeInitialFiles,
 } from "./authoring-contracts";
 import { type Code, codeQueryContracts } from "./contracts";
+import { simulateCodeEvent } from "./event-preview";
 import { listCodeRunsWithEvents } from "./events";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./policy";
 import { type CodePolicyRow, codePolicyRow } from "./policy-contracts";
@@ -262,6 +263,7 @@ export const codeAuthoringServices = {
     const code = await createCodeCheckRequest(input.codeId, input.files, input.entry ?? "code.ts", context);
     return testCode({ code, tests: input.tests, trace: input.trace }, await createRunnerCodeTestingHost(context), context.signal);
   },
+  simulateEvent: simulateCodeEvent,
   async simulate(input: CodeAuthoringInput<"simulate">, context: CodeContext) {
     const code = await createCodeCheckRequest(input.codeId, input.files, input.entry ?? "code.ts", context);
     return simulateCode({ code, fixture: input.fixture, trace: input.trace }, await createRunnerCodeTestingHost(context), context.signal);

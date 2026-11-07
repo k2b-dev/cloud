@@ -107,8 +107,11 @@ Use `--offset` and `--limit` to page through retained work. Structured output
 preserves `{ items, pagination: { offset, limit, total } }`, including in
 `--jsonl` mode, where each page is one JSON line. Text output shows delivery
 IDs, subscription IDs, states, attempt counts, and `heldBy`. A non-null `heldBy`
-is the earlier unresolved delivery holding this subscription and subject;
-retry or reconcile that predecessor first.
+is the earlier unresolved delivery holding this subscription. Normal app
+subscriptions order by subject and retain failed predecessors. Resource-bound
+workloads order all subjects at their place; bounded delivery exhaustion leaves
+a visible failure and releases later messages. Retry or reconcile a pending
+predecessor first.
 
 These commands call the matching administrative endpoints:
 
@@ -378,3 +381,33 @@ allow 2.77 GiB for seven days of completed rows, or 11.87 GiB for 30 days of
 unresolved deliveries. Provision indexes and operational headroom separately.
 The bounded cleanup removes at most 1000 rows from each retention class per
 minute, above the planning rate of 72 new deliveries per minute.
+
+## Mail Code catch-up and recovery
+
+Mailbox Code uses the generic resource-event admission and ordinary Code run
+outbox. Mail’s old workflow emission remains independent. A single resource
+registration admits and runs messages in receipt order; exhausted failures
+remain visible without holding the mailbox indefinitely. Attempted event runs
+can be rerun deliberately with their original envelope through the existing
+Code run service. Inspect effects first.
+
+Historical operations use the existing Sync pump primitive
+`core:code-event-catchup`: at most 100 reference envelopes and 64 KiB per saved
+snapshot, pages of 20, sequential dispatch, three bounded dispatch attempts and
+30 days of terminal progress. Version changes and revoked approval stop further
+admission. Cancellation allows in-flight admission and queued runs to finish.
+Permanent per-version/message receipts prevent a pump retry or resumed snapshot
+from re-admitting historical work. No events enter the global stream. Failed
+execution stays in Code’s normal Runs view. AI versions cannot catch up.
+
+The browser stores only reference snapshots and operation receipts for response
+recovery. Preview uses ordinary Mail read permission followed by Code’s
+checker and fake-only Runner jobs; real-message bodies never enter event
+payloads. See [Mail automations](/en/docs/platform/mail-code-automations).
+
+Historical Code admission reserves half of its event backlog for live delivery.
+When that share fills, the existing catch-up pump waits without consuming its
+three failure attempts. Its total capacity wait is bounded by selected message
+count times the run wall-clock budget. Editors see waiting progress, can cancel,
+and can resume a stopped snapshot. Each dispatch rechecks the current resource
+binding, service account and mandate as well as version approval.

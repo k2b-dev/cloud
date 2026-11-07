@@ -130,6 +130,7 @@ export function createCodeAuthoringRoutes() {
   register("sdk", codeAuthoringContracts.sdk, codeAuthoringServices.sdk, true);
   register("check", codeAuthoringContracts.check, codeAuthoringServices.check, true);
   register("test", codeAuthoringContracts.test, codeAuthoringServices.test, true);
+  register("simulateEvent", codeAuthoringContracts.simulateEvent, codeAuthoringServices.simulateEvent, true);
   register("simulate", codeAuthoringContracts.simulate, codeAuthoringServices.simulate, true);
   register("push", codeAuthoringContracts.push, codeAuthoringServices.push, true);
   register("submit", codeAuthoringContracts.submit, codeAuthoringServices.submit, true);

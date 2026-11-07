@@ -57,6 +57,14 @@ export async function admitCodeEvent(
       if (!run?.recoverable) return;
       recoverRun = run.id;
     }
+    if (!receipt) {
+      const [historical] = await db`SELECT run_id FROM code.run_requests WHERE code_id=${code.id}
+        AND request_key=${`historical:${codeEventTargetKey(code.activeVersionId, envelope)}`}`;
+      if (historical) {
+        await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${requestKey},${historical.run_id}::uuid)`;
+        return;
+      }
+    }
     const [delivery] = await db<{ seq: string; subject_key: string }[]>`SELECT seq,subject_key FROM events.app_deliveries
       WHERE subscription_id=${context.subscriptionId} AND event_id=${envelope.id}::uuid FOR SHARE`;
     if (!delivery) return { cancelled: true as const };
@@ -90,10 +98,16 @@ export async function admitCodeEvent(
         WHERE id=${runId}::uuid`;
       await db`INSERT INTO code.run_outbox(run_id) VALUES(${runId}::uuid) ON CONFLICT DO NOTHING`;
     } else await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${requestKey},${runId}::uuid)`;
-    await db`UPDATE code.runs SET event_subject_key=${`${envelope.type}@${envelope.version}:${delivery.subject_key}`},event_sequence=${delivery.seq}::bigint WHERE id=${runId}::uuid`;
+    await db`UPDATE code.runs SET event_subject_key=${`${envelope.type}@${envelope.version}:${binding.place.type}:${binding.place.id}`},event_sequence=(SELECT sequence FROM code.run_outbox WHERE run_id=${runId}::uuid) WHERE id=${runId}::uuid`;
+    await db`INSERT INTO code.run_requests(code_id,request_key,run_id)
+      VALUES(${code.id},${codeEventTargetKey(code.activeVersionId, envelope)},${runId}::uuid) ON CONFLICT DO NOTHING`;
     context.signal.throwIfAborted();
   });
 }
+/** One historical execution per immutable version and message; live admission also reserves this identity. */
+export const codeEventTargetKey = (versionId: string, envelope: AppEventEnvelope) =>
+  `catchup:${versionId}:${new Bun.CryptoHasher("sha256").update(JSON.stringify([envelope.type, envelope.version, envelope.subject])).digest("hex")}`;
+
 export const startCodeEventConsumer = () => registerResourceEventConsumer(CODE_EVENT_CONSUMER, admitCodeEvent);
 
 /** A compact, payload-free view beside the Code's runs. Only its exact subscription keys can be inspected. */

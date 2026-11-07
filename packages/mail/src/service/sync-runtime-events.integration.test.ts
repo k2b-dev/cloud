@@ -1,8 +1,10 @@
 import { beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import type { AppEventEnvelope } from "@k2b/cloud/events";
 import { appEventFixture, createAppEventTestHarness, deliverAppEvent } from "@k2b/cloud/events/testing";
+import { accounts } from "@k2b/cloud/services";
 import { createAppEventBroker } from "@k2b/cloud/services/app-events";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
@@ -88,6 +90,51 @@ suite("Mail receipt events at the sync and event-service seams", () => {
     `
     ).map((row) => row.payload);
   };
+
+  test("historical selection excludes unsuitable copies and source resolution requires current mailbox read access", async () => {
+    const incoming = await ingest(envelope(700), "inbox", false);
+    await ingest(envelope(700), "archive", false);
+    const excluded = await Promise.all([
+      ingest(envelope(701), "junk", false),
+      ingest(envelope(702, "own@example.test"), "inbox", false),
+      ingest(envelope(703), "all", false),
+      ingest(envelope(704), "sent", false),
+    ]);
+    const [person] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,admin)
+      VALUES(${`mail-code-${crypto.randomUUID()}`},'local','user',true) RETURNING id`;
+    const user = await accounts.users.get({ id: person!.id });
+    if (!user) throw new Error("Missing historical Mail reader");
+    const context: CapabilityExecutionContext = {
+      actor: { kind: "user", user },
+      accessSubject: { type: "user", userId: user.id },
+      user,
+      locale: "en",
+      requestId: "mail-code-history",
+      origin: "app",
+      signal: new AbortController().signal,
+      target: { type: "mail.mailbox", id: mailboxShortId },
+    };
+    const selected = await mailCapabilities.queries["message.catchup"].run({ cutoffAt: "9999-01-01T00:00:00Z" }, context);
+    expect(selected.ok).toBe(true);
+    if (!selected.ok) throw new Error("Selection refused");
+    const [message] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.message_contents WHERE id=${incoming}::uuid`;
+    const excludedRows = await sql<
+      { short_id: string }[]
+    >`SELECT short_id FROM mail.message_contents WHERE id=ANY(${`{${excluded.join(",")}}`}::uuid[])`;
+    const ids = selected.data.data.items.map((item) => item.event.subject.id);
+    expect(ids.filter((id) => id === message!.short_id)).toHaveLength(1);
+    for (const row of excludedRows) expect(ids).not.toContain(row.short_id);
+    const resolved = await mailCapabilities.queries["message.event"].run({ id: message!.short_id }, context);
+    expect(resolved).toMatchObject({ ok: true, data: { data: { subject: { id: message!.short_id }, place: { id: mailboxShortId } } } });
+    const deniedUser: User = { ...user, roles: ["user"] };
+    const denied = await mailCapabilities.queries["message.event"].run(
+      { id: message!.short_id },
+      { ...context, actor: { kind: "user", user: deniedUser }, user: deniedUser },
+    );
+    expect(denied.ok).toBe(false);
+    const outside = await mailCapabilities.queries["message.catchup"].run({ from: "2027-01-01T00:00:00Z" }, context);
+    expect(outside).toMatchObject({ ok: true, data: { data: { items: [], nextCursor: null } } });
+  });
 
   test("one receipt survives sync retry, labels and moves with public refs and the original placement identity", async () => {
     const message = envelope(1);

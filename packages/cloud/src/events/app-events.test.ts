@@ -34,6 +34,25 @@ const fixtureCapabilities = capabilities();
 bindAppEvents("core", fixtureCapabilities);
 const envelope = () => appEventFixture(fixtureCapabilities, "user.created", { subject: userId, data: { userId, provider: "password" } });
 
+test("historical event resolvers must name a declared source query and survive manifest parsing", () => {
+  const definition = { ...capabilities(), events: { "user.created": { ...event, catchup: "user.event" } } };
+  expect(() => compileCapabilities("core", definition)).toThrow("catchup must reference a local Query");
+  const compiled = compileCapabilities("core", {
+    ...definition,
+    queries: {
+      "user.event": {
+        title: "Read original receipt",
+        description: "Resolve one source occurrence with current read permission.",
+        openWorld: false,
+        input: z.object({ id: z.uuid().describe("Subject ID.") }).strict(),
+        data: AppEventEnvelopeSchema,
+        run: async () => ({ ok: true, data: { data: envelope() } }),
+      },
+    },
+  });
+  expect(parseCapabilityManifest(compiled.manifest, "core").events?.[0]?.catchup).toBe("user.event");
+});
+
 test("event declarations compile deterministically and preserve old manifest shapes", () => {
   const original = compileCapabilities("core", { protocolVersion: 2 });
   expect(Object.hasOwn(original.manifest, "events")).toBe(false);

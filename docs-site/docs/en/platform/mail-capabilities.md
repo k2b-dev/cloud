@@ -106,3 +106,6 @@ Code inherits no group, signed-in or public grants and never counts as a manager
 Removing or lowering a share applies on the next permission check. Activating
 again cannot restore it. Mail's ordinary sending, assigned-conversation and
 personal automation mandate rules continue to apply.
+
+For incoming-message handlers, keyword limits, catch-up and previews, see
+[Mail automations with Code](/en/docs/platform/mail-code-automations).
