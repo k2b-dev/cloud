@@ -24,7 +24,6 @@ import { computeActiveFormats } from "./active-formats";
 import { handleListContinuation, handleShortcut, handleSmartPaste } from "./behaviors";
 import { isInCodeZone } from "./code-zone";
 import { useMarkdownEditorMessages } from "./editor-messages";
-import type { SelectionFormattingProps } from "./SelectionFormatting";
 import Toolbar from "./Toolbar";
 
 export type MarkdownEditorProps = ValueFieldProps<string> & {
@@ -107,7 +106,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
   });
   const knownLabels = createMemo(() => collectKnownLabels(mergedCompletions()));
   // The floating toolbar loads on first use and attaches to the textarea itself, so other editors carry none of it.
-  const [selectionFormatting, setSelectionFormatting] = createSignal<(props: SelectionFormattingProps) => JSX.Element>();
+  const [selectionFormatting, setSelectionFormatting] = createSignal<typeof import("./SelectionFormatting")["SelectionFormatting"]>();
   createEffect(() => {
     if (props.toolbar === "selection")
       import("./SelectionFormatting").then(
