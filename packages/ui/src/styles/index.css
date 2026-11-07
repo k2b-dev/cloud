@@ -17610,6 +17610,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* Flow geometry keeps readable stage labels on a narrow host; sources are visible first. */
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] { overflow-x: auto; }
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] > .k2b-chart__svg { min-width: 620px; }
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] [data-inspected] > .k2b-chart-sankey-link,
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] [data-selected] > .k2b-chart-sankey-link { fill-opacity: 0.6; stroke: none !important; }
 /* Calendar coordinates stay square in every host. */
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) { overflow-x: auto; }
 .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { width: var(--k2b-chart-width); }

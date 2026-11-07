@@ -18,6 +18,7 @@ import type { MapViewport } from "../charts/core";
 import { calendarLayout } from "../charts/core/calendar";
 import { chartKinds } from "../charts/core/registry";
 import { type ChartDrawingOptions, chartRenderHeight, preservesAspectRatio, renderChartSvg } from "../charts/core/render";
+import { sankeyWidth } from "../charts/core/sankey";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -33,6 +34,7 @@ import {
 } from "./chart-inspection-core";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
 import { resolveChartMessages, useChartMessages } from "./chart-messages";
+import { sankeyInspectionNavigation } from "./chart-sankey";
 import {
   panStateTimelineViewport,
   type StateTimelineDomain,
@@ -138,6 +140,7 @@ export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../c
  *  block on truly empty inputs; partially-filled series get rendered
  *  as-is and the core handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
+  if (props.kind === "sankey") return !props.nodes.length || !props.links.length;
   if (props.kind === "area")
     return (
       !props.x.length ||
@@ -460,13 +463,18 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     tooltip: () => chartTooltipRef,
     anchor: () => lineAnchorRef,
     kind: () => props.kind,
-    nav: () => (props.kind === "heatmap" && props.layout === "calendar" ? calendarInspectionNavigation : undefined),
+    nav: () =>
+      props.kind === "sankey"
+        ? sankeyInspectionNavigation
+        : props.kind === "heatmap" && props.layout === "calendar"
+          ? calendarInspectionNavigation
+          : undefined,
     enabled: () => !isEmpty(props),
     select: (selection) => props.onSelect?.(selection),
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
       const fields =
-        props.kind === "heatmap" && props.layout === "calendar"
+        props.kind === "sankey" || (props.kind === "heatmap" && props.layout === "calendar")
           ? resolveChartMessages(props.locale ?? locale()).chartFields
           : chartMessages().chartFields;
       if (selection.kind === "area" && props.kind === "area") {
@@ -509,7 +517,9 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
     renderChartSvg(
-      props.kind === "heatmap" && props.layout === "calendar" ? { ...props, locale: props.locale ?? locale() } : drawingProps,
+      props.kind === "sankey" || (props.kind === "heatmap" && props.layout === "calendar")
+        ? { ...props, locale: props.locale ?? locale() }
+        : drawingProps,
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,
@@ -540,7 +550,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
         container: () => containerRef,
         tooltip: () => chartTooltipRef,
         close: closeChartTooltip,
-        keepScroll: () => props.kind === "heatmap" && props.layout === "calendar",
+        keepScroll: () => props.kind === "sankey" || (props.kind === "heatmap" && props.layout === "calendar"),
       }),
     );
   });
@@ -639,7 +649,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
           data-stretch={!calendar() && !preservesAspectRatio(props.kind) ? "true" : undefined}
           style={{
             "min-width": calendar() ? `${calendar()!.minWidth}px` : undefined,
-            "--k2b-chart-width": `${size().width}px`,
+            "--k2b-chart-width": `${props.kind === "sankey" ? sankeyWidth(props, props.displayWidth ?? size().width) : size().width}px`,
             "--k2b-chart-height": `${size().height}px`,
             "aspect-ratio": `${size().width} / ${size().height}`,
           }}

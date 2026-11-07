@@ -1,6 +1,7 @@
 import { highlight, text } from "@k2b/stdlib";
 import { prepareChartSnapshot } from "@k2b/ui";
 import { barChartLayout } from "@k2b/ui/charts";
+import { sankeyLayout } from "@k2b/ui/charts/core";
 import { Lexer, type Tokens } from "marked";
 import type { z } from "zod";
 import {
@@ -457,6 +458,7 @@ export const chartBlockFrame = (body: string[], options: Pick<MarkdownChartOptio
  */
 export const notebookChartHeight = (input: ChartInput, locale: string): number | undefined => {
   const options = chartRenderOptions(input, locale, { legend: "outside" });
+  if (options.kind === "sankey") return sankeyLayout(options).height;
   if (options.kind === "heatmap" && options.layout === "calendar") return 280;
   if (options.kind === "area") return 280;
   if (options.kind !== "bar") return undefined;

@@ -23,6 +23,9 @@ import {
   renderAreaSvg,
   renderBarChartSvg,
   renderHeatmapSvg,
+  renderSankeySvg,
+  type SankeyOptions,
+  sankeyGraph,
   scatter,
   sparkline,
   stat,
@@ -35,13 +38,15 @@ export * from "./chart-schema";
 type RenderOptions = {
   [K in ChartInput["kind"]]: { kind: K } & (K extends "area"
     ? AreaOptions
-    : K extends "heatmap"
-      ? HeatmapChartOptions
-      : K extends "bar"
-        ? BarChartOptions
-        : K extends keyof typeof charts
-          ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-          : never);
+    : K extends "sankey"
+      ? SankeyOptions
+      : K extends "heatmap"
+        ? HeatmapChartOptions
+        : K extends "bar"
+          ? BarChartOptions
+          : K extends keyof typeof charts
+            ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+            : never);
 }[ChartInput["kind"]];
 
 /**
@@ -56,7 +61,10 @@ const labels = /* @__PURE__ */ i18n.define({
   messages: {
     en: {
       category: "Category",
+      flow: "Flow",
       series: "Series",
+      incoming: "Incoming",
+      outgoing: "Outgoing",
       value: "Value",
       share: "Share",
       position: "Position",
@@ -74,7 +82,10 @@ const labels = /* @__PURE__ */ i18n.define({
     },
     de: {
       category: "Kategorie",
+      flow: "Fluss",
       series: "Datenreihe",
+      incoming: "Eingang",
+      outgoing: "Ausgang",
       value: "Wert",
       share: "Anteil",
       position: "Position",
@@ -246,6 +257,8 @@ const numberFormat = (format: ChartFormat | undefined) => (format && !("date" in
 /** The values a chart writes with its value format, for whole-number currency. */
 const formattedValues = (input: ChartInput): number[] => {
   switch (input.kind) {
+    case "sankey":
+      return input.links.map((link) => link.value);
     case "area":
       return input.series.flatMap((s) => s.data.filter((v): v is number => v !== null));
     case "line":
@@ -354,7 +367,7 @@ export function chartRenderOptions(
     formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string };
   } = {},
 ): RenderOptions {
-  if (input.kind === "heatmap" && input.layout === "calendar") locale = input.locale ?? locale;
+  if ("locale" in input && input.locale) locale = input.locale;
   const defaults = formats(input, locale);
   // Function formats must be measured with the same text the renderer will print.
   const format = {
@@ -367,6 +380,16 @@ export function chartRenderOptions(
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
   switch (input.kind) {
+    case "sankey":
+      return {
+        kind: "sankey",
+        nodes: input.nodes,
+        links: input.links,
+        legend: input.legend,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
     case "area":
       return {
         kind: "area",
@@ -545,6 +568,8 @@ const decode = (value: string) =>
 export const drawChart = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
+    case "sankey":
+      return renderSankeySvg({ ...options, ...common });
     case "area":
       return renderAreaSvg({ ...options, ...common });
     case "bar":
@@ -627,7 +652,7 @@ export function chartRows(
   locale: string,
   options: { formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string } } = {},
 ) {
-  if (input.kind === "heatmap" && input.layout === "calendar") locale = input.locale ?? locale;
+  if ("locale" in input && input.locale) locale = input.locale;
   const t = labels.resolve([locale]).t;
   const format = formats(input, locale);
   const valueFormat = input.tooltip?.format
@@ -666,7 +691,16 @@ export function chartRows(
           ? input.data[datum.role === "outlier" ? (datum.seriesIndex ?? 0) : datum.index]?.label
           : datum.label;
       if (label)
-        cell("label", input.kind === "heatmap" && input.layout === "calendar" ? calendarWords(locale).day : t.category, label, label);
+        cell(
+          "label",
+          input.kind === "heatmap" && input.layout === "calendar"
+            ? calendarWords(locale).day
+            : input.kind === "sankey"
+              ? t.flow
+              : t.category,
+          label,
+          label,
+        );
     }
     for (const field of datum.values) {
       const value = field.value;
@@ -714,6 +748,7 @@ export function chartRows(
             ? (field.formatted ?? valueFormat(value))
             : `${valueFormat(value)}${unit}`,
         );
+      else if (field.key === "incoming" || field.key === "outgoing") cell(field.key, t[field.key], value, valueFormat(value));
       else if (field.key === "delta") cell("delta", t.delta, value, `${value > 0 ? "+" : ""}${valueFormat(value)}`);
       else if (field.key === "q1" || field.key === "q2" || field.key === "q3" || field.key === "whiskerLow" || field.key === "whiskerHigh")
         cell(field.key, t[field.key], value, valueFormat(value));
@@ -745,6 +780,16 @@ export function chartTable(input: ChartInput, locale: string): ChartTable {
 /** Input values count against the budget, including observations summarized into boxes or bins. */
 export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
+    case "sankey": {
+      const graph = sankeyGraph(input);
+      return (
+        input.nodes.length +
+        input.links.reduce(
+          (sum, link) => sum + graph.nodes[graph.ids.get(link.target)!]!.stage - graph.nodes[graph.ids.get(link.source)!]!.stage,
+          0,
+        )
+      );
+    }
     case "area":
       return input.series.reduce((sum, s) => sum + s.data.length, 0);
     case "line":

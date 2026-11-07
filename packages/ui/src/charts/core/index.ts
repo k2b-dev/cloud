@@ -13,6 +13,7 @@ export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
 export * from "./calendar";
 export * from "./inspection";
 export * from "./render";
+export * from "./sankey";
 export * from "./snapshot";
 export {
   type AxisOptions,

@@ -23,6 +23,7 @@ import {
 /** Host policy for inspecting an overflowing drawing. */
 export type ChartInspectionNavigation = {
   last?: boolean;
+  order?: (entries: { datum: ChartDatum }[]) => void;
   pointer?: boolean;
   reveal?: (element: SVGGraphicsElement) => void;
   keepScroll?: boolean;
@@ -79,7 +80,7 @@ export function createChartInspector(options: {
       entries = [];
       byElement.clear();
       sortedPoints = [];
-      for (const element of Array.from(options.container()?.querySelectorAll<SVGGraphicsElement>("[data-chart-datum]") ?? [])) {
+      for (const element of options.container()?.querySelectorAll<SVGGraphicsElement>("[data-chart-datum]") ?? []) {
         try {
           const value: unknown = JSON.parse(element.getAttribute("data-chart-datum") ?? "null");
           if (isChartDatum(value)) {
@@ -91,6 +92,7 @@ export function createChartInspector(options: {
           /* Only valid renderer metadata participates in inspection. */
         }
       }
+      options.nav?.()?.order?.(entries);
       sortedPoints = entries.filter((entry) => entry.datum.role === "point").sort((a, b) => a.datum.anchor[0] - b.datum.anchor[0]);
     }
     return entries;
@@ -347,9 +349,7 @@ export function createChartInspector(options: {
       .filter((entry) => entry.datum.role === role)
       .map((entry) => ({ entry, rect: entry.element.getBoundingClientRect() }));
     if (!slots.length) return [];
-    const guides = Array.from(container.querySelectorAll(".stdlib-chart-grid, .stdlib-chart-axis")).map((node) =>
-      node.getBoundingClientRect(),
-    );
+    const guides = [...container.querySelectorAll(".stdlib-chart-grid, .stdlib-chart-axis")].map((node) => node.getBoundingClientRect());
     // The band spans the plot across the categories: grid lines and every mark, so rows without value ticks, whose
     // only guide is one vertical baseline, still get a band from the baseline to the longest bar.
     const spans = [...guides, ...slots.map((slot) => slot.rect)];
@@ -373,7 +373,7 @@ export function createChartInspector(options: {
   const updatePlotBounds = () => {
     const container = options.container();
     if (!container) return;
-    const axes = Array.from(container.querySelectorAll(".stdlib-chart-axis")).map((axis) => axis.getBoundingClientRect());
+    const axes = [...container.querySelectorAll(".stdlib-chart-axis")].map((axis) => axis.getBoundingClientRect());
     if (axes.length < 2) return;
     const left = Math.min(...axes.map((a) => a.left)),
       right = Math.max(...axes.map((a) => a.right));

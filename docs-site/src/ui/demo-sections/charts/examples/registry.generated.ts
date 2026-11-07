@@ -15,6 +15,7 @@ import * as histogramExamples from "./histogram";
 import * as lineExamples from "./line";
 import * as mapExamples from "./map";
 import * as pieExamples from "./pie";
+import * as sankeyExamples from "./sankey";
 import * as scatterExamples from "./scatter";
 import * as sparklineExamples from "./sparkline";
 import * as statExamples from "./stat";
@@ -38,6 +39,7 @@ export const exampleModules: Record<string, unknown>[] = [
   lineExamples,
   mapExamples,
   pieExamples,
+  sankeyExamples,
   scatterExamples,
   sparklineExamples,
   statExamples,
