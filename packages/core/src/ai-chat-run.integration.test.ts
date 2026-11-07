@@ -94,7 +94,7 @@ const read = (id: string, context = ctx()) =>
     target: { type: "core.ai.chat", id: chat.shortId },
     input: { id },
     expectedSchemaHash: compiled.queries.get("ai.chat.run.read")!.manifest.schemaHash,
-    context,
+    context: { ...context, idempotencyKey: undefined },
   });
 const dataSchema = aiChatRunAction.data;
 const start = async (context = ctx()) => {
@@ -322,7 +322,7 @@ suiteFor(
       localId: "ai.generate",
       expectedSchemaHash: compiled.queries.get("ai.generate")!.manifest.schemaHash,
       input: { task: "budget-regression", prompt: "Write a brief summary", input: {}, output: { type: "text", maxChars: 100 } },
-      context: ctx(),
+      context: { ...ctx(), idempotencyKey: undefined },
     });
     expect(generated).toMatchObject({ ok: true, data: { data: { output: "Available" } } });
     await sql.begin((db) => settleCodeAiBudget(claims, 1, "0.01", db));
