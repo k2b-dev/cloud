@@ -19,7 +19,7 @@ const messages = async (steps: string) => {
   }
 };
 
-const all = ["Dockerfile", "docs-site/Dockerfile", "pwas/pwa-auth/Dockerfile", "pwas/notes/Dockerfile"];
+const all = ["Dockerfile", "docs-site/Dockerfile", "pwas/pwa-auth/Dockerfile", "pwas/notes/Dockerfile", "packages/runner/Dockerfile"];
 
 test("accepts a gate that builds every release Dockerfile", async () => {
   expect(await messages(all.map(build).join(""))).toEqual([]);
