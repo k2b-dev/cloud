@@ -5,7 +5,7 @@ section: Platform services
 order: 965
 description: Start Code, understand retry and schedule outcomes, and read the recorded calls.
 tags: [code, runs, schedules, runner]
-updated: 2026-11-03
+updated: 2026-11-07
 ---
 
 # Code runs
@@ -15,6 +15,46 @@ pins that version when it accepts the run. Activating another version before
 a queued run obtains a lease terminates that queued run with `code_not_active`;
 already running attempts may drain under their original authority. The run list shows its state and
 its capability calls in order. A run does not resume at a saved step.
+
+## One-off chat jobs
+
+Gustav's `code_run` uses the same runner pool as lasting Code. Core queues a
+`chat` job; the runner loads a fresh workerd isolate with the generated SDK
+and the existing script helpers. The chat keeps the same tool name, result
+card, run ID, inspect/stop/export controls and ordered approval flow.
+These jobs do not appear in a lasting Code's run list. Their results remain
+in the chat.
+
+The Assistant host authorizes selected chat files, capability calls, HTTP,
+views and exports for the originating turn. The sandbox has no direct network
+or credentials. Unattended turns use the same path with their current routine
+mandate; HTTP grants still apply. Studio RSQL database grants do not authorize
+a runner database and are unavailable in `code_run`.
+
+The following limits apply:
+
+| Boundary | One-off chat run |
+| --- | --- |
+| Source and selected files | Existing script limits: 1 MiB per source file, 2 MiB total source, 64 files; selected files up to 50 MiB each and 250 MiB total |
+| Submitted job | 8 MiB UTF-8 JSON, including script and bundled helper modules |
+| Script bundle | `core.code.bundle_bytes`, default 4 MiB; helper modules also count toward the job limit |
+| Elapsed time | `core.code.wall_clock_ms`, default and maximum 300 seconds, including queueing and approval waits; progress does not extend it |
+| Memory and liveness | The runner's process-memory limit and workerd watchdog |
+| Bridge messages | 256 KiB per request and response, including JSON envelopes and base64 file bytes; larger file transfers fail visibly even when within the selected-file budget |
+| Calls | `core.code.calls_per_run`, default 200; script RPCs, logs, progress and terminal messages all consume this budget; exhaustion reports `code_job_call_limit` |
+| Admission | The shared runner slots and `core.code.job_pending` / `core.code.concurrency_per_owner` job limits |
+
+The existing script startup watchdog also stops an initial run that stays
+silent for 15 seconds without progress or a host request, after queue admission.
+The existing ceiling of 32 pending host messages bounds the isolate transport. Inspect output is
+still truncated at 16,000 characters and keeps the latest 20 log entries.
+Captured exports and views retain the existing 64-item and file-size budgets.
+
+Cancellation, a lost lease, an expired deadline or a lost Assistant host ends
+the attempt. A chat job and a delivered bridge request are never automatically
+replayed: inspect completed effects before deliberately starting another run.
+The Assistant retains live run state until its host closes; durable tool
+results and exported chat files follow the chat's existing retention.
 
 ## Start or run again
 

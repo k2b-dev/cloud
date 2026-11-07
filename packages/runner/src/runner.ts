@@ -9,6 +9,7 @@ import {
   RunnerLeaseSchema,
 } from "@k2b/cloud/code/runner";
 import { BundleCache } from "./cache";
+import { executeChatJob } from "./chat-job";
 import type { RunnerEngine } from "./engine";
 import { executeRunnerJob } from "./jobs";
 
@@ -149,7 +150,10 @@ export class Runner {
           }
           throw controller.signal.reason;
         })();
-        result = await this.executeJob(lease, input, this.#config, controller.signal);
+        result =
+          lease.kind === "chat"
+            ? await executeChatJob(lease, input, this.#config, this.engine, this.bridge, controller.signal)
+            : await this.executeJob(lease, input, this.#config, controller.signal);
       } catch (error) {
         this.#isolationFailure(error);
         if (controller.signal.aborted) return;

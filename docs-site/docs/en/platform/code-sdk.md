@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-06
+updated: 2026-11-07
 ---
 
 # Code SDK
@@ -488,12 +488,26 @@ permission changes, and the runner's ESM bundle.
 ## One-off chat runs
 
 Gustav's one-off `code_run` compiler supplies the same `generateCodeSdk` output
-with `mode: "code_run"`. It binds normalized targets, refs and idempotency
-metadata to the existing capability host, preserving its access checks and
-approvals. SDK methods return domain data; the older `cloud.capabilities.run`
+with `mode: "code_run"` and executes it in the Code runner's isolated workerd
+runtime. It binds normalized targets, refs and idempotency metadata to the
+current person's Assistant turn, preserving capability access checks and
+approvals. It does not create a lasting Code, version or version mandate.
+SDK methods return domain data; the older `cloud.capabilities.run`
 keeps returning its capability envelope. This mode has no `app` or `owner`,
 and accepts dynamic IDs. The host also exports its existing `cloud.sheet`
 helpers as `sheet` from `@sdk`. Other package imports remain unavailable.
+`http` and `secrets` use the person's existing chat HTTP approvals and secret
+bindings. Secret values remain in the Assistant host. Files, views, progress,
+logs, return values and script errors keep their chat result format.
+
+One-off runs share runner capacity and use its fixed wall-clock, memory and
+bridge budgets; see [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs).
+Background turns use the same runner path. Their capability and HTTP calls
+still require the routine's current mandate and exact grants; they cannot ask
+for interactive approval. Studio RSQL `database` grants are unavailable in
+runner `code_run`, including when `resourceId` or a saved script is supplied.
+Use an application's permission-aware capabilities for application data.
+There is no automatic replacement database or grant migration.
 
 See [Gustav Code tools](/en/docs/platform/gustav-code-tools) for a one-call CSV
 example and the lasting-Code workflow.

@@ -4,7 +4,7 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } f
 import { dispatchCapabilityStream, sealCapabilityStream } from "../api/capability-streams";
 import { invokeCapability, reviewCapabilityAction, transferCapabilityStream } from "../capabilities/server";
 import { stubConnections } from "../runtime/connections.test-fixture";
-import type { RequestActor } from "../server";
+import type { AuthContext, RequestActor } from "../server";
 import { signInvocationToken, verifyInvocationToken } from "../services/identity/invocation-token";
 import type { PreparedIdentitySigner } from "../services/identity/key-ring";
 import type { Mandate } from "../services/mandates";
@@ -144,6 +144,13 @@ function fixture() {
     getMandate: async () => mandate,
     dispatch,
     stream,
+    runner: new Hono<AuthContext>().post("/start", (c) =>
+      c.json({
+        userId: c.get("actor").kind === "user" ? userId : null,
+        conversationId: c.req.param("conversationId"),
+        turnId: c.req.param("turnId"),
+      }),
+    ),
   });
   return {
     app: new Hono().route("/api/_internal/ai/code", routes),
@@ -247,6 +254,9 @@ test("remote host routes invocation, review and binary continuations to Core wit
       ok: true,
       data: { message: "Write file?" },
     });
+    const allocation = await caller.transport(new Request("http://core.invalid/api/code-runner/start", { method: "POST", body: "{}" }));
+    expect(allocation.status).toBe(200);
+    expect(await allocation.json()).toEqual({ userId, conversationId, turnId });
     const payload = "a,b\n1,2\n".repeat(40000);
     const offer = {
       id: "opaque",
@@ -393,4 +403,20 @@ test("interactive code callbacks refuse all platform Code access operations befo
     expect((await f.app.fetch(request(jwt, operation))).status).toBe(403);
   }
   expect(f.dispatch).not.toHaveBeenCalled();
+});
+
+test("chat runner allocation uses the same signed current-turn continuation and rejects cancellation", async () => {
+  const f = fixture();
+  const jwt = await token();
+  const send = () =>
+    f.app.request(`http://core.test${codeCapabilityPath(conversationId, turnId)}/runner/start`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${jwt}`, "content-type": "application/json" },
+      body: "{}",
+    });
+  const result = await send();
+  expect(result.status).toBe(200);
+  expect(await result.json()).toEqual({ userId, conversationId, turnId });
+  f.set({ cancelRequestedAt: new Date().toISOString() });
+  expect((await send()).status).toBe(403);
 });

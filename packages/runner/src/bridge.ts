@@ -8,6 +8,7 @@ import {
   RunnerConfigSchema,
   RunnerFetchResponseSchema,
   RunnerHeartbeatResponseSchema,
+  RunnerJobCallReplySchema,
   RunnerLeaseLostError,
 } from "@k2b/cloud/code/runner";
 
@@ -107,6 +108,11 @@ export class CoreBridge implements RunnerBridge {
   }
   async jobInput(request: import("@k2b/cloud/code/runner").RunnerJobProof, signal: AbortSignal, maxBytes: number) {
     return this.#post(RUNNER_PATHS.jobInput, request, signal, maxBytes, this.#settings().transportMs);
+  }
+  async jobCall(request: Parameters<NonNullable<RunnerBridge["jobCall"]>>[0], signal: AbortSignal) {
+    return RunnerJobCallReplySchema.parse(
+      JSON.parse(await this.#post(RUNNER_PATHS.jobCall, request, signal, this.#settings().bridgeBytes, 240_000)),
+    );
   }
   async bundle(request: Parameters<RunnerBridge["bundle"]>[0], signal: AbortSignal) {
     const config = this.#settings();

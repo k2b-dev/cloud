@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CodeInternetOriginSchema } from "../contracts/code-internet";
+import { ChatRunReplySchema } from "./chat-run";
 import { CodeCheckResultSchema } from "./checker-contract";
 import { CodeRouteResponseSchema } from "./request-contract";
 import { CodeTestResultSchema } from "./test-contract";
@@ -13,6 +14,7 @@ export const RUNNER_PATHS = {
   complete: "/_internal/code/runner/complete",
   call: "/_internal/code/runner/call",
   jobInput: "/_internal/code/runner/job-input",
+  jobCall: "/_internal/code/runner/job-call",
 } as const;
 
 /** JSON-only values cross the sandbox boundary; streams and object capabilities never do. */
@@ -72,7 +74,7 @@ export const RunnerJobProofSchema = z
 export type RunnerJobProof = z.infer<typeof RunnerJobProofSchema>;
 /** Authoring lease shares the runner slot budget; input is fetched separately through the signed job route. */
 export const RunnerJobLeaseSchema = RunnerJobProofSchema.extend({
-  kind: z.enum(["check", "test", "simulate"]),
+  kind: z.enum(["check", "test", "simulate", "chat"]),
   deadlineAt: positive,
   leaseExpiresAt: positive,
   heartbeatMs: positive,
@@ -83,12 +85,29 @@ export const RunnerJobLeaseSchema = RunnerJobProofSchema.extend({
 export type RunnerJobLease = z.infer<typeof RunnerJobLeaseSchema>;
 /** Stable bounded checker or fake-executor JSON; jobs never report production call results. */
 export const RunnerJobResultSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("chat"),
+      outcome: z.enum(["succeeded", "failed", "wall_clock_limit", "memory_limit", "stalled", "lease_lost"]),
+    })
+    .strict(),
   z.object({ kind: z.literal("check"), result: CodeCheckResultSchema }).strict(),
   z.object({ kind: z.enum(["test", "simulate"]), result: CodeTestResultSchema }).strict(),
-  z.object({ kind: z.literal("error"), code: z.enum(["code_job_failed", "code_job_time_limit", "code_job_output_limit"]) }).strict(),
+  z
+    .object({
+      kind: z.literal("error"),
+      code: z.enum(["code_job_failed", "code_job_time_limit", "code_job_output_limit", "code_job_call_limit"]),
+    })
+    .strict(),
 ]);
 /** Result validated by both runner and Core before the waiting host receives it. */
 export type RunnerJobResult = z.infer<typeof RunnerJobResultSchema>;
+export const RunnerJobCallSchema = RunnerJobProofSchema.extend({
+  id: z.uuid(),
+  operation: z.string().min(1).max(256),
+  input: z.json(),
+}).strict();
+export const RunnerJobCallReplySchema = ChatRunReplySchema;
 /** Separate job proof cannot authorize a production bridge call. */
 export const RunnerJobCompleteSchema = RunnerJobProofSchema.extend({ result: RunnerJobResultSchema }).strict();
 /** An empty batch means the long-poll elapsed. Combined runs/jobs never exceed advertised freeSlots. */
@@ -158,6 +177,7 @@ export interface RunnerBridge {
   jobInput?(request: RunnerJobProof, signal: AbortSignal, maxBytes: number): Promise<string>;
   jobHeartbeat?(request: RunnerJobProof, signal: AbortSignal): Promise<RunnerHeartbeatResponse>;
   jobComplete?(request: z.infer<typeof RunnerJobCompleteSchema>, signal: AbortSignal): Promise<void>;
+  jobCall?(request: z.infer<typeof RunnerJobCallSchema>, signal: AbortSignal): Promise<z.infer<typeof RunnerJobCallReplySchema>>;
   heartbeat(request: RunnerHeartbeatRequest, signal: AbortSignal): Promise<RunnerHeartbeatResponse>;
   complete(request: RunnerCompleteRequest, signal: AbortSignal): Promise<void>;
   call(request: RunnerCallRequest, signal: AbortSignal): Promise<RunnerCallResponse>;

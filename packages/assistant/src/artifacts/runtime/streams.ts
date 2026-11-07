@@ -4,10 +4,16 @@ import { LIMITS } from "../contracts";
 
 export const RuntimeStream = CapabilityStreamSchema.extend({ callId: z.uuid() }).strict();
 export type RuntimeStream = z.infer<typeof RuntimeStream>;
-export async function runStream(ref: RuntimeStream, verb: string, body: Blob | undefined, signal: AbortSignal) {
+export async function runStream(
+  ref: RuntimeStream,
+  verb: string,
+  body: Blob | undefined,
+  signal: AbortSignal,
+  send: (path: string, init: RequestInit) => Promise<Response> = fetch,
+) {
   if (ref.size > LIMITS.inputFileBytes) throw new Error("Stream exceeds the 50 MiB code-run file budget");
   if (verb === "write" && (!body || body.size !== ref.size)) throw new Error("Upload size differs from the authorized stream");
-  const response = await fetch(`/api/assistant/artifacts/runtime/capabilities/${encodeURIComponent(ref.callId)}/stream/${verb}`, {
+  const response = await send(`/api/assistant/artifacts/runtime/capabilities/${encodeURIComponent(ref.callId)}/stream/${verb}`, {
     method: "POST",
     body: verb === "write" ? body : undefined,
     signal: AbortSignal.any([signal, AbortSignal.timeout(300_000)]),
