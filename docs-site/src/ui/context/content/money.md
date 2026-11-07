@@ -51,8 +51,8 @@ direction. `end = start + in − out`; the signs of `in` and `out` are ignored.
 | `in`, `out` | `number` | required | Money that came in and went out, as amounts. |
 | `currency` | `string` | required | ISO 4217 code. |
 | `locale` | `string` | inherited | Number format and words. |
-| `decimals` | `number` | `0` | Fixed fraction digits. |
-| `labels` | `{ start?, end?, in?, out? }` | "Anfang", "Ende", "rein", "raus" | Replaces the words. |
+| `decimals` | `number` | whole amounts | Fixed fraction digits. Without it, whole amounts show unless their rounding would not add up; then cents show. |
+| `labels` | `{ start?, end?, in?, out? }` | the locale's words ("Start", "End", "in", "out"; German "Anfang", "Ende", "rein", "raus") | Replaces the words. |
 
 The operators are hidden from screen readers, which hear "Anfang 18.800 €,
 29.260 €, rein, 29.520 €, raus, Ende 18.540 €". A broken figure shows "—" in

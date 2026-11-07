@@ -58,7 +58,12 @@ const measure = () =>
       hintHeight: Math.round(row.querySelector(".k2b-budget__hint")!.getBoundingClientRect().height),
       parts,
       // Where the limit mark sits along the track, and how far it reaches above and below it.
-      mark: mark ? { at: Math.round(((mark.left + mark.width / 2 - track.left) / track.width) * 1000) / 10, reach: Math.round(mark.height - track.height) } : null,
+      mark: mark
+        ? {
+            at: Math.round(((mark.left + mark.width / 2 - track.left) / track.width) * 1000) / 10,
+            reach: Math.round(mark.height - track.height),
+          }
+        : null,
     };
   });
 
@@ -91,7 +96,9 @@ describe("@k2b/ui budgets and balance rows", () => {
         // A long balance line wraps instead of widening the page.
         expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
         const lines = await page.evaluate(() => {
-          const parts = Array.from(document.querySelectorAll(".k2b-balance > *")).map((part) => Math.round(part.getBoundingClientRect().top));
+          const parts = Array.from(document.querySelectorAll(".k2b-balance > *")).map((part) =>
+            Math.round(part.getBoundingClientRect().top),
+          );
           return new Set(parts).size;
         });
         if (name === "phone") expect(lines).toBeGreaterThan(1);

@@ -569,9 +569,16 @@
 }
 .k2b-ui .k2b-progress__segment[data-pattern="over"] { border-radius: 0 999px 999px 0; background: var(--k2b-danger-500); }
 .k2b-ui .k2b-progress__limit { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--k2b-text); }
+/* Forced colours drop gradients: booked stays filled, expected becomes an outline, over the budget takes Mark. */
 @media (forced-colors: active) {
-  .k2b-ui .k2b-progress__segment { background: CanvasText; }
-  .k2b-ui .k2b-progress__segment[data-pattern="over"] { background: Mark; }
+  .k2b-ui .k2b-progress[data-segmented] .k2b-progress__track { box-shadow: inset 0 0 0 1px CanvasText; }
+  .k2b-ui .k2b-progress__segment[data-pattern="solid"],
+  .k2b-ui .k2b-budget__swatch[data-pattern="solid"] { background: CanvasText; }
+  .k2b-ui .k2b-progress__segment[data-pattern="hatched"],
+  .k2b-ui .k2b-budget__swatch[data-pattern="hatched"] { background: Canvas; box-shadow: inset 0 0 0 2px CanvasText; }
+  .k2b-ui .k2b-progress__segment[data-pattern="over"],
+  .k2b-ui .k2b-budget__swatch[data-pattern="over"] { background: Mark; }
+  .k2b-ui .k2b-progress__limit { background: CanvasText; }
 }
 
 /* ---------------------------------------------------------------- Budget -- */

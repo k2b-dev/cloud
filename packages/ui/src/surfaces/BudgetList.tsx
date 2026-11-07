@@ -2,7 +2,7 @@ import { For, type JSX, Show } from "solid-js";
 import { Tooltip } from "../feedback/Tooltip";
 import { useLocale } from "../intl/locale";
 import { useBudgetMessages } from "./budget-messages";
-import { ProgressBar } from "./ProgressBar";
+import { budgetOverrun, budgetRatio, ProgressBar } from "./ProgressBar";
 
 /** One budget: `used` is booked, `expected` comes on top; over the budget is `used + expected - limit`. */
 export type BudgetItem = { id?: string; label: string; used: number; expected?: number; limit: number };
@@ -31,10 +31,11 @@ export const budgetState = (item: Pick<BudgetItem, "used" | "expected" | "limit"
   const expected = item.expected !== undefined && Number.isFinite(item.expected) ? Math.max(0, item.expected) : 0;
   const limit = Number.isFinite(item.limit) ? Math.max(0, item.limit) : 0;
   const total = used + expected;
-  const over = Math.max(0, total - limit);
-  const ratio = limit > 0 ? total / limit : total > 0 ? Number.POSITIVE_INFINITY : 0;
-  const level: BudgetLevel = over > 0 ? "over" : ratio >= 0.8 ? "near" : "ok";
-  return { used, expected, limit, total, over, free: Math.max(0, limit - total), ratio, level };
+  const over = budgetOverrun(total, limit);
+  const ratio = budgetRatio(total, limit);
+  // The same float tolerance as the overrun: 0.7 + 0.1 of 1 is exactly 80 %.
+  const level: BudgetLevel = over > 0 ? "over" : ratio >= 0.8 - 1e-9 ? "near" : "ok";
+  return { used, expected, limit, total, over, free: over > 0 ? 0 : Math.max(0, limit - total), ratio, level };
 };
 
 /**

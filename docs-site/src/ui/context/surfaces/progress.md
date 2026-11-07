@@ -78,7 +78,7 @@ type DotStripProps = {
 };
 ```
 
-`IntentTone` is defined in [shared API conventions](/en/ui/getting-started#icons-tones-and-navigation); each component accepts only the tones listed above. Defaults: `size="md"`, `tone="info"`, `showValue=false`. Finite values round to an integer and clamp to 0–100; non-finite values render 0. With `segments`, negative and non-finite parts count as 0, the track spans the larger of `limit` and the sum, and `aria-valuenow` is the sum as a percent of the limit (it may exceed 100). `BudgetList` formats money in the inherited locale with 0 decimals unless `decimals` says otherwise; `locale` overrides number format and words alike.
+`IntentTone` is defined in [shared API conventions](/en/ui/getting-started#icons-tones-and-navigation); each component accepts only the tones listed above. Defaults: `size="md"`, `tone="info"`, `showValue=false`. Finite values round to an integer and clamp to 0–100; non-finite values render 0. With `segments`, `value` is ignored: the share comes from the segments. Negative and non-finite parts count as 0, the track spans the larger of `limit` and the sum, and a `limit` of 0, below 0 or not finite is an empty budget, so any spending is over it. Without `limit` the segments fill the track. `aria-valuenow` stays within 0–100 and `aria-valuetext` says the real share ("120%") unless `valueText` replaces it. Sums within a billionth of the limit count as equal, so float residue never tips a budget over 100 % or under 80 %. In forced colours, expected spending is an outlined part and the overrun uses `Mark`. `BudgetList` formats money in the inherited locale with 0 decimals unless `decimals` says otherwise; `locale` overrides number format and words alike.
 
 ## Accessibility
 

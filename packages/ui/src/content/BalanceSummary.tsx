@@ -14,7 +14,7 @@ export type BalanceSummaryProps = {
   currency: string;
   /** Explicit locale override; defaults to the inherited render locale. */
   locale?: string;
-  /** Fixed fraction digits. Defaults to 0. */
+  /** Fixed fraction digits. Defaults to whole amounts, or cents when whole amounts would not add up. */
   decimals?: number;
   /** Replaces the words "Start", "End", "in" and "out". */
   labels?: { start?: string; end?: string; in?: string; out?: string };
@@ -32,7 +32,16 @@ export function BalanceSummary(props: BalanceSummaryProps): JSX.Element {
   const locale = useLocale();
   const t = useBalanceSummaryMessages(() => props.locale);
   const lang = () => props.locale ?? locale();
-  const decimals = () => props.decimals ?? 0;
+  const start = () => props.start;
+  const end = () => start() + amount(props.in) - amount(props.out);
+  // Whole amounts read best, but the line is an equation: when the rounded parts would not add up, show cents.
+  const decimals = () => {
+    if (props.decimals !== undefined) return props.decimals;
+    const whole = (value: number) => Math.round(value);
+    const parts = [start(), amount(props.in), amount(props.out)];
+    if (!parts.every(Number.isFinite)) return 0;
+    return whole(start()) + whole(amount(props.in)) - whole(amount(props.out)) === whole(end()) ? 0 : 2;
+  };
   const balance = (value: number) =>
     !Number.isFinite(value)
       ? "—"
@@ -42,8 +51,6 @@ export function BalanceSummary(props: BalanceSummaryProps): JSX.Element {
           minimumFractionDigits: decimals(),
           maximumFractionDigits: decimals(),
         }).format(value === 0 ? 0 : value);
-  const start = () => props.start;
-  const end = () => start() + amount(props.in) - amount(props.out);
   return (
     <p class={props.class ? `k2b-balance ${props.class}` : "k2b-balance"}>
       <span class="k2b-balance__part">

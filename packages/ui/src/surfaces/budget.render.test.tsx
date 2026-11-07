@@ -69,9 +69,15 @@ describe("segmented progress bar", () => {
     expect(html.match(/k2b-progress__segment"/g)?.length).toBe(3);
     expect(html).toContain('data-pattern="over"');
     expect(html).toContain("k2b-progress__limit");
-    expect(html).toContain('aria-valuenow="120"');
-    expect(html).toContain('aria-valuemax="120"');
+    expect(html).toContain('aria-valuenow="100"');
+    expect(html).toContain('aria-valuemax="100"');
     expect(html).toContain('aria-valuetext="900 € booked, 300 € expected, of 1,000 €"');
+    // Without a spoken value the overrun is said as a percent; `value` never contradicts the segments.
+    const own = renderToString(() =>
+      createComponent(ProgressBar, { label: "Travel", value: 20, segments: [{ value: 120 }], limit: 100, showValue: true }),
+    );
+    expect(own).toContain('aria-valuetext="120%"');
+    expect(own).toContain(">120%<");
     const plain = renderToString(() => createComponent(ProgressBar, { label: "Upload", value: 42 }));
     expect(plain).toContain('style="width: 42%"');
     expect(plain).not.toContain("data-segmented");
@@ -84,6 +90,25 @@ describe("budget list", () => {
     expect(budgetState({ used: 600, expected: 200, limit: 1000 }).level).toBe("near");
     expect(budgetState({ used: 1000, limit: 1000 })).toMatchObject({ level: "near", free: 0, over: 0 });
     expect(budgetState({ used: 900, expected: 300, limit: 1000 })).toMatchObject({ level: "over", over: 200, total: 1200 });
+  });
+
+  test("float residue never tips a budget: exactly 100 % is not over, exactly 80 % is tight", () => {
+    expect(budgetState({ used: 0.1, expected: 0.2, limit: 0.3 })).toMatchObject({ over: 0, level: "near" });
+    expect(budgetState({ used: 0.7, expected: 0.1, limit: 1 }).level).toBe("near");
+    expect(progressBarParts([{ value: 0.1 }, { value: 0.2 }], 0.3)).toMatchObject({ over: 0, mark: null });
+  });
+
+  test("an empty budget makes any spending over it, with the mark at the start", () => {
+    expect(budgetState({ used: 10, limit: 0 })).toMatchObject({ over: 10, level: "over" });
+    const bar = progressBarParts([{ value: 10 }], 0);
+    expect(bar.parts).toEqual([{ pattern: "over", width: 100 }]);
+    expect(bar.mark).toBe(0);
+    expect(progressBarParts([{ value: 10 }], Number.NaN).over).toBe(10);
+    // Without a limit the segments fill the track.
+    expect(progressBarParts([{ value: 10 }]).over).toBe(0);
+    const html = renderToString(() => createComponent(ProgressBar, { label: "Empty", segments: [{ value: 10 }], limit: 0 }));
+    expect(html).toContain("k2b-progress__limit");
+    expect(html).toContain('aria-valuetext="∞"');
   });
 
   test("each row says spent of budget, and the hint names what is left or over", () => {
@@ -139,6 +164,15 @@ describe("balance summary", () => {
       createComponent(BudgetList, { currency: "EUR", locale: "en", items: [{ label: "Travel", used: 10, limit: 100 }] }),
     );
     expect(budget).toContain("€90 left");
+  });
+
+  test("whole amounts that would not add up show cents, so the line stays a true equation", () => {
+    const html = de(() => createComponent(BalanceSummary, { start: 100.4, in: 0.4, out: 0, currency: "EUR" }));
+    expect(html).toMatch(/Anfang <b>100,40\s€<\/b>/);
+    expect(html).toMatch(/Ende <b>100,80\s€<\/b>/);
+    expect(de(() => createComponent(BalanceSummary, { start: 18800, in: 29260, out: 29520, currency: "EUR" }))).toMatch(
+      /Ende <b>18\.540\s€<\/b>/,
+    );
   });
 
   test("a negative end keeps its sign; signs of in and out are ignored", () => {
