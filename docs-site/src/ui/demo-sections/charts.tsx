@@ -4,6 +4,29 @@ import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 
 const examples = {
+  funnel: {
+    description: "Funnel · Share of the start and previous step.",
+    chart: {
+      kind: "funnel",
+      data: [
+        { label: "Visits", value: 12000 },
+        { label: "Products", value: 8400 },
+        { label: "Basket", value: 3600 },
+        { label: "Orders", value: 1800 },
+      ],
+    },
+  },
+  hbar: {
+    description: "Horizontal bars · Quarterly orders by channel, with group headings and totals.",
+    chart: {
+      kind: "hbar",
+      series: ["Q1", "Q2"],
+      rows: [
+        { group: "Store", label: "Furniture", values: [35, 46] },
+        { group: "Web", label: "Lighting", values: [49, 34] },
+      ],
+    },
+  },
   line: {
     description: "Line · Requests rise from 12 to 42 per second. Inspect individual points with the pointer or keyboard.",
     chart: {
@@ -243,6 +266,11 @@ type TooltipField = { label: string; unit?: string; names?: Record<string, strin
 type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
 const tooltipExamples: Record<ChartKind, TooltipExample> = {
+  funnel: {
+    title: "Conversion",
+    fields: { value: { label: "Count" }, startPercent: { label: "Share of start" }, previousPercent: { label: "Share of previous step" } },
+  },
+  hbar: { title: "Quarterly orders", fields: { Q1: { label: "Q1" }, Q2: { label: "Q2" }, total: { label: "Total" } } },
   line: {
     title: "Request rate",
     fields: {
@@ -423,6 +451,21 @@ const euro = new Intl.NumberFormat("en", { style: "currency", currency: "EUR", m
 
 /** Bar labels in every state: few short labels as columns, rows for long labels, negative values, many categories. */
 const barStates = [
+  {
+    title: "Nested dot matrix: clicks are part of opens",
+    chart: {
+      kind: "bar",
+      layout: "nested",
+      marks: "dots",
+      total: 1000,
+      dots: 100,
+      x: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+      series: [
+        { label: "Opened", data: [780, 620, 810, 690, 570] },
+        { label: "Clicked", data: [320, 210, 420, 290, 190] },
+      ],
+    },
+  },
   {
     title: "Few short labels stand below columns with their values",
     chart: {

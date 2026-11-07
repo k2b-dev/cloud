@@ -128,7 +128,7 @@ const flatChartSchema = () => {
           .array(
             z.object({
               label: ChartLabel.optional(),
-              value: z.number().optional(),
+              value: z.number().nullable().optional(),
               values: z.array(z.number()).min(1).optional(),
               x: ChartLabel.optional(),
               y: ChartLabel.optional(),
@@ -144,13 +144,44 @@ const flatChartSchema = () => {
       .describe(
         "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value. histogram, sparkline: numbers.",
       ),
+    x: z.array(ChartLabel).max(CLOUD_AI_CHART_MAX_VALUES).optional().describe("bar: aligned category labels."),
+    compare: z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }).optional(),
+    marks: z.enum(["bars", "dots"]).optional(),
+    total: z.number().positive().optional(),
+    dots: z.number().int().min(2).optional(),
+    share: z.boolean().optional(),
+    limit: z.number().int().positive().optional(),
+    tone: z.enum(["in", "out"]).optional(),
+    normalize: z.boolean().optional().describe("stacked bars: normalize positive totals to 100 percent."),
+    rows: z
+      .array(
+        z.object({
+          group: ChartLabel.optional(),
+          label: ChartLabel,
+          values: z.array(z.number().nonnegative().nullable()).max(CLOUD_AI_CHART_MAX_SERIES),
+        }),
+      )
+      .max(CLOUD_AI_CHART_MAX_VALUES)
+      .optional()
+      .describe("hbar: grouped rows of aligned segment values."),
+    layout: z.enum(["columns", "rows", "grouped", "stacked", "nested"]).optional().describe("bar: category layout."),
     series: z
-      .array(ChartSeries(ChartPoints.min(1)).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }))
+      .array(
+        z.union([
+          ChartLabel,
+          ChartSeries(ChartPoints.min(1)).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }),
+          z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }),
+        ]),
+      )
       .min(1)
       .max(CLOUD_AI_CHART_MAX_SERIES)
       .optional()
-      .describe("line, scatter: label/data, optional reference role; line: style. Line needs 2 points per series."),
-    xAxis: ChartAxis.optional().describe("line, scatter: x axis. bar: only label, the category axis title."),
+      .describe(
+        "bar: aligned label/data counts; hbar: series names. line, scatter: label/data points, optional reference role; line: style. Line needs 2 points per series.",
+      ),
+    xAxis: ChartAxis.extend({ ordered: z.boolean().optional() })
+      .optional()
+      .describe("line, scatter: x axis. bar: label titles categories; ordered keeps their sequence."),
     yAxis: ChartAxis.optional().describe("bar, line, scatter, boxplot: y axis; label names the value, format sets units."),
     legend: z
       .boolean()
@@ -191,7 +222,10 @@ const chartInputSchema = () => {
         .optional()
         .describe(`Groups: 2..${CLOUD_AI_GROUP_MAX_CHARTS} related charts, each with a kind.`),
       linkX: z.boolean().optional().describe("Groups: share the x cursor between line charts with the same kind of x."),
-      layout: z.enum(["stack", "grid"]).optional().describe("Groups: stack (default) or grid."),
+      layout: z
+        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked", "nested"])
+        .optional()
+        .describe("Groups: stack or grid. Bar: columns, rows, grouped or stacked."),
     })
     .superRefine((value, context) => {
       if ((value.kind !== undefined) === (value.charts !== undefined)) {
@@ -209,8 +243,8 @@ const chartInputSchema = () => {
           if (issue) context.addIssue({ code: "custom", message: issue, path: ["charts", index] });
         });
       } else {
-        if (value.linkX !== undefined || value.layout !== undefined)
-          context.addIssue({ code: "custom", message: "linkX and layout belong to groups." });
+        if (value.linkX !== undefined || (value.layout !== undefined && value.kind !== "bar"))
+          context.addIssue({ code: "custom", message: "linkX belongs to groups; bar layouts belong to bars." });
         const parsed = ChartSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });

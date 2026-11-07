@@ -226,6 +226,19 @@ describe("flat chart tool schema", () => {
     expect(CloudAiChartInputSchema.parse(group)).toEqual(group);
     expect(parseCloudAiChartToolView(group)).toEqual({ ...group, view: "group" });
     expect(parseCloudAiChartToolView(bar)).toEqual({ ...bar, view: "chart" });
+    for (const layout of ["grouped", "stacked"] as const) {
+      const seriesBar = {
+        kind: "bar",
+        title: "Orders",
+        x: ["A"],
+        series: [
+          { label: "Shop", data: [10] },
+          { label: "Fair", data: [20] },
+        ],
+        layout,
+      };
+      expect(parseCloudAiChartToolView(seriesBar)).toMatchObject({ ...seriesBar, view: "chart" });
+    }
     for (const args of [
       { title: "G" },
       { ...bar, charts: [bar, bar] },
