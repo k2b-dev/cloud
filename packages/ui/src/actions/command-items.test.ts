@@ -57,4 +57,12 @@ describe("command items", () => {
     expect(labels(resolveCommandSource(source, "xyz"))).toEqual(["Phone call"]);
     expect(seen).toEqual(["xyz"]);
   });
+
+  test("an entry changed in place is found by its new words", () => {
+    const entry: CommandItem = { label: "Alpha", onSelect: noop };
+    expect(filterCommandItems([entry], "alpha")).toHaveLength(1);
+    entry.label = "Beta";
+    expect(filterCommandItems([entry], "alpha")).toHaveLength(0);
+    expect(filterCommandItems([entry], "beta")).toHaveLength(1);
+  });
 });

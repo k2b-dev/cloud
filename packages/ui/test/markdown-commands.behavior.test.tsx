@@ -133,6 +133,18 @@ describe("MarkdownEditor slash commands", () => {
     expect(active(textarea)).toContain("Phone call");
   });
 
+  test("the marked row scrolls into view, since the focus stays in the text", async () => {
+    const scrolled: string[] = [];
+    (dom.window.HTMLElement.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = function (this: HTMLElement) {
+      scrolled.push(this.textContent ?? "");
+    };
+    const { commands } = fixture();
+    const { textarea } = await mount({ commands });
+    await type(textarea, "/");
+    key(textarea, "End");
+    expect(scrolled.at(-1)).toContain("Assign");
+  });
+
   test("Enter on an action removes the typed /query and then runs it; keywords and accents match", async () => {
     const { commands, log } = fixture();
     const { textarea, value } = await mount({ commands });
@@ -224,6 +236,41 @@ describe("MarkdownEditor slash commands", () => {
     const { textarea } = await mount({ commands });
     await type(textarea, "and/or");
     expect(options()).toHaveLength(0);
+  });
+
+  test("/ after punctuation is no command either, as in a URL or a bracket", async () => {
+    const { commands, log } = fixture();
+    const { textarea, value } = await mount({ commands });
+    await type(textarea, "https://");
+    expect(options()).toHaveLength(0);
+    expect(key(textarea, "Enter")).toBe(false);
+    await type(textarea, " (/");
+    expect(options()).toHaveLength(0);
+    expect(log).toEqual([]);
+    expect(value()).toBe("https:// (/");
+  });
+
+  test("entries that arrive while the / waits open the list", async () => {
+    const { commands } = fixture();
+    const { MarkdownEditor } = await import("../src/inputs/markdown/MarkdownEditor");
+    const [source, setSource] = createSignal<readonly CommandItem[]>([]);
+    dispose = render(
+      () =>
+        createComponent(MarkdownEditor, {
+          label: "Late",
+          get commands() {
+            return source();
+          },
+        }),
+      dom.root,
+    );
+    const textarea = dom.root.querySelector("textarea")!;
+    textarea.focus();
+    await type(textarea, "/");
+    expect(options()).toHaveLength(0);
+    setSource(commands);
+    expect(options()).toHaveLength(4);
+    expect(textarea.getAttribute("aria-activedescendant")).toBe(options()[0]!.id);
   });
 
   test("the old completions path with its own / trigger still inserts text", async () => {

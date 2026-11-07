@@ -118,6 +118,10 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     },
   });
   const commandsOpen = createMemo(() => commandContext() !== null && (commands.step() !== undefined || commands.entries().length > 0));
+  // Entries that arrive while the commands wait at a `/`, such as from a reactive source, show them.
+  createEffect(() => {
+    if (commandsOpen()) queueMicrotask(positionDropdown);
+  });
   const closeCommands = (): void => {
     setCommandContext(null);
     commands.reset();
@@ -229,6 +233,11 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     const maxHeight = commandsOpen() ? 320 : 260;
     const spaceBelow = window.innerHeight - rect.bottom;
     const openAbove = spaceBelow < maxHeight && rect.top > spaceBelow;
+    // A long command list never reaches past the window edge it opens toward.
+    if (commandsOpen()) {
+      const room = (openAbove ? rect.top : spaceBelow) - 12;
+      dropdown.style.setProperty("max-height", `${Math.max(120, Math.min(maxHeight, room))}px`, "important");
+    }
     if (openAbove) {
       dropdown.style.setProperty("top", "auto", "important");
       dropdown.style.setProperty("bottom", `${window.innerHeight - rect.top + 4}px`, "important");
@@ -333,6 +342,12 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     if (context?.completion !== commandCompletion || context.start !== commandContext()?.start) {
       if (context?.completion !== commandCompletion || context.start !== commandsDismissedAt) commandsDismissedAt = null;
       if (commandContext()) closeCommands();
+    }
+    // Commands start at the line start or after a space, never inside `https://` or after a bracket.
+    if (context?.completion === commandCompletion && context.start > 0 && !/\s/.test(textarea.value[context.start - 1] ?? "")) {
+      if (commandContext()) closeCommands();
+      clearCompletion();
+      return;
     }
     if (context?.completion === commandCompletion) {
       // The suggestions' popover element is gone once the commands show; closing it would close theirs.

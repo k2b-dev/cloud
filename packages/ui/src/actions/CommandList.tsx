@@ -1,4 +1,4 @@
-import { type Accessor, createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import {
   type CommandGroup,
@@ -105,6 +105,11 @@ export function CommandList(props: {
   const commandMessages = useCommandMessages();
   const nav = props.navigator;
   const matches = () => nav.entries().filter((item) => !item.disabled).length;
+  // The focus stays in the field, so the marked row scrolls into view itself.
+  createEffect(() => {
+    if (nav.entries().length === 0) return;
+    document.getElementById(commandOptionId(props.id, nav.active()))?.scrollIntoView?.({ block: "nearest" });
+  });
   const status = () => {
     const step = nav.step()?.next;
     const count = props.query().trim() || step ? messages().searchMatches({ count: matches() }) : "";

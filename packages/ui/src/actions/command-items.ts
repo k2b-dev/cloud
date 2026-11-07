@@ -61,15 +61,10 @@ const fold = (text: string) => text.normalize("NFD").replace(marks, "").toLowerC
 // German writes ä as ae where umlauts are missing, so "zustaendig" finds "zuständig" as well as "zustandig" does.
 const spellOut = (text: string) => text.normalize("NFC").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue");
 
-const haystacks = new WeakMap<CommandItem, string>();
+// Built on every search, not cached by entry: an application may change an entry in place, such as its label.
 const haystackOf = (item: CommandItem): string => {
-  let haystack = haystacks.get(item);
-  if (haystack === undefined) {
-    const text = [item.label, item.hint?.replace(/^\//, ""), ...(item.keywords ?? [])].filter(Boolean).join(" ");
-    haystack = `${fold(text)} ${fold(spellOut(text))}`;
-    haystacks.set(item, haystack);
-  }
-  return haystack;
+  const text = [item.label, item.hint?.replace(/^\//, ""), ...(item.keywords ?? [])].filter(Boolean).join(" ");
+  return `${fold(text)} ${fold(spellOut(text))}`;
 };
 
 /**
