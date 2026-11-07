@@ -9,6 +9,7 @@ import { renderWaterfallSvg } from "../charts/core/waterfall";
 
 let browser: Browser, bundle: string, css: string, ssr: string;
 const pages: Page[] = [];
+const pageErrors: string[] = [];
 beforeAll(async () => {
   const { transformAsync } = await import("@babel/core");
   const typescript = (await import("@babel/preset-typescript")).default;
@@ -70,9 +71,11 @@ beforeAll(async () => {
 afterAll(async () => {
   for (const page of pages) await page.close();
   await browser?.close();
+  expect(pageErrors).toEqual([]);
 });
 const open = async (width: number, dark = false, touch = false) => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: false });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.setContent(
     `<!doctype html><html ${dark ? 'class="dark"' : ""}><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css} body{margin:0;padding:20px} main{max-width:900px;margin:auto}.waterfall-panel{border:1px solid var(--k2b-border);border-radius:12px;padding:16px;margin-top:20px}h2{font-size:17px;margin:0}.meta{font-size:13px;margin:4px 0 16px}.waterfall-frame{height:280px}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
   );
@@ -193,4 +196,17 @@ test("measured widths bound many labels and print amounts only on sufficiently w
     if (width <= 650) expect(await page.locator("#width-check .k2b-waterfall-value").count()).toBe(0);
   }
   await page.locator("#width-check").evaluate((e) => e.remove());
+});
+
+test("pure waterfall SVG keeps distinct flow paint with base.css alone", async () => {
+  const page = await browser.newPage();
+  pages.push(page);
+  const baseCss = await Bun.file(resolve(import.meta.dir, "../../dist/base.css")).text();
+  const drawing = renderWaterfallSvg({ ...waterfallFixture, width: 900, height: 280 });
+  await page.setContent(`<html><head><style>${baseCss}</style></head><body>${drawing}</body></html>`);
+  await settled(page);
+  const fills = await page.locator(".k2b-waterfall-bar").evaluateAll((nodes) => nodes.slice(0, 3).map((e) => getComputedStyle(e).fill));
+  expect(new Set(fills).size).toBe(3);
+  expect(fills[1]).toBe("rgb(8, 145, 178)");
+  expect(fills[2]).toBe("rgb(139, 92, 246)");
 });

@@ -63,7 +63,7 @@ render(
           <ChartExplorer
             title="Kontobewegungen"
             description={state() === "stale" ? "Veraltet · Oktober 2026" : "Oktober 2026"}
-            data={{ chart: snapshot, rows: state() === "data" || state() === "stale" ? rows : [] }}
+            data={state() === "data" || state() === "stale" ? { chart: snapshot, rows } : { rows: [] }}
             columns={[{ id: "amount", label: "Betrag", value: (row) => row.amount }]}
             height="280px"
             renderDetails={false}
