@@ -1,19 +1,17 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { showcaseDashboards } from "../dashboards";
-import { resolveDrawing } from "../resolve";
-import { specToTsx } from "../tsx";
-import { chartShowcaseExamples, chartShowcaseKinds, chartShowcaseQuestions } from ".";
 import { exampleFiles, isExampleList } from "./files";
-import { exampleRegistrySource } from "./generate";
+import { writeExampleRegistry } from "./generate";
 
-test("every example file in the folder is in the generated registry", () => {
+// Like every Fibel start and build: lanes add example files on main without touching the generated list.
+writeExampleRegistry();
+const { showcaseDashboards } = await import("../dashboards");
+const { resolveDrawing } = await import("../resolve");
+const { specToTsx } = await import("../tsx");
+const { chartShowcaseExamples, chartShowcaseKinds, chartShowcaseQuestions } = await import(".");
+
+test("every example file in the folder reaches the registry", () => {
   expect(exampleFiles().length).toBeGreaterThanOrEqual(14);
-  expect(
-    readFileSync(resolve(import.meta.dir, "registry.generated.ts"), "utf8"),
-    "run: bun docs-site/src/ui/demo-sections/charts/examples/generate.ts",
-  ).toBe(exampleRegistrySource());
   for (const file of exampleFiles()) {
     const module = require(resolve(import.meta.dir, file)) as Record<string, unknown>;
     const examples = Object.values(module).filter(isExampleList).flat();
