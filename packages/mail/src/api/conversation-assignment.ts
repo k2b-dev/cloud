@@ -25,6 +25,8 @@ export default new Hono<MailApiContext>().post(
         conversationIds: input.conversationIds,
         assigneeUserIds: input.assigneeUserIds,
         mode: input.mode,
+        onlyIfUnassigned: input.onlyIfUnassigned,
+        expectedRevision: input.expectedRevision,
         locale: getLocale(c),
       }),
     );

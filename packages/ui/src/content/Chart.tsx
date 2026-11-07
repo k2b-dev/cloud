@@ -1,9 +1,21 @@
 import type { MapViewport } from "@k2b/stdlib";
-import { charts } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
-import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  mergeProps,
+  onCleanup,
+  onMount,
+  Show,
+  splitProps,
+  untrack,
+} from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
+import { chartKinds, chartRenderers } from "../charts/core/registry";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -142,7 +154,7 @@ export type ChartProps = {
       ? StateTimelineChartOptions
       : K extends "bar"
         ? BarChartOptions
-        : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+        : Omit<Parameters<(typeof chartRenderers)[K]>[0], "width" | "height" | "inspect">);
 }[ChartKind];
 
 /** Pure renderer options: component layout, events and inspection are configured elsewhere. */
@@ -211,7 +223,7 @@ export const renderChartSvg = (
   const timeAxis = props.kind === "line" ? props.timeAxis : undefined;
   const timeDomain = timeAxis && props.kind === "line" ? lineTimeDomain(props) : undefined;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let svg = (charts[kind] as (o: unknown) => string)({
+  let svg = (chartRenderers[kind] as (o: unknown) => string)({
     ...(opts as any),
     ...(timeDomain && props.kind === "line" ? { xAxis: { ...props.xAxis, domain: timeDomain, format: () => "" } } : {}),
     ...(props.kind === "line" &&
@@ -269,7 +281,7 @@ const isEmpty = (props: ChartProps): boolean => {
   return false;
 };
 
-const Chart = (props: ChartProps): JSX.Element => {
+const ChartRoot = (props: ChartProps): JSX.Element => {
   const [, drawingProps] = splitProps(props, ["selected", "onSelect", "tooltip", "cursor"]);
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
@@ -765,4 +777,21 @@ const Chart = (props: ChartProps): JSX.Element => {
   );
 };
 
+export type ChartKindProps<K extends ChartKind> = Omit<Extract<ChartProps, { kind: K }>, "kind">;
+
+type ChartComponents = {
+  [Name in keyof typeof chartKinds]: (props: ChartKindProps<(typeof chartKinds)[Name]>) => JSX.Element;
+};
+
+// Add a renderer to charts/core/registry.ts; its key defines the namespace member and discriminator.
+// Both entry styles share ChartRoot, preserving the same owner, markup and reactive props.
+const chartComponent =
+  (kind: ChartKind) =>
+  (props: Omit<ChartProps, "kind">): JSX.Element =>
+    // Public namespace types correlate each discriminator with its options.
+    ChartRoot(mergeProps(props, { kind }) as ChartProps);
+const components = Object.fromEntries(
+  Object.entries(chartKinds).map(([name, kind]) => [name, chartComponent(kind)]),
+) as unknown as ChartComponents;
+const Chart = Object.assign(ChartRoot, components);
 export default Chart;
