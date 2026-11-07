@@ -1,5 +1,6 @@
-import { afterAll, afterEach, beforeAll, expect, mock, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import * as publicAi from "@k2b/cloud/ai";
 import { AiQuotaError, aiConversations, createAiProvider } from "@k2b/cloud/ai";
 import * as runtime from "@k2b/cloud/ai/runtime";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
@@ -10,13 +11,18 @@ import {
   AiTurnExecutor,
   aiAssignmentFixture,
   aiModelFixture,
+  aiModelSettings,
+  aiQuotas,
   aiSettingsFixture,
+  beginAiCall,
   compileCapabilities,
+  finishAiCall,
   invokeCompiledCapability,
 } from "../../../scripts/fixtures/code-platform";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 import { aiChatRunAction } from "./ai-chat-run";
 import { aiCapabilities } from "./capabilities";
+import { reserveCodeAiBudget, settleCodeAiBudget } from "./code/ai-budget";
 import { codeSettings } from "./code/settings";
 
 const owner = "4f000000-0000-4000-8000-000000000001";
@@ -115,7 +121,10 @@ suiteFor(
   afterAll(async () => {
     await database?.drop();
   });
-  afterEach(() => mock.restore());
+  afterEach(() => {
+    mock.restore();
+    setSystemTime();
+  });
 
   const setup = async () => {
     runId = `4f000000-0000-4000-8000-${String(++ordinal).padStart(12, "0")}`;
@@ -124,6 +133,8 @@ suiteFor(
     chat = await aiConversations.createConversation({ ownerUserId: owner });
     foreign = await aiConversations.createConversation({ ownerUserId: other });
     await sql`DELETE FROM code.ai_daily_budget`;
+    await sql`DELETE FROM ai.inference_calls WHERE user_id=${owner}::uuid`;
+    await sql`UPDATE ai.cost_config SET enabled=false,rules='[]',background=NULL WHERE singleton`;
     spyOn(codeSettings, "get").mockResolvedValue(1);
     spyOn(coreSettings, "get").mockResolvedValue("UTC");
     const prepareTurn: typeof runtime.prepareAiChatTurn = async (input) => ({
@@ -184,7 +195,7 @@ suiteFor(
     expect(await invoke()).toEqual(results[0]);
     expect(await invoke(chat.shortId, ctx(), "Changed instructions")).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT" } });
     const [debit] = await sql<{ cost: string }[]>`SELECT ai_reference_cost::text AS cost FROM code.runs WHERE id=${runId}::uuid`;
-    expect(Number(debit?.cost)).toBe(1);
+    expect(Number(debit?.cost)).toBe(0);
   });
 
   test("stranger Code and a reader of shared personal Code cannot start an owner's turn", async () => {
@@ -246,16 +257,166 @@ suiteFor(
     expect(prepare).not.toHaveBeenCalled();
   });
 
-  test("owner quota and existing Code daily budgets refuse with stable budget codes", async () => {
+  test("owner interactive quota refuses with its stable budget code before a turn starts", async () => {
     const { prepare } = await setup();
     prepare.mockRejectedValueOnce(new AiQuotaError("quota_exhausted", "The allowance is exhausted"));
     expect(await invoke()).toMatchObject({ ok: false, error: { code: "quota_exhausted" } });
     expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
-    const [day] = await sql<{ day: string }[]>`SELECT (clock_timestamp() AT TIME ZONE 'UTC')::date::text AS day`;
+  });
+
+  test("three cheap turns fit the daily USD budget and leave generate/decide allowance available", async () => {
+    const { prepare, prepareTurn } = await setup();
+    // Freeze the JS quota clock within the database's current day; no fixture assumes a calendar date.
+    setSystemTime(new Date());
+    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 } });
+    const state = aiSettingsFixture({ profiles: [profile] });
+    spyOn(aiModelSettings, "readAiSettingsState").mockResolvedValue(state);
+    const subject = { type: "user" as const, userId: owner };
+    // Same daily USD rule and real ledger as interactive owner turns, with no model network call.
+    const rules = [
+      { scope: "*", hours: 24, anchor: "1970-01-01T00:00:00Z", grants: [{ principal: { type: "user", userId: owner }, limit: 0.07 }] },
+    ];
+    await sql`UPDATE ai.cost_config SET enabled=true,rules=${JSON.stringify(rules)}::jsonb WHERE singleton`;
+    prepare.mockImplementation(async (input) => {
+      await aiQuotas.assertAllowed(subject, profile.id, state);
+      return prepareTurn(input);
+    });
+    const charge = async (turnId: string, input = 10_000, output = 10_000) => {
+      const call = await beginAiCall(
+        profile,
+        { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId },
+        input,
+        output,
+      );
+      await finishAiCall(call.id, { input, output }, "ok");
+    };
+    for (let i = 0; i < 3; i++) {
+      const started = await start(ctx(`cheap-${i}`));
+      const turn = await aiConversations.getTurnByShortId({ conversationId: chat.id, shortId: started.id });
+      await charge(turn!.id);
+      await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${turn!.id}::uuid`;
+    }
+    const [usage] = await sql<{ cost: string; attributed: number }[]>`
+      SELECT sum(cost)::text AS cost,count(*) FILTER(WHERE code_id=${codeId})::int AS attributed
+      FROM ai.inference_calls WHERE user_id=${owner}::uuid`;
+    expect(Number(usage?.cost)).toBe(0.06);
+    expect(usage?.attributed).toBe(3);
+    const [run] = await sql<{ cost: string }[]>`SELECT ai_reference_cost::text AS cost FROM code.runs WHERE id=${runId}::uuid`;
+    expect(Number(run?.cost)).toBe(0);
+    // Exercise the bridge reservation and the compiled generation capability as separate seams.
+    // The attempt allowance stays intact; only the actual 0.06 daily cost reduces its headroom.
+    const claims = { runId, codeId, generation: 0 };
+    const reserved = await sql.begin((db) => reserveCodeAiBudget(claims, 1, 1, db, { code: 1, owner: 1, timeZone: "UTC" }));
+    expect(reserved.ok).toBeTrue();
+    if (!reserved.ok) throw new Error(reserved.code);
+    expect(Number(reserved.reserved)).toBeCloseTo(0.94, 12);
+    spyOn(publicAi, "runAiStructured").mockResolvedValue({
+      structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
+      output: { text: "Available" },
+      model: { id: "fixture" },
+      usage: { input: 5_000, output: 5_000, total: 10_000 },
+    });
+    const generated = await invokeCompiledCapability({
+      compiled,
+      kind: "query",
+      localId: "ai.generate",
+      expectedSchemaHash: compiled.queries.get("ai.generate")!.manifest.schemaHash,
+      input: { task: "budget-regression", prompt: "Write a brief summary", input: {}, output: { type: "text", maxChars: 100 } },
+      context: ctx(),
+    });
+    expect(generated).toMatchObject({ ok: true, data: { data: { output: "Available" } } });
+    await sql.begin((db) => settleCodeAiBudget(claims, 1, "0.01", db));
+    // Spend the remaining owner allowance through an ordinary interactive call.
+    const final = await beginAiCall(profile, { kind: "chat", task: "chat", subject }, 5_000, 5_000);
+    await finishAiCall(final.id, { input: 5_000, output: 5_000 }, "ok");
+    expect(await invoke(chat.shortId, ctx("exhausted"))).toMatchObject({ ok: false, error: { code: "quota_exhausted" } });
+    expect(await sql`SELECT * FROM code.chat_runs WHERE run_id=${runId}::uuid`).toHaveLength(3);
+  });
+
+  test.each(["code", "owner"] as const)("actual turn cost counts toward the existing %s daily Code USD budget", async (scope) => {
+    await setup();
+    const started = await start();
+    const turn = await aiConversations.getTurnByShortId({ conversationId: chat.id, shortId: started.id });
+    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 } });
+    const call = await beginAiCall(
+      profile,
+      { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId: turn!.id },
+      100_000,
+      100_000,
+    );
+    await finishAiCall(call.id, { input: 100_000, output: 100_000 }, "ok");
+    await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${turn!.id}::uuid`;
+    spyOn(codeSettings, "get").mockImplementation(async (key) =>
+      key === (scope === "code" ? "core.code.ai_daily_budget_usd" : "core.code.ai_owner_daily_budget_usd") ? 0.2 : 1,
+    );
+    // Removing the chat history cannot erase the cost attribution captured on the call.
+    await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+    chat = await aiConversations.createConversation({ ownerUserId: owner });
+    expect(await invoke(chat.shortId, ctx("daily-limit"))).toMatchObject({
+      ok: false,
+      error: { code: scope === "code" ? "code_ai_daily_budget_limit" : "code_ai_owner_daily_budget_limit" },
+    });
+    const [run] = await sql<{ cost: string }[]>`SELECT ai_reference_cost::text AS cost FROM code.runs WHERE id=${runId}::uuid`;
+    expect(Number(run?.cost)).toBe(0);
+  });
+
+  test("unknown turn usage blocks another turn without adding a text-AI-only budget refusal", async () => {
+    await setup();
+    const started = await start();
+    const turn = await aiConversations.getTurnByShortId({ conversationId: chat.id, shortId: started.id });
+    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 } });
+    const call = await beginAiCall(
+      profile,
+      { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId: turn!.id },
+      1,
+      1,
+    );
+    await finishAiCall(call.id, undefined, "ok");
+    await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${turn!.id}::uuid`;
+    expect(await invoke(chat.shortId, ctx("unknown"))).toMatchObject({ ok: false, error: { code: "code_ai_owner_daily_budget_limit" } });
+    // Normal owner quotas remain authoritative for text AI; Code does not add an unrelated unknown-usage ban.
+    const claims = { runId, codeId, generation: 0 };
+    expect(await sql.begin((db) => reserveCodeAiBudget(claims, 1, 1, db, { code: 1, owner: 1, timeZone: "UTC" }))).toEqual({
+      ok: true,
+      reserved: "1.000000000000",
+    });
+    await sql.begin((db) => settleCodeAiBudget(claims, 1, "0", db));
+  });
+
+  test("a live owner inference reservation counts until it settles to actual usage", async () => {
+    await setup();
+    setSystemTime(new Date());
+    const started = await start();
+    const turn = await aiConversations.getTurnByShortId({ conversationId: chat.id, shortId: started.id });
+    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 } });
+    spyOn(aiModelSettings, "readAiSettingsState").mockResolvedValue(aiSettingsFixture({ profiles: [profile] }));
+    const rules = [
+      { scope: "*", hours: 24, anchor: "1970-01-01T00:00:00Z", grants: [{ principal: { type: "user", userId: owner }, limit: 1 }] },
+    ];
+    await sql`UPDATE ai.cost_config SET enabled=true,rules=${JSON.stringify(rules)}::jsonb WHERE singleton`;
+    const call = await beginAiCall(
+      profile,
+      { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId: turn!.id },
+      100_000,
+      100_000,
+    );
+    chat = await aiConversations.createConversation({ ownerUserId: owner });
+    spyOn(codeSettings, "get").mockResolvedValue(0.2);
+    try {
+      expect(await invoke(chat.shortId, ctx("reserved"))).toMatchObject({ ok: false, error: { code: "code_ai_owner_daily_budget_limit" } });
+    } finally {
+      await finishAiCall(call.id, { input: 10_000, output: 10_000 }, "ok");
+    }
+    // Settlement retains the actual 0.02, releasing the other 0.18.
+    expect(await invoke(chat.shortId, ctx("settled"))).toMatchObject({ ok: true });
+  });
+
+  test("existing text AI daily spend still refuses a new turn", async () => {
+    await setup();
+    const [period] = await sql<{ day: string }[]>`SELECT (clock_timestamp() AT TIME ZONE 'UTC')::date::text AS day`;
     await sql`INSERT INTO code.ai_daily_budget(day,scope_kind,scope_key,reference_cost)
-      VALUES(${day!.day}::date,'owner',json_build_array('person',${owner}::uuid)::text,1)`;
+      VALUES(${period!.day}::date,'owner',json_build_array('person',${owner}::uuid)::text,1)`;
     expect(await invoke()).toMatchObject({ ok: false, error: { code: "code_ai_owner_daily_budget_limit" } });
-    expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
   });
 
   test.each(["ai_disabled", "ai_no_model", "model_policy_mismatch"] as const)("%s is an explicit pre-turn refusal", async (code) => {

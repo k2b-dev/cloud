@@ -56,7 +56,8 @@ The Action returns a turn ID and its current state promptly. Use
 `core.ai.chat.run.read` for a later snapshot; if it says `waiting_for_approval`,
 tell the owner to decide in that chat and finish the Code run. Never poll until
 approval. The turn uses the owner's current tools, normal approval rules and
-AI allowance, plus the existing Code admission limits. It keeps its Code
+interactive AI allowance by actual usage, plus the existing daily Code USD
+limits. It never spends a full attempt allowance just to start a turn. It keeps its Code
 origin in chat history. For a bounded summary, prefer `core.ai.generate` and
 result delivery. Do not recreate routines or activate Code from the chat.
 

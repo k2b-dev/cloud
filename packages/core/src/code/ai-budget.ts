@@ -78,11 +78,11 @@ export async function reserveCodeAiBudget(
   db: SQL,
   daily: { code: number; owner: number; timeZone: string },
 ) {
-  const [run] = await db<{ cost: string; busy: boolean; owner_key: string }[]>`
+  const [run] = await db<{ cost: string; busy: boolean; owner_key: string; owner_user_id: string | null }[]>`
     SELECT r.ai_reference_cost::text AS cost,r.ai_budget_call IS NOT NULL AS busy,
       CASE c.owner_kind WHEN 'person' THEN json_build_array('person',c.owner_user_id)::text
         WHEN 'app' THEN json_build_array('app',c.owner_app_id)::text
-        ELSE json_build_array('resource',c.owner_type,c.owner_id)::text END AS owner_key
+        ELSE json_build_array('resource',c.owner_type,c.owner_id)::text END AS owner_key,c.owner_user_id
     FROM code.runs r JOIN code.codes c ON c.id=r.code_id
     WHERE r.id=${claims.runId}::uuid AND r.generation=${claims.generation} FOR UPDATE OF r`;
   if (run?.busy) return { ok: false as const, code: "code_ai_budget_reserved" };
@@ -99,7 +99,9 @@ export async function reserveCodeAiBudget(
     await db`INSERT INTO code.ai_daily_budget(day,scope_kind,scope_key) VALUES(${day}::date,${kind},${key}) ON CONFLICT DO NOTHING`;
     const [counter] = await db<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget
       WHERE day=${day}::date AND scope_kind=${kind} AND scope_key=${key} FOR UPDATE`;
-    const available = codeAiBudgetRemainder(limit, counter!.cost);
+    const turns = await codeChatDailyUsage(db, day, daily.timeZone, kind, key, run.owner_user_id);
+    const spent = aiCostDecimal(aiDecimalUnits(counter!.cost) + aiDecimalUnits(turns.cost));
+    const available = codeAiBudgetRemainder(limit, spent);
     if (available === 0n)
       return { ok: false as const, code: kind === "code" ? "code_ai_daily_budget_limit" : "code_ai_owner_daily_budget_limit" };
     if (available < remaining) remaining = available;
@@ -137,25 +139,35 @@ export async function settleCodeAiBudget(
     WHERE id=${claims.runId}::uuid AND generation=${claims.generation} AND ai_budget_call=${ordinal}`;
 }
 
-/** Async chat turns debit one full attempt allowance at admission, never a guessed token cost.
- * This bounds turn starts using the existing attempt/Code/owner daily settings, including
- * unpriced models. Actual inference also charges the owner's ordinary Assistant allowance.
- * The caller holds the Code and run locks and commits this with the turn receipt.
+/** Use the inference ledger's settled cost and live reservations, without booking it twice.
+ * Code attribution is captured on the call, so deleting the chat or Code cannot refill a day.
  */
-export async function chargeCodeChatRunBudget(
+async function codeChatDailyUsage(db: SQL, day: string, timeZone: string, kind: "code" | "owner", key: string, ownerUserId: string | null) {
+  const [usage] = await db<{ cost: string; unknown: number }[]>`
+    SELECT (COALESCE(sum(cost),0)+COALESCE(sum(reserved) FILTER(WHERE finished_at IS NULL AND lease_expires_at>now()),0))::text AS cost,
+      count(*) FILTER(WHERE (COALESCE((pricing->>'inputPerMillion')::numeric,0)>0 OR COALESCE((pricing->>'outputPerMillion')::numeric,0)>0)
+        AND cost IS NULL AND (finished_at IS NOT NULL OR lease_expires_at<=now()))::int AS unknown
+    FROM ai.inference_calls WHERE kind='chat' AND code_id IS NOT NULL
+      AND started_at>=(${day}::date::timestamp AT TIME ZONE ${timeZone})
+      AND started_at<(((${day}::date+1)::timestamp) AT TIME ZONE ${timeZone})
+      AND CASE WHEN ${kind}='code' THEN code_id=${key}
+        ELSE user_id=${ownerUserId}::uuid END`;
+  return usage!;
+}
+
+/** Async turns use normal owner quota admission and actual inference accounting.
+ * Only check the existing Code daily USD limits here; never allocate an attempt's full allowance.
+ * The caller holds the Code/run locks and commits the receipt with the turn.
+ */
+export async function checkCodeChatRunBudget(
   runId: string,
   db: SQL,
-  limits: { attempt: number; code: number; owner: number; timeZone: string },
+  limits: { code: number; owner: number; timeZone: string },
 ): Promise<string | null> {
-  const amount = aiDecimalUnits(limits.attempt.toFixed(12));
-  if (amount === 0n) return "code_ai_budget_limit";
-  const [run] = await db<{ cost: string; busy: boolean; code_id: string; owner_key: string }[]>`
-    SELECT r.ai_reference_cost::text AS cost,r.ai_budget_call IS NOT NULL AS busy,c.id AS code_id,
-      json_build_array('person',c.owner_user_id)::text AS owner_key
-    FROM code.runs r JOIN code.codes c ON c.id=r.code_id WHERE r.id=${runId}::uuid FOR UPDATE OF r`;
+  const [run] = await db<{ code_id: string; owner_key: string; owner_user_id: string }[]>`
+    SELECT c.id AS code_id,json_build_array('person',c.owner_user_id)::text AS owner_key,c.owner_user_id
+    FROM code.runs r JOIN code.codes c ON c.id=r.code_id WHERE r.id=${runId}::uuid`;
   if (!run) return "code_ai_budget_limit";
-  if (run.busy) return "code_ai_budget_reserved";
-  if (codeAiBudgetRemainder(limits.attempt, run.cost) < amount) return "code_ai_budget_limit";
   const [period] = await db<{ day: string }[]>`SELECT (clock_timestamp() AT TIME ZONE ${limits.timeZone})::date::text AS day`;
   const day = period!.day;
   for (const [kind, key, limit] of [
@@ -165,12 +177,10 @@ export async function chargeCodeChatRunBudget(
     await db`INSERT INTO code.ai_daily_budget(day,scope_kind,scope_key) VALUES(${day}::date,${kind},${key}) ON CONFLICT DO NOTHING`;
     const [counter] = await db<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget
       WHERE day=${day}::date AND scope_kind=${kind} AND scope_key=${key} FOR UPDATE`;
-    if (codeAiBudgetRemainder(limit, counter!.cost) < amount)
+    const turns = await codeChatDailyUsage(db, day, limits.timeZone, kind, key, run.owner_user_id);
+    const spent = aiCostDecimal(aiDecimalUnits(counter!.cost) + aiDecimalUnits(turns.cost));
+    if (turns.unknown || codeAiBudgetRemainder(limit, spent) === 0n)
       return kind === "owner" ? "code_ai_owner_daily_budget_limit" : "code_ai_daily_budget_limit";
   }
-  const debit = aiCostDecimal(amount);
-  await db`UPDATE code.ai_daily_budget SET reference_cost=reference_cost+${debit}::numeric
-    WHERE day=${day}::date AND ((scope_kind='owner' AND scope_key=${run.owner_key}) OR (scope_kind='code' AND scope_key=${run.code_id}))`;
-  await db`UPDATE code.runs SET ai_reference_cost=ai_reference_cost+${debit}::numeric WHERE id=${runId}::uuid`;
   return null;
 }

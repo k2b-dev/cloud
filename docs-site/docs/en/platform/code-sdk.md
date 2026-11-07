@@ -333,7 +333,9 @@ Only the personal Code owner may target their own active chat. Sharing Code
 with a reader grants no chat authority. Resource- and app-owned Code cannot
 start these turns. Each turn uses the owner's current model grants, tools and
 approval rules, without passing the Code mandate to its tools. Billable
-inference charges the owner's normal Assistant allowance; normal model step
+inference charges actual usage to the owner's normal interactive Assistant allowance,
+with no flat Code attempt debit. Existing daily Code USD limits include that
+actual cost; normal model step
 and turn time limits still apply. The chat and run show “Started by Code
 {name}” (or “Gestartet von Code {name}”). The invoking Code keeps its ordinary
 capability call log.

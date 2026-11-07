@@ -1558,25 +1558,37 @@ instructions, context or destination under that key return
 messages returns `chat_busy`. A Project change during preparation returns
 `chat_changed`; reread the chat before trying again.
 
-Each admitted turn debits one full `core.code.ai_budget_usd` allowance from the
-Code attempt and the existing `core.code.ai_daily_budget_usd` and
-`core.code.ai_owner_daily_budget_usd` counters. This is a conservative admission
-allocation, not a measured inference charge or a new setting. For example,
-an attempt allowance of 1 and an owner daily allowance of 3 admit at most three
-turns per installation calendar day, across all their Code; other Code AI
-usage reduces the available allowance. Zero disables admission. Partial
-allowances do not admit another turn. Existing budget codes are
-`code_ai_budget_limit`, `code_ai_budget_reserved`, `code_ai_daily_budget_limit`
-and `code_ai_owner_daily_budget_limit`. A retry with a receipt consumes no
-second allocation. Actual model inference independently charges the owner's
-normal Assistant allowance and can refuse with `quota_exhausted`.
-The three Code allowances default to 1 each, so one admitted turn consumes
-the owner's entire Code AI allowance for that day, shared with their other
-Code AI calls. Adjust the existing attempt and daily settings for the intended
-schedule frequency before activation. Model admission can also return
+Turn admission uses the owner's normal interactive Assistant budget. Each
+provider call reserves only affordable input/output and settles to its actual
+reported usage, exactly as an interactive turn does. An exhausted owner budget
+returns `quota_exhausted`; unknown priced usage returns `quota_usage_unknown`.
+The existing Assistant budget rules determine the amount and reset window
+(including a daily rule when configured). As with interactive chat, disabled
+Assistant budgets or unpriced models have no owner cost ceiling. There is no new turn-count setting
+or flat charge. Normal per-turn loop and step limits bound each invocation.
+
+The existing `core.code.ai_daily_budget_usd` and
+`core.code.ai_owner_daily_budget_usd` limits also include the actual costs of
+Code-started chat calls, alongside text AI usage, per installation calendar day
+in `app.timezone`. Live inference reservations count until they settle; unknown
+priced chat costs block new turn admission. They do not create an extra unknown-usage
+block for text AI calls; those retain the normal owner quota rules. Unknown
+Code chat costs block new turns until the next installation calendar day; an
+Assistant allowance reset does not reset the Code daily check. These limits
+default to 1 each and return
+`code_ai_daily_budget_limit` or `code_ai_owner_daily_budget_limit` when exhausted.
+For example, three turns costing 0.02 each use 0.06 of the daily allowance,
+leaving 0.94 for further turns or `core.ai.generate` / `core.ai.decide`.
+The Code daily checks refuse new invocations once that allowance is spent;
+an already admitted turn can exceed the remaining Code allowance. Its owner
+quota still applies at each provider call. Compaction retains normal background
+accounting and is excluded from these chat costs.
+Turns never allocate the full `core.code.ai_budget_usd` attempt allowance:
+that setting continues to bound the separate text AI calls. A receipt retry
+starts no inference and adds no cost. Model admission can also return
 `ai_disabled`, `ai_no_model` or `model_policy_mismatch` before starting a turn.
 
-Turn creation, its receipt and the admission debit commit together. The
+Turn creation and its receipt commit together. The
 ordinary AI queue and sweep recover work after a failed queue wake-up. Chat
 history and the turn record retain the Code name, Code run and invocation
 request ID. Code call logging remains the standard bridge log. Read a later

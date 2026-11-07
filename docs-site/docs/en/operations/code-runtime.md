@@ -57,15 +57,17 @@ Existing routines stay unchanged until that cut.
 
 The replacement starts a normal turn in the owner's chat. Required approvals
 wait there and the Code run ends promptly; this differs from routines that
-refuse approval-needed tools. Owners retain their ordinary AI allowance. Each
-new turn also debits the existing Code per-attempt reference allowance against
-the Code and owner daily admission counters. Review those settings before
-activation; see the [capability contract](/en/docs/platform/capabilities#start-personal-code-chat-turns)
-for states and budget codes. Bounded text tasks can keep `core.ai.generate`
-instead of starting a tool-using turn.
-The attempt, Code daily and owner daily reference allowances default to 1 each:
-one turn consumes the owner's daily Code AI allowance, including the allowance
-shared with their other Code. Review those limits for the schedule frequency.
+refuse approval-needed tools. Each provider call uses the owner's normal
+interactive AI budget and settles to actual usage. The existing Assistant USD
+budget rules, when enabled, supply the bound and reset window; no new count
+setting is added. Disabled Assistant budgets retain normal unlimited owner usage.
+The existing Code and Code-owner daily USD limits also count these actual
+costs. A turn never allocates the full Code attempt allowance, so several cheap
+turns can run without consuming the full allowance for `core.ai.generate` and
+`core.ai.decide`. The normal loop and step limits still bound each turn. See the
+[capability contract](/en/docs/platform/capabilities#start-personal-code-chat-turns)
+for states, budget codes and a cost example. Bounded text tasks can keep
+`core.ai.generate` instead of starting a tool-using turn.
 
 Core adds `code.chat_runs` without altering routine definitions. Receipts
 follow Code run retention; ordinary chat messages and turns retain their own
