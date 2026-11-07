@@ -17,13 +17,15 @@ import {
   line,
   niceLogTicks,
   niceStep,
+  type ParetoOptions,
   pie,
   renderBarChartSvg,
-  renderTreemapSvg, type TreemapOptions,
-  renderParetoSvg, type ParetoOptions,
+  renderParetoSvg,
+  renderTreemapSvg,
   scatter,
   sparkline,
   stat,
+  type TreemapOptions,
 } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTime, chartKinds } from "./chart-schema";
@@ -31,9 +33,15 @@ import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTim
 export * from "./chart-schema";
 
 type RenderOptions = {
-  [K in ChartInput["kind"]]: { kind: K } & (K extends "treemap" ? TreemapOptions : K extends "pareto" ? ParetoOptions : K extends "bar"
-    ? BarChartOptions
-    : K extends keyof typeof charts ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect"> : never);
+  [K in ChartInput["kind"]]: { kind: K } & (K extends "treemap"
+    ? TreemapOptions
+    : K extends "pareto"
+      ? ParetoOptions
+      : K extends "bar"
+        ? BarChartOptions
+        : K extends keyof typeof charts
+          ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+          : never);
 }[ChartInput["kind"]];
 
 /**
@@ -49,7 +57,10 @@ const labels = /* @__PURE__ */ i18n.define({
     en: {
       category: "Category",
       series: "Series",
-      group:"Group",previous:"Previous",change:"Change",cumulative:"Cumulative",
+      group: "Group",
+      previous: "Previous",
+      change: "Change",
+      cumulative: "Cumulative",
       value: "Value",
       share: "Share",
       from: "From",
@@ -67,7 +78,10 @@ const labels = /* @__PURE__ */ i18n.define({
     de: {
       category: "Kategorie",
       series: "Datenreihe",
-      group:"Bereich",previous:"Vorher",change:"Änderung",cumulative:"Kumuliert",
+      group: "Bereich",
+      previous: "Vorher",
+      change: "Änderung",
+      cumulative: "Kumuliert",
       value: "Wert",
       share: "Anteil",
       from: "Von",
@@ -355,8 +369,25 @@ export function chartRenderOptions(
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
   switch (input.kind) {
-    case "treemap": return { kind: "treemap", groups: input.groups, data: input.data, format: format.value, locale: input.locale ?? locale, displayWidth: options.width };
-    case "pareto": return { kind: "pareto", labels: input.labels, data: input.data, format: format.value, locale: input.locale ?? locale, displayWidth: options.width };
+    case "treemap":
+      return {
+        kind: "treemap",
+        legend: input.legend,
+        groups: input.groups,
+        data: input.data,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
+    case "pareto":
+      return {
+        kind: "pareto",
+        labels: input.labels,
+        data: input.data,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
     case "bar":
     case "boxplot": {
       const yAxis = referencedAxis(input, "y");
@@ -512,8 +543,10 @@ const decode = (value: string) =>
 export const drawChart = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
-    case "treemap": return renderTreemapSvg({ ...options, ...common });
-    case "pareto": return renderParetoSvg({ ...options, ...common });
+    case "treemap":
+      return renderTreemapSvg({ ...options, ...common });
+    case "pareto":
+      return renderParetoSvg({ ...options, ...common });
     case "bar":
       return renderBarChartSvg({ ...options, ...common, height: barChartLayout(options).height });
     case "line":
@@ -626,8 +659,18 @@ export function chartRows(
         cell(field.key, field.key.toUpperCase(), value, value);
         continue;
       }
-      if (input.kind === "treemap" && field.key === "group" && typeof value === "string") {cell("group",t.group,value,value);continue;}
-      if (input.kind === "pareto" && (field.key === "previous" || field.key === "change" || field.key === "cumulative") && typeof value === "number") {cell(field.key,field.key === "previous" ? input.labels[1] : t[field.key],value,field.formatted ?? valueFormat(value));continue;}
+      if (input.kind === "treemap" && field.key === "group" && typeof value === "string") {
+        cell("group", t.group, value, value);
+        continue;
+      }
+      if (
+        input.kind === "pareto" &&
+        (field.key === "previous" || field.key === "change" || field.key === "cumulative") &&
+        typeof value === "number"
+      ) {
+        cell(field.key, field.key === "previous" ? input.labels[1] : t[field.key], value, field.formatted ?? valueFormat(value));
+        continue;
+      }
       if (typeof value !== "number" || field.key === "total") continue;
       if (field.key === "x") {
         const header = (input.kind === "line" || input.kind === "scatter" ? input.xAxis?.label : undefined) ?? "X";
@@ -646,7 +689,9 @@ export function chartRows(
       } else if (field.key === "value")
         cell(
           "value",
-          input.tooltip?.label ?? (input.kind === "pareto" ? input.labels[0] : input.kind === "bar" ? input.yAxis?.label : undefined) ?? t.value,
+          input.tooltip?.label ??
+            (input.kind === "pareto" ? input.labels[0] : input.kind === "bar" ? input.yAxis?.label : undefined) ??
+            t.value,
           value,
           `${valueFormat(value)}${unit}`,
         );
@@ -681,6 +726,8 @@ export function chartTable(input: ChartInput, locale: string): ChartTable {
 /** Input values count against the budget, including observations summarized into boxes or bins. */
 export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
+    case "pareto":
+      return input.data.length * 3;
     case "line":
     case "scatter":
       return input.series.reduce((sum, series) => sum + series.data.length, 0);

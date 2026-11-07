@@ -1,6 +1,7 @@
 import { highlight, text } from "@k2b/stdlib";
 import { prepareChartSnapshot } from "@k2b/ui";
 import { barChartLayout } from "@k2b/ui/charts";
+import { paretoLayout } from "@k2b/ui/charts/core";
 import { Lexer, type Tokens } from "marked";
 import type { z } from "zod";
 import {
@@ -458,7 +459,7 @@ export const chartBlockFrame = (body: string[], options: Pick<MarkdownChartOptio
 export const notebookChartHeight = (input: ChartInput, locale: string): number | undefined => {
   const options = chartRenderOptions(input, locale, { legend: "outside" });
   if (options.kind === "treemap") return 280;
-  if (options.kind === "pareto") return Math.max(280, options.data.length*34+44);
+  if (options.kind === "pareto") return paretoLayout(options).height;
   if (options.kind !== "bar") return undefined;
   const layout = barChartLayout(options);
   return layout.layout === "rows" ? layout.height : undefined;

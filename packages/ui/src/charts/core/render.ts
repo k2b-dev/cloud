@@ -54,7 +54,12 @@ export const renderChartSvg = (
   mapViewport?: MapViewport,
   timelineViewport?: StateTimelineDomain,
 ): string => {
-  if (props.kind === "treemap" || props.kind === "pareto") return responsiveChartSvg(props.kind === "treemap" ? chartRenderers.treemap({ ...props, width, height, inspect: true }) : chartRenderers.pareto({ ...props, width, height, inspect: true }));
+  if (props.kind === "treemap" || props.kind === "pareto")
+    return responsiveChartSvg(
+      props.kind === "treemap"
+        ? chartRenderers.treemap({ ...props, width, height, inspect: true })
+        : chartRenderers.pareto({ ...props, width, height, inspect: true }),
+    );
   const {
     kind,
     zoomFocus: _zoomFocus,

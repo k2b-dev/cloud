@@ -10,6 +10,7 @@ export {
 } from "../../content/chart-state-timeline";
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export * from "./inspection";
+export * from "./pareto";
 export * from "./render";
 export * from "./snapshot";
 export {
@@ -61,6 +62,8 @@ export {
   stepPathD,
   svgRoot,
 } from "./svg";
+
+export * from "./treemap";
 export {
   type ChartDateFormat,
   type ChartDatum,
@@ -70,6 +73,3 @@ export {
   type ChartNumberFormat,
   chartDatumRoles,
 } from "./types";
-
-export * from "./treemap";
-export * from "./pareto";

@@ -1032,3 +1032,27 @@ every number readable without a pointer. Countries too small for a shape appear
 as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
+
+
+## Treemap and Pareto
+
+`Chart.Treemap` accepts `groups: string[]` and `data: {label,group,value}[]`.
+Every group exists in `groups`; values are finite and nonnegative. Squarified
+cells preserve value proportions. Color identifies the group and the wrapping
+legend names it (`legend={false}` hides it). Labels and values print only when
+both fit; the tooltip and table keep every item, including zero-valued items.
+
+`Chart.Pareto` accepts `labels: [current, previous]` and
+`data: {label,value,prev}[]`. It ranks current values descending and places a
+category named `Rest` last. Solid bars show current values; hatched bars show
+the previous period. The cumulative line uses the percentage axis below;
+the absolute value axis is above. The dashed 80% line marks concentration.
+Both periods must be nonnegative. A zero previous value or zero total shows
+an undefined percentage as an en dash.
+
+Both kinds support portable number `format`, explicit BCP 47 `locale`, and
+measured `displayWidth` for app frames. Locale overrides the inherited provider.
+Arrows inspect items, Enter selects and Escape dismisses; tap uses the same
+inspector. Hover outlines one treemap cell or adds a quiet Pareto row band.
+Keep the host's fixed content height across loading, empty, error/retry and
+stale-subtitle states. The live chart catalog demonstrates both kinds.

@@ -113,7 +113,7 @@ export type ChartProps = {
   [K in ChartKind]: Extract<ChartDrawingOptions, { kind: K }> & {
     class?: string;
     style?: JSX.CSSProperties | string;
-    labels?: K extends "pareto" ? [string,string] : ChartLabels;
+    labels?: K extends "pareto" ? [string, string] : ChartLabels;
     /**
      * Navigation for maps and state timelines: pan, zoom and reset controls.
      * Arrows pan; Alt+arrows inspect. Every chart shows tooltips and keyboard
@@ -205,7 +205,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   const interactiveMap = () => props.kind === "map" && props.interactive === true;
   const interactiveTimeline = () => props.kind === "stateTimeline" && props.interactive === true;
   const draggable = () => interactiveMap() || interactiveTimeline();
-  const labels = (): ChartLabels => props.kind === "pareto" ? {} : props.labels ?? {};
+  const labels = (): ChartLabels => (props.kind === "pareto" ? {} : (props.labels ?? {}));
   const accessibleName = () => {
     const override =
       props.kind === "map"
@@ -437,7 +437,10 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     select: (selection) => props.onSelect?.(selection),
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
-      const fields = props.kind === "treemap" || props.kind === "pareto" ? resolveChartMessages(props.locale ?? locale()).chartFields : chartMessages().chartFields;
+      const fields =
+        props.kind === "treemap" || props.kind === "pareto"
+          ? resolveChartMessages(props.locale ?? locale()).chartFields
+          : chartMessages().chartFields;
       const format = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 });
       return {
         title:
@@ -447,9 +450,11 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
             : undefined),
         rows: selection.datum.values.map((field) => ({
           label:
-            props.kind === "pareto" && (field.key === "value" || field.key === "previous") ? props.labels[field.key === "value" ? 0 : 1] : selection.kind === "line" && field.key === "y"
-              ? (selection.datum.label ?? labels().series ?? chartMessages().series)
-              : fields({ key: field.key }),
+            props.kind === "pareto" && (field.key === "value" || field.key === "previous")
+              ? props.labels[field.key === "value" ? 0 : 1]
+              : selection.kind === "line" && field.key === "y"
+                ? (selection.datum.label ?? labels().series ?? chartMessages().series)
+                : fields({ key: field.key }),
           value:
             field.formatted ??
             (field.key === "upperInclusive"

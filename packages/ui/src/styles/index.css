@@ -17307,6 +17307,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-.k2b-ui .k2b-chart[data-chart-kind="treemap"] :is([data-inspected],[data-selected]) > rect { stroke-width:1.5px; }
-.k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > :is(rect,path) { stroke: none !important; }
+.k2b-ui .k2b-chart[data-chart-kind="treemap"] [data-inspected]:not([data-chart-role="value"]) > rect,
+.k2b-ui .k2b-chart[data-chart-kind="treemap"] [data-selected] > rect { stroke-width:1.5px; }
+.k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > :is(.k2b-chart-pareto-current,.k2b-chart-category-band) { stroke: none !important; }
 .k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-category-band { fill:color-mix(in srgb,var(--stdlib-chart-c1,#3b82f6) 7%,transparent); }
+
+.k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-previous { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: .8px; }
+.k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-hatch { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: 1px; }

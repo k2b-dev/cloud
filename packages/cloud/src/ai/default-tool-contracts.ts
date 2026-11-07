@@ -34,6 +34,7 @@ import {
   type ChartFormat as CloudAiFormat,
   type ChartNumberFormat as CloudAiNumberFormat,
   chartKinds,
+  chartLocaleSchema,
   chartParts,
   chartSchema,
   chartKindSchema as cloudAiChartKindSchema,
@@ -123,7 +124,7 @@ const flatChartSchema = () => {
     tooltip: ChartTooltip.optional(),
     groups: z.array(ChartLabel).max(CLOUD_AI_CHART_MAX_SERIES).optional().describe("treemap: group names."),
     labels: z.array(ChartLabel).length(2).optional().describe("pareto: current and previous period labels."),
-    locale: z.string().optional(),
+    locale: chartLocaleSchema().optional(),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
     data: z
       .union([
@@ -204,6 +205,10 @@ const chartInputSchema = () => {
         return;
       }
       if (value.charts !== undefined) {
+        value.charts.forEach((chart, index) => {
+          if (chart.locale !== undefined && chart.kind !== "treemap" && chart.kind !== "pareto")
+            context.addIssue({ code: "custom", message: "locale belongs to treemap and Pareto charts.", path: ["charts", index] });
+        });
         const parsed = groupSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });
@@ -216,6 +221,8 @@ const chartInputSchema = () => {
       } else {
         if (value.linkX !== undefined || value.layout !== undefined)
           context.addIssue({ code: "custom", message: "linkX and layout belong to groups." });
+        if (value.locale !== undefined && value.kind !== "treemap" && value.kind !== "pareto")
+          context.addIssue({ code: "custom", message: "locale belongs to treemap and Pareto charts." });
         const parsed = ChartSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });

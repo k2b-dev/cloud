@@ -4,7 +4,6 @@ import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
 import { type ChartDatum, charts } from "@k2b/ui/charts/core";
 import {
   type ChartInput,
-  drawChart,
   chartKinds,
   chartMarkKey,
   chartRenderOptions,
@@ -12,6 +11,7 @@ import {
   chartTable,
   chartTooltip,
   checkChartLabels,
+  drawChart,
 } from "./charts";
 
 // Preserve the renderer fixtures' bounded data shape; AI policy assertions remain in Cloud.
