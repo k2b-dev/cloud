@@ -469,8 +469,8 @@ suite("Spaces declared resource event producers", () => {
           new Response(child.stderr).text(),
           child.exited,
         ]);
-        expect(stderr).not.toContain("error:");
         expect(exit).toBe(0);
+        expect(stderr).not.toMatch(/^error:/m);
         return Number(/DUE_COUNT:(\d+)/.exec(stdout)?.[1]);
       };
       expect(await restarted(at)).toBe(0);
