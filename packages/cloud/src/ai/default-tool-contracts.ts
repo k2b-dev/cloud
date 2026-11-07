@@ -144,6 +144,13 @@ const flatChartSchema = () => {
       .describe(
         "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value. histogram, sparkline: numbers.",
       ),
+    start: z.object({ label: ChartLabel, value: z.number() }).optional().describe("waterfall: opening balance."),
+    steps: z
+      .array(z.object({ label: ChartLabel, value: z.number() }))
+      .max(CLOUD_AI_VIEW_MAX_MARKS - 2)
+      .optional()
+      .describe("waterfall: positive inflows and negative outflows."),
+    end: z.strictObject({ label: ChartLabel }).optional().describe("waterfall: closing label; balance is calculated."),
     series: z
       .array(ChartSeries(ChartPoints.min(1)).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }))
       .min(1)
@@ -169,7 +176,7 @@ const flatChartSchema = () => {
     unit: ChartUnit.optional().describe("gauge, barGauge, stat: unit after value."),
     format: cloudAiNumberFormatSchema()
       .optional()
-      .describe("gauge, barGauge, stat, heatmap, pie, donut: number format; percent values are fractions."),
+      .describe("waterfall, gauge, barGauge, stat, heatmap, pie, donut: number format; percent values are fractions."),
     references: ChartReferences.optional().describe(
       "bar, line, scatter, histogram, boxplot: reference lines; x only for line, scatter, histogram.",
     ),

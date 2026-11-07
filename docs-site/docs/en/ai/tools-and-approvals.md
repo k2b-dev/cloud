@@ -199,6 +199,7 @@ of points.
 | --- | --- |
 | `bar` | `data: [{label, value}]`; `xAxis: {label}` (category title), `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
 | `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `area`, `smooth` and series `style`. |
+| `waterfall` | `start: {label, value}`, `steps: [{label, value}]`, `end: {label}`. Positive steps are inflows, negative steps outflows; the closing balance is calculated. `format`, `showValues`. |
 | `pie`, `donut` | `data: [{label, value}]`; `legend`, `showLabels`, `format` |
 | `histogram` | `data: number[]`; `bins` (count or ascending edges), `references` |
 | `gauge` | `value`; `min`, `max`, `label`, `unit`, `format`, `thresholds` |
