@@ -42,8 +42,32 @@ export type ImageEditorSaveActions = {
   dirty: boolean;
   busy: boolean;
 };
+/** One image in the strip beside the view bar: the opened photos in Tools, the folder or selection in Files. */
+export type ImageEditorItem = {
+  id: string;
+  name: string;
+  /** Small image URL; the strip shows a neutral tile until it loads. */
+  thumbnail?: string;
+  /** Marks an image with unsaved edits. */
+  dirty?: boolean;
+};
+/** An extra info chip after name, size and format, such as a file version or "Read only". */
+export type ImageEditorFact = { label: string; icon?: string; tooltip?: string };
 export type ImageEditorProps = {
   source: File | Blob | string;
+  /** Name in the first chip. Defaults to the File's name. */
+  title?: string;
+  facts?: readonly ImageEditorFact[];
+  /** A quiet line above the save actions that holds for the whole session, such as why saving is locked. */
+  notice?: string;
+  /** Shown while the image has redactions, for example when older unredacted versions remain. */
+  redactionNotice?: string;
+  /** With more than one item the strip appears; the caller swaps `source` on selection. */
+  items?: readonly ImageEditorItem[];
+  currentItem?: string;
+  onSelectItem?: (id: string) => void;
+  /** Adds a "+" at the end of the strip. */
+  onAddItems?: () => void;
   /** Required with previews, so opening the editor does not read the full source. */
   sourceSize?: ImageEditorSourceSize;
   previews?: readonly ImageEditorPreview[];
@@ -60,6 +84,10 @@ export type ImageEditorProps = {
 
 export type ImageEditorPoint = { x: number; y: number };
 export type ImageEditorAnnotation = {
+  /** Stable within an editing session; names and selection follow it while layers move. */
+  id?: string;
+  /** Hidden marks are neither drawn nor exported. Redactions are never hidden. */
+  hidden?: boolean;
   tool: ImageEditorAnnotationTool | "redact";
   points: readonly ImageEditorPoint[];
   color: string;
@@ -75,6 +103,8 @@ export type ImageEditorAdjustments = {
   vignette: number;
   grain: number;
 };
+/** Slider values set by Auto; a slider counts as "Auto" while its value still equals this. */
+export type ImageEditorAutoAdjustments = Partial<Pick<ImageEditorAdjustments, "brightness" | "contrast" | "saturation" | "warmth">>;
 export type ImageEditorLook = "original" | "vivid" | "soft" | "mono" | "warm" | "cool" | "mono-hard" | "faded" | "vintage";
 export type ImageEditorState = {
   cropAspect: ImageEditorAspect;
@@ -88,4 +118,5 @@ export type ImageEditorState = {
   look: ImageEditorLook;
   lookStrength: number;
   annotations: readonly ImageEditorAnnotation[];
+  auto?: ImageEditorAutoAdjustments;
 };

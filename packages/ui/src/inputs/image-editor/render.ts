@@ -172,8 +172,9 @@ export function renderImageEditor(
       target.fillRect(0, 0, width, height);
     });
   ctx.setTransform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
-  for (const annotation of state.annotations) if (annotation.tool !== "redact") drawAnnotation(ctx, annotation, source);
-  // Opaque redactions always cover every adjustment and annotation.
+  // Hidden marks are left out of the preview and the export alike.
+  for (const annotation of state.annotations) if (annotation.tool !== "redact" && !annotation.hidden) drawAnnotation(ctx, annotation, source);
+  // Opaque redactions always cover every adjustment and annotation, and are never hidden.
   for (const annotation of state.annotations) if (annotation.tool === "redact") drawAnnotation(ctx, annotation, source);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
