@@ -1,7 +1,7 @@
 import { lazySync, sql } from "@k2b/cloud";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, stopRuntimeResources } from "@k2b/cloud/services";
 import { toPgIntArray, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
-import { workflowEffectKey } from "@k2b/cloud/workflows/store";
+import { workflowEffectKey } from "@k2b/cloud/shared";
 import type { JobContext, Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
 import { z } from "zod";

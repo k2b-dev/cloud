@@ -159,7 +159,9 @@ Studio opens the standalone runner for users with **Use** access. App managers
 enter the management view and select **Open fullscreen** in the header or action menu. The
 runner offers **Manage** and a personal action menu beside **Restart** and
 **Stop** in the bottom toolbar. The app fills the page and scrolls inside its
-own frame. Restarting shows progress in the button without adding a status row
+own frame. The background at its scroll edges follows Cloud's light or dark
+appearance, including changes while the app runs. Restarting shows progress in
+the button without adding a status row
 or moving the app. This distinction uses app permissions, not the global Cloud
 administrator role.
 

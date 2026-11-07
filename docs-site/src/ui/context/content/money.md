@@ -31,7 +31,7 @@ import { BalanceSummary, FlowAmount, flowDirection, type FlowAmountProps } from 
 | `locale` | `string` | inherited | Overrides the inherited render locale. |
 | `decimals` | `number` | the currency's digits | Fixed fraction digits. |
 | `labels` | `{ in?: string; out?: string }` | "incoming", "outgoing" | The words screen readers hear, such as "Income" and "Expense". |
-| `size` | `"md" \| "lg"` | `"md"` | `lg` is the key figure size (24 px, bold). |
+| `size` | `"md" \| "lg"` | `"md"` | `lg` is the key figure size (24 px, bold). In a `StatGrid` tile it shrinks with the tile (down to 12 px on a 320 px phone) so the amount stays whole; give tile amounts `decimals={0}`. |
 
 `flowDirection(value)` returns `"in"`, `"out"`, or `"none"` with the same
 rule, for hosts that tint a row or pick a chart color. `-0` moves nothing.
