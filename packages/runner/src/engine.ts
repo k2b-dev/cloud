@@ -12,7 +12,14 @@ export type SandboxCall = (operation: string, input: RunnerJsonValue) => Promise
 /** Execution seam for C14 attacks and C17 simulations. load does not execute user code. */
 export type RunnerExecutionResult = RunnerOutcome | { outcome: RunnerOutcome; response: CodeRouteResponse };
 export interface RunnerEngine {
-  load(lease: RunnerLease, source: string, config: RunnerConfig, call: SandboxCall, signal: AbortSignal): Promise<void>;
+  load(
+    lease: RunnerLease,
+    source: string,
+    config: RunnerConfig,
+    call: SandboxCall,
+    signal: AbortSignal,
+    modules?: Record<string, string>,
+  ): Promise<void>;
   run(lease: RunnerLease, signal: AbortSignal): Promise<RunnerExecutionResult>;
   kill(runId: string): Promise<void>;
   close(): Promise<void>;
@@ -24,6 +31,7 @@ type Loaded = {
   call: SandboxCall;
   signal: AbortSignal;
   calls: number;
+  modules?: Record<string, string>;
   group?: Group;
 };
 type Group = {
@@ -46,10 +54,17 @@ export class WorkerdEngine implements RunnerEngine {
   #loaded = new Map<string, Loaded>();
   #groups = new Map<string, Promise<Group>>();
   constructor(readonly executable?: string) {}
-  async load(lease: RunnerLease, source: string, config: RunnerConfig, call: SandboxCall, signal: AbortSignal) {
+  async load(
+    lease: RunnerLease,
+    source: string,
+    config: RunnerConfig,
+    call: SandboxCall,
+    signal: AbortSignal,
+    modules?: Record<string, string>,
+  ) {
     signal.throwIfAborted();
     if (this.#loaded.has(lease.runId)) throw new Error("runner_already_loaded");
-    this.#loaded.set(lease.runId, { lease, source, config, call, signal, calls: 0 });
+    this.#loaded.set(lease.runId, { lease, source, config, call, signal, calls: 0, modules });
   }
   async #spawn(config: RunnerConfig, retire: () => void): Promise<Group> {
     if (process.platform !== "linux" || process.getuid?.() !== 0) throw new Error("runner_isolation_requires_root");
@@ -284,7 +299,13 @@ const config :Workerd.Config = (
       const response = await fetch("http://workerd/run", {
         unix: group.socket,
         method: "POST",
-        body: JSON.stringify({ runId: lease.runId, source: loaded.source, entrypoint: lease.entrypoint, input: lease.input }),
+        body: JSON.stringify({
+          runId: lease.runId,
+          source: loaded.source,
+          entrypoint: lease.entrypoint,
+          input: lease.input,
+          modules: loaded.modules,
+        }),
         signal,
         timeout: false,
       });

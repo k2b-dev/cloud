@@ -68,6 +68,7 @@ export { createPwaPhoneRoutes } from "./pwa-phone";
  * the typed shape for the client.
  */
 export type CoreApiOptions = {
+  codeChatRunner?: Hono<import("../server").AuthContext>;
   /** Local Manage adapter for Core-owned targets without a resource reader. Undefined uses the target reader. */
   principalSearchTarget?: AccountsEntitiesRouteDependencies["managesTarget"];
   terminalLogins?: import("../services/app-approval").AppTerminalLogins;
@@ -119,7 +120,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/ai/approval-preferences", approvalPreferenceRoutes)
     .route("/ai/projects", aiProjectsRoutes)
     .route("/ai/skills", aiSkillsRoutes)
-    .route("/_internal/ai/code", createCodeCapabilityRoutes())
+    .route("/_internal/ai/code", createCodeCapabilityRoutes({ runner: options.codeChatRunner }))
     .route("/ai", aiRoutes)
     .route("/", helpRoutes)
     .route("/", capabilityRoutes)

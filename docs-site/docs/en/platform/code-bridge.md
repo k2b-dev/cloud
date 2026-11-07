@@ -5,7 +5,7 @@ section: Platform services
 order: 966
 description: Authenticate runner requests and check each actual Code call against the current lease, policy, approval and mandate.
 tags: [code, runner, capabilities, mandates]
-updated: 2026-11-03
+updated: 2026-11-07
 ---
 
 # Code bridge
@@ -14,6 +14,32 @@ Code in a runner reaches Cloud through `cloud.call(operation, input)`. Core
 checks every actual call before forwarding it to a capability provider. A
 checked manifest supplies review evidence; it grants no execution authority.
 The provider still resolves the subject's current resource access.
+
+## One-off chat authority
+
+The platform-owned `@k2b/cloud/code/chat-run` export defines the private
+chat-job payload, reply schemas and tagged file/byte codec. Core mounts its
+chat-job adapter through `CoreApiOptions.codeChatRunner`; applications do not
+mount this authority endpoint.
+
+One-off `code_run` uses a `chat` job rather than a version run token. Its
+generation and opaque lease key fence the private runner job-input, heartbeat,
+job-call and completion routes. Each transmission also requires the runner's
+fresh app proof. Check/test/simulate job proofs cannot use the chat mailbox.
+
+Core binds each chat job to its person, conversation and originating turn.
+The Assistant uses that turn's existing verified continuation to submit,
+read, resolve or cancel the job. Core rechecks current turn authority before
+admitting each runner call. The sandbox receives neither that continuation
+nor the job proof. Only the existing Assistant services execute capabilities
+and HTTP, with the turn's current approvals or background mandate.
+
+Bridge requests are claimed once before the Assistant handles them. A lost
+response or host never replays an uncertain effect. Chat jobs expire without
+automatic retry. Script errors, logs and return values travel back to the
+originating chat; the version-run bridge below keeps its existing payload-free
+error contract. See [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs)
+for shared capacity, limits and the unavailable Studio database grants.
 
 ## Authenticate a call
 

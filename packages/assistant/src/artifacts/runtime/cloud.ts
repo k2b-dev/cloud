@@ -15,9 +15,15 @@ type LazyModules = {
   finance: typeof import("./finance-chunk");
   "pdf-read": typeof import("./pdf-reader");
 };
-export function createCloud(rpc: Rpc, context: RuntimeContext, script = false) {
+export function createCloud(
+  rpc: Rpc,
+  context: RuntimeContext,
+  script = false,
+  moduleLoader?: <K extends keyof LazyModules>(name: K) => Promise<LazyModules[K]>,
+) {
   const chunks = new Map<keyof LazyModules, Promise<unknown>>();
   async function load<K extends keyof LazyModules>(name: K): Promise<LazyModules[K]> {
+    if (moduleLoader) return moduleLoader(name);
     let pending = chunks.get(name);
     if (!pending) {
       pending = rpc("runtime.chunk", [name])

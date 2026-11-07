@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-23
+updated: 2026-11-07
 ---
 
 # Chat interface
@@ -807,6 +807,12 @@ code tools report it to the model as a tool error.
 `inputPaths`, takes a fixed snapshot of current source, and returns a run ID and
 compact state. There is no required source revision. An app whose interface is
 `index.html` does not run there; `code_open` and `code_present` show it.
+Managed `code_run` runs in the Code runner (workerd), including background
+turns. It keeps the person's turn approvals and routine HTTP grants. Studio
+RSQL database grants are unavailable on this path. See
+[One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs) for limits:
+the runner's deadline includes approval waits and its bridge limits also
+apply to selected files and exports.
 `code_run` and `code_inspect` also return `views`: paths and chart, group, table, stats, details or explorer
 summaries without values. Present each view with `present({path})`.
 `code_inspect` returns status, progress, logs, output and captured files, and can
@@ -1012,16 +1018,20 @@ The host owns isolation, artifact permissions, input file authorization,
 cancellation, and execution deduplication. Assistant persists call ownership
 and results; an uncertain execution is never automatically replayed.
 Its test runs are separate from visible apps and persistent user data. Assistant
-owns an isolated Chromium host for model-driven run/inspect/interact/stop/export
-operations. Closing or freezing the user's tab does not suspend these operations.
+uses the Code runner for one-off run/inspect/stop/export operations. Closing
+or freezing the user's tab does not suspend these operations.
 Calls, results and ordered approvals are persisted; a lost host is not replayed.
-Only `code_open` and `code_secret` require the user interface. The host pool admits
-eight hosts. Foreground chat runs and scheduled turns have separate hosts.
+Only `code_open` and `code_secret` require the user interface. Assistant retains
+up to eight turn hosts; runner slots independently bound execution. Foreground
+chat runs and scheduled turns have separate hosts.
 Foreground hosts without an active turn expire after two idle minutes.
 Scheduled hosts live for their turn; finished scheduled turns and cancelled
 runs are closed by the host sweep.
-The Assistant image includes Chromium; other application images do not need it.
-The direct CLI code command retains its own isolated local execution host.
+Chromium starts lazily for remaining Studio operations: HTML `code_check`,
+`code_action`, and Studio presentations. Studio machine execution and the
+direct CLI code command also retain their isolated Chromium hosts. Visible
+Studio apps run in the person's browser. The Assistant image still includes
+Chromium for these paths; managed `code_run` does not require it.
 
 ### Assistant apps and browser work
 
@@ -1203,9 +1213,10 @@ of business correctness. Recent one-off runs are a separate compact list (latest
 when the context snapshot is loaded.
 
 Managed execution reports starting, working, and approval phases in the active
-tool row. Startup is bounded to 45 seconds; the server also checks the browser
-event loop with a 10-second heartbeat deadline. A dead host is reported without
-replaying an uncertain operation.
+tool row. Managed chat scripts use the runner deadline described above. Legacy
+Studio browser startup is bounded to 45 seconds, with a 10-second event-loop
+heartbeat deadline. A lost host or runner attempt is reported without replaying
+an uncertain operation.
 
 ### Working plan and compact Studio context
 
