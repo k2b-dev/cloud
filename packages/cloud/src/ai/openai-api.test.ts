@@ -47,7 +47,7 @@ afterEach(() => settings.mockReset());
 afterAll(() => settings.mockRestore());
 
 function accounting(onBegin = () => {}) {
-  type Lifecycle = NonNullable<Parameters<typeof inferenceProvider>[4]>;
+  type Lifecycle = NonNullable<Parameters<typeof inferenceProvider>[3]>;
   const bookings: {
     usage: Parameters<Lifecycle["finish"]>[1];
     status: Parameters<Lifecycle["finish"]>[2];
@@ -63,7 +63,7 @@ function accounting(onBegin = () => {}) {
       bookings.push({ usage, status, details });
     },
   };
-  const wrap: typeof inferenceProvider = (provider, profile, context) => inferenceProvider(provider, profile, context, context, lifecycle);
+  const wrap: typeof inferenceProvider = (provider, profile, context) => inferenceProvider(provider, profile, context, lifecycle);
   return { bookings, wrap };
 }
 
@@ -73,7 +73,6 @@ function fixture(
     classes?: boolean;
     auth?: boolean;
     slots?: boolean;
-    family?: Provider["family"];
     context?: number;
     events?: StreamEvent[];
     failure?: Error;
@@ -98,12 +97,9 @@ function fixture(
   const provider: Provider = {
     name: "fixture",
     model: "provider-model",
-    family: options.family ?? "openai-compatible",
+    family: "openai-compatible",
     contextWindow: options.context ?? 1000,
     capabilities: { streaming: true, tools: false, thinking: true, images: false, usage: true },
-    async complete() {
-      throw new Error("OpenAI API must use stream(), including non-streaming requests");
-    },
     stream(request) {
       requests.push(request);
       if (options.stream) return options.stream(request);
@@ -446,19 +442,12 @@ describe("models-only OpenAI-compatible API", () => {
     expect(f.requests[0]?.temperature).toBeUndefined();
     expect(f.requests[0]?.extraBody).toBeUndefined();
   });
-  for (const [family, extraBody] of [
-    ["ollama", { options: { top_p: 0.7 } }],
-    ["gemini", { generationConfig: { topP: 0.7 } }],
-    ["openai-compatible", { top_p: 0.7 }],
-    ["anthropic", { top_p: 0.7 }],
-    ["mistral", { top_p: 0.7 }],
-  ] as const) {
-    test(`maps top_p for ${family}`, async () => {
-      const f = fixture({ family });
-      await f.call({ top_p: 0.7 });
-      expect(f.requests[0]?.extraBody).toEqual(extraBody);
-    });
-  }
+  // Every provider type is an OpenAI-compatible endpoint.
+  test("passes top_p on unchanged", async () => {
+    const f = fixture();
+    await f.call({ top_p: 0.7 });
+    expect(f.requests[0]?.extraBody).toEqual({ top_p: 0.7 });
+  });
   for (const [fields, cap] of [
     [{ max_tokens: 100 }, 40],
     [{ max_tokens: 100, max_completion_tokens: 20 }, 20],

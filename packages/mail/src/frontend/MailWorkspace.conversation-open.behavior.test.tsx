@@ -207,6 +207,9 @@ describe("Mail workspace conversation open", () => {
       draftsMode: false,
       draftsPage: null,
       draftsError: null,
+      eventsMode: false,
+      eventsPage: null,
+      eventsError: null,
       activeView: url.searchParams.get("view") === "send_problems" ? "send_problems" : url.searchParams.has("view") ? "needs_action" : null,
       savedViewId: null,
       listMode: "conversations",
@@ -220,6 +223,8 @@ describe("Mail workspace conversation open", () => {
       listCursor: cursor,
       nextListCursor: page.next,
       listError: null,
+      hiddenDone: null,
+      assignedGroups: null,
       listTitle: "Inbox",
     };
   };

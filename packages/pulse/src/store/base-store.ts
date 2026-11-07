@@ -24,6 +24,7 @@ const RowSchema = z.object({
   retention_days: z.number(),
   rollup_retention_days: z.number(),
   sensitive_retention_hours: z.number(),
+  reset_generation: z.coerce.string(),
   checkpoint_id: z.string().nullable(),
   pending_checkpoint_id: z.string().nullable(),
   write_block_reason: z.string().nullable(),

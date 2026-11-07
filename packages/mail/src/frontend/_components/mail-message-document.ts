@@ -1,3 +1,5 @@
+import { ATTRIBUTION_VERB, FORWARD_MARKER } from "./mail-message-presentation";
+
 const MIN_MESSAGE_BODY_HEIGHT = 32;
 const MAX_INITIAL_MESSAGE_BODY_HEIGHT = 480;
 const ESTIMATED_LINE_HEIGHT = 22;
@@ -48,6 +50,8 @@ export const buildMessageDocument = (
   const channelLiteral = JSON.stringify(channel).replaceAll("<", "\\u003c");
   const quotedTextLabelsLiteral = JSON.stringify(quotedTextLabels).replaceAll("<", "\\u003c");
   const linksDisabledLiteral = linksDisabled ? "true" : "false";
+  const forwardMarkerLiteral = JSON.stringify(FORWARD_MARKER.source).replaceAll("<", "\\u003c");
+  const attributionVerbLiteral = JSON.stringify(ATTRIBUTION_VERB.source).replaceAll("<", "\\u003c");
   const scriptNonce = channel.replace(/[^a-zA-Z0-9]/gu, "") || "mailbridge";
   return `<!doctype html>
 <html lang="${escapeHtmlAttribute(locale)}">
@@ -129,11 +133,53 @@ export const buildMessageDocument = (
         return labels;
       };
       const quoteSelectors = 'blockquote[type="cite"], .gmail_quote, .yahoo_quoted';
-      const candidates = [...document.querySelectorAll(quoteSelectors)].filter((node) => !node.parentElement?.closest("details.mail-quoted-history"));
+      const forwardMarker = new RegExp(${forwardMarkerLiteral}, "iu");
+      const attributionVerb = new RegExp(${attributionVerbLiteral}, "iu");
+      const root = document.getElementById("mail-message-root");
+      const textOf = (fragment) => (fragment.textContent || "").replace(/[\\u200b-\\u200d\\ufeff]/gu, "").trim();
+      const hasMedia = (fragment) => Boolean(fragment.querySelector("img, picture, video, audio, svg, canvas"));
+      const isAttribution = (element) => {
+        const text = textOf(element);
+        return text.length <= 300 && text.endsWith(":") && attributionVerb.test(text);
+      };
+      // Only the quote that ends the message is earlier conversation, by the same rule as plain text: the sender
+      // wrote something of their own above it, nothing but a "-- " signature follows it, and it is the only quote
+      // or introduced by an attribution. Inline and bottom-posted answers, quote-only messages, and forwarded
+      // originals stay visible.
+      const isTrailingHistory = (node, quoteCount) => {
+        if (!root) return false;
+        const range = document.createRange();
+        range.setStartAfter(node);
+        range.setEnd(root, root.childNodes.length);
+        const after = range.cloneContents();
+        const afterText = textOf(after);
+        if ((afterText && !/^--(?:\\s|$)/u.test(afterText)) || (!afterText && hasMedia(after))) return false;
+        // Gmail keeps inline answers inside its quote container, between the parts of the split quote.
+        const firstInner = node.querySelector(quoteSelectors);
+        if (firstInner) {
+          range.setStartAfter(firstInner);
+          range.setEnd(node, node.childNodes.length);
+          const rest = range.cloneContents();
+          for (const quote of rest.querySelectorAll(quoteSelectors)) quote.remove();
+          if (textOf(rest)) return false;
+        }
+        let attribution = node.previousElementSibling;
+        while (attribution?.tagName === "BR") attribution = attribution.previousElementSibling;
+        if (attribution && !isAttribution(attribution)) attribution = null;
+        const container = node.tagName !== "BLOCKQUOTE" && node.matches(".gmail_quote, .yahoo_quoted");
+        if (quoteCount > 1 && !attribution && !container) return false;
+        range.setStart(root, 0);
+        range.setEndBefore(node);
+        if (forwardMarker.test(textOf(range.cloneContents())) || forwardMarker.test(textOf(node).slice(0, 200))) return false;
+        if (attribution) range.setEndBefore(attribution);
+        const own = range.cloneContents();
+        return Boolean(textOf(own)) || hasMedia(own);
+      };
+      const outermost = [...document.querySelectorAll(quoteSelectors)].filter((node) => !node.parentElement?.closest(quoteSelectors));
+      const candidates = outermost.slice(-1).filter((node) => isTrailingHistory(node, outermost.length));
       // The parent remembers opened quotes and reopens them after a reload.
       const quotes = [];
       for (const node of candidates) {
-        if (node.parentElement?.closest(quoteSelectors)) continue;
         const details = document.createElement("details");
         details.className = "mail-quoted-history";
         const summary = document.createElement("summary");
@@ -162,7 +208,6 @@ export const buildMessageDocument = (
         clearTimeout(selectionTimer);
         selectionTimer = setTimeout(() => post("selection", String(getSelection()?.toString() || "").trim().slice(0, 10000)), 25);
       });
-      const root = document.getElementById("mail-message-root");
       // break-word keeps short cell values whole, but a long plain-text token can then make its
       // table wider than anywhere did, past the reader or a newsletter's own width. Such a table
       // breaks anywhere as before. Closed quoted history is not rendered and is checked once it opens.

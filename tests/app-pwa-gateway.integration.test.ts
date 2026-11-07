@@ -14,33 +14,33 @@ const origin = "https://cloud.example.test";
 const owner = "ca110000-0000-4000-8000-000000000001";
 const path = "/app/pwa-fixture/counter/";
 const pairResult = z.object({ id: z.uuid(), qr: z.string() });
-const pwa = createAppPwa({
-  app: { id: "pwa-fixture", installable: { path } },
-  publicOrigin: origin,
-  schema: "app_pwa_gateway_test",
-  subject: z.object({ document: z.literal("fixture") }),
-  budgets: { requestBytes: 4096, responseBytes: 4096, listPageSize: 10, maxAccessIds: 1 },
-  authorizeStaff: async (_action, signIn) => signIn.userId === owner,
-  authorizeVisit: async (_signIn, subject) => z.object({ document: z.literal("fixture") }).safeParse(subject).success,
-  commands: {
-    sign: appPwaCommand({
-      input: z.object({ consent: z.literal(true) }),
-      output: z.object({ saved: z.literal(true) }),
-      handler: async ({ actor, tx, endVisit }) => {
-        expect(actor.kind).toBe("visit");
-        await tx`INSERT INTO app_pwa_gateway_test.signatures(visit_id) VALUES (${actor.visitId}::uuid)`;
-        endVisit();
-        return { saved: true };
-      },
-    }),
-  },
-});
 
 suiteFor(
   "database",
   "nats",
   "valkey",
 )("App-PWA through the gateway and real Core identity authority", () => {
+  const pwa = createAppPwa({
+    app: { id: "pwa-fixture", installable: { path } },
+    publicOrigin: origin,
+    schema: "app_pwa_gateway_test",
+    subject: z.object({ document: z.literal("fixture") }),
+    budgets: { requestBytes: 4096, responseBytes: 4096, listPageSize: 10, maxAccessIds: 1 },
+    authorizeStaff: async (_action, signIn) => signIn.userId === owner,
+    authorizeVisit: async (_signIn, subject) => z.object({ document: z.literal("fixture") }).safeParse(subject).success,
+    commands: {
+      sign: appPwaCommand({
+        input: z.object({ consent: z.literal(true) }),
+        output: z.object({ saved: z.literal(true) }),
+        handler: async ({ actor, tx, endVisit }) => {
+          expect(actor.kind).toBe("visit");
+          await tx`INSERT INTO app_pwa_gateway_test.signatures(visit_id) VALUES (${actor.visitId}::uuid)`;
+          endVisit();
+          return { saved: true };
+        },
+      }),
+    },
+  });
   let upstream: ReturnType<typeof Bun.serve> | undefined;
   let gateway: ReturnType<typeof Bun.serve> | undefined;
   let token: string;

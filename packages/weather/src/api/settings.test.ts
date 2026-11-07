@@ -1,8 +1,9 @@
 import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
-import { SettingUnreadableError } from "@k2b/cloud/services";
+import { audit, SettingUnreadableError } from "@k2b/cloud/services";
 import { session } from "@k2b/cloud/services/session";
 import { buildProjectedUser } from "@k2b/cloud/services/session/user";
+import * as settings from "@k2b/cloud/services/settings";
 import { SQL } from "bun";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { app } from "../config";
@@ -23,7 +24,9 @@ const authenticate = spyOn(session, "authenticateRequest").mockResolvedValue({
 });
 const key = "weather.default_lat";
 const read = spyOn(app.settings, "read");
-const write = spyOn(app.settings, "set");
+const write = spyOn(settings, "set");
+const record = spyOn(audit, "record").mockResolvedValue();
+const invalidate = spyOn(settings, "invalidateSettingsCache").mockResolvedValue();
 const tx = Object.assign(new SQL("postgres://localhost/unused_test"), {
   savepoint: () => {
     throw new Error("Unexpected savepoint");
@@ -45,11 +48,13 @@ let begin: ReturnType<typeof mockBegin>;
 afterEach(() => begin.mockRestore());
 beforeEach(() => {
   begin = mockBegin();
+  record.mockClear();
+  invalidate.mockClear();
   read.mockReset().mockResolvedValue({ value: 0, stored: "readable" });
   write.mockReset().mockResolvedValue(undefined);
 });
 afterAll(async () => {
-  for (const spy of [begin, read, write, authenticate, clock]) spy.mockRestore();
+  for (const spy of [read, write, authenticate, clock, record, invalidate]) spy.mockRestore();
   await tx.close();
 });
 
@@ -62,8 +67,8 @@ test.each([false, true])("Weather preflights all keys before writing (replacemen
   if (replace) {
     expect(response.status).toBe(204);
     expect(read).not.toHaveBeenCalledWith(otherKey);
-    expect(write).toHaveBeenCalledWith(key, 52, { replaceUnreadable: false });
-    expect(write).toHaveBeenCalledWith(otherKey, 13, { replaceUnreadable: true });
+    expect(write).toHaveBeenCalledWith(key, 52, tx, { replaceUnreadable: false });
+    expect(write).toHaveBeenCalledWith(otherKey, 13, tx, { replaceUnreadable: true });
   } else {
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ code: "setting_unreadable", message: new SettingUnreadableError(otherKey).message });
@@ -78,15 +83,15 @@ for (const explicit of [false, true]) {
     const response = await request(explicit ? { updates: { [key]: 52 }, replaceUnreadable: [key] } : { [key]: 52 });
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ code: "setting_unreadable", message: error.message });
-    expect(write).toHaveBeenCalledWith(key, 52, { replaceUnreadable: explicit });
+    expect(write).toHaveBeenCalledWith(key, 52, tx, { replaceUnreadable: explicit });
   });
 }
 
 test("Weather replaces only the keys explicitly included in replaceUnreadable", async () => {
   const response = await request({ updates: { [key]: 52, "weather.default_lon": 13 }, replaceUnreadable: [key] });
   expect(response.status).toBe(204);
-  expect(write).toHaveBeenCalledWith(key, 52, { replaceUnreadable: true });
-  expect(write).toHaveBeenCalledWith("weather.default_lon", 13, { replaceUnreadable: false });
+  expect(write).toHaveBeenCalledWith(key, 52, tx, { replaceUnreadable: true });
+  expect(write).toHaveBeenCalledWith("weather.default_lon", 13, tx, { replaceUnreadable: false });
 });
 
 for (const body of [
@@ -106,5 +111,14 @@ for (const body of [
 
 test("Weather still accepts legacy record updates without replacement", async () => {
   expect((await request({ [key]: 52 })).status).toBe(204);
-  expect(write).toHaveBeenCalledWith(key, 52, { replaceUnreadable: false });
+  expect(write).toHaveBeenCalledWith(key, 52, tx, { replaceUnreadable: false });
+});
+
+test("Weather settings audit uses the same transaction and records only keys", async () => {
+  expect((await request({ [key]: 52 })).status).toBe(204);
+  expect(record).toHaveBeenCalledWith(
+    expect.objectContaining({ action: "settings.update", actor: { userId: user.id }, metadata: { keys: [key] } }),
+    tx,
+  );
+  expect(invalidate).toHaveBeenCalledWith([key]);
 });

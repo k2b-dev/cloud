@@ -8,6 +8,12 @@ export const APP_PWA_LIMITS = {
   deviceSeconds: 12 * 60 * 60,
   visitIdleSeconds: 15 * 60,
   visitSeconds: 60 * 60,
+  /** A registered shared browser; the cookie lifetime upper bound that browsers enforce (RFC 6265bis). */
+  registrationSeconds: 400 * 24 * 60 * 60,
+  /** A registered device shows a rotating presence code; the previous window is still accepted. */
+  presenceSeconds: 30,
+  /** Takeover attempts per registration and presence window, bounding guesses of its six digits. */
+  presenceAttempts: 5,
 } as const;
 
 export const AppPwaId = z.uuid();
@@ -33,6 +39,28 @@ export type AppPwaDeviceView = {
   name: string;
   state: "pending" | "active" | "expired" | "revoked";
   expiresAt: string | null;
+  /** Set when this device row is a use of a registered shared device. */
+  registrationId: string | null;
+};
+/** What a registered browser learns without a visit: never an account ID, login name, or contact detail. */
+export type AppPwaRegistrationGuestView = {
+  id: string;
+  name: string;
+  expiresAt: string;
+  holder: { displayName: string | null } | null;
+  /** Show this code on the device; staff type it to take the device over. */
+  presence: { code: string; expiresAt: string };
+};
+/** The registration a staff action changes or lists. */
+export type AppPwaStaffTarget = { registrationId: string; name: string };
+export type AppPwaRegistrationView = {
+  id: string;
+  name: string;
+  state: "active" | "expired";
+  registeredAt: string;
+  expiresAt: string;
+  activeVisit: { id: string; issuedBy: { displayName: string | null }; issuedAt: string } | null;
+  holder: { userId: string; displayName: string; deviceId: string; expiresAt: string | null; visitActive: boolean } | null;
 };
 export type AppPwaVisitView = {
   id: string;
@@ -41,7 +69,18 @@ export type AppPwaVisitView = {
   idleExpiresAt: string | null;
 };
 export type AppPwaWebSignIn = { userId: string; sid: string };
-export type AppPwaStaffAction = "issue-device" | "list-devices" | "device-status" | "revoke-device" | "issue-visit" | "revoke-visit";
+export type AppPwaStaffAction =
+  | "issue-device"
+  | "list-devices"
+  | "device-status"
+  | "revoke-device"
+  | "issue-visit"
+  | "revoke-visit"
+  | "register-device"
+  | "list-registrations"
+  | "take-over-device"
+  | "revoke-registration"
+  | "rename-registration";
 
 export type AppPwaVisitContext = {
   actor: AppPwaVisitActor;
@@ -125,10 +164,14 @@ export type AppPwaOptions = {
   /** Positive safe integer seconds; capped at 12 hours, then bounded by browser and initiating family. */
   deviceTtlSeconds?: number;
   subject: z.ZodType;
+  /** Allow target-authorized staff to push visits to registered browsers without a use or presence code. */
+  registeredDevices?: { push: "staff" };
   /** Explicit application budgets, covering transport, stored results, and staff pagination. */
   budgets: { requestBytes: number; responseBytes: number; listPageSize: number; maxAccessIds: number };
-  /** Mandatory application authorization, repeated under the current web authority locks for every staff action. */
-  authorizeStaff(action: AppPwaStaffAction, signIn: AppPwaWebSignIn, tx: TransactionSQL): Promise<boolean>;
+  /** Mandatory application authorization, repeated under the current web authority locks for every staff action.
+   * Registration actions act on other people's state. They are called once without `target` and again
+   * with the registration they change, push to, or list; return false to narrow them. */
+  authorizeStaff(action: AppPwaStaffAction, signIn: AppPwaWebSignIn, tx: TransactionSQL, target?: AppPwaStaffTarget): Promise<boolean>;
   /** Authorize exposing this validated domain subject to a customer; lock its authority using tx.
    * Called before issuance and again before commit, including issuance retries. */
   authorizeVisit(signIn: AppPwaWebSignIn, subject: unknown, tx: TransactionSQL): Promise<boolean>;
@@ -156,6 +199,8 @@ export type AppPwaErrorCode =
   | "REVOKED"
   | "ALREADY_CLAIMED"
   | "ACTIVE_VISIT"
+  | "IN_USE"
+  | "PRESENCE_REQUIRED"
   | "ATTEMPT_CONFLICT"
   | "TOO_LARGE"
   | "RATE_LIMITED"

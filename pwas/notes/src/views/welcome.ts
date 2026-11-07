@@ -21,6 +21,7 @@ Bleibt in diesem Browser · kein Konto · teilen per Link
 | Juli | 48 |
 | August | 61 |
 | September | 74 |
+| Summe | =SUM(Tassen) |
 
 :::chart
 type: bar
@@ -57,6 +58,7 @@ Stays in this browser · no account · share by link
 | July | 48 |
 | August | 61 |
 | September | 74 |
+| Total | =SUM(Cups) |
 
 :::chart
 type: bar

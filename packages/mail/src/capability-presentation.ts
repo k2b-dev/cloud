@@ -156,13 +156,15 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "conversation.list": {
           title: "Gespräche auflisten",
           description:
-            "Durchsuchen Sie kompakte Konversationsvorschauen in einem bekannten Postfach, optional nach Ordner, Arbeitsansicht oder ungelesenem Status. Ohne folderId lassen alle Ansichten außer mine, send_problems und kept Unterhaltungen aus Ordnern mit folder_only oder hidden weg; mit folderId werden sie aufgelistet. Das Ergebnis verfügt über genügend Status, um eine Konversation auszuwählen oder eine Anbietermarkierung/-verschiebung durchzuführen Actions; Verwenden Sie conversation.read für Details zur Zusammenarbeit.",
+            "Durchsuchen Sie kompakte Konversationsvorschauen in einem bekannten Postfach, optional nach Ordner, Arbeitsansicht oder ungelesenem Status. Wie die Mail-Listen zeigt eine Liste ohne view oder workStatus nur offene Arbeit: Sie lässt erledigte und zurückgestellte Unterhaltungen weg, außer in Ablageordnern (Archiv, Gesendet, Papierkorb, Spam, Alle Nachrichten); workStatus done, view done oder includeDone listet sie. Ohne folderId lassen alle Ansichten außer mine, send_problems und kept Unterhaltungen aus Ordnern mit folder_only oder hidden weg; mit folderId werden sie aufgelistet. Das Ergebnis verfügt über genügend Status, um eine Konversation auszuwählen oder eine Anbietermarkierung/-verschiebung durchzuführen Actions; Verwenden Sie conversation.read für Details zur Zusammenarbeit.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             folderId: "Optionaler Anbieterordner ID-Filter.",
             workStatus: "Optionaler Filter für den Arbeitsstatus der Zusammenarbeit.",
             unread: "Optionaler Filter für den ungelesenen Zustand; true gibt nur Konversationen mit ungelesenen E-Mails zurück.",
             view: "Optionale Ansicht der gespeicherten Arbeitswarteschlange.",
+            includeDone:
+              "Auch erledigte und zurückgestellte Unterhaltungen listen, die die Liste ohne Ansicht, Arbeitsstatus oder Ablageordner weglässt.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
           },
@@ -208,9 +210,9 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "delivery.list": {
-          title: "Geplante Zustellungen auflisten",
+          title: "Wartende Zustellungen auflisten",
           description:
-            "Listen Sie Zustellungen, die sich noch in einem Rückgängig-Fenster befinden oder für einen späteren Zeitpunkt geplant sind, in einem bekannten Postfach auf. MailboxId von mailbox.list abrufen; Verwenden Sie zurückgegebenes mail.delivery refs mit delivery.read oder delivery.cancel.",
+            "Zustellungen eines bekannten Postfachs auflisten, die nach Widerrufsfrist und Versandpuffer in der Warteschlange stehen oder für später geplant sind. MailboxId von mailbox.list abrufen; Verwenden Sie zurückgegebenes mail.delivery refs mit delivery.read oder delivery.cancel.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
@@ -222,7 +224,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Lesen Sie einen von delivery.list oder draft.send zurückgegebenen mail.delivery ref, einschließlich seines aktuellen Planungsstatus.",
           input: {
-            id: "Exaktes mail.delivery ID, zurückgegeben von „Geplante Zustellungen auflisten“ oder einer typisierten Ressource ref.",
+            id: "Exaktes mail.delivery ID, zurückgegeben von „Wartende Zustellungen auflisten“ oder einer typisierten Ressource ref.",
           },
         },
         "draft.list": {

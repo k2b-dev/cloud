@@ -88,7 +88,6 @@ describe("Yjs undo boundaries", () => {
               editor={editorFor(clientA.view)}
               notebookId="Book01"
               noteId="Note01"
-              initialPanelOpen={false}
               format={format()}
               onUndo={() => {
                 manager.undo();

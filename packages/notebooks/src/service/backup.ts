@@ -156,11 +156,14 @@ const decryptString = async (encrypted: string): Promise<string> => {
 const S3_PROVIDER_HINT =
   "Provider returned no detailed error message. Check that the endpoint includes the storage location, the region matches it, the bucket exists, and the access key can write objects.";
 
+// Plain text for logs and error messages, never markup. Script and style bodies are noise in a
+// provider page; end tags may carry spaces or attributes. One tag pass can join two halves into a
+// new tag, so every `<` left after it goes too.
 const stripHtml = (value: string): string =>
   value
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
+    .replace(/<(script|style)\b[\s\S]*?(?:<\/\1\b[^>]*>|$)/gi, " ")
+    .replace(/<[^<>]*>/g, " ")
+    .replace(/</g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -419,13 +422,26 @@ export const updateConfig = async (params: {
   return ok(await getConfig({ notebookId: params.notebookId }));
 };
 
-export const updateCron = async (cron: string, options?: { replaceUnreadable?: boolean }): Promise<Result<{ cron: string }>> => {
+export const updateCron = async (
+  cron: string,
+  options?: { replaceUnreadable?: boolean; actorId?: string },
+): Promise<Result<{ cron: string }>> => {
   const normalized = cron.trim();
   if (!normalized) return fail(err.badInput("Snapshot cron must not be empty."));
   const saved = await settingsService.entry.update({
     key: SNAPSHOT_CRON_KEY,
     value: normalized,
     replaceUnreadable: options?.replaceUnreadable,
+    ...(options?.actorId
+      ? {
+          audit: {
+            action: "settings.update",
+            outcome: "allowed" as const,
+            actor: { userId: options.actorId },
+            target: { type: "setting", id: SNAPSHOT_CRON_KEY },
+          },
+        }
+      : {}),
   });
   if (!saved.ok) return fail(saved.error);
   await snapshotRuntime.reschedule(normalized);

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { createComponent, createEffect, createSignal, onCleanup } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
@@ -42,6 +42,24 @@ describe("@k2b/ui DOM test harness", () => {
 
     dom.cleanup();
     expect(globalThis.document).toBeUndefined();
+  });
+
+  test("cleanup cancels window callbacks before the next harness starts", async () => {
+    const dom = createDomTestHarness();
+    const callback = mock(() => {});
+    dom.window.setTimeout(callback, 0);
+    dom.window.requestAnimationFrame(callback);
+
+    dom.cleanup();
+    dom.cleanup();
+    const next = createDomTestHarness();
+    try {
+      await dom.window.happyDOM.waitUntilComplete();
+      expect(callback).not.toHaveBeenCalled();
+      expect(globalThis.document).toBe(next.document);
+    } finally {
+      next.cleanup();
+    }
   });
 
   test("renders, updates, and dismisses a toast in the browser", async () => {

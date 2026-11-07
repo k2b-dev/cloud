@@ -1,17 +1,23 @@
-import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { z } from "zod";
 import { CapabilityManifestSchema, CloudResourceReaderViewSchema } from "../contracts/capabilities";
 import { DiscussionContainersDataSchema, DiscussionContainersInputSchema } from "../contracts/discussions";
+import * as settings from "../services/settings";
 import { discussionProviders } from "./discussion-providers";
 import { compileCapabilityManifest } from "./testing";
 
 const now = Date.parse("2026-10-29T00:00:00Z");
 const originalOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+const publicOrigin = "https://cloud.example.test";
+let publicUrl: ReturnType<typeof spyOn<typeof settings, "get">>;
 beforeEach(() => {
   setSystemTime(new Date(now));
   process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.test";
+  publicUrl = spyOn(settings, "get").mockResolvedValue(`${publicOrigin}/configured/path`);
 });
 afterEach(() => {
+  expect(publicUrl.mock.calls.every(([key]) => key === "app.url")).toBe(true);
+  publicUrl.mockRestore();
   setSystemTime();
   if (originalOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
   else process.env.CLOUD_CORE_INTERNAL_ORIGIN = originalOrigin;
@@ -55,7 +61,17 @@ const page = (apps: unknown[], next?: string) =>
 const options = { deadline: now + 60_000 };
 test("discovers generic providers from the person catalog while preserving readability availability", async () => {
   const personApp = { ...app, manifest: { ...app.manifest, queries: app.manifest.queries.filter((query) => !query.appOnly) } };
-  const providers = await discussionProviders({ cookie: "session=fixture", transport: async () => page([personApp]) }, options);
+  const providers = await discussionProviders(
+    {
+      cookie: "session=fixture",
+      transport: async (request) => {
+        expect(request.headers.get("origin")).toBe(publicOrigin);
+        expect(request.headers.get("cookie")).toBe("session=fixture");
+        return page([personApp]);
+      },
+    },
+    options,
+  );
   expect(providers).toMatchObject([{ itemType: "inventory.item", containerType: "inventory.collection", containers: "collection.list" }]);
   expect(providers[0]!.app.manifest.resourceTypes?.find((model) => model.type === "item")?.readable).toBe(true);
 });

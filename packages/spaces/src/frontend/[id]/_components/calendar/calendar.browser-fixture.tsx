@@ -13,6 +13,7 @@ export default function CalendarFixture(props: Props) {
         baseUrl={props.baseUrl}
         columns={props.columns}
         tags={props.tags}
+        templates={props.templates}
         initialState={props.initialState}
         selectedItemId={props.selectedItemId}
         dateConfig={props.dateConfig}

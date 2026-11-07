@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import autocomplete from "../services/geo/fixtures/autocomplete.json";
 import geocode from "../services/geo/fixtures/geocode.json";
 import { GEO_TEST_KEY, GEO_TEST_NOW } from "../services/geo/geo.test-fixture";
@@ -7,6 +7,7 @@ import { geoClient } from "./geo-client";
 
 const original = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
 afterEach(() => {
+  mock.restore();
   if (original === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
   else process.env.CLOUD_CORE_INTERNAL_ORIGIN = original;
 });
@@ -87,4 +88,44 @@ test("geoClient geocode derives the address contract without a candidate limit",
     },
   });
   expect(result).toMatchObject({ ok: true, data: { data } });
+});
+
+test("autocomplete without a caller uses only the private Core origin and sends no identity", async () => {
+  process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal";
+  const fixture = await new GeoapifyAdapter({ now: () => GEO_TEST_NOW, fetch: async () => Response.json(autocomplete) }).autocomplete(
+    { text: "Orle" },
+    GEO_TEST_KEY,
+    "en",
+  );
+  const requests: Request[] = [];
+  spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async (input: string | URL | Request) => {
+        expect(input).toBeInstanceOf(Request);
+        if (!(input instanceof Request)) throw new Error("Expected request");
+        requests.push(input);
+        return Response.json({ data: fixture });
+      },
+      { preconnect: globalThis.fetch.preconnect },
+    ),
+  );
+  expect((await geoClient.autocomplete({ text: "Orle" })).ok).toBe(true);
+  expect(requests[0]!.url).toBe("http://core.internal/api/_internal/geo/v1/autocomplete");
+  expect(requests[0]!.headers.has("authorization")).toBe(false);
+  expect(requests[0]!.headers.has("cookie")).toBe(false);
+  expect(requests[0]!.headers.has("x-cloud-app-id")).toBe(false);
+});
+
+test("an explicit caller without identity keeps the authenticated capability transport", async () => {
+  process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal";
+  const result = await geoClient.autocomplete(
+    { text: "Orle" },
+    {
+      transport: async (request) => {
+        expect(new URL(request.url).pathname).toBe("/api/capabilities/v1/queries/core/address.autocomplete");
+        return Response.json({ code: "UNAUTHENTICATED", message: "Authentication required" }, { status: 401 });
+      },
+    },
+  );
+  expect(result.ok).toBe(false);
 });

@@ -4,10 +4,18 @@ import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "pulse",
-  // APIs admit roleless service accounts; navigation keeps its narrower audience.
-  access: appAccess.signedIn({
-    // Ingest-only source keys keep their scope, binding and domain checks.
-    publicRoutes: ["/api/pulse/openapi.json", "/api/pulse/ingest"],
+  // These protocols validate their own credentials and never use Cloud session authority.
+  sessionlessRoutes: ["/api/pulse/ingest"],
+  // Resource-bound and roleless service accounts remain eligible.
+  access: appAccess.noGuests({
+    // Source keys and dashboard publication tokens retain their own domain checks.
+    publicRoutes: [
+      "/api/pulse/openapi.json",
+      "/api/pulse/ingest",
+      "/app/pulse/public/:token",
+      "/api/pulse/public/:token",
+      "/api/pulse/public/:token/panels/:panelId",
+    ],
   }),
   cli: { pulse: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Pulse",
@@ -36,6 +44,7 @@ export const app = defineApp({
   adminHref: "/admin/pulse",
   settings: {
     "pulse.max_bases": {
+      adminWrite: "application",
       kind: "number",
       default: 200,
       min: 1,
@@ -48,6 +57,7 @@ export const app = defineApp({
       },
     },
     "pulse.max_raw_retention_days": {
+      adminWrite: "application",
       kind: "number",
       default: 730,
       min: 1,
@@ -62,6 +72,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_values_per_minute": {
+      adminWrite: "application",
       kind: "number",
       default: 2000,
       min: 1,
@@ -74,6 +85,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_bytes_per_minute": {
+      adminWrite: "application",
       kind: "number",
       default: 5242880,
       min: 1,
@@ -86,6 +98,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_storage_bytes": {
+      adminWrite: "application",
       kind: "number",
       default: 5000000000,
       min: 1,
@@ -98,6 +111,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_max_series": {
+      adminWrite: "application",
       kind: "number",
       default: 50000,
       min: 1,
@@ -110,6 +124,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_max_event_kinds": {
+      adminWrite: "application",
       kind: "number",
       default: 2000,
       min: 1,
@@ -122,6 +137,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_queries_per_hour": {
+      adminWrite: "application",
       kind: "number",
       default: 600,
       min: 1,
@@ -134,6 +150,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_max_state_keys": {
+      adminWrite: "application",
       kind: "number",
       default: 2000,
       min: 1,
@@ -148,6 +165,7 @@ export const app = defineApp({
       },
     },
     "pulse.base_creation": {
+      adminWrite: "application",
       kind: "enum",
       default: "everyone",
       options: [
@@ -168,6 +186,7 @@ export const app = defineApp({
       },
     },
     "pulse.default_profile": {
+      adminWrite: "application",
       kind: "enum",
       default: "normal",
       options: [
@@ -190,6 +209,7 @@ export const app = defineApp({
     // Address, service user and password are one encrypted value, written and read as a whole: three
     // separate settings would let a reader combine a new address with the old password.
     "pulse.clickhouse_connection": {
+      adminWrite: "application",
       kind: "secret",
       default: "",
       label: "ClickHouse connection",

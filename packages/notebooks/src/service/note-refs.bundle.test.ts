@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { solidTestPlugin } from "../../../ui/test/solid-test-plugin";
 
 // Bun 1.4.2 minifies a dynamic import of "bun" to `awaitPromise.resolve(globalThis.Bun)`,
 // which throws a ReferenceError at runtime (#137). Source runs never see it.
@@ -32,7 +33,7 @@ describe("minified notebooks bundle", () => {
       `export { reindexAll } from ${JSON.stringify(resolve(import.meta.dir, "note-refs.ts"))};
 export { initializePlatform } from ${JSON.stringify(Bun.resolveSync("@k2b/cloud/start", import.meta.dir))};`,
     );
-    const bundle = await Bun.build({ entrypoints: [source], outdir, target: "bun", minify: true });
+    const bundle = await Bun.build({ entrypoints: [source], outdir, target: "bun", minify: true, plugins: [solidTestPlugin("ssr")] });
     expect(bundle.success, bundle.logs.join("\n")).toBe(true);
     const entry = bundle.outputs[0]!.path;
     const script = `const { initializePlatform, reindexAll } = await import(${JSON.stringify(entry)});

@@ -1,6 +1,6 @@
 import { sql } from "@k2b/cloud";
 import type { MutationResult } from "@k2b/cloud/contracts";
-import { noteFavoriteChanged } from "./workspace-events";
+import { noteFavoriteChanged, workspaceTransaction } from "./workspace-events";
 
 export type FavoriteNoteId = {
   noteId: string;
@@ -37,20 +37,22 @@ export const setFavorite = async (params: {
   userId: string;
   favorite: boolean;
 }): Promise<MutationResult<{ favorite: boolean }>> => {
-  if (params.favorite) {
-    await sql`
+  await workspaceTransaction(async (tx) => {
+    if (params.favorite) {
+      await tx`
       INSERT INTO notebooks.note_favorites (user_id, notebook_id, note_id)
       VALUES (${params.userId}::uuid, ${params.notebookId}::uuid, ${params.noteId}::uuid)
       ON CONFLICT (user_id, note_id) DO NOTHING
     `;
-  } else {
-    await sql`
+    } else {
+      await tx`
       DELETE FROM notebooks.note_favorites
       WHERE user_id = ${params.userId}::uuid
         AND note_id = ${params.noteId}::uuid
     `;
-  }
+    }
 
-  await noteFavoriteChanged(params);
+    await noteFavoriteChanged(params, tx);
+  });
   return { ok: true, data: { favorite: params.favorite } };
 };

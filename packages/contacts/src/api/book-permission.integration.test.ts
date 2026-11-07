@@ -202,6 +202,8 @@ suite("Contacts book grants on every application surface (#1234 option B)", () =
   let adminReader: Subject;
   let agentReader: Subject;
   let agentUnscoped: Subject;
+  let agentFull: Subject;
+  let agentFullAdmin: Subject;
   let standalone: Subject;
   let bound: Subject;
   let b: Book;
@@ -234,6 +236,13 @@ suite("Contacts book grants on every application surface (#1234 option B)", () =
     agentReader = await apiToken(agent, ["read"]);
     // App entry is allowed; no resource read/write scope is granted.
     agentUnscoped = await apiToken(agent, ["openid", "contacts:read"]);
+    // The scopes the Accounts dialog names for "Full access".
+    const full = await account("agent");
+    await grant(b.id, { serviceAccountId: full });
+    agentFull = await apiToken(full, ["read", "write", "admin"]);
+    const fullAdmin = await account("agent");
+    await grant(b.id, { serviceAccountId: fullAdmin }, "admin");
+    agentFullAdmin = await apiToken(fullAdmin, ["read", "write", "admin"]);
     const sync = await account("standalone");
     await grant(b.id, { serviceAccountId: sync });
     standalone = await apiToken(sync, ["read"]);
@@ -331,6 +340,13 @@ suite("Contacts book grants on every application surface (#1234 option B)", () =
   test.each(["reader", "stranger", "admin reader", "owner"] as const)("a %s follows only their book grant", async (kind) => {
     const subject = { reader, stranger, "admin reader": adminReader, owner }[kind];
     await expectAgreement(subject, b, kind !== "stranger", kind === "owner");
+  });
+
+  test("a full-access machine key follows the account's grant on each book", async () => {
+    await expectAgreement(agentFull, b, true);
+    await expectAgreement(agentFull, c, false);
+    await expectAgreement(agentFullAdmin, b, true, true);
+    await expectAgreement(agentFullAdmin, c, false);
   });
 
   test.each(["agent read", "agent unscoped", "standalone granted", "standalone ungranted", "bound B", "bound C"] as const)(

@@ -177,7 +177,10 @@ describe("@k2b/ui complete action migrations", () => {
     expect(button).toContain('data-variant="subtle"');
     expect(button).toContain('type="button"');
     expect(rule('.k2b-ui .k2b-button[data-size="xs"]')).toContain("min-height: 1.5rem");
-    expect(rule('.k2b-ui .k2b-button[data-variant="subtle"]')).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
+    // Subtle and secondary share one look: white with a light 1 px border.
+    const quiet = rule('.k2b-ui .k2b-button:is([data-variant="secondary"], [data-variant="subtle"])');
+    expect(quiet).toContain("border-color: var(--k2b-control-border-soft)");
+    expect(quiet).toContain("background: var(--k2b-surface)");
     const warningRule = rule('.k2b-ui .k2b-button[data-variant="warning"]');
     expect(warningRule).toContain("color: #422006");
     expect(warningRule).toContain("background: var(--k2b-warning-500)");
@@ -204,7 +207,8 @@ describe("@k2b/ui complete action migrations", () => {
     expect(button).toContain('data-variant="input"');
     const inputRule = rule('.k2b-ui .k2b-button[data-variant="input"]');
     expect(inputRule).toContain("min-height: 2.25rem");
-    expect(inputRule).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
+    expect(inputRule).toContain("background: var(--k2b-surface)");
+    expect(inputRule).toContain("box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color)");
     expect(rule('.k2b-ui .k2b-icon-button[data-variant="input"]')).toContain("width: 2.25rem");
   });
 
@@ -564,9 +568,11 @@ describe("@k2b/ui complete action migrations", () => {
       /role="group" aria-label="Sort"><div class="k2b-dropdown__label">Sort<\/div>(?:<!--[^>]*-->)*<div class="k2b-dropdown__row">/,
     );
     expect(html.match(/<div class="k2b-dropdown__row">(.*?)<\/div><\/div>/s)?.[1]?.match(/role="menuitemradio"/g)).toHaveLength(2);
-    expect(rule(".k2b-ui .k2b-dropdown__row")).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
+    expect(rule(".k2b-ui .k2b-dropdown__row")).toContain("background: var(--k2b-tray)");
     expect(rule(".k2b-ui .k2b-dropdown__row > .k2b-dropdown__item > i")).toContain("display: none");
-    expect(rule('.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]')).toContain("background: var(--k2b-surface)");
+    expect(rule('.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]')).toContain(
+      "background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))",
+    );
 
     // A row of choices is no set of actions: without a label its group stays unnamed instead of "Actions".
     const unlabeled = renderToString(() =>
@@ -760,6 +766,14 @@ describe("@k2b/ui complete action migrations", () => {
     expect(forced).not.toContain("<span>Copy value</span>");
   });
 
+  test("CopyButton with a visible label reserves the width of Copied and announces it", () => {
+    const html = renderToString(() => createComponent(CopyButton, { text: "value", iconOnly: false }));
+    // Both words share one cell; CSS draws the other one hidden, so it stays out of the text and the accessible name.
+    expect(html).toContain('<span class="k2b-copy-button__label" data-reserve="Copied"><span>Copy</span></span>');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).not.toContain("aria-label=");
+  });
+
   test("CopyButton reflects loading and disabled state on the button element", () => {
     const loading = renderToString(() =>
       createComponent(CopyButton, { text: "value", label: "Copy value", loading: true, loadingLabel: "Copying…" }),
@@ -897,7 +911,7 @@ describe("@k2b/ui complete action migrations", () => {
 
     const css = rule(".k2b-ui .k2b-button__busy");
     expect(css).toContain("position: absolute");
-    expect(rule(".k2b-ui .k2b-button:has(> .k2b-button__busy) > .k2b-button__label")).toContain("opacity: 0");
+    expect(rule(".k2b-ui .k2b-button > .k2b-button__label:has(+ .k2b-button__busy)")).toContain("opacity: 0");
   });
 
   test("gives every spotlight trigger variant a styled surface", () => {
@@ -910,19 +924,22 @@ describe("@k2b/ui complete action migrations", () => {
 });
 
 describe("@k2b/ui action geometry parity", () => {
-  test("segments keep control-sized, flex-1 geometry", () => {
+  test("segments keep field-sized, flex-1 geometry on a grey track", () => {
     const control = rule(".k2b-ui .k2b-segmented-control");
     const option = rule(".k2b-ui .k2b-segmented-control__option");
 
     expect(control).toContain("w-full");
     expect(control).toContain("items-stretch");
-    expect(control).toContain("background: transparent");
+    expect(control).toContain("background: var(--k2b-tray)");
+    // A 3 px track around 30 px options: as tall as a field.
+    expect(control).toContain("padding: 3px");
+    expect(control).toContain("gap: 2px");
     expect(option).toContain("flex-1");
-    expect(option).toContain("min-height: 2rem");
+    expect(option).toContain("min-height: 1.875rem");
     expect(option).toContain("padding: 0.25rem 0.5rem");
-    // The soft look keeps the former box: no added weight, no gap between options.
+    expect(option).toContain("box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color)");
+    // Selection never adds weight.
     expect(option).not.toContain("font-weight");
-    expect(control).not.toContain("gap");
     expect(actionsCss).toMatch(/\.k2b-segmented-control__option:not\([^)]*\):hover/);
   });
 
@@ -949,7 +966,8 @@ describe("@k2b/ui action geometry parity", () => {
     expect(chip).toContain("border-radius: var(--k2b-radius-control)");
     expect(chip).not.toContain("999px");
     expect(chip).toContain("border: 0");
-    expect(chip).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
+    expect(chip).toContain("background: var(--k2b-surface)");
+    expect(chip).toContain("box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color)");
     expect(iconOnly).toContain("width: 2.25rem");
     expect(actionsCss).toContain(".k2b-ui .k2b-filter-chip:hover");
   });
@@ -974,7 +992,7 @@ describe("@k2b/ui action geometry parity", () => {
     expect(actionsCss).toContain("@media (prefers-reduced-motion: reduce)");
     expect(disabled).toContain("opacity: 0.4");
     // A focusable aria-disabled button looks disabled and gets no hover or press feedback.
-    for (const variant of ["", '[data-variant="ghost"]', '[data-variant="secondary"]'])
+    for (const variant of ["", '[data-variant="ghost"]', ':is([data-variant="secondary"], [data-variant="subtle"])'])
       expect(actionsCss).toContain(`.k2b-ui .k2b-button${variant}:not(:disabled, [aria-disabled="true"]):hover {`);
     expect(actionsCss).not.toMatch(/\.k2b-button[^{}\n]*:not\(:disabled\):(hover|active)/);
   });
@@ -1067,12 +1085,34 @@ describe("workspace head navigation", () => {
     count: index,
   }));
   test("overflow replaces the last slot with the current view at both levels", () => {
-    expect(viewTabsLayout(items, "7")).toEqual({ wide: [0, 1, 2, 3, 6], compact: [0, 1, 6], wideHidden: 3, compactHidden: 5 });
+    expect(viewTabsLayout(items, "7")).toEqual({ wide: [0, 1, 2, 3, 6], compact: [0, 1, 6], pinned: [], wideHidden: 3, compactHidden: 5 });
     expect(viewTabsLayout(items, "missing").wide).toEqual([0, 1, 2, 3, 4]);
-    expect(viewTabsLayout(items.slice(0, 2), "2")).toEqual({ wide: [0, 1], compact: [0, 1], wideHidden: 0, compactHidden: 0 });
-    expect(viewTabsLayout(items, "8", 2)).toEqual({ wide: [0, 7], compact: [0, 7], wideHidden: 6, compactHidden: 6 });
-    expect(viewTabsLayout([], undefined)).toEqual({ wide: [], compact: [], wideHidden: 0, compactHidden: 0 });
+    expect(viewTabsLayout(items.slice(0, 2), "2")).toEqual({ wide: [0, 1], compact: [0, 1], pinned: [], wideHidden: 0, compactHidden: 0 });
+    expect(viewTabsLayout(items, "8", 2)).toEqual({ wide: [0, 7], compact: [0, 7], pinned: [], wideHidden: 6, compactHidden: 6 });
+    expect(viewTabsLayout([], undefined)).toEqual({ wide: [], compact: [], pinned: [], wideHidden: 0, compactHidden: 0 });
     for (const max of [0, -1, NaN, Infinity]) expect(viewTabsLayout(items, "7", max).wide).toContain(6);
+  });
+  test("a pinned view takes no overflow slot and stays after More at every level, also while it is current", () => {
+    const withPinned = [...items.slice(0, 7), { ...items[7]!, pinned: true, badge: "New" }];
+    expect(viewTabsLayout(withPinned, "2")).toEqual({
+      wide: [0, 1, 2, 3, 4],
+      compact: [0, 1, 2],
+      pinned: [7],
+      wideHidden: 2,
+      compactHidden: 4,
+    });
+    expect(viewTabsLayout(withPinned, "8")).toEqual({
+      wide: [0, 1, 2, 3, 4],
+      compact: [0, 1, 2],
+      pinned: [7],
+      wideHidden: 2,
+      compactHidden: 4,
+    });
+    const html = renderToString(() => createComponent(ViewTabs, { label: "Views", items: withPinned, current: "8" }));
+    expect([...html.matchAll(/data-view-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(["1", "2", "3", "4", "5", "8"]);
+    expect(html.indexOf('data-view-tab="8"')).toBeGreaterThan(html.indexOf("k2b-view-tabs__more"));
+    expect(html).toMatch(/class="k2b-view-tabs__badge"[^>]*>New</);
+    expect(html).toMatch(/href="\?view=8" aria-current="page"/);
   });
   test("SSR renders ordinary view links and both CSS overflow levels", () => {
     const html = renderToString(() => createComponent(ViewTabs, { label: "Views", items, current: "7", class: "custom" }));
@@ -1164,7 +1204,7 @@ describe("workspace head navigation", () => {
       expect(html.match(/class="k2b-app-workspace__head"/g)).toHaveLength(1);
     }
   });
-  const workspace = (filtered: boolean, head = true) =>
+  const workspace = (filtered: boolean, head = true, popup?: "menu" | "dialog") =>
     renderToString(() =>
       createComponent(PageTrailProvider, {
         trail: { title: "Project", ancestors: [{ title: "Projects", href: "/projects" }] },
@@ -1185,7 +1225,7 @@ describe("workspace head navigation", () => {
                       resetHref: "?view=list",
                       count: "12 results",
                       actions: "SECONDARY",
-                      primary: { label: "New task", icon: "ti ti-plus", href: "/new" },
+                      primary: { label: "New task", icon: "ti ti-plus", href: "/new", popup },
                     })
                   : null,
               ];
@@ -1221,6 +1261,14 @@ describe("workspace head navigation", () => {
     expect(unfiltered).not.toContain("12 results");
     expect(workspace(false, false)).toContain("k2b-app-workspace__head-lead");
     expect(workspace(false, false)).not.toContain("data-row");
+  });
+  test("a primary that opens a menu says so in server HTML and keeps its link", () => {
+    const html = workspace(false, true, "menu");
+    expect(html).toMatch(/<a [^>]*data-workspace-primary=""[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"[^>]*href="\/new"/);
+    expect(html).toContain("k2b-app-workspace__head-primary-chevron");
+    const plain = workspace(false);
+    expect(plain).not.toContain("aria-haspopup");
+    expect(plain).not.toContain("k2b-app-workspace__head-primary-chevron");
   });
   test("shows a zero result count while filtered", () => {
     const html = renderToString(() =>
@@ -1345,9 +1393,14 @@ describe("FilterToggle", () => {
     expect(disabled).not.toContain("href=");
   });
 
-  test("uses the shared active FilterChip tint and keeps links undecorated", () => {
+  test("uses the shared active FilterChip edge and fill and keeps links undecorated", () => {
     const active = rule('.k2b-ui .k2b-filter-chip[data-active="true"]');
-    expect(active).toContain("background: var(--k2b-app-workspace-selected)");
+    expect(active).toContain(
+      "--k2b-edge-color: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface))",
+    );
+    expect(active).toContain(
+      "background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))",
+    );
     expect(active).toContain("color: var(--k2b-app-workspace-active)");
     expect(rule(".k2b-ui a.k2b-filter-chip")).toContain("text-decoration: none");
   });

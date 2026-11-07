@@ -26,7 +26,7 @@ New users and existing eligible users are checked at startup, after configuratio
 
 ## Create machine storage {icon="server"}
 
-In **Settings → Machine storage**, choose an agent or standalone service account and select **Create storage**. Open the new storage row and grant named users, groups or machines access to a **Relative path**. Empty means the whole storage; a narrower grant includes that file or folder and its descendants. Choose **Read**, **Read and write**, or **Read, write and share**. Ownership alone grants no access, including to the owner.
+In **Settings → Machine storage**, choose an agent and select **Create storage**. Open the new storage row and grant named users, groups or machines access to a **Relative path**. Empty means the whole storage; a narrower grant includes that file or folder and its descendants. Choose **Read**, **Read and write**, or **Read, write and share**. Ownership alone grants no access, including to the owner.
 
 Machine storage uses its own Cloud directory and the existing Files service identity. It needs no local Linux provisioning and never uses a person's Unix identity. FreeIPA machine storage is unavailable without an independently provisioned machine Unix identity. Machine storage is excluded from the human directory lifecycle and automatic archiving.
 
@@ -93,7 +93,7 @@ Historical versions can be permanently deleted only from the administrator file 
 
 ## Use the terminal {icon="terminal"}
 
-`cld filesv2 admin inventory --storage freeipa --kind groups --json` reads the same inventory. Pass a returned `next` cursor with `--after`. Read configuration with `cld filesv2 admin configuration get --json`; write a complete edited configuration with `cld filesv2 admin configuration set --input-file ./filesv2.json` or `--stdin`. An omitted or empty `token` preserves the secret.
+`cld filesv2 admin inventory --storage freeipa --kind groups --json` reads the same inventory. Pass a returned `next` cursor with `--after`. Read configuration with `cld filesv2 admin configuration get --json`; write a complete edited configuration with `cld filesv2 admin configuration set --input-file ./filesv2.json --yes` or `--stdin`. An omitted or empty `token` preserves the secret.
 
 `cld filesv2 admin shares list --json` lists all links; `admin shares revoke <share-id> --yes` revokes one. `cld filesv2 admin uploads list --json` lists unresolved inbox reservations. These lists accept `--after` for further pages.
 
@@ -101,7 +101,7 @@ Directory and file commands address a directory as `<storage>/<users|groups>/<na
 
 ## Manage templates {icon="template"}
 
-The **Templates** tab stores reusable files independently of storage bases. Upload a file or choose an existing file you can read. Each template is a separate snapshot, up to 20 MiB. Name it, optionally describe it, and give **Use** access to users, groups, agents, standalone service accounts or everyone signed in. Without access, only administration lists it. These are Cloud permissions; no POSIX group or access to the original folder is required.
+The **Templates** tab stores reusable files independently of storage bases. Upload a file or choose an existing file you can read. Each template is a separate snapshot, up to 20 MiB. Name it and optionally describe it. Then choose **Who can use this template?** to give **Use** access to users, groups, agents or all signed-in people, and choose **Save**. Without access, only administration lists it. These are Cloud permissions; no POSIX group or access to the original folder is required.
 
 Users choose **Add → Template** in a writable folder. Using a template still requires **Edit** on the destination folder. Replacing a template file or deleting the template does not affect files previously created from it. Imported originals can also be changed or removed independently. Template bytes and access entries are stored in PostgreSQL and must be included in database backups.
 

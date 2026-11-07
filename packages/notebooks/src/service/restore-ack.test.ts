@@ -58,9 +58,14 @@ if (process.env.NOTEBOOKS_RESTORE_ACK_CHILD !== "1") {
   };
   const fixtureSql = async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const query = parts.join("?");
-    if (query.includes("FOR UPDATE") || query.includes("FOR SHARE")) {
+    if (query.includes("FROM notebooks.notebooks") && query.includes("FOR KEY SHARE")) {
       expect(locked).toBe(true);
-      lockKind = query.includes("FOR UPDATE") ? "exclusive" : "shared";
+      expect(lockKind).toBeNull();
+      return [{ id: "book" }];
+    }
+    if (query.includes("FOR NO KEY UPDATE") || query.includes("FOR SHARE")) {
+      expect(locked).toBe(true);
+      lockKind = query.includes("FOR NO KEY UPDATE") ? "exclusive" : "shared";
       underLock?.();
       if (!row) return [];
       return query.includes("AS revision") ? [{ revision: row.yjs_restore_revision }] : [{ ...row }];
@@ -95,18 +100,17 @@ if (process.env.NOTEBOOKS_RESTORE_ACK_CHILD !== "1") {
     }
     throw new Error("Unexpected SQL: " + query);
   };
-  Object.assign(fixtureSql, {
-    begin: async (callback: (tx: typeof fixtureSql) => Promise<unknown>) => {
-      expect(locked).toBe(false);
-      locked = true;
-      try {
-        return await callback(fixtureSql);
-      } finally {
-        locked = false;
-        lockKind = null;
-      }
-    },
-  });
+  const fixtureBegin = async (callback: (tx: typeof fixtureSql) => Promise<unknown>) => {
+    expect(locked).toBe(false);
+    locked = true;
+    try {
+      return await callback(fixtureSql);
+    } finally {
+      locked = false;
+      lockKind = null;
+    }
+  };
+  Object.assign(fixtureSql, { begin: fixtureBegin });
   // The platform client is mockable; the real service keeps its transaction ordering.
   mock.module("@k2b/cloud", () => ({ lazySync: () => () => ({}), sql: fixtureSql }));
   mock.module("@k2b/cloud/server", () => ({ REQUEST_IDLE_TIMEOUT_MAX_SECONDS: 240 }));
@@ -120,7 +124,13 @@ if (process.env.NOTEBOOKS_RESTORE_ACK_CHILD !== "1") {
   mock.module("./access", () => ({ buildNotebookVisibleAccessCondition() {}, mayReadAcrossNotebooks() {} }));
   mock.module("./activity", () => ({ record: async () => {} }));
   mock.module("./note-refs", () => ({ reindexNoteRefsSafe: async () => {} }));
-  mock.module("./workspace-events", () => ({ invalidated() {}, noteCreated() {}, noteDeleted() {}, noteUpdated: async () => {} }));
+  mock.module("./workspace-events", () => ({
+    invalidated() {},
+    noteCreated() {},
+    noteDeleted() {},
+    noteUpdated: async () => {},
+    workspaceTransaction: fixtureBegin,
+  }));
   const topic = {
     head: async () => {
       expect(lockKind).toBe("exclusive");

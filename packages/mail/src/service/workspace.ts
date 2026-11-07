@@ -12,7 +12,9 @@ import {
   type ScheduledSendPage,
   type SenderIdentity,
 } from "../contracts";
-import { isAggregatedListing, mailListingExcludesTrashAndJunk } from "../folder-display-rules";
+import { isAggregatedListing, mailListingExcludesTrashAndJunk, withOpenWork } from "../folder-display-rules";
+import { mailFolderNames } from "../folder-names";
+import { isMailEventsRoute, type MailEventsFilter, mailEventsKinds, readMailEventsFilter } from "../mail-events-route";
 import type { MailDoneTodayCounts, MailViewPreference } from "../mail-view-preference";
 import {
   MAIL_SEARCH_MATCHES_NOTHING,
@@ -22,13 +24,21 @@ import {
   replaceMailSearchReferences,
   resolveMailSearchRoute,
 } from "../search-state";
-import { type MailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
+import { type MailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages, withOneAccessRead } from "./access";
 import type { MailRequestContext } from "./auth";
 import * as automationLog from "./automation-log";
-import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./collaboration";
+import type {
+  ConversationCollaboration,
+  ConversationComment,
+  MailActivityEvent,
+  MailActivityPerson,
+  MailAssignableUser,
+} from "./collaboration";
 import * as collaboration from "./collaboration";
 import type { ConversationKeep } from "./conversation-keeps";
 import * as conversationKeeps from "./conversation-keeps";
+import type { MailConversationParticipant, MailConversationParticipants } from "./conversation-participants";
+import * as conversationParticipants from "./conversation-participants";
 import * as conversationReferences from "./conversation-reference";
 import type { ConversationContentSummary } from "./conversation-summary";
 import * as conversationSummaries from "./conversation-summary";
@@ -68,7 +78,15 @@ export type MailListItem = {
   unread: boolean;
   activeFolderIds: string[];
   flagged: boolean;
-  hasAttachments: boolean;
+  /** Left out when the conversation has none, so most rows of a page cost nothing for it. */
+  attachmentCount?: number;
+  /**
+   * Who wrote in the conversation, first to write first, at most `MAIL_ROW_PARTICIPANT_LIMIT`. Left out when only the
+   * sender the row already names wrote, as in most conversations, and in a message list.
+   */
+  participants?: MailConversationParticipant[];
+  /** How many people wrote, only when more wrote than `participants` names. */
+  participantCount?: number;
   messageCount: number;
   workStatus: "needs_action" | "waiting" | "done" | null;
   assigneeUserIds: string[];
@@ -80,6 +98,18 @@ export type MailListItem = {
 };
 
 export type MailListMode = "conversations" | "messages";
+
+/** The first page of the mailbox's event feed for the filter in the URL; later pages load from the activity API. */
+export type MailEventsPage = {
+  items: MailActivityEvent[];
+  nextCursor: string | null;
+  filter: MailEventsFilter;
+  /** People the Person chip offers, at most as many as the assignee list loads. */
+  people: MailActivityPerson[];
+};
+
+const MAIL_EVENTS_PAGE_SIZE = 50;
+const MAIL_EVENTS_PEOPLE_LIMIT = 200;
 
 const EMPTY_VIEW_COUNTS: ConversationViewCounts = {
   needs_action: 0,
@@ -109,7 +139,8 @@ const workspaceMessages = i18n.define({
           recently_active: "Recent activity",
           kept: "Kept",
         })[view],
-      scheduled: "Scheduled",
+      scheduled: "Outbox",
+      events: "Events",
       search: "Search",
       resultsFor: ({ query }: { query: string }) => `Results for “${query}”`,
       filteredSearch: "Filtered search",
@@ -128,7 +159,8 @@ const workspaceMessages = i18n.define({
           recently_active: "Letzte Aktivität",
           kept: "Aufbewahrt",
         })[view],
-      scheduled: "Geplant",
+      scheduled: "Postausgang",
+      events: "Ereignisse",
       search: "Suche",
       resultsFor: ({ query }) => `Ergebnisse für „${query}“`,
       filteredSearch: "Gefilterte Suche",
@@ -168,6 +200,10 @@ export type MailboxPageData = {
   draftsMode: boolean;
   draftsPage: DraftFolderPage | null;
   draftsError: string | null;
+  /** The Events tab is open: it shows the mailbox's event feed instead of conversations. */
+  eventsMode: boolean;
+  eventsPage: MailEventsPage | null;
+  eventsError: string | null;
   activeView: ConversationView | null;
   savedViewId: string | null;
   savedViews: SavedConversationView[];
@@ -183,6 +219,10 @@ export type MailboxPageData = {
   listCursor: string | null;
   nextListCursor: string | null;
   listError: MailListError | null;
+  /** The done conversations the list leaves out, named at its end; null while more pages follow or when it leaves none out. */
+  hiddenDone: MailHiddenDone | null;
+  /** Assigned to me's two groups, counted for the whole view; null in every other list and when they could not be counted. */
+  assignedGroups: MailAssignedGroups | null;
   listTitle: string;
   detailMessages: MailWorkspaceMessage[];
   conversationRowState: ConversationRowState | null;
@@ -288,7 +328,7 @@ const conversationToListItem = (conversation: ConversationSummary): MailListItem
   unread: conversation.unread,
   activeFolderIds: conversation.activeFolderIds,
   flagged: conversation.flagged,
-  hasAttachments: conversation.hasAttachments,
+  ...(conversation.attachmentCount > 0 ? { attachmentCount: conversation.attachmentCount } : {}),
   messageCount: conversation.messageCount,
   workStatus: conversation.workStatus,
   assigneeUserIds: conversation.assigneeUserIds,
@@ -306,7 +346,17 @@ type MailListPage = {
   items: MailListItem[];
   nextCursor: string | null;
   error: MailListError | null;
+  /** The list leaves out done and snoozed conversations (`mailListingOpenOnly`). */
+  openOnly: boolean;
+  /** The condition the list ran, before the open-work rule; it counts the done conversations the list leaves out. */
+  expression: MailSearchExpression | null;
 };
+
+/** The done conversations a work list leaves out, named at its end. `count` is null when it could not be counted. */
+export type MailHiddenDone = { count: number | null; more: boolean };
+
+/** Assigned to me lists whose turn it is, then the conversations waiting for a reply; each heading names its count. */
+export type MailAssignedGroups = { needsAction: number; waiting: number };
 
 export const searchHitToListItem = (item: search.MessageSearchHit, listMode: MailListMode): MailListItem => {
   const selectionKind = listMode === "messages" || !item.conversationId ? "message" : "conversation";
@@ -325,7 +375,7 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
     unread: item.unread,
     activeFolderIds: item.activeFolderIds,
     flagged: item.flagged,
-    hasAttachments: item.hasAttachments,
+    ...(item.attachmentCount > 0 ? { attachmentCount: item.attachmentCount } : {}),
     messageCount: item.messageCount,
     workStatus: item.workStatus,
     assigneeUserIds: item.assigneeUserIds,
@@ -337,25 +387,45 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
   };
 };
 
-const attachLocalTags = async (
+/** Only the sender the row already names wrote, so the row costs nothing for its participants. */
+const namesOnlyItsSender = (item: MailListItem, participants: MailConversationParticipants): boolean =>
+  participants.count === 1 && !participants.people[0]?.kind && participants.people[0]?.name === item.participantLabels[0];
+
+/** The page's local tags and participants, read for the chosen rows only. */
+const attachRowDetails = async (
   context: MailRequestContext,
   mailboxId: string,
   items: MailListItem[],
   nextCursor: string | null,
+  rule: Pick<MailListPage, "openOnly" | "expression">,
 ): Promise<MailListPage> => {
-  const result = await localTags.listConversationLocalTags({
-    context,
-    mailboxId,
-    conversationIds: items.flatMap((item) => (item.conversationId ? [item.conversationId] : [])),
-  });
-  if (!result.ok) return { items: [], nextCursor: null, error: "load_failed" };
+  const conversationIds = items.flatMap((item) => (item.conversationId ? [item.conversationId] : []));
+  const [tags, participants] = await Promise.all([
+    localTags.listConversationLocalTags({ context, mailboxId, conversationIds }),
+    conversationParticipants.listConversationParticipants({
+      context,
+      mailboxId,
+      conversationIds: items.flatMap((item) => (item.selectionKind === "conversation" && item.conversationId ? [item.conversationId] : [])),
+    }),
+  ]);
+  if (!tags.ok || !participants.ok) return { items: [], nextCursor: null, error: "load_failed", ...rule };
   return {
     error: null,
     nextCursor,
-    items: items.map((item) => ({
-      ...item,
-      localTags: item.conversationId ? (result.data.get(item.conversationId) ?? []) : [],
-    })),
+    ...rule,
+    items: items.map((item) => {
+      const written = item.selectionKind === "conversation" && item.conversationId ? participants.data.get(item.conversationId) : undefined;
+      return {
+        ...item,
+        localTags: item.conversationId ? (tags.data.get(item.conversationId) ?? []) : [],
+        ...(written && !namesOnlyItsSender(item, written)
+          ? {
+              participants: written.people,
+              ...(written.count > written.people.length ? { participantCount: written.count } : {}),
+            }
+          : {}),
+      };
+    }),
   };
 };
 
@@ -461,19 +531,20 @@ export const loadMailboxConversationDetail = async (params: {
   preferredFolderId?: string | null;
   locale?: string | null;
 }): Promise<MailConversationDetailData | null> => {
-  const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
+  const context = withOneAccessRead(params.context);
+  const permission = await requireMailboxAccess(context, params.mailboxId, "read");
   if (!permission.ok) return null;
   // Mailbox-wide visibility alone does not check conversation existence or mailbox ownership.
   const conversation = await messages.listConversationMessages({
-    context: params.context,
+    context,
     mailboxId: params.mailboxId,
     conversationId: params.conversationId,
     limit: 1,
   });
   if (!conversation.ok) return null;
   const [detail, availableTags] = await Promise.all([
-    loadConversationDetails(params, permission.data),
-    localTags.listLocalTags(params.context, params.mailboxId),
+    loadConversationDetails({ ...params, context }, permission.data),
+    localTags.listLocalTags(context, params.mailboxId),
   ]);
   const availableTagsError = availableTags.ok ? null : localizeMailError(availableTags.error, params.locale).message;
   return {
@@ -559,11 +630,20 @@ const loadListItems = async (params: {
   const sendProblems = !params.searchExpression && !params.savedView && !params.folderId && params.activeView === "send_problems";
 
   if (params.searchExpression || params.listMode === "messages") {
+    const openOnly = await messages.listingOpenOnly({
+      mailboxId: params.mailboxId,
+      view: params.activeView,
+      status: null,
+      expression: messageModeExpression,
+      folderId: params.folderId,
+    });
+    // All mail and folders count from the cached workspace counts; only a search or saved view counts its own condition.
+    const rule = { openOnly, expression: params.searchExpression ?? params.savedView?.filter.expression ?? null };
     const result = await search.searchMessages({
       context: params.context,
       mailboxId: params.mailboxId,
       request: {
-        expression: messageModeExpression,
+        expression: openOnly ? withOpenWork(messageModeExpression) : messageModeExpression,
         sort: params.searchExpression ? params.searchSort : (params.savedView?.filter.sort ?? "newest"),
         cursor: params.cursor,
         limit: 50,
@@ -574,10 +654,10 @@ const loadListItems = async (params: {
       aggregatedView: !params.searchExpression && !params.savedView && isAggregatedListing(params.folderId, params.activeView),
     });
     if (!result.ok) {
-      return { items: [], nextCursor: null, error: params.searchExpression || params.savedView ? "search_failed" : "load_failed" };
+      return { items: [], nextCursor: null, error: params.searchExpression || params.savedView ? "search_failed" : "load_failed", ...rule };
     }
     const items = result.data.items.map((item) => searchHitToListItem(item, params.listMode));
-    return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor);
+    return attachRowDetails(params.context, params.mailboxId, items, result.data.nextCursor, rule);
   }
 
   if (params.savedView) {
@@ -588,9 +668,13 @@ const loadListItems = async (params: {
       cursor: params.cursor,
       limit: 50,
     });
-    if (!result.ok) return { items: [], nextCursor: null, error: "search_failed" };
+    const expression = params.savedView.filter.expression;
+    if (!result.ok) return { items: [], nextCursor: null, error: "search_failed", openOnly: false, expression };
     const items = result.data.items.map(conversationToListItem);
-    return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor);
+    return attachRowDetails(params.context, params.mailboxId, items, result.data.nextCursor, {
+      openOnly: result.data.openOnly,
+      expression,
+    });
   }
 
   const result = await messages.listConversations({
@@ -602,9 +686,62 @@ const loadListItems = async (params: {
     cursor: params.cursor,
     limit: 50,
   });
-  if (!result.ok) return { items: [], nextCursor: null, error: "load_failed" };
+  if (!result.ok) return { items: [], nextCursor: null, error: "load_failed", openOnly: false, expression: null };
   const items = result.data.items.map(conversationToListItem);
-  return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor);
+  return attachRowDetails(params.context, params.mailboxId, items, result.data.nextCursor, {
+    openOnly: result.data.openOnly,
+    expression: null,
+  });
+};
+
+/** Assigned to me's group counts from the cached view counts, never from the page: later pages keep the same headings. */
+const loadAssignedGroups = async (params: { context: MailRequestContext; mailboxId: string }): Promise<MailAssignedGroups | null> => {
+  try {
+    const counts = await messages.getMailboxConversationCounts({ context: params.context, mailboxId: params.mailboxId, cached: true });
+    if (!counts.ok) return null;
+    const waiting = Math.min(counts.data.mineWaiting, counts.data.views.mine);
+    return { needsAction: counts.data.views.mine - waiting, waiting };
+  } catch (error) {
+    log.warn("Failed to count the groups of a Mail Assigned to me list", {
+      mailboxId: params.mailboxId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+};
+
+/**
+ * The done conversations a work list leaves out, once it reached its end. All mail and folders read them from the
+ * cached workspace counts; a search, tag, filter or saved view counts them once, bounded like a ranked search.
+ */
+const loadHiddenDone = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  folderId: string | null;
+  list: MailListPage;
+  excludedFolderIds: readonly string[];
+}): Promise<MailHiddenDone | null> => {
+  if (!params.list.openOnly || params.list.error || params.list.nextCursor !== null) return null;
+  try {
+    if (params.list.expression) {
+      const counted = await search.countDoneConversations({
+        context: params.context,
+        mailboxId: params.mailboxId,
+        expression: params.list.expression,
+        excludedFolderIds: params.excludedFolderIds,
+      });
+      return counted.ok ? counted.data : { count: null, more: false };
+    }
+    const counts = await messages.getMailboxConversationCounts({ context: params.context, mailboxId: params.mailboxId, cached: true });
+    if (!counts.ok) return { count: null, more: false };
+    return { count: params.folderId ? (counts.data.doneByFolder[params.folderId] ?? 0) : counts.data.views.done, more: false };
+  } catch (error) {
+    log.warn("Failed to count the done conversations a Mail list leaves out", {
+      mailboxId: params.mailboxId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { count: null, more: false };
+  }
 };
 
 /** A workspace URL after its public IDs were resolved: resource parameters and search conditions carry internal IDs. */
@@ -675,6 +812,9 @@ export type MailboxListView = Pick<
   | "draftsMode"
   | "draftsPage"
   | "draftsError"
+  | "eventsMode"
+  | "eventsPage"
+  | "eventsError"
   | "activeView"
   | "savedViewId"
   | "listMode"
@@ -685,6 +825,8 @@ export type MailboxListView = Pick<
   | "listCursor"
   | "nextListCursor"
   | "listError"
+  | "hiddenDone"
+  | "assignedGroups"
   | "listTitle"
 > & { scheduledCount?: number };
 
@@ -698,6 +840,36 @@ type MailboxListParams = {
   locale?: string | null;
 };
 
+/**
+ * The feed's first page and the people its Person chip offers. Both need the collaboration read permission, so a
+ * person who sees only assigned conversations gets the feed's refusal as its error.
+ */
+const loadEventsPage = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  filter: MailEventsFilter,
+): Promise<Result<MailEventsPage>> => {
+  const [page, people] = await Promise.all([
+    collaboration.listActivity({
+      context,
+      mailboxId,
+      limit: MAIL_EVENTS_PAGE_SIZE,
+      kinds: mailEventsKinds(filter),
+      actorId: filter.actorId,
+      mine: filter.mine,
+    }),
+    collaboration.listAssignableUsers({ context, mailboxId, limit: MAIL_EVENTS_PEOPLE_LIMIT }),
+  ]);
+  if (!page.ok) return page;
+  return ok({
+    ...page.data,
+    filter,
+    people: people.ok
+      ? people.data.map((person) => ({ id: person.id, displayName: person.displayName, avatarHash: person.avatarHash, type: person.type }))
+      : [],
+  });
+};
+
 const buildMailboxListView = async (
   params: MailboxListParams,
   folderResult: Awaited<ReturnType<typeof messages.listFolders>>,
@@ -705,10 +877,12 @@ const buildMailboxListView = async (
 ): Promise<Omit<MailboxListView, "mailbox" | "permission" | "access" | "savedViews">> => {
   const t = workspaceMessages.resolve([params.locale ?? "en"]).t;
   const scheduledMode = params.requestUrl.searchParams.get("scheduled") === "1";
+  // Events is a tab like a view, so it excludes folder, saved view, and search as views do.
+  const eventsMode = !scheduledMode && isMailEventsRoute(params.requestUrl);
   const parsedView = conversationViewSchema.safeParse(params.requestUrl.searchParams.get("view") ?? undefined);
   const activeView = parsedView.success ? parsedView.data : null;
-  const savedViewId = activeView ? null : optionalUuidSearchParam(params.requestUrl, "savedView");
-  const folderId = activeView || savedViewId ? null : optionalUuidSearchParam(params.requestUrl, "folder");
+  const savedViewId = activeView || eventsMode ? null : optionalUuidSearchParam(params.requestUrl, "savedView");
+  const folderId = activeView || savedViewId || eventsMode ? null : optionalUuidSearchParam(params.requestUrl, "folder");
   const resolvedSearch = params.search;
   const { query, expression: searchExpression, sort: searchSort } = resolvedSearch;
   const listCursor = params.requestUrl.searchParams.get("cursor");
@@ -731,8 +905,8 @@ const buildMailboxListView = async (
   })
     ? folders.filter((folder) => folder.role === "trash" || folder.role === "junk").map((folder) => folder.id)
     : [];
-  const [list, scheduledPageResult, draftsPageResult] = await Promise.all([
-    scheduledMode || draftsMode
+  const [list, scheduledPageResult, draftsPageResult, eventsPageResult] = await Promise.all([
+    scheduledMode || draftsMode || eventsMode
       ? Promise.resolve({ items: [], nextCursor: null, error: null })
       : resolvedSearch.error
         ? Promise.resolve({
@@ -763,6 +937,14 @@ const buildMailboxListView = async (
     draftsMode
       ? drafts.listDraftFolder({ context: params.context, mailboxId: params.mailboxId, cursor: listCursor ?? undefined, limit: 50 })
       : Promise.resolve(null),
+    eventsMode ? loadEventsPage(params.context, params.mailboxId, readMailEventsFilter(params.requestUrl)) : Promise.resolve(null),
+  ]);
+  // The same listing the service sorts by group: the Assigned to me tab without a search or another list mode.
+  const grouped =
+    activeView === "mine" && !searchExpression && !resolvedSearch.error && listMode === "conversations" && !scheduledMode && !eventsMode;
+  const [hiddenDone, assignedGroups] = await Promise.all([
+    "openOnly" in list ? loadHiddenDone({ context: params.context, mailboxId: params.mailboxId, folderId, list, excludedFolderIds }) : null,
+    grouped && !list.error ? loadAssignedGroups({ context: params.context, mailboxId: params.mailboxId }) : null,
   ]);
   return {
     scheduledMode,
@@ -773,6 +955,9 @@ const buildMailboxListView = async (
     draftsMode,
     draftsPage: draftsPageResult?.ok ? draftsPageResult.data : null,
     draftsError: draftsPageResult && !draftsPageResult.ok ? localizeMailError(draftsPageResult.error, params.locale).message : null,
+    eventsMode,
+    eventsPage: eventsPageResult?.ok ? eventsPageResult.data : null,
+    eventsError: eventsPageResult && !eventsPageResult.ok ? localizeMailError(eventsPageResult.error, params.locale).message : null,
     activeView,
     savedViewId,
     listMode,
@@ -783,21 +968,26 @@ const buildMailboxListView = async (
     listCursor,
     nextListCursor: list.nextCursor,
     listError: list.error,
+    hiddenDone,
+    assignedGroups,
     listTitle: scheduledMode
       ? t.scheduled
-      : resolvedSearch.error
-        ? t.search
-        : searchExpression
-          ? query
-            ? t.resultsFor({ query })
-            : t.filteredSearch
-          : activeView
-            ? t.view({ view: activeView })
-            : (activeSavedView?.name ?? activeFolder?.name ?? t.allMail),
+      : eventsMode
+        ? t.events
+        : resolvedSearch.error
+          ? t.search
+          : searchExpression
+            ? query
+              ? t.resultsFor({ query })
+              : t.filteredSearch
+            : activeView
+              ? t.view({ view: activeView })
+              : (activeSavedView?.name ?? (activeFolder ? mailFolderNames(params.locale ?? "en")(activeFolder) : t.allMail)),
   };
 };
 
-export const loadMailboxListView = async (params: MailboxListParams): Promise<Result<MailboxListView>> => {
+export const loadMailboxListView = async (listParams: MailboxListParams): Promise<Result<MailboxListView>> => {
+  const params = { ...listParams, context: withOneAccessRead(listParams.context) };
   const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!permission.ok) return fail(permission.error);
   const [mailboxResult, folderResult, savedViewResult] = await Promise.all([
@@ -815,7 +1005,7 @@ export const loadMailboxListView = async (params: MailboxListParams): Promise<Re
   });
 };
 
-export const loadMailboxPageData = async (params: {
+export const loadMailboxPageData = async (pageParams: {
   context: MailRequestContext;
   mailboxId: string;
   requestUrl: URL;
@@ -824,6 +1014,7 @@ export const loadMailboxPageData = async (params: {
   listMode?: MailListMode;
   locale?: string | null;
 }): Promise<Result<MailboxPageData>> => {
+  const params = { ...pageParams, context: withOneAccessRead(pageParams.context) };
   const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!permission.ok) return fail(permission.error);
 
@@ -863,6 +1054,7 @@ export const loadMailboxPageData = async (params: {
     messages.getConversationViewCounts({
       context: params.context,
       mailboxId: params.mailboxId,
+      cached: true,
     }),
     saved,
     localTags.listLocalTags(params.context, params.mailboxId),
@@ -889,6 +1081,7 @@ export const loadMailboxPageData = async (params: {
     item.selectionKind === "message" ? item.id === selectedMessageId : item.conversationId === selectedConversationId,
   );
   const preferredFolderId = selectedListItem?.sourceFolderId ?? folderId;
+  // The Events tab keeps the reader: a click on an event opens its conversation beside the feed.
   const selection =
     scheduledMode || draftsMode
       ? EMPTY_SELECTION_DETAIL

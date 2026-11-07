@@ -138,8 +138,11 @@ const harness = {
       const style = getComputedStyle(line);
       return {
         left: content.left + parseFloat(getComputedStyle(view.contentDOM).paddingLeft) + parseFloat(style.paddingLeft),
-        top: view.documentTop + block.top,
-        height: view.defaultLineHeight,
+        // Inside a rendered block the caret runs along the whole block as drawn.
+        ...(() => {
+          const box = view.coordsAtPos(block.from, 1)!;
+          return { top: box.top, height: box.bottom - box.top };
+        })(),
       };
     }
     const coords = harness.coords(side, head, head > anchor ? -1 : 1);

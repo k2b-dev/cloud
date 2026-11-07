@@ -2,7 +2,20 @@ import { history, historyKeymap, redo, undo } from "@codemirror/commands";
 import type { Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { clipboard } from "@k2b/stdlib/solid";
-import { createEffect, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
+import {
+  children,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+} from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import {
   Dropdown,
@@ -16,10 +29,14 @@ import { SegmentedControl } from "../actions/SegmentedControl";
 import { Toolbar } from "../actions/Toolbar";
 import { Kbd } from "../content/Kbd";
 import { dialogCore } from "../feedback/dialog-core";
+import { createDictation } from "../inputs/dictation/create-dictation";
+import { DictationBar, DictationButton, dictationBarShown } from "../inputs/dictation/Dictation";
+import type { DictationAlternative, DictationSource } from "../inputs/dictation/types";
 import { NumberInput } from "../inputs/NumberInput";
 import { LocaleProvider, useLocale } from "../intl/locale";
 import { formatShortcut, type KeyboardPlatform, keyboardPlatform } from "../intl/shortcut";
 import BottomSheet, { bottomSheetAdaptiveOptions } from "../layout/BottomSheet";
+import { codeMirrorDictationTarget, dictationExtension } from "./dictation";
 import { createTextEditor, type TextEditorController, type TextEditorMode, type TextEditorOptions } from "./engine";
 import { commands, formatLabels, type InlineFormat } from "./format";
 import { findTables, inspectTableStructure } from "./markdown-table";
@@ -60,8 +77,13 @@ export type TextEditorProps = {
   /** Opens the host's attachment picker when clipboard images cannot be inserted. */
   onAttachImages?: () => void;
   onTableCheck?: (needsCheck: boolean) => void;
-  /** Host-owned sync status; its place is reserved across transitions. */
+  /** Host-owned sync status. Its row appears only while there is a status or a table check; keep it set across transitions. */
   status?: JSX.Element;
+  /**
+   * Live dictation as the last control of the toolbar, so it never scrolls away. While it runs, the dictation bar
+   * stands in for the formatting controls in the same row. Words land at the caret as typed text does.
+   */
+  dictation?: { source: DictationSource; alternative?: DictationAlternative };
   class?: string;
 };
 
@@ -269,6 +291,7 @@ export function TextEditor(props: TextEditorProps) {
   const locale = useLocale();
   const t = () => textEditorMessages.resolve([locale()]).t;
   const [mode, setMode] = createSignal<TextEditorMode>(props.mode ?? "formatted");
+  const status = children(() => props.status);
   const [ready, setReady] = createSignal(false);
   const [recovery, setRecovery] = createSignal<string>();
   const [notice, setNotice] = createSignal<{ message: string; images?: boolean }>();
@@ -368,6 +391,24 @@ export function TextEditor(props: TextEditorProps) {
   let root!: HTMLDivElement;
   let mount!: HTMLDivElement;
   let editor: TextEditorController | undefined;
+  // The view is read-only while it loads or recovers, too; dictation only runs where words can land.
+  const dictationWritable = () => !props.readOnly && !props.loading && ready() && recovery() === undefined && mode() !== "plain";
+  const dictation = createDictation({
+    source: {
+      start: (options) => props.dictation!.source.start(options),
+      devices: () => props.dictation?.source.devices() ?? Promise.resolve([]),
+    },
+    get alternative() {
+      return props.dictation?.alternative;
+    },
+    target: codeMirrorDictationTarget(() => editor?.view),
+    disabled: () => !props.dictation || !dictationWritable(),
+  });
+  // A field that turns read-only or plain hides the toolbar; dictation then ends and the words so far stay.
+  // A memo compares the value, so ordinary edits never end it.
+  const dictationScope = createMemo(() => `${Boolean(props.dictation)}:${dictationWritable()}`);
+  createEffect(on(dictationScope, () => dictation.end(), { defer: true }));
+  const dictating = () => Boolean(props.dictation) && dictationBarShown(dictation);
   const menuBlocked = () => !!props.loading || !ready() || recovery() !== undefined;
   const blocked = () => !!props.readOnly || menuBlocked();
   const updateCheck = () => {
@@ -407,11 +448,20 @@ export function TextEditor(props: TextEditorProps) {
         positionMenu();
       });
   };
-  const unavailable = () => !!props.host?.structure && !props.host.structure.available();
+  const unavailable = createMemo(() => !!props.host?.structure && !props.host.structure.available());
+  // Closed table menus keep their entries until they open again. A host may report another availability on every
+  // edit, and each entry rebuilt or re-enabled in a hidden menu restyles the whole page through the shared `:has()`
+  // rules, so typing would lag.
+  const [tableMenuShown, setTableMenuShown] = createSignal(false);
+  const whileMenuShown = <T,>(read: () => T) => createMemo<T>((last) => (tableMenuShown() ? read() : last), untrack(read));
+  const menuRevision = whileMenuShown(documentRevision);
+  const menuUnavailable = whileMenuShown(unavailable);
   const actionDisabled = (action: MenuAction) => {
-    documentRevision();
+    menuRevision();
+    menuUnavailable();
     const wrap = cell()?.closest<HTMLElement>(".k2b-ste-table");
-    return blocked() || !editor || !wrap || !tableActionEnabled(editor.view, wrap, action);
+    const view = editor?.view;
+    return blocked() || !view || !wrap || untrack(() => !tableActionEnabled(view, wrap, action));
   };
   const isMove = (action: MenuAction) => action.startsWith("move");
   const runAction = (action: MenuAction) => {
@@ -453,11 +503,11 @@ export function TextEditor(props: TextEditorProps) {
     deleteCol: "menuDelete",
   } as const;
   const menuRow = () => {
-    documentRevision();
+    menuRevision();
     return t().menuRow(Number(cell()?.dataset.r ?? 0));
   };
   const menuColumn = () => {
-    documentRevision();
+    menuRevision();
     const column = Number(cell()?.dataset.c ?? 0);
     const header = cell()?.closest(".k2b-ste-table")?.querySelector<HTMLElement>(`.k2b-ste-cell[data-r="0"][data-c="${column}"]`);
     return t().menuColumn(header?.dataset.raw || t().column(column + 1));
@@ -532,7 +582,7 @@ export function TextEditor(props: TextEditorProps) {
   const items = (kind: MenuScope): DropdownItem[] => {
     if (props.readOnly) return copyItems();
     const align = () => {
-      documentRevision();
+      menuRevision();
       return cell()?.parentElement?.style.textAlign || "left";
     };
     const row: DropdownItem[] = [
@@ -582,7 +632,7 @@ export function TextEditor(props: TextEditorProps) {
             choice: "checkbox",
             class: "k2b-ste-header-choice",
             checked: () => {
-              documentRevision();
+              menuRevision();
               return cell()?.closest<HTMLElement>(".k2b-ste-table")?.dataset.header === "true";
             },
           }),
@@ -596,7 +646,7 @@ export function TextEditor(props: TextEditorProps) {
           },
           ...copyItems(),
           actionItem("deleteTable"),
-          ...(unavailable() ? [{ label: t().structureUnavailable, disabled: true as const }] : []),
+          ...(menuUnavailable() ? [{ label: t().structureUnavailable, disabled: true as const }] : []),
         ],
       },
     ];
@@ -611,6 +661,7 @@ export function TextEditor(props: TextEditorProps) {
   const tableMenuChange = (open: boolean) => {
     menuOpen = open;
     tableMenuOpen = open && !phoneMenu();
+    setTableMenuShown(open);
   };
   let swallow: AbortController | undefined;
   const pressBesideMenu = (event: PointerEvent) => {
@@ -642,6 +693,7 @@ export function TextEditor(props: TextEditorProps) {
   const menuClose = () => {
     menuOpen = false;
     tableMenuOpen = false;
+    setTableMenuShown(false);
     setScope("cell");
     grip = undefined;
     schedulePosition();
@@ -800,7 +852,10 @@ export function TextEditor(props: TextEditorProps) {
     </Dropdown>
   );
   const selectMode = (next: TextEditorMode) => {
-    const restoreEditorFocus = !!editor?.view.contentDOM.contains(document.activeElement);
+    // Returning from the source view removes its switch; keyboard focus then moves into the text.
+    const restoreEditorFocus =
+      !!editor?.view.contentDOM.contains(document.activeElement) ||
+      !!root.querySelector(".k2b-ste-views")?.contains(document.activeElement);
     menuOpen = false;
     setCell(undefined);
     setMode(next);
@@ -836,7 +891,13 @@ export function TextEditor(props: TextEditorProps) {
           schedulePosition();
           if (update.docChanged) queueMicrotask(() => setDocumentRevision((revision) => revision + 1));
         }),
+        // The caret never moves under a toolbar that stays at the top of a scrolling host.
+        EditorView.scrollMargins.of(() => {
+          const slot = root.querySelector<HTMLElement>(".k2b-ste-toolbar-slot");
+          return slot && getComputedStyle(slot).position === "sticky" ? { top: slot.offsetHeight } : null;
+        }),
         props.extensions ?? [],
+        props.dictation ? dictationExtension() : [],
       ],
       host: {
         ...props.host,
@@ -1036,9 +1097,9 @@ export function TextEditor(props: TextEditorProps) {
       <span class="k2b-ste-announcement" role="status" aria-live="polite" aria-atomic="true">
         {announcement()}
       </span>
-      <Show when={!props.presentation || "status" in props || check()}>
+      <Show when={(status() !== undefined && status() !== null && status() !== false) || check()}>
         <div class="k2b-ste-status" role="status">
-          <span>{props.status}</span>
+          <span>{status()}</span>
           <Show when={check()}>
             <span class="k2b-ste-check" title={missingSeparator() ? t().checkSeparatorDetail : t().checkTableDetail}>
               <i class="ti ti-alert-triangle" aria-hidden="true" />
@@ -1072,7 +1133,10 @@ export function TextEditor(props: TextEditorProps) {
       <Show when={!props.readOnly && mode() !== "plain" && props.toolbar !== false}>
         <div class="k2b-ste-toolbar-slot">
           <Toolbar class="k2b-ste-toolbar" label={t().formatting}>
-            <For each={[toolbar.slice(0, 3), toolbar.slice(3, 6), toolbar.slice(6)]}>
+            <Show when={dictating()}>
+              <DictationBar dictation={dictation} />
+            </Show>
+            <For each={dictating() ? [] : [toolbar.slice(0, 3), toolbar.slice(3, 6), toolbar.slice(6)]}>
               {(group) => (
                 <Toolbar.Group class="k2b-ste-tool-group">
                   <For each={group}>
@@ -1109,17 +1173,23 @@ export function TextEditor(props: TextEditorProps) {
                 </Toolbar.Group>
               )}
             </For>
-            <SegmentedControl
-              class="k2b-ste-views"
-              size="sm"
-              ariaLabel={t().view}
-              value={mode() === "source" ? "source" : "formatted"}
-              options={[
-                { value: "formatted", label: t().formatted, icon: "ti ti-typography" },
-                { value: "source", label: t().source, icon: "ti ti-markdown" },
-              ]}
-              onValueChange={selectMode}
-            />
+            {/* Editing is always formatted. Only a source view reached through the table check offers the way back. */}
+            <Show when={mode() === "source" && !dictating()}>
+              <SegmentedControl
+                class="k2b-ste-views"
+                size="sm"
+                ariaLabel={t().view}
+                value="source"
+                options={[
+                  { value: "formatted", label: t().formatted, icon: "ti ti-typography" },
+                  { value: "source", label: t().source, icon: "ti ti-markdown" },
+                ]}
+                onValueChange={selectMode}
+              />
+            </Show>
+            <Show when={props.dictation && !dictating()}>
+              <DictationButton dictation={dictation} class="k2b-ste-tool k2b-ste-dictate" />
+            </Show>
           </Toolbar>
         </div>
       </Show>

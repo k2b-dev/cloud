@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { Reader } from "mmdb-lib";
-import type { GeoIpKind } from "../../contracts/geoip";
+import { DBIP_ATTRIBUTION, type GeoIpKind, type IpCountryResult } from "../../contracts/geoip";
+import { isDbIp } from "../../services/geoip/attribution";
 import { geoIpUploads } from "../../services/geoip/store";
 import { logger } from "../../services/logging";
 import { publicClientAddress } from "./address";
@@ -43,6 +46,18 @@ const cleanName = (value: unknown): string | null => {
 };
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {};
+
+// ISO 3166-1 alpha-2 plus XK for Kosovo, which DB-IP reports; excludes provider placeholders and non-country region codes.
+const COUNTRY_CODES = new Set(
+  "AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XK YE YT ZA ZM ZW".split(
+    " ",
+  ),
+);
+const isoCountryCode = (value: unknown): string | null => {
+  if (typeof value !== "string" || value.length !== 2) return null;
+  const code = value.toUpperCase();
+  return COUNTRY_CODES.has(code) ? code : null;
+};
 
 const METADATA_MARKER = Buffer.from("abcdef4d61784d696e642e636f6d", "hex");
 const isBoundedMmdbValue = (
@@ -176,7 +191,7 @@ export const hasBoundedMmdbMetadata = (bytes: Uint8Array): boolean =>
   boundedMmdbMetadataStart(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)) !== -1;
 
 export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "bundled" | "uploaded" = "bundled") => {
-  // This Buffer is a view: Buffer.from(bytes) would copy the entire mmap.
+  // This Buffer is a view: Buffer.from(bytes) would copy the entire database.
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const metadataStart = boundedMmdbMetadataStart(buffer);
   if (metadataStart === -1) return null;
@@ -208,6 +223,7 @@ export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "b
       return null;
     // An IPv4-only tree answers IPv6 lookups with unrelated IPv4 records, so only IPv6 databases qualify.
     if (metadata.ipVersion !== 6 || !metadata.databaseType.toLowerCase().includes(kind)) return null;
+    const description = record(metadata.description).en;
     const info: GeoIpDatabaseInfo = { databaseType: metadata.databaseType, buildDate: metadata.buildEpoch, source };
     if (!Number.isFinite(info.buildDate.getTime())) return null;
     const clear = () => {
@@ -216,7 +232,11 @@ export const openGeoIpDatabase = (kind: GeoIpKind, bytes: Uint8Array, source: "b
     };
     return {
       info,
-      get(address: string) {
+      attribution:
+        source === "bundled" || isDbIp(`${metadata.databaseType} ${truncateUtf8(typeof description === "string" ? description : "", 256)}`)
+          ? DBIP_ATTRIBUTION
+          : null,
+      get(address: string): object | null {
         try {
           return reader.get(address);
         } finally {
@@ -245,6 +265,7 @@ export type GeoIpUploads = {
 export type GeoIp = {
   refresh(): Promise<void>;
   install(kind: GeoIpKind, database: GeoIpDatabase | null): void;
+  country(address: string): IpCountryResult;
   lookup(address: string | null, locale?: string): GeoIpLookup;
   status(): { city: GeoIpDatabaseInfo | null; asn: GeoIpDatabaseInfo | null };
 };
@@ -275,8 +296,8 @@ export const createGeoIp = (
   };
   const open = (kind: "city" | "asn", path: string): GeoIpDatabase | null => {
     try {
-      // A private mapping: pages load on demand and a stray write never reaches the file.
-      const database = openGeoIpDatabase(kind, Bun.mmap(path, { shared: false }));
+      // Bun.mmap requires a writable file even for private mappings. Image files must open read-only.
+      const database = openGeoIpDatabase(kind, readFileSync(path));
       if (!database)
         logOnce(kind, `GeoIP ${kind} snapshot is invalid; sign-in ${kind === "city" ? "locations" : "network names"} are unavailable`);
       return database;
@@ -295,7 +316,7 @@ export const createGeoIp = (
   };
   const install = (kind: GeoIpKind, database: GeoIpDatabase | null) => {
     generations[kind]++;
-    // Undefined opens the bundled mapping lazily, without retaining a second reader.
+    // Undefined opens the bundled snapshot lazily, without retaining a second reader.
     if (database) databases[kind] = database;
     else delete databases[kind];
   };
@@ -356,6 +377,14 @@ export const createGeoIp = (
       const info = (database: GeoIpDatabase | null): GeoIpDatabaseInfo | null =>
         database ? { ...database.info, buildDate: new Date(database.info.buildDate.getTime()) } : null;
       return { city: info(city), asn: info(asn) };
+    },
+    country(address) {
+      if (now() - lastCheck >= refreshIntervalMs) void refresh();
+      const city = load("city");
+      const result: IpCountryResult = { country: null, available: city !== null, attribution: city?.attribution ?? null };
+      const publicAddress = address.length <= 45 && isIP(address) ? publicClientAddress(address) : null;
+      if (publicAddress) result.country = isoCountryCode(record(read("city", city, publicAddress).country).iso_code);
+      return result;
     },
     lookup(address, locale = "en") {
       if (now() - lastCheck >= refreshIntervalMs) void refresh();

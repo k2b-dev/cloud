@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { audit } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
 import { SQL } from "bun";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
@@ -23,9 +24,11 @@ beforeEach(() => {
     if (typeof run !== "function") throw new Error("Expected transaction callback");
     await run(tx);
   });
+  const record = spyOn(audit, "record").mockResolvedValue();
   const invalidate = spyOn(settings, "invalidateSettingsCache").mockResolvedValue();
   restoreTransaction = () => {
     begin.mockRestore();
+    record.mockRestore();
     invalidate.mockRestore();
   };
 });

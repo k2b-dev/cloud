@@ -60,11 +60,13 @@ export const appDomainCommands = (locale?: string) => {
       ),
       args: domainArgs,
       flags: {
+        yes: confirmFlag(t("Confirm domain change", "Domain-Änderung bestätigen")),
         redirectTo: flag.string({
           description: t("Another domain of this app without a redirect", "Eine andere Domain dieser App ohne Weiterleitung"),
         }),
       },
       async run({ ctx, args, flags }) {
+        if (!flags.yes) throw new Error("Domain changes require --yes.");
         const result = domain.parse(
           await apiJson(ctx, "POST", path(args.appId), { host: args.host, ...(flags.redirectTo ? { redirectTo: flags.redirectTo } : {}) }),
         );
@@ -75,6 +77,7 @@ export const appDomainCommands = (locale?: string) => {
       summary: t("Set or clear an app domain redirect", "Eine Domain-Weiterleitung setzen oder entfernen"),
       args: domainArgs,
       flags: {
+        yes: confirmFlag(t("Confirm domain change", "Domain-Änderung bestätigen")),
         redirectTo: flag.string({
           description: t("Another domain of this app without a redirect", "Eine andere Domain dieser App ohne Weiterleitung"),
         }),
@@ -88,6 +91,7 @@ export const appDomainCommands = (locale?: string) => {
               de: "Nutze genau eine Option: --redirect-to oder --no-redirect.",
             }),
           );
+        if (!flags.yes) throw new Error("Domain changes require --yes.");
         const result = domain.parse(
           await apiJson(ctx, "PATCH", path(args.appId, args.host), { redirectTo: flags.noRedirect ? null : flags.redirectTo }),
         );
@@ -111,7 +115,9 @@ export const appDomainCommands = (locale?: string) => {
         "DNS, Zertifikat und Gateway-Erreichbarkeit höchstens einmal pro 60 Sekunden prüfen",
       ),
       args: domainArgs,
-      async run({ ctx, args }) {
+      flags: { yes: confirmFlag(t("Confirm domain check", "Domain-Prüfung bestätigen")) },
+      async run({ ctx, args, flags }) {
+        if (!flags.yes) throw new Error("Domain checks require --yes.");
         const result = z.object({ status: status.nullable() }).parse(await apiJson(ctx, "POST", `${path(args.appId, args.host)}/check`));
         if (printStructured(ctx, result)) return;
         if (!result.status) {

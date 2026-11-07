@@ -1,6 +1,7 @@
 import type { Topic, TopicConfig } from "@k2b/sync";
 import { assertAppEventSize } from "../_internal/app-event-schemas";
 import { lazySync } from "../_internal/process-sync";
+import { notifyPgOutbox } from "../_internal/work-wake";
 import { type AppEventEnvelope, AppEventEnvelopeSchema } from "../contracts/app-events";
 import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
@@ -53,7 +54,7 @@ export const appEventOutbox = (appId: string, publish: (row: AppEventOutboxRow) 
     where: { kind: "event", app_id: appId },
     orderBy: "ordering_key",
     sequence: "seq",
-    reconcileIntervalMs: 1_000,
+    reconcileIntervalMs: 5_000,
     publish,
   });
 
@@ -61,7 +62,11 @@ const dispatchers = new Map<string, (() => void) | null>();
 export const registerAppEventPublisher = (appId: string): void => {
   if (!dispatchers.has(appId)) dispatchers.set(appId, null);
 };
-export const wakeAppEventDelivery = (appId: string): void => dispatchers.get(appId)?.();
+export const wakeAppEventDelivery = (appId: string): void => {
+  const wake = dispatchers.get(appId);
+  if (wake) wake();
+  else notifyPgOutbox("events.outbox", { kind: "event", app_id: appId });
+};
 
 export const startAppEventDelivery = async (appId: string): Promise<(() => Promise<void>) | null> => {
   if (!dispatchers.has(appId)) return null;

@@ -164,10 +164,13 @@ export const deliverMessage = async (messageId: string, signal?: AbortSignal): P
   const queued = await sql
     .begin(async (db) => {
       if (system) await db`SET LOCAL lock_timeout = '1s'`;
+      // Match chat writes: conversation before message. NO KEY UPDATE still permits recipient FK KEY SHARE checks.
+      const [conversation] = await db<
+        ConversationRow[]
+      >`SELECT * FROM chat.conversations WHERE id = ${preparedConversation.id}::uuid FOR NO KEY UPDATE`;
+      if (!conversation) return false;
       const [message] = await db<DeliveryMessage[]>`SELECT * FROM chat.messages WHERE id = ${messageId}::uuid FOR UPDATE`;
       if (!message || message.notification_done) return false;
-      const [conversation] = await db<ConversationRow[]>`SELECT * FROM chat.conversations WHERE id = ${message.conversation_id}::uuid`;
-      if (!conversation) return false;
       const candidates =
         message.kind === "text" ? await messageCandidates(db, message, conversation) : await addedCandidates(db, message, conversation);
       // A concurrent delivery or resource change invalidates preparation; retry from the durable cursor.
@@ -246,6 +249,7 @@ export const deliverMessage = async (messageId: string, signal?: AbortSignal): P
       if (system) await recordFailedDecision(system, error);
       throw error;
     });
+  void notificationOutbox.notify();
   if (!queued) await recordCompletedDecision(system);
   return queued;
 };
@@ -263,7 +267,7 @@ export const notificationOutbox = createPgOutbox<{
   name: "chat:notification-outbox",
   orderBy: "ordering_key",
   sequence: "seq",
-  reconcileIntervalMs: 1_000,
+  reconcileIntervalMs: 5_000,
   publish: async (row) => {
     if (row.user_id) {
       const [message] = await sql<
@@ -587,11 +591,15 @@ export const notificationLifecycle = {
     log.info("Chat notification workers started", { deliveryBatch: DELIVERY_BATCH, pushDelayMs: PUSH_DELAY_MS, retention: "sync-default" });
   },
   async stop() {
-    await notificationOutbox.stop();
     deliveryWorker?.stop();
     pushWorker?.stop();
-    await Promise.all([deliveryWorker?.drain(), pushWorker?.drain()]);
-    deliveryWorker = undefined;
-    pushWorker = undefined;
+    try {
+      await Promise.all([deliveryWorker?.drain(), pushWorker?.drain()]);
+    } finally {
+      // Accepted handlers may commit and wake the outbox while draining.
+      await notificationOutbox.stop();
+      deliveryWorker = undefined;
+      pushWorker = undefined;
+    }
   },
 };

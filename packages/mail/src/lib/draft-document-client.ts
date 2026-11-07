@@ -613,12 +613,15 @@ export async function openMailDraftDocumentClient(options: {
       try {
         if (rejectedExternalEdit) throw new Error(t().bodyEditFailed);
         await awaitSynchronized();
+        const submitted = Y.encodeStateAsUpdate(doc);
         const saved = durableSchema.parse(await request("/snapshot", { generation }));
         if (saved.generation !== generation) throw new Error(t().generation);
         Y.applyUpdate(doc, encoding.fromBase64(saved.durable.state), "remote");
         acknowledge(encoding.fromBase64(saved.durable.state));
         options.onDurable(saved.durable.content, saved.revision);
-        if (state.dirty || provider.hasUnsentChanges()) throw new Error(t().pending);
+        // Typing after the request started is pending work, not a failed save.
+        // Require coverage of this request's input; newer input keeps its journal.
+        if (!draftSnapshotCovers(encoding.fromBase64(saved.durable.state), submitted)) throw new Error(t().pending);
         return saved;
       } catch (error) {
         fail(error);

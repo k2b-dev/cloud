@@ -57,9 +57,16 @@ These clients use the initialized installation connections. The application
 owns their lifecycle: close them when the work or its lifecycle ends. SQL
 connections use `application_name=cloud:<app-id>` unless the URL supplies an
 operator name or startup options, or the pool's `connection` options override
-it. Platform initialization leaves the environment URL unchanged. During the
-transition from Bun-global clients, `defineApp()` retains the existing URL
-application name for those clients; a separate follow-up removes that rewrite after every application migration has merged.
+it. Bun sends the name in the PostgreSQL startup packet; Cloud issues no
+per-transaction `SET application_name`. With PgBouncer transaction pooling,
+PgBouncer tracks `application_name` itself and can issue server-side `SET`
+commands when reassigning a backend between differently named clients. Setting
+the startup parameter does not remove that pooler work. `application_name` is
+tracked by PgBouncer by default; it does not need an extra
+`track_extra_parameters` entry. Preserve per-application names when diagnosing
+SQL; changing pool separation or dropping that identity is an operator decision.
+Platform initialization leaves the environment URL unchanged; Bun-global
+clients get no application name from Cloud.
 
 ## Migrate existing imports
 

@@ -1,7 +1,8 @@
 import type { TopicDeadLetter, TopicInventoryEntry } from "@k2b/sync";
 import type { SQL } from "bun";
 import { lazySync } from "../_internal/process-sync";
-import { getCapability, listCapabilities } from "../_internal/registry";
+import { getCapability, listCapabilities, watchAppRegistry } from "../_internal/registry";
+import { notifyWork, subscribeWorkWake } from "../_internal/work-wake";
 import type { AppEventEnvelope } from "../contracts/app-events";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { appEventTopic } from "../events/app-event-delivery";
@@ -10,8 +11,10 @@ import { createEventAcceptance } from "./app-events/accept";
 import { createEventAdministration } from "./app-events/admin";
 import { createDeclarationSync } from "./app-events/declarations";
 import { createEventDelivery } from "./app-events/deliver";
+import { startEventDispatcher } from "./app-events/runtime";
 import type { signAppEventInvocation } from "./identity/invocation-token";
 import { logger } from "./logging";
+import { superviseRuntimeTask } from "./runtime-lifecycle";
 
 export { APP_EVENT_DELIVERY_ATTEMPTS, APP_EVENT_DELIVERY_BACKOFF_MS } from "./app-events/deliver";
 
@@ -44,50 +47,70 @@ export const createAppEventBroker = (dependencies: BrokerDependencies = {}) => {
 
 export const appEventBroker = createAppEventBroker();
 export const startAppEventBroker = async (): Promise<() => Promise<void>> => {
-  const worker = await appEventTopic().process(
-    {
-      consumer: "core-app-events-v1",
-      start: "earliest",
-      concurrency: 1,
-      recoverDeadLetters: true,
-      delivery: { maxAttempts: 8, backoffMs: [1000, 5000, 30000, 120000, 600000, 1800000, 3600000], maxInFlight: 1 },
-    },
-    async (event) => {
-      try {
-        await appEventBroker.accept(event.data, event.sequence, event.attempt);
-      } catch (error) {
-        if (event.attempt >= 8) {
-          await appEventBroker.markSeen(event.sequence);
+  const topic = appEventTopic();
+  const dispatcher = startEventDispatcher(appEventBroker, (error) => log.error("App event broker pass failed", { error: message(error) }));
+  let unsubscribe = () => {};
+  try {
+    unsubscribe = subscribeWorkWake("app-events:delivery", dispatcher.wake);
+  } catch (error) {
+    log.warn("App event wake subscription failed; safety scan will recover", { error: message(error) });
+  }
+  const controller = new AbortController();
+  const registryReader = superviseRuntimeTask({
+    name: "App event declarations",
+    signal: controller.signal,
+    run: (signal) =>
+      watchAppRegistry({
+        signal,
+        onChange: async () => {
+          await appEventBroker.reconcileSubscriptions();
+          dispatcher.wake();
+        },
+      }),
+    onError: ({ error }) => log.error("App event declaration sync failed", { error: message(error) }),
+  });
+  const worker = await topic
+    .process(
+      {
+        consumer: "core-app-events-v1",
+        start: "earliest",
+        concurrency: 1,
+        recoverDeadLetters: true,
+        delivery: { maxAttempts: 8, backoffMs: [1000, 5000, 30000, 120000, 600000, 1800000, 3600000], maxInFlight: 1 },
+      },
+      async (event) => {
+        try {
+          await appEventBroker.accept(event.data, event.sequence, event.attempt);
+          // accept() commits the durable deliveries before the dispatcher can claim them.
+          dispatcher.wake();
+          notifyWork("app-events:delivery");
+        } catch (error) {
+          if (event.attempt >= 8) {
+            await appEventBroker.markSeen(event.sequence);
+          }
+          throw error;
         }
-        throw error;
-      }
-    },
-  );
-  let stopping = false;
-  let active: Promise<void> | null = null;
-  let tickCount = 0;
-  const run = () => {
-    if (stopping || active) return;
-    active = (async () => {
-      await appEventBroker.work();
-      if (++tickCount % 60 === 0) {
-        await appEventBroker.checkGap();
-        await appEventBroker.retain();
-      }
-    })()
-      .catch((error) => log.error("App event broker pass failed", { error: message(error) }))
-      .finally(() => {
-        active = null;
-      });
-  };
-  const timer = setInterval(run, 1000);
-  timer.unref();
-  run();
+      },
+    )
+    .catch(async (error: unknown) => {
+      unsubscribe();
+      controller.abort();
+      await registryReader;
+      await dispatcher.stop();
+      throw error;
+    });
   return async () => {
-    stopping = true;
-    clearInterval(timer);
+    unsubscribe();
+    controller.abort();
     worker.stop();
-    await worker.drain();
-    await active;
+    try {
+      await worker.drain();
+    } finally {
+      try {
+        await registryReader;
+      } finally {
+        await dispatcher.stop();
+      }
+    }
   };
 };

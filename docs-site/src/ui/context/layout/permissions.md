@@ -43,6 +43,12 @@ A level with a `scope` applies to a narrower part of the resource that the appli
 
 Service accounts and agents are included by default. Set `allowServiceAccounts={false}` only for a documented user-backed workflow. Public access remains opt-in through `allowPublic`.
 
+The authenticated audience is labeled “All signed-in people” (“Alle
+angemeldeten Personen”). It includes guests and credentials acting for a
+person. Its description names the selected level and explains that agents
+and service accounts need their own grant. The app-access editor also names
+guests explicitly. Existing audience counts keep their counting contract.
+
 Authorization still belongs in the service. Rendering an editor does not grant the current actor permission to change access.
 
 ## Select a principal

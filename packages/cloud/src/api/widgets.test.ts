@@ -1,8 +1,10 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { person } from "../_internal/define-app.test-fixture";
 import type { DashboardWidget } from "../_internal/registry";
+import { appAccess } from "../contracts/app-access";
 import { CAPABILITY_QUALIFIED_ID_MAX_LENGTH, CLOUD_RESOURCE_ID_MAX_LENGTH } from "../contracts/capabilities";
 import type { AppRegistryEntry } from "../contracts/registry";
 import {
@@ -20,13 +22,15 @@ import { sql } from "../runtime/clients";
 import type { AuthContext } from "../server";
 import { AppAccessDeniedError } from "../server/middleware/app-access";
 import { WIDGET_SETTINGS_PARAM, WIDGET_SETTINGS_PARAM_MAX_LENGTH } from "../server/widget-request";
+import * as appAccessService from "../services/app-access";
 import { type signInvocationToken, signInvocationToken as signRealInvocation } from "../services/identity/invocation-token";
+import { prepareFanoutIssuance } from "../services/identity/issue-invocation";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createWidgetRoutes as buildWidgetRoutes, WIDGET_CONCURRENCY } from "./widgets";
 
 useUnitClients();
 
-const user = { id: "11111111-1111-4111-8111-111111111111", roles: ["user"] } as AuthContext["Variables"]["user"];
+const user = person;
 const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
   c.set("actor", { kind: "user", user });
   c.set("accessSubject", { type: "user", userId: user.id });
@@ -91,6 +95,16 @@ const createWidgetRoutes = (dependencies: Parameters<typeof buildWidgetRoutes>[0
   return buildWidgetRoutes({
     withActiveSigner,
     signInvocation: async () => ({ token: "target-token" }) as Awaited<ReturnType<typeof signInvocationToken>>,
+    prepareFanout: (params, options) =>
+      prepareFanoutIssuance(params, {
+        ...options,
+        resolve: async () => ({
+          actor: { kind: "user", user },
+          accessSubject: { type: "user", userId: user.id },
+          credentialKind: "session",
+          scopes: [],
+        }),
+      }),
     ...dependencies,
     listWidgets: async () => {
       entries = (await dependencies.listWidgets?.()) ?? [];
@@ -388,6 +402,65 @@ const widgetsFor = (count: number): DashboardWidget[] =>
   }));
 
 const appOf = (input: string | URL | Request) => new URL(input instanceof Request ? input.url : input).hostname.split(":")[0]!;
+
+for (const method of ["GET", "POST"]) {
+  test.each([1, 15])(`widget ${method} resolves issuance once for %i admitted apps without per-target app access`, async (count) => {
+    const admitted = widgetsFor(count);
+    const hidden = widget;
+    const resolve = mock(async () => ({
+      actor: { kind: "user" as const, user },
+      accessSubject: { type: "user" as const, userId: user.id },
+      credentialKind: "session" as const,
+      scopes: [],
+    }));
+    const sign = mock((params: Parameters<typeof signInvocationToken>[0]) =>
+      signRealInvocation({
+        ...params,
+        issuedAt: new Date("2026-11-03T00:00:00Z"),
+        jti: "22222222-2222-4222-8222-222222222222",
+      }),
+    );
+    const access = spyOn(appAccessService, "canUseApp");
+    const routes = createWidgetRoutes({
+      authenticate,
+      listWidgets: async () => [...admitted, hidden],
+      listApps: async () =>
+        [...admitted, hidden].map((entry) => ({
+          id: entry.appId,
+          name: entry.appName,
+          description: "",
+          icon: entry.appIcon,
+          routes: [],
+          baseUrl: "http://test.invalid",
+          access: entry === hidden ? appAccess.roles(["admin"]) : appAccess.signedIn(),
+        })),
+      prepareFanout: (params, options) => prepareFanoutIssuance(params, { ...options, resolve }),
+      signInvocation: sign,
+      fetch: async () => Response.json({ title: "Summary", blocks: [] }),
+    });
+    try {
+      const response = await routes.request(
+        "/widgets/v1",
+        method === "GET"
+          ? undefined
+          : {
+              method,
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                widgets: [...admitted, hidden].map((entry) => ({ id: entry.appId, key: widgetKey(entry.appId, entry.widgetId) })),
+              }),
+            },
+      );
+      expect(response.status).toBe(200);
+      expect(await response.text()).not.toContain(hidden.appId);
+      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(access).not.toHaveBeenCalled();
+      expect(sign.mock.calls.map(([params]) => params.targetAppId)).toEqual(admitted.map((entry) => entry.appId));
+    } finally {
+      access.mockRestore();
+    }
+  });
+}
 
 /** Reads the NDJSON stream and records when each line arrived relative to the others. */
 const readLines = async (response: Response): Promise<WidgetStreamLine[]> =>

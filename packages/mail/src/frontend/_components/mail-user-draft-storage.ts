@@ -6,7 +6,7 @@ export class MailUserDraftStorageEndedError extends Error {
 }
 
 /** Plaintext legacy seeds/journals are scoped to the authenticated user, never claimed from global legacy keys. */
-export const openMailUserDraftStorage = (storage: Storage, userId: string): Storage => {
+export const openMailUserDraftStorage = (storage: Storage, userId: string): Storage & { keys(): string[] } => {
   if (!userId) throw new Error("Authenticated user storage is required");
   const prefix = `cloud:user:${userId}:mail:`;
   const epochKey = `cloud:user-epoch:${userId}`;
@@ -21,6 +21,7 @@ export const openMailUserDraftStorage = (storage: Storage, userId: string): Stor
     );
   };
   return {
+    keys: () => keys().map((key) => key.slice(prefix.length)),
     get length() {
       return keys().length;
     },

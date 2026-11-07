@@ -32,10 +32,10 @@ const mapToColumn = (row: DbColumn): SpaceColumn => ({
 
 const selectColumns = async (db: typeof sql, spaceId: string): Promise<SpaceColumn[]> => {
   const rows = await db<DbColumn[]>`
-    SELECT id, space_id, name, color, rank::text AS rank, is_done, created_at
-    FROM spaces.columns
-    WHERE space_id = ${spaceId}
-    ORDER BY rank
+    SELECT c.id, c.space_id, c.name, c.color, c.rank::text AS rank, c.is_done, c.created_at
+    FROM spaces.columns c
+    WHERE c.space_id = ${spaceId}
+    ORDER BY c.rank, c.short_id COLLATE "C"
   `;
   return rows.map(mapToColumn);
 };
@@ -44,6 +44,22 @@ const selectColumns = async (db: typeof sql, spaceId: string): Promise<SpaceColu
  * List columns for a space
  */
 export const list = (params: { spaceId: string }): Promise<SpaceColumn[]> => selectColumns(sql, params.spaceId);
+
+/**
+ * The column a new task lands in when the caller names none: the first column that is not done, in board order
+ * (numeric rank, then public ID; the order `list` and Read space return).
+ */
+export const firstOpen = async (params: { spaceId: string }): Promise<SpaceColumn | null> => {
+  // Qualified: a bare `rank` would sort by the text alias, putting 10240 before 2048.
+  const [row] = await sql<DbColumn[]>`
+    SELECT c.id, c.space_id, c.name, c.color, c.rank::text AS rank, c.is_done, c.created_at
+    FROM spaces.columns c
+    WHERE c.space_id = ${params.spaceId} AND NOT c.is_done
+    ORDER BY c.rank, c.short_id COLLATE "C"
+    LIMIT 1
+  `;
+  return row ? mapToColumn(row) : null;
+};
 
 /**
  * Get a column by ID
@@ -150,10 +166,10 @@ export type BoardOrderEntry = { kind: "column"; id: string } | { kind: SpaceVirt
 
 const selectVirtual = (db: typeof sql, spaceId: string) =>
   db<SpaceVirtualColumn[]>`
-    SELECT kind, rank::text AS rank
-    FROM spaces.virtual_columns
-    WHERE space_id = ${spaceId}
-    ORDER BY rank, kind
+    SELECT v.kind, v.rank::text AS rank
+    FROM spaces.virtual_columns v
+    WHERE v.space_id = ${spaceId}
+    ORDER BY v.rank, v.kind
   `;
 
 /**

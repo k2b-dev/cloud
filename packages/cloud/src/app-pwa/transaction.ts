@@ -169,7 +169,7 @@ export const withAppPwaTransactionLease = async <T>(
     open = false;
     for (const query of queries) {
       try {
-        query.cancel();
+        void Promise.resolve(query.cancel()).catch(() => {});
       } catch {
         /* Transaction recovery owns a failed cancellation. */
       }
@@ -251,14 +251,14 @@ export const withAppPwaTransaction = async <T>(
       closeConnection();
     } finally {
       await control?.close({ timeout: 0 });
-      // Pool close(timeout:0) is graceful in this Bun; a positive bound is required.
+      // A running cancellation gets the request bound to finish.
       await pool?.close({ timeout: REQUEST_IDLE_TIMEOUT_SECONDS });
     }
   };
   const abort = () => {
     startRecoveryTimer();
-    // Query.cancel() does not send PostgreSQL cancellation on Bun 744846f84.
-    // Keep this reservation until the independent cancellation has settled.
+    // Cancel by backend, which also reaches a statement sent outside `run` and reports failure so recovery
+    // can discard the connection. Keep this reservation until that cancellation has settled.
     if (!recovering) cancellation ??= cancelBackend().catch(closeConnection);
   };
   requestSignal.addEventListener("abort", abort, { once: true });
@@ -286,7 +286,9 @@ export const withAppPwaTransaction = async <T>(
       // Discount that precision as well as the clock query's round trip.
       authorityEnd = Math.min(authorityEnd, started + deadline.getTime() - time.getTime() - 1);
       clearTimeout(expiryTimer);
-      expiryTimer = setTimeout(() => expiry.abort(), Math.max(0, authorityEnd - performance.now()));
+      // The request budget bounds the transaction. A later authority needs no timer, and
+      // timer delays above 2^31-1 ms (about 24.8 days) would fire at once.
+      if (authorityEnd < requestEnd) expiryTimer = setTimeout(() => expiry.abort(), Math.max(0, authorityEnd - performance.now()));
     }
     check();
   };

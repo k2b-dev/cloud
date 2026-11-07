@@ -101,9 +101,6 @@ test.each(["done", "not_done"] as const)("nessi resumes a settled %s cut-off cal
     family: "openai-compatible",
     model: "fixture",
     capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-    complete: async () => {
-      throw new Error("Unexpected completion");
-    },
     async *stream(request) {
       requests.push(request);
       yield { type: "block_start", blockId: "answer", index: 0, kind: "text" };

@@ -1,8 +1,8 @@
 # TextEditor
 
 `TextEditor` edits Markdown in a formatted view with directly editable table
-cells. Switch to Markdown to see and edit the same source. Use it when a text
-field needs tables or a CodeMirror collaboration extension.
+cells. Use it when a text field needs tables or a CodeMirror collaboration
+extension.
 
 ## Use TextEditor
 
@@ -38,7 +38,9 @@ import { TextEditor } from "@k2b/ui/text-editor";
 ## Edit text and tables
 
 The toolbar formats text and inserts links, lists, quotes, rules and tables.
-The view switch changes presentation without rewriting the document.
+It has no Formatted/Markdown switch: people edit formatted. Only a source view,
+set through `mode="source"` or opened by **Check Markdown**, shows a switch
+back to the formatted view. Neither view rewrites the document.
 `mode="plain"` shows unformatted text.
 
 Click a table cell to type. Tab and Shift+Tab move between cells; Tab from the
@@ -171,10 +173,10 @@ building blocks share one editor state and describe actions as data; its
 
 ## Keep an application's own presentation and toolbar
 
-An application presentation without a `status` prop adds no empty status row
-above its content. Table warnings still appear when needed. Supplying `status`
-reserves that row across status transitions; the standalone editor also keeps
-its reserved row.
+The status row above the toolbar appears only while `status` has content or a
+table warning shows, so an editor without a status adds no empty row above its
+toolbar or content. Keep `status` set across transitions, such as Saving and
+Saved, so the row does not come and go.
 
 An application with its own Markdown presentation, such as Notebooks, passes
 `presentation` and `toolbar={false}`. `presentation(mode)` replaces the
@@ -226,8 +228,7 @@ transaction and reparse before another operation.
 ## Loading and access
 
 `loading` reserves the text area with a placeholder and blocks editing.
-`readOnly` blocks editing and hides the built-in toolbar, including its mode
-switch. Neither replaces the application's server authorization.
+`readOnly` blocks editing and hides the built-in toolbar. Neither replaces the application's server authorization.
 
 The length limit refuses only edits that make an over-limit text longer, so a
 text above the limit can still be shortened.
@@ -253,8 +254,8 @@ server authorization, convergence checks or send ordering.
 ## Accessibility
 
 Supply a descriptive `label`; the editor uses it as the accessible name of
-its text input. Formatting controls have labels, and the mode control exposes
-its selected state. Table cells support the keyboard navigation described
+its text input. Formatting controls have labels, and the source view's switch
+back exposes its selected state. Table cells support the keyboard navigation described
 above; the context-menu key or Shift+F10 opens the cell menu, and each cell
 announces that key through `aria-keyshortcuts`. Tab from prose leaves the editor.
 

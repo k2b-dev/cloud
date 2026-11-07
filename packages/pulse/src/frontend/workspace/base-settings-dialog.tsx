@@ -1,4 +1,4 @@
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { AccessSummary, openAccessDialog } from "@k2b/cloud/access/ui";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { text } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
@@ -45,6 +45,7 @@ type BaseSettingsDialogOptions = {
   onTabChange?: (tab: PulseSettingsTab) => void;
   onCloseRequestReady?: (request: () => Promise<boolean>) => void;
   loading: Accessor<boolean>;
+  refreshBase: () => Promise<void>;
   updateBaseSettings: (
     base: PulseBase,
     input: {
@@ -228,47 +229,105 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       });
       const refreshAccess = async () => {
         try {
-          await access.invalidate();
+          await Promise.all([access.invalidate(), options.refreshBase()]);
         } catch {
           if (!disposed) toast.error(t().accessChangedRefreshFailed);
         }
       };
+      // Set by every saved access change, also when a later one fails and the person discards the rest.
+      let wroteAccess = false;
+      // A plain guard, not a disabled state: a disabled button could not take focus back when the dialog closes.
+      let editingAccess = false;
+      // The access dialog stacks over these settings and closes with them.
+      const accessDialogOwner = new AbortController();
+      let accessDialogOpen = false;
       const requireAccessWritable = () => {
         if (!access.stale() && !access.loading() && !access.refreshing()) return;
         throw new Error(t().refreshAccessBeforeChanges);
       };
+      const requireOpen = () => {
+        if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
+      };
       const grantAccess = async (principal: Principal, permission: GrantableLevel) => {
+        requireOpen();
         requireAccessWritable();
         await grantMutation.mutate({ principal, permission });
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
         const error = grantMutation.error();
         if (error) throw error;
-        await refreshAccess();
-        if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
+        wroteAccess = true;
         return grantMutation.data()!;
       };
       const updateAccess = async (accessId: string, permission: GrantableLevel) => {
+        requireOpen();
         requireAccessWritable();
         await updateMutation.mutate({ accessId, permission });
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
         const error = updateMutation.error();
         if (error) throw error;
-        await refreshAccess();
-        if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
+        wroteAccess = true;
       };
       const revokeAccess = async (accessId: string) => {
+        requireOpen();
         requireAccessWritable();
         await revokeMutation.mutate(accessId);
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
         const error = revokeMutation.error();
         if (error) throw error;
-        await refreshAccess();
-        if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
+        wroteAccess = true;
       };
+      // Changes are collected in the access dialog and saved together; the list reloads once afterwards.
+      const editAccess = async () => {
+        // A failed or running reload is read first, so the dialog never starts from an old list.
+        if (access.error() || access.stale() || access.refreshing()) {
+          try {
+            await access.invalidate();
+          } catch {
+            return;
+          }
+        }
+        const entries = access.data();
+        if (disposed || !entries) return;
+        wroteAccess = false;
+        accessDialogOpen = true;
+        try {
+          await openAccessDialog({
+            resourceName: saved().name,
+            subtitle: t().accessDialogSubtitle,
+            initialEntries: entries,
+            grantAccess,
+            updateAccess,
+            revokeAccess,
+            allowedLevels: accessLevels(),
+            signal: accessDialogOwner.signal,
+          });
+        } finally {
+          accessDialogOpen = false;
+        }
+        // Awaited, so a second click waits for the saved list instead of opening the old one.
+        if (wroteAccess && !disposed) await refreshAccess();
+      };
+      const runEditAccess = () => {
+        if (editingAccess) return;
+        editingAccess = true;
+        editAccess()
+          .catch((error: Error) => {
+            if (!disposed) void prompts.error(error.message);
+          })
+          .finally(() => {
+            editingAccess = false;
+          });
+      };
+      const accessLevels = () => [
+        { level: "read" as const, label: t().view, icon: "ti-eye" },
+        { level: "write" as const, label: t().edit, icon: "ti-pencil" },
+        { level: "admin" as const, label: t().manage, icon: "ti-shield" },
+      ];
       const accessBusy = () => grantMutation.loading() || updateMutation.loading() || revokeMutation.loading() || access.refreshing();
       let checkingClose = false;
       const requestClose = async () => {
-        if (checkingClose || options.loading() || accessBusy()) return false;
+        // Back while the access dialog is open keeps both: that dialog asks before it discards changes.
+        if (checkingClose || options.loading() || accessBusy() || accessDialogOpen) return false;
         checkingClose = true;
         try {
           if (!(await confirmDiscardIfDirty(() => changeCount() > 0)) || disposed) return false;
@@ -285,6 +344,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
 
       onCleanup(() => {
         disposed = true;
+        accessDialogOwner.abort();
         grantMutation.abort();
         updateMutation.abort();
         revokeMutation.abort();
@@ -395,6 +455,12 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
               </Show>
               <Show when={options.canAdmin}>
                 <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
+                  <SettingsGroup.Action>
+                    <Button size="sm" variant="secondary" disabled={!access.data()} onClick={runEditAccess}>
+                      <i class="ti ti-lock-access" aria-hidden="true" />
+                      {t().editAccess}
+                    </Button>
+                  </SettingsGroup.Action>
                   <Show when={access.data() && access.error()}>
                     {(error) => (
                       <NoticeCard tone="danger" title={t().accessRefreshFailed} detail={error().message}>
@@ -414,20 +480,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                       </NoticeCard>
                     }
                   >
-                    {(entries) => (
-                      <PermissionEditor
-                        initialEntries={entries()}
-                        canEdit
-                        grantAccess={grantAccess}
-                        updateAccess={updateAccess}
-                        revokeAccess={revokeAccess}
-                        allowedLevels={[
-                          { level: "read", label: t().view, icon: "ti-eye" },
-                          { level: "write", label: t().edit, icon: "ti-pencil" },
-                          { level: "admin", label: t().manage, icon: "ti-shield" },
-                        ]}
-                      />
-                    )}
+                    {(entries) => <AccessSummary entries={entries()} allowedLevels={accessLevels()} />}
                   </Show>
                 </SettingsGroup>
               </Show>
@@ -436,7 +489,6 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
             <SettingsModal.Tab id="retention" title={t().retention} icon="ti ti-clock-cog" description={t().retentionTabDescription}>
               <div class="max-w-[860px]">
                 <SettingsField
-                  class="px-0! md:grid! md:grid-cols-[170px_minmax(0,1fr)]! md:gap-x-7!"
                   label={t().rawDataRetention}
                   description={t().rawDataRetentionDescription}
                   error={() => undefined}
@@ -488,7 +540,6 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                   )}
                 </SettingsField>
                 <SettingsField
-                  class="px-0! md:grid! md:grid-cols-[170px_minmax(0,1fr)]! md:gap-x-7!"
                   label={t().hourlyRollupRetention}
                   description={t().hourlyRollupRetentionDescription}
                   error={() => undefined}
@@ -545,7 +596,6 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                   )}
                 </SettingsField>
                 <SettingsField
-                  class="px-0! md:grid! md:grid-cols-[170px_minmax(0,1fr)]! md:gap-x-7!"
                   label={t().sensitiveEventRetention}
                   description={t().sensitiveEventRetentionDescription}
                   error={() => undefined}

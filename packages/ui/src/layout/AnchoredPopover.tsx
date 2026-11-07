@@ -20,6 +20,11 @@ export type AnchoredPopoverProps = {
   plannedHeight?: number;
   /** Width of the panel on wide screens, such as `21rem`. On a phone it is a bottom sheet across the screen. */
   width?: string;
+  /**
+   * `false` keeps a small notice beside its control on a phone too, inside the screen with a margin, instead of a
+   * bottom sheet that would cover the control. Defaults to `true`.
+   */
+  sheet?: boolean;
   /** Moves the focus into the panel when it opens; defaults to the panel itself. */
   initialFocus?: () => HTMLElement | null | undefined;
   class?: string;
@@ -123,9 +128,10 @@ export function AnchoredPopover(props: AnchoredPopoverProps): JSX.Element {
         previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         ring = ringOnReturn(previous ?? anchor);
       }
-      setSheet(typeof matchMedia === "function" && matchMedia(sheetQuery).matches);
+      setSheet(props.sheet !== false && typeof matchMedia === "function" && matchMedia(sheetQuery).matches);
       setShown(anchor);
-      if (!surface.matches(":popover-open")) surface.showPopover();
+      // Without the popover API, as in test DOMs, the panel stays in the flow instead of the top layer.
+      if (!surface.matches(":popover-open") && typeof surface.showPopover === "function") surface.showPopover();
       place();
       queueMicrotask(() => (props.initialFocus?.() ?? surface)?.focus({ preventScroll: true }));
     });

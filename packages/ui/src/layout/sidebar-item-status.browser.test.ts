@@ -488,6 +488,22 @@ describe("@k2b/ui sidebar item status", () => {
     }
   }, 30_000);
 
+  test("an object row's icon chip has the same inset before it as above and below it", async () => {
+    const page = await load("light");
+    try {
+      const insets = await page.locator('[data-group="object"][data-state="plain"]').evaluate((row) => {
+        const outer = row.getBoundingClientRect();
+        const chip = row.querySelector(".k2b-icon-tile")!.getBoundingClientRect();
+        return { start: chip.left - outer.left, top: chip.top - outer.top, bottom: outer.bottom - chip.bottom };
+      });
+      // A two-line copy may make the row one pixel taller than the chip's even frame; never more.
+      expect(Math.abs(insets.start - insets.top)).toBeLessThanOrEqual(1);
+      expect(Math.abs(insets.start - insets.bottom)).toBeLessThanOrEqual(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("hover changes no box in any state", async () => {
     const page = await load("light");
     try {

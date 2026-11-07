@@ -2,6 +2,7 @@ export type { AnnounceOptions, AnnouncePoliteness } from "./announce";
 export { announce } from "./announce";
 export type { DialogClose, DialogCore, DialogRender, OpenDialogOptions } from "./dialog-core";
 export { dialogCore } from "./dialog-core";
+export type { DialogTone } from "./dialog-tone";
 export type { HoverPreviewController, HoverPreviewOptions, HoverPreviewPlacement, HoverPreviewProps } from "./HoverPreview";
 export { createHoverPreview, HoverPreview } from "./HoverPreview";
 export type { InlineGuidanceProps } from "./InlineGuidance";

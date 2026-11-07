@@ -60,6 +60,7 @@ const authenticate = (
     appId: overrides.appId ?? "reports",
     scope: overrides.scope ?? "identity:invoke",
     credentials: fake.credentials,
+    recordLegacy: async () => {},
   });
 };
 
@@ -120,6 +121,7 @@ describe("Cloud app workload authentication", () => {
         appId: "reports",
         scope: "identity:invoke",
         credentials: fake.credentials,
+        recordLegacy: async () => {},
       }),
     ).toBeNull();
     expect(
@@ -128,6 +130,7 @@ describe("Cloud app workload authentication", () => {
         appId: "reports",
         scope: "identity:invoke",
         credentials: fake.credentials,
+        recordLegacy: async () => {},
       }),
     ).toBeNull();
     expect(fake.calls()).toBe(0);
@@ -171,4 +174,27 @@ describe("Cloud app workload authentication", () => {
   test("returns null when the current credential lookup denies access", async () => {
     expect(await authenticate(null)).toBeNull();
   });
+});
+
+test("accepted legacy bearer use records evidence and an unavailable recorder cannot silently lose it", async () => {
+  const fake = authenticator({ credential: credential(), serviceAccount: serviceAccount(), delegatedUser: null });
+  const seen: string[] = [];
+  const params = { token, appId: "reports", scope: "identity:invoke" as const, credentials: fake.credentials };
+  expect(
+    await authenticateWorkloadCredential({
+      ...params,
+      recordLegacy: async (path) => {
+        seen.push(path);
+      },
+    }),
+  ).not.toBeNull();
+  expect(seen).toEqual(["bearer"]);
+  await expect(
+    authenticateWorkloadCredential({
+      ...params,
+      recordLegacy: async () => {
+        throw new Error("observation unavailable");
+      },
+    }),
+  ).rejects.toThrow("observation unavailable");
 });

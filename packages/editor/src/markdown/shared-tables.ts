@@ -1,4 +1,5 @@
 /** Notebook presentation only. The public grid owns editing, focus, history and source writes. */
+import { completionStatus } from "@codemirror/autocomplete";
 import { type EditorState, type Extension, type Range, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin } from "@codemirror/view";
 import { i18n } from "@k2b/stdlib";
@@ -224,13 +225,19 @@ const activeFormulaPreview = (options: TablePresentationOptions): Extension =>
           ? formatFormulaError(evaluated, locale).replace(/\n→ /, " · ")
           : formatFormulaValue(evaluated.value, locale);
         result.append(message);
+        yieldToCompletions();
         place();
       });
+    // The result sits in the top layer, right where the suggestions open; while they show, they are what matters.
+    const yieldToCompletions = () => {
+      if (result) result.style.visibility = completionStatus(view.state) ? "hidden" : "";
+    };
     view.contentDOM.addEventListener("focusin", paint);
     view.contentDOM.addEventListener("focusout", paint);
     return {
       update(update) {
         if (update.docChanged) paint();
+        yieldToCompletions();
       },
       destroy() {
         alive = false;

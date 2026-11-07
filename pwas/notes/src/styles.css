@@ -580,8 +580,7 @@ body.k2b-ui {
   width: 20px;
   height: 20px;
 }
-.n-cloud u,
-.n-more u {
+.n-cloud u {
   text-decoration-color: var(--ink);
   text-underline-offset: 3px;
 }
@@ -742,20 +741,9 @@ body.k2b-ui {
   margin-right: auto;
 }
 .n-check {
-  display: flex;
-  gap: 0.7rem;
-  align-items: flex-start;
   margin-top: 0.9rem;
   font-size: 0.9375rem;
   line-height: 1.45;
-  cursor: pointer;
-}
-.n-check input {
-  width: 18px;
-  height: 18px;
-  margin: 2px 0 0;
-  accent-color: var(--k2b-action-solid);
-  flex: none;
 }
 .n-check a,
 .n-lead a,
@@ -864,54 +852,59 @@ body.k2b-ui {
   font-size: 0.8125rem;
   line-height: 1.45;
 }
-.n-more {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-top: 1.25rem;
-  color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  text-decoration: none;
-}
-.n-more img {
-  width: 22px;
-  height: 22px;
-  flex: none;
-}
-.n-more u {
+/* What the site is: one sentence, then three facts in one rhythm. Cloud is the third fact, not a footnote. */
+.n-about-lead {
+  margin: 0.5rem 0 0;
   color: var(--k2b-text-secondary);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.n-about {
+  display: grid;
+  gap: 1.25rem;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.n-about li {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  column-gap: 0.875rem;
+}
+.n-about .ti,
+.n-about img {
+  grid-row: span 2;
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--ink);
+  font-size: 1.375rem;
+  line-height: 1.5rem;
+  text-align: center;
+}
+.n-about strong {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+}
+.n-about p {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+.n-about a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--ink);
+  text-underline-offset: 3px;
+}
+.n-about a:hover {
+  color: var(--ink);
 }
 .n-field {
   margin-top: 1rem;
   display: grid;
   gap: 0.35rem;
-}
-.n-field > .n-l {
-  font-weight: 500;
-  font-size: 0.875rem;
-}
-.n-field input[type="text"],
-.n-field input[type="email"],
-.n-field textarea {
-  width: 100%;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-control);
-  background: var(--k2b-field-surface, var(--k2b-surface));
-  color: var(--k2b-text);
-  font: inherit;
-  font-size: 0.9375rem;
-}
-.n-field textarea {
-  min-height: 84px;
-  resize: vertical;
-  line-height: 1.45;
-}
-.n-field input:focus-visible,
-.n-field textarea:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: 0;
 }
 .n-help {
   color: var(--k2b-text-muted);
@@ -966,17 +959,15 @@ body.k2b-ui {
   gap: 0.5rem;
   margin-top: 1.25rem;
 }
-.n-textlink {
-  border: 0;
-  background: none;
-  padding: 0;
+/* The one quiet way to delete everything: small red text in line with the content, underlined when pointed at. */
+.n-dialog-acts .k2b-button.n-clear {
   color: var(--danger);
-  font: inherit;
-  font-size: 0.9375rem;
-  font-weight: 500;
-  cursor: pointer;
-  justify-self: start;
-  border-radius: 4px;
+  font-weight: 400;
+}
+.n-dialog-acts .k2b-button.n-clear[data-variant="text"]:not(:disabled):hover {
+  color: var(--danger);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .n-drop {
   display: grid;
@@ -1441,15 +1432,17 @@ body.k2b-ui {
 }
 
 /* ---------- `/` menu (mockup v4) ---------- */
+/* @k2b/editor's popup fights CodeMirror with !important, so what differs here must as well. */
 .n-editor .cm-tooltip.cm-tooltip-autocomplete {
-  width: 290px;
-  padding: 0.3rem;
-  border: 0;
-  border-radius: 12px;
-  background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  width: 260px;
+  min-width: 0;
+  padding: 0.25rem !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background-color: var(--k2b-surface-elevated) !important;
+  box-shadow: var(--k2b-shadow-float) !important;
   font-family: var(--k2b-font-sans);
-  font-size: 0.9375rem;
+  font-size: 0.8125rem !important;
   line-height: 1.3;
 }
 .n-editor .cm-tooltip.cm-tooltip-autocomplete > ul {
@@ -1457,29 +1450,39 @@ body.k2b-ui {
   font-family: var(--k2b-font-sans);
 }
 .n-editor .cm-tooltip-autocomplete > ul > li {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  display: grid !important;
+  grid-template-columns: 24px minmax(0, 1fr);
   grid-template-rows: auto auto;
-  column-gap: 0.65rem;
+  column-gap: 0.5rem;
   align-items: center;
-  padding: 0.45rem 0.55rem;
-  border-radius: 8px;
-  color: var(--k2b-text);
+  padding: 0.25rem 0.4rem !important;
+  border-radius: 7px;
+  color: var(--k2b-text) !important;
 }
-.n-editor .cm-tooltip-autocomplete > ul > li[aria-selected] {
-  background: var(--ink-fill);
-  color: var(--k2b-text);
+/* A finger still needs the full height; the type stays compact. */
+@media (pointer: coarse) {
+  .n-editor .cm-tooltip-autocomplete > ul > li {
+    min-height: 44px;
+  }
+}
+.n-editor .cm-tooltip-autocomplete > ul > li:hover {
+  background: var(--ui-hover) !important;
+}
+.n-editor .cm-tooltip-autocomplete > ul > li[aria-selected],
+.n-editor .cm-tooltip-autocomplete > ul > li[aria-selected]:hover {
+  background: var(--ink-fill) !important;
+  color: var(--k2b-text) !important;
 }
 .n-editor .cm-tooltip-autocomplete .cm-slash-icon {
   grid-row: 1 / span 2;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   background: var(--k2b-surface-muted);
   color: var(--k2b-text-secondary);
-  font-size: 17px;
+  font-size: 14px;
 }
 .n-editor .cm-tooltip-autocomplete > ul > li[aria-selected] .cm-slash-icon {
   background: var(--k2b-surface);
@@ -1493,13 +1496,23 @@ body.k2b-ui {
   color: var(--ink);
   font-weight: 600;
 }
-.n-editor .cm-tooltip-autocomplete .cm-completion-detail {
+/* The hint is always quieter than its label, also in the selected row. */
+.n-editor .cm-tooltip-autocomplete > ul > li .cm-completion-detail,
+.n-editor .cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completion-detail {
   grid-column: 2;
+  margin-left: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Without a hint the label centres on its icon; the renderer's empty span takes no row. */
+.n-editor .cm-tooltip-autocomplete > ul > li > span:empty {
+  display: none;
+}
+.n-editor .cm-tooltip-autocomplete > ul > li:not(:has(.cm-completion-detail)) .cm-completionLabel {
+  grid-row: 1 / span 2;
 }
 .n-editor .cm-tooltip-autocomplete .cm-completionDetail,
 .n-editor .cm-tooltip-autocomplete .cm-completionSectionLabel,
@@ -1527,6 +1540,12 @@ body.k2b-ui {
   .n-sheet .n-dialog-acts .n-left {
     margin-right: 0;
   }
+  /* A quiet side action stays beside the main one: both fit on one line, and stacking would make it loud again. */
+  .n-sheet .n-dialog-acts:has(.n-clear) {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
   .n-sheet .n-qr,
   .n-sheet .n-linkbox .n-host {
     display: none;
@@ -1548,7 +1567,44 @@ body.k2b-ui {
   cursor: pointer;
 }
 
-/* Checklist boxes take the site ink, as in mockup v4. */
+/* Table cells: computed values carry the site ink; a failed formula stays readable and names its problem on hover. */
+.n-editor .md-formula-ok {
+  color: var(--ink);
+  cursor: help;
+}
+.n-editor .md-formula-ok > .ti {
+  margin-right: 0.25rem;
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+.n-editor .md-formula-error {
+  color: var(--k2b-danger-text);
+  background: var(--k2b-danger-surface);
+  cursor: help;
+}
+.n-editor .md-table-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.n-editor .md-table-progress-track {
+  width: 3rem;
+  height: 0.375rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+}
+.n-editor .md-table-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink);
+}
+
+/* Checklist boxes take the site ink, as in mockup v4; the dark shade keeps the white check readable. */
 .n-editor .custom-list-task-marker {
-  accent-color: var(--ink);
+  --k2b-action-solid: #6d28d9;
+}
+[data-theme="dark"] .n-editor .custom-list-task-marker {
+  --k2b-action-solid: #7c3aed;
 }

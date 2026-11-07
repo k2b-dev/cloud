@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { baseline, checkSource, rule } from "./platform-clients";
+import { checkSource, rule } from "./platform-clients";
 
 const path = "packages/example/src/data.ts";
 test.each([
@@ -177,31 +177,6 @@ test.each(["packages/cloud/src/runtime/clients.ts", "packages/example/test/nativ
     ).toEqual([]);
   },
 );
-
-test("a new finding before a baselined finding reports the new source line", async () => {
-  const workspaceRoot = mkdtempSync(join(tmpdir(), "platform-clients-baseline-"));
-  const path = "packages/example/src/baselined.ts";
-  const content = 'import { sql } from "bun";';
-  baseline[path] = [content];
-  const file = join(workspaceRoot, path);
-  try {
-    mkdirSync(dirname(file), { recursive: true });
-    const lines = Array.from({ length: 5 }, () => "");
-    lines[0] = 'import { redis } from "bun";';
-    lines[4] = content!;
-    writeFileSync(file, lines.join("\n"));
-    const findings = await rule.run({ workspaceRoot, fix: false, flags: new Set() });
-    expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatchObject({ file, line: 1 });
-    // Unrelated lines may move an existing finding without changing its identity.
-    lines[0] = "// an unrelated import or comment was added";
-    writeFileSync(file, lines.join("\n"));
-    expect(await rule.run({ workspaceRoot, fix: false, flags: new Set() })).toEqual([]);
-  } finally {
-    delete baseline[path];
-    rmSync(workspaceRoot, { recursive: true, force: true });
-  }
-});
 
 // Inspecting a native error class cannot create a pool or bypass its target.
 test("allows native Postgres error classification without allowing constructor escapes", () => {

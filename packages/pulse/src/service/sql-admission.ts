@@ -60,6 +60,8 @@ export type AdmissionInput = {
   countQuota?: boolean;
   quotaKind?: "alerts";
   freeOnly?: boolean;
+  /** Slots this run may share within its base. The Cloud-wide limit always applies. */
+  baseSlots?: number;
   signal?: AbortSignal;
 };
 export type SqlAdmission = ReturnType<typeof createSqlAdmission>;
@@ -132,7 +134,7 @@ export const createSqlAdmission = (
         input.countQuota === false ? "0" : "1",
         String(deadlineMs),
         String(CLOUD_SLOTS),
-        String(BASE_SLOTS),
+        String(input.baseSlots ?? BASE_SLOTS),
         String(MAX_WAITING),
         String(LEASE_MS),
         String(WAIT_MS + WAIT_GRACE_MS),

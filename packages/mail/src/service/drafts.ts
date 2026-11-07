@@ -62,6 +62,14 @@ import { mailLive } from "./live";
 import type { AttachmentDownload } from "./messages";
 
 const InternalIdSchema = z.string().uuid();
+/**
+ * An ID field that fails the internal UUID check carries a public ID the API boundary did not resolve, so the
+ * person sees the localized missing-resource message instead of a schema detail such as "Invalid UUID".
+ */
+const draftInputError = (error: z.ZodError, fallback: string) =>
+  error.issues.some((issue) => issue.code === "invalid_format" && issue.format === "uuid" && String(issue.path.at(-1)).endsWith("Id"))
+    ? err.notFound("Mail resource")
+    : err.badInput(error.issues[0]?.message ?? fallback);
 // Every saved body keeps only complete signature segments, so marks left by a hand edit do not pile up.
 const savedDraftBodySchema = draftEditableContentInputSchema.shape.body.transform(removeOrphanComposeSegmentMarks);
 const internalDraftEditableContentSchema = draftEditableContentInputSchema.extend({
@@ -517,21 +525,32 @@ const storeRecoveryCopy = async (params: {
   baseRevision: number;
   content: DraftEditableContent;
   actor: MutableActor;
+  includeAttachments?: boolean;
 }): Promise<void> => {
   const contentHash = sha256Json(params.content);
-  await params.db`
+  const [stored] = await params.db<{ id: string }[]>`
     INSERT INTO mail.draft_recovery_copies (
-      draft_id, base_revision, content, content_hash, creator_kind, creator_id
+      draft_id, base_revision, content, content_hash, creator_kind, creator_id, has_attachment_snapshot
     ) VALUES (
       ${params.draftId}::uuid,
       ${params.baseRevision},
       ${params.content}::jsonb,
       ${contentHash},
       ${params.actor.kind},
-      ${actorId(params.actor)}::uuid
+      ${actorId(params.actor)}::uuid,
+      ${params.includeAttachments ?? false}
     )
-    ON CONFLICT (draft_id, base_revision, creator_kind, creator_id, content_hash) DO NOTHING
+    ON CONFLICT (draft_id, base_revision, creator_kind, creator_id, content_hash) DO UPDATE
+      SET has_attachment_snapshot = true
+      WHERE EXCLUDED.has_attachment_snapshot AND NOT mail.draft_recovery_copies.has_attachment_snapshot
+    RETURNING id
   `;
+  if (stored && params.includeAttachments)
+    await params.db`
+      INSERT INTO mail.draft_recovery_attachments (recovery_copy_id, blob_id, filename, content_type, byte_length, content_hash, position)
+      SELECT ${stored.id}::uuid, blob_id, filename, content_type, byte_length, content_hash, position
+      FROM mail.draft_attachments WHERE draft_id = ${params.draftId}::uuid AND removed_at IS NULL
+    `;
 };
 
 type PreparedComposeDraft = {
@@ -617,7 +636,7 @@ const prepareComposeDraftInTransaction = async (params: {
   input: DraftContentInput;
 }): Promise<Result<PreparedComposeDraft>> => {
   const parsed = internalDraftContentSchema.safeParse(params.input);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid draft"));
+  if (!parsed.success) return fail(draftInputError(parsed.error, "Invalid draft"));
   const [mailbox] = await params.db<{ id: string }[]>`
     SELECT id FROM mail.mailboxes
     WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL
@@ -1071,7 +1090,7 @@ export const prepareDraftSeed = async (params: {
   origin: DraftSeedOrigin;
 }): Promise<Result<MailDraftSeed>> => {
   const parsed = internalDraftSeedOriginSchema.safeParse(params.origin);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid compose request"));
+  if (!parsed.success) return fail(draftInputError(parsed.error, "Invalid compose request"));
   if (!mutableActor(params.context)) return fail(err.forbidden("Draft author is invalid"));
   try {
     return await sql.begin(async (tx) => {
@@ -1123,7 +1142,7 @@ export const materializeDraftSeed = async (params: {
   input: MaterializeDraftSeedInput;
 }): Promise<Result<MailDraft>> => {
   const parsed = internalMaterializeDraftSeedInputSchema.safeParse(params.input);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid compose request"));
+  if (!parsed.success) return fail(draftInputError(parsed.error, "Invalid compose request"));
   const actor = mutableActor(params.context);
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
   try {
@@ -1254,7 +1273,7 @@ export const deriveDraftFromMessage = async (params: {
   input: DeriveDraftFromMessageInput;
 }): Promise<Result<MailDraft>> => {
   const parsed = internalDeriveDraftFromMessageInputSchema.safeParse(params.input);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid draft derivation"));
+  if (!parsed.success) return fail(draftInputError(parsed.error, "Invalid draft derivation"));
   const actor = mutableActor(params.context);
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
   try {
@@ -1698,7 +1717,7 @@ export const updateDraft = async (params: {
       message: "The draft update was published but its durable save is pending. Keep the submitted content and retry.",
     });
   const parsed = internalDraftEditableContentSchema.safeParse(params.input);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid draft"));
+  if (!parsed.success) return fail(draftInputError(parsed.error, "Invalid draft"));
   if (!Number.isInteger(params.expectedRevision) || params.expectedRevision < 1) return fail(err.badInput("Invalid draft revision"));
   const actor = mutableActor(params.context);
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
@@ -1757,10 +1776,10 @@ export const updateDraft = async (params: {
         const [saved] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
         return saved ? ok(mapDraft(saved)) : pending();
       }
-      if (Number(current.revision) !== params.expectedRevision) {
+      const staleRecovery = async () => {
         await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
         return conflict("Draft changed; the submitted content was saved as a recovery copy");
-      }
+      };
       const identity = await validateIdentity({ mailboxId: params.mailboxId, senderIdentityId: parsed.data.senderIdentityId, db: tx });
       if (!identity.ok) {
         await storeRecoveryCopy({ db: tx, draftId, baseRevision: params.expectedRevision, content: parsed.data, actor });
@@ -1774,7 +1793,24 @@ export const updateDraft = async (params: {
         body: parsed.data.body,
         requested: parsed.data.signatureTemplateId,
       });
-      if (!signature.ok) return signature;
+      if (!signature.ok) return Number(current.revision) !== params.expectedRevision ? staleRecovery() : signature;
+      // A successful PUT may lose its response. Confirm identical input under
+      // the row lock before enforcing the revision; never replay it as a new edit.
+      const [unchanged] = await tx<DbDraft[]>`
+        SELECT ${draftColumns()} FROM mail.drafts d
+        WHERE d.id = ${draftId}::uuid AND d.revision >= ${params.expectedRevision}
+          AND d.sender_identity_id = ${parsed.data.senderIdentityId}::uuid
+          AND d.signature_template_id IS NOT DISTINCT FROM ${signature.data.signatureTemplateId}::uuid
+          AND jsonb_strip_nulls(d.to_addresses) = jsonb_strip_nulls(${parsed.data.to}::jsonb)
+          AND jsonb_strip_nulls(d.cc_addresses) = jsonb_strip_nulls(${parsed.data.cc}::jsonb)
+          AND jsonb_strip_nulls(d.bcc_addresses) = jsonb_strip_nulls(${parsed.data.bcc}::jsonb)
+          AND d.subject = ${parsed.data.subject} AND d.body_markdown = ${signature.data.body}
+          AND d.body_format = ${parsed.data.format} AND d.priority = ${parsed.data.priority}
+          AND d.request_delivery_receipt = ${parsed.data.requestDeliveryReceipt}
+          AND d.request_read_receipt = ${parsed.data.requestReadReceipt}
+      `;
+      if (unchanged) return ok(mapDraft(unchanged));
+      if (Number(current.revision) !== params.expectedRevision) return staleRecovery();
       const [row] = await tx<DbDraft[]>`
         UPDATE mail.drafts d
         SET
@@ -1902,6 +1938,8 @@ export const listDraftFolder = async (params: {
       to_addresses: MailAddress[] | string;
       cc_addresses: MailAddress[] | string;
       bcc_addresses: MailAddress[] | string;
+      revision: string | number;
+      attachment_count: number;
       updated_at_cursor: string;
     })[]
   >`
@@ -1914,6 +1952,11 @@ export const listDraftFolder = async (params: {
       d.to_addresses,
       d.cc_addresses,
       d.bcc_addresses,
+      d.revision,
+      (
+        SELECT COUNT(*)::int FROM mail.draft_attachments attachment
+        WHERE attachment.draft_id = d.id AND attachment.removed_at IS NULL
+      ) AS attachment_count,
       LEFT(d.body_markdown, ${DRAFT_BODY_PREVIEW_SOURCE_LENGTH}) AS body_preview_source,
       COALESCE(
         NULLIF(author_user.display_name, ''),
@@ -1959,6 +2002,8 @@ export const listDraftFolder = async (params: {
       to: parseArray(row.to_addresses),
       cc: parseArray(row.cc_addresses),
       bcc: parseArray(row.bcc_addresses),
+      revision: Number(row.revision),
+      attachmentCount: row.attachment_count,
       bodyPreview: draftBodyPreview(row.body_preview_source),
       createdByDisplayName: row.created_by_display_name,
       updatedAt: toIso(row.updated_at),
@@ -2131,6 +2176,20 @@ export const restoreDraftRecoveryCopy = async (params: {
           if (saved.data.status !== "accepted")
             return conflict("Recovery is awaiting synchronization. The copy remains available; refresh before retrying.");
         }
+        if (draft.edit_mode === "lock") {
+          // Restoring is an explicit replacement. Preserve the replaced server
+          // version in the same transaction, including its attachment set.
+          const [previous] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
+          if (!previous) return fail(err.notFound("Draft"));
+          await storeRecoveryCopy({
+            db: tx,
+            draftId,
+            baseRevision: Number(draft.revision),
+            content: internalDraftEditableContentSchema.strip().parse(mapDraft(previous)),
+            actor,
+            includeAttachments: true,
+          });
+        }
         const recoveryAttachments = copy.has_attachment_snapshot
           ? await tx<
               {
@@ -2289,6 +2348,13 @@ export const removeDraftAttachment = async (params: {
       `;
       if (!draft) return fail(err.notFound("Draft"));
       if (draft.state !== "draft") return fail(err.badInput("Draft can no longer be edited"));
+      const [attachment] = await tx<{ removed_at: Date | null }[]>`
+        SELECT removed_at FROM mail.draft_attachments WHERE id = ${attachmentId}::uuid AND draft_id = ${draftId}::uuid
+      `;
+      if (attachment?.removed_at && params.expectedRevision <= Number(draft.revision)) {
+        const [current] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
+        return current ? ok(mapDraft(current)) : fail(err.notFound("Draft"));
+      }
       if (Number(draft.revision) !== params.expectedRevision) return conflict("Draft changed before the attachment could be removed");
       const [removed] = await tx<{ id: string }[]>`
         UPDATE mail.draft_attachments

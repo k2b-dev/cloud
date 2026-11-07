@@ -64,7 +64,7 @@ const { defaultBrowserType: _, ...phone } = devices[browserName === "webkit" ? "
 const profiles: Record<string, BrowserContextOptions> = { desktop: { viewport: { width: 1440, height: 900 } }, phone };
 for (const [name, options] of Object.entries(profiles))
   describe(name, () => {
-    test("toolbar formats the cell selection and source mode clears its floating menu", async () => {
+    test("toolbar formats the cell selection without a view switch; a source view returns to formatted", async () => {
       const context = await browser.newContext(options);
       try {
         const page = await context.newPage();
@@ -90,11 +90,62 @@ for (const [name, options] of Object.entries(profiles))
         });
         await page.getByRole("button", { name: "Fett", exact: true }).click();
         expect(await page.evaluate(() => window.sharedComponentHarness.view.state.doc.toString())).toContain("**Visitenkarten**");
-        await page.getByRole("radio", { name: "Markdown", exact: true }).click();
+        // Editing is always formatted: the toolbar offers no Formatted/Markdown switch.
+        expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+        expect(await page.getByRole("radio", { name: "Markdown", exact: true }).count()).toBe(0);
+        // A source view (the table check's "Check Markdown") keeps its tools and the way back.
+        await page.goto(server.url.href + "?state=source");
+        await page.locator(".k2b-ste-views").waitFor();
         expect(await page.locator(".k2b-ste-table").count()).toBe(0);
-        expect(await page.locator(".k2b-ste-floating-menu .k2b-dropdown__trigger").count()).toBe(0);
+        // Phones show the toolbar for the focused editor.
+        await page.locator(".cm-content").click();
         await page.getByRole("button", { name: "Tabelle", exact: true }).click();
         expect(await page.evaluate(() => window.sharedComponentHarness.view.state.doc.toString())).toContain("Spalte 1");
+        await page.getByRole("radio", { name: "Markdown", exact: true }).focus();
+        await page.keyboard.press("ArrowLeft");
+        await page.locator(".k2b-ste-table").first().waitFor();
+        expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+        // The switch is gone; keyboard focus continues in the text instead of falling back to the page.
+        await page.waitForFunction(() => document.activeElement?.closest(".k2b-text-editor") !== null);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+    test("dictation stands in for the formatting row at its height and writes at the caret", async () => {
+      const context = await browser.newContext(options);
+      try {
+        const page = await context.newPage();
+        const errors = pageErrors(page);
+        await page.goto(server.url.href + "?state=dictation");
+        const microphone = page.getByRole("button", { name: "Diktieren", exact: true });
+        await microphone.waitFor();
+        await page.evaluate(() => {
+          const view = window.sharedComponentHarness.view;
+          view.dispatch({ selection: { anchor: view.state.doc.length } });
+        });
+        await settled(page);
+        // A person dictates while editing: the toolbar is in its active place, on a phone above the keyboard. The
+        // focused view keeps restarting its caret blink, so the rest waits for frames instead of `settled`.
+        await page.evaluate(() => window.sharedComponentHarness.view.focus());
+        const frames = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+        await frames();
+        const row = (await page.locator(".k2b-ste-toolbar").boundingBox())!;
+        // The microphone stays visible at the end of the row, also where the row scrolls on a phone.
+        const mic = (await microphone.boundingBox())!;
+        expect(mic.x + mic.width).toBeLessThanOrEqual(row.x + row.width + 1);
+        await microphone.click();
+        await page.evaluate(() => {
+          const emit = (window as unknown as { dictationEmit: (event: unknown) => void }).dictationEmit;
+          emit({ type: "state", state: "live", maxMs: 600_000 });
+          emit({ type: "text", text: "Bis bald" });
+        });
+        await page.getByRole("group", { name: "Diktat läuft" }).waitFor();
+        await page.waitForFunction(() => window.sharedComponentHarness.view.state.doc.toString().endsWith("Lena Bis bald"));
+        await frames();
+        expect((await page.locator(".k2b-ste-toolbar").boundingBox())!.height).toBe(row.height);
+        await page.getByRole("button", { name: "Diktat verwerfen" }).click();
+        await page.waitForFunction(() => window.sharedComponentHarness.view.state.doc.toString().endsWith("Lena"));
         expect(errors).toEqual([]);
       } finally {
         await context.close();
@@ -360,6 +411,39 @@ for (const [name, options] of Object.entries(profiles))
         await page.keyboard.press("Escape");
         await page.waitForFunction(() => document.activeElement?.matches('.k2b-ste-cell[data-r="2"][data-c="0"]'));
         expect(await cell(2, 0).textContent()).toBe("Bühne und Technik");
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+    test.skipIf(name === "phone")("a grip menu closed before the browser announces it leaves every grip usable", async () => {
+      const { context, page, errors, cell, openMenu } = await polish();
+      try {
+        await cell(1, 0).hover();
+        // A busy page can deliver the click and Escape before the menu's toggle event. The browser then sends one
+        // toggle from "closed" to "closed", and the grip must still give up its open mark.
+        const after = await page.evaluate(async () => {
+          const grip = document.querySelector<HTMLElement>('tr[data-r="1"] .k2b-ste-rowMenu')!;
+          grip.click();
+          let menu: HTMLElement | null = null;
+          for (let step = 0; step < 10 && !menu; step++) {
+            await Promise.resolve();
+            menu = document.querySelector<HTMLElement>(".k2b-ste-table-menu:popover-open");
+          }
+          if (!menu) throw new Error("The row menu did not open");
+          const toggled = new Promise((resolve) => menu.addEventListener("toggle", resolve, { once: true }));
+          menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+          await toggled;
+          return document.querySelectorAll(".k2b-ste-grip[data-open], [data-marked]").length;
+        });
+        expect(after).toBe(0);
+        expect(await openMenu.count()).toBe(0);
+        await cell(1, 0).hover();
+        expect(await page.locator('.k2b-ste-columnMenu[data-c="0"]').isVisible()).toBe(true);
+        await cell(1, 1).hover();
+        expect(await page.locator('tr[data-r="1"] .k2b-ste-rowMenu').isVisible()).toBe(true);
+        await page.locator('.k2b-ste-columnMenu[data-c="1"]').click();
+        await openMenu.waitFor();
         expect(errors).toEqual([]);
       } finally {
         await context.close();

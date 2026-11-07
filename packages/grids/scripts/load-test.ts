@@ -577,7 +577,7 @@ const updateCoreSettings = async (sessionToken: string, body: { updates?: Record
     method: "PUT",
     headers: {
       "content-type": "application/json",
-      cookie: `session_token=${sessionToken}`,
+      authorization: `Bearer ${sessionToken}`,
     },
     body: JSON.stringify(body),
   });
@@ -589,7 +589,7 @@ const updateCoreSettings = async (sessionToken: string, body: { updates?: Record
 const logout = async (sessionToken: string): Promise<void> => {
   await fetch(`${BASE_URL}/api/auth/logout`, {
     method: "POST",
-    headers: { cookie: `session_token=${sessionToken}` },
+    headers: { authorization: `Bearer ${sessionToken}` },
   }).catch(() => undefined);
 };
 

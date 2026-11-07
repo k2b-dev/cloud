@@ -77,6 +77,12 @@ Without `--ttl`, a `--user` login lasts the Cloud's session length. Browser and 
 
 As an agent on a headless box, prefer `--user <the user's username or email>` when the user has paired Cloud Login, otherwise `--device`. Tell the user to approve only the code shown in your terminal. Pass a `--ttl` that fits the task, such as `--ttl 2h` for one session of work. Never ask for a password or token. To sign in with fewer rights, pass `--scope`.
 
+For an explicitly approved administrator operation that needs `admin` scope,
+use a short-lived browser/device login as described in
+[Administrator operations](administration.md#explicit-approval-for-dangerous-actions).
+Ordinary administrator diagnostics and configuration work with the default
+`read write` login.
+
 ## Create personal API keys
 
 Create personal keys in the browser at `<server>/me/developer` after signing

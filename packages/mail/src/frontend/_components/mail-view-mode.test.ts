@@ -6,6 +6,7 @@ import {
   mailTimeColumnSamples,
   mailTimeColumnSizer,
   resolveMailLargeLayout,
+  resolveMailListPresence,
   toggleMailLargeView,
 } from "./mail-view-mode";
 
@@ -14,6 +15,23 @@ test("auto shows columns until a conversation opens, then the list beside the re
   expect(resolveMailLargeLayout("auto", true)).toEqual({ rows: "lines", list: "pane", reader: true });
   expect(resolveMailLargeLayout("columns", true)).toEqual({ rows: "columns", list: "hidden", reader: true });
   expect(resolveMailLargeLayout("split", false)).toEqual({ rows: "lines", list: "pane", reader: true });
+});
+
+test("the list hides only beside the reader; without it beside the reader, × and Escape lead back", () => {
+  const presence = (view: "auto" | "columns" | "split", open: boolean, collapsed: boolean) =>
+    resolveMailListPresence(resolveMailLargeLayout(view, open), open, collapsed);
+  // Reading beside the list: the switch works and the list shows until it is hidden.
+  expect(presence("auto", true, false)).toEqual({ open: true, hideable: true, away: false });
+  expect(presence("split", true, false)).toEqual({ open: true, hideable: true, away: false });
+  expect(presence("auto", true, true)).toEqual({ open: false, hideable: true, away: true });
+  expect(presence("split", true, true)).toEqual({ open: false, hideable: true, away: true });
+  // Always columns opens a mail over the full width: nothing to hide, and the way back is × or Escape.
+  expect(presence("columns", true, false)).toEqual({ open: false, hideable: false, away: true });
+  expect(presence("columns", true, true)).toEqual({ open: false, hideable: false, away: true });
+  // Without an open conversation there is no reader beside the list, and a stored choice waits for the next one.
+  expect(presence("auto", false, true)).toEqual({ open: false, hideable: false, away: false });
+  expect(presence("split", false, true)).toEqual({ open: true, hideable: false, away: false });
+  expect(presence("columns", false, false)).toEqual({ open: false, hideable: false, away: false });
 });
 
 test("V switches to the view that is not on screen", () => {

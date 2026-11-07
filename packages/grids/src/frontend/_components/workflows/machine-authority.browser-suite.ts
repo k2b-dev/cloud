@@ -149,7 +149,7 @@ for (const [width, theme] of [
       await picker.fill("Inventory");
       const candidate = page.getByRole("button", { name: "Inventory agent avatar Inventory agent Agent", exact: true });
       await candidate.waitFor();
-      await page.getByRole("button", { name: "Nightly service avatar Nightly service Service account", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Nightly service avatar Nightly service Agent (API key only)", exact: true }).waitFor();
       expect(searches.at(-1)!.searchParams.get("kinds")).toBe("service_account");
       expect(searches.at(-1)!.searchParams.get("service_account_kinds")).toBe("standalone,agent");
       expect(searches.at(-1)!.searchParams.get("service_account_status")).toBe("active");

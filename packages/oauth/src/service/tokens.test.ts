@@ -1351,7 +1351,7 @@ suite("OAuth resource access tokens", () => {
       expect(restored).toMatchObject({
         name: "Cloud CLI",
         redirectUris: ["http://127.0.0.1/callback", "http://[::1]/callback"],
-        scopes: ["openid", "profile", "email", "offline_access", "read", "write"],
+        scopes: ["openid", "profile", "email", "offline_access", "read", "write", "admin"],
         audiences: ["cloud"],
         serviceAccountId: null,
         allowedProfiles: ["user", "guest"],

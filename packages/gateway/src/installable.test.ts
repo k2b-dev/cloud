@@ -139,7 +139,7 @@ test("a confirmed all-invalid registry snapshot removes the previous App-PWA rou
       apps: rejected ? [] : [{ id: "inventory", name: "Inventory", icon: "ti ti-box", description: "", baseUrl: "http://inventory.invalid", routes: ["/app/inventory"], installable: ${JSON.stringify(surface("inventory"))} }],
       issues: rejected ? [{ key: "apps/inventory", reason: "invalid installable", version: "2" }] : []
     }) }));
-    mock.module("@k2b/cloud/services", () => ({ logger: () => ({ info() {}, warn() {}, error(error) { throw new Error(String(error)); } }), buildGatewayRouteSnapshot: () => ({}), publishGatewayRouteSnapshot: async () => {}, removeGatewayRouteSnapshot: async () => {}, superviseRuntimeTask: async () => {} }));
+    mock.module("@k2b/cloud/services", () => ({ logger: () => ({ info() {}, warn() {}, error(error) { throw new Error(String(error)); } }), buildGatewayRouteSnapshot: () => ({}), publishGatewayRouteSnapshot: async () => {}, removeGatewayRouteSnapshot: async () => {}, superviseRuntimeTask: async () => {}, watchGatewayDomainChanges: async () => {} }));
     mock.module("@k2b/cloud/services/settings/env-status", () => ({ readEnvSettingsStatus: async () => [] }));
     const { refreshRoutes } = await import(${runtime});
     const { getRouteTable } = await import(${stats});

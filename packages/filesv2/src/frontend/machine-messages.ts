@@ -5,13 +5,13 @@ export const machineMessages = i18n.define({
   messages: {
     en: {
       title: "Machine storage",
-      detail: "Give an agent or service account its own storage, then grant access explicitly. Ownership alone grants nothing.",
+      detail: "Give an agent its own storage, then grant access explicitly. Ownership alone grants nothing.",
       owner: "Storage owner",
-      choose: "Choose an agent or service account",
+      choose: "Choose an agent",
       selected: "Selected owner",
       create: "Create storage",
       agent: "Agent",
-      standalone: "Service account",
+      standalone: "Agent (API key only)",
       empty: "No machine storage",
       emptyDetail: "Choose an owner to create independent Cloud storage.",
       loading: "Loading machine storage…",
@@ -33,7 +33,7 @@ export const machineMessages = i18n.define({
       provisioning:
         "FreeIPA needs an independently provisioned machine Unix identity. Human Unix identities cannot be used. Machine storage in FreeIPA is currently unavailable.",
       cloud: "Cloud storage uses the Files service identity. Each machine owns a separate directory.",
-      wrongOwner: "Choose an agent or standalone service account.",
+      wrongOwner: "Choose an agent.",
       saved: "Storage created. Add an explicit grant below.",
       actionFailed: "The change failed. Check the connection and try again.",
       refresh: "Refresh",
@@ -43,14 +43,13 @@ export const machineMessages = i18n.define({
     },
     de: {
       title: "Maschinenablagen",
-      detail:
-        "Gib einem Agenten oder Dienstkonto eine eigene Ablage und erteile danach ausdrücklich Zugriff. Eigentum allein gewährt keinen Zugriff.",
+      detail: "Gib einem Agenten eine eigene Ablage und erteile danach ausdrücklich Zugriff. Eigentum allein gewährt keinen Zugriff.",
       owner: "Eigentümer der Ablage",
-      choose: "Agenten oder Dienstkonto wählen",
+      choose: "Agenten wählen",
       selected: "Gewählter Eigentümer",
       create: "Ablage erstellen",
       agent: "Agent",
-      standalone: "Dienstkonto",
+      standalone: "Agent (nur API Key)",
       empty: "Keine Maschinenablagen",
       emptyDetail: "Wähle einen Eigentümer, um eine eigene Cloud-Ablage zu erstellen.",
       loading: "Maschinenablagen werden geladen…",
@@ -69,11 +68,11 @@ export const machineMessages = i18n.define({
       revoke: "Entziehen",
       noGrants: "Kein Zugriff erteilt",
       noGrantsDetail:
-        "Wähle unten einen benannten Benutzer, eine Gruppe oder ein Dienstkonto. Neue Ablagen gewähren auch ihrem Eigentümer noch keinen Zugriff.",
+        "Wähle unten einen benannten Benutzer, eine Gruppe oder einen Agenten. Neue Ablagen gewähren auch ihrem Eigentümer noch keinen Zugriff.",
       provisioning:
         "FreeIPA benötigt eine unabhängig eingerichtete Unix-Identität für die Maschine. Menschliche Unix-Identitäten können nicht verwendet werden. Maschinenablagen in FreeIPA sind derzeit nicht verfügbar.",
       cloud: "Cloud-Ablagen verwenden die Dienstidentität von Dateien. Jede Maschine besitzt ein eigenes Verzeichnis.",
-      wrongOwner: "Wähle einen Agenten oder ein eigenständiges Dienstkonto.",
+      wrongOwner: "Wähle einen Agenten.",
       saved: "Ablage erstellt. Erteile unten ausdrücklich Zugriff.",
       actionFailed: "Die Änderung ist fehlgeschlagen. Prüfe die Verbindung und versuche es erneut.",
       refresh: "Aktualisieren",

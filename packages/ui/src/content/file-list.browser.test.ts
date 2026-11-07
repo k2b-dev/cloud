@@ -18,7 +18,7 @@ const entry = resolve(import.meta.dir, "file-list.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent as c, render } from "solid-js/web";
-import { DetailPanel, FileGrid, FileTypeIcon, IconButton, fileKindLabel } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { DetailPanel, FileGrid, FileTypeIcon, IconButton, createCollectionSelection, fileKindLabel } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const pixel = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="3"><rect width="4" height="3" fill="#7c9cd6"/></svg>');
 const files = [
@@ -57,12 +57,20 @@ const live = () => c(FileGrid, {
   getRowId: (file) => file.name, renderPreview: (file) => c(FileTypeIcon, { name: file.name }), renderLabel: (file) => file.name,
   onOpen() {},
 });
+// A picker: items are selected with one click, and one is disabled.
+const sources = [{ id: "device", name: "This device" }, { id: "locked", name: "Locked source" }];
+const picker = () => c(FileGrid, {
+  rows: sources, label: "Sources", layout: "list", getRowId: (row) => row.id,
+  selection: createCollectionSelection({ ids: () => sources.map((row) => row.id), isDisabled: (id) => id === "locked" }),
+  renderPreview: () => icon("ti-device-laptop"), renderLabel: (row) => row.name, onRowClick() {}, onOpen() {},
+});
 render(() => c(DetailPanel, { surface: "plain", get children() { return [c(DetailPanel.Header, {
   kind: "Conversation", title: "Brochure approval", subtitle: "Northern Light Print · 3 messages",
   get actions() { return c(IconButton, { size: "sm", variant: "ghost", label: "Close details", get children() { return icon("ti-x"); } }); },
 }), c(DetailPanel.Body, { scrollFade: false, get children() { return [
   c(DetailPanel.Section, { title: "Attachments", count: files.length, get children() { return list(); } }),
   c(DetailPanel.Section, { title: "Live", get children() { return live(); } }),
+  c(DetailPanel.Section, { title: "Sources", get children() { return picker(); } }),
   c(DetailPanel.Section, { title: "Linked", get children() { return c(DetailPanel.Action, {
     title: "Brochure task", href: "#task", secondaryAction: { icon: "ti ti-unlink", label: "Unlink Brochure task", onClick() {} },
   }); } }),
@@ -167,6 +175,32 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
     }, 30_000);
   }
 
+  test("a file's glyph stays centred in its tile while the tile stands on the section's text edge", async () => {
+    const page = await load(1440, "light");
+    try {
+      const offsets = await page.locator(".att .k2b-file-type-icon").evaluateAll((tiles) =>
+        tiles.map((tile) => {
+          const box = tile.getBoundingClientRect();
+          const glyph = tile.querySelector("i")!.getBoundingClientRect();
+          const preview = tile.closest(".k2b-file-grid__preview")!.getBoundingClientRect();
+          return {
+            x: glyph.left + glyph.width / 2 - (box.left + box.width / 2),
+            y: glyph.top + glyph.height / 2 - (box.top + box.height / 2),
+            edge: box.left - preview.left,
+          };
+        }),
+      );
+      expect(offsets).toHaveLength(5);
+      for (const { x, y, edge } of offsets) {
+        expect(Math.abs(x)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(y)).toBeLessThanOrEqual(0.5);
+        expect(edge).toBe(0);
+      }
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("with a mouse, row actions show on hover and focus inside the row's surface without moving anything", async () => {
     const page = await load(1440, "light");
     try {
@@ -236,6 +270,24 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
       await page.close();
     }
   }, 30_000);
+
+  test("every item that opens or selects shows the pointer, and a disabled item shows not-allowed", async () => {
+    const page = await load(1440, "light");
+    try {
+      const cursor = (name: string) =>
+        page.evaluate((name) => {
+          const item = Array.from(document.querySelectorAll(".k2b-file-grid__item")).find((element) =>
+            element.textContent?.includes(name),
+          )!;
+          return getComputedStyle(item).cursor;
+        }, name);
+      expect(await cursor("Brochure-v3.pdf")).toBe("pointer");
+      expect(await cursor("This device")).toBe("pointer");
+      expect(await cursor("Locked source")).toBe("not-allowed");
+    } finally {
+      await page.close();
+    }
+  });
 
   test("on touch, row actions always show", async () => {
     const touch = await load(390, "light", "touch");

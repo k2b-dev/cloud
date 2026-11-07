@@ -1,5 +1,5 @@
 import { type CapabilityCatalogClientResult, invokeCapability, listCapabilityCatalog } from "@k2b/cloud/capabilities";
-import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
+import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
 import type { ResourceCardColor, ResourceCardState } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { z } from "zod";

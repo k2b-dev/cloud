@@ -16,7 +16,7 @@ import { Button, IconButton, Toolbar } from "@k2b/ui";
 
 Enable `wrap` where actions may outgrow the available width. Button variants remain yours.
 
-Separators automatically follow the toolbar orientation: they are vertical in a horizontal toolbar and horizontal in a vertical toolbar.
+A separator groups clusters with space, not a drawn line, and keeps `role="separator"` for assistive technology. It follows the toolbar orientation: vertical in a horizontal toolbar and horizontal in a vertical toolbar.
 
 ## Floating variant
 
@@ -42,7 +42,7 @@ container clips it.
   below the selection. On touch use `placement="below"`: the system's selection
   menu sits above.
 - It is compact so it stays small over the text: a 4 px frame, 30 px buttons
-  with 16 px icons, tight gaps and a slim separator. Use `Toolbar.Action` for
+  with 16 px icons, tight gaps and a narrow separator space. Use `Toolbar.Action` for
   icon commands and a `size="sm"` ghost `Button` for a text command such as
   Comment. On touch screens every button keeps a 44 px hit area through the
   buttons' own touch rule; the bar does not grow. Shortcuts from `keys` show in

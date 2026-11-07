@@ -253,9 +253,12 @@ export const usageCount = async (params: { notebookId: string; attachmentId: str
  *  orchestrator. Drops rows that point at attachments which have been
  *  deleted in the meantime (FK CASCADE handles that, but we ANTI JOIN
  *  upfront to avoid inserting them). */
-export const reindexAttachmentRefs = async (params: { noteId: string; notebookId: string; contentMd: string | null }): Promise<void> => {
+export const reindexAttachmentRefs = async (
+  params: { noteId: string; notebookId: string; contentMd: string | null },
+  transaction?: typeof sql,
+): Promise<void> => {
   const shortIds = extractIds(params.contentMd);
-  await sql.begin(async (tx) => {
+  const persist = async (tx: typeof sql) => {
     await tx`DELETE FROM notebooks.note_attachments WHERE note_id = ${params.noteId}`;
     if (shortIds.length === 0) return;
     // Filter to attachments that actually exist + belong to the same
@@ -273,5 +276,7 @@ export const reindexAttachmentRefs = async (params: { noteId: string; notebookId
       INSERT INTO notebooks.note_attachments ${tx(valid.map((row) => ({ note_id: params.noteId, notebook_id: params.notebookId, attachment_id: row.id })))}
       ON CONFLICT DO NOTHING
     `;
-  });
+  };
+  if (transaction) await persist(transaction);
+  else await sql.begin(persist);
 };

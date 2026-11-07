@@ -4,9 +4,12 @@ import { decodeJwt, SignJWT } from "jose";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
+import { type AuthContext, auth } from "../server/middleware/auth";
+import { sessionOriginGuard } from "../server/middleware/session-origin";
 import { freeipa } from "../server/services";
 import { accounts } from "../services/accounts";
 import { audit } from "../services/audit";
+import * as freeIpaConfig from "../services/freeipa-config";
 import * as keyRing from "../services/identity/key-ring";
 import { getIdentityRuntimeConfig } from "../services/identity/runtime-config";
 import * as sessionTokens from "../services/identity/session-token";
@@ -24,15 +27,18 @@ const issuer = "http://localhost:3000";
 const unused = async (): Promise<never> => {
   throw new Error("No notification expected");
 };
-const router = new Hono().route("/api/me", me).route(
-  "/api/auth",
-  createAuthRoutes({
-    sendMagicLink: unused,
-    sendIpaLoginHint: unused,
-    sendPasswordReset: unused,
-    sendNewBrowserSignIn: async () => {},
-  }),
-);
+const router = new Hono()
+  .use(sessionOriginGuard())
+  .route("/api/me", me)
+  .route(
+    "/api/auth",
+    createAuthRoutes({
+      sendMagicLink: unused,
+      sendIpaLoginHint: unused,
+      sendPasswordReset: unused,
+      sendNewBrowserSignIn: async () => {},
+    }),
+  );
 const post = (path: string, token: string, body: unknown = {}) =>
   router.request(path, {
     method: "POST",
@@ -82,6 +88,21 @@ suite("password changes end other sign-ins", () => {
     "freeipa.groups.base_sync": ["fixture"],
     "freeipa.groups.base_ipa_realm": ["fixture"],
   };
+  const ipaConfig: freeIpaConfig.FreeIpaConfig = {
+    enabled: true,
+    configured: true,
+    missingSettings: [],
+    url: "https://ipa.example.test",
+    serviceUser: "fixture",
+    servicePassword: "fixture-only",
+    groupsAdmin: ["admins"],
+    groupsBaseSync: ["fixture"],
+    groupsBaseIpaRealm: ["fixture"],
+    groupsExcluded: ["editors", "trust admins", "admins"],
+    caCert: "",
+    allowInsecure: false,
+    syncGuard: { maxUserChanges: 10, maxUserChangePercent: 20, maxGroupDeletions: 5, maxGroupDeletionPercent: 20 },
+  };
   let userId: string;
   let uid: string;
   let a: string;
@@ -112,6 +133,9 @@ suite("password changes end other sign-ins", () => {
     epoch = Number(decodeJwt(a).auth_epoch);
     watch(spyOn(providers.ipa.auth, "login").mockResolvedValue({ status: "success", session: "fixture" }));
     watch(spyOn(providers.ipa.auth, "changePassword").mockResolvedValue({ ok: true, data: undefined }));
+    // Every integration process on a host shares the Valkey settings cache, so another file's database
+    // could replace this file's cached FreeIPA settings; the flows under test need only a configured FreeIPA.
+    watch(spyOn(freeIpaConfig, "getFreeIpaConfig").mockResolvedValue(ipaConfig));
   });
   afterEach(async () => {
     for (const undo of restore.reverse()) undo();
@@ -121,6 +145,51 @@ suite("password changes end other sign-ins", () => {
   });
   afterAll(async () => {
     for (const [key, value] of previous) await settings.set(key, value);
+  });
+
+  test("foreign and missing Origins cannot log out or sign out other browser sessions", async () => {
+    for (const path of ["/api/auth/logout", "/api/me/sign-ins/sign-out-others"]) {
+      for (const origin of [undefined, "null", "https://evil.localhost:3000", "https://evil.example.test"]) {
+        const headers = new Headers({ Cookie: `session_token=${a}`, "Sec-Fetch-Site": "same-site" });
+        if (origin) headers.set("Origin", origin);
+        const response = await router.request(path, { method: "POST", headers });
+        expect(response.status).toBe(403);
+        expect(response.headers.has("set-cookie")).toBe(false);
+        expect(await session.authenticate(a)).not.toBeNull();
+        expect(await session.authenticate(b)).not.toBeNull();
+      }
+    }
+    expect((await post("/api/auth/logout", a)).status).toBe(200);
+    expect(await session.authenticate(a)).toBeNull();
+    expect(await session.authenticate(b)).not.toBeNull();
+  });
+
+  test("app and web session mutations reach SSR form handlers only with the canonical Origin", async () => {
+    const phone = await createTestAppSession(userId);
+    let writes = 0;
+    const forms = new Hono<AuthContext>()
+      .use(sessionOriginGuard())
+      .use(auth.requireRole("authenticated"))
+      .post("/app/example/action", async (c) => {
+        await c.req.parseBody();
+        writes++;
+        return c.json({ kind: c.get("sessionKind") });
+      });
+    for (const [name, token, kind] of [
+      ["session_token", a, "web"],
+      ["pwa_session", phone.token, "app"],
+    ]) {
+      const headers = { Cookie: `${name}=${token}`, "Content-Type": "application/x-www-form-urlencoded" };
+      expect((await forms.request("/app/example/action", { method: "POST", headers, body: "decision=approve" })).status).toBe(403);
+      const accepted = await forms.request("/app/example/action", {
+        method: "POST",
+        headers: { ...headers, Origin: issuer },
+        body: "decision=approve",
+      });
+      expect(accepted.status).toBe(200);
+      expect(await accepted.json()).toEqual({ kind });
+    }
+    expect(writes).toBe(2);
   });
 
   test("a password sign-in overlapping a password change gets no session", async () => {

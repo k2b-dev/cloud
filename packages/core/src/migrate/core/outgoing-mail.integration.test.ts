@@ -302,19 +302,41 @@ databaseSuite()("outgoing mail migration", () => {
     await withProcessSync(async () => {
       await migrate(db);
       const writer = await db.reserve();
+      const pool = new SQL(disposable.url, { max: 2 });
+      let first: ReturnType<typeof buildSearchIndexes> | undefined;
+      let probes: Promise<unknown> | undefined;
       try {
         // An open write keeps a concurrent build waiting, so the second start sees the first one build.
         await writer`BEGIN`.simple();
         await writer`LOCK TABLE outgoing_mail.messages IN ROW EXCLUSIVE MODE`.simple();
-        const first = buildSearchIndexes(db);
+        first = buildSearchIndexes(pool);
         await buildStarted();
+        // Saturate the pool while the build is blocked. Ordinary startup reads
+        // must not be pipelined behind its long-running index statement.
+        probes = Promise.all(Array.from({ length: 4 }, () => pool`SELECT 1`.execute()));
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            probes,
+            new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(() => reject(new Error("Ordinary query queued behind send-log index")), 10_000);
+            }),
+          ]);
+        } finally {
+          clearTimeout(timer);
+        }
         expect(await buildSearchIndexes(db)).toBe("busy");
         expect(await advisoryLocks()).toBe(0);
         await writer`COMMIT`.simple();
         expect(await first).toBe("built");
       } finally {
-        await writer`ROLLBACK`.simple();
-        writer.release();
+        try {
+          await writer`ROLLBACK`.simple();
+        } finally {
+          writer.release();
+          await Promise.allSettled([first, probes]);
+          await pool.close();
+        }
       }
       expect(await searchIndexes()).toEqual([
         { name: "outgoing_mail_messages_recipients", valid: true },

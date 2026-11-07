@@ -9,6 +9,7 @@ const scope: ConversationCursorScope = {
   view: "needs_action",
   unread: true,
   userId: "00000000-0000-4000-8000-000000000003",
+  openOnly: false,
 };
 
 describe("conversation pagination cursor", () => {
@@ -48,6 +49,8 @@ describe("conversation pagination cursor", () => {
     expect(decodeConversationCursor(encoded, { ...scope, unread: false }).ok).toBe(false);
     expect(decodeConversationCursor(encoded, { ...scope, excludedFolderIds: [] }).ok).toBe(false);
     expect(decodeConversationCursor(encoded, { ...scope, userId: "00000000-0000-4000-8000-000000000006" }).ok).toBe(false);
+    // A page of the open-work list cannot continue the list with done conversations, or the other way round.
+    expect(decodeConversationCursor(encoded, { ...scope, openOnly: true }).ok).toBe(false);
   });
 
   test("rejects legacy, malformed, and non-date cursors", () => {

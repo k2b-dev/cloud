@@ -156,7 +156,8 @@ export const create = async (config: {
   if (!(await verifyNoteInNotebook(config))) return fail(err.notFound("Note"));
 
   const shortId = await generateUniqueShortId("comment");
-  const [row] = await sql<DbNoteComment[]>`
+  const row = await workspaceEvents.workspaceTransaction(async (tx) => {
+    const [row] = await tx<DbNoteComment[]>`
     WITH inserted AS (
       INSERT INTO notebooks.note_comments (short_id, note_id, author_user_id, author_display_name, content)
       VALUES (${shortId}, ${config.noteId}::uuid, ${config.authorUserId}::uuid, ${config.authorDisplayName}, ${content.data})
@@ -175,18 +176,23 @@ export const create = async (config: {
     FROM inserted
     LEFT JOIN auth.users author ON author.id = inserted.author_user_id
   `;
+    if (row) {
+      await activity.record(
+        {
+          notebookId: config.notebookId,
+          noteId: config.noteId,
+          actor: { kind: "user", id: config.authorUserId },
+          action: "comment.created",
+          metadata: { commentId: row.short_id },
+        },
+        tx,
+      );
+      await workspaceEvents.noteCommentsChanged({ notebookId: config.notebookId, noteId: config.noteId }, tx);
+    }
+    return row;
+  });
   if (!row) return fail(err.internal("Failed to create comment"));
 
-  await Promise.all([
-    activity.record({
-      notebookId: config.notebookId,
-      noteId: config.noteId,
-      actor: { kind: "user", id: config.authorUserId },
-      action: "comment.created",
-      metadata: { commentId: row.short_id },
-    }),
-    workspaceEvents.noteCommentsChanged({ notebookId: config.notebookId, noteId: config.noteId }),
-  ]);
   return ok(mapComment(row, config.authorUserId));
 };
 
@@ -206,7 +212,8 @@ export const update = async (config: {
   if (existing.authorUserId !== config.authorUserId) return fail(err.forbidden("Only the author may edit this comment"));
   if (!existing.canEdit) return fail(err.forbidden("Comments can only be edited within 10 minutes"));
 
-  const [row] = await sql<DbNoteComment[]>`
+  const row = await workspaceEvents.workspaceTransaction(async (tx) => {
+    const [row] = await tx<DbNoteComment[]>`
     WITH updated AS (
       UPDATE notebooks.note_comments
       SET content = ${content.data}, updated_at = now()
@@ -229,18 +236,23 @@ export const update = async (config: {
     FROM updated
     LEFT JOIN auth.users author ON author.id = updated.author_user_id
   `;
+    if (row) {
+      await activity.record(
+        {
+          notebookId: config.notebookId,
+          noteId: config.noteId,
+          actor: { kind: "user", id: config.authorUserId },
+          action: "comment.updated",
+          metadata: { commentId: row.short_id },
+        },
+        tx,
+      );
+      await workspaceEvents.noteCommentsChanged({ notebookId: config.notebookId, noteId: config.noteId }, tx);
+    }
+    return row;
+  });
   if (!row) return fail(err.forbidden("Comments can only be edited within 10 minutes"));
 
-  await Promise.all([
-    activity.record({
-      notebookId: config.notebookId,
-      noteId: config.noteId,
-      actor: { kind: "user", id: config.authorUserId },
-      action: "comment.updated",
-      metadata: { commentId: row.short_id },
-    }),
-    workspaceEvents.noteCommentsChanged({ notebookId: config.notebookId, noteId: config.noteId }),
-  ]);
   return ok(mapComment(row, config.authorUserId));
 };
 
@@ -256,7 +268,8 @@ export const remove = async (config: {
   if (existing.authorUserId !== config.authorUserId) return fail(err.forbidden("Only the author may delete this comment"));
   if (!existing.canDelete) return fail(err.forbidden("Comments can only be deleted within 10 minutes"));
 
-  const [deleted] = await sql<{ id: string }[]>`
+  const deleted = await workspaceEvents.workspaceTransaction(async (tx) => {
+    const [deleted] = await tx<{ id: string }[]>`
     DELETE FROM notebooks.note_comments
     WHERE id = ${existing.id}::uuid
       AND note_id = ${config.noteId}::uuid
@@ -264,17 +277,22 @@ export const remove = async (config: {
       AND created_at >= now() - interval '10 minutes'
     RETURNING id
   `;
+    if (deleted) {
+      await activity.record(
+        {
+          notebookId: config.notebookId,
+          noteId: config.noteId,
+          actor: { kind: "user", id: config.authorUserId },
+          action: "comment.deleted",
+          metadata: { commentId: existing.shortId },
+        },
+        tx,
+      );
+      await workspaceEvents.noteCommentsChanged({ notebookId: config.notebookId, noteId: config.noteId }, tx);
+    }
+    return deleted;
+  });
   if (!deleted) return fail(err.forbidden("Comments can only be deleted within 10 minutes"));
 
-  await Promise.all([
-    activity.record({
-      notebookId: config.notebookId,
-      noteId: config.noteId,
-      actor: { kind: "user", id: config.authorUserId },
-      action: "comment.deleted",
-      metadata: { commentId: existing.shortId },
-    }),
-    workspaceEvents.noteCommentsChanged({ notebookId: config.notebookId, noteId: config.noteId }),
-  ]);
   return ok(undefined);
 };

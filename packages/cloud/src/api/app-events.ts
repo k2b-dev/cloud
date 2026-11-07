@@ -26,7 +26,9 @@ export const createAppEventRoutes = (
 ) =>
   new Hono<AuthContext>()
     .use(authenticate)
-    .use(auth.requireOAuthScope("admin"))
+    .use((c, next) =>
+      auth.requireOAuthScope(...(c.req.method === "GET" || c.req.method === "HEAD" ? ["read", "admin"] : ["admin"]))(c, next),
+    )
     .get(
       "/apps/:appId",
       describeRoute({ tags: ["App events"], summary: "Inspect one application's access, events and notifications" }),

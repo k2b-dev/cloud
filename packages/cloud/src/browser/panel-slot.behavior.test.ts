@@ -304,7 +304,7 @@ else {
     expect(main.hasAttribute("tabindex")).toBe(false);
   });
 
-  test("tabs move focus manually, Escape respects prevention, and grabber toggles size", () => {
+  test("tabs move focus manually, Escape respects prevention, and grabber toggles size from full", () => {
     const h = setup(390);
     h.open();
     const tabs = h.slot.querySelectorAll<HTMLButtonElement>("[data-cloud-panel-provider]");
@@ -314,17 +314,24 @@ else {
     expect(h.slot.dataset.provider).toBe("fixture");
     h.click("[data-cloud-panel-provider='second']");
     expect(h.slot.dataset.provider).toBe("second");
+    // The sheet opens at full height; the grabber is a button that switches the height.
+    expect(h.slot.dataset.sheetDetent).toBeUndefined();
     h.click("[data-cloud-panel-grow]");
-    expect(h.slot.dataset.panelSize).toBe("full");
+    expect(h.slot.dataset.sheetDetent).toBe("half");
+    expect(h.slot.querySelector("[data-cloud-panel-grow]")?.getAttribute("aria-label")).toBe("Enlarge panel");
+    h.click("[data-cloud-panel-grow]");
+    expect(h.slot.dataset.sheetDetent).toBe("full");
     expect(h.slot.querySelector("[data-cloud-panel-grow]")?.getAttribute("aria-label")).toBe("Shrink panel");
     h.click("[data-cloud-panel-grow]");
-    expect(h.slot.dataset.panelSize).toBeUndefined();
     const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
     event.preventDefault();
     tabs[1]!.dispatchEvent(event);
     expect(h.canvas.dataset.panelSheet).toBe("open");
     tabs[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
     expect(h.canvas.dataset.panelSheet).toBeUndefined();
+    // Closing forgets a half-height sheet: the next one opens at full height.
+    expect(h.slot.dataset.sheetDetent).toBeUndefined();
+    expect(h.slot.querySelector("[data-cloud-panel-grow]")?.getAttribute("aria-label")).toBe("Shrink panel");
   });
 
   test("install is idempotent and disposal removes the timer and listeners", () => {
@@ -400,7 +407,7 @@ else {
       h.open();
       const root = document.createElement("div");
       h.dom.root.append(root);
-      const dispose = render(() => createComponent(PanelTrigger, { variant: "header", open: false }), root);
+      const dispose = render(() => createComponent(PanelTrigger, { open: false }), root);
       try {
         expect(root.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
       } finally {

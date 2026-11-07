@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { REMOTE_CARET_IDLE_CLASS, REMOTE_CARET_LABEL_IDLE_MS } from "@k2b/editor/collab";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../../../ui/test/browser";
-
+import { solidTestPlugin } from "../../../../../ui/test/solid-test-plugin";
 // Fading, hover, and reduced motion are computed styles, so this runs the editor theme in a real browser.
 import type {} from "./remote-cursors.browser-harness";
 
@@ -15,6 +15,7 @@ beforeAll(async () => {
     target: "browser",
     conditions: ["browser"],
     format: "iife",
+    plugins: [solidTestPlugin()],
   });
   if (!build.success) throw new AggregateError(build.logs, "Could not bundle the editor harness.");
   const bundle = await build.outputs[0]!.text();

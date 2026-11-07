@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { deflateSync } from "node:zlib";
 import type { BrowserContextOptions, Frame, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import { renderComposeContent } from "../../service/compose-renderer";
 import { sanitizeIncomingMailHtml } from "../../service/message-hydration";
 import type {} from "./MailMessageBody.browser-harness";
+import { buildMessageDocument } from "./mail-message-document";
 import type { MessageColors } from "./mail-message-presentation";
 
 // A 1x1 PNG; natural width 1 proves the frame decoded delivered image bytes.
@@ -308,6 +309,81 @@ describe("HTML mail message frame", () => {
       expect(opened.chevron).not.toBe("none");
       expect(opened.box).toEqual(closed.box);
       expect(await frame.getByText("Earlier message").isVisible()).toBeTrue();
+      expect(errors).toEqual([]);
+    });
+  }, 30_000);
+
+  test("collapses only the quoted conversation that ends a message", async () => {
+    // Invented samples of what common mail programs send, after the same sanitizer real mail passes.
+    const samples = {
+      appleReply:
+        '<div>Thanks, Friday works.</div><div>On 3 Nov 2026, at 09:15, Alex Example &lt;alex@example.com&gt; wrote:</div><blockquote type="cite"><div>Lunch on Friday?</div></blockquote>',
+      gmailReply:
+        '<div dir="ltr">Sounds good.</div><br><div class="gmail_quote"><div dir="ltr">Am Mo., 3. Nov. 2026 um 09:15 Uhr schrieb Erika Muster:<br></div><blockquote class="gmail_quote"><div>Mittag am Freitag?</div></blockquote></div>',
+      replyAboveSignature: '<p>Agreed.</p><blockquote type="cite"><p>Start at nine?</p></blockquote><div>-- <br>Riley Sample</div>',
+      inlineReply:
+        '<p>Answers below.</p><blockquote type="cite"><p>Can you send the plan?</p></blockquote><p>Yes, attached.</p><blockquote type="cite"><p>And the budget?</p></blockquote><p>Next week.</p>',
+      bottomPosted: '<blockquote type="cite"><p>Is the room booked?</p></blockquote><p>Yes, room 4 from ten.</p>',
+      quoteInTheMiddle: '<p>The note said:</p><blockquote type="cite"><p>Back at two.</p></blockquote><p>So we waited.</p>',
+      onlyAQuote: '<blockquote type="cite"><p>A quoted note without any reply</p></blockquote>',
+      onlyAnAttributedQuote:
+        '<div class="moz-cite-prefix">On Monday, Alex Example wrote:<br></div><blockquote type="cite"><p>The meeting is cancelled.</p></blockquote>',
+      gmailInlineReply:
+        '<div dir="ltr">Answers inline.</div><div class="gmail_quote"><div dir="ltr">On Mon, Alex Example wrote:<br></div><blockquote class="gmail_quote"><div>Can we ship?</div></blockquote><div>No, the release is blocked.</div><blockquote class="gmail_quote"><div>Why?</div></blockquote></div>',
+      unansweredClosingQuote:
+        '<blockquote type="cite"><p>Can you send the plan?</p></blockquote><p>Yes, attached.</p><blockquote type="cite"><p>And the budget?</p></blockquote>',
+      attributedAfterInline:
+        '<blockquote type="cite"><p>Can you send the plan?</p></blockquote><p>Yes, attached.</p><div>On Monday, Alex Example wrote:</div><br><blockquote type="cite"><p>Thanks in advance.</p></blockquote>',
+      historyInForward:
+        '<div dir="ltr">FYI</div><div class="gmail_quote"><div dir="ltr">---------- Forwarded message ---------<br>From: Sam Example</div><div>Approved, see below.</div><div>On Monday, Riley Sample wrote:</div><blockquote type="cite"><p>The budget is approved.</p></blockquote></div>',
+      gmailForward:
+        '<div dir="ltr">FYI</div><br><div class="gmail_quote"><div dir="ltr">---------- Forwarded message ---------<br>From: Sam Example &lt;sam@example.com&gt;<br>Subject: Agenda<br></div><br><div>Agenda below.</div></div>',
+      appleForward:
+        '<div>Zur Info.</div><div><br><blockquote type="cite"><div>Anfang der weitergeleiteten Nachricht:</div><div><b>Von:</b> Sam Beispiel</div><div>Anbei.</div></blockquote></div>',
+    };
+    await withOpenedMessage(false, async ({ page, errors }) => {
+      const documents = Object.fromEntries(
+        Object.entries(samples).map(([name, sample]) => [name, buildMessageDocument(sanitizeIncomingMailHtml(sample), `sample-${name}`)]),
+      );
+      const collapsed = await page.evaluate(
+        (documents) =>
+          Promise.all(
+            Object.entries(documents).map(
+              ([name, srcdoc]) =>
+                new Promise<[string, string[]]>((resolve) => {
+                  const frame = document.createElement("iframe");
+                  frame.sandbox.add("allow-scripts", "allow-same-origin");
+                  frame.addEventListener("load", () =>
+                    resolve([
+                      name,
+                      [...frame.contentDocument!.querySelectorAll("details.mail-quoted-history > :last-child")].map((quote) =>
+                        (quote.textContent ?? "").trim(),
+                      ),
+                    ]),
+                  );
+                  frame.srcdoc = srcdoc;
+                  document.body.append(frame);
+                }),
+            ),
+          ).then(Object.fromEntries),
+        documents,
+      );
+      expect(collapsed).toEqual({
+        appleReply: ["Lunch on Friday?"],
+        gmailReply: ["Am Mo., 3. Nov. 2026 um 09:15 Uhr schrieb Erika Muster:Mittag am Freitag?"],
+        replyAboveSignature: ["Start at nine?"],
+        inlineReply: [],
+        bottomPosted: [],
+        quoteInTheMiddle: [],
+        onlyAQuote: [],
+        onlyAnAttributedQuote: [],
+        gmailInlineReply: [],
+        unansweredClosingQuote: [],
+        attributedAfterInline: ["Thanks in advance."],
+        historyInForward: [],
+        gmailForward: [],
+        appleForward: [],
+      });
       expect(errors).toEqual([]);
     });
   }, 30_000);
@@ -725,12 +801,12 @@ describe("HTML mail colors", () => {
   }, 30_000);
 
   test("keeps colors that follow the text color in step with the adapted text", async () => {
-    const content = `<p id="reply">Reply</p><blockquote type="cite"><p id="quoted">Earlier message</p></blockquote>
+    const content = `<p id="reply">Reply</p>
 <div id="plain-border" style="border:1px solid">Plain border</div>
 <a id="underlined" href="https://example.com" style="color:#111111;text-decoration:underline;text-decoration-color:#000000">Underlined</a>
 <p id="embossed" style="color:#333333;text-shadow:0 1px 0 #ffffff">Embossed</p>
 <del id="withdrawn" style="color:#000000;text-decoration-color:#000000">Withdrawn offer</del>
-<div style="color:#1f2937"><p id="authored-reply">Authored reply</p><blockquote type="cite"><p id="authored-quoted">Authored quote</p></blockquote></div>`;
+<blockquote type="cite"><p id="quoted">Earlier message</p></blockquote>`;
     await withOpenedMessage(
       false,
       async ({ page, frame, errors }) => {
@@ -782,24 +858,6 @@ describe("HTML mail colors", () => {
         expect(followers.shadow).toBe("none");
         expect(followers.withdrawn[1]).toBe(followers.withdrawn[0]!);
         expect(followers.withdrawn[0]).not.toBe("rgb(0, 0, 0)");
-        // Under a sender color the quote is dimmed from the adapted color, and its toggle still lights up on hover.
-        const authoredReply = await frame.locator("#authored-reply").evaluate((element) => getComputedStyle(element).color);
-        expect(authoredReply).toMatch(/^rgb\(/);
-        expect(await frame.locator("#authored-quoted").evaluate((element) => getComputedStyle(element).color)).toBe(
-          authoredReply.replace("rgb(", "rgba(").replace(")", ", 0.65)"),
-        );
-        const authoredToggle = frame.locator("details.mail-quoted-history").nth(1).locator("summary");
-        await frame.waitForFunction(
-          (expected) =>
-            getComputedStyle(document.querySelectorAll("details.mail-quoted-history > summary .mail-quoted-show")[1]!).color === expected,
-          authoredReply.replace("rgb(", "rgba(").replace(")", ", 0.65)"),
-        );
-        await authoredToggle.hover();
-        await frame.waitForFunction(
-          (expected) =>
-            getComputedStyle(document.querySelectorAll("details.mail-quoted-history > summary .mail-quoted-show")[1]!).color === expected,
-          authoredReply,
-        );
         await assertAdaptedContrast(frame);
         await updateTheme(page, "light");
         await waitForMode(frame, false);
@@ -811,6 +869,38 @@ describe("HTML mail colors", () => {
         expect(light.border).toBe(light.expected.border);
         expect(light.quote).not.toBe(dark.quote);
         await assertNoReload(page);
+        expect(errors).toEqual([]);
+      },
+      { html: content, theme: "light", colors: "adapted" },
+    );
+  }, 30_000);
+
+  test("dims quoted history under a sender color from the adapted color", async () => {
+    const content = `<div style="color:#1f2937"><p id="authored-reply">Authored reply</p><blockquote type="cite"><p id="authored-quoted">Authored quote</p></blockquote></div>`;
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        await waitForMode(frame, false);
+        await updateTheme(page, "dark");
+        await waitForMode(frame, true);
+        // Under a sender color the quote is dimmed from the adapted color, and its toggle still lights up on hover.
+        const authoredReply = await frame.locator("#authored-reply").evaluate((element) => getComputedStyle(element).color);
+        expect(authoredReply).toMatch(/^rgb\(/);
+        expect(await frame.locator("#authored-quoted").evaluate((element) => getComputedStyle(element).color)).toBe(
+          authoredReply.replace("rgb(", "rgba(").replace(")", ", 0.65)"),
+        );
+        await frame.waitForFunction(
+          (expected) =>
+            getComputedStyle(document.querySelector("details.mail-quoted-history > summary .mail-quoted-show")!).color === expected,
+          authoredReply.replace("rgb(", "rgba(").replace(")", ", 0.65)"),
+        );
+        await frame.locator("details.mail-quoted-history > summary").hover();
+        await frame.waitForFunction(
+          (expected) =>
+            getComputedStyle(document.querySelector("details.mail-quoted-history > summary .mail-quoted-show")!).color === expected,
+          authoredReply,
+        );
+        await assertAdaptedContrast(frame);
         expect(errors).toEqual([]);
       },
       { html: content, theme: "light", colors: "adapted" },
@@ -1104,11 +1194,88 @@ describe("HTML mail with tables", () => {
         expect(errors).toEqual([]);
       },
       {
-        html: sanitizeIncomingMailHtml(`<blockquote type="cite">${plainTokenTable}</blockquote>`),
+        html: sanitizeIncomingMailHtml(`<p>Reply</p><blockquote type="cite">${plainTokenTable}</blockquote>`),
         attachments: [],
         viewport: { width: 360, height: 812 },
         reducedMotion: "reduce",
       },
     );
+  }, 30_000);
+});
+
+describe("plain mail message copy", () => {
+  test("copies plain text as lines and paragraphs instead of preformatted HTML", async () => {
+    const browser = await launchBrowser();
+    try {
+      const page = await browser.newPage();
+      const errors = pageErrors(page);
+      await page.goto(server.url.href);
+      await page.evaluate(() =>
+        window.mountMailMessageBody({
+          mailboxId: "Box001",
+          messageId: "Msg001",
+          format: "plain",
+          html: null,
+          plainText:
+            "Hello Sam,\n\nthe meeting moves to Thursday.\nRoom 4 stays booked: https://example.com/rooms/4\n\nOn Monday, Sam Example wrote:\n> Is the meeting still on?",
+          attachments: [],
+          remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+        }),
+      );
+      await page.locator("details > summary").click();
+      // A real copy shortcut, so the browser picks the event target from the selection as it does for people.
+      const copy = async (select: () => void) => {
+        const copied = page.evaluate(
+          () =>
+            new Promise<{ plain: string; html: string; prevented: boolean }>((resolve) => {
+              document.addEventListener(
+                "copy",
+                (event) =>
+                  resolve({
+                    plain: event.clipboardData?.getData("text/plain") ?? "",
+                    html: event.clipboardData?.getData("text/html") ?? "",
+                    prevented: event.defaultPrevented,
+                  }),
+                { once: true },
+              );
+            }),
+        );
+        await page.evaluate(select);
+        await page.keyboard.press("ControlOrMeta+C");
+        return copied;
+      };
+      expect(await copy(() => getSelection()!.selectAllChildren(document.querySelector("#root > div")!))).toEqual({
+        plain:
+          "Hello Sam,\n\nthe meeting moves to Thursday.\nRoom 4 stays booked: https://example.com/rooms/4\n\nOn Monday, Sam Example wrote:\n> Is the meeting still on?",
+        html: "<p>Hello Sam,</p><p>the meeting moves to Thursday.<br>Room 4 stays booked: https://example.com/rooms/4</p><p>On Monday, Sam Example wrote:<br>&gt; Is the meeting still on?</p>",
+        prevented: true,
+      });
+      expect(
+        await copy(() => {
+          const text = document.querySelector("pre")!.firstChild!;
+          const start = text.textContent!.indexOf("the meeting");
+          getSelection()!.setBaseAndExtent(text, start, text, start + "the meeting moves to Thursday.\nRoom 4".length);
+        }),
+      ).toEqual({
+        plain: "the meeting moves to Thursday.\nRoom 4",
+        html: "<p>the meeting moves to Thursday.<br>Room 4</p>",
+        prevented: true,
+      });
+      // A selection from the message header into the body sends its copy event past the body.
+      const fromHeader = await copy(() => {
+        const header = document.createElement("p");
+        header.textContent = "From Sam Example";
+        document.body.prepend(header);
+        const text = document.querySelector("pre")!.firstChild!;
+        getSelection()!.setBaseAndExtent(header.firstChild!, 0, text, "Hello Sam,".length);
+      });
+      expect(fromHeader.prevented).toBeTrue();
+      expect(fromHeader.plain).toStartWith("From Sam Example\n");
+      expect(fromHeader.plain).toEndWith("Hello Sam,");
+      expect(fromHeader.html).not.toContain("<pre");
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+    }
   }, 30_000);
 });

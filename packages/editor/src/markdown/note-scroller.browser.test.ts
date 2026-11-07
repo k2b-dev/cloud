@@ -38,9 +38,9 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-const open = async () => {
+const open = async (search = "") => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.goto(server.url.href);
+  await page.goto(server.url.href + search);
   await page.waitForFunction(() => "harness" in window);
   await page.evaluate(() => (window as unknown as { harness: NoteScrollerHarness }).harness.settle());
   return page;
@@ -74,3 +74,42 @@ test("a note shortened above the view keeps a focused editor at the bottom", asy
     await page.close();
   }
 });
+
+// A sidebar or panel drag changes the column width on every frame and rewraps lines above the page's top edge. The
+// text being read stays where it is in every painted frame, also while the drag holds focus away from the editor.
+for (const focused of [false, true])
+  test(`a column resized frame by frame keeps the text at the top edge in place (${focused ? "focused" : "not focused"})`, async () => {
+    const page = await open("?prose");
+    try {
+      const widths = [
+        ...Array.from({ length: 40 }, (_, index) => 1180 - index * 9),
+        ...Array.from({ length: 40 }, (_, index) => 829 + index * 9),
+      ];
+      const moved = await page.evaluate(
+        ({ widths, focused }) =>
+          (window as unknown as { harness: NoteScrollerHarness }).harness.resizeColumn("Paragraph 40 ", widths, focused),
+        { widths, focused },
+      );
+      expect(moved.filter((distance) => Math.abs(distance) > 1)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+// The place to hold is where the reader is now: after another person's edit above moved the text, and after the
+// column changed inside the same scroller and the reader scrolled on.
+for (const before of ["edit", "column"] as const)
+  test(`a resize after ${before === "edit" ? "an edit above the view" : "a column change and scrolling"} keeps the text the reader sees`, async () => {
+    const page = await open("?prose");
+    try {
+      const widths = Array.from({ length: 30 }, (_, index) => 1180 - index * 9);
+      const moved = await page.evaluate(
+        ({ widths, before }) =>
+          (window as unknown as { harness: NoteScrollerHarness }).harness.resizeColumn("Paragraph 50 ", widths, false, before),
+        { widths, before },
+      );
+      expect(moved.filter((distance) => Math.abs(distance) > 1)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });

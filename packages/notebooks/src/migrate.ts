@@ -1,11 +1,25 @@
 import { sql } from "@k2b/cloud";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { deriveNoteTitle } from "./lib/note-title";
-import { backfillShortIds, type ShortIdTable } from "./lib/short-id";
+import { type BackfilledShortIdTable, backfillShortIds } from "./lib/short-id";
 
 export const migrate = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS notebooks`.simple();
   console.log("  ✓ notebooks schema");
+
+  // No foreign key: deletion hints must survive removal of their notebook.
+  await sql`CREATE TABLE IF NOT EXISTS notebooks.workspace_outbox (
+    seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    notebook_id UUID NOT NULL,
+    payload JSONB NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    claimed_until TIMESTAMPTZ,
+    last_error TEXT
+  )`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS workspace_outbox_busy ON notebooks.workspace_outbox (notebook_id)
+    WHERE claimed_until IS NOT NULL OR attempts > 0`.simple();
 
   await sql`
     CREATE TABLE IF NOT EXISTS notebooks.notebooks (
@@ -537,13 +551,34 @@ export const migrate = async (): Promise<void> => {
   )`.simple();
   await sql`INSERT INTO notebooks.app_event_sweep(singleton) VALUES (true) ON CONFLICT DO NOTHING`;
 
+  // Pages a new page starts from, owned by one notebook; built-in templates live in code. Pages made from one keep no
+  // link to it.
+  await sql`
+    CREATE TABLE IF NOT EXISTS notebooks.page_templates (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id TEXT NOT NULL CONSTRAINT page_templates_short_id_format CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
+      notebook_id UUID NOT NULL REFERENCES notebooks.notebooks(id) ON DELETE CASCADE,
+      name TEXT NOT NULL CONSTRAINT page_templates_name_length CHECK (char_length(btrim(name)) BETWEEN 1 AND 100),
+      content_md TEXT NOT NULL CONSTRAINT page_templates_content_length CHECK (char_length(content_md) <= 2097152),
+      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_page_templates_short_id ON notebooks.page_templates(short_id)`.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_page_templates_notebook_name
+    ON notebooks.page_templates(notebook_id, lower(name))
+  `.simple();
+  console.log("  ✓ notebooks.page_templates table");
+
   // Short-id backfill — fills `short_id` for any rows created before
   // the column existed (or before the new code path was deployed).
   // Idempotent: each call is just a `WHERE short_id IS NULL` SELECT.
   // The UNIQUE index above guarantees we never write duplicates.
   // Keep at the END of `migrate()` so the columns + indexes exist
   // before we try to populate them.
-  const tables: ShortIdTable[] = ["notebook", "note", "attachment", "comment"];
+  const tables: BackfilledShortIdTable[] = ["notebook", "note", "attachment", "comment"];
   for (const table of tables) {
     const filled = await backfillShortIds(table);
     if (filled > 0) console.log(`  ✓ short_id backfill: ${filled} ${table}(s)`);

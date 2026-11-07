@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-30
+updated: 2026-11-02
 ---
 
 # Testing
@@ -242,6 +242,15 @@ before it. After a navigation, a test awaits `viewTransitionEnded(page)` from
 `packages/ui/test/browser.ts` before its next click or Back. See the Info and
 thread tests in `packages/chat/src/frontend`.
 
+On a wide screen, a closing `AppWorkspace` detail panel slides out first, and
+only 140 ms later the content takes its room back in one step. Playwright's
+stability check can pass before that step, so a press can start on a control
+that then moves, and the click goes to an ancestor. After closing a detail
+panel, a test moves the pointer off the content that moves, so no hover starts
+while it settles, and awaits `settled(page)` before its next press. See the Info
+reopening test in `packages/chat/src/frontend/ChatWorkspace.browser.test.ts`
+([#2487](https://github.com/k2b-dev/cloud/issues/2487)).
+
 After a pointer move, a test waits until the target matches `:hover`, or for
 the control that the hover reveals, before it reads what the hover changes.
 WebKit can apply `:hover` after `mouse.move()` resolves, and a reveal that only
@@ -344,6 +353,13 @@ launch carries its duration in the error. A process group still alive after
 the kill fails the hook with those timings.
 `packages/ui/test/browser.browser.test.ts` guards a hung close and the next
 launch.
+
+`bun run test --browser` first runs `packages/ui/test/browser-warmup.ts`. It
+draws real `@k2b/ui` surfaces once, so a fresh engine's one-time costs, such as
+WebKit's shader compile in a new Playwright container
+([#2149](https://github.com/k2b-dev/cloud/issues/2149)), do not fall inside the
+first test's 5 s. It starts its own browser, shares only on-disk caches with the
+suites, and has its own bounded budget. When it fails, no suite runs.
 
 Open each URL state that a test checks in its own page. Navigate a loaded page
 in place only when the test checks navigation itself: reload, Back, Forward,
@@ -1118,8 +1134,8 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in seven shards, WebKit tests in ten, and integration tests in
-four. Each mode uses its own measured seconds per suite in
+Unit tests run in nine shards, WebKit tests in eleven, and integration tests in
+five. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
 measurements; Chromium runs inside the unit suites. Equal weights use the suite
@@ -1136,7 +1152,8 @@ returns the jobs to standard runners without a pull request.
 
 Each shard prints its predicted and actual time. Its runner stops an active
 suite and fails with an annotation at the 20-minute budget, before the
-30-minute job limit. The budget also includes NATS housekeeping and integration database bootstrap.
+30-minute job limit. A shard that finishes above the 15-minute target stays green
+and gets a warning annotation that asks for a weight refresh. The budget also includes NATS housekeeping and integration database bootstrap.
 To refresh the weights, run
 `bun scripts/test-weights.ts --run <id> <id> <id>` with recent completed runs,
 including slow or failed runs, using `gh-agent` authentication; add
@@ -1149,7 +1166,9 @@ measurement. Later refreshes replace observed weights, so an exceptional slow
 runner does not increase them permanently. The script plans the current checkout,
 excluding Grids from integration.
 It reports the smallest shard count whose predicted slowest shard fits 15
-minutes. If one suite alone exceeds that target, split the suite. Commit the
+minutes. If one suite alone exceeds that target, split the suite: `test:part:<name>`
+scripts in the package become the suites `<package> <name>` in place of its `test`
+script, and together they must run the same files. Commit the
 refreshed weights and adjust the matrix together; keep the 20-minute execution
 budget unchanged. Refresh after browser suites grow or timings drift, even
 when the jobs still pass. An outdated table can balance predicted times while
@@ -1176,9 +1195,18 @@ page with an island using the installed production build script, and starts
 the app against disposable services. Normal pull requests use the workspace
 tarballs. On a release pull request, whose diff changes
 `.release-please-manifest.json`, it runs with `--release`, also in the merge
-queue: each pinned `@k2b/ui`, `@k2b/ssr`, and `@k2b/editor` version already on npm comes from
-npm; only a version this release publishes comes from its tarball. The check
-fails when npm cannot be reached. Run it locally with Docker and npm available:
+queue. Older sibling pins still come from npm. For a published pin equal to the
+workspace version, it compares the tarballs’ TypeScript files and public package
+metadata before choosing npm. If Cloud’s own version is already published, the
+checkout is a snapshot: changed sibling sources use current tarballs. If Cloud’s
+version is unpublished, changed same-version sibling sources fail with “source
+changed without a version bump”. Refresh a stale release PR, or land a scoped
+`fix`/`feat` commit for the affected package so release-please bumps it. This is a
+byte comparison, so shipped comments and compiler output changes also count.
+Matching
+published types come from npm, and unpublished sibling pins must match the
+workspace version. Registry or comparison failures fail the check. Run it locally
+with Docker and npm available:
 
 ```bash
 bun run --cwd packages/ui build
@@ -1419,7 +1447,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in ten shards with `bun run test --browser`, against
+them again in WebKit in eleven shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the
@@ -1458,6 +1486,19 @@ live socket with that public origin and the fixture's session cookie. The
 application's origin checks still apply. Grids reports only known refusal
 codes and close metadata; it does not print cookies, frame bodies, or arbitrary
 close reasons.
+
+### Read what a failed suite left running
+
+After an integration suite fails, the runner prints `Database activity:` next
+to the suite's output: every statement still running on the test server, how
+long it has run, what it waits on, and which backends block it. A statement
+listed there outlived its test.
+
+Such a statement cannot stall the suites after it in the `integration` and
+`packed` jobs: their PostgreSQL sets `client_connection_check_interval`, so it
+ends within seconds of its test process and logs `connection to client lost`.
+Find its plan in the slow statement log below only when it finished; otherwise
+the activity line has its text.
 
 ### Read slow statements from a CI run
 

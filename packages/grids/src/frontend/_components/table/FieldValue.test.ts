@@ -160,7 +160,7 @@ describe("FieldValue helpers", () => {
     ).toEqual({ kind: "principal", text: "Catalog assistant" });
     expect(resolveFieldDisplay({ field: participants, value: [{ type: "service_account", id: "hidden" }] })).toEqual({
       kind: "principal",
-      text: "Private service account",
+      text: "Private agent or service account",
     });
     expect(resolveFieldDisplay({ field: participants, value: ["Ada", "Design team"] })).toEqual({
       kind: "principal",

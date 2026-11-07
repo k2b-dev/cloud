@@ -9,8 +9,9 @@
  */
 
 import { sql } from "@k2b/cloud";
-import { type AuthContext, auth, getLocale, v } from "@k2b/cloud/server";
-import { SettingUnreadableError } from "@k2b/cloud/services";
+import { type AuthContext, auth, expectUserBackedActor, getLocale, v } from "@k2b/cloud/server";
+import { audit, SettingUnreadableError } from "@k2b/cloud/services";
+import { invalidateSettingsCache, remove, set } from "@k2b/cloud/services/settings";
 import { Hono } from "hono";
 import { z } from "zod";
 import { app } from "../config";
@@ -49,15 +50,25 @@ export const weatherSettingsRouter = new Hono<AuthContext>()
       for (const key of keys.filter(isWeatherKey)) {
         if (!replace.has(key) && (await app.settings.read(key)).stored === "unreadable") throw new SettingUnreadableError(key);
       }
-      await sql.begin(async () => {
+      await sql.begin(async (tx) => {
         for (const [key, value] of Object.entries(updates)) {
           try {
-            await app.settings.set(key as never, value as never, { replaceUnreadable: replace.has(key) });
+            await set(key, value, tx, { replaceUnreadable: replace.has(key) });
           } catch (error) {
             fieldErrors[key] = t.updateSettingFailed({ key });
             throw error;
           }
         }
+        await audit.record(
+          {
+            action: "settings.update",
+            outcome: "allowed",
+            actor: { userId: expectUserBackedActor(c).id },
+            target: { type: "settings", id: "weather" },
+            metadata: { keys },
+          },
+          tx,
+        );
       });
     } catch (error) {
       if (error instanceof SettingUnreadableError) throw error;
@@ -65,6 +76,7 @@ export const weatherSettingsRouter = new Hono<AuthContext>()
       return c.json({ message, errors: Object.keys(fieldErrors).length > 0 ? fieldErrors : { _form: message } }, 400);
     }
 
+    await invalidateSettingsCache(keys);
     return c.body(null, 204);
   })
   .delete("/:key{.+}", auth.requireRole("admin"), async (c) => {
@@ -74,7 +86,19 @@ export const weatherSettingsRouter = new Hono<AuthContext>()
       return c.json({ message: t.settingNotOwned({ key }) }, 400);
     }
     try {
-      await app.settings.remove(key as never);
+      await sql.begin(async (tx) => {
+        await remove(key, tx);
+        await audit.record(
+          {
+            action: "settings.reset",
+            outcome: "allowed",
+            actor: { userId: expectUserBackedActor(c).id },
+            target: { type: "setting", id: key },
+          },
+          tx,
+        );
+      });
+      await invalidateSettingsCache([key]);
       return c.body(null, 204);
     } catch {
       return c.json({ message: t.resetFailed }, 500);

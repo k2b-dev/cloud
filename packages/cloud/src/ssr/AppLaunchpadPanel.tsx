@@ -42,7 +42,7 @@ const appIconPalette: readonly [AppIconPaletteEntry, ...AppIconPaletteEntry[]] =
   { from: "#7c3aed" },
   { from: "#d97706" },
   { from: "#e11d48" },
-  { from: "#c026d3" },
+  { from: "#0891b2" },
   { from: "#52525b" },
 ];
 
@@ -71,6 +71,8 @@ export const AppLaunchpadPanel = (
   const apps = () => props.apps.filter((app) => matches(app.label, app.description));
   const shortcuts = () =>
     (rail ? projectRailNavigation(rail.apps, rail.settings, locale()).shortcuts : []).filter((shortcut) => matches(shortcut.label));
+  // A signed-in phone has no rail and no Home button in its title row: the sheet leads its shortcuts with Start.
+  const start = () => props.surface === "sheet" && !!props.profile && matches(messages().home);
   const follow: JSX.EventHandler<HTMLAnchorElement, MouseEvent> = (event) => {
     if (!props.beforeSelect || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -127,9 +129,22 @@ export const AppLaunchpadPanel = (
           </div>
         </Show>
       </div>
-      <Show when={shortcuts().length > 0}>
+      <Show when={start() || shortcuts().length > 0}>
         <section class="mb-5" aria-label={t().shortcuts}>
           <div class="flex flex-wrap justify-center gap-3">
+            <Show when={start()}>
+              <a
+                onClick={follow}
+                href="/"
+                data-cloud-launchpad-start=""
+                class="group flex w-16 min-w-0 flex-col items-center gap-1 rounded-lg p-1 text-center focus-ui"
+              >
+                <span class="relative grid h-9 w-9 place-items-center rounded-xl bg-[var(--ui-hover)] text-lg transition-colors group-hover:bg-[var(--ui-active)]">
+                  <i class="ti ti-home" aria-hidden="true" />
+                </span>
+                <span class="max-w-full k2b-truncate-fade text-[11px] font-medium text-primary dark:text-white">{messages().home}</span>
+              </a>
+            </Show>
             <For each={shortcuts()}>
               {(shortcut) => {
                 const badge = useAppBadgeDescription(() => ({ endpoint: shortcut.badge, appId: shortcut.appId }));
@@ -184,7 +199,7 @@ export const AppLaunchpadPanel = (
           }}
         </For>
       </div>
-      <Show when={!apps().length && !shortcuts().length}>
+      <Show when={!apps().length && !shortcuts().length && !start()}>
         <p class="py-6 text-center text-dimmed">{messages().noAppsFound}</p>
       </Show>
       <Show when={props.surface === "sheet" && props.profile && props.beforeSelect}>

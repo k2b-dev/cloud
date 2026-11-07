@@ -5,7 +5,7 @@ section: Platform services
 order: 500
 description: Choose the platform boundary that removes shared infrastructure from an application.
 tags: [platform, api, applications]
-updated: 2026-10-09
+updated: 2026-11-01
 ---
 
 # Platform services
@@ -52,3 +52,59 @@ service, or [API surface](/en/docs/reference/api-surface) to look up an import.
 Request middleware and identity are separate application boundaries:
 [Request middleware](/en/docs/server/middleware) loads request context, while
 [Identity and access](/en/docs/identity) explains caller and resource checks.
+
+## Look up a country on the server
+
+Use `ipCountry` from `@k2b/cloud/server` when an application needs an approximate
+country for an IP address. It returns `Promise<IpCountryResult>`:
+
+```ts
+type IpCountryResult = {
+  country: string | null;
+  available: boolean;
+  attribution: typeof DBIP_ATTRIBUTION | null;
+};
+```
+
+`country` is an uppercase ISO 3166-1 alpha-2 code, or `XK` for Kosovo. A missing record, private
+address, invalid IP, or input longer than 45 characters returns `null`.
+`available` says whether Core has a country-capable database loaded, even when
+that address has no country. A missing database, unavailable Core, rejected
+app proof, rate limit (HTTP 429), or two-second request deadline returns
+`{ country: null, available: false, attribution: null }`.
+
+Call it after application startup with an enrolled
+[app key](/en/docs/operations/app-keys#use-the-key-at-start) and
+`CLOUD_CORE_INTERNAL_ORIGIN`. Built-in and third-party applications use the same
+signed POST to Core. Only signed app principals can call the route; browser
+sessions, API keys, legacy workload tokens, and anonymous requests cannot.
+No additional platform permission is required. Applications need neither a
+local GeoIP snapshot nor direct access to `geoip.databases` for this helper.
+Update Core before deploying applications that use it.
+
+For example, the fictional Atlas application can derive `dimensions.country`
+on its server before sending a `page_view` to Pulse:
+
+```ts
+import { ipCountry } from "@k2b/cloud/server";
+
+const pageViewDimensions = async (ip: string) => {
+  const { country } = await ipCountry(ip);
+  return country ? { country } : {};
+};
+```
+
+Use the returned object as the event's `dimensions`, then discard the IP.
+The helper sends the IP only in the POST body to Core within the installation.
+It does not store, log, audit, or cache the address. It is not a capability and
+creates no capability execution history. Only the country, availability, and
+attribution return to the application; no city, coordinates, or network
+operator are returned.
+
+When `attribution` is non-null, link its `text` to its `url` wherever you use
+or display the results, including reports built from saved country dimensions.
+`DBIP_ATTRIBUTION` is also exported from `@k2b/cloud/server`. A non-DB-IP upload
+returns null attribution; the operator still follows that provider's licence.
+See [Sign-in locations](/en/docs/operations/sign-in-locations) for database
+updates, availability, and accuracy limits. Country estimates are unsuitable
+as proof of a person's location or as an authorization decision.

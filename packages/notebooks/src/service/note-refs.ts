@@ -17,6 +17,7 @@
 
 import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
+import type { TransactionSQL } from "bun";
 import * as attachments from "./attachments";
 import * as links from "./links";
 import { repairNoteDataProperties } from "./note-properties";
@@ -24,9 +25,20 @@ import * as tags from "./tags";
 
 const log = logger("notebooks:note-refs");
 
-export const reindexNoteRefs = async (params: { noteId: string; notebookId: string; contentMd: string | null }): Promise<void> => {
-  // Run in parallel — the three primitives target disjoint tables so
-  // there's no contention. Each opens its own transaction internally.
+export const reindexNoteRefs = async (
+  params: { noteId: string; notebookId: string; contentMd: string | null },
+  tx?: typeof sql,
+): Promise<void> => {
+  // A caller transaction owns all three projections; standalone callers keep
+  // their existing independent writes. These tables are disjoint.
+  if (tx) {
+    // Keep one savepoint's statements sequential so a rejected query cannot
+    // leave another projection writing after the rollback.
+    await links.reindexLinks(params.noteId, params.contentMd, tx);
+    await tags.reindexTags(params, tx);
+    await attachments.reindexAttachmentRefs(params, tx);
+    return;
+  }
   await Promise.all([
     links.reindexLinks(params.noteId, params.contentMd),
     tags.reindexTags(params),
@@ -34,9 +46,15 @@ export const reindexNoteRefs = async (params: { noteId: string; notebookId: stri
   ]);
 };
 
-export const reindexNoteRefsSafe = async (params: { noteId: string; notebookId: string; contentMd: string | null }): Promise<void> => {
+export const reindexNoteRefsSafe = async (
+  params: { noteId: string; notebookId: string; contentMd: string | null },
+  tx?: TransactionSQL,
+): Promise<void> => {
   try {
-    await reindexNoteRefs(params);
+    // A failed projection must not abort the domain transaction. Roll its
+    // statements back to a savepoint before logging the best-effort failure.
+    if (tx) await tx.savepoint((savepoint) => reindexNoteRefs(params, savepoint));
+    else await reindexNoteRefs(params);
   } catch (error) {
     log.warn("Failed to reindex note refs", {
       noteId: params.noteId,

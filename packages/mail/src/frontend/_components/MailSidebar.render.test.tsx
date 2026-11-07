@@ -41,7 +41,7 @@ const folder = (id: string, name: string, role: string, total: number, unread: n
 });
 
 describe("Mail sidebar", () => {
-  test("Focus and a mailbox list the same mailboxes in pin order, with only the open folder group", async () => {
+  test("Mail's page without a mailbox and a mailbox list the same mailboxes in pin order, with no Focus entry", async () => {
     const render = (open: boolean) =>
       renderSidebar({
         mailboxes: [
@@ -51,19 +51,18 @@ describe("Mail sidebar", () => {
         open: open ? openMailboxFixture() : null,
         preferences: createMailboxPreferences({ pinnedMailboxIds: ["Box001"], hiddenMailboxIds: [] }),
       });
-    const focus = render(false);
+    const landing = render(false);
     const mailbox = render(true);
     const rows = async (html: string) => (await selectHtml(html, "[data-mailbox]")).map((row) => row.attributes["data-mailbox"]);
-    expect(await rows(focus)).toEqual(["Box001", "Box002"]);
-    expect(await rows(mailbox)).toEqual(await rows(focus));
-    expect(await selectHtml(focus, '[role="group"][aria-label="Folders of Support"]')).toHaveLength(0);
+    expect(await rows(landing)).toEqual(["Box001", "Box002"]);
+    expect(await rows(mailbox)).toEqual(await rows(landing));
+    expect(await selectHtml(landing, '[role="group"][aria-label="Folders of Support"]')).toHaveLength(0);
     expect(await selectHtml(mailbox, ".mail-sidebar-folders")).toHaveLength(1);
-    expect((await selectHtml(focus, 'a[href="/app/mail"]'))[0]?.attributes["aria-current"]).toBe("page");
     expect((await selectHtml(mailbox, '[data-mailbox="Box001"] a'))[0]?.attributes["aria-current"]).toBe("page");
-    expect((await selectHtml(mailbox, 'a[href="/app/mail"]'))[0]?.attributes["aria-current"]).toBeUndefined();
+    for (const html of [landing, mailbox]) expect(await selectHtml(html, 'a[href="/app/mail"]')).toHaveLength(0);
   });
 
-  test("the open mailbox and its full folder tree share one section while Focus chips stay direct rows", async () => {
+  test("the open mailbox and its full folder tree share one section while stacked rows stay direct rows", async () => {
     const html = renderSidebar({
       open: openMailboxFixture({ folders: [folder("Inbox1", "Inbox", "inbox", 20, 5), folder("Cust01", "Customers", "other", 9, 4)] }),
     });
@@ -73,9 +72,9 @@ describe("Mail sidebar", () => {
     expect(await selectHtml(html, `${group} .mail-sidebar-folders`)).toHaveLength(1);
     for (const id of ["Inbox1", "Cust01"])
       expect(await selectHtml(html, `${group} a[href="/app/mail/Box001?folder=${id}"]`)).toHaveLength(1);
-    const focus = renderSidebar({ mobile: "stacked", open: null });
-    expect(await selectHtml(focus, ".mail-sidebar-mailbox-group")).toHaveLength(0);
-    expect(await selectHtml(focus, ".k2b-app-workspace__sidebar-section-content > [data-mailbox]")).not.toHaveLength(0);
+    const stacked = renderSidebar({ mobile: "stacked", open: null });
+    expect(await selectHtml(stacked, ".mail-sidebar-mailbox-group")).toHaveLength(0);
+    expect(await selectHtml(stacked, ".k2b-app-workspace__sidebar-section-content > [data-mailbox]")).not.toHaveLength(0);
   });
 
   test("phone title navigation lists places, hidden mailboxes and New mailbox without views or tools", () => {
@@ -100,13 +99,12 @@ describe("Mail sidebar", () => {
     const snapshot = JSON.parse(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)![1]!) as { items: Entry[] };
     const flatten = (items: Entry[]): Entry[] => items.flatMap((item) => [item, ...flatten(item.children ?? [])]);
     expect(flatten(snapshot.items).map((item) => item.label)).toEqual([
-      "Focus",
       "Mailboxes",
       "Sales",
       "Support",
       "Inbox",
       "Drafts",
-      "Scheduled",
+      "Outbox",
       "Send problems",
       "Sent",
       "More",
@@ -116,6 +114,21 @@ describe("Mail sidebar", () => {
       "Hidden box",
       "New mailbox",
     ]);
+  });
+
+  test("the notice that Focus is gone renders on the server above the mailboxes until the person closed it", async () => {
+    const open = renderSidebar({ open: openMailboxFixture(), focusNoticeOpen: true });
+    const [notice] = await selectHtml(open, '.mail-sidebar [role="status"].mail-focus-notice');
+    expect(notice?.text).toContain("Focus is gone.");
+    expect(notice?.text).toContain("Assigned to me");
+    expect(notice?.text).toContain("Got it");
+    // It comes first, so the mailboxes move once, when the person closes it.
+    expect(open.indexOf("mail-focus-notice")).toBeLessThan(open.indexOf("data-mailbox"));
+    for (const closed of [
+      renderSidebar({ open: openMailboxFixture() }),
+      renderSidebar({ open: openMailboxFixture(), focusNoticeOpen: false }),
+    ])
+      expect(await selectHtml(closed, ".mail-focus-notice")).toHaveLength(0);
   });
 
   test("mailbox navigation is enhanced only when its island owns mailbox switches", () => {
@@ -144,7 +157,7 @@ describe("Mail sidebar", () => {
     expect(current.active).toBe(false);
     expect(current.children!.find((item) => item.id === "folder:Inbox1")!.active).toBe(true);
     expect(boxes.find((item) => item.id === "mailbox:Box002")!.context).toBe(false);
-    expect(snapshot.items.find((item) => item.id === "focus")!.context).toBeUndefined();
+    expect(snapshot.items.find((item) => item.id === "focus")).toBeUndefined();
   });
 
   test("a hidden open mailbox stays expanded, and a folder marks its own row instead of the mailbox", async () => {

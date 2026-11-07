@@ -15,6 +15,7 @@ describe("Mail workspace preferences", () => {
       lastMailboxId: null,
       searchDiscovered: false,
       searchHintDismissed: false,
+      eventsDiscovered: false,
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
@@ -35,6 +36,7 @@ describe("Mail workspace preferences", () => {
       lastMailboxId: null,
       searchDiscovered: false,
       searchHintDismissed: false,
+      eventsDiscovered: false,
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
@@ -46,6 +48,7 @@ describe("Mail workspace preferences", () => {
       lastMailboxId: null,
       searchDiscovered: false,
       searchHintDismissed: false,
+      eventsDiscovered: false,
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
@@ -57,6 +60,9 @@ describe("Mail workspace preferences", () => {
     expect(used).toMatchObject({ detailsOpen: true, searchDiscovered: true, searchHintDismissed: false });
     const dismissed = readMailWorkspacePreferences(mailWorkspaceCookie({ ...original, searchHintDismissed: true }));
     expect(dismissed).toMatchObject({ detailsOpen: false, searchDiscovered: false, searchHintDismissed: true });
+    // A visit to Events is stored once and survives every other write.
+    const visited = readMailWorkspacePreferences(mailWorkspaceCookie({ ...original, eventsDiscovered: true }));
+    expect(readMailWorkspacePreferences(mailWorkspaceCookie({ ...visited, detailsOpen: true })).eventsDiscovered).toBe(true);
   });
 
   test("reads the optional message list mode", () => {

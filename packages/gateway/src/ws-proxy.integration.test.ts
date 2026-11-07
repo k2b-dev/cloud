@@ -15,6 +15,7 @@ const until = async (condition: () => boolean) => {
 const fixture = (delayHandshake = false) => {
   let peer: ServerWebSocket<undefined> | undefined;
   let requested = false;
+  let requestHeaders: Headers | undefined;
   let handshakeDone = false;
   let releaseHandshake = () => {};
   const handshake = new Promise<void>((resolve) => {
@@ -28,6 +29,7 @@ const fixture = (delayHandshake = false) => {
       port,
       async fetch(request, server) {
         requested = true;
+        requestHeaders = request.headers;
         if (delayHandshake) await handshake;
         const upgraded = server.upgrade(request);
         handshakeDone = true;
@@ -65,6 +67,7 @@ const fixture = (delayHandshake = false) => {
     },
     peer: () => peer,
     requested: () => requested,
+    requestHeaders: () => requestHeaders,
     handshakeDone: () => handshakeDone,
     releaseHandshake,
     async stop() {
@@ -74,6 +77,22 @@ const fixture = (delayHandshake = false) => {
     },
   };
 };
+
+test("the gateway preserves the browser origin, Fetch Metadata and session cookie for application checks", async () => {
+  const f = fixture();
+  const socket = new WebSocket(new URL("/ws", f.gateway.url).href.replace("http:", "ws:"), {
+    headers: { Origin: "https://cloud.example.test", "Sec-Fetch-Site": "same-site", Cookie: "session_token=fixture" },
+  } as never);
+  try {
+    await until(() => !!f.peer());
+    expect(f.requestHeaders()?.get("Origin")).toBe("https://cloud.example.test");
+    expect(f.requestHeaders()?.get("Sec-Fetch-Site")).toBe("same-site");
+    expect(f.requestHeaders()?.get("Cookie")).toBe("session_token=fixture");
+  } finally {
+    socket.close();
+    await f.stop();
+  }
+});
 
 test.each([false, true])("TCP disconnect cancels the upstream (handshake delayed: %s)", async (delayed) => {
   const f = fixture(delayed);
