@@ -1238,9 +1238,9 @@ const computeAxisScale = (values: readonly number[], axisOpts: AxisOptions | und
       // increment. Keep endpoint ticks instead of entering a non-advancing loop.
       if (step > 0 && Number.isFinite(step) && (hi - lo) / step <= MAX_AXIS_TICKS) {
         for (let value = Math.ceil(lo / step) * step; value < hi; ) {
-          // Exact bounds are labelled too. Leave a regular interval beside
+          // Exact bounds are labelled too. Leave half a regular interval beside
           // each endpoint so a nearby round tick cannot overprint its label.
-          if (value - lo >= step && hi - value >= step) ticks.push(value);
+          if (value - lo >= step / 2 && hi - value >= step / 2) ticks.push(value);
           const next = value + step;
           if (next <= value) break;
           value = next;
@@ -1316,12 +1316,8 @@ const renderXAxisNumeric = (axis: AxisScale, area: PlotArea, height: number, opt
   const parts: string[] = [];
   for (const t of axis.ticks) {
     const x = map(t, axis.domain, [area.x0, area.x1]);
-    // Explicit bounds can end in a long formatted value. Keep endpoint labels
-    // inside the plot instead of letting their units extend beyond the SVG.
-    const label = format(t);
-    const anchor = label && opts?.domain ? (t === axis.domain[0] ? "start" : t === axis.domain[1] ? "end" : "middle") : "middle";
     parts.push(
-      `<text class="stdlib-chart-tick-label" x="${fmt(x)}" y="${fmt(area.y1 + 14)}" text-anchor="${anchor}">${escapeXml(label)}</text>`,
+      `<text class="stdlib-chart-tick-label" x="${fmt(x)}" y="${fmt(area.y1 + 14)}" text-anchor="middle">${escapeXml(format(t))}</text>`,
     );
   }
   for (const mt of axis.minorTicks) {

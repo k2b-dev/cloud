@@ -272,8 +272,8 @@ over `autoVariant`. Non-finite coordinates are skipped.
 `ticks?: number` (suggested count, default 5), `scale?: "linear" | "log"`
 (default linear), `minorTicks?: boolean` (default false), and optional exact
 `domain?: [number, number]` comparison bounds. Exact linear bounds keep both
-endpoint labels and omit round ticks closer than a regular interval to
-either endpoint. Numeric X endpoint labels align inward so formatted units remain inside the plot. See the snapshot section for domain validation.
+endpoint labels and omit round ticks closer than half a regular interval to
+either endpoint. Numeric X labels stay centered; reserve space for long formatted labels through `padding`. See the snapshot section for domain validation.
 For line and scatter charts, log axes exclude non-positive coordinates. `references` is an array of
 `{ value: number; axis?: "x" | "y"; label?: string }`; the default axis is Y.
 Categorical bars ignore X references. Use the

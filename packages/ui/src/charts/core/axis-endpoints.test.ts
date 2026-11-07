@@ -38,7 +38,7 @@ test("exact linear domains keep their endpoints without crowding them with round
   }
 });
 
-test("explicit numeric X bounds point labels inward and leave room for endpoint units", () => {
+test("explicit numeric X labels stay centered with caller-reserved space for units", () => {
   const svg = line({
     series: [
       {
@@ -49,16 +49,26 @@ test("explicit numeric X bounds point labels inward and leave room for endpoint 
       },
     ],
     xAxis: { domain: [0, 11.2], format: (value) => `${value} s` },
+    padding: { right: 32 },
   });
   const ticks = [...svg.matchAll(/<text class="stdlib-chart-tick-label"[^>]*text-anchor="([^"]+)"[^>]*>([^<]+ s)<\/text>/g)].map(
     (match) => ({ anchor: match[1], text: match[2] }),
   );
   expect(ticks).toEqual([
-    { anchor: "start", text: "0 s" },
+    { anchor: "middle", text: "0 s" },
     { anchor: "middle", text: "2 s" },
     { anchor: "middle", text: "4 s" },
     { anchor: "middle", text: "6 s" },
     { anchor: "middle", text: "8 s" },
-    { anchor: "end", text: "11.2 s" },
+    { anchor: "middle", text: "10 s" },
+    { anchor: "middle", text: "11.2 s" },
   ]);
+});
+
+test("one-slot domains retain the whole slot between unlabeled half-slot endpoints", () => {
+  const svg = line({
+    series: [{ data: [{ x: 1, y: 5 }] }],
+    xAxis: { domain: [0.5, 1.5], ticks: 1, format: (value) => (value === 1 ? "Sep 28" : "") },
+  });
+  expect(svg.match(/>Sep 28<\/text>/g)).toHaveLength(1);
 });
