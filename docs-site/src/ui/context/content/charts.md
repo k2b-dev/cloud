@@ -244,7 +244,7 @@ Hover stays calm: no other mark dims. Bar, histogram and box-plot charts lay a
 light band behind the whole column (or row) of the inspected category, and the
 pointer anywhere in that column keeps it, so moving within one column changes
 nothing. A column's tooltip waits at the top of the plot. Single marks such as
-pie slices, heatmap cells and scatter points get a 1.5 px outline.
+pie slices and heatmap cells get a 1.5 px outline; points keep their 2 px ring.
 Hover or tap a datum to show its values; click or tap pins the tooltip and calls the optional
 `onSelect` callback. Hover and focus never emit selection events. Escape,
 focus leaving the chart, an outside tap, scrolling, resizing, and a data update
