@@ -73,7 +73,7 @@ export type ImageEditorAdjustments = {
   vignette: number;
   grain: number;
 };
-export type ImageEditorLook = "original" | "vivid" | "soft" | "mono" | "warm" | "cool";
+export type ImageEditorLook = "original" | "vivid" | "soft" | "mono" | "warm" | "cool" | "monoHard" | "faded" | "vintage";
 export type ImageEditorState = {
   crop: ImageCropRect;
   rotation: ImageCropRotation;

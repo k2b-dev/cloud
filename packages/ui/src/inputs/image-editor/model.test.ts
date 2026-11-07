@@ -5,6 +5,7 @@ import {
   createImageEditorHistory,
   currentImageEditorEntry,
   editorOutputSize,
+  effectiveEditorAdjustments,
   imageEditorDirty,
   initialImageEditorState,
   markImageEditorSaved,
@@ -57,6 +58,25 @@ describe("shared image editor model", () => {
     expect(() => editorOutputSize(source, state, NaN)).toThrow();
     expect(() => editorOutputSize(source, state, 0)).toThrow();
     expect(() => editorOutputSize(source, state, "device", Infinity)).toThrow();
+  });
+  test("remaining approved looks blend into adjustments with neutral zero strength", () => {
+    const base = initialImageEditorState();
+    const cases = [
+      { look: "monoHard", expected: { ...base.adjustments, saturation: 0, contrast: 1.45, vignette: 0.25 } },
+      { look: "faded", expected: { ...base.adjustments, contrast: 0.75, saturation: 0.78, brightness: 1.12 } },
+      { look: "vintage", expected: { ...base.adjustments, warmth: 0.45, saturation: 0.75, contrast: 1.12, vignette: 0.6, grain: 0.45 } },
+    ] as const;
+    for (const { look, expected } of cases) {
+      expect(effectiveEditorAdjustments({ ...base, look, lookStrength: 0 })).toEqual(base.adjustments);
+      const full = effectiveEditorAdjustments({ ...base, look, lookStrength: 1 });
+      const half = effectiveEditorAdjustments({ ...base, look, lookStrength: 0.5 });
+      for (const key of ["brightness", "contrast", "saturation", "warmth", "vignette", "grain"] as const) {
+        expect(full[key]).toBeCloseTo(expected[key], 10);
+        expect(half[key]).toBeCloseTo((base.adjustments[key] + expected[key]) / 2, 10);
+      }
+    }
+    const adjusted = { ...base, look: "faded" as const, adjustments: { ...base.adjustments, brightness: 1.2 }, lookStrength: 1 };
+    expect(effectiveEditorAdjustments(adjusted).brightness).toBeCloseTo(1.32, 10);
   });
   test("quarter turns preserve the selected source region", () => {
     const state = { ...initialImageEditorState(), crop: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 } };

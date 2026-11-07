@@ -61,6 +61,7 @@ describe(`ImageEditor shared renderer and export (${browserName})`, () => {
           const states = [
             api.initialImageEditorState(),
             { ...api.initialImageEditorState(), look: "warm" as const, lookStrength: 0.65 },
+            ...(["monoHard", "faded", "vintage"] as const).map((look) => ({ ...api.initialImageEditorState(), look, lookStrength: 0.65 })),
             {
               ...api.initialImageEditorState(),
               adjustments: { brightness: 0.6, contrast: 0.7, saturation: 0.3, warmth: -0.4, vignette: 0.5, grain: 0 },
