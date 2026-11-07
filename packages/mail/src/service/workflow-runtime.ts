@@ -7,7 +7,6 @@ import {
   type WorkflowExecutionError,
   type WorkflowJsonValue,
 } from "@k2b/cloud/workflows";
-import { startWorkflowAiRuntime, stopWorkflowAiRuntime } from "@k2b/cloud/workflows/ai";
 import type { WorkflowExecuteActionPort, WorkflowTracePort } from "@k2b/cloud/workflows/runtime";
 import {
   createWorkflowActionPort,
@@ -185,13 +184,11 @@ const worker = createWorkflowWorker({
 const lifecycle = createRuntimeLifecycle({
   start: async () => {
     try {
-      await startWorkflowAiRuntime();
       await startMailWorkflowScheduleRuntime();
       await wakeExpiredWorkflowRuns(100, { appId: MAIL_WORKFLOW_APP_ID });
       await worker.start();
     } catch (error) {
       await stopMailWorkflowScheduleRuntime();
-      await stopWorkflowAiRuntime();
       await worker.stop();
       throw error;
     }
@@ -199,7 +196,6 @@ const lifecycle = createRuntimeLifecycle({
   stop: async () => {
     await worker.stop();
     await stopMailWorkflowScheduleRuntime();
-    await stopWorkflowAiRuntime();
   },
 });
 

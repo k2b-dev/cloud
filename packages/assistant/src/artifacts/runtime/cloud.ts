@@ -121,7 +121,7 @@ export function createCloud(
     html,
     chart: (options: Parameters<typeof chart>[0]) => chart(options, context.locale, context.timeZone),
     money: boundMoney(context.locale),
-    pdf: { ...createPdf(rpc), read: async (file: Blob) => (await load("pdf-read")).read(file) },
+    pdf: { ...createPdf(rpc, context.locale), read: async (file: Blob) => (await load("pdf-read")).read(file) },
     sheet: {
       parseCsv: async (input: Blob | string, options = {}) => (await load("csv")).parseCsv(input, options, context.locale),
       toCsv: async (rows: Record<string, unknown>[], options = {}) => (await load("csv")).toCsv(rows, options, context.locale),

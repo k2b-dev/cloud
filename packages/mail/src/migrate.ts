@@ -10,8 +10,8 @@
  * history is also refused without altering its data or suggesting a schema reset.
  */
 import { lazySync, sql } from "@k2b/cloud";
+import { migrateWorkflowAi } from "@k2b/cloud/ai/tasks";
 import { logger } from "@k2b/cloud/services";
-import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
 import automationLogSchema from "./automation-log-schema.sql" with { type: "text" };
 import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
 import baselineSchema from "./schema.sql" with { type: "text" };

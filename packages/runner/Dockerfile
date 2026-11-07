@@ -13,9 +13,14 @@ COPY package.json bun.lock bunfig.toml ./
 COPY patches/ patches/
 COPY --parents packages/*/package.json pwas/*/package.json fixtures/*/package.json docs-site/package.json ./
 RUN bun install --frozen-lockfile --ignore-scripts
+# The checker consumes the editor chart schema and its public, browser-free UI core.
+# Build the same public package exports as the application images.
+COPY tsconfig.base.json ./
+COPY packages/ssr/src packages/ssr/src
+COPY packages/ui packages/ui
+RUN bun run --cwd packages/ui build
 COPY packages/cloud/src packages/cloud/src
-# The portable chart contract has no renderer or UI build dependency.
-COPY packages/editor/src/chart-schema.ts packages/editor/src/chart-schema.ts
+COPY packages/editor/src/chart-schema.ts packages/editor/src/chart-locale.ts packages/editor/src/
 COPY packages/cloud/scripts/code-check*.ts packages/cloud/scripts/
 COPY packages/runner/src packages/runner/src
 COPY packages/runner/scripts packages/runner/scripts

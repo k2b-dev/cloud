@@ -16,11 +16,12 @@ if (Bun.argv.includes("--help")) {
       [...request.entrypoints]
         .sort((a, b) => a.entrypoint.localeCompare(b.entrypoint))
         .filter((e) => e.kind === "schedule" || e.kind === "route")
-        .map(({ kind, entrypoint, cron, title, route }) => ({
+        .map(({ kind, entrypoint, cron, at, timeZone, title, route }) => ({
           kind,
           entrypoint,
           ...(route ? { route } : {}),
           cron,
+          ...(at === undefined ? {} : { at, timeZone }),
           ...(title === undefined ? {} : { title }),
         })),
     );

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { type ChartDatum, charts } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
+import { type ChartDatum, charts } from "@k2b/ui/charts/core";
+import { z } from "zod";
 import {
   type ChartInput,
   chartKinds,
@@ -11,6 +12,7 @@ import {
   chartTable,
   chartTooltip,
   checkChartLabels,
+  drawChart,
 } from "./charts";
 
 // Preserve the renderer fixtures' bounded data shape; AI policy assertions remain in Cloud.
@@ -22,6 +24,37 @@ const chartDatums = (svg: string): ChartDatum[] =>
     if (!isChartDatum(datum)) throw new Error("Invalid chart datum");
     return datum;
   });
+
+test("bounded chart schemas export to JSON Schema for generated consumers", () => {
+  const exported = z.fromJSONSchema(z.toJSONSchema(schema));
+  for (const input of [
+    { kind: "heatmap", title: "Grid", data: [{ x: "A", y: "B", value: 1 }] },
+    { kind: "heatmap", title: "Calendar", layout: "calendar", data: [["2026-11-07", 1]], scale: "sequential" },
+  ]) {
+    expect(schema.safeParse(input).success).toBeTrue();
+    expect(exported.safeParse(input).success).toBeTrue();
+  }
+  const invalid = { kind: "heatmap", title: "Invalid", layout: "other", data: [{ x: "A", y: "B", value: 1 }] };
+  expect(schema.safeParse(invalid).success).toBeFalse();
+  expect(exported.safeParse(invalid).success).toBeFalse();
+});
+
+test("chart validation retains discriminator and field paths", () => {
+  const cases = [
+    [{ kind: "unknown" }, ["kind"]],
+    [{ kind: "bar", title: "Bar", data: [{ label: "A", value: "bad" }] }, ["data", 0, "value"]],
+    [{ kind: "stat", title: "Stat", value: "bad" }, ["value"]],
+    [{ kind: "heatmap", title: "Grid", data: [{ x: "A", y: "B", value: "bad" }] }, ["data", 0, "value"]],
+    [{ kind: "heatmap", title: "Calendar", layout: "calendar", data: [["2026-11-07", "bad"]], scale: "sequential" }, ["data", 0, 1]],
+    [{ kind: "heatmap", title: "Unknown layout", layout: "other", data: [] }, ["layout"]],
+  ] as const;
+  for (const [input, path] of cases) {
+    const result = schema.safeParse(input);
+    expect(result.success).toBeFalse();
+    if (result.success) throw new Error("Expected invalid chart");
+    expect(result.error.issues[0]?.path).toEqual([...path]);
+  }
+});
 
 describe("chart table", () => {
   test("has the same labels in every locale", () => {
@@ -115,8 +148,7 @@ describe("chart table", () => {
       ],
     });
     const rows = chartRows(input, "de");
-    const { kind, ...options } = chartRenderOptions(input, "de");
-    const svg = (charts[kind] as (value: object) => string)({ ...options, width: 480, height: 280, inspect: true });
+    const svg = drawChart(chartRenderOptions(input, "de"));
     for (const match of svg.matchAll(/data-chart-datum="([^"]*)"/g)) rows.add(JSON.parse(match[1]!.replaceAll("&quot;", '"')));
     expect(rows.table()).toEqual(chartTable(input, "de"));
     expect(rows.table().rows.map((row) => row.key)).toEqual([chartMarkKey({ index: 0 }), chartMarkKey({ index: 1 })]);
@@ -225,10 +257,32 @@ describe("chart render options", () => {
   });
 });
 
+test("saved references preserve their individual style and tone through schema and rendering", () => {
+  const spec = {
+    kind: "line",
+    title: "Flow",
+    series: [
+      {
+        data: [
+          { x: 1, y: 1 },
+          { x: 2, y: 5 },
+        ],
+      },
+    ],
+    references: [{ value: 3, label: "Target", style: "dotted", tone: "success" }],
+  } satisfies ChartInput;
+  const input = parse(spec);
+  const options = chartRenderOptions(input, "en");
+  if (options.kind !== "line") throw new Error("Expected line");
+  expect(options.references).toEqual(spec.references);
+  expect(charts.line(options)).toContain('style="stroke-dasharray:1 3;stroke-linecap:round;color:var(--k2b-success-text,#047857)"');
+  expect(schema.safeParse({ ...spec, references: [{ value: 3, style: "unknown" }] }).success).toBe(false);
+  expect(schema.safeParse({ ...spec, references: [{ value: 3, tone: "unknown" }] }).success).toBe(false);
+});
+
 describe("chart axes", () => {
   const ticks = (input: unknown, anchor: "end" | "middle") => {
-    const { kind, ...options } = chartRenderOptions(parse(input), "en");
-    const svg = (charts[kind] as (value: object) => string)({ ...options, width: 480, height: 280 });
+    const svg = drawChart(chartRenderOptions(parse(input), "en"));
     return [...svg.matchAll(new RegExp(`stdlib-chart-tick-label"[^>]*text-anchor="${anchor}">([^<]*)<`, "g"))].map((match) => match[1]);
   };
 
@@ -289,6 +343,7 @@ describe("shared chart tooltip", () => {
     for (const input of [
       { kind: "bar", title: "B", data: [{ label: "Jan", value: 1200 }], yAxis: { label: "Axis", format: { decimals: 0 } } },
       { kind: "pie", title: "P", data: [{ label: "Jan", value: 1200 }] },
+      { kind: "donut", title: "D", data: [{ label: "Jan", value: 1200 }] },
       { kind: "stat", title: "S", value: 1200, sparkline: [1200, 1500] },
       ...["line", "scatter"].map((kind) => ({
         kind,

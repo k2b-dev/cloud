@@ -5,7 +5,7 @@ export { TaskGrantsSchema as ChatTaskGrantsSchema };
 import { dates } from "@k2b/stdlib";
 import { z } from "zod";
 import { coreSettings } from "../services";
-import { normalizeWorkflowSchedule } from "../workflows/runtime";
+import { normalizeCronSchedule } from "../shared/cron-schedule";
 import type { ChatTaskReason } from "./chat-task-reasons";
 import type { AiChatTask, AiChatTaskOccurrence, AiChatTaskOccurrenceState, AiChatTaskSchedule, AiChatTaskState } from "./chat-tasks";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
@@ -136,7 +136,7 @@ export const normalizeChatTaskSchedule = async (
   if (timezoneInput && !dates.isValidTimeZone(timezoneInput)) throw new Error("Invalid IANA timezone");
   const timezone = timezoneInput ? dates.normalizeTimeZone(timezoneInput) : await getChatTaskTimezone();
   if (input.kind === "cron") {
-    const normalized = normalizeWorkflowSchedule({ cron: input.cron, timezone });
+    const normalized = normalizeCronSchedule({ cron: input.cron, timezone });
     return { schedule: { kind: "cron", cron: normalized.cron }, timezone: normalized.timezone };
   }
   const runAt = dates.zonedDateTimeToInstant(input.localAt, timezone, { disambiguation: "reject" });

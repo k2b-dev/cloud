@@ -21,13 +21,16 @@ export class CodeRequestError extends Error {
     super(code);
   }
 }
-/** Admission snapshots the active checked manifest. No visitor credentials or grants enter data dispatch. */
+/** Admission snapshots the active checked manifest. No visitor credentials or grants enter data dispatch.
+ * Personal Code runs with its owner's mandate, so only that owner may open its non-public routes. */
 export async function codeRequestVersion(codeId: string) {
-  const [row] = await sql<{ manifest: unknown; active_version_id: string }[]>`SELECT v.manifest,c.active_version_id FROM code.codes c
-    JOIN code.versions v ON v.id=c.active_version_id WHERE c.id=${codeId} AND c.service_account_id IS NOT NULL AND c.state='active'`;
+  const [row] = await sql<{ manifest: unknown; active_version_id: string; owner_user_id: string | null }[]>`SELECT v.manifest,
+    c.active_version_id,CASE WHEN c.owner_kind='person' THEN c.owner_user_id::text END AS owner_user_id FROM code.codes c
+    JOIN code.versions v ON v.id=c.active_version_id
+    WHERE c.id=${codeId} AND (c.service_account_id IS NOT NULL OR c.owner_kind='person') AND c.state='active'`;
   const parsed = CodeCheckedVersionManifestSchema.safeParse(row?.manifest);
   if (!row || !parsed.success) throw new CodeRequestError("code_route_not_found", 404);
-  return { versionId: row.active_version_id, manifest: parsed.data };
+  return { versionId: row.active_version_id, manifest: parsed.data, personalOwner: row.owner_user_id };
 }
 /** One bounded request/response job, backed by the normal run lease, mandate and audit trail.
  * No automatic retries: even a disconnected client must never cause an implicit second POST. */
@@ -53,7 +56,7 @@ export async function requestCodeRoute(input: {
     await db`SELECT id FROM code.codes WHERE id=${input.codeId} FOR UPDATE`;
     const code = await findCode(input.codeId, db);
     if (!code || code.state !== "active" || code.activeVersionId !== input.versionId) throw new CodeRequestError("code_route_changed", 409);
-    if (code.owner.kind === "person" || !code.serviceAccountId) throw new CodeRequestError("code_route_account_required", 409);
+    if (code.owner.kind !== "person" && !code.serviceAccountId) throw new CodeRequestError("code_route_account_required", 409);
     await requireCodeVersionApproval(code, input.versionId, db);
     const [counts] = await db<{ own: number; owner: number; requests: number }[]>`SELECT
       count(*) FILTER(WHERE r.code_id=c.id)::int AS own,
