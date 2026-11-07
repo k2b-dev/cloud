@@ -33,6 +33,8 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
   let trigger: HTMLButtonElement | undefined;
   let surface: HTMLDivElement | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** The control inside the details that last had the focus, while it has not left them. */
+  let focusedInside: Element | null = null;
   const clear = () => {
     clearTimeout(timer);
     timer = undefined;
@@ -52,6 +54,7 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
   const close = (restoreFocus = false) => {
     clear();
     pinned = false;
+    focusedInside = null;
     // Before hiding, so the popover does not return focus on its own.
     if (restoreFocus) returnFocus(trigger, triggerRing);
     if (open()) surface?.hidePopover();
@@ -70,6 +73,13 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
   onMount(() => {
     const resize = new ResizeObserver(position);
     if (surface) resize.observe(surface);
+    // A focused control that leaves the DOM or turns disabled drops the focus to the page. WebKit sends no blur or
+    // focusout for a removed element, so watch the details themselves and hold the focus in them.
+    const holdFocus = new MutationObserver(() => {
+      const active = document.activeElement;
+      if (open() && focusedInside && (!active || active === document.body)) surface?.focus();
+    });
+    if (surface) holdFocus.observe(surface, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
     const outside = (event: PointerEvent) => {
       const path = event.composedPath();
       if (!path.includes(trigger!) && !path.includes(surface!)) close();
@@ -87,6 +97,7 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
     window.addEventListener("scroll", position, true);
     onCleanup(() => {
       resize.disconnect();
+      holdFocus.disconnect();
       clear();
       document.removeEventListener("pointerdown", outside);
       document.removeEventListener("keydown", escape);
@@ -127,7 +138,11 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
         class="k2b-chat-context-popup"
         onPointerEnter={clear}
         onPointerLeave={leave}
-        onFocusIn={clear}
+        // A direct listener: the hold below must know the focused control even where delegation is not set up.
+        on:focusin={(event) => {
+          clear();
+          focusedInside = event.target instanceof Element ? event.target : null;
+        }}
         tabIndex={-1}
         onFocusOut={(event) => {
           const next = event.relatedTarget;
