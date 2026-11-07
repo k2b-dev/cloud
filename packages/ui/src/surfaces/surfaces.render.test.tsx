@@ -485,8 +485,10 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
       }),
     );
 
-    expect(html).toContain('data-columns="6"');
-    expect(html).toContain('class="k2b-paper k2b-stat-grid');
+    // An out-of-range column count falls back to the four-tile row; the grid is no frame, each tile is.
+    expect(html).toContain('data-columns="4"');
+    expect(html).toContain('<section class="k2b-stat-grid');
+    expect(html).not.toContain("k2b-paper");
     expect(html).toContain('data-surface="muted"');
     expect(html).toContain('href="/details"');
     expect(html).toContain('href="/latency"');
@@ -510,8 +512,8 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(html).toContain('data-columns="3"');
     expect(html).toContain('class="k2b-stat-cell" data-size="sm"');
     expect(html).toContain('class="k2b-stat-cell__label" data-size="sm"');
-    // Cloud scales the sub line with the cell, so the rule must key off the cell.
-    expect(parityCss).toContain('.k2b-ui .k2b-stat-cell[data-size="sm"] .k2b-stat-cell__sub');
+    // The support line scales with the cell, so the rule must key off the cell.
+    expect(parityCss).toContain('.k2b-ui .k2b-stat-cell[data-size="sm"] .k2b-stat-cell__support');
   });
 
   test("lets a stat cell on its own wrap its text instead of truncating it", () => {
@@ -527,7 +529,71 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
 
     expect(cell(true)).toContain('class="k2b-stat-cell" data-size="md" data-surface="white" data-wrap="true"');
     expect(cell()).not.toContain("data-wrap");
-    expect(parityCss).toContain(".k2b-ui .k2b-stat-cell[data-wrap] .k2b-stat-cell__support { flex-wrap: wrap; }");
+    expect(parityCss).toContain(
+      ".k2b-ui .k2b-stat-cell[data-wrap] :is(.k2b-stat-cell__main, .k2b-stat-cell__support) { height: auto; flex-wrap: wrap; }",
+    );
+  });
+
+  test("a change badge carries arrow, sign and a spoken rating only when better is known", () => {
+    const cell = (props: Record<string, unknown>, locale = "de") =>
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(StatCell, { label: "Abonnenten", value: "48.210", ...props } as never);
+          },
+        }),
+      );
+    const up = cell({ delta: { value: 0.082, better: "up" }, compare: { label: "Vormonat", value: 44560 } });
+    expect(up).toMatch(/class="k2b-stat-cell__delta" data-tone="good" role="img" aria-label="\+8,2\s%\sgegenüber Vormonat, besser"/);
+    expect(up).toContain("ti-trending-up");
+    expect(up).toContain("Vormonat 44.560");
+    const worse = cell({ delta: { value: -0.006, unit: "points", better: "up" } });
+    expect(worse).toMatch(/data-tone="bad" role="img" aria-label="\u22120,6 Pkt\., schlechter"/);
+    expect(worse).toContain("ti-trending-down");
+    const fewerIsBetter = cell({ delta: { value: -0.125, better: "down" } });
+    expect(fewerIsBetter).toContain('data-tone="good"');
+    const unrated = cell({ delta: { value: 0.031 } }, "en");
+    expect(unrated).toMatch(/data-tone="neutral" role="img" aria-label="\+3\.1%"/);
+    expect(unrated).not.toMatch(/better|worse/);
+    // A change that rounds to zero is shown, pointed and rated as no change.
+    const tiny = cell({ delta: { value: -0.00001, unit: "points", better: "up" } });
+    expect(tiny).toMatch(/data-tone="neutral" role="img" aria-label="0,0 Pkt\."/);
+    expect(tiny).toContain("ti-minus");
+    const flat = cell({ delta: { value: 0, better: "up" } });
+    expect(flat).toContain('data-tone="neutral"');
+    expect(flat).toContain("ti-minus");
+  });
+
+  test("a tile keeps its three rows in every state", () => {
+    const cell = (props: Record<string, unknown>) =>
+      renderToString(() =>
+        createComponent(StatCell, { label: "Orders", value: "1,204", size: "lg", icon: "ti ti-box", tone: "blue", ...props } as never),
+      );
+    for (const html of [
+      cell({}),
+      cell({ status: "loading" }),
+      cell({ status: "error", onRetry: () => undefined }),
+      cell({ stale: "As of 09:12 · not current", onRetry: () => undefined }),
+      cell({ value: null, sub: "Nothing counted in this period" }),
+    ]) {
+      expect(html).toContain("k2b-stat-cell__head");
+      expect(html).toContain("k2b-stat-cell__main");
+      expect(html).toContain("k2b-stat-cell__support");
+      expect(html).toContain('class="k2b-stat-cell__icon k2b-icon-tile" data-tone="blue"');
+    }
+    expect(cell({ status: "loading" })).toContain('aria-busy="true"');
+    expect(cell({ status: "loading" })).not.toContain("1,204");
+    expect(cell({ status: "error", onRetry: () => undefined })).toContain("Try again");
+    expect(cell({ status: "error" })).not.toContain("<button");
+    expect(cell({ stale: "As of 09:12 · not current", onRetry: () => undefined })).toContain("Reload");
+    expect(cell({ value: null, sub: "Nothing counted in this period" })).toMatch(/data-empty="true"[^>]*>–</);
+    // A link tile is no link while it loads or failed.
+    expect(cell({ href: "/orders", status: "loading" })).not.toContain('href="/orders"');
+    // A stale tile with "Reload" is no link, so the button never sits inside an anchor.
+    expect(cell({ href: "/orders", stale: "As of 09:12", onRetry: () => undefined })).not.toContain('href="/orders"');
+    expect(cell({ href: "/orders", stale: "As of 09:12" })).toContain('href="/orders"');
+    expect(parityCss).toContain('.k2b-ui .k2b-stat-cell[data-size="lg"]:not([data-wrap]) { height: 8.5rem; }');
   });
 
   test("ships focus, responsive, dark, and reduced-motion parity hooks", () => {
@@ -541,7 +607,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     // Every neutral surface inherits the same flat Cloud paper shadow token.
     const paperRule = parityCss.match(/\.k2b-ui \.k2b-paper \{[^}]*\}/)?.[0] ?? "";
     expect(paperRule).toContain("box-shadow: var(--k2b-shadow-surface)");
-    for (const selector of [".k2b-link-card", ".k2b-stat-grid", ".k2b-widget"]) {
+    for (const selector of [".k2b-link-card", ".k2b-stat-grid", ".k2b-stat-cell", ".k2b-widget"]) {
       const rule = parityCss.match(new RegExp(`\\.k2b-ui \\${selector} \\{[^}]*\\}`))?.[0] ?? "";
       expect(rule).not.toContain("box-shadow:");
     }
@@ -550,8 +616,9 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(parityCss).not.toMatch(/\.k2b-widget__icon \{[^}]*background:/);
     // `.state-placeholder[data-variant="panel"]` is 13rem/1.5rem, not 14rem/2rem.
     expect(parityCss).toContain('.k2b-placeholder[data-variant="panel"] { min-height: 13rem;');
-    // A muted StatGrid tints the frame, never the cells.
-    expect(parityCss).not.toContain('.k2b-stat-cell[data-surface="muted"]');
+    // Each key figure is its own framed tile (F2); a muted grid tints the tiles.
+    expect(parityCss).toMatch(/\.k2b-ui \.k2b-stat-cell \{[^}]*border: 1px solid var\(--k2b-border\)/);
+    expect(parityCss).toContain('.k2b-ui .k2b-stat-cell[data-surface="muted"] { background: var(--k2b-surface-muted); }');
     // ProgressBar is a row: track then optional readout.
     expect(parityCss).toMatch(/\.k2b-progress \{[^}]*flex-direction: row/);
     // WidgetHero is a bare block inside the widget body, not a tinted card.
