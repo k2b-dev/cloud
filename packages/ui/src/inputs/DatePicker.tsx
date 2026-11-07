@@ -346,7 +346,7 @@ export function DatePickerPanel(props: {
   max?: string;
   /** Which month steps this panel offers; a second month beside it offers the other one. */
   nav?: "both" | "previous" | "next";
-  /** Leaves the days of neighbouring months empty, so two months side by side never show a day twice. */
+  /** Leaves the days of neighbouring months empty (`visibility: hidden`), so two months side by side never show a day twice. */
   hideOutside?: boolean;
   /** Whether a day is already on screen, also in a neighbouring panel; arrow keys then move there without paging. */
   isShown?: (date: Date) => boolean;
@@ -492,8 +492,6 @@ export function DatePickerPanel(props: {
           type="button"
           class="k2b-date-calendar__nav"
           data-hidden={props.nav === "next" ? "true" : undefined}
-          tabIndex={props.nav === "next" ? -1 : undefined}
-          aria-hidden={props.nav === "next" ? "true" : undefined}
           onClick={() => (view() === "days" ? moveMonth(-1) : moveYear(-1))}
           disabled={stepBlocked(-1)}
           aria-label={previousLabel()}
@@ -509,8 +507,6 @@ export function DatePickerPanel(props: {
           type="button"
           class="k2b-date-calendar__nav"
           data-hidden={props.nav === "previous" ? "true" : undefined}
-          tabIndex={props.nav === "previous" ? -1 : undefined}
-          aria-hidden={props.nav === "previous" ? "true" : undefined}
           onClick={() => (view() === "days" ? moveMonth(1) : moveYear(1))}
           disabled={stepBlocked(1)}
           aria-label={nextLabel()}
@@ -561,7 +557,7 @@ export function DatePickerPanel(props: {
           </For>
           <For each={dayRows()}>
             {(week) => (
-              // A week of a neighbouring month only, left empty beside a second month, is no row for assistive tech.
+              // A week of a neighbouring month only, left empty beside a second month, is hidden as a whole.
               <div
                 class="k2b-date-week"
                 role="row"
@@ -587,14 +583,13 @@ export function DatePickerPanel(props: {
                         data-date-focus={focusable() ? "true" : undefined}
                         data-outside={cell.outside ? "true" : undefined}
                         data-hidden={hidden() ? "true" : undefined}
-                        aria-hidden={hidden() ? "true" : undefined}
                         data-weekend={weekendColumns()[cellIndex()] ? "true" : undefined}
                         data-in-range={inRange(cell.key, range()) && !active() ? "true" : undefined}
                         data-today={today() ? "true" : undefined}
                         aria-current={today() ? "date" : undefined}
                         aria-label={label()}
                         aria-selected={active()}
-                        disabled={hidden() || blocked(cell.key)}
+                        disabled={blocked(cell.key)}
                         tabIndex={focusable() ? 0 : -1}
                         onClick={() => props.onSelect(cell.key)}
                         onKeyDown={(event) => handleDayKeyDown(event, cell.day)}

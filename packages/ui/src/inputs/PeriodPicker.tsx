@@ -134,6 +134,7 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
   let popover: HTMLDivElement | undefined;
   let openedByKeyboard = false;
   const popoverId = `${meta.controlId}-period`;
+  const sheetId = `${meta.controlId}-sheet`;
   const valueId = `${meta.controlId}-value`;
 
   // A trigger disabled while a change saves would drop keyboard focus on the page; it comes back once enabled.
@@ -203,7 +204,7 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
       title: typeof props.label === "string" ? props.label : (props["aria-label"] ?? t().period),
       subtitle: current() ? joined(current()!) : t().choosePeriod,
       ariaLabel: typeof props.label === "string" ? props.label : (props["aria-label"] ?? t().period),
-      id: popoverId,
+      id: sheetId,
       locale: locale(),
       content: (closeSheet) => (
         <PeriodPanel
@@ -260,7 +261,7 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
         class="k2b-period-picker__trigger"
         aria-haspopup="dialog"
         aria-expanded={open() || sheetOpen()}
-        aria-controls={popoverId}
+        aria-controls={sheetOpen() ? sheetId : popoverId}
         aria-label={name()}
         aria-labelledby={props.label ? `${meta.labelId} ${valueId}` : undefined}
         aria-describedby={fieldDescribedBy(meta, props)}
@@ -388,13 +389,16 @@ function PeriodPanel(props: {
     event.preventDefault();
     focusOption(next);
   };
+  let panel: HTMLDivElement | undefined;
   const openCustom = () => {
     setActive(props.presets.length);
     setView("custom");
+    // In the sheet the list goes away with the focused option; focus continues on the calendar's day.
+    if (props.sheet) queueMicrotask(() => panel?.querySelector<HTMLElement>('[data-date-focus="true"]')?.focus());
   };
 
   return (
-    <div class="k2b-period-picker__panel" data-view={view()} data-sheet={props.sheet ? "true" : undefined}>
+    <div ref={panel} class="k2b-period-picker__panel" data-view={view()} data-sheet={props.sheet ? "true" : undefined}>
       <Show when={!props.sheet || view() === "list"}>
         <div ref={list} class="k2b-period-picker__list" role="listbox" aria-label={props.label} onKeyDown={onListKeyDown}>
           <For each={props.presets}>
@@ -415,7 +419,11 @@ function PeriodPanel(props: {
                     <span>{text().label}</span>
                   </span>
                   <span class="k2b-period-picker__hint">{text().detail}</span>
-                  <i class="ti ti-check k2b-dropdown__check" aria-hidden="true" data-hidden={isSelected(preset) && view() === "list" ? undefined : "true"} />
+                  <i
+                    class="ti ti-check k2b-dropdown__check"
+                    aria-hidden="true"
+                    data-hidden={isSelected(preset) && view() === "list" ? undefined : "true"}
+                  />
                 </button>
               );
             }}
@@ -485,15 +493,26 @@ function RangeEditor(props: {
   const [endText, setEndText] = createSignal(props.initial ? formatDateInput(props.initial.end, locale()) : "");
   const [startError, setStartError] = createSignal("");
   const [endError, setEndError] = createSignal("");
-  const twoMonths = () => !props.sheet && typeof matchMedia === "function" && matchMedia(TWO_MONTHS_QUERY).matches;
-  // The first visible month: the end's month (and the one before it when two months show).
-  const openingMonth = () => {
-    const end = props.initial?.end ?? props.today;
-    const month = parseDateValue(end, config());
-    return twoMonths() ? dates.addMonths(month, -1, config()) : month;
+  // Follows the window: narrowing it below two months' room drops the second month, widening adds it.
+  const query = !props.sheet && typeof matchMedia === "function" ? matchMedia(TWO_MONTHS_QUERY) : undefined;
+  const [wide, setWide] = createSignal(Boolean(query?.matches));
+  if (query) {
+    const update = () => setWide(query.matches);
+    query.addEventListener("change", update);
+    onCleanup(() => query.removeEventListener("change", update));
+  }
+  const twoMonths = () => !props.sheet && wide();
+  // Months are anchored on their 1st: stepping from 31 March or 30 November never skips a month.
+  const monthOf = (key: string, offset = 0) => {
+    const year = Number(key.slice(0, 4));
+    const month = Number(key.slice(5, 7)) - 1 + offset;
+    return parseDateValue(`${year + Math.floor(month / 12)}-${String((((month % 12) + 12) % 12) + 1).padStart(2, "0")}-01`, config());
   };
-  const [first, setFirst] = createSignal(openingMonth());
-  const second = createMemo(() => dates.addMonths(first(), 1, config()));
+  const keyOf = (date: Date) => dates.formatDateKey(date, config());
+  // The first visible month: the end's month, and the one before it when two months show.
+  const [first, setFirstMonth] = createSignal(monthOf(props.initial?.end ?? props.today, twoMonths() ? -1 : 0));
+  const setFirst = (date: Date) => setFirstMonth(monthOf(keyOf(date)));
+  const second = createMemo(() => monthOf(keyOf(first()), 1));
   const shown = createMemo(() => previewRange(draft(), anchor(), preview()));
   let months: HTMLDivElement | undefined;
   const startId = createFieldMeta().controlId;
@@ -544,8 +563,7 @@ function RangeEditor(props: {
     if (start && !end) setEndError(inputT().missingEnd);
     if (end && !start) setStartError(inputT().missingStart);
     const visible = end ?? start;
-    if (visible && !isShown(parseDateValue(visible, config())))
-      setFirst(twoMonths() ? dates.addMonths(parseDateValue(visible, config()), -1, config()) : parseDateValue(visible, config()));
+    if (visible && !isShown(parseDateValue(visible, config()))) setFirstMonth(monthOf(visible, twoMonths() ? -1 : 0));
     return start && end ? { start, end } : undefined;
   };
   const complete = () => {
@@ -625,7 +643,7 @@ function RangeEditor(props: {
         <Show when={twoMonths()}>
           <DatePickerPanel
             visibleMonth={second}
-            setVisibleMonth={(date) => setFirst(dates.addMonths(date, -1, config()))}
+            setVisibleMonth={(date) => setFirstMonth(monthOf(keyOf(date), -1))}
             range={shown}
             focusDate={() => draft().end}
             onSelect={pickDay}

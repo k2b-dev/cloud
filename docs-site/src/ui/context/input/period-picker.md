@@ -68,10 +68,11 @@ around midnight.
 ## Read the trigger
 
 The trigger shows a preset with its days, **This month · Nov 1 – 30**, and
-explicit days with their count, **11/01/2026 – 11/07/2026 · 7 days**. The year
-appears only for a period outside the current year. The trigger keeps the width
-of its widest text, all presets and a long range of the current year, so a new
-choice never moves the title or links beside it. A range across the turn of the
+explicit days with their count, **11/01/2026 – 11/07/2026 · 7 days**. A
+preset's days name the year only for a period outside the current year;
+explicit days always carry it. The trigger keeps the width of its widest text,
+every preset and the whole current year as explicit days, so a new choice never
+moves the title or links beside it. A range across the turn of the
 year may be wider; right-aligned in a header it grows to the left.
 
 ## Pick a custom range

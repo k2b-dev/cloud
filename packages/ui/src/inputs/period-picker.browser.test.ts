@@ -192,14 +192,40 @@ describe("PeriodPicker", () => {
     await editor.waitFor();
     const titles = () => editor.locator(".k2b-date-calendar__title").allTextContents();
     const opened = await titles();
-    await editor.locator('[data-date-day="2026-10-31"]:not([data-hidden])').focus();
+    expect(opened).toEqual(["September 2026", "Oktober 2026"]);
+    await editor.locator('[data-date-day="2026-09-30"]:not([data-hidden])').focus();
     await page.keyboard.press("ArrowRight");
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-date-day"))).toBe("2026-11-01");
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-date-day"))).toBe("2026-10-01");
     expect(await titles()).toEqual(opened);
-    // Leaving the second month pages by one.
+    // Leaving the second month pages by one month at a time.
     await page.keyboard.press("PageDown");
     await page.keyboard.press("PageDown");
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-date-day"))).toBe("2027-01-01");
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-date-day"))).toBe("2026-12-01");
+    expect(await titles()).toEqual(["November 2026", "Dezember 2026"]);
+    await page.close();
+  });
+
+  test("custom range: months stay whole at month ends, and the editor follows the window width", async () => {
+    // A range ending on 31 March opens on February and March, not March and April.
+    const page = await load(desktop, { value: { start: "2027-03-01", end: "2027-03-31" } });
+    await trigger(page).click();
+    const editor = popover(page).locator(".k2b-period-picker__editor");
+    await editor.waitFor();
+    const titles = () => editor.locator(".k2b-date-calendar__title").allTextContents();
+    expect(await titles()).toEqual(["Februar 2027", "März 2027"]);
+    // Stepping on from a month end never skips a month.
+    const next = editor.getByRole("button", { name: /Nächster Monat|Next month/ });
+    await next.click();
+    expect(await titles()).toEqual(["März 2027", "April 2027"]);
+    await next.click();
+    expect(await titles()).toEqual(["April 2027", "Mai 2027"]);
+    // Narrow the window: the second month goes; widen it again: it comes back.
+    await page.setViewportSize({ width: 700, height: 860 });
+    await settled(page);
+    expect(await editor.locator(".k2b-date-calendar").count()).toBe(1);
+    await page.setViewportSize(desktop.viewport);
+    await settled(page);
+    expect(await editor.locator(".k2b-date-calendar").count()).toBe(2);
     await page.close();
   });
 
@@ -213,6 +239,7 @@ describe("PeriodPicker", () => {
     const months = await rect(page, ".k2b-period-picker__months");
     await from.fill("31.11.2026");
     await from.press("Tab");
+    await settled(page);
     expect(await from.getAttribute("aria-invalid")).toBe("true");
     const message = await from.getAttribute("aria-describedby");
     expect(await page.locator(`#${message}`).textContent()).toContain("30 Tage");
@@ -232,8 +259,14 @@ describe("PeriodPicker", () => {
     await trigger(page).click();
     const sheet = page.locator(".k2b-date-sheet");
     await sheet.waitFor();
-    await sheet.getByRole("option", { name: /^Frei wählen/ }).click();
+    // The sheet has its own id, and the trigger points at what is shown.
+    expect(await trigger(page).getAttribute("aria-controls")).toBe(await sheet.getAttribute("id"));
+    await sheet.getByRole("option", { name: /^Frei wählen/ }).focus();
+    await page.keyboard.press("Enter");
     expect(await sheet.locator(".k2b-date-calendar").count()).toBe(1);
+    // The focused option went away with the list; focus continues on the calendar's day.
+    await settled(page);
+    expect(await page.evaluate(() => document.activeElement?.hasAttribute("data-date-day"))).toBe(true);
     expect(await sheet.getByRole("listbox").count()).toBe(0);
     await sheet.getByRole("button", { name: "Zurück zu den Vorgaben" }).click();
     await sheet.getByRole("option", { name: /^Letzter Monat/ }).click();

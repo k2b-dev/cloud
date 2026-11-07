@@ -74,11 +74,11 @@ describe("PeriodPicker on the server", () => {
       "Letzter Monat · 1.–31. Okt.",
       "Dieses Jahr · 2026",
       "Gesamt · seit 14.03.2019",
-      "28.10. – 31.12.2026 · 65 Tage",
+      "01.01. – 31.12.2026 · 365 Tage",
       "Zeitraum wählen",
     ]);
     // Without a custom range there is no range sample to reserve.
-    expect(reserved(render({ custom: false }))).not.toContain("28.10. – 31.12.2026 · 65 Tage");
+    expect(reserved(render({ custom: false }))).not.toContain("01.01. – 31.12.2026 · 365 Tage");
   });
 
   test("an unknown or missing value shows the placeholder instead of another period", () => {

@@ -106,6 +106,9 @@ describe("period values and instants", () => {
     expect(parsePeriodValue("this-month", presets)).toBeUndefined();
     expect(isPeriodDay("2028-02-29")).toBe(true);
     expect(isPeriodDay("2027-02-29")).toBe(false);
+    // Malformed keys from a URL or storage are refused, never thrown on.
+    for (const key of ["2026-13-01", "2026-00-10", "2026-01-32", "2026-01-00"]) expect(isPeriodDay(key)).toBe(false);
+    expect(parsePeriodValue({ start: "2026-13-01", end: "2026-13-02" }, presets)).toBeUndefined();
   });
 
   test("query bounds start at local midnight and end exclusively at the next one, across DST", () => {

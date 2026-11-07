@@ -9839,8 +9839,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: auto;
 }
 
+/* Hidden, not removed: the slot keeps its size, and hidden elements leave the tab order and the accessibility tree. */
 .k2b-ui .k2b-date-calendar__nav[data-hidden="true"],
-.k2b-ui .k2b-date-grid button[data-hidden="true"] {
+.k2b-ui .k2b-date-grid button[data-hidden="true"],
+.k2b-ui .k2b-date-week[aria-hidden="true"] > button {
   visibility: hidden;
 }
 

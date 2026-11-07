@@ -90,8 +90,11 @@ export const periodPresets = {
 
 const dateKeyPattern = /^\d{4}-\d{2}-\d{2}$/;
 /** A real calendar day key, not only the shape (`2026-02-30` is refused). */
-export const isPeriodDay = (value: unknown): value is string =>
-  typeof value === "string" && dateKeyPattern.test(value) && dateKeyOf(keyDate(value)) === value;
+export const isPeriodDay = (value: unknown): value is string => {
+  if (typeof value !== "string" || !dateKeyPattern.test(value)) return false;
+  const date = keyDate(value);
+  return !Number.isNaN(date.getTime()) && dateKeyOf(date) === value;
+};
 
 /** Accepts a stored or URL value only when it is a known preset key or two real days in order. */
 export const parsePeriodValue = (value: unknown, presets: readonly PeriodPreset[]): PeriodValue | undefined => {
@@ -155,8 +158,8 @@ export const formatPeriodRange = (range: { start: string; end: string }, locale:
   return range.start === range.end ? format.format(keyDate(range.start)) : format.formatRange(keyDate(range.start), keyDate(range.end));
 };
 
-/** A long explicit range within today's year (two months, two-digit days), so a trigger can reserve its width. */
+/** The widest explicit range within today's year, all of it (two-digit days, a three-digit count), so a trigger can reserve its width. */
 export const widePeriodRangeSample = (today: string): { start: string; end: string } => {
   const year = today.slice(0, 4);
-  return { start: `${year}-10-28`, end: `${year}-12-31` };
+  return { start: `${year}-01-01`, end: `${year}-12-31` };
 };
