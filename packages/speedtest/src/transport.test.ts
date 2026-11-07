@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createBrowserTransport } from "./browser";
 import { UPLOAD_BYTES } from "./engine";
-import { createHttpTransport } from "./http";
+import { checkResponse, createHttpTransport } from "./http";
 import { createNodeTransport } from "./node";
 
 const unusedUpload = async () => {};
@@ -44,6 +44,73 @@ test("browser upload streams share one immutable payload and count progress befo
     else Reflect.deleteProperty(globalThis, "XMLHttpRequest");
   }
 });
+const retryHeaders: [string | null, number | undefined][] = [
+  ["Infinity", undefined],
+  ["1e999", undefined],
+  ["-Infinity", undefined],
+  ["invalid", undefined],
+  [null, undefined],
+  ["0", undefined],
+  ["-1", undefined],
+  ["34", 34],
+];
+
+test.each(retryHeaders)("browser upload accepts only finite positive Retry-After: %s", async (header, retryAfter) => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "XMLHttpRequest");
+  class RejectedUpload {
+    upload = { onprogress: null };
+    onload: (() => void) | null = null;
+    status = 429;
+    open() {}
+    setRequestHeader() {}
+    getResponseHeader() {
+      return header;
+    }
+    send() {
+      queueMicrotask(() => this.onload?.());
+    }
+  }
+  Object.defineProperty(globalThis, "XMLHttpRequest", { configurable: true, value: RejectedUpload });
+  try {
+    await expect(createBrowserTransport("https://example.com").upload(1, () => {}, new AbortController().signal)).rejects.toMatchObject({
+      status: 429,
+      retryAfter,
+    });
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "XMLHttpRequest", descriptor);
+    else Reflect.deleteProperty(globalThis, "XMLHttpRequest");
+  }
+});
+
+test("native upload accepts only finite positive Retry-After", async () => {
+  let header: string | null = null;
+  const server = createServer((request, response) => {
+    request.resume();
+    request.once("end", () => {
+      response.writeHead(429, header === null ? {} : { "Retry-After": header });
+      response.end();
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Missing port");
+    const transport = createNodeTransport(`http://127.0.0.1:${address.port}`);
+    for (const [value, retryAfter] of retryHeaders) {
+      header = value;
+      await expect(transport.upload(1, () => {}, new AbortController().signal)).rejects.toMatchObject({ status: 429, retryAfter });
+    }
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test.each(retryHeaders)("HTTP errors accept only finite positive Retry-After: %s", (header, retryAfter) => {
+  const response = new Response(null, { status: 429, headers: header === null ? {} : { "Retry-After": header } });
+  expect(() => checkResponse(response)).toThrow(expect.objectContaining({ status: 429, retryAfter }));
+});
+
 test("HTTP errors never count their response bodies as throughput", async () => {
   let counted = 0;
   const transport = createHttpTransport(

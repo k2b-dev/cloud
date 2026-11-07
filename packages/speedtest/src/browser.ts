@@ -38,7 +38,14 @@ export function createBrowserTransport(server: string): Transport {
         xhr.onload = () => {
           const retry = Number(xhr.getResponseHeader("Retry-After"));
           if (xhr.status < 200 || xhr.status >= 300)
-            finish(new SpeedtestError("http", `Speedtest HTTP ${xhr.status}`, xhr.status, retry > 0 ? retry : undefined));
+            finish(
+              new SpeedtestError(
+                "http",
+                `Speedtest HTTP ${xhr.status}`,
+                xhr.status,
+                Number.isFinite(retry) && retry > 0 ? retry : undefined,
+              ),
+            );
           else finish();
         };
         xhr.onerror = () => finish(new SpeedtestError("network", "Upload connection failed"));
