@@ -153,7 +153,12 @@ const isEmpty = (props: ChartProps): boolean => {
 };
 
 export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import("../charts/core/render").renderChartSvg): JSX.Element => {
-  const [, drawingProps] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
+  const drawingProps = () => {
+    // Pareto's labels name its two measures; other kinds use labels only for host controls.
+    if (props.kind === "pareto") return props;
+    const [, drawing] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
+    return drawing;
+  };
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
   const viewportMessages = useViewportMessages();
@@ -501,7 +506,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     renderChartSvg(
       props.kind === "treemap" || props.kind === "pareto" || (props.kind === "heatmap" && props.layout === "calendar")
         ? { ...props, locale: props.locale ?? locale() }
-        : drawingProps,
+        : drawingProps(),
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,
