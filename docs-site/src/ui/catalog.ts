@@ -313,6 +313,7 @@ const portableSections = [
       page("match-text", "MatchText", "ti ti-highlight", "Search matches marked in a result's name or path."),
       page("steps", "Steps", "ti ti-list-numbers", "Ordered instructions with accent numbers."),
       page("charts", "Charts", "ti ti-chart-line", "Typed responsive charts and interactive state timelines."),
+      page("money", "Money", "ti ti-coin", "Amounts that show their direction: turquoise in, violet out."),
       page("tables", "DataTable", "ti ti-table", "Basic records and professional panels with search, filters, actions, and pagination."),
       page("calendar", "Calendar", "ti ti-calendar-month", "Controlled generic calendar navigation and items."),
       page(
@@ -481,6 +482,7 @@ export const documentedOnlyUiCatalogExports = {
   filterRows: "Search helper for complete table rows; documented in Search, groups, and order on the DataTable page.",
   sortRows: "Order helper for complete table rows by a typed column; documented on the DataTable page.",
   DETAILS_ICON: "The one Details icon class that DetailsToggle and AppWorkspace.Detail show; documented on the AppWorkspace page.",
+  flowDirection: "Documented FlowAmount direction rule (in, out, none) on the Money page (/en/ui/content/money).",
   personColor: "Documented person color for avatars, cursors and comments in Colors and selection (/en/ui/surfaces/color).",
   PERSON_COLORS: "Documented person color palette in Colors and selection (/en/ui/surfaces/color).",
   MapAttribution: "Linked credits for OpenMapTiles maps; documented with the host tile and glyph setup on the MapView page.",

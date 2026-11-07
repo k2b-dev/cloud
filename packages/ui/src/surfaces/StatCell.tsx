@@ -39,10 +39,10 @@ export type StatCellProps = {
   value: string | number | JSX.Element | null;
   sub?: string;
   valueClass?: string;
-  /** An icon in a chip before the label, in `tone`. */
+  /** An icon in a chip before the label, in `tone`. `"in"` and `"out"` are the money colours of `FlowAmount`. */
   icon?: string;
   /** The chip colour of `icon`. Defaults to zinc. */
-  tone?: StatCellTone;
+  tone?: StatCellTone | "in" | "out";
   accent?: StatCellAccent;
   delta?: StatCellDelta;
   compare?: StatCellCompare;

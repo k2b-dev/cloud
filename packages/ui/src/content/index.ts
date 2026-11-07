@@ -24,7 +24,7 @@ export { default as Calendar } from "./Calendar";
 
 export type { ChartKind, ChartKindProps, ChartLabels, ChartProps, ChartRenderOptions } from "./Chart";
 export { default as Chart } from "./Chart";
-export type { ChartExplorerColumn, ChartExplorerProps, ChartLegendEntry } from "./ChartExplorer";
+export type { ChartExplorerColumn, ChartExplorerProps, ChartFrameRequest, ChartLegendEntry } from "./ChartExplorer";
 export { ChartExplorer } from "./ChartExplorer";
 export type { ChartExplorerControlsProps } from "./ChartExplorerControls";
 export { ChartExplorerControls } from "./ChartExplorerControls";
@@ -96,6 +96,7 @@ export {
   formatFileViewSize,
   getFileViewPreviewKind,
 } from "./FileView";
+export { FlowAmount, type FlowAmountDirection, type FlowAmountProps, flowDirection } from "./FlowAmount";
 export type { KbdProps } from "./Kbd";
 export { Kbd } from "./Kbd";
 export type { LabelChipProps } from "./LabelChip";

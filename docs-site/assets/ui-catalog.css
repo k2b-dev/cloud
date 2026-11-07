@@ -1037,6 +1037,20 @@
   gap: 0.85rem;
 }
 
+.ui-chart-frame-demo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.ui-chart-frame-demo__frame {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 1rem;
+  overflow: hidden;
+}
+
 .ui-crop-demo {
   display: grid;
   max-width: 34rem;

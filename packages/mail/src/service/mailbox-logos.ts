@@ -27,6 +27,7 @@ export const mailboxLogoDataUrl = (row: DbMailboxLogo): string =>
 export const mapMailboxLogo = (row: DbMailboxLogo | null): MailboxComposeLogo => ({
   logo: row
     ? {
+        versionId: row.id,
         contentType: row.content_type,
         pixelWidth: row.pixel_width,
         pixelHeight: row.pixel_height,
