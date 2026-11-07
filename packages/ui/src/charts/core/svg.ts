@@ -16,6 +16,7 @@
 import type { IntentTone } from "../../semantics";
 import { WORLD_LAND_PATH, WORLD_MAP_HEIGHT, WORLD_MAP_WIDTH } from "./chart-map-data";
 import { coreChartMessages } from "./chart-messages";
+import { lineDetailsEnabled, lineForecastLayout } from "./line-options";
 import type { ChartDatum } from "./types";
 
 // ==========================
@@ -1548,34 +1549,6 @@ const collectSeriesLegend = (opts: { series: Series[]; legend?: boolean }): Arra
  *   yAxis: { format: v => `$${v}k` },
  * });
  */
-/** Validate forecast bounds against the first series, sorted by X. Missing Y values retain their bound position. */
-export const lineForecastLayout = (opts: LineOptions) => {
-  if (!opts.forecast) return [];
-  const { from, band } = opts.forecast;
-  const points = [...(opts.series[0]?.data ?? [])].filter((p) => Number.isFinite(p.x)).sort((a, b) => a.x - b.x);
-  if (!Number.isFinite(from) || (opts.xAxis?.scale === "log" && from <= 0) || !points.some((p) => p.x === from))
-    throw new RangeError("Forecast must start at an X value of the first series");
-  const suffix = points.filter((p) => p.x >= from);
-  if (band && band.length !== suffix.length) throw new RangeError("Forecast band must match the ordered first series suffix");
-  return suffix.map((p, index) => {
-    const bounds = band?.[index];
-    if (
-      bounds &&
-      (bounds.length !== 2 || !bounds.every(Number.isFinite) || bounds[0] > bounds[1] || (opts.yAxis?.scale === "log" && bounds[0] <= 0))
-    )
-      throw new RangeError("Forecast bounds must be finite and ordered");
-    return { ...p, source: p, lo: bounds?.[0], hi: bounds?.[1] };
-  });
-};
-
-export const lineDetailsEnabled = (opts: {
-  forecast?: unknown;
-  zero?: boolean;
-  threshold?: unknown;
-  marker?: unknown;
-  legendValues?: boolean;
-}) => !!(opts.forecast || opts.zero || opts.threshold || opts.marker || opts.legendValues);
-
 export const line = (opts: LineOptions): string => {
   const details = lineDetailsEnabled(opts);
   const forecast = lineForecastLayout(opts);
@@ -1587,6 +1560,8 @@ export const line = (opts: LineOptions): string => {
     throw new RangeError("Line threshold must be finite and positive on a log axis");
   if (opts.marker && !isOnAxis({ scale: opts.xAxis?.scale ?? "linear" }, opts.marker.at))
     throw new RangeError("Line marker must be finite and positive on a log axis");
+  if (opts.marker && opts.xAxis?.domain && (opts.marker.at < opts.xAxis.domain[0] || opts.marker.at > opts.xAxis.domain[1]))
+    throw new RangeError("Line marker must be inside the explicit X domain");
   const width = opts.width ?? DEFAULT_WIDTH;
   const height = opts.height ?? DEFAULT_HEIGHT;
   const padding = normalizePadding(opts.padding);
@@ -1609,7 +1584,7 @@ export const line = (opts: LineOptions): string => {
     yMap = pickMapper(yAxis.scale);
   const x = (value: number) => xMap(value, xAxis.domain, [area.x0, area.x1]);
   const y = (value: number) => yMap(value, yAxis.domain, [area.y1, area.y0]);
-  const palette = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#a855f7", "#0891b2", "#db2777", "#65a30d"];
+  const palette = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316"];
   const paint = (index: number) => `var(--stdlib-chart-c${(index % 8) + 1}, ${palette[index % 8]})`;
   const body: string[] = [];
   const inspectionMarks: string[] = [];

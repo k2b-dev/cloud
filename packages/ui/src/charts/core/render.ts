@@ -10,8 +10,9 @@ import {
 import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
 import { type AreaOptions, renderAreaSvg } from "./area";
+import { lineDetailsEnabled } from "./line-options";
 import { chartRenderers } from "./registry";
-import { lineDetailsEnabled, type MapViewport } from "./svg";
+import type { MapViewport } from "./svg";
 import type { ChartKind } from "./types";
 
 export type ChartDrawingOptions = {

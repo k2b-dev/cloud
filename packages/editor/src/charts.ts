@@ -333,7 +333,7 @@ const thinned = <T extends { label: string }>(data: T[], left: number, width = W
 export function chartLegend(
   input: ChartInput,
   locale: string,
-): { label: string; color: number; style?: "solid" | "dashed" | "dotted"; reference?: boolean }[] {
+): { label: string; color: number; style?: "solid" | "dashed" | "dotted"; reference?: boolean; seriesIndex?: number }[] {
   if (input.kind === "bar")
     return input.colorByBar && input.legend ? input.data.map((entry, index) => ({ label: entry.label, color: index % 8 })) : [];
   if (input.kind === "area") return input.legend === false ? [] : input.series.map((s, i) => ({ label: s.label, color: i % 8 }));
@@ -343,6 +343,7 @@ export function chartLegend(
   return input.series.map((entry, index) => ({
     label: entry.label ?? `${t.series} ${index + 1}`,
     color: index % 8,
+    ...(input.kind === "line" && lineDetailsEnabled(input) ? { seriesIndex: index } : {}),
     ...(input.kind === "line" ? { style: input.series[index]?.style ?? (entry.role === "reference" ? "dashed" : "solid") } : {}),
     ...(entry.role === "reference" ? { reference: true } : {}),
   }));
@@ -617,17 +618,6 @@ export function chartTooltip(
 ): { title?: string; rows: { label: string; value: string }[] } {
   const input = typeof kind === "object" ? kind : undefined;
   const chartKind = input?.kind ?? kind;
-  if (input?.kind === "line" && lineDetailsEnabled(input))
-    return {
-      title: `${columns.find((column) => column.id === "x")?.label ?? "X"}: ${row.cells.x}`,
-      rows: [
-        { label: row.cells.series ?? columns.find((column) => column.id === "y")?.label ?? "Y", value: row.cells.y ?? "—" },
-        ...columns
-          .filter((column) => column.id === "forecastLow" || column.id === "forecastHigh")
-          .filter((column) => column.id in row.cells)
-          .map((column) => ({ label: column.label, value: row.cells[column.id]! })),
-      ],
-    };
   if (chartKind === "area")
     return {
       title: row.cells.x,

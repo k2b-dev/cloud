@@ -31,6 +31,38 @@ const snapshotRows = snapshot.marks.map((mark) => ({
   key: mark.rowKey,
   amount: String(mark.datum.values.find((f) => f.key === "y")?.value),
 }));
+const referenceSnapshot = prepareChartSnapshot(
+  {
+    kind: "line",
+    legendValues: true,
+    legend: false,
+    series: Array.from({ length: 9 }, (_, i) => ({
+      label: `Series ${i}`,
+      data:
+        i === 1
+          ? [
+              { x: 1, y: 11 },
+              { x: 2, y: 22 },
+            ]
+          : i === 8
+            ? [
+                { x: 1, y: 77 },
+                { x: 2, y: 88 },
+              ]
+            : [],
+    })),
+  },
+  { key: ({ datum }) => `${datum.seriesIndex}:${datum.index}`, tooltip: () => ({ rows: [] }) },
+);
+const referenceRows = referenceSnapshot.marks.map((mark) => ({ key: mark.rowKey }));
+const tooltipSeries = [
+  {
+    data: [
+      { x: 1, y: 2.5, errY: 0.5 },
+      { x: 2, y: 3.5, errY: 1 },
+    ],
+  },
+];
 const [state, setState] = createSignal<ShowcaseState>("data");
 const [selected, setSelected] = createSignal(false);
 render(
@@ -121,6 +153,31 @@ render(
           <ShowcaseLocaleProvider locale="en">
             <ShowcaseFrame spec={liquidityForecastSpec} title="Balance" state={state()} height={280} onRetry={() => setState("data")} />
           </ShowcaseLocaleProvider>
+        </section>
+        <section class="reference-series line-forecast-panel">
+          <ChartExplorer
+            title="Reference indices"
+            data={{ chart: referenceSnapshot, rows: referenceRows }}
+            columns={[{ id: "row", label: "Observation", value: (row) => row.key }]}
+            legend={[
+              { label: "Current", color: 1, seriesIndex: 1 },
+              { label: "Reference", color: 0, seriesIndex: 8 },
+            ]}
+            renderDetails={false}
+            height="230px"
+          />
+        </section>
+        <section class="tooltip-legacy line-forecast-panel">
+          <Chart kind="line" series={tooltipSeries} labels={{ series: "Messreihe" }} style={{ height: "230px" }} />
+        </section>
+        <section class="tooltip-opted line-forecast-panel">
+          <Chart
+            kind="line"
+            series={tooltipSeries}
+            labels={{ series: "Messreihe" }}
+            forecast={{ from: 2, band: [[2, 5]] }}
+            style={{ height: "230px" }}
+          />
         </section>
         <div id="line-hosts" />
       </main>

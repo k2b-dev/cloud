@@ -328,8 +328,8 @@ test("framework-free line markup keeps paint and currency labels with base.css a
     .locator(".stdlib-chart-line")
     .first()
     .evaluate((node) => getComputedStyle(node).stroke);
-  expect(paint).not.toBe("none");
-  expect(paint).not.toBe("rgb(0, 0, 0)");
+  expect(paint).toBe("rgb(59, 130, 246)");
+  expect(await page.locator(".k2b-line-threshold").evaluate((node) => getComputedStyle(node).stroke)).toBe("rgb(245, 158, 11)");
   expect(await page.locator(".k2b-line-forecast-band").evaluate((node) => getComputedStyle(node).fill)).toBe(paint);
   expect(
     await page.locator(".base-frame").evaluate((node) => {
@@ -354,4 +354,51 @@ test("keyboard inspection wins over a pointer frame queued before the key", asyn
   });
   await settled(page);
   expect(await chart.locator("[data-chart-legend-value]").first().textContent()).toBe("10");
+});
+
+test("forecast inspection adds bounds while retaining legacy title, labels and error rows", async () => {
+  const page = await open(900);
+  pages.push(page);
+  const rows: string[][] = [];
+  const titles: string[] = [];
+  for (const name of ["tooltip-legacy", "tooltip-opted"]) {
+    const chart = page.locator(`.${name} .k2b-chart`);
+    await chart.scrollIntoViewIfNeeded();
+    await page.mouse.move(0, 0);
+    await settled(page);
+    await chart.focus();
+    await settled(page);
+    await page.keyboard.press("End");
+    await settled(page);
+    titles.push((await tooltip(page).locator("strong").textContent())!);
+    rows.push(await tooltip(page).locator(".k2b-chart__tooltip-row").allTextContents());
+    await page.keyboard.press("Escape");
+    await settled(page);
+  }
+  expect(titles).toEqual(["Messreihe 1", "Messreihe 1"]);
+  expect(rows[0]!.some((row) => row.includes("Messreihe: 3,5"))).toBe(true);
+  expect(rows[0]!.length).toBeGreaterThan(2);
+  expect(rows[1]!.slice(0, rows[0]!.length)).toEqual(rows[0]!);
+  expect(rows[1]!.length).toBe(rows[0]!.length + 2);
+});
+
+test("snapshot legends use source series indices after empty series and palette wrapping", async () => {
+  const page = await open(900);
+  pages.push(page);
+  const host = page.locator(".reference-series");
+  const legend = host.locator("[data-chart-legend-value]");
+  expect(await legend.allTextContents()).toEqual(["22", "88"]);
+  expect(await legend.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-series-index")))).toEqual(["1", "8"]);
+  const chart = host.locator(".k2b-chart");
+  await chart.scrollIntoViewIfNeeded();
+  await page.mouse.move(0, 0);
+  await settled(page);
+  await chart.focus();
+  await settled(page);
+  await page.keyboard.press("Home");
+  await settled(page);
+  expect(await legend.allTextContents()).toEqual(["11", "77"]);
+  await page.keyboard.press("End");
+  await settled(page);
+  expect(await legend.allTextContents()).toEqual(["22", "88"]);
 });

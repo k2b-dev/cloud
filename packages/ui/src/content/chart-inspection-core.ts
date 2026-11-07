@@ -217,7 +217,10 @@ export function createChartInspector(options: {
       anchor = options.anchor(),
       container = options.container();
     if (!tooltip || !anchor || !container || !options.enabled()) return;
-    if ((active === entry || (seriesChart() && active && category(active) === category(entry))) && tooltip.matches(":popover-open")) return;
+    if ((active === entry || (seriesChart() && active && category(active) === category(entry))) && tooltip.matches(":popover-open")) {
+      active = entry;
+      return;
+    }
     clearHighlight();
     active = entry;
     highlighted =

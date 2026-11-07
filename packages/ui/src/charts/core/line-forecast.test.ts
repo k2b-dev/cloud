@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
+import { lineForecastLayout } from "./line-options";
 import { renderChartSvg } from "./render";
-import { line, lineForecastLayout } from "./svg";
+import { line } from "./svg";
 
 const spec = {
   width: 480,
@@ -112,7 +113,7 @@ test("old line options still produce a drawing; bounds belong only to the first 
 test("forecast respects maxGap and gives isolated observations a visible portable mark", () => {
   const svg = line({ ...spec, maxGap: 0.5, inspect: true });
   expect(svg).not.toContain('class="stdlib-chart-line');
-  expect(svg).toContain('fill="var(--stdlib-chart-c1, #2563eb)"');
+  expect(svg).toContain('fill="var(--stdlib-chart-c1, #3b82f6)"');
   expect(() => line({ ...spec, maxGap: 0 })).toThrow();
   expect(() => line({ ...spec, maxGap: 1, area: true })).toThrow();
 });
@@ -187,4 +188,11 @@ test("log axes reject annotations and forecast bounds outside their positive dom
   expect(line({ series, xAxis: { scale: "log" }, yAxis: { scale: "log" }, forecast: { from: 2, band: [[1, 4]] } })).not.toMatch(
     /NaN|Infinity/,
   );
+});
+
+test("markers must fit an explicit X domain, including its edges", () => {
+  for (const at of [0, 5])
+    expect(() => line({ ...spec, marker: { at, label: "Today" }, xAxis: { domain: [1, 4] } })).toThrow(/explicit X domain/);
+  for (const at of [1, 4])
+    expect(line({ ...spec, marker: { at, label: "Today" }, xAxis: { domain: [1, 4] } })).toContain("k2b-line-marker");
 });

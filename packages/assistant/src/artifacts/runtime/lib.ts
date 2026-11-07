@@ -106,7 +106,7 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
         break;
       }
       case "line":
-        svg = line({ ...mapped, ...common });
+        svg = line({ ...mapped, ...common, locale });
         break;
       case "scatter":
         svg = scatter({ ...mapped, ...common });

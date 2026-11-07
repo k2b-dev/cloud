@@ -15,9 +15,9 @@ import {
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
+import { lineDetailsEnabled } from "../charts/core/line-options";
 import { chartKinds } from "../charts/core/registry";
 import { type ChartDrawingOptions, chartRenderHeight, preservesAspectRatio, renderChartSvg } from "../charts/core/render";
-import { lineDetailsEnabled } from "../charts/core/svg";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -469,26 +469,6 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
       const fields = chartMessages().chartFields;
-      if (selection.kind === "line" && props.kind === "line" && lineDetailsEnabled(props)) {
-        const x = selection.datum.values.find((f) => f.key === "x");
-        const value = selection.datum.values.find((f) => f.key === "y");
-        const number = new Intl.NumberFormat(props.locale ?? locale(), { maximumFractionDigits: 6 }).format;
-        return {
-          title: `${props.xAxis?.label ?? fields({ key: "x" })}: ${x?.formatted ?? (typeof x?.value === "number" ? number(x.value) : x?.value)}`,
-          rows: [
-            {
-              label: selection.datum.label ?? chartMessages().series,
-              value: value?.formatted ?? (typeof value?.value === "number" ? number(value.value) : (value?.value ?? "—")),
-            },
-            ...selection.datum.values
-              .filter((f) => f.key === "forecastLow" || f.key === "forecastHigh")
-              .map((field) => ({
-                label: fields({ key: field.key }),
-                value: field.formatted ?? (typeof field.value === "number" ? number(field.value) : field.value),
-              })),
-          ],
-        };
-      }
       if (selection.kind === "area" && props.kind === "area") {
         const amount = selection.datum.values.find((f) => f.key === "value")!;
         const share = selection.datum.values.find((f) => f.key === "percent");
@@ -630,7 +610,11 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
                       height="8"
                       rx="2"
                       class={`stdlib-chart-series-${index() % 8}`}
-                      fill={`var(--stdlib-chart-c${(index() % 8) + 1}, ${["#2563eb", "#16a34a", "#d97706", "#dc2626", "#a855f7", "#0891b2", "#db2777", "#65a30d"][index() % 8]})`}
+                      fill={`var(--stdlib-chart-c${(index() % 8) + 1}, ${
+                        (props.kind === "line" && lineDetailsEnabled(props)
+                          ? ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316"]
+                          : ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#a855f7", "#0891b2", "#db2777", "#65a30d"])[index() % 8]
+                      })`}
                       stroke="none"
                     />
                   </svg>

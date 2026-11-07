@@ -11,6 +11,7 @@ export {
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
 export * from "./inspection";
+export { lineDetailsEnabled, lineForecastLayout } from "./line-options";
 export * from "./render";
 export * from "./snapshot";
 export {
@@ -36,8 +37,6 @@ export {
   type LineStyle,
   line,
   linearRegression,
-  lineDetailsEnabled,
-  lineForecastLayout,
   linePathD,
   type MapOptions,
   type MapPoint,

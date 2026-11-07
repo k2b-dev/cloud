@@ -221,8 +221,11 @@ export const chartKinds = (limits?: ChartLimits) => {
         references: ChartReferences.optional(),
       })
       .superRefine((spec, ctx) => {
-        if (!spec.forecast) return;
         const coordinate = (x: number | string) => (typeof x === "number" ? x : chartDateTime(x));
+        const at = spec.marker && coordinate(spec.marker.at);
+        if (at !== undefined && spec.xAxis?.domain && (at < spec.xAxis.domain[0]! || at > spec.xAxis.domain[1]!))
+          ctx.addIssue({ code: "custom", path: ["marker", "at"], message: "Marker must be inside the explicit X domain." });
+        if (!spec.forecast) return;
         const from = coordinate(spec.forecast.from);
         const points = spec.series[0]?.data ?? [];
         if (!points.some((point) => coordinate(point.x) === from)) {

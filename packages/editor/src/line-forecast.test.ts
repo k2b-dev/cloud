@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { liquidityForecastSpec } from "../../../docs-site/src/ui/demo-sections/charts/liquidity-forecast";
-import { chartKinds, chartRenderOptions, chartSchema, chartTable, drawChart } from "./charts";
+import { chartKinds, chartRenderOptions, chartSchema, chartTable, chartTooltip, drawChart } from "./charts";
 import { renderNotebookChartFigure } from "./markdown/lib/chart-blocks";
 
 const spec = {
@@ -148,4 +148,34 @@ test("opted-in snapshot legends keep an all-missing final column as gaps", () =>
   const html = renderNotebookChartFigure(input, "en")!;
   expect(html).toContain('data-line-last-x="2"');
   expect([...html.matchAll(/data-default="([^"]*)"/g)].map((match) => match[1])).toEqual(["—", "—"]);
+});
+
+test("forecast tooltips retain the legacy title and columns, then append bounds", () => {
+  const base = { ...spec, tooltip: { label: "Betrag" }, forecast: undefined, zero: undefined, marker: undefined, threshold: undefined };
+  const legacy = chartTable(chartKinds().parse(base), "de");
+  const forecast = chartTable(chartKinds().parse({ ...base, forecast: spec.forecast }), "de");
+  const original = chartTooltip(legacy.columns, legacy.rows[1]!, "line");
+  const updated = chartTooltip(forecast.columns, forecast.rows[1]!, chartKinds().parse({ ...base, forecast: spec.forecast }));
+  expect(updated.title).toBe(original.title);
+  expect(updated.rows.slice(0, original.rows.length)).toEqual(original.rows);
+  expect(updated.rows.map((row) => row.label)).toEqual(["X", "Betrag", "Untere Prognosegrenze", "Obere Prognosegrenze"]);
+});
+
+test("portable markers reject an explicit domain overflow without requiring a forecast", () => {
+  const base = {
+    kind: "line",
+    series: [
+      {
+        data: [
+          { x: 1, y: 2 },
+          { x: 4, y: 5 },
+        ],
+      },
+    ],
+    xAxis: { domain: [1, 4] },
+  };
+  for (const schema of [chartKinds(), chartKinds({ maxSeries: 8, maxValues: 480, maxMarks: 3840 })]) {
+    for (const at of [0, 5]) expect(schema.safeParse({ ...base, marker: { at, label: "Today" } }).success).toBe(false);
+    for (const at of [1, 4]) expect(schema.safeParse({ ...base, marker: { at, label: "Today" } }).success).toBe(true);
+  }
 });

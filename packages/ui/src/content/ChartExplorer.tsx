@@ -29,6 +29,8 @@ export type ChartExplorerColumn<T> = {
 export type ChartLegendEntry = {
   label: string;
   color: number;
+  /** Source series index when entries omit empty series or use a wrapped palette. Defaults to the entry position. */
+  seriesIndex?: number;
   /** Line pattern of a line series; a solid series shows a filled swatch. */
   style?: "solid" | "dashed" | "dotted";
   /** A comparison series, drawn hollow like its marks. */
@@ -480,7 +482,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                       >
                         <b
                           data-chart-legend-value
-                          data-series-index={index()}
+                          data-series-index={entry.seriesIndex ?? index()}
                           data-field={
                             snapshot()?.kind === "area"
                               ? snapshot()?.marks.some((mark) => mark.datum.values.some((field) => field.key === "percent"))
@@ -488,9 +490,9 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                                 : "value"
                               : "y"
                           }
-                          data-default={legendValue(index())}
+                          data-default={legendValue(entry.seriesIndex ?? index())}
                         >
-                          {legendValue(index())}
+                          {legendValue(entry.seriesIndex ?? index())}
                         </b>
                       </Show>
                     </li>

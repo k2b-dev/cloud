@@ -59,3 +59,21 @@ test("the real Chat tool accepts the Liquidity dashboard forecast", () => {
   if (view?.view !== "chart" || view.kind !== "line") throw new Error("Expected line");
   expect(view.forecast?.band).toHaveLength(60);
 });
+
+test("the real Chat tool rejects a marker outside an explicit X domain", () => {
+  const input = {
+    kind: "line",
+    title: "Cash",
+    series: [
+      {
+        data: [
+          { x: 1, y: 2 },
+          { x: 4, y: 5 },
+        ],
+      },
+    ],
+    xAxis: { domain: [1, 4] },
+    marker: { at: 5, label: "Today" },
+  };
+  expect(CloudAiChartInputSchema.safeParse(input).success).toBe(false);
+});
