@@ -10,7 +10,7 @@ export const PLANS = {
   accurate: { ping: 3_000, download: 13_000, upload: 13_000, samples: 16, warmup: 2_000 },
 } as const;
 export type Mode = keyof typeof PLANS;
-export type Phase = "ping" | "download" | "upload";
+export type Phase = "ping" | "download" | "upload" | "verify";
 export interface Transport {
   begin?(mode: Mode, signal: AbortSignal): Promise<void>;
   end?(): void;
@@ -188,7 +188,7 @@ export async function runSpeedtest(options: {
       loaded_latency_ms: loaded.length ? round(median(loaded)) : null,
     });
   };
-  const execute = async (phase: Phase, following: number, work: (signal: AbortSignal) => Promise<void>, measurement?: Measurement) => {
+  const execute = async (phase: Exclude<Phase, "verify">, work: (signal: AbortSignal) => Promise<void>, measurement?: Measurement) => {
     root.signal.throwIfAborted();
     const local = new AbortController();
     const phaseStart = clock.now();
@@ -203,7 +203,7 @@ export async function runSpeedtest(options: {
       if (local.signal.aborted) return;
       const elapsed = clock.now() - phaseStart;
       measurement?.sample(elapsed);
-      remaining = Math.min(remaining, Math.max(0, phaseCap - elapsed) + following);
+      remaining = Math.max(0, totalCap - (clock.now() - start));
       publish(phase, measurement?.mbps ?? 0, measurement?.bytes ?? 0);
       if (measurement?.stable) stop();
       else stopTick = clock.schedule(emit, WINDOW_MS);
@@ -224,11 +224,11 @@ export async function runSpeedtest(options: {
       // Stop sibling streams before returning or propagating the first error.
       local.abort(completed);
     }
-    remaining = Math.min(remaining, following);
+    remaining = Math.max(0, totalCap - (clock.now() - start));
     root.signal.throwIfAborted();
   };
   try {
-    await execute("ping", plan.download + plan.upload, async (signal) => {
+    await execute("ping", async (signal) => {
       await options.transport.begin?.(mode, signal);
       await options.transport.ping(signal); // Discard connection warmup.
       for (let index = 0; index < plan.samples; index++) {
@@ -244,7 +244,6 @@ export async function runSpeedtest(options: {
       const measurement = new Measurement(plan.warmup);
       await execute(
         phase,
-        phase === "download" ? plan.upload : 0,
         async (signal) => {
           const stream = async () => {
             while (!signal.aborted) {
@@ -269,21 +268,29 @@ export async function runSpeedtest(options: {
         },
         measurement,
       );
+      if (measurement.measuredBytes === 0) throw new SpeedtestError("slow_server", "No bytes measured after warmup");
       publish(phase, measurement.result, measurement.bytes, true);
       return measurement;
     };
     const download = await transfer("download");
     const upload = await transfer("upload");
     if (options.transport.verify) {
+      const allowance = Math.max(0, totalCap - (clock.now() - start));
+      if (allowance === 0) throw new SpeedtestError("slow_server", "Server verification timed out");
       const verification = new AbortController();
       const propagate = () => verification.abort(root.signal.reason);
       root.signal.addEventListener("abort", propagate, { once: true });
       if (root.signal.aborted) propagate();
-      const stop = clock.schedule(
-        () => verification.abort(new SpeedtestError("slow_server", "Server verification timed out")),
-        Math.max(0, Math.min(250, totalCap - (clock.now() - start))),
-      );
+      const stop = clock.schedule(() => verification.abort(new SpeedtestError("slow_server", "Server verification timed out")), allowance);
+      let stopTick = () => {};
+      const emit = () => {
+        if (verification.signal.aborted) return;
+        remaining = Math.max(0, totalCap - (clock.now() - start));
+        publish("verify", 0, 0);
+        stopTick = clock.schedule(emit, WINDOW_MS);
+      };
       try {
+        emit();
         await Promise.race([
           options.transport.verify(verification.signal),
           new Promise<never>((_, reject) => {
@@ -291,8 +298,11 @@ export async function runSpeedtest(options: {
             else verification.signal.addEventListener("abort", () => reject(verification.signal.reason), { once: true });
           }),
         ]);
+        root.signal.throwIfAborted();
+        if (clock.now() - start > totalCap) throw new SpeedtestError("slow_server", "Server verification timed out");
       } finally {
         stop();
+        stopTick();
         root.signal.removeEventListener("abort", propagate);
         verification.abort();
       }

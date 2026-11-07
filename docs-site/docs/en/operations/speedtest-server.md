@@ -74,7 +74,7 @@ aggregate IP budget at ingress. No durable user data is stored.
 | `SPEEDTEST_CAPACITY_MBPS` | `1000` | Sustainable aggregate measurement budget, combined download and upload |
 | `SPEEDTEST_TEST_MBPS` | `1000` | Capacity reserved per admitted test |
 | `SPEEDTEST_MAX_ACTIVE` | `128` | Stream memory ceiling; ten slots are reserved per admitted test, including cancellation headroom |
-| `SPEEDTEST_MAX_PEERS` | `4096` | Maximum IP budget records, roughly 1 MiB of ledger storage |
+| `SPEEDTEST_MAX_PEERS` | `4096` | Maximum client records; the IPv6 network ledger has the same record ceiling |
 | `SPEEDTEST_UDP_PACKETS_PER_SECOND` | `4096` | Global UDP packet processing ceiling per second |
 | `SPEEDTEST_TRUSTED_PROXIES` | empty | Exact proxy addresses allowed to supply `X-Real-IP` |
 
@@ -83,6 +83,10 @@ in any rolling 60-second interval**. A cancelled test still counts. Rejection
 because the server is full does not consume a start. Shared connections, such
 as an office NAT, share this allowance. HTTP 429 includes the seconds until
 the oldest counted start expires; the UI and CLI display that waiting time.
+IPv6 also has a shared allowance of 32 starts per /48 in the same rolling
+minute, enough for sixteen /64 connections to use both starts. Cancellation
+counts in both allowances. A shared network limit also returns HTTP 429
+with the remaining wait.
 
 The engine requests admission with `POST /session?mode=quick` (or `accurate`).
 Its unpredictable, short-lived ticket travels in `X-Speedtest-Token`, never a
@@ -119,6 +123,11 @@ bytes/second with a one-second burst allowance. Exhaustion fails the test;
 a truncated download never becomes a successful measurement. HTTP 503 and
 `Retry-After` report an unavailable server. This budget does not pace traffic
 and silently report an imposed ceiling as the client's speed.
+The per-test reservation controls admission; it does not throttle individual
+connections. A client faster than the planned reservation can consume the
+shared budget and fail concurrent measurements. Use one concurrent test when
+the service must measure its full link capacity. Anonymous admission offers
+no priority guarantee; apply the ingress budgets even at low concurrency.
 
 Application code cannot undo bytes already received from the network.
 Configure an aggregate ingress bandwidth ceiling and upload body limit at the
@@ -162,6 +171,10 @@ including the initial challenge. Confirmed UDP probes have a separate packet bud
 absolute difference between consecutive ping measurements. Throughput excludes
 the first 1.5 seconds per phase in quick mode, or 2 seconds in accurate mode.
 Completed 250 ms windows form each result. A stable rate can end a phase early.
+A phase with no bytes measured after warmup fails instead of reporting zero
+as a completed result. Final server verification reserves at least 250 ms
+inside the same total deadline and can use time saved by earlier phases.
+Its countdown remains visible in the browser and CLI.
 `loaded_latency_ms` is the median of pings during download and upload, or null
 when none completed. Byte totals include warmup traffic.
 

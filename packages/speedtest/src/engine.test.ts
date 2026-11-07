@@ -244,6 +244,56 @@ describe("shared speedtest", () => {
     expect(finished).toBe(14_000);
     expect(clock.tasks.size).toBe(0);
   });
+  test("verification can use the remaining deadline after stable phases finish early", async () => {
+    const clock = new FakeClock();
+    const fake = fixture(clock);
+    fake.transport.verify = () => new Promise((resolve) => clock.schedule(resolve, 750));
+    const progress: Progress[] = [];
+    const result = runSpeedtest({ server, transport: fake.transport, clock, timestamp, onProgress: (event) => progress.push(event) });
+    const outcome = result.catch((error: unknown) => error);
+    await clock.advance(14_000);
+    expect(await outcome).toHaveProperty("upload_mbps");
+    expect((await result).duration_ms).toBeLessThan(14_000);
+    expect(progress.filter((event) => event.phase === "verify").length).toBeGreaterThanOrEqual(3);
+    expect(progress.filter((event) => event.phase === "verify").every((event) => event.remaining_ms > 0)).toBe(true);
+    for (let index = 1; index < progress.length; index++)
+      expect(progress[index]!.remaining_ms).toBeLessThanOrEqual(progress[index - 1]!.remaining_ms);
+    expect(clock.tasks.size).toBe(0);
+  });
+  for (const phase of ["download", "upload"] as const) {
+    test(`${phase} without measured bytes fails before publishing completion`, async () => {
+      const clock = new FakeClock();
+      const fake = fixture(clock);
+      const transfer = fake.transport[phase];
+      let phaseStart: number | undefined;
+      // Bytes during warmup alone must not count as a measured result.
+      fake.transport[phase] = (bytes, count, signal) => {
+        phaseStart ??= clock.now();
+        const started = phaseStart;
+        return transfer(
+          bytes,
+          (value) => {
+            if (clock.now() - started < 1_500) count(value);
+          },
+          signal,
+        );
+      };
+      const progress: Progress[] = [];
+      const outcome = runSpeedtest({
+        server,
+        transport: fake.transport,
+        clock,
+        timestamp,
+        onProgress: (event) => progress.push(event),
+      }).catch((error: unknown) => error);
+      await clock.advance(14_000);
+      expect(await outcome).toMatchObject({ code: "slow_server" });
+      expect(progress.some((event) => event.phase === phase && event.bytes > 0)).toBe(true);
+      expect(progress.some((event) => event.phase === phase && event.phase_complete)).toBe(false);
+      expect(fake.active()).toBe(0);
+      expect(clock.tasks.size).toBe(0);
+    });
+  }
   test("server selection never silently falls back or carries credentials", () => {
     expect(normalizeServer("http://127.0.0.1:8080/")).toBe("http://127.0.0.1:8080");
     for (const url of ["invalid", "http://example.org", "https://user:pass@example.org", "https://example.org/?token=secret"])

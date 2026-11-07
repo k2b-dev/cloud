@@ -26,7 +26,7 @@ export async function main(args: string[]) {
   process.once("SIGINT", cancel);
   let lineOpen = false;
   const progress = (event: Progress) => {
-    const phase = german ? { ping: "Ping", download: "Download", upload: "Upload" }[event.phase] : event.phase;
+    const phase = german ? { ping: "Ping", download: "Download", upload: "Upload", verify: "Prüfung" }[event.phase] : event.phase;
     const seconds = Math.ceil(event.remaining_ms / 1_000);
     const text = `${phase}: ${event.mbps.toPrecision(3)} Mbit/s · ${german ? `noch ${seconds} s` : `${seconds} s left`}`;
     if (tty) {

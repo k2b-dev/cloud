@@ -20,6 +20,7 @@ interface Session {
 /** A start is a whole test, never one of its four streams. No persistent visitor identity. */
 export class TestAdmission {
   private readonly peers = new Map<string, number[]>();
+  private readonly networks = new Map<string, number[]>();
   private readonly sessions = new Map<string, Session>();
   private nextSweep = 0;
   private tokens: number;
@@ -56,7 +57,8 @@ export class TestAdmission {
     }
     if (now < this.nextSweep) return;
     this.nextSweep = now + 1_000;
-    for (const [key, starts] of this.peers) if (starts.every((start) => now - start >= 60_000)) this.peers.delete(key);
+    for (const ledger of [this.peers, this.networks])
+      for (const [key, starts] of ledger) if (starts.every((start) => now - start >= 60_000)) ledger.delete(key);
   }
   start(ip: string, mode: Mode): { token: string; expiresIn: number; capacityMbps: number } | Refusal {
     const now = this.now();
@@ -64,15 +66,21 @@ export class TestAdmission {
     const key = addressBudgetKey(ip);
     const starts = (this.peers.get(key) ?? []).filter((start) => now - start < 60_000);
     if (starts.length >= 2) return { status: 429, retryAfter: Math.max(1, Math.ceil((starts[0]! + 60_000 - now) / 1_000)) };
+    const network = key.endsWith("/64") ? `${key.split(":").slice(0, 3).join(":")}::/48` : undefined;
+    const networkStarts = network ? (this.networks.get(network) ?? []).filter((start) => now - start < 60_000) : [];
+    // Sixteen /64 connections can each use two starts per minute within one /48.
+    if (networkStarts.length >= 32) return { status: 429, retryAfter: Math.max(1, Math.ceil((networkStarts[0]! + 60_000 - now) / 1_000)) };
     if (this.sessions.size >= this.maxTests) {
       const expiry = Math.min(...Array.from(this.sessions.values(), (session) => session.expires));
       return { status: 503, retryAfter: Math.max(1, Math.ceil((expiry - now) / 1_000)) };
     }
     if (!this.peers.has(key) && this.peers.size >= this.options.maxPeers) return { status: 503, retryAfter: 1 };
+    if (network && !this.networks.has(network) && this.networks.size >= this.options.maxPeers) return { status: 503, retryAfter: 1 };
     const plan = PLANS[mode];
     const expiresIn = plan.ping + plan.download + plan.upload;
     const token = crypto.randomUUID();
     this.peers.set(key, [...starts, now]);
+    if (network) this.networks.set(network, [...networkStarts, now]);
     this.sessions.set(token, { key, expires: now + expiresIn, active: 0, limited: false, controller: new AbortController() });
     return { token, expiresIn, capacityMbps: this.capacityMbps };
   }
