@@ -16517,7 +16517,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 @keyframes k2b-chart-explorer-pulse { 50% { opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { .k2b-ui .k2b-chart-explorer__skeleton > span { animation: none; } }
 /* Inside a frame the table reaches its left, right and bottom edges; the viewport grows by the inset it covers. */
-.k2b-ui .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-view="table"] { margin: 0 calc(-1 * var(--k2b-chart-explorer-inset)) calc(-1 * var(--k2b-chart-explorer-inset)); }
+.k2b-ui .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-view="table"] { margin: 0 calc(-1 * var(--k2b-chart-explorer-inset)) calc(-1 * var(--k2b-chart-explorer-inset-block, var(--k2b-chart-explorer-inset))); }
 .k2b-ui .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-view="table"] .k2b-chart-explorer__note { padding: 0 var(--k2b-chart-explorer-inset) .5rem; }
 .k2b-ui .k2b-chart-explorer__details:empty { display: none; }
 .k2b-ui .k2b-chart-explorer__detail-paper { padding: .75rem 1rem; }

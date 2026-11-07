@@ -221,6 +221,8 @@ export default function DashboardPanelView(props: {
             height="13.5rem"
             tableRows={100}
             renderDetails={false}
+            // The panel's padding: in the table view the table runs to its frame instead of adding a second one.
+            inset="0.875rem 1rem"
           />
         </div>
       </Show>

@@ -385,6 +385,7 @@ test("a line panel is a chart explorer with exact values, units and a table of e
     expect(await panel.locator(".k2b-chart-explorer h3").textContent()).toBe("Anfragen je Dienst");
     expect(await panel.getByRole("button", { name: "So gerechnet: Anfragen je Dienst", exact: true }).count()).toBe(1);
     expect(await panel.locator(".k2b-chart-legend li").allTextContents()).toEqual(["demo-site", "demo-shop", "demo-cloud"]);
+    const frameHeight = await panel.evaluate((element) => element.getBoundingClientRect().height);
     await panel.getByRole("button", { name: "Diagrammansicht", exact: true }).click();
     await tab.getByRole("menuitemradio", { name: "Tabelle", exact: true }).click();
     const table = panel.getByRole("table");
@@ -392,8 +393,19 @@ test("a line panel is a chart explorer with exact values, units and a table of e
     expect(await table.locator("thead th").allTextContents()).toEqual(["Zeit (Europe/Berlin)", "Reihe", "Wert (/s)"]);
     // Each time carries its offset, so the two instants of a repeated hour stay apart in copied rows.
     expect(await table.locator("tbody tr").first().locator("td").first().textContent()).toMatch(/GMT[+-]\d/);
-    // The table takes the chart's place at the same viewport height.
-    expect(await panel.locator(".k2b-chart-explorer__viewport").evaluate((el) => el.getBoundingClientRect().height)).toBe(216);
+    // The table takes the chart's place and runs to the panel's frame: one edge, and the panel keeps its height.
+    const edges = await panel.locator(".k2b-table-shell").evaluate((shell) => {
+      const frame = shell.closest(".k2b-dashboard-panel")!.getBoundingClientRect();
+      const box = shell.getBoundingClientRect();
+      return {
+        surface: shell.getAttribute("data-surface"),
+        // Left and right on the frame; the bottom where the viewport ends, which a taller neighbour may push down.
+        inset: [box.left - frame.left, frame.right - box.right].map(Math.round),
+        fills: Math.round(shell.closest(".k2b-chart-explorer__viewport")!.getBoundingClientRect().bottom - box.bottom),
+        height: frame.height,
+      };
+    });
+    expect(edges).toEqual({ surface: "plain", inset: [1, 1], fills: 0, height: frameHeight });
   } finally {
     await tab.close();
   }
