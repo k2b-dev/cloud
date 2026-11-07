@@ -897,7 +897,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                   </tr>
                   {/* Totals of hidden columns stay readable under the totals row while the width hides them. */}
                   <Show when={detailsPriority()}>
-                    <tr class="k2b-data-table__details k2b-data-table__footer-details">
+                    <tr class="k2b-data-table__details" data-footer="true">
                       <td colspan={columnCount()}>
                         <dl>
                           <For each={hiddenColumns()}>

@@ -156,7 +156,7 @@ test("priorities add one details toggle per row whose details list the columns a
     footer: { values: { name: "Total", rev: 13130 } },
   });
   expect(labelled.match(/<dt>Revenue \(EUR\)<\/dt>/g)?.length).toBe(5);
-  expect(labelled).toMatch(/k2b-data-table__footer-details.*?<dt>Revenue \(EUR\)<\/dt><dd>€13,130.00<\/dd>/);
+  expect(labelled).toMatch(/data-footer="true".*?<dt>Revenue \(EUR\)<\/dt><dd>€13,130.00<\/dd>/);
   // Without priorities nothing is added.
   const plain = render({ columns: columns.map(({ priority: _priority, ...column }) => column) });
   expect(plain).not.toContain("k2b-data-table__details");
