@@ -7,11 +7,8 @@ export const replaceTextareaRange = (textarea: HTMLTextAreaElement, start: numbe
   textarea.focus();
   textarea.setSelectionRange(start, end);
 
-  if (start === end && replacement === "") return true;
   try {
-    // An empty replacement deletes: "insertText" with no text does not remove a selection in every engine.
-    const command = replacement === "" ? "delete" : "insertText";
-    if (typeof document !== "undefined" && document.execCommand?.(command, false, replacement)) return true;
+    if (typeof document !== "undefined" && document.execCommand?.("insertText", false, replacement)) return true;
   } catch {
     // Fall through to the standards-based replacement below.
   }

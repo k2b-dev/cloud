@@ -21,7 +21,7 @@ import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
 import { focusMenuRow, focusRowSegment } from "./menu-rows";
 import { MenuSearch, type MenuSearchApi } from "./menu-search";
-import { openMenuSheet, prefersMenuSheet } from "./menu-sheet";
+import { prefersMenuSheet } from "./phone-sheet";
 
 // Resolved outside JSX: a conditional attribute compiles to a lazy memo, which would be created inside the click handler.
 const selectAction = (item: { action?: () => void }) => item.action;
@@ -772,26 +772,40 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody }): JSX.Eleme
       // The sheet is this menu's open state: the trigger reports it and the owner hears both ends.
       setInternalOpen(true);
       props.onOpenChange?.(true);
-      void openMenuSheet({
-        Items: DropdownItems,
-        items: props.items,
-        label: props.label ?? messages().dropdownMenu,
-        locale: locale(),
-        top: props.sheetTop,
-        search: props.search,
-        icons: props.icons,
-        note: props.note,
-        signal: current.signal,
-      }).finally(() => {
-        sheet = undefined;
-        // An entry that moved focus elsewhere, such as into a field, keeps it.
-        const target = anchored ? originElement() : undefined;
-        const focused = document.activeElement;
-        if (target?.isConnected && (!focused || focused === document.body)) returnFocus(target, ring);
-        setInternalOpen(false);
-        props.onOpenChange?.(false);
-        props.onClose?.();
-      });
+      // The sheet's module loads with the first phone sheet, so pages whose menus never open one carry none of it.
+      void import("./menu-sheet")
+        .then(({ openMenuSheet }) =>
+          openMenuSheet({
+            Items: DropdownItems,
+            items: props.items,
+            label: props.label ?? messages().dropdownMenu,
+            locale: locale(),
+            top: props.sheetTop,
+            search: props.search,
+            icons: props.icons,
+            note: props.note,
+            signal: current.signal,
+          }),
+        )
+        .then(
+          () => false,
+          (error: unknown) => {
+            console.error(error);
+            return true;
+          },
+        )
+        .then((failed) => {
+          sheet = undefined;
+          // An entry that moved focus elsewhere, such as into a field, keeps it.
+          const target = anchored ? originElement() : undefined;
+          const focused = document.activeElement;
+          if (target?.isConnected && (!focused || focused === document.body)) returnFocus(target, ring);
+          setInternalOpen(false);
+          props.onOpenChange?.(false);
+          props.onClose?.();
+          // A sheet that could not load leaves the person the same entries as a menu.
+          if (failed && !current.signal.aborted) open(focus);
+        });
       return;
     }
     if (next) open(focus);

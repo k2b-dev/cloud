@@ -44,7 +44,14 @@ const mount = async (props: { commands?: readonly CommandItem[]; completions?: r
   );
   const textarea = dom.root.querySelector("textarea")!;
   textarea.focus();
+  if (props.commands) await commandsLoaded();
   return { textarea, changes, value };
+};
+
+/** The editor loads its slash commands on first use; once the module resolved, the editor attached them. */
+const commandsLoaded = async () => {
+  await import("../src/inputs/markdown/slash-commands");
+  await Promise.resolve();
 };
 
 const type = async (textarea: HTMLTextAreaElement, text: string) => {
@@ -267,6 +274,7 @@ describe("MarkdownEditor slash commands", () => {
     );
     const textarea = dom.root.querySelector("textarea")!;
     textarea.focus();
+    await commandsLoaded();
     await type(textarea, "/");
     expect(options()).toHaveLength(0);
     setSource(commands);

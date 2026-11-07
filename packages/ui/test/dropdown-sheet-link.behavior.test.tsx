@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
-import { createDomTestHarness } from "./dom";
+import { createDomTestHarness, until } from "./dom";
 
 // A file of its own: Solid binds its delegated click handler to the document of the first test in a process.
 if (isServer) test.skip("requires browser conditions", () => {});
@@ -44,12 +44,15 @@ else
     );
     try {
       dom.root.querySelector<HTMLButtonElement>("button")!.click();
+      // The sheet loads its module on first use.
+      await until(() => dialogCore.isOpen());
       expect(dialogCore.isOpen()).toBe(true);
       dom.document.querySelector<HTMLAnchorElement>('dialog a[href="/versions"]')!.click();
       for (let attempt = 0; attempt < 50 && followed.length === 0; attempt++) await Bun.sleep(10);
       expect(followed).toEqual([{ href: "/versions", sheetOpen: false }]);
       await Bun.sleep(100);
       dom.root.querySelector<HTMLButtonElement>("button")!.click();
+      await until(() => dialogCore.isOpen());
       const choice = dom.document.querySelector<HTMLAnchorElement>('dialog .k2b-dropdown__row a[href="/read"]')!;
       expect(choice.getAttribute("role")).toBe("menuitemradio");
       expect(choice.getAttribute("aria-checked")).toBe("true");

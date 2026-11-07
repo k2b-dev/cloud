@@ -1,5 +1,5 @@
 import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, Show } from "solid-js";
-import { useUiMessages } from "../intl/messages";
+import type { UiMessages } from "../intl/messages";
 import {
   type CommandGroup,
   type CommandItem,
@@ -8,7 +8,6 @@ import {
   groupCommandItems,
   resolveCommandSource,
 } from "./command-items";
-import { useCommandMessages } from "./command-messages";
 
 /** The state of one open command list: its steps, the shown entries, and the marked one. */
 export type CommandNavigator = ReturnType<typeof createCommandNavigator>;
@@ -100,9 +99,10 @@ export function CommandList(props: {
   query: Accessor<string>;
   /** Content between the back control and the list, such as a search field. */
   header?: JSX.Element;
+  /** The host's resolved messages, so a list loaded on demand needs no locale of its own. */
+  messages: () => UiMessages;
 }): JSX.Element {
-  const messages = useUiMessages();
-  const commandMessages = useCommandMessages();
+  const messages = props.messages;
   const nav = props.navigator;
   const matches = () => nav.entries().filter((item) => !item.disabled).length;
   // The focus stays in the field, so the marked row scrolls into view itself.
@@ -125,7 +125,7 @@ export function CommandList(props: {
               type="button"
               class="k2b-command-list__back"
               tabIndex={-1}
-              aria-label={commandMessages().back({ label: item().label })}
+              aria-label={messages().backFrom({ label: item().label })}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => nav.back()}
             >

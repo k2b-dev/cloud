@@ -75,6 +75,8 @@ below 48rem. The default `phone="menu"` keeps the menu beside its trigger.
 Use `sheetTop={(close) => ...}` for a contextual heading or a visible Done
 button above those items. Call `close` to dismiss through the same history and
 focus lifecycle as the menu actions.
+The sheet's code loads with the first sheet a page opens, so pages whose menus
+never open one do not carry it; if it cannot load, the same items open as a menu.
 A controlled dropdown (`open` supplied) always stays a menu. Choices with
 `closeOnSelect: false` keep the sheet open, with reactive checked state, just
 as they do in the desktop menu. The inherited UI locale follows into the sheet.

@@ -1,4 +1,5 @@
 import { createEffect, createSignal, createUniqueId, type JSX, on } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 import { CommandList, commandListKey, commandOptionId, createCommandNavigator } from "./CommandList";
 import type { CommandSource } from "./command-items";
 import {
@@ -38,6 +39,7 @@ export type CommandMenuProps = {
  * mark, Enter and Tab choose, Escape or Backspace in an empty field go back, and Escape in the first list closes.
  */
 function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
+  const messages = useUiMessages();
   const body: DropdownBody = (shell) => {
     const listId = `k2b-command-menu-${createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-")}`;
     const [query, setQuery] = createSignal("");
@@ -94,7 +96,7 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
         />
       </label>
     );
-    return <CommandList navigator={nav} id={listId} label={props.label} query={query} header={search} />;
+    return <CommandList navigator={nav} id={listId} label={props.label} query={query} header={search} messages={messages} />;
   };
 
   return (

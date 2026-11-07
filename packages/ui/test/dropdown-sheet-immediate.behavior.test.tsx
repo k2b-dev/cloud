@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
-import { createDomTestHarness } from "./dom";
+import { createDomTestHarness, until } from "./dom";
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else
@@ -40,12 +40,15 @@ else
     try {
       const trigger = dom.root.querySelector<HTMLButtonElement>("button")!;
       trigger.click();
+      // The sheet loads its module on first use.
+      await until(() => dialogCore.isOpen());
       choose("Copy");
       // Synchronously within the tap, so the browser still sees the gesture.
       expect(ran).toEqual(["copy"]);
       await closed();
 
       trigger.click();
+      await until(() => dialogCore.isOpen());
       choose("Duplicate");
       // Not yet: it may navigate or open a dialog, so it waits until the sheet has left the history.
       expect(ran).toEqual(["copy"]);

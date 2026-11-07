@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
-import { createDomTestHarness } from "./dom";
+import { createDomTestHarness, until } from "./dom";
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else
@@ -43,6 +43,8 @@ else
         const trigger = dom.root.querySelector<HTMLButtonElement>("button")!;
         expect(trigger.getAttribute("aria-expanded")).toBe("false");
         trigger.click();
+        // The sheet loads its module on first use.
+        await until(() => dialogCore.isOpen());
         expect(dom.document.querySelector("dialog[open] .k2b-bottom-sheet__handle")).not.toBeNull();
         expect(trigger.getAttribute("aria-expanded")).toBe("true");
         expect(calls).toEqual([true]);

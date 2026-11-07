@@ -72,3 +72,8 @@ export function createDomTestHarness(): DomTestHarness {
     },
   };
 }
+
+/** Resolves once `ready` holds, such as a sheet whose module loads on first use; the test's own timeout bounds it. */
+export const until = async (ready: () => boolean): Promise<void> => {
+  while (!ready()) await new Promise((resolve) => setTimeout(resolve, 5));
+};
