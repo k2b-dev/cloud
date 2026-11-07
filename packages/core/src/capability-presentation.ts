@@ -484,6 +484,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             permission: "Neue Berechtigungsstufe; null entzieht die vorhandene Berechtigung.",
           },
         },
+        "ai.chat.deliver": {
+          title: "Code-Ergebnis im eigenen Chat ablegen",
+          description:
+            "Legt das Ergebnis eines persönlichen Codes in einem Chat seines Eigentümers ab und benachrichtigt ihn, ohne einen KI-Lauf zu starten.",
+          input: { text: "Ergebnistext für den eigenen Chat, höchstens 10.000 Zeichen." },
+        },
         "ai.chat.run": {
           title: "Gustav-Lauf aus persönlichem Code starten",
           description:

@@ -25,7 +25,6 @@ import {
   type CapabilityExecutionContext,
   CloudResourceRefSchema,
   type CloudResourceView,
-  capabilityIdempotencyConflict,
   capabilityPage,
   defineCapabilities,
   geoContract,
@@ -34,12 +33,13 @@ import {
   PrincipalSchema,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
-import { accessRevision, isAppSessionActor, type RequestAuthority, resolveDisplayNames } from "@k2b/cloud/server";
+import { accessRevision, type RequestAuthority, resolveDisplayNames } from "@k2b/cloud/server";
 import { type AuditActor, accountsAppService, audit, coreGeo, coreGeoMap } from "@k2b/cloud/services";
 import { coreUserEvents, coreUserEventTypes } from "@k2b/cloud/services/core-user-events";
 import { principalLabel } from "@k2b/cloud/shared";
-import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
+import { err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { aiChatDeliveryAction } from "./ai-chat-delivery";
 import { aiChatRunAction, aiChatRunReadQuery } from "./ai-chat-run";
 import { aiDecisionQuery } from "./ai-decision-capability";
 import { aiGenerationQuery } from "./ai-generation-capability";
@@ -1715,6 +1715,7 @@ export const aiCapabilities = defineCapabilities({
         }
       },
     },
+    "ai.chat.deliver": aiChatDeliveryAction,
     "ai.chat.message": {
       target: "ai.chat",
       title: "Message another AI conversation",

@@ -235,6 +235,42 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     return { scanned: candidates.length, sent, failed };
   };
 
+  // Committed chat delivery receipts are the outbox; the same notification definition
+  // and stable event key make crash recovery and concurrent Core replicas safe.
+  const recoverCodeDeliveries = async (): Promise<AiNotificationRecoverySummary> => {
+    const candidates = await sql<{ message_id: string; conversation_id: string; user_id: string }[]>`
+      SELECT delivery.message_id,conversation.short_id AS conversation_id,conversation.created_by_user_id AS user_id
+      FROM code.chat_deliveries delivery JOIN ai.conversations conversation ON conversation.id=delivery.conversation_id
+      JOIN notifications.definitions definition ON definition.id=${definitions.turnCompleted.id}
+      WHERE conversation.archived_at IS NULL AND conversation.created_by_user_id IS NOT NULL
+        AND delivery.created_at>=definition.first_seen_at
+        AND NOT EXISTS(SELECT 1 FROM notifications.events event WHERE event.definition_id=${definitions.turnCompleted.id}
+          AND event.idempotency_key='code-message:' || delivery.message_id::text)
+      ORDER BY delivery.created_at,delivery.message_id LIMIT ${RECOVERY_BATCH_SIZE}`;
+    const locale = await coreSettings.get<string>("app.locale");
+    let sent = 0;
+    let failed = 0;
+    for (const candidate of candidates) {
+      try {
+        await notifications.send(definitions.turnCompleted, {
+          recipient: { userId: candidate.user_id },
+          data: { conversationId: candidate.conversation_id },
+          idempotencyKey: `code-message:${candidate.message_id}`,
+          locale,
+        });
+        sent++;
+      } catch (error) {
+        failed++;
+        log.warn("Failed to create Code result notification", {
+          messageId: candidate.message_id,
+          error: error instanceof Error ? error.message : "Notification creation failed",
+        });
+      }
+    }
+    if (failed) throw new Error(`Failed to create ${failed} Code result notification(s).`);
+    return { scanned: candidates.length, sent, failed };
+  };
+
   const recoverCostAlerts = async (): Promise<AiNotificationRecoverySummary> => {
     const groups = (await getFreeIpaConfig()).groupsAdmin;
     const candidates = await sql<{ id: string; user_id: string; kind: "warning" | "stop"; cost: number; unit: string }[]>`
@@ -374,16 +410,17 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     return { scanned: candidates.length, sent, failed };
   };
   const recover = async (): Promise<AiNotificationRecoverySummary> => {
-    const [completions, costs, approvals, modelChanges] = await Promise.all([
+    const [completions, costs, approvals, modelChanges, codeDeliveries] = await Promise.all([
       recoverCompletions(),
       recoverCostAlerts(),
       recoverApprovalWaiting(),
       recoverModelChanges(),
+      recoverCodeDeliveries(),
     ]);
     return {
-      scanned: completions.scanned + costs.scanned + approvals.scanned + modelChanges.scanned,
-      sent: completions.sent + costs.sent + approvals.sent + modelChanges.sent,
-      failed: completions.failed + costs.failed + approvals.failed + modelChanges.failed,
+      scanned: completions.scanned + costs.scanned + approvals.scanned + modelChanges.scanned + codeDeliveries.scanned,
+      sent: completions.sent + costs.sent + approvals.sent + modelChanges.sent + codeDeliveries.sent,
+      failed: completions.failed + costs.failed + approvals.failed + modelChanges.failed + codeDeliveries.failed,
     };
   };
 

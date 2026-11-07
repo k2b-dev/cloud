@@ -97,7 +97,7 @@ export type AiRememberableCapabilityApprovals = ReadonlyMap<string, string>;
  * - `skill`: the name is an Assistant Skill; load_skill loads it, not load_tools;
  * - `unknown`: no tool has this exact name;
  * - `not_offered_in_turn`: the tool exists, but this turn's client or task does not provide it;
- * - `not_allowed`: the conversation's fixed tool scope or task grants exclude it;
+ * - `not_allowed`: the conversation's fixed tool scope excludes it;
  * - `app_offline`: the app operation is not in the live registry now.
  */
 export const AI_TOOL_UNAVAILABLE_REASONS = ["unknown", "skill", "not_offered_in_turn", "not_allowed", "app_offline"] as const;
@@ -724,7 +724,7 @@ export const createAiToolMetaTools = (input: {
       : input.appOperations === "not_offered"
         ? " App operations are not offered in this turn."
         : input.appOperations === "not_allowed"
-          ? " This chat's tool scope allow no app operations. Do not search for app operations in this turn; continue with the available tools or tell the user which grant is missing."
+          ? " This chat's tool scope allows no app operations. Do not search for app operations in this turn; continue with the available tools or tell the user which grant is missing."
           : " No Cloud app publishes operations right now. Do not search for app operations again in this turn; tell the user which app is not reachable instead of claiming a permanent product limitation.";
   const unavailableLoadedNames = input.unavailableLoadedNames ?? [];
   const unavailableLoadedNotice =
@@ -1009,7 +1009,7 @@ export const createAiToolResolver =
       if (!input.listRegistry) return "not_offered_in_turn";
       return liveRegistry === null || persistedLoadedNames.includes(name) ? "app_offline" : "unknown";
     };
-    // Independent of which apps are live: the fixed scope or task grants name no app operation at all.
+    // Independent of which apps are live: the fixed scope names no app operation at all.
     const scopeExcludesAppOperations = allowed !== null && ![...allowed].some((name) => name.includes("."));
     const eagerNames = new Set(builtIns.map((tool) => tool.def.name).filter((name) => !CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has(name)));
     const loadTools = createAiToolLoader({

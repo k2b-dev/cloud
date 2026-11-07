@@ -398,7 +398,10 @@ suite("AI conversation store integration", () => {
     }
   });
 
-  test("an interactive turn defers new background results without losing or compacting them", async () => {
+  test.each([
+    { scheduledTask: { taskId: "task", occurrenceId: "run" } },
+    { codeDelivery: { codeId: "c_report", runId: "run", effectKey: "report" } },
+  ])("an interactive turn defers new background results without losing or compacting them: %j", async (meta) => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
@@ -420,7 +423,7 @@ suite("AI conversation store integration", () => {
       const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground" });
       await sql`INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, meta)
         VALUES (${createAiShortId()}, ${chat.id}, 2, 'message', 'assistant', ${JSON.stringify(assistantMessage("Background result"))}::text::jsonb,
-          '{"scheduledTask":{"taskId":"task","occurrenceId":"run"}}'::jsonb)`;
+          ${JSON.stringify(meta)}::text::jsonb)`;
       await sql`UPDATE ai.conversations SET background_received_at = now() WHERE id = ${chat.id}`;
       expect((await session.load()).map((entry) => entry.message)).toEqual([userMessage("Hello")]);
       // Nessi's next local sequence is already occupied by the delivered result.

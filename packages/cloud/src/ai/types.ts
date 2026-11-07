@@ -315,6 +315,8 @@ export type AiStoredMessage = {
       sourceTitle: string;
       sourceHref?: string;
     };
+    /** A committed personal Code result; deferred from any already-running model turn. */
+    codeDelivery?: { codeId: string; runId: string; effectKey: string };
     scheduledTask?: {
       reason?: { code: string; at: string; action?: string };
       /** Historical marker; the original stored text remains the display source. */

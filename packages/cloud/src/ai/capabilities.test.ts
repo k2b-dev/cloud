@@ -2094,3 +2094,17 @@ test("app access removes Assistant schemas, app names and loaded tools from disc
     ],
   });
 });
+
+test("explains when an interactive scope offers only built-in tools", async () => {
+  const tools = await createAiToolResolver({
+    conversationId: "interactive",
+    actor,
+    staticTools: [],
+    allowedTools: ["read_file", "memory"],
+    store: createRunToolStore([]),
+    listRegistry: async () => [capabilityApp("spaces")],
+  })();
+  const description = tools.find((tool) => tool.def.name === "search_tools")!.def.description;
+  expect(description).toContain("This chat's tool scope allows no app operations.");
+  expect(description).not.toContain("No Cloud app publishes operations right now");
+});

@@ -36,22 +36,38 @@ cld code check ./code/work-shop/workshop-owner
 `code.tsx`; personal projects start with a schedule and can add routes and pages
 the same way.
 
-Use `c.page(tree)` for a Cloud-rendered document. In a `.tsx` entry file, import
-`jsx` and the description components from `@sdk`. The checker compiles TSX with
+Build a page from blocks and return it with `c.page(...)`. In a `.tsx` entry
+file, import `jsx` and the blocks from `@sdk`. The checker compiles TSX with
 this factory. The generated `tsconfig.json` includes `.ts` and `.tsx` files and
 sets `jsx: "react"` with `jsxFactory: "jsx"`. No React, Hono or Solid runtime is
-needed; the factory produces description objects.
+needed.
 
+<!-- code-page-example -->
 ```tsx
-import { app, jsx, Page, Section, Text, Form, Chart } from "@sdk";
+import { app, jsx, Page, Stats, Stat, Section, Chart, Table, Column, Form, Field, Option } from "@sdk";
+
+const items = [{ item: "Chair", status: "In repair", count: 2 }, { item: "Lamp", status: "Ready", count: 5 }];
 
 app.get("/", c => c.page(
-  <Page title="Workshop">
-    <Section title="Today">
-      <Text>Scan an item to open its details.</Text>
-      <Chart.Bar title="Items" data={[{ label: "Ready", value: 12 }]} />
-      <Form title="Find an item" action="/find" submit="Find"
-        fields={[{ type: "scan", name: "barcode", label: "Barcode", required: true }]} />
+  <Page title="Workshop" subtitle="As of 09:40" icon="ti ti-tool" color="blue">
+    <Stats>
+      <Stat label="Received" value={128} delta={{ value: 0.12, better: "up" }} compare={{ label: "Last week", value: 114 }} />
+      <Stat label="Revenue" value={4610} format={{ style: "currency", currency: "EUR" }} />
+    </Stats>
+    <Section title="Today" icon="ti ti-calendar-event" color="blue">
+      <Chart.Bar width="twoThirds" title="Items per status" data={[{ label: "Received", value: 12 }, { label: "Ready", value: 4 }]} />
+      <Form width="third" title="Find an item" action="/find" submit="Find">
+        <Field.Scan name="barcode" label="Barcode" required />
+        <Field.Select name="status" label="Status" value="open">
+          <Option value="open" label="Open" />
+          <Option value="done" label="Done" />
+        </Field.Select>
+      </Form>
+      <Table title="Items" rows={items}>
+        <Column key="item" label="Item" />
+        <Column key="status" label="Status" />
+        <Column key="count" label="Count" />
+      </Table>
     </Section>
   </Page>
 ));
@@ -59,46 +75,49 @@ app.post("/find", async c => {
   const form = await c.req.formData();
   return c.redirect(`/items/${encodeURIComponent(String(form.get("barcode") ?? ""))}`);
 });
+export default app;
 ```
 
-Components build data only. The root is `{ version: 1, kind: "Page", title,
-children }`. Plain objects are an equal alternative, for example:
+Blocks take typed props: an unknown prop or a value of the wrong type is a
+type error in your editor and in `cld code check`. Data, such as a table's
+`rows` or a chart's `data`, is a prop; the parts of a block are its children.
+A part outside its block, or another element among a block's parts, fails
+`cld code check` with `code_page_child`; one kept in a variable fails when the
+route builds the page. Parts may come from data, such as
+`{statuses.map(status => <Option value={status} label={status} />)}`. Only
+pages built from blocks reach `c.page`; a hand-written object does not.
 
-```ts
-app.get("/", c => c.page({
-  version: 1, kind: "Page", title: "Workshop",
-  children: [{ kind: "Text", text: "Your Code page is ready." }],
-}));
-```
+| Block | Props | Children |
+| --- | --- | --- |
+| `Page` | `title`, optional `subtitle`, `icon`, `color`, `follow`; the root of every page | blocks |
+| `Section` | `title`, optional `description`, `icon`, `color` | blocks |
+| `Stats` | none | 1–6 `Stat` |
+| `Stat` | `label`, `value` (number, text or `null`), optional `format`, `delta`, `compare`, `trend` | none |
+| `Text` | none | text |
+| `Heading` | optional `level: 2 \| 3 \| 4` | text |
+| `Table` | `title`, `rows` of scalar values, optional `empty` text and `width` | 1–20 `Column` |
+| `Column` | `key` (the row field), `label`, optional number `format` | none |
+| `Detail` | `title`, optional `width` | `Item` |
+| `Item` | `label`, `value` | none |
+| `Form` | `title`, `action`, `submit`, optional `width`; always POST | 1–40 `Field.*` |
+| `Field.Text`, `Field.Email`, `Field.Textarea`, `Field.Scan` | `name`, `label`, optional text `value`, `required`, `error` | none |
+| `Field.Number` | as above, number `value` | none |
+| `Field.Checkbox` | as above, boolean `value` | none |
+| `Field.Select` | as above, text `value` | `Option` |
+| `Option` | `value`, `label` | none |
+| `Chart.Bar`, `Chart.Line`, … | the chart's own props, such as `title`, `data` or `series`, optional `width` | none |
+| `Chart.Empty` | `title`, `empty`, optional `width` | none |
+| `Link` | `label`, `href` | none |
+| `Button`, `Action` | `label`, `action`, optional string `values`; always POST | none |
+| `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` | none |
 
-TSX and objects produce the same tree and pass the same Core validation. Core checks
-every returned tree before rendering it. Text is escaped. Unknown kinds and
-properties, HTML/SVG, event handlers, functions, accessors and foreign links
-are rejected. `c.html()` is unavailable.
-
-The version 1 allow-list is:
-
-| Node | Description fields |
-| --- | --- |
-| `Page` | `title`, `children`, optional `subtitle`, `icon`, `color` and `follow`; root only, `version: 1` |
-| `Section` | `title`, `children`, optional `description`, `icon` and `color` |
-| `Stats` | `items` (1–6 key figures, see below) |
-| `Text` | `text`; TSX also accepts a text child |
-| `Heading` | `text`, optional `level: 2 \| 3 \| 4` |
-| `Table` | `title`, `columns: [{ key, label, format? }]`, `rows` of scalar values, optional `empty` text and `width` |
-| `Form` | `title`, `action`, `fields`, `submit`, optional `width`; always POST |
-| `Detail` | `title`, `items: [{ label, value }]`, optional `width` |
-| `Chart` | `description: { kind, … }` and optional `width`; with nothing to draw, `title` and `empty` instead; portable chart data, no callbacks |
-| `Link` | `label`, `href` |
-| `Button`, `Action` | `label`, `action`, optional string `values`; always POST |
-| `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` |
-
-Fields have `name`, `label`, `type`, optional `value`, `required` and `error`. Types are
-`text`, `email`, `number`, `textarea`, `select`, `checkbox` and `scan`. Only
-`select` takes `options: [{ value, label }]`. Values match the field type.
 Field names are unique; `_csrf` is reserved. Cloud inserts the CSRF token into
 forms and actions and removes it before invoking the handler. Links and POST
 destinations resolve inside `/code/<id>/`; they cannot leave that Code.
+
+Core checks every page before drawing it, whatever produced it. Text is
+escaped. HTML, SVG, event handlers, functions, accessors, foreign links and
+anything not built from these blocks are rejected. `c.html()` is unavailable.
 
 ### Lay out a page
 
@@ -107,14 +126,14 @@ chip of its `color`, the `title` and a quiet `subtitle`; then key figures, then
 sections. A `Section` names a topic with an optional `icon`, `color` and
 `description` beside its title.
 
-Blocks sit on a grid of six columns. `Chart`, `Table`, `Detail` and `Form`
+Blocks sit on a grid of six columns. Charts, `Table`, `Detail` and `Form`
 are framed panels; `width` gives a panel `third`, `half`, `twoThirds` or
 `full` (the default) of its row. Panels in one row share its height. The grid
 measures its own width: up to 1,000 px a third takes half a row and two thirds
 the whole row, up to 600 px every panel takes the row. All other blocks take
 the whole row.
 
-`Stats` shows up to six key figures in one row. Each item has a `label` and a
+`Stats` shows up to six key figures in one row. A `Stat` has a `label` and a
 `value` (number, text or `null` for not counted), and optionally a `format`
 (the chart number format: `style`, `currency`, `unit`, `decimals`, `compact`),
 a `delta` with the change since the comparison (`value` is a share,
@@ -124,34 +143,20 @@ with `label` and `value`, and a `trend` of up to 60 numbers. A column
 `format` formats a table's numbers the same way.
 
 `icon` is a Tabler class such as `ti ti-package`. `color` is one of `zinc`,
-`blue`, `emerald`, `amber` and `red`; the AI colour is reserved. In TSX,
-`Chart.Bar` and the other chart builders take `width` beside the description.
-A chart description needs at least one value, so a chart with nothing to draw
-yet is `<Chart title="Items per status" empty="No item arrived today." />`:
-the frame keeps its title and place and says why it is empty.
-
-```tsx
-<Page title="Workshop" subtitle="As of 09:40" icon="ti ti-tool" color="blue">
-  <Stats items={[
-    { label: "Received", value: 128, delta: { value: 0.12, better: "up" }, compare: { label: "Last week", value: 114 } },
-    { label: "Revenue", value: 4610, format: { style: "currency", currency: "EUR" } },
-  ]} />
-  <Section title="Today" icon="ti ti-calendar-event" color="blue">
-    <Chart.Bar width="twoThirds" title="Items per status" data={[{ label: "Received", value: 12 }]} />
-    <Detail width="third" title="Chair" items={[{ label: "Code", value: "W-1" }]} />
-  </Section>
-</Page>
-```
+`blue`, `emerald`, `amber` and `red`; the AI colour is reserved. A chart needs
+at least one value, so a chart with nothing to draw yet is
+`<Chart.Empty title="Items per status" empty="No item arrived today." />`: the
+frame keeps its title and place and says why it is empty.
 
 Cloud draws every block with its shared components, on the server and again in
 the browser with the same result, in light and dark and at phone width. A chart
 draws its description with the shared chart renderer and can switch to its data
-table. Supported chart descriptions are `bar`, `line`, `scatter`, `pie`, `donut`,
-`histogram`, `gauge`, `sparkline`, `boxplot`, `heatmap`, `barGauge` and `stat`,
-with matching `Chart.Bar`, `Chart.Line`, etc. builders. The portable chart data
-contract is exported by `@k2b/editor/chart-schema`. A table sorts by any column
+table. The chart blocks are `Chart.Bar`, `Chart.Line`, `Chart.Scatter`,
+`Chart.Pie`, `Chart.Donut`, `Chart.Histogram`, `Chart.Gauge`, `Chart.Sparkline`,
+`Chart.Boxplot`, `Chart.Heatmap`, `Chart.BarGauge` and `Chart.Stat`; their props
+are the portable chart data of `@k2b/editor/chart-schema`. A table sorts by any column
 and shows `empty`, or a default text, when it has no rows. Neighbouring
-`Button` and `Action` nodes share one row.
+`Button` and `Action` blocks share one row.
 
 A `scan` field is a text field with a **Scan** button. The button opens the
 device camera in Cloud's QR code scanner; the read text goes into the field and
@@ -162,7 +167,7 @@ Forms and actions send without reloading the document. While a POST runs, its
 button shows that it is busy and nothing else on the page moves. A handler
 answers with a page or a redirect:
 
-- `c.page(tree)` replaces the page in place. To report invalid input, return
+- `c.page(...)` replaces the page in place. To report invalid input, return
   the form again with the submitted values and an `error` on each field.
 - `c.redirect(path)` opens that page of this Code; Back returns to the
   previous one.
@@ -182,7 +187,7 @@ following page also loads again when its tab becomes visible. Delivery of
 platform events to open pages arrives with the event service; until then only
 the return to the tab reloads a following page.
 
-A tree is limited to 64 KiB, 256 nodes and 12 node levels. A table has at most
+A page is limited to 64 KiB, 256 blocks and 12 levels of nesting. A table has at most
 200 rows and 20 columns; a form has at most 40 fields. Portable chart budgets
 are eight series, 200 values per series and 1,600 marks. Request and response
 limits still apply to the complete envelope.
@@ -247,6 +252,8 @@ matching the dispatcher contract. Choose a stable key from
 the business operation, such as a message ID and revision. Keys are trimmed,
 contain 1–200 visible ASCII characters, and cannot contain spaces. Repeating a key
 has the platform's existing 24-hour idempotency semantics.
+Chat result delivery and chat turns scope their keys to one run, as described below;
+other Actions retain their cross-run business-key deduplication.
 
 Methods resolve the operation's domain `data`, typed from `dataSchema`.
 Bridge refusals reject the promise; catch a failure only when the Code can
@@ -264,6 +271,25 @@ Queries are absent from the SDK.
 `code_run` uses the same operation signatures for one chat execution. It has
 no schedule registrations, version or owner. The chat execution path still
 asks for writing Actions as required by the normal approval policy.
+
+## Schedule a recurring local time
+
+For a recurring local time, declare the cron expression and an IANA time zone
+on the first argument. Keep the declaration at module level and use constants,
+including imported `as const` objects:
+
+```ts
+app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" }, async () => {
+  // Runs at 09:00 in Berlin, including after a daylight-saving change.
+});
+```
+
+A string cron and an object without `timeZone` use UTC. The optional third
+argument still supplies a readable `title` and may supply the stable `name`;
+an inline `name` takes precedence. Cron uses the same normalizer and scheduler
+as workflows and Assistant routines: a local minute skipped by the spring clock
+change does not run, and a repeated autumn minute runs once, at its first
+occurrence. The checked manifest retains the declared `timeZone`.
 
 ## Run once at a chosen time
 
@@ -292,6 +318,42 @@ or the recovery window expires. A consumed date does not run again after a resta
 activation. The automation list shows its `at`, `timeZone`, and a null
 `nextRunAt` once consumed or expired.
 
+## Deliver a result to your Gustav chat
+
+Personal Code can append a result to one of its owner's own active Assistant
+chats through `core.ai.chat.deliver`. Discover the actual chat ID and generated
+handle before writing the call:
+
+```ts
+import { app, core } from "@sdk";
+
+app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" }, async () => {
+  await core.ai.chat("Chat23").ai.chat.deliver({
+    text: "Your weekly report is ready.",
+    idempotencyKey: "weekly-report",
+  });
+});
+export default app;
+```
+
+`Chat23` is an example, not a destination to copy. Delivery appends an assistant
+message and marks the chat unread; it does not start another AI turn. Cloud
+keeps each delivery as its own answer. A result arriving during an interactive
+turn enters model context on the next turn and survives the current turn's
+compaction. Cloud
+creates the existing Assistant response notification on its next recovery pass,
+normally within one minute, subject to the owner's notification preferences.
+Text must contain 1–10,000 characters after trimming. Use one stable effect key
+per delivery: it is scoped to the current run, so retrying returns the original
+message instead of appending another. Reusing that key for different text or a
+different destination returns `IDEMPOTENCY_CONFLICT`.
+
+Only personal Code can use this Action. Resource- and app-owned Code, ordinary
+interactive callers, archived chats and another person's chats are refused.
+The Action uses the `silent: "you"` policy and appears in the run's normal
+capability call log. It performs no model inference and consumes no Code AI
+budget.
+
 ## Start a Gustav turn in your own chat
 
 Personal Code uses `core.ai.chat.run` when the task needs Gustav to choose and
@@ -315,8 +377,8 @@ export default app;
 ```
 
 `Chat23` is a fictional destination. Keep the routine's actual time zone.
-For recurring routines, use `{ cron, timeZone }` when that schedule form is
-available in the installed SDK. The Action accepts a trimmed prompt of
+For recurring routines, use `{ cron, timeZone }` to preserve the routine's time
+zone. The Action accepts a trimmed prompt of
 1–10,000 characters and optional `context` of at most 10,000 characters.
 Context is source data, not additional authority or trusted instructions.
 

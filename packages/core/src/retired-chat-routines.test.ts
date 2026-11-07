@@ -35,4 +35,5 @@ test("Core no longer advertises routine types, readers or actions", async () => 
     expect(name).not.toMatch(/^ai\.(tasks\.|task\.)/);
   }
   expect(aiCapabilities.actions["ai.chat.run"]).toBeDefined();
+  expect(aiCapabilities.actions["ai.chat.deliver"]).toBeDefined();
 });
