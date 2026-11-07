@@ -74,23 +74,25 @@ or less (one at 280 px or less). Tiles in a row share one height. Tiles keep
 | `onRetry` | `() => void` | Offers "Try again" after an error and "Reload" beside `stale`. |
 | `stale` | `string` | Replaces the support line with a warning such as "As of 09:12 · not current". |
 
-`size="lg"` is the dashboard tile: a 28 px figure in a tile of 136 px. When
-the grid is 600 px wide or less, the change badge moves under the figure in
-every size, and the support line gives the comparison its own line with the
-trend below it; the `lg` tile is then 172 px.
+`size="lg"` is the dashboard tile: a 28 px figure in a tile of at least 136 px.
+When the grid is 600 px wide or less, or a tile is narrower than 200 px, the
+change badge moves under the figure in every size and its slot is kept free in
+every state; the `lg` tile is then at least 172 px.
 
-Tiles in one row share three rows (head, figure, support line), so their
-figures sit on one line whether or not a tile has a change badge, an icon, a
-wrapped label or a longer support line. Every state keeps the same rows, so
-loading, error and data have one height.
+In a grid the figure follows the head directly, and every head keeps the icon
+chip's height when any tile in the grid has an icon, so figures in one row sit
+on one line whether or not a tile has a change badge, an icon, a link or a
+longer support line. The support line sits at the bottom of the tile.
 
-The figure and the comparison are never cut off. In a grid the figure shrinks
-with its tile's width within fixed bounds (`lg` 18–28 px, `md` 16–20 px, `sm`
-14–16 px), and support texts wrap instead of ending in an ellipsis; only a text
-long enough to wrap makes its row taller. Below 200 px of tile width an `lg`
-tile drops its trend. These adjustments follow the grid; a `StatCell` on its
-own keeps its sizes and wraps. `md` and `sm` tiles take the height of their
-content.
+The figure and the support texts (comparison, note) are never cut off. The
+figure shrinks with its tile's width within fixed bounds (`lg` 18–28 px, `md`
+16–20 px, `sm` 14–16 px), and support texts wrap instead of ending in an
+ellipsis. A tile narrower than 240 px gives the comparison its own line and the
+trend the next, and keeps that room in every state, so loading, error and data
+have one height; a support text longer than two lines still makes its tile
+taller when it arrives. Below 200 px an `lg` tile drops its trend. These
+adjustments follow the grid; a `StatCell` on its own keeps its sizes and
+wraps. `md` and `sm` tiles take the height of their content.
 
 ### Change and comparison
 
@@ -145,7 +147,7 @@ focusable link. Keep its combined text useful at the destination.
 
 Icons, the change arrow, and sparklines supplement the text; they do not
 replace a status label or numeric value. The change badge has its own spoken
-label. Labels and support lines may end in an ellipsis; the value is never cut.
+label. A label may end in an ellipsis; figures, comparisons and notes in a grid are never cut.
 
 A trend sparkline uses the tile's label as its accessible name. Its tooltip
 names each value after the tile label and formats it in the inherited locale.

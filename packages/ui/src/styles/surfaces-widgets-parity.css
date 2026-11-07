@@ -736,8 +736,8 @@
 /* Tiles side by side put their figures on one line whether or not one has a change badge, an icon or a longer support
    line: the figure follows the head directly (the head keeps the icon chip's height when any tile in the row has
    one), and the support line takes the free space above it at the bottom. */
-.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell:not([data-wrap]) > .k2b-stat-cell__main { margin-top: 0; }
-.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell:not([data-wrap]) > .k2b-stat-cell__support { margin-top: auto; }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell > .k2b-stat-cell__main { margin-top: 0; }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell > .k2b-stat-cell__support { margin-top: auto; }
 .k2b-ui .k2b-stat-grid__body:has(> .k2b-stat-cell .k2b-stat-cell__icon) > .k2b-stat-cell > .k2b-stat-cell__head { min-height: 1.75rem; }
 .k2b-ui .k2b-stat-grid__body:has(> .k2b-stat-cell .k2b-stat-cell__icon) > .k2b-stat-cell[data-size="sm"] > .k2b-stat-cell__head { min-height: 1.375rem; }
 .k2b-ui .k2b-stat-grid__body:has(> .k2b-stat-cell .k2b-stat-cell__icon) > .k2b-stat-cell[data-size="lg"] > .k2b-stat-cell__head { min-height: 2.125rem; }
@@ -745,7 +745,7 @@
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell:not([data-wrap]) > .k2b-stat-cell__support { height: auto; min-height: 1rem; flex-wrap: wrap; }
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="sm"]:not([data-wrap]) > .k2b-stat-cell__support { min-height: 0.875rem; }
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="lg"]:not([data-wrap]) > .k2b-stat-cell__support { min-height: 1.125rem; }
-.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell:not([data-wrap]) .k2b-stat-cell__sub { overflow: visible; overflow-wrap: break-word; text-overflow: clip; white-space: normal; }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell .k2b-stat-cell__sub { overflow: visible; overflow-wrap: break-word; text-overflow: clip; white-space: normal; }
 /* The trend reaches into the gaps above and below instead of making its line taller, so a tile with a trend keeps the
    height of one without. */
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell:not([data-wrap]) .k2b-stat-cell__trend { margin-block: -0.3125rem; }
@@ -755,13 +755,6 @@
    the dashboard tile grows to make room. */
 @container k2b-stat-grid (max-width: 600px) {
   .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="lg"]:not([data-wrap]) { min-height: 10.75rem; }
-  /* Narrow tiles give the comparison its own line and the trend the next, in every state, so nothing is cut and
-     nothing moves when data arrives. */
-  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell:not([data-wrap]) > .k2b-stat-cell__support { min-height: 2rem; align-content: flex-start; row-gap: 0; }
-  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="sm"]:not([data-wrap]) > .k2b-stat-cell__support { min-height: 1.75rem; }
-  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="lg"]:not([data-wrap]) > .k2b-stat-cell__support { min-height: 2.25rem; }
-  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell:not([data-wrap]) .k2b-stat-cell__trend { margin-left: 0; }
-  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell:not([data-wrap]) .k2b-stat-cell__sub { flex: 1 1 100%; }
   .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell:not([data-wrap]) .k2b-stat-cell__main {
     flex-direction: column;
     align-items: flex-start;
@@ -773,9 +766,11 @@
   .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="sm"]:not([data-wrap]) .k2b-stat-cell__main { min-height: 3.125rem; }
   .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="lg"]:not([data-wrap]) .k2b-stat-cell__main { min-height: 3.875rem; }
 }
-.k2b-ui .k2b-stat-cell--link { padding-right: 1.75rem; transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out); }
+.k2b-ui .k2b-stat-cell--link { transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out); }
 .k2b-ui .k2b-stat-cell--link:hover { background: var(--k2b-hover); }
 .k2b-ui .k2b-stat-cell__head { display: flex; min-width: 0; align-items: center; gap: 0.625rem; }
+/* The link icon sits in the head's corner; only the head leaves room for it, so a linked figure sizes like its neighbours. */
+.k2b-ui .k2b-stat-cell--link .k2b-stat-cell__head { padding-right: 0.75rem; }
 .k2b-ui .k2b-stat-cell[data-size="lg"] .k2b-stat-cell__head { min-height: 2.125rem; }
 .k2b-ui .k2b-stat-cell__icon {
   display: inline-grid;
@@ -828,8 +823,8 @@
 }
 .k2b-ui .k2b-stat-cell__value[data-size="sm"] { font-size: 1rem; line-height: 1.5rem; }
 .k2b-ui .k2b-stat-cell__value[data-size="lg"] { font-size: 1.75rem; letter-spacing: -0.02em; line-height: 2.25rem; }
-.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell .k2b-stat-cell__value { font-size: clamp(1rem, 13cqi, 1.25rem); line-height: 1.4; }
-.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell .k2b-stat-cell__value[data-size="sm"] { font-size: clamp(0.875rem, 11cqi, 1rem); }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell .k2b-stat-cell__value { font-size: clamp(1rem, 13cqi, 1.25rem); line-height: 1.75rem; }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell .k2b-stat-cell__value[data-size="sm"] { font-size: clamp(0.875rem, 11cqi, 1rem); line-height: 1.5rem; }
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell .k2b-stat-cell__value[data-size="lg"] { font-size: clamp(1.125rem, 16cqi, 1.75rem); line-height: 2.25rem; }
 .k2b-ui .k2b-stat-cell__value[data-empty] { color: var(--k2b-text-muted); }
 .k2b-ui .k2b-stat-cell__delta {
@@ -888,7 +883,17 @@
 .k2b-ui .k2b-stat-cell[data-status="error"] .k2b-stat-cell__retry { margin-left: 0; }
 .k2b-ui .k2b-stat-cell__trend { width: 4.5rem; height: 1.625rem; flex: none; margin-left: auto; color: var(--stdlib-chart-c1); }
 .k2b-ui .k2b-stat-cell[data-size="sm"] .k2b-stat-cell__trend { width: 3.5rem; height: 1.25rem; }
-/* A narrow tile keeps the figure whole: the change badge moves under it, and the dashboard tile drops its trend. */
+/* A tile too narrow for comparison and trend side by side gives the comparison its own line and the trend the next, in
+   every state, so nothing is cut and nothing moves when data arrives. */
+@container k2b-stat-cell (max-width: 240px) {
+  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell:not([data-wrap]) > .k2b-stat-cell__support { min-height: 2.875rem; align-content: flex-start; row-gap: 0.25rem; }
+  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="sm"]:not([data-wrap]) > .k2b-stat-cell__support { min-height: 2.375rem; }
+  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="lg"]:not([data-wrap]) > .k2b-stat-cell__support { min-height: 3rem; }
+  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size]:not([data-wrap]) .k2b-stat-cell__trend { margin: 0; }
+  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell:is([data-size], [data-wrap]) .k2b-stat-cell__sub { flex: 1 1 100%; }
+}
+/* A narrow tile keeps the figure whole: the change badge moves under it, and the dashboard tile drops its trend (its
+   support line then keeps two text lines). */
 @container k2b-stat-cell (max-width: 200px) {
   .k2b-ui .k2b-stat-cell:not([data-wrap]) .k2b-stat-cell__main {
     flex-direction: column;
@@ -900,6 +905,7 @@
   .k2b-ui .k2b-stat-cell[data-size="sm"]:not([data-wrap]) .k2b-stat-cell__main { min-height: 3.125rem; }
   .k2b-ui .k2b-stat-cell[data-size="lg"]:not([data-wrap]) .k2b-stat-cell__main { min-height: 3.875rem; }
   .k2b-ui .k2b-stat-cell[data-size="lg"] .k2b-stat-cell__trend { display: none; }
+  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="lg"]:not([data-wrap]) > .k2b-stat-cell__support { min-height: 2.25rem; row-gap: 0; }
 }
 /* A cell on its own shows all of its text: lines wrap, and the accent moves below the sub line when both do not fit. */
 .k2b-ui .k2b-stat-cell[data-wrap] :is(.k2b-stat-cell__label, .k2b-stat-cell__value, .k2b-stat-cell__sub) { overflow-wrap: anywhere; white-space: normal; }
