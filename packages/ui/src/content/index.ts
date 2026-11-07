@@ -1,3 +1,4 @@
+export { BalanceSummary, type BalanceSummaryProps } from "./BalanceSummary";
 export type {
   CalendarAttendee,
   CalendarCommand,
@@ -20,7 +21,6 @@ export type {
   CalendarView,
 } from "./Calendar";
 export { default as Calendar } from "./Calendar";
-
 export type { ChartKind, ChartLabels, ChartProps, ChartRenderOptions } from "./Chart";
 export { default as Chart } from "./Chart";
 export type { ChartExplorerColumn, ChartExplorerProps, ChartLegendEntry } from "./ChartExplorer";
@@ -86,7 +86,6 @@ export {
   formatFileViewSize,
   getFileViewPreviewKind,
 } from "./FileView";
-export { BalanceSummary, type BalanceSummaryProps } from "./BalanceSummary";
 export { FlowAmount, type FlowAmountDirection, type FlowAmountProps, flowDirection } from "./FlowAmount";
 export type { KbdProps } from "./Kbd";
 export { Kbd } from "./Kbd";

@@ -43,7 +43,7 @@ export const budgetState = (item: Pick<BudgetItem, "used" | "expected" | "limit"
  */
 export function BudgetList(props: BudgetListProps): JSX.Element {
   const locale = useLocale();
-  const t = useBudgetMessages();
+  const t = useBudgetMessages(() => props.locale);
   const money = (value: number) =>
     new Intl.NumberFormat(props.locale ?? locale(), {
       style: "currency",
@@ -92,10 +92,7 @@ export function BudgetList(props: BudgetListProps): JSX.Element {
                     class="k2b-budget__bar"
                     size="sm"
                     label={item.label}
-                    segments={[
-                      { value: state.used },
-                      { value: state.expected, pattern: "hatched" },
-                    ]}
+                    segments={[{ value: state.used }, { value: state.expected, pattern: "hatched" }]}
                     limit={state.limit}
                     valueText={t().valueText({
                       used: money(state.used),

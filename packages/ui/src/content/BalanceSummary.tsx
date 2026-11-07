@@ -21,7 +21,8 @@ export type BalanceSummaryProps = {
   class?: string;
 };
 
-const amount = (value: number) => (Number.isFinite(value) ? Math.abs(value) : 0);
+/** A movement as an amount; a broken value stays broken, so it shows "—" and never a believable zero. */
+const amount = (value: number) => (Number.isFinite(value) ? Math.abs(value) : Number.NaN);
 
 /**
  * One line from the start of a period to its end: "Start 18,800 € + ↙ 29,260 € − ↗ 29,520 € = End 18,540 €". In and
@@ -29,17 +30,19 @@ const amount = (value: number) => (Number.isFinite(value) ? Math.abs(value) : 0)
  */
 export function BalanceSummary(props: BalanceSummaryProps): JSX.Element {
   const locale = useLocale();
-  const t = useBalanceSummaryMessages();
+  const t = useBalanceSummaryMessages(() => props.locale);
   const lang = () => props.locale ?? locale();
   const decimals = () => props.decimals ?? 0;
   const balance = (value: number) =>
-    new Intl.NumberFormat(lang(), {
-      style: "currency",
-      currency: props.currency,
-      minimumFractionDigits: decimals(),
-      maximumFractionDigits: decimals(),
-    }).format(value === 0 ? 0 : value);
-  const start = () => (Number.isFinite(props.start) ? props.start : 0);
+    !Number.isFinite(value)
+      ? "—"
+      : new Intl.NumberFormat(lang(), {
+          style: "currency",
+          currency: props.currency,
+          minimumFractionDigits: decimals(),
+          maximumFractionDigits: decimals(),
+        }).format(value === 0 ? 0 : value);
+  const start = () => props.start;
   const end = () => start() + amount(props.in) - amount(props.out);
   return (
     <p class={props.class ? `k2b-balance ${props.class}` : "k2b-balance"}>
@@ -50,7 +53,7 @@ export function BalanceSummary(props: BalanceSummaryProps): JSX.Element {
         +
       </span>
       <FlowAmount
-        value={amount(props.in) || 0}
+        value={amount(props.in)}
         currency={props.currency}
         locale={lang()}
         decimals={decimals()}
@@ -60,7 +63,7 @@ export function BalanceSummary(props: BalanceSummaryProps): JSX.Element {
         −
       </span>
       <FlowAmount
-        value={-amount(props.out) || 0}
+        value={-amount(props.out)}
         currency={props.currency}
         locale={lang()}
         decimals={decimals()}

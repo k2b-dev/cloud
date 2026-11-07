@@ -37,10 +37,10 @@ const budgetMessages = i18n.define({
 
 export type BudgetMessages = ReturnType<(typeof budgetMessages)["resolve"]>["t"];
 
-/** Resolved from the inherited render locale. */
-export const useBudgetMessages = (): (() => BudgetMessages) => {
+/** Resolved from an explicit locale override, else the inherited render locale. */
+export const useBudgetMessages = (override?: () => string | undefined): (() => BudgetMessages) => {
   const locale = useLocale();
-  return () => budgetMessages.resolve([locale()]).t;
+  return () => budgetMessages.resolve([override?.() ?? locale()]).t;
 };
 
 export const checkBudgetMessages = () => budgetMessages.check();

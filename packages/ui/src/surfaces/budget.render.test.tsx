@@ -124,6 +124,23 @@ describe("balance summary", () => {
     expect(html.match(/class="k2b-balance__op" aria-hidden="true"/g)?.length).toBe(3);
   });
 
+  test("a broken figure shows a dash in its place and in the end, never a believable zero", () => {
+    const html = de(() => createComponent(BalanceSummary, { start: 1000, in: Number.NaN, out: 200, currency: "EUR" }));
+    expect(html).toMatch(/Ende <b>—<\/b>/);
+    expect(html).toContain(", Betrag unbekannt<");
+    expect(de(() => createComponent(BalanceSummary, { start: Number.NaN, in: 10, out: 0, currency: "EUR" }))).toMatch(/Anfang <b>—<\/b>/);
+  });
+
+  test("an explicit locale sets the words too", () => {
+    const html = de(() => createComponent(BalanceSummary, { start: 100, in: 10, out: 5, currency: "EUR", locale: "en" }));
+    expect(html).toContain("Start <b>€100</b>");
+    expect(html).toContain(", in<");
+    const budget = de(() =>
+      createComponent(BudgetList, { currency: "EUR", locale: "en", items: [{ label: "Travel", used: 10, limit: 100 }] }),
+    );
+    expect(budget).toContain("€90 left");
+  });
+
   test("a negative end keeps its sign; signs of in and out are ignored", () => {
     const html = de(() => createComponent(BalanceSummary, { start: 500, in: -200, out: -1000, currency: "EUR", decimals: 2 }));
     expect(html).toMatch(/Ende <b>-300,00\s€<\/b>/);

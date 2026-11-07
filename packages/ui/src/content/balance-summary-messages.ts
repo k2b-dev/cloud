@@ -11,10 +11,10 @@ const balanceSummaryMessages = i18n.define({
 
 export type BalanceSummaryMessages = ReturnType<(typeof balanceSummaryMessages)["resolve"]>["t"];
 
-/** Resolved from the inherited render locale. */
-export const useBalanceSummaryMessages = (): (() => BalanceSummaryMessages) => {
+/** Resolved from an explicit locale override, else the inherited render locale. */
+export const useBalanceSummaryMessages = (override?: () => string | undefined): (() => BalanceSummaryMessages) => {
   const locale = useLocale();
-  return () => balanceSummaryMessages.resolve([locale()]).t;
+  return () => balanceSummaryMessages.resolve([override?.() ?? locale()]).t;
 };
 
 export const checkBalanceSummaryMessages = () => balanceSummaryMessages.check();

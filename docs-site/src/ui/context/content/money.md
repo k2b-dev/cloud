@@ -1,7 +1,8 @@
 # Money
 
-`FlowAmount` shows money that moves: what comes in, what goes out. The
-direction is the message, so the amount carries no sign. An arrow and a color
+`FlowAmount` shows money that moves: what comes in, what goes out.
+`BalanceSummary` puts a period on one line: start, in, out, end. For money
+that moves, the direction is the message, so the amount carries no sign. An arrow and a color
 say which way the money goes, and screen readers hear it as a word.
 
 Use `Format.Currency` for a stand, a price, or a balance, which has no
@@ -18,7 +19,7 @@ See [Locale and formatting](/en/ui/content/intl).
 ## Import
 
 ```tsx
-import { FlowAmount, flowDirection, type FlowAmountProps } from "@k2b/ui";
+import { BalanceSummary, FlowAmount, flowDirection, type FlowAmountProps } from "@k2b/ui";
 ```
 
 ## Properties
@@ -37,6 +38,25 @@ rule, for hosts that tint a row or pick a chart color. `-0` moves nothing.
 `NaN` and infinite values are no amount: they show "—" and are spoken as
 "amount unknown", never as a believable zero. `locale` sets the number format
 and the spoken words alike.
+
+## BalanceSummary
+
+"Anfang 18.800 € + ↙ 29.260 € − ↗ 29.520 € = Ende 18.540 €": start and end are
+balances and keep their sign; in and out are `FlowAmount`s, so they show their
+direction. `end = start + in − out`; the signs of `in` and `out` are ignored.
+
+| Property | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `start` | `number` | required | The balance at the start of the period. |
+| `in`, `out` | `number` | required | Money that came in and went out, as amounts. |
+| `currency` | `string` | required | ISO 4217 code. |
+| `locale` | `string` | inherited | Number format and words. |
+| `decimals` | `number` | `0` | Fixed fraction digits. |
+| `labels` | `{ start?, end?, in?, out? }` | "Anfang", "Ende", "rein", "raus" | Replaces the words. |
+
+The operators are hidden from screen readers, which hear "Anfang 18.800 €,
+29.260 €, rein, 29.520 €, raus, Ende 18.540 €". A broken figure shows "—" in
+its place and in the end. The line wraps on narrow screens.
 
 ## Look
 
@@ -70,5 +90,6 @@ the browser show the same text.
 <FlowAmount value={31240.5} currency="EUR" />       {/* ↙ 31.240,50 € , incoming */}
 <FlowAmount value={-30500} currency="EUR" />        {/* ↗ 30.500,00 € , outgoing */}
 <FlowAmount value={0} currency="EUR" />             {/* = 0,00 € */}
+<BalanceSummary start={18800} in={29260} out={29520} currency="EUR" />
 <StatCell label="In in October" value={<FlowAmount value={31240} currency="EUR" decimals={0} size="lg" />} />
 ```
