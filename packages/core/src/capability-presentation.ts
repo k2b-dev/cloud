@@ -326,6 +326,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             "Liest Berechtigungen und deren Revision vor einer Änderung. Erfordert Verwaltungsrechte. Zugriffe auf Skills und Studio-Apps sind unabhängig.",
           input: { skillId: "ID des Skills, dessen Zugriffsrechte gelesen werden." },
         },
+        "ai.chat.run.read": {
+          title: "Gustav-Lauf aus Code lesen",
+          description: "Liest den aktuellen Zustand eines durch Code gestarteten Laufs im eigenen Chat.",
+          input: { id: "Lauf-ID aus ai.chat.run." },
+        },
         "ai.chat.read": {
           title: "KI-Chat lesen",
           description:
@@ -509,6 +514,15 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             principal: "Neuer Empfänger aus entities.search; entweder principal oder accessId angeben.",
             accessId: "Vorhandene Berechtigungs-ID aus ai.skill.access.read; entweder accessId oder principal angeben.",
             permission: "Neue Berechtigungsstufe; null entzieht die vorhandene Berechtigung.",
+          },
+        },
+        "ai.chat.run": {
+          title: "Gustav-Lauf aus persönlichem Code starten",
+          description:
+            "Startet einen Lauf mit Werkzeugen im eigenen Chat. Rückfragen warten im Chat; das KI-Kontingent des Eigentümers gilt.",
+          input: {
+            prompt: "Anweisung für einen Chat-Lauf, höchstens 10.000 Zeichen.",
+            context: "Optionaler Quellkontext, höchstens 10.000 Zeichen.",
           },
         },
         "ai.chat.message": {

@@ -1027,3 +1027,11 @@ mobile-session limits. It is for the trusted runtime host, not an application
 credential exchange. `createCodeSourceTool` from `@k2b/cloud/ai/tools` exposes
 one existing Studio source tool so an overloaded host tool can preserve that
 tool's authenticated transport and revision behavior.
+
+Trusted hosts may pass their open database transaction as the second argument
+to `aiConversations.submitChatTurn(input, db)` to commit a turn and a
+host-owned receipt together. Hold the authorized conversation lock first and
+enqueue with `enqueueExistingAiTurn` only after committing. Core uses this seam
+for [Code-started chat turns](/en/docs/platform/capabilities#start-personal-code-chat-turns).
+The optional host-owned `runConfig.codeOrigin` is copied to the user message
+and turn record for attribution; it grants no tool authority.

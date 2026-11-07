@@ -43,7 +43,7 @@ export async function createCodeCheckRequest(
     entry,
     sdk,
     aiOperations: sdk.manifest.operations
-      .filter((operation) => operation.capability.startsWith("core.ai."))
+      .filter((operation) => operation.capability.startsWith("core.ai.") && operation.capability !== "core.ai.chat.run.read")
       .map((operation) => operation.capability),
     limits: CODE_CHECK_LIMITS,
   };

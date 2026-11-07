@@ -29,6 +29,7 @@ import { migrate as migrateSettings } from "../../../core/src/migrate/core/setti
 import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../_internal/capabilities";
 import * as registry from "../_internal/registry";
 import { aiModelFixture, aiSettingsFixture } from "../ai/model-fixture";
+import { migrateAiQuotas } from "../ai/quotas-migrate";
 import {
   type CapabilityDispatchDependencies,
   codeHttpOriginAllowed,
@@ -313,6 +314,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await migrateScheduling();
     await migratePolicy();
     await migrateVersions();
+    // Shared Code AI admission includes actual Code-started chat inference costs.
+    await sql`CREATE SCHEMA IF NOT EXISTS ai`.simple();
+    await migrateAiQuotas();
     await migrateCloudCapabilities();
     await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${userId}::uuid,'bridge-admin','local','user',true)`;
     const actor = { id: userId, uid: "bridge-admin", provider: "local" as const, roles: ["admin" as const] };

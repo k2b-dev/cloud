@@ -26,11 +26,15 @@ export const parseAiWebsiteApprovalScope = (scope: string): { origin: string; re
 };
 
 /**
- * Website approvals apply only to a turn a person started in a signed-in browser session: never to a scheduled task,
- * a mandate, `cld`, an API key, or another delegated credential.
+ * Website approvals apply to signed-in chat turns and trusted personal Code turns running as the chat owner.
+ * Code attribution never overrides a mandate, background task, or delegated actor.
  */
 export const aiTurnAllowsWebsiteApprovals = (config: AiTurnRunConfig | null | undefined): boolean =>
-  config != null && config.kind !== "compact" && config.signedInSession === true && aiTurnAllowsRememberedApprovals(config);
+  config != null &&
+  config.kind !== "compact" &&
+  (config.signedInSession === true ||
+    (config.codeOrigin !== undefined && config.actor?.kind === "user" && !config.actor.delegation && config.background === undefined)) &&
+  aiTurnAllowsRememberedApprovals(config);
 
 export type AiToolApprovalContext = {
   actorUserId: string;

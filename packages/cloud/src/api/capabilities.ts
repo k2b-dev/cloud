@@ -811,11 +811,16 @@ const runCapabilityDispatch = async (
       ? {
           appId: params.appId,
           capability: `${params.appId}.${params.capabilityId}`,
-          principal: params.appCaller
-            ? `app:${params.appCaller.appId}`
-            : claimPrincipal
-              ? `${claimPrincipal.type}:${claimPrincipal.id}`
-              : "anonymous",
+          // A chat turn is one effect per Code run; ordinary business keys keep cross-run dedupe.
+          principal:
+            (params.appCaller
+              ? `app:${params.appCaller.appId}`
+              : claimPrincipal
+                ? `${claimPrincipal.type}:${claimPrincipal.id}`
+                : "anonymous") +
+            (params.codeRun && params.workloadRun && params.appId === "core" && params.capabilityId === "ai.chat.run"
+              ? `:code-run:${params.workloadRun}`
+              : ""),
           keyHash: capabilityIdempotencyKeyHash(idempotencyKey.data),
         }
       : null;
