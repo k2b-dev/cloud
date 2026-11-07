@@ -277,6 +277,8 @@ export type AiConversationProjectUpdateResult =
   | { ok: false; reason: "not_found" | "active_turn" | "already_assigned" };
 
 export type AiStoredMessage = {
+  /** Personal composer hint, projected only for the person who triggered the latest completed answer. */
+  suggestedNextMessage?: { text: string; dismissedAt: string | null };
   id: string;
   shortId: string;
   conversationId: string;

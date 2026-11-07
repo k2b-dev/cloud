@@ -9,7 +9,7 @@ import {
   prepareChartSnapshot,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, type JSX, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { type CloudAiChartRow, cloudAiChartMarkKey, cloudAiChartReferenceMark, cloudAiChartRenderOptions } from "../chart-block";
 import {
   type CloudAiExplorerRequest,
@@ -20,6 +20,7 @@ import {
   cloudAiViewCellOf,
   cloudAiViewTable,
 } from "../view-block";
+import { ExplorerPlaceholder } from "./explorer-placeholder";
 import { aiChatMessages } from "./messages";
 import { ReferenceText } from "./reference-text";
 
@@ -32,6 +33,7 @@ const VISIBLE_ROWS = 100;
 const HEIGHT = "18rem";
 /** createChartExplorer holds the shown rows as its only entry; views are drawn from them on demand. */
 const TABLE = "table";
+const hasControls = (summary: ExplorerSummary) => summary.step || summary.filter;
 
 const emptySnapshot = (kind: ChartSnapshot["kind"]): ChartSnapshot => ({
   kind,
@@ -103,41 +105,6 @@ function drawExplorerView(
   } catch {
     return undefined;
   }
-}
-
-const hasControls = (summary: ExplorerSummary) => summary.step || summary.filter;
-
-/** The frame of an explorer whose file is loading or unavailable, at the size the loaded explorer takes. */
-function ExplorerPlaceholder(props: { summary: ExplorerSummary; message: JSX.Element }) {
-  const locale = useLocale();
-  return (
-    <ChartExplorer
-      title={props.summary.title}
-      description={props.summary.subtitle ? <span class="text-sm text-secondary">{props.summary.subtitle}</span> : undefined}
-      height={HEIGHT}
-      data={{ chart: emptySnapshot(props.summary.views[0]?.kind ?? "bar"), rows: [] }}
-      columns={[{ id: "value", label: aiChatMessages(locale()).chartUnavailable, value: () => "" }]}
-      charts={props.summary.views}
-      chart={props.summary.views[0]?.id}
-      controls={
-        hasControls(props.summary) ? (
-          <ChartFilterControls
-            request={{ step: props.summary.step ? "0" : undefined }}
-            displayedRequest={{}}
-            steps={props.summary.step ? [{ key: "0", label: "" }] : undefined}
-            series={props.summary.filter ? [{ key: "0", label: "", color: "var(--stdlib-chart-c1)" }] : undefined}
-            compare={props.summary.compare}
-            dimensionLabel={"\u00a0"}
-            seriesLabel={"\u00a0"}
-            disabled
-            onRequest={() => {}}
-          />
-        ) : undefined
-      }
-      empty={props.message}
-      renderDetails={false}
-    />
-  );
 }
 
 /**

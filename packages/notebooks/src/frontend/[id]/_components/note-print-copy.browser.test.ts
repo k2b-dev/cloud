@@ -5,7 +5,7 @@ import type { Browser } from "playwright";
 import { launchBrowser } from "../../../../../ui/test/browser";
 import type { PrintCopyHarness } from "./editor/note-print-copy.browser-harness";
 
-declare const window: Window & { printCopyHarness: PrintCopyHarness };
+declare const window: Window & { printCopyHarness: PrintCopyHarness; printMediaMatches: boolean };
 const markdown =
   "# Field notebook\n\n" +
   Array.from({ length: 150 }, (_, i) => `Paragraph ${i + 1}. An invented team records observations for the next visit.`).join("\n\n") +
@@ -96,8 +96,21 @@ test("the Book copy prints the whole note; changes at print time replace the sta
   try {
     await page.goto(String(server.url));
     await page.waitForSelector(".notebook-note-print", { state: "attached" });
+    await page.evaluate(() => {
+      const media = window.matchMedia("print");
+      window.printMediaMatches = media.matches;
+      media.addEventListener("change", (event) => {
+        window.printMediaMatches = event.matches;
+      });
+    });
+    const emulateMedia = async (media: "print" | "screen") => {
+      await page.emulateMedia({ media });
+      // Rapid toggles can coalesce before Chromium delivers the media change.
+      // Observe each real event before requesting the next transition.
+      await page.waitForFunction((printing) => window.printMediaMatches === printing, media === "print");
+    };
     expect(await page.locator(".notebook-note-print").boundingBox()).toBeNull();
-    await page.emulateMedia({ media: "print" });
+    await emulateMedia("print");
     await page.waitForSelector(".notebook-note-print[data-print-region]", { state: "attached" });
     for (const selector of [".k2b-app-workspace__sidebar", ".k2b-app-workspace__detail", ".editor-toolbar", ".editor-surface"])
       expect({ selector, box: await page.locator(selector).boundingBox() }).toEqual({ selector, box: null });
@@ -109,9 +122,9 @@ test("the Book copy prints the whole note; changes at print time replace the sta
       expect(await page.locator(`.notebook-note-print ${selector}`).first().boundingBox()).not.toBeNull();
     expect(await page.locator(".notebook-note-print img").getAttribute("loading")).toBe("eager");
     await page.waitForFunction(() => document.querySelector<HTMLImageElement>(".notebook-note-print img")?.naturalWidth === 4);
-    await page.emulateMedia({ media: "screen" });
+    await emulateMedia("screen");
     await page.evaluate(() => window.printCopyHarness.change("# Updated note\n\nFresh content at print time."));
-    await page.emulateMedia({ media: "print" });
+    await emulateMedia("print");
     await page.waitForFunction(() => document.querySelector(".notebook-note-print")?.textContent?.includes("Fresh content at print time."));
     expect(await page.locator(".notebook-note-print").textContent()).not.toContain("Paragraph 150.");
     // beforeprint is an independent path (including browsers without print media events).
@@ -120,10 +133,10 @@ test("the Book copy prints the whole note; changes at print time replace the sta
       window.dispatchEvent(new Event("beforeprint"));
     });
     expect(await page.locator(".notebook-note-print").textContent()).toContain("Latest local text.");
-    await page.emulateMedia({ media: "screen" });
+    await emulateMedia("screen");
     await page.evaluate(() => window.printCopyHarness.switchNote("# Another note\n\nOnly this note."));
     expect(await page.locator(".notebook-note-print").getAttribute("data-print-region")).toBeNull();
-    await page.emulateMedia({ media: "print" });
+    await emulateMedia("print");
     await page.waitForSelector(".notebook-note-print[data-print-region]", { state: "attached" });
     expect(await page.locator(".notebook-note-print").textContent()).toContain("Only this note.");
     await page.evaluate(() => {
