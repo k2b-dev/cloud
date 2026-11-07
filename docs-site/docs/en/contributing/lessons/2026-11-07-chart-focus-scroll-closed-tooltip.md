@@ -1,0 +1,6 @@
+### Focusing a chart below the fold closed its own tooltip
+
+- **What happened:** The chart showcase browser test waited in vain for a chart's tooltip in WebKit at 1280 px (#2850). Keyboard users saw the same: tabbing to a chart that was partly out of view flashed its tooltip and closed it.
+- **Root cause:** Focus opens the tooltip at the first value, and the browser then scrolls the focused chart into view. That scroll event arrives a frame later, and `closeChartInspectionOnOutside` closed the inspection on every scroll. Whether the chart needed scrolling depended on the engine's layout, so the test failed only in WebKit and only sometimes; at 390 px the test never checks the tooltip.
+- **Error class:** A dismissal rule written for one input (a pointer leaving its mark when the page moves) applied to another input (keyboard focus) whose own side effect triggers it.
+- **Guard:** The inspector records whether the open tooltip came from the keyboard; only such a tooltip follows its mark when the page scrolls, and a pointer's or a tap's tooltip still closes. `packages/ui/src/content/chart-focus-scroll.browser.test.ts` focuses a live and a prepared chart below the fold and checks the tooltip stays open next to its mark, and that a hover tooltip still closes on scroll; `chart-tooltips.browser.test.ts` keeps the tap case.

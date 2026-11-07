@@ -48,6 +48,8 @@ export function ChartSnapshotView(props: {
       closeChartInspectionOnOutside({
         container: () => container,
         tooltip: () => tooltip,
+        anchor: () => anchor,
+        follow: inspection.followsFocus,
         close: inspection.close,
       }),
     );

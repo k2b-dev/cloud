@@ -178,10 +178,13 @@ export function createChartInspector(options: {
     }
     highlighted = [];
   };
+  /** The open tooltip came from keyboard focus or keys, not from a pointer: it follows its mark when the page scrolls. */
+  let byKeyboard = false;
   const close = (broadcast = true, cancelPending = true) => {
     const state = linkedCursor?.read();
     if (broadcast && state && state.source !== source) return;
     if (broadcast) linkedCursor?.clear(source);
+    byKeyboard = false;
     options.container()?.removeAttribute("data-cursor-source");
     pinned = false;
     active = undefined;
@@ -504,6 +507,7 @@ export function createChartInspector(options: {
       if (!sample) return;
       const entry = nearest(sample.x, sample.y, sample.target);
       if (entry) {
+        byKeyboard = false;
         show(entry);
         if (seriesChart()) {
           const container = options.container();
@@ -516,6 +520,7 @@ export function createChartInspector(options: {
   let pointerFocusing = false;
   const down = (event: PointerEvent) => {
     pointerFocusing = true;
+    byKeyboard = false;
     pointerStart = { x: event.clientX, y: event.clientY };
     moved = false;
   };
@@ -540,9 +545,11 @@ export function createChartInspector(options: {
       pointerFocusing = false;
       return;
     }
+    const fromPointer = pointerFocusing;
     const nodes = visibleRecords();
     const first = options.nav?.()?.last ? nodes.at(-1) : options.kind() === "line" ? sortedPoints.at(-1) : nodes[0];
     if (first) show(first);
+    byKeyboard = Boolean(first) && !fromPointer;
   };
   const key = (event: KeyboardEvent): boolean => {
     if (!options.enabled() || event.target !== options.container()) return false;
@@ -610,6 +617,7 @@ export function createChartInspector(options: {
     const next = nodes[Math.max(0, Math.min(nodes.length - 1, index))]!;
     options.nav?.()?.reveal?.(next.element);
     show(next);
+    byKeyboard = true;
     return true;
   };
   return {
@@ -623,6 +631,7 @@ export function createChartInspector(options: {
     click,
     focus,
     key,
+    followsFocus: () => byKeyboard && active !== undefined,
     close: () => close(),
     invalidate,
     leave: () => {
@@ -635,6 +644,10 @@ export function createChartInspector(options: {
 export function closeChartInspectionOnOutside(options: {
   container: () => HTMLElement | undefined;
   tooltip: () => HTMLElement | undefined;
+  /** The tooltip's anchor, for a tooltip that follows its mark when the page scrolls. */
+  anchor?: () => HTMLElement | undefined;
+  /** Whether the open tooltip came from the keyboard; only such a tooltip follows its mark instead of closing. */
+  follow?: () => boolean;
   close: () => void;
   keepScroll?: () => boolean | undefined;
 }): () => void {
@@ -644,6 +657,22 @@ export function closeChartInspectionOnOutside(options: {
   const scroll = (event: Event) => {
     if (event.target === options.container() && options.keepScroll?.()) return;
     if (event.target instanceof Node && options.tooltip()?.contains(event.target)) return;
+    // Keyboard inspection keeps its tooltip while the page scrolls, such as when focus scrolls the chart into view a
+    // frame after the tooltip opened; the tooltip follows its mark. A pointer's tooltip closes: the pointer left it.
+    const container = options.container(),
+      tooltip = options.tooltip(),
+      anchor = options.anchor?.();
+    if (
+      options.follow?.() &&
+      container &&
+      tooltip &&
+      anchor &&
+      container.contains(container.ownerDocument.activeElement) &&
+      tooltip.matches(":popover-open")
+    ) {
+      positionTooltipSurface(tooltip, anchor);
+      return;
+    }
     options.close();
   };
   window.addEventListener("pointerdown", outside);
@@ -719,6 +748,8 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
   const removeOutside = closeChartInspectionOnOutside({
     container: () => container,
     tooltip: () => tooltip,
+    anchor: () => anchor,
+    follow: inspector.followsFocus,
     close: inspector.close,
     keepScroll: () => options.nav?.keepScroll,
   });
