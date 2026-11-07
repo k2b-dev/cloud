@@ -316,6 +316,37 @@ Names contain letters,
 digits, dots, underscores or hyphens, start with a letter or digit, and must be
 unique in the module. Keep the name across versions to identify the same task.
 
+## React to resource events
+
+Resource-owned Code can register a declared automation event at its own place:
+
+```ts
+import { app, owner } from "@sdk";
+
+app.on("inventory.item.changed", async (event) => {
+  // event.subject identifies the changed item; event.place is this Code's owner.
+  // Read current data through the SDK before deciding what to do.
+});
+```
+
+Use an event actually offered by the generated SDK. `app.on(owner, event, handler)`
+is the explicit form. The event name and place must be constants at module level.
+Only one handler per event is allowed. Personal Code and app-owned Code cannot
+subscribe. Events without a place, events at another place, and declarations
+with `automation: false` cannot start this Code.
+
+The handler receives the typed reference envelope: `id`, `type`, `version`,
+`source`, `time`, `subject`, `place`, optional `cause`, and `data`. Data stays
+reference-only; the event grants no access to the referenced resource. Cloud
+checks the Code account's current read permission at the place before admitting
+a run. Actual SDK calls still check their current target permissions.
+
+Checking records the exact event version and owner place in the immutable
+manifest. Activation installs those subscriptions with the approved version's
+execution mandate. The stable entrypoint is `event:<event-type>@<version>`.
+See [Code runs](/en/docs/platform/code-runs#understand-event-deliveries) for
+pause, replay, deduplication and queue behavior.
+
 ## Serve routes
 
 Resource-, app-owned and personal Code can register routes. Register routes at
@@ -380,8 +411,8 @@ calls. Visitor input and response payloads are transient.
 
 ## Recognize later-phase APIs
 
-`nav` and `fetch` registrations still report Phase 2; `on` and `webhook`
-report Phase 3. The runtime refuses these registrations too. Eligible event
+`nav` and `fetch` registrations still report Phase 2; `webhook`
+reports Phase 3. The runtime refuses these registrations too. Eligible event
 payloads come from event schemas; events with `automation: false` are absent.
 
 ## Generate and host an SDK

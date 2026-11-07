@@ -1,6 +1,18 @@
 import { CAPABILITY_MAX_RESULT_BYTES, CloudResourceRefSchema, CODE_BRIDGE_REFUSAL_KINDS } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
+export const CodeEventDeliverySchema = z
+  .object({
+    id: z.uuid(),
+    eventId: z.uuid(),
+    eventType: z.string(),
+    state: z.enum(["pending", "retrying", "failed"]),
+    code: z.string().nullable(),
+    attempts: z.number().int().nonnegative(),
+    createdAt: z.string(),
+  })
+  .strict();
+
 /** Stable public identity; never changes when a new version is saved. */
 export const CodeIdSchema = z
   .string()
@@ -243,7 +255,7 @@ export const codeQueryContracts = {
   },
   runList: {
     input: z.object({ codeId: CodeIdSchema, ...pageInput, cursor: CodeRunCursorSchema.optional() }).strict(),
-    data: z.object({ items: z.array(CodeRunSchema), ...page }).strict(),
+    data: z.object({ items: z.array(CodeRunSchema), ...page, eventDeliveries: z.array(CodeEventDeliverySchema).max(20) }).strict(),
   },
   runRead: {
     input: z

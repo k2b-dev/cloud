@@ -38,17 +38,18 @@ type TestModule = {
   owner: TestHandle;
   app: {
     schedule(cron: string, fn: () => void | Promise<void>, options?: { name: string; title?: string }): unknown;
+    on(event: string, fn: (input: unknown) => void | Promise<void>): unknown;
     get(path: string, fn: () => Response): unknown;
   };
   __codeSdk: {
     bind(bridge: CodeSdkBridge): void;
     entries(): Array<{ kind: string; entrypoint: string; cron: string; title?: string }>;
     diagnostics(): Array<{ message: string }>;
-    run(entrypoint: string): Promise<unknown>;
+    run(entrypoint: string, input?: unknown): Promise<unknown>;
   };
 };
-async function runtime(mode: CodeSdkOptions = options): Promise<TestModule> {
-  const sdk = generateCodeSdk([fixture], mode);
+async function runtime(mode: CodeSdkOptions = options, manifest = fixture): Promise<TestModule> {
+  const sdk = generateCodeSdk([manifest], mode);
   const dir = await temporaryDirectory("cloud-code-c15-runtime-");
   const file = join(dir, "sdk.mjs");
   await writeFile(file, sdk.runtime);
@@ -307,7 +308,7 @@ describe("generated runtime through the canonical call seam", () => {
     await expect(sdk.__codeSdk.run("missing")).rejects.toThrow("missing_entrypoint");
     sdk.app.get("/", () => new Response("ok"));
     expect(sdk.__codeSdk.diagnostics()).toEqual([]);
-    expect(codeSdkPhaseDiagnostic("on")?.message).toBe("app.on kommt in Phase 3");
+    expect(codeSdkPhaseDiagnostic("on")).toBeNull();
     expect(codeSdkPhaseDiagnostic("schedule")).toBeNull();
     expect(codeSdkPhaseDiagnostic("typo")).toBeNull();
   });
@@ -390,7 +391,7 @@ declare const dynamic: string;
 personal.workshop(dynamic);
 once.workshop(dynamic);
 app.schedule("0 8 * * 1", async () => { await owner.item.create({ title: "Hi", idempotencyKey: "fixed" }); });
-app.on("work-shop.changed", async event => { const title: string = event.title; });
+app.on("work-shop.changed", async event => { const title: string = event.data.title; });
 app.get("/", c => c.json({ groups: c.user?.groups }));
 app.post("/", c => c.text(c.req.param("id")));
 app.put("/", c => c.text("ok"));
@@ -471,4 +472,31 @@ test("SDK secrets contain only placeholders and HTTP dispatches those placeholde
     { operation: "http.fetch", input: { method: "GET", url: "https://api.example/v1", headers: { authorization: "Bearer [secret:API]" } } },
   ]);
   expect(() => sdk.secrets["bad name"]).toThrow("code_sdk_invalid_secret_name");
+});
+
+test("resource app.on registers one checked event and passes its reference envelope", async () => {
+  const manifest = sdkFixture();
+  manifest.events![0]!.place = "workshop";
+  const sdk = await runtime(options, manifest);
+  const seen: unknown[] = [];
+  sdk.app.on("work-shop.changed", (input) => {
+    seen.push(input);
+  });
+  expect(seen).toEqual([]);
+  const input = {
+    id: "11111111-1111-4111-8111-111111111111",
+    type: "work-shop.changed",
+    version: 1,
+    source: "work-shop",
+    time: "2026-01-01T00:00:00Z",
+    subject: { type: "work-shop.workshop", id: "owner-shop" },
+    place: { type: "work-shop.workshop", id: "owner-shop" },
+    data: { title: "fixture" },
+  };
+  await sdk.__codeSdk.run("event:work-shop.changed@1", input);
+  expect(seen).toEqual([input]);
+  await expect(sdk.__codeSdk.run("event:work-shop.changed@1", { ...input, place: { ...input.place, id: "other" } })).rejects.toThrow(
+    "code_event_input",
+  );
+  expect(() => sdk.app.on("work-shop.changed", () => {})).toThrow("code_duplicate_on");
 });

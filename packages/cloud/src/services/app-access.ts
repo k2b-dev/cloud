@@ -206,6 +206,7 @@ export const canUseApp = async (
   app: AccessApp,
   options: { db?: SQL; signal?: AbortSignal } = {},
 ): Promise<boolean> => {
+  if (confirmedCodeInvocation(authority)) return true;
   if (app.access?.kind !== "resources") return (await usableAppIds(authority, [app], options)).has(app.id);
   if (!authority || !credentialAllows(authority, app.id)) return false;
   const signal = resourceAccessSignal(authority, RESOURCE_ACCESS_ENTRY_TIMEOUT_MS, options.signal);

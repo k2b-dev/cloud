@@ -515,6 +515,23 @@ origin arrays, and a refused request can report a validated `origin` alongside
 its stable error code. See [Code secrets](/en/docs/platform/code-secrets) for
 literal declarations, redirect checks and network protections.
 
+## Event admission budget
+
+`core.code.event_backlog` limits queued and running event runs per Code to 100
+by default (operator range 1–1000). A full backlog leaves the event in the
+platform event-delivery queue, using its retry and retention budgets. Inspect
+failed admission on the Code page's Runs tab; an editor can deliberately retry
+a retained delivery against a matching current subscription. No separate event broker is required.
+Runs for the same event registration and subject do not overlap, including at higher per-Code
+concurrency. Pause, owner deletion and version changes fence subscriptions
+transactionally; resume starts with a fresh publication cutoff.
+
+Never-started event runs survive pause. Following a version switch, explicit
+delivery recovery can bind the same never-started run to the current approved
+version within 30 days of the event reaching Core. Started runs are excluded.
+Each event leaves one small permanent deduplication receipt until its Code is
+deleted; run-detail retention does not bound this identity metadata. Include
+these receipts in storage planning for Codes with sustained event traffic.
 
 ## One-time schedules
 

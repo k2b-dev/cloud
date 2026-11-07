@@ -1,4 +1,5 @@
 import { getApp, sql } from "@k2b/cloud";
+import { cancelResourceEventSubscriptions } from "@k2b/cloud/services/app-events";
 import type { SQL } from "bun";
 import { CodeOwnerUnavailableError } from "./access";
 import type { Code } from "./contracts";
@@ -51,6 +52,7 @@ export async function checkCodeOwnerBeforeRun(code: Code, signal?: AbortSignal):
         await tx`UPDATE auth.service_accounts SET title=${title} WHERE id=${code.serviceAccountId}::uuid AND title IS DISTINCT FROM ${title}`;
       return current.state === "active";
     }
+    await cancelResourceEventSubscriptions(tx, "core.code", code.id);
     await tx`UPDATE code.codes SET state='paused',pause_reason='owner_not_found',pause_rows='{}',pause_policy_revision=NULL
       WHERE id=${code.id} AND state<>'deleting'`;
     await tx`UPDATE code.runs SET state='skipped',outcome='owner_not_found',ended_at=clock_timestamp()

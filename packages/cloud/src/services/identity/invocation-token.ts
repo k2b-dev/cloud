@@ -128,6 +128,7 @@ const validateInvocationClaims = (claims: z.infer<typeof InvocationPayloadBaseSc
   if (
     claims.workload_event &&
     (claims.credential_kind !== "mandate" ||
+      !!claims.workload_run ||
       !claims.workload_id ||
       !(claims.op.startsWith("capability.query:") || (subjectProbe && claims.op === "app-access.check")))
   )
