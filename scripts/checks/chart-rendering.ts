@@ -32,6 +32,10 @@ const ALLOWED_RENDERERS = new Map([
     "packages/assistant/src/artifacts/runtime/lib.ts",
     "Studio cloud.chart() runs in a sandbox whose frame prelude enhances SVG with inspectChart.",
   ],
+  [
+    "packages/assistant/src/artifacts/runtime/chart-renderers-rare.ts",
+    "Offline cloud.chart() drawings use inspect: true; the frame attaches inspectChart after loading. Script/PDF output stays inert.",
+  ],
   ["packages/editor/src/charts.ts", "Reads SVG marks for validation and tables; the SVG never reaches the DOM."],
 ]);
 
