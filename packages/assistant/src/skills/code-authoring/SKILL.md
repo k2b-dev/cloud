@@ -1,6 +1,6 @@
 ---
 name: code-authoring
-description: Build or edit lasting Cloud Code, including schedules and resource-owned automations. Use for code.ts, checking permissions, fictional tests, simulation and submitting an immutable version for human activation. One-off analysis or CSV exports use assistant-code-mode and code_run.
+description: Build or edit lasting Cloud Code, including schedules and resource-owned automations. Use for code.ts, checking permissions, fictional tests, simulation and submitting an immutable version for human activation. Rebuild exported Mail rules or Assistant routines as reviewed candidates. One-off analysis or CSV exports use assistant-code-mode and code_run.
 load-tools: [code_init, code_pull, code_sdk, code_write, code_check, code_test, code_simulate, code_submit, code_diff]
 ---
 # Build lasting Code
@@ -15,7 +15,7 @@ versioned JSON result intact; these are the same contracts as `cld code`.
    the requested operations; use their actual handle, input and result types.
    No guessed operations or resource IDs. A Space task can omit `columnId`;
    it goes into the first open column.
-3. Write `app.schedule` in `code.ts`, default-exporting `app`. Give schedules
+3. Write `app.schedule` or a supported resource event `app.on` in `code.ts`, default-exporting `app`. Give schedules
    stable names and a short human title next to the name, for example
    `{ name: "weekly-review", title: "Weekly review" }` in the declaration options.
    Required action idempotency keys describe the intended effect
@@ -45,6 +45,13 @@ job is a visible failure; do not claim the source passed.
 Studio HTML apps retain `code_create` and the existing `code_read/write/check`
 inputs with `id`, revision and screenshots. Load `assistant-code-mode` for them.
 
+## Rebuild an exported automation
+
+For a Mail rule or Assistant routine export, read
+[Rebuild exported Mail rules and routines](references/rebuild.md). Explain the
+old behavior, discover its current SDK equivalents, and draft through the same
+check, fictional test and submit tools. The export grants nothing; activation
+stays with a person. Automatic replies have no replacement at the cut.
 
 ## Mail triage: category first
 
