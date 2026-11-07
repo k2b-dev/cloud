@@ -45,3 +45,6 @@ Explicit object colours stay unchanged: file-type and avatar colours, colour
 choices and presence colours, `tint-blue`,
 `data-tone="blue"`, explicit blue calendar/timeline colours, chart series and data bars, syntax
 colours, and the map’s location marker (`--k2b-map-me`).
+An explicitly blue calendar event keeps its blue edge, and a chart keeps its
+series and inspection markers when focus enters it. Their focus indicators
+follow the primary scope.

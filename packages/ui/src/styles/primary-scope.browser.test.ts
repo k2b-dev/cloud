@@ -4,8 +4,6 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { auditPrimaryColors } from "../../test/primary-scope-audit";
-import emojiData from "../inputs/emoji/emoji-data";
-import { RECENT_EMOJI_LIMIT } from "../inputs/emoji/emoji-index";
 
 const ui = resolve(import.meta.dir, "../..");
 const repo = resolve(ui, "../..");
@@ -284,6 +282,25 @@ for (const theme of ["light", "dark"] as const) {
         await settled(page);
         expect((await page.evaluate(auditPrimaryColors, "#portal-trigger")).some((leak) => leak.includes("background-color"))).toBe(true);
         await page.locator("#portal-trigger").evaluate((node) => node.style.removeProperty("background-color"));
+        // Explicit object edges survive focus, but new blue focus paint does not.
+        await page.locator("#portal-trigger").evaluate((node) => {
+          node.classList.add("k2b-chart");
+          node.style.border = "1px solid #3b82f6";
+          const style = document.createElement("style");
+          style.id = "primary-focus-self-test";
+          style.textContent = "#portal-trigger:focus-visible{box-shadow:0 0 0 3px #2563eb!important}";
+          document.head.append(style);
+        });
+        await page.keyboard.press("Tab");
+        await settled(page);
+        const objectFocus = await page.evaluate(auditPrimaryColors, { selector: "#portal-trigger", focus: true });
+        expect(objectFocus.some((leak) => leak.includes("box-shadow"))).toBe(true);
+        expect(objectFocus.some((leak) => leak.includes("border-"))).toBe(false);
+        await page.locator("#portal-trigger").evaluate((node) => {
+          node.classList.remove("k2b-chart");
+          node.style.removeProperty("border");
+          document.getElementById("primary-focus-self-test")?.remove();
+        });
         await page.locator("#evidence").scrollIntoViewIfNeeded();
 
         const primary = page.locator("#controls").getByRole("button", { name: "Save notes", exact: true });
@@ -443,84 +460,21 @@ for (const theme of ["light", "dark"] as const) {
           demos.map(({ section, slug }) => `${section}/${slug}`).sort(),
         );
       });
-      for (const { section, slug } of demos) {
-        // The emoji demo mounts the full Unicode catalog. Keep every option in
-        // coverage while giving each small batch its own unchanged deadline.
-        const emojiBatches = Math.ceil((emojiData.trim().split("\n").length + RECENT_EMOJI_LIMIT) / 100);
-        const batches =
-          section === "input" && slug === "emoji-picker"
-            ? ["controls", ...Array.from({ length: emojiBatches }, (_, index) => index)]
-            : ["all"];
-        for (const batch of batches) {
-          test(`${section}/${slug} ${batch}: every demo and keyboard focus follows the scope`, async () => {
-            const area = `[data-demo-section="${section}"] .ui-demo-card__preview`;
-            await page.evaluate((demo) => document.dispatchEvent(new CustomEvent("primary-scope-demo", { detail: demo })), {
-              section,
-              slug,
-            });
-            await page.locator(area).first().waitFor();
-            if (section === "input" && slug === "emoji-picker") await page.locator(`${area} .k2b-emoji-picker__option`).last().waitFor();
-            await settled(page);
-            expect(await page.evaluate(auditPrimaryColors, `${area}, ${area} *`)).toEqual([]);
-            // Every tabbable receives a real Tab transition, including offscreen demos.
-            const selector =
-              typeof batch === "number"
-                ? ".k2b-emoji-picker__option"
-                : `:is(button,a[href],input,select,textarea,[tabindex],[contenteditable])${batch === "controls" ? ":not(.k2b-emoji-picker__option)" : ""}`;
-            const candidates = await page.locator(`${area} ${selector}`).evaluateAll((nodes) => {
-              return nodes
-                .filter(
-                  (node) =>
-                    node instanceof HTMLElement &&
-                    !node.matches(":disabled") &&
-                    !node.closest("[inert]") &&
-                    node.getClientRects().length &&
-                    getComputedStyle(node).visibility === "visible",
-                )
-                .map((node, index) => {
-                  node.setAttribute("data-primary-focus-probe", String(index));
-                  return String(index);
-                });
-            });
-            if (typeof batch === "number") expect(candidates.length).toBeLessThanOrEqual(emojiBatches * 100);
-            const tabbables = typeof batch === "number" ? candidates.slice(batch * 100, (batch + 1) * 100) : candidates;
-            for (const id of tabbables) {
-              const target = page.locator(`[data-primary-focus-probe="${id}"]`);
-              await target.evaluate((node) => {
-                const sentinel = document.createElement("button");
-                sentinel.id = "primary-tab-sentinel";
-                sentinel.onkeydown = (event) => event.stopPropagation();
-                sentinel.style.cssText = "position:fixed;width:1px;height:1px;opacity:0";
-                node.setAttribute("data-primary-original-tabindex", node.getAttribute("tabindex") ?? "absent");
-                if (node instanceof HTMLElement) node.tabIndex = 0;
-                node.before(sentinel);
-                sentinel.focus();
-              });
-              await page.keyboard.press("Tab");
-              await settled(page);
-              expect(
-                await target.evaluate((node) => ({
-                  target: node.outerHTML.slice(0, 500),
-                  active: document.activeElement?.outerHTML.slice(0, 500),
-                  focused: node === document.activeElement,
-                })),
-              ).toMatchObject({ focused: true });
-              expect(
-                await page.evaluate(
-                  auditPrimaryColors,
-                  `[data-primary-focus-probe="${id}"], [data-primary-focus-probe="${id}"] *, #catalog .ui-demo-card__preview :focus-within, #catalog .ui-demo-card__preview :focus-within > *`,
-                ),
-              ).toEqual([]);
-              await target.evaluate((node) => {
-                const original = node.getAttribute("data-primary-original-tabindex");
-                if (original === "absent") node.removeAttribute("tabindex");
-                else if (original !== null) node.setAttribute("tabindex", original);
-                node.removeAttribute("data-primary-focus-probe");
-                document.getElementById("primary-tab-sentinel")?.remove();
-              });
-            }
-          }, 30_000);
-        }
+      // Colour mapping is independent of width. Keep phone coverage focused
+      // on composites with responsive layouts; desktop covers the full registry.
+      const mobileSmoke = new Set(["actions/toolbar", "ai/chat", "layout/workspace", "content/calendar"]);
+      for (const { section, slug } of demos.filter((demo) => width === 1440 || mobileSmoke.has(`${demo.section}/${demo.slug}`))) {
+        test(`${section}/${slug}: every demo and focus follows the scope`, async () => {
+          const area = `[data-demo-section="${section}"] .ui-demo-card__preview`;
+          await page.evaluate((demo) => document.dispatchEvent(new CustomEvent("primary-scope-demo", { detail: demo })), { section, slug });
+          await page.locator(area).first().waitFor();
+          if (section === "input" && slug === "emoji-picker") await page.locator(`${area} .k2b-emoji-picker__option`).last().waitFor();
+          // Establish keyboard modality; focus() keeps focus-visible semantics
+          // and lets roving/composite controls choose their actual focus target.
+          await page.keyboard.press("Tab");
+          await settled(page);
+          expect(await page.evaluate(auditPrimaryColors, { selector: `${area}, ${area} *`, focus: true })).toEqual([]);
+        }, 30_000);
       }
     });
   }

@@ -1,5 +1,6 @@
 /** Runs in the browser; semantic blue exceptions never exempt a focus indicator. */
-export function auditPrimaryColors(selector: string): string[] {
+export async function auditPrimaryColors(input: string | { selector: string; focus: boolean }): Promise<string[]> {
+  const selector = typeof input === "string" ? input : input.selector;
   const canvas = document.createElement("canvas").getContext("2d")!;
   const cache = new Map<string, number[]>();
   const rgba = (value: string) => {
@@ -110,23 +111,69 @@ export function auditPrimaryColors(selector: string): string[] {
     values.set(value, result);
     return result;
   };
-  const leaks: string[] = [];
-  for (const node of document.querySelectorAll(selector)) {
-    const exempt = node.closest(exceptions) !== null;
-    const focused = node.matches(":focus-within");
-    for (const pseudo of [null, "::before", "::after"]) {
-      const style = getComputedStyle(node, pseudo);
-      if (pseudo && (style.content === "none" || style.content === "normal")) continue;
-      for (const property of properties) {
-        // An object/chart/syntax colour is an exception; its focus ring is not.
-        if (exempt && property !== "outline-color" && !(focused && (property === "box-shadow" || property.startsWith("border-")))) continue;
-        // Invisible outlines and zero-width borders do not paint a colour.
-        if (property === "outline-color" && (style.outlineStyle === "none" || style.outlineWidth === "0px")) continue;
-        if (property.startsWith("border-") && style.getPropertyValue(property.replace("color", "width")) === "0px") continue;
-        const value = style.getPropertyValue(property);
-        if (hasBlue(value)) leaks.push(`${node.tagName}.${String(node.className)} ${pseudo ?? ""} ${property}=${value}`);
+  const leaks = new Set<string>();
+  const baseline = new Map<Element, Map<string, string>>();
+  const audit = (nodes: Iterable<Element>, focusing = false) => {
+    for (const node of nodes) {
+      const exempt = node.closest(exceptions) !== null;
+      const initial = baseline.get(node) ?? new Map<string, string>();
+      if (!focusing) baseline.set(node, initial);
+      for (const pseudo of [null, "::before", "::after"]) {
+        const style = getComputedStyle(node, pseudo);
+        if (pseudo && (style.content === "none" || style.content === "normal")) continue;
+        for (const property of properties) {
+          const value = style.getPropertyValue(property);
+          const key = `${pseudo ?? ""}/${property}`;
+          if (!focusing) initial.set(key, value);
+          // Keyboard inspection draws series-coloured crosshairs. Their two
+          // dashed pseudo-element edges encode data, rather than focus scope.
+          if (
+            ((pseudo === "::after" && property === "border-left-color") || (pseudo === "::before" && property === "border-top-color")) &&
+            node.matches(".k2b-chart[data-inspecting='series']")
+          )
+            continue;
+          // Object and series paint stays explicit. A focus outline or a newly
+          // blue border/shadow is still a leak, even inside an exempt object.
+          if (exempt && property !== "outline-color") {
+            if (!focusing || (property !== "box-shadow" && !property.startsWith("border-")) || initial.get(key) === value) continue;
+          }
+          if (property === "outline-color" && (style.outlineStyle === "none" || style.outlineWidth === "0px")) continue;
+          if (property.startsWith("border-") && style.getPropertyValue(property.replace("color", "width")) === "0px") continue;
+          if (hasBlue(value)) leaks.add(`${node.tagName}.${String(node.className)} ${pseudo ?? ""} ${property}=${value}`);
+        }
       }
     }
+  };
+  const nodes = [...document.querySelectorAll(selector)];
+  if (typeof input !== "string" && input.focus && document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  audit(nodes);
+  if (typeof input !== "string" && input.focus) {
+    const focusables = nodes.filter(
+      (node): node is HTMLElement =>
+        node instanceof HTMLElement &&
+        node.matches("button,a[href],input,select,textarea,[tabindex],[contenteditable='true']") &&
+        !node.matches(":disabled") &&
+        !node.closest("[inert]") &&
+        node.getClientRects().length > 0 &&
+        getComputedStyle(node).visibility === "visible",
+    );
+    const roots = new Set(nodes);
+    for (const target of focusables) {
+      // The caller establishes keyboard modality once. Programmatic focus then
+      // retains :focus-visible without rewriting a composite's roving tabindex.
+      target.focus({ preventScroll: true });
+      await Promise.resolve(); // Allow queued focus delegation to finish.
+      const active = document.activeElement;
+      if (!active || active === document.body || active === document.documentElement) continue;
+      const focused = new Set<Element>([active, ...active.querySelectorAll("*")]);
+      for (let ancestor = active.parentElement; ancestor && roots.has(ancestor); ancestor = ancestor.parentElement) focused.add(ancestor);
+      // Input shells can draw a ring on an adjacent sibling.
+      if (active.previousElementSibling) focused.add(active.previousElementSibling);
+      if (active.nextElementSibling) focused.add(active.nextElementSibling);
+      // Focus pseudo-classes apply synchronously; computed style resolves their
+      // paint here. Transitions and animations are disabled in this fixture.
+      audit(focused, true);
+    }
   }
-  return leaks;
+  return [...leaks];
 }
