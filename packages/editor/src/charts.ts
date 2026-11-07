@@ -3,6 +3,7 @@ import { i18n } from "@k2b/stdlib";
 import {
   autoBin,
   type BarChartOptions,
+  type BubbleOptions,
   barChartLayout,
   barGauge,
   boxplot,
@@ -18,7 +19,10 @@ import {
   niceLogTicks,
   niceStep,
   pie,
+  type RadarOptions,
   renderBarChartSvg,
+  renderBubbleSvg,
+  renderRadarSvg,
   scatter,
   sparkline,
   stat,
@@ -29,9 +33,15 @@ import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTim
 export * from "./chart-schema";
 
 type RenderOptions = {
-  [K in ChartInput["kind"]]: { kind: K } & (K extends "bar"
-    ? BarChartOptions
-    : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+  [K in ChartInput["kind"]]: { kind: K } & (K extends "bubble"
+    ? BubbleOptions
+    : K extends "radar"
+      ? RadarOptions
+      : K extends "bar"
+        ? BarChartOptions
+        : K extends keyof typeof charts
+          ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+          : never);
 }[ChartInput["kind"]];
 
 /**
@@ -46,6 +56,9 @@ const labels = /* @__PURE__ */ i18n.define({
   messages: {
     en: {
       category: "Category",
+      group: "Group",
+      size: "Size",
+      axis: "Axis",
       series: "Series",
       value: "Value",
       share: "Share",
@@ -63,6 +76,9 @@ const labels = /* @__PURE__ */ i18n.define({
     },
     de: {
       category: "Kategorie",
+      group: "Gruppe",
+      size: "Größe",
+      axis: "Achse",
       series: "Datenreihe",
       value: "Wert",
       share: "Anteil",
@@ -234,6 +250,10 @@ const numberFormat = (format: ChartFormat | undefined) => (format && !("date" in
 /** The values a chart writes with its value format, for whole-number currency. */
 const formattedValues = (input: ChartInput): number[] => {
   switch (input.kind) {
+    case "bubble":
+      return input.data.flatMap((p) => (p.size === undefined ? [] : [p.size]));
+    case "radar":
+      return input.series.flatMap((s) => s.data);
     case "line":
     case "scatter":
       return [...input.series.flatMap((series) => series.data.map((point) => point.y)), ...chartReferenceValues(input, "y")];
@@ -336,6 +356,7 @@ export function chartRenderOptions(
     formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string };
   } = {},
 ): RenderOptions {
+  if (input.kind === "bubble" || input.kind === "radar") locale = input.locale ?? locale;
   const defaults = formats(input, locale);
   // Function formats must be measured with the same text the renderer will print.
   const format = {
@@ -348,6 +369,34 @@ export function chartRenderOptions(
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
   switch (input.kind) {
+    case "bubble":
+      return {
+        kind: "bubble",
+        groups: input.groups,
+        data: input.data,
+        xLabel: input.xLabel,
+        yLabel: input.yLabel,
+        sizeLabel: input.sizeLabel,
+        averages: input.averages,
+        legend: input.legend,
+        locale,
+        displayWidth: options.width,
+        xFormat: options.formats?.x ?? (input.xFormat ? chartNumberFormatters(input.xFormat, locale).value : undefined),
+        yFormat: options.formats?.y ?? (input.yFormat ? chartNumberFormatters(input.yFormat, locale).value : undefined),
+        sizeFormat: format.value,
+      };
+    case "radar":
+      return {
+        kind: "radar",
+        axes: input.axes,
+        max: input.max,
+        unit: input.unit,
+        series: input.series,
+        legend: input.legend,
+        locale,
+        displayWidth: options.width,
+        format: format.value,
+      };
     case "bar":
     case "boxplot": {
       const yAxis = referencedAxis(input, "y");
@@ -503,6 +552,10 @@ const decode = (value: string) =>
 export const drawChart = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
+    case "bubble":
+      return renderBubbleSvg({ ...options, ...common });
+    case "radar":
+      return renderRadarSvg({ ...options, ...common });
     case "bar":
       return renderBarChartSvg({ ...options, ...common, height: barChartLayout(options).height });
     case "line":
@@ -574,6 +627,7 @@ export function chartRows(
   locale: string,
   options: { formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string } } = {},
 ) {
+  if (input.kind === "bubble" || input.kind === "radar") locale = input.locale ?? locale;
   const t = labels.resolve([locale]).t;
   const format = formats(input, locale);
   const valueFormat = input.tooltip?.format
@@ -606,10 +660,26 @@ export function chartRows(
         input.kind === "bar" || input.kind === "pie" || input.kind === "donut" || input.kind === "boxplot" || input.kind === "barGauge"
           ? input.data[datum.role === "outlier" ? (datum.seriesIndex ?? 0) : datum.index]?.label
           : datum.label;
-      if (label) cell("label", t.category, label, label);
+      if (label) cell("label", input.kind === "radar" ? t.axis : t.category, label, label);
     }
     for (const field of datum.values) {
       const value = field.value;
+      if (input.kind === "bubble") {
+        const label =
+          field.key === "x"
+            ? input.xLabel
+            : field.key === "y"
+              ? input.yLabel
+              : field.key === "size"
+                ? (input.sizeLabel ?? t.size)
+                : t.group;
+        cell(field.key, label, value, field.formatted ?? String(value));
+        continue;
+      }
+      if (input.kind === "radar" && field.key.startsWith("series:")) {
+        cell(field.key, input.series[Number(field.key.slice(7))]!.label, value, field.formatted ?? String(value));
+        continue;
+      }
       if (typeof value === "string" && input.kind === "heatmap" && (field.key === "x" || field.key === "y")) {
         cell(field.key, field.key.toUpperCase(), value, value);
         continue;
@@ -667,6 +737,8 @@ export function chartTable(input: ChartInput, locale: string): ChartTable {
 /** Input values count against the budget, including observations summarized into boxes or bins. */
 export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
+    case "radar":
+      return input.axes.length * input.series.length;
     case "line":
     case "scatter":
       return input.series.reduce((sum, series) => sum + series.data.length, 0);

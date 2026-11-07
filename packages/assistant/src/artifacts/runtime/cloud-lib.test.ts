@@ -673,3 +673,68 @@ test("a titled bar chart with many rows reserves the height of its title and eve
   expect(baselines).toHaveLength(20);
   expect(Math.max(...baselines)).toBeLessThan(height);
 });
+
+test("named bubbles and radar keep titles, locale, complete axis tooltips and measured redraws", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "bubble",
+        title: "Reach",
+        groups: ["North"],
+        xLabel: "Visits",
+        yLabel: "Opens",
+        sizeLabel: "Audience",
+        averages: true,
+        locale: "de-DE",
+        data: [{ label: "Letter A", group: "North", x: 1200, y: 2400, size: 3600 }],
+      },
+      "en",
+    ),
+  );
+  expect(markup).toContain("Reach");
+  expect(markup).toContain("1.200");
+  expect(markup).toContain("Ungewichteter Durchschnitt");
+  const saved = chartOptions.get(/data-chart-id="([^"]+)"/.exec(markup)?.[1] ?? "");
+  expect(saved).toBeDefined();
+  if (!saved) throw Error("Missing redraw input");
+  const redrawn = chartSvg(saved, "en", 900, 280);
+  expect(redrawn).toContain('viewBox="0 0 900 280"');
+  expect(redrawn).toContain("1.200");
+  const custom = String(
+    chart(
+      {
+        kind: "bubble",
+        groups: ["A"],
+        xLabel: "X",
+        yLabel: "Y",
+        data: [{ label: "A", group: "A", x: 2, y: 3 }],
+        xFormat: (v: number) => `x=${v}`,
+        yFormat: (v: number) => `y=${v}`,
+      },
+      "en",
+    ),
+  );
+  expect(custom).toContain("x=2");
+  expect(custom).toContain("y=3");
+  const radar = String(
+    chart(
+      {
+        kind: "radar",
+        title: "Plan scores",
+        axes: ["Quality", "Speed", "Cost"],
+        max: 5,
+        unit: "points",
+        series: [
+          { label: "Plan A", data: [1, 2, 3] },
+          { label: "Plan B", data: [4, 3, 2] },
+        ],
+      },
+      "en",
+    ),
+  );
+  expect(radar).toContain("Plan scores");
+  expect(radar).toContain("Plan A");
+  expect(radar).toContain("Plan B");
+  expect(radar).toContain("1 / 5 points");
+  expect(radar).not.toContain("data-stretch");
+});

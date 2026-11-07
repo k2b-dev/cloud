@@ -9,7 +9,9 @@ export {
   stateTimelineHeight,
 } from "../../content/chart-state-timeline";
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
+export * from "./bubble";
 export * from "./inspection";
+export * from "./radar";
 export * from "./render";
 export * from "./snapshot";
 export {

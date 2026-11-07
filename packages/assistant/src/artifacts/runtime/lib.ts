@@ -26,6 +26,8 @@ import {
   line,
   pie,
   renderBarChartSvg,
+  renderBubbleSvg,
+  renderRadarSvg,
   scatter,
   sparkline,
   stat,
@@ -54,10 +56,12 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Html 
   return new Html(out);
 }
 
-const KEEP_ASPECT = new Set(["pie", "donut", "gauge"]);
+const KEEP_ASPECT = new Set(["pie", "donut", "gauge", "radar"]);
 type ChartOptions = Record<string, unknown> & {
   kind: string;
   format?: CloudAiNumberFormat | ((value: number) => string);
+  xFormat?: CloudAiNumberFormat | ((value: number) => string);
+  yFormat?: CloudAiNumberFormat | ((value: number) => string);
   xAxis?: Record<string, unknown> & { format?: CloudAiFormat | ((value: number) => string) };
   yAxis?: Record<string, unknown> & { format?: CloudAiFormat | ((value: number) => string) };
 };
@@ -95,6 +99,12 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
     const common = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
     let svg: string;
     switch (mapped.kind) {
+      case "bubble":
+        svg = renderBubbleSvg({ ...mapped, ...common });
+        break;
+      case "radar":
+        svg = renderRadarSvg({ ...mapped, ...common });
+        break;
       case "bar": {
         // The title and subtitle take height too: lay out exactly what is drawn.
         const layout = barChartLayout({ ...mapped, ...common }, width);
@@ -188,6 +198,12 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
       if (name === "xAxis") stored.xFormat = format;
       else stored.yFormat = format;
       raw[name] = rest;
+    }
+  }
+  for (const name of ["xFormat", "yFormat"] as const) {
+    if (typeof raw[name] === "function") {
+      stored[name] = raw[name];
+      delete raw[name];
     }
   }
   if (typeof raw.format === "function") {

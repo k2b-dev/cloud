@@ -17354,3 +17354,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     transition: none;
   }
 }
+
+/* New distribution marks keep the selected state stronger than calm hover. */
+.k2b-ui .k2b-chart:is([data-chart-kind="bubble"],[data-chart-kind="radar"]) [data-selected] > circle { stroke-width: 3px !important; }
+.k2b-ui .k2b-chart[data-chart-kind="radar"] [data-inspected] > .k2b-chart-radar-axis { stroke: var(--k2b-chart-inspection-color); stroke-width: 1.5px !important; }
+.k2b-ui .k2b-chart[data-chart-kind="radar"] [data-selected] > .k2b-chart-radar-axis { stroke-width: 2.5px !important; }

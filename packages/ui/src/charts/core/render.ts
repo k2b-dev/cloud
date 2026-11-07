@@ -107,7 +107,8 @@ const lineTimeDomain = (props: Extract<ChartDrawingOptions, { kind: "line" }>): 
   return lo < hi ? [lo, hi] : undefined;
 };
 
-export const preservesAspectRatio = (kind: ChartKind) => kind === "map" || kind === "pie" || kind === "donut" || kind === "gauge";
+export const preservesAspectRatio = (kind: ChartKind) =>
+  kind === "map" || kind === "pie" || kind === "donut" || kind === "gauge" || kind === "radar";
 
 export type ChartSize = { width: number; height: number };
 export type ChartScene = ChartSize & { kind: ChartKind; svg: string };

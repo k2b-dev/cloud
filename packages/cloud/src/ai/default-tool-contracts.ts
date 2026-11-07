@@ -34,6 +34,7 @@ import {
   type ChartFormat as CloudAiFormat,
   type ChartNumberFormat as CloudAiNumberFormat,
   chartKinds,
+  chartLocaleSchema,
   chartParts,
   chartSchema,
   chartKindSchema as cloudAiChartKindSchema,
@@ -121,6 +122,15 @@ const flatChartSchema = () => {
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
+    groups: z.array(ChartLabel).max(CLOUD_AI_CHART_MAX_SERIES).optional(),
+    axes: z.array(ChartLabel).min(3).max(8).optional(),
+    xLabel: ChartLabel.optional(),
+    yLabel: ChartLabel.optional(),
+    sizeLabel: ChartLabel.optional(),
+    averages: z.boolean().optional(),
+    locale: chartLocaleSchema().optional(),
+    xFormat: cloudAiNumberFormatSchema().optional(),
+    yFormat: cloudAiNumberFormatSchema().optional(),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
     data: z
       .union([
@@ -130,8 +140,10 @@ const flatChartSchema = () => {
               label: ChartLabel.optional(),
               value: z.number().optional(),
               values: z.array(z.number()).min(1).optional(),
-              x: ChartLabel.optional(),
-              y: ChartLabel.optional(),
+              group: ChartLabel.optional(),
+              size: z.number().nonnegative().optional(),
+              x: z.union([ChartLabel, z.number()]).optional(),
+              y: z.union([ChartLabel, z.number()]).optional(),
               min: z.number().optional(),
               max: z.number().optional(),
             }),
@@ -145,7 +157,12 @@ const flatChartSchema = () => {
         "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value. histogram, sparkline: numbers.",
       ),
     series: z
-      .array(ChartSeries(ChartPoints.min(1)).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }))
+      .array(
+        ChartSeries(ChartPoints.min(1)).extend({
+          data: z.union([ChartPoints.min(1), z.array(z.number()).min(3).max(8)]),
+          style: z.enum(["solid", "dashed", "dotted"]).optional(),
+        }),
+      )
       .min(1)
       .max(CLOUD_AI_CHART_MAX_SERIES)
       .optional()
@@ -199,6 +216,10 @@ const chartInputSchema = () => {
         return;
       }
       if (value.charts !== undefined) {
+        value.charts.forEach((chart, index) => {
+          if (chart.locale !== undefined && chart.kind !== "bubble" && chart.kind !== "radar")
+            context.addIssue({ code: "custom", path: ["charts", index, "locale"], message: "locale belongs to bubble and radar charts." });
+        });
         const parsed = groupSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });
@@ -211,6 +232,8 @@ const chartInputSchema = () => {
       } else {
         if (value.linkX !== undefined || value.layout !== undefined)
           context.addIssue({ code: "custom", message: "linkX and layout belong to groups." });
+        if (value.locale !== undefined && value.kind !== "bubble" && value.kind !== "radar")
+          context.addIssue({ code: "custom", path: ["locale"], message: "locale belongs to bubble and radar charts." });
         const parsed = ChartSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });

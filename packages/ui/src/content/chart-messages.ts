@@ -55,6 +55,7 @@ const chartMessages = i18n.define({
           latitude: "Latitude",
           longitude: "Longitude",
           size: "Size",
+          group: "Group",
           state: "State",
           duration: "Duration",
           detail: "Detail",
@@ -124,6 +125,7 @@ const chartMessages = i18n.define({
           latitude: "Breitengrad",
           longitude: "Längengrad",
           size: "Größe",
+          group: "Gruppe",
           state: "Zustand",
           duration: "Dauer",
           detail: "Details",
@@ -152,5 +154,7 @@ export const useChartMessages = (): (() => ChartMessages) => {
   const locale = useLocale();
   return () => chartMessages.resolve([locale()]).t;
 };
+
+export const resolveChartMessages = (locale: string) => chartMessages.resolve([locale]).t;
 
 export const checkChartMessages = () => chartMessages.check();

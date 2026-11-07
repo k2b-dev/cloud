@@ -1,5 +1,7 @@
 import { renderBarChartSvg } from "../../content/chart-bar";
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
+import { renderBubbleSvg } from "./bubble";
+import { renderRadarSvg } from "./radar";
 import { charts } from "./svg";
 
 // Add one renderer here: its key defines the discriminator, ChartKind and the capitalized Chart namespace member.
@@ -19,6 +21,8 @@ export const chartRenderers = {
   heatmap: charts.heatmap,
   map: charts.map,
   stateTimeline: renderStateTimelineSvg,
+  bubble: renderBubbleSvg,
+  radar: renderRadarSvg,
 };
 type Kind = keyof typeof chartRenderers;
 type ChartKinds = { [K in Kind as Capitalize<K>]: K };

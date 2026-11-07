@@ -1079,3 +1079,29 @@ every number readable without a pointer. Countries too small for a shape appear
 as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
+
+
+## Named scatter points and bubbles
+
+Use `Chart.Bubble` (`kind: "bubble"`) to compare two numeric measures for named observations. Set `groups`,
+`data: [{label, group, x, y, size?}]`, `xLabel` and `yLabel`. Omitting `size` gives named scatter points;
+`Chart.Scatter` keeps its existing series contract. Bubble area follows `size` and radius follows its square root.
+Sizes must be nonnegative and every point must name a declared group. A zero-size observation remains in the table.
+
+Names appear only where they fit without overlapping another name or point. Every observation remains available
+through the tooltip, keyboard and table. `averages: true` adds two guides explicitly labelled **Unweighted average**:
+every observation contributes equally, regardless of bubble size. `sizeLabel` names the area measure.
+
+JSON accepts `xFormat`, `yFormat` and `format` as number-format descriptions; typed props take formatter functions
+(`xFormat`, `yFormat`, `sizeFormat`). Explicit `locale` wins over the inherited UI locale. Measured hosts forward
+`displayWidth`; the server and initial browser drawing use identical geometry.
+
+## Radar charts
+
+`Chart.Radar` (`kind: "radar"`) takes 3–8 `axes`, one positive `max`, an optional shared `unit`, and up to four
+`series: [{label, data: number[]}]`. Every series has one value per axis, between zero and the shared maximum.
+All axes use that same unit and maximum; use another chart when the axes measure different units.
+
+Hover or tap an axis to compare every series there. Arrow keys, Home and End move across axes; Enter selects,
+and Escape closes inspection. Selection has a stronger outline than hover. Both kinds keep all other marks
+visible and use the shared loading, empty, error/retry and stale frame states.

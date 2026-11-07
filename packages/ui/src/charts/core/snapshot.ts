@@ -73,5 +73,12 @@ export function prepareChartSnapshot(
       return `${opening}${escapeXml(text)}</title>`;
     },
   );
-  return { kind: options.kind, svg: formattedSvg, width, height, stretch: !["map", "pie", "donut", "gauge"].includes(options.kind), marks };
+  return {
+    kind: options.kind,
+    svg: formattedSvg,
+    width,
+    height,
+    stretch: !["map", "pie", "donut", "gauge", "radar"].includes(options.kind),
+    marks,
+  };
 }

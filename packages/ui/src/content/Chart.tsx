@@ -30,7 +30,7 @@ import {
   closeChartInspectionOnOutside,
 } from "./chart-inspection-core";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
-import { useChartMessages } from "./chart-messages";
+import { resolveChartMessages, useChartMessages } from "./chart-messages";
 import {
   panStateTimelineViewport,
   type StateTimelineDomain,
@@ -136,6 +136,8 @@ export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../c
  *  block on truly empty inputs; partially-filled series get rendered
  *  as-is and the core handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
+  if (props.kind === "bubble") return !props.data.length;
+  if (props.kind === "radar") return !props.series.length;
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);
   }
@@ -436,7 +438,10 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     select: (selection) => props.onSelect?.(selection),
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
-      const fields = chartMessages().chartFields;
+      const fields =
+        props.kind === "bubble" || props.kind === "radar"
+          ? resolveChartMessages(props.locale ?? locale()).chartFields
+          : chartMessages().chartFields;
       const format = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 });
       return {
         title:
@@ -446,9 +451,17 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
             : undefined),
         rows: selection.datum.values.map((field) => ({
           label:
-            selection.kind === "line" && field.key === "y"
-              ? (selection.datum.label ?? labels().series ?? chartMessages().series)
-              : fields({ key: field.key }),
+            props.kind === "bubble" && field.key === "x"
+              ? props.xLabel
+              : props.kind === "bubble" && field.key === "y"
+                ? props.yLabel
+                : props.kind === "bubble" && field.key === "size"
+                  ? (props.sizeLabel ?? fields({ key: "size" }))
+                  : props.kind === "radar" && field.key.startsWith("series:")
+                    ? (props.series[Number(field.key.slice(7))]?.label ?? fields({ key: "series" }))
+                    : selection.kind === "line" && field.key === "y"
+                      ? (selection.datum.label ?? labels().series ?? chartMessages().series)
+                      : fields({ key: field.key }),
           value:
             field.formatted ??
             (field.key === "upperInclusive"
@@ -465,7 +478,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
     renderChartSvg(
-      drawingProps,
+      props.kind === "bubble" || props.kind === "radar" ? { ...props, locale: props.locale ?? locale() } : drawingProps,
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,

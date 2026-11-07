@@ -248,12 +248,46 @@ const examples = {
       interactive: true,
     },
   },
+  bubble: {
+    description: "Named bubbles compare reach, opens and audience area. Guides show the unweighted average.",
+    chart: {
+      kind: "bubble",
+      groups: ["North", "South"],
+      xLabel: "Visits",
+      yLabel: "Opens",
+      sizeLabel: "Audience",
+      averages: true,
+      data: [
+        { label: "Letter A", group: "North", x: 1, y: 2, size: 4 },
+        { label: "Letter B", group: "North", x: 4, y: 8, size: 16 },
+        { label: "Letter C", group: "South", x: 8, y: 4, size: 8 },
+      ],
+    },
+  },
+  radar: {
+    description: "Two plans use the same five-point scale on every axis. Inspect one axis to compare both plans.",
+    chart: {
+      kind: "radar",
+      axes: ["Quality", "Speed", "Cost", "Access"],
+      max: 5,
+      unit: "points",
+      series: [
+        { label: "Plan A", data: [4, 3, 2, 5] },
+        { label: "Plan B", data: [2, 4, 4, 3] },
+      ],
+    },
+  },
 } satisfies { [K in ChartKind]: { description: string; chart: Extract<ChartProps, { kind: K }> } };
 
 type TooltipField = { label: string; unit?: string; names?: Record<string, string> };
 type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
 const tooltipExamples: Record<ChartKind, TooltipExample> = {
+  bubble: {
+    title: "Campaign",
+    fields: { group: { label: "Group" }, x: { label: "Visits" }, y: { label: "Opens" }, size: { label: "Audience" } },
+  },
+  radar: { title: "Axis", fields: { "series:0": { label: "Plan A" }, "series:1": { label: "Plan B" } } },
   line: {
     title: "Request rate",
     fields: {
@@ -396,13 +430,27 @@ export const ChartDemo = (props: { window: "1h" | "24h" }) => (
   <For each={gallery}>
     {(example) => {
       const [selection, setSelection] = createSignal<ChartSelection>();
-      const tooltip = createTooltip(tooltipExamples[example.chart.kind]);
+      const native = example.chart.kind === "bubble" || example.chart.kind === "radar";
+      const tooltip = native ? undefined : createTooltip(tooltipExamples[example.chart.kind]);
+      const detailTooltip: ChartTooltipFormatter =
+        tooltip ??
+        (({ datum }) => ({
+          title: datum.label,
+          rows: datum.values.map((field) => ({
+            label: tooltipExamples[example.chart.kind].fields[field.key]?.label ?? field.key,
+            value: field.formatted ?? String(field.value),
+          })),
+        }));
       return (
         <DemoCard
           id={example.chart.kind === "line" ? "charts" : `charts-${example.chart.kind}`}
           chip={{ kind: "component", name: `Chart · ${example.chart.kind}`, from: "@k2b/ui" }}
           description={example.description}
-          code={`import { Chart, type ChartTooltipFormatter } from "@k2b/ui";\n\n${tooltipCode(tooltipExamples[example.chart.kind])}\n\n<Chart\n  {...${JSON.stringify(example.chart, null, 2).replaceAll("\n", "\n  ")}}\n  tooltip={tooltip}\n  onSelect={(selection) => console.log(selection)}\n/>`}
+          code={
+            native
+              ? `import { Chart } from "@k2b/ui";\n\n<Chart {...${JSON.stringify(example.chart, null, 2)}} />`
+              : `import { Chart, type ChartTooltipFormatter } from "@k2b/ui";\n\n${tooltipCode(tooltipExamples[example.chart.kind])}\n\n<Chart\n  {...${JSON.stringify(example.chart, null, 2).replaceAll("\n", "\n  ")}}\n  tooltip={tooltip}\n  onSelect={(selection) => console.log(selection)}\n/>`
+          }
         >
           <div class="ui-chart-demo">
             <Show when={example.chart.kind === "line"}>
@@ -418,7 +466,7 @@ export const ChartDemo = (props: { window: "1h" | "24h" }) => (
             <Chart {...example.chart} tooltip={tooltip} onSelect={setSelection} />
             <output aria-live="polite" style={{ display: "block", "min-height": "2rem" }}>
               {selection()
-                ? `Selected: ${tooltip(selection()!).title} — ${tooltip(selection()!)
+                ? `Selected: ${detailTooltip(selection()!).title} — ${detailTooltip(selection()!)
                     .rows.map((row) => `${row.label}: ${row.value}`)
                     .join(" · ")}`
                 : "Select a data point to see its details here."}
