@@ -1,8 +1,11 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterAll, expect, spyOn, test } from "bun:test";
 import { createRoot } from "solid-js";
+import { createDomTestHarness } from "../../../ui/test/dom";
 import * as client from "./client";
-import * as secrets from "./SecretsDialog";
-import { createChatSecretRuntime } from "./secret-runtime";
+
+const dom = createDomTestHarness();
+afterAll(() => dom.cleanup());
+const [secrets, { createChatSecretRuntime }] = await Promise.all([import("./SecretsDialog"), import("./secret-runtime")]);
 
 const call = {
   name: "code_secret",

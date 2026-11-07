@@ -1,6 +1,6 @@
 ---
 name: assistant-code-mode
-description: Analyze files, transform data, create native chat views, generate documents and combine discovered Cloud capabilities with one-off runner scripts. For lasting Code and schedules use code-authoring; for plain arithmetic use calculate.
+description: Analyze files, transform data, create native chat views, generate documents and combine discovered Cloud capabilities with one-off runner scripts. For lasting Code and schedules use code-authoring. For plain arithmetic or date offsets, use calculate.
 load-tools: [code_run]
 ---
 # Assistant code mode
@@ -34,6 +34,10 @@ read-only probes. Writes and external actions have real effects, including in
 tests; cancellation does not undo them. Inspect an uncertain effect before
 starting again.
 
+For work with several steps, keep a short `todo_write` plan with stable IDs
+and at most one `in_progress` step. Update it after verification; leave
+blocked work open with its reason.
+
 ## First file script
 
 Pass exact current-chat manifest paths as `code_run.inputPaths`, and this entry
@@ -59,7 +63,7 @@ Each run has fresh variables. No saved resource or interface is required.
 - Values computed in code: create `cloud.view.chart`, `cloud.view.group`,
   `cloud.view.table`, `cloud.view.stats`, `cloud.view.details` or
   `cloud.view.explorer` in the run, then `present({path})` each returned view.
-  Never retype computed rows or values into a chart tool or Markdown.
+  Never retype run values into tool arguments or Markdown.
 - A few values already in the conversation: the `chart` tool can show them.
 - A downloadable result: call `cloud.download` in the script, then
   `code_export` with the returned `runId` and captured name, and `present`
@@ -67,7 +71,9 @@ Each run has fresh variables. No saved resource or interface is required.
 
 A successful run is visible to the agent only until its views or files are
 presented. Read [Views](references/views.md) for groups and explorers. Keep
-units in separate charts and reconcile counts, exclusions and totals.
+units in separate charts and reconcile counts, exclusions and totals. Use
+table `ref` columns for Cloud objects so their authorized resource links stay
+with each row; reuse returned references exactly.
 
 ## Verify and deliver
 
@@ -98,6 +104,19 @@ apply to unattended routine turns; Studio database grants are unavailable.
 | Cloud queries/actions | [Capabilities](references/capabilities.md) |
 | External HTTPS and secrets | [HTTP](references/http.md) |
 | Cross-app investigation | [Investigation](references/investigation.md) |
+| Run errors, cancellation and retained results | [Debugging](references/debugging.md) |
+| Chat and Project file references and reviewed transfers | [Files](references/files.md) |
+| Worked scripts and legacy Studio examples | [Examples](references/examples.md) |
+
+The following references describe legacy standalone Studio behavior. They do
+not enable Studio authoring, storage, database or HTML tools in chat. Use
+`code-authoring` for lasting Code instead:
+
+- [Studio apps](references/apps.md), [published actions](references/app-actions.md) and
+  [legacy chat presentations](references/chat.md).
+- [Studio access](references/access.md) and [management](references/management.md).
+- [Studio source workflow](references/source-workflow.md) and [publishing](references/publishing.md).
+- [Studio database](references/database.md) and [storage](references/storage.md).
 
 For analytical reports also load `assistant-data-analysis` for metrics and
 source validation.
