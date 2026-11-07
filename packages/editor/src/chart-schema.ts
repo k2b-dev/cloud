@@ -1,7 +1,7 @@
+import type { ChartInput, ChartLimits } from "@k2b/ui/charts";
 import { z } from "zod";
 
-/** Optional caller policy. Rendering itself has no AI input budget. */
-export type ChartLimits = { maxSeries: number; maxValues: number; maxMarks: number };
+export type { ChartDateFormat, ChartDescription, ChartFormat, ChartInput, ChartLimits, ChartNumberFormat } from "@k2b/ui/charts";
 
 // Every chart schema is built by a function whose call is marked pure, so a bundle that imports neither chart contract
 // leaves them out. App frames include the app contract through `cloud.chart()`.
@@ -25,10 +25,6 @@ export const chartNumberFormatSchema = () =>
     });
 const dateFormatSchema = () => z.strictObject({ date: z.enum(["day", "minute", "second"]) });
 export const chartFormatSchema = () => z.union([chartNumberFormatSchema(), dateFormatSchema()]);
-
-export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSchema>>;
-export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
-export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
 export const chartKindSchema = () =>
   z.enum(["area", "bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
@@ -298,5 +294,10 @@ export const chartDateTime = (value: string): number | undefined => {
   return date.toISOString().startsWith(`${year}-${month}-${day}T${hour}:${minute}:${second}`) ? date.getTime() : undefined;
 };
 
-/** One chart as the shared renderers read it. */
-export type ChartInput = z.output<ReturnType<typeof chartKinds>>;
+// Both directions are checked: a validator change must update the ui-owned description too.
+type Assert<T extends true> = T;
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+export type ChartSchemaMatchesDescription = Assert<Same<z.output<ReturnType<typeof chartKinds>>, ChartInput>>;
+export type ChartNumberFormatSchemaMatchesDescription = Assert<
+  Same<z.output<ReturnType<typeof chartNumberFormatSchema>>, import("@k2b/ui/charts").ChartNumberFormat>
+>;

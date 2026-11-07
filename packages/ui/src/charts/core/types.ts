@@ -16,13 +16,4 @@ export type ChartDatum = {
   values: { key: string; value: string | number; formatted?: string }[];
 };
 
-/** Serializable number presentation, compatible with the editor's NumberFormat contract. */
-export type ChartNumberFormat = {
-  style?: "number" | "percent" | "currency";
-  currency?: string;
-  unit?: string;
-  decimals?: number;
-  compact?: boolean;
-};
-export type ChartDateFormat = { date: "day" | "minute" | "second" };
-export type ChartFormat = ChartNumberFormat | ChartDateFormat;
+export type { ChartDateFormat, ChartFormat, ChartNumberFormat } from "../description";

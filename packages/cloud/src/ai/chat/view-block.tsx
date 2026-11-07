@@ -1,28 +1,19 @@
-import {
-  CopyButton,
-  DataTable,
-  type DataTableSort,
-  DescriptionList,
-  StatCell,
-  type StatCellAccent,
-  StatGrid,
-  type StatGridColumns,
-  useLocale,
-} from "@k2b/ui";
+import { CopyButton, DataTable, type DataTableSort, DescriptionList, StatCell, StatGrid, type StatGridColumns, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, Index, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { type CloudAiChartRow, cloudAiNumberFormatters } from "../chart-block";
 import {
   CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
   CLOUD_AI_VIEW_MAX_BYTES,
-  type CloudAiDetailsView,
-  type CloudAiExplorerView,
-  type CloudAiStatsView,
-  type CloudAiTableView,
   type CloudAiView,
   type CloudAiViewSummary,
+  type CloudDetailsDescription,
+  type CloudExplorerDescription,
+  type CloudStatsDescription,
+  type CloudTableDescription,
   cloudAiDetailsRows,
   cloudAiStatsTiles,
   cloudAiTableTsv,
+  cloudAiViewDescription,
   cloudAiViewSummary,
   cloudAiViewTable,
   isAiViewFile,
@@ -93,7 +84,7 @@ const tableHeight = (summary: TableSummary) => {
  * A table view: title, Copy data and a sortable table in a viewport whose height follows the row count of its
  * `present` summary, so loading, the table and the unavailable state take the same room.
  */
-function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView | null | undefined }) {
+function CloudTableView(props: { summary: TableSummary; input: CloudTableDescription | null | undefined }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const id = `cloud-view-${createUniqueId()}`;
@@ -189,14 +180,8 @@ function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView 
 type StatsSummary = Extract<CloudAiViewSummary, { view: "stats" }>;
 type DetailsSummary = Extract<CloudAiViewSummary, { view: "details" }>;
 
-const DELTA_TONES = { better: "emerald", worse: "red", neutral: "zinc" } as const;
-const DELTA_ICONS = { up: "ti ti-trending-up", down: "ti ti-trending-down", flat: "ti ti-minus" } as const;
 /** One column per tile, up to the grid's six; its ladder narrows them on phones. */
 const STATS_COLUMNS: readonly StatGridColumns[] = [1, 2, 3, 4, 5, 6];
-
-/** The host picks the change's color from whether it is better; the model never chooses tones. */
-const deltaAccent = (delta: ReturnType<typeof cloudAiStatsTiles>[number]["delta"]): StatCellAccent | undefined =>
-  delta && { tone: DELTA_TONES[delta.tone], icon: DELTA_ICONS[delta.direction], text: delta.text };
 
 /** The loading or unavailable message, centered over the room the view reserved. */
 function ViewStatus(props: { loading: boolean }) {
@@ -214,7 +199,7 @@ function ViewStatus(props: { loading: boolean }) {
  * has a sparkline and a support line, which the summary records, so a hidden copy of the same grid reserves the exact
  * room while the file loads or when it is unavailable.
  */
-function CloudStatsView(props: { summary: StatsSummary; input: CloudAiStatsView | null | undefined }) {
+function CloudStatsView(props: { summary: StatsSummary; input: CloudStatsDescription | null | undefined }) {
   const locale = useLocale();
   const id = `cloud-view-${createUniqueId()}`;
   const tiles = createMemo(() => (props.input ? cloudAiStatsTiles(props.input, locale()) : null));
@@ -239,7 +224,8 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudAiStatsView 
                       value="0"
                       trend={item().sparkline ? [0, 1] : undefined}
                       sub={item().sub ? "\u00a0" : undefined}
-                      accent={item().delta ? { tone: "zinc", icon: DELTA_ICONS.flat, text: "0" } : undefined}
+                      delta={item().delta ? { value: 0 } : undefined}
+                      compare={item().compare ? { label: "\u00a0", value: "0" } : undefined}
                     />
                   )}
                 </Index>
@@ -266,7 +252,13 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudAiStatsView 
                     return { rows: point === undefined ? [] : [{ label: tile().label, value: format(point) }] };
                   }}
                   sub={tile().sub}
-                  accent={deltaAccent(tile().delta)}
+                  delta={props.input?.items[index]?.delta}
+                  compare={(() => {
+                    const item = props.input?.items[index];
+                    return item?.compare
+                      ? { label: item.compare.label, value: cloudAiNumberFormatters(item.format, locale()).value(item.compare.value) }
+                      : undefined;
+                  })()}
                 />
               )}
             </Index>
@@ -298,7 +290,7 @@ const placeholder = (chars: number) =>
  * keeps its room in the first frame. More fields, or a value longer than its stand-in, scroll inside the viewport
  * instead of moving the chat.
  */
-function CloudDetailsView(props: { summary: DetailsSummary; input: CloudAiDetailsView | null | undefined }) {
+function CloudDetailsView(props: { summary: DetailsSummary; input: CloudDetailsDescription | null | undefined }) {
   const locale = useLocale();
   const id = `cloud-view-${createUniqueId()}`;
   const rows = createMemo(() => (props.input ? cloudAiDetailsRows(props.input, locale()) : null));
@@ -407,15 +399,15 @@ export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummar
   const statsSummary = (): StatsSummary | undefined => (props.summary.view === "stats" ? props.summary : undefined);
   const detailsSummary = (): DetailsSummary | undefined => (props.summary.view === "details" ? props.summary : undefined);
   const explorerSummary = (): ExplorerSummary | undefined => (props.summary.view === "explorer" ? props.summary : undefined);
-  function loaded(kind: "chart"): Extract<CloudAiView, { view: "chart" }> | null | undefined;
-  function loaded(kind: "table"): CloudAiTableView | null | undefined;
-  function loaded(kind: "group"): Extract<CloudAiView, { view: "group" }> | null | undefined;
-  function loaded(kind: "stats"): CloudAiStatsView | null | undefined;
-  function loaded(kind: "details"): CloudAiDetailsView | null | undefined;
-  function loaded(kind: "explorer"): CloudAiExplorerView | null | undefined;
+  function loaded(kind: "chart"): import("@k2b/ui/charts").ChartInput | null | undefined;
+  function loaded(kind: "table"): CloudTableDescription | null | undefined;
+  function loaded(kind: "group"): import("../view-block").CloudGroupDescription | null | undefined;
+  function loaded(kind: "stats"): CloudStatsDescription | null | undefined;
+  function loaded(kind: "details"): CloudDetailsDescription | null | undefined;
+  function loaded(kind: "explorer"): CloudExplorerDescription | null | undefined;
   function loaded(kind: CloudAiView["view"]) {
     const value = view();
-    return value && value.view !== kind ? null : value;
+    return value ? (value.view === kind ? cloudAiViewDescription(value) : null) : value;
   }
   return (
     <div data-view-path={props.path} class="min-w-0">

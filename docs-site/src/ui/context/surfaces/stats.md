@@ -19,6 +19,11 @@ sparklines and deltas; the host maps better/worse/neutral tones to colors.
 The Assistant's card tool shows one figure as a single-cell grid with a
 neutral trend accent and `wrap`, so a long value or caption stays whole.
 
+For an existing measure whose change is an amount or count, use
+`delta={{value: 12, unit: "absolute", format: {style: "currency", currency: "EUR"}}}`.
+The badge retains that unit. Assistant stats use this mode for saved numeric
+deltas; new ratio and points deltas use the same badge and comparison line.
+
 ## Import
 
 ```tsx
@@ -84,7 +89,7 @@ layout. `md` and `sm` tiles take the height of their content.
 ### Change and comparison
 
 ```ts
-type StatCellDelta = { value: number; unit?: "ratio" | "points"; better?: "up" | "down" };
+type StatCellDelta = { value: number; unit?: "ratio" | "points" | "absolute"; format?: ChartNumberFormat; better?: "up" | "down" };
 type StatCellCompare = { label: string; value: string | number };
 ```
 
