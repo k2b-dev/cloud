@@ -170,3 +170,17 @@ test("explicit core widths size square cells without a browser, bounded at 32px"
   expect(capped.cell).toBe(32);
   expect(capped.height).toBe(capped.top + 7 * (32 + 3) + 18);
 });
+
+test("the final partial week does not invent a month or year beyond the observations", () => {
+  const svg = renderCalendarSvg({
+    ...spec,
+    locale: "en-GB",
+    data: [
+      ["2025-01-01", 1],
+      ["2025-12-31", 2],
+    ],
+  });
+  expect(svg).toContain(">Dec</text>");
+  expect(svg).not.toContain(">2026</text>");
+  expect(svg.match(/>Jan<\/text>/g)).toHaveLength(1);
+});

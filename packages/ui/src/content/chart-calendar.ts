@@ -14,17 +14,9 @@ export function mountCalendarScroll(container: HTMLElement): () => void {
   const header = () => {
     const svg = drawing.querySelector<SVGSVGElement>("svg[data-calendar]");
     if (!svg) return;
-    const scale = 1 / (svg.getScreenCTM()?.a || 1);
-    container.style.setProperty("--k2b-calendar-header-x", `${container.scrollLeft * scale}px`);
-    for (const label of svg.querySelectorAll<SVGTextElement>("[data-calendar-month]")) {
-      // A month name is useful whole; hide a fragment behind the fixed weekday rail.
-      container.style.setProperty(
-        `--k2b-calendar-month-${label.dataset.calendarMonth}`,
-        label.x.baseVal[0]!.value < container.scrollLeft * scale + 32 ? "hidden" : "visible",
-      );
-    }
+    container.style.setProperty("--k2b-calendar-header-x", `${container.scrollLeft / (svg.getScreenCTM()?.a || 1)}px`);
   };
-  let previousEnd = container.scrollWidth - container.clientWidth;
+  let previousEnd = 0;
   const reset = () => {
     if (!drawing.querySelector("svg[data-calendar]")) return;
     container.scrollLeft = container.scrollWidth;

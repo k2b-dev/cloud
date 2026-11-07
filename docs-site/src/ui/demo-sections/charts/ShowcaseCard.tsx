@@ -1,4 +1,5 @@
 import { Chart, type ChartSnapshot, ChartSnapshotView } from "@k2b/ui";
+import { calendarViewportHeight } from "@k2b/ui/charts";
 import { createMemo, For, type JSX, Match, onMount, Show, Switch } from "solid-js";
 import type { ChartShowcaseExample, JsonValue } from "./examples/types";
 import { resolveDrawing } from "./resolve";
@@ -12,10 +13,13 @@ const STRETCH_HEIGHT = 180;
 /**
  * How a card holds a drawing without clipping it: a stretching chart takes a calm fixed height; rows (bar lists,
  * horizontal bars, funnels) keep the height their rows need; a drawing that scales as a whole (pie, donut, gauge)
- * keeps its proportions; a drawing wider than the card (calendar, sankey) keeps its size and scrolls sideways,
- * newest end first.
+ * keeps its proportions. Calendars own their square-cell size and scroll viewport; other wide drawings keep
+ * their logical width in the card.
  */
-export const cardFit = (snapshot: ChartSnapshot): { mode: "stretch" | "rows" | "whole" | "wide"; style: JSX.CSSProperties } => {
+export const cardFit = (
+  snapshot: ChartSnapshot,
+): { mode: "stretch" | "rows" | "whole" | "wide" | "calendar"; style: JSX.CSSProperties } => {
+  if (snapshot.maxWidth) return { mode: "calendar", style: { "container-type": "inline-size" } };
   if (snapshot.width > DRAWING_WIDTH) return { mode: "wide", style: { height: `${snapshot.height}px` } };
   if (!snapshot.stretch) return { mode: "whole", style: { "aspect-ratio": `${snapshot.width} / ${snapshot.height}` } };
   if (/data-bar-layout="rows"/.test(snapshot.svg) || snapshot.height !== 280)
@@ -52,7 +56,19 @@ export function ShowcaseCardChart(props: { example: ChartShowcaseExample; height
               <div ref={scroller} class="ui-charts-card__chart" data-fit={fit().mode} style={fit().style}>
                 <div
                   class="ui-charts-card__drawing"
-                  style={fit().mode === "wide" ? { width: `${snapshot().snapshot.width}px` } : undefined}
+                  style={
+                    fit().mode === "calendar"
+                      ? {
+                          height: calendarViewportHeight({
+                            ...snapshot().snapshot,
+                            minWidth: snapshot().snapshot.minWidth!,
+                            maxWidth: snapshot().snapshot.maxWidth!,
+                          }),
+                        }
+                      : fit().mode === "wide"
+                        ? { width: `${snapshot().snapshot.width}px` }
+                        : undefined
+                  }
                 >
                   <ChartSnapshotView snapshot={snapshot().snapshot} selectedKey={null} onSelect={() => {}} style={{ height: "100%" }} />
                 </div>

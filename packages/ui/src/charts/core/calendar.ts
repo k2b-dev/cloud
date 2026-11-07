@@ -70,6 +70,7 @@ export function calendarLayout(spec: CalendarHeatmapOptions, size = { width: spe
     minWidth: Math.max(240, (width * 14) / cell),
     maxWidth: (width * 32) / cell,
     firstMonday: monday,
+    lastDay: dates.at(-1)?.time ?? first,
     weekStart,
     weeks,
     min,
@@ -120,7 +121,7 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
     lastMonth = "";
   for (let week = 0; week < s.weeks; week++) {
     const time = s.firstMonday + week * 7 * DAY,
-      next = time + 6 * DAY;
+      next = Math.min(time + 6 * DAY, s.lastDay);
     const nextDate = new Date(next),
       ym = nextDate.toISOString().slice(0, 7);
     if (ym === lastMonth) continue;
@@ -128,14 +129,13 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
     const text = month.format(next);
     const textWidth = chartTextWidth(text, 11);
     const x = Math.min(s.width - textWidth - 2, Math.max(32 + week * (s.cell + 3), lastRight + 3));
-    const visibility = `visibility:var(--k2b-calendar-month-${week},visible)`;
     // The year has its own row, so a partial first month cannot suppress the following month.
     if (week === 0 || nextDate.getUTCMonth() === 0)
       body.push(
-        `<g style="${visibility}"><text x="${x}" y="${s.top - 24}" font-size="10" fill="var(--k2b-text-muted,#45454e)">${nextDate.getUTCFullYear()}</text></g>`,
+        `<g><text x="${x}" y="${s.top - 24}" font-size="10" fill="var(--k2b-text-muted,#45454e)">${nextDate.getUTCFullYear()}</text></g>`,
       );
     body.push(
-      `<text data-calendar-month="${week}" style="${visibility}" x="${x}" y="${s.top - 10}" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(text)}</text>`,
+      `<text data-calendar-month="${week}" x="${x}" y="${s.top - 10}" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(text)}</text>`,
     );
     lastRight = x + textWidth;
   }
@@ -203,5 +203,5 @@ export function calendarViewportHeight(
   size: { width: number; height: number; minWidth: number; maxWidth: number },
   availableWidth = "100cqw",
 ): string {
-  return `calc(clamp(${size.minWidth}px, ${availableWidth}, ${size.maxWidth}px) * ${size.height / size.width})`;
+  return `calc(${size.height / size.width} * clamp(${Number(size.minWidth.toPrecision(6))}px, ${availableWidth}, ${Number(size.maxWidth.toPrecision(6))}px))`;
 }

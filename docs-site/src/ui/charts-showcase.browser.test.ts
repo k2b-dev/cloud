@@ -231,3 +231,64 @@ test("both dashboards keep every panel in place in every state", async () => {
     }
   }
 }, 600_000);
+
+for (const width of [390, 800, 1440, 1920]) {
+  for (const path of ["/en/ui/charts/calendar", "/en/ui/charts/dashboards/newsletter", "/en/ui/charts"]) {
+    test(`calendar starts flush with newest weeks in ${path} at ${width}px`, async () => {
+      const page = await browser!.newPage({ viewport: { width, height: 1000 }, reducedMotion: "reduce" });
+      const errors = pageErrors(page);
+      try {
+        await page.goto(`${origin}${path}`, { waitUntil: "networkidle" });
+        await settled(page);
+        const selector = ".k2b-chart__svg > svg[data-calendar]";
+        const response = await page.request.get(`${origin}${path}`);
+        const serverSvg = await page.evaluate(
+          (html) => new DOMParser().parseFromString(html, "text/html").querySelector(".k2b-chart__svg > svg[data-calendar]")!.outerHTML,
+          await response.text(),
+        );
+        expect(
+          await page
+            .locator(selector)
+            .first()
+            .evaluate((e) => e.outerHTML),
+        ).toBe(serverSvg);
+        const calendar = page
+          .locator(".k2b-chart")
+          .filter({ has: page.locator("svg[data-calendar]") })
+          .first();
+        expect(await calendar.count(), path).toBe(1);
+        const geometry = await calendar.evaluate((element) => {
+          const viewport = element.getBoundingClientRect();
+          const drawing = element.querySelector(".k2b-chart__svg")!.getBoundingClientRect();
+          const newest = element.querySelectorAll("[data-chart-datum] rect");
+          const last = newest[newest.length - 1]!.getBoundingClientRect();
+          const svg = element.querySelector("svg") as SVGSVGElement;
+          const matrix = svg.getScreenCTM()!;
+          return {
+            left: element.scrollLeft,
+            end: element.scrollWidth - element.clientWidth,
+            gap: drawing.x + element.scrollLeft - viewport.x,
+            lastRight: last.right - viewport.right,
+            lastLeft: last.left - viewport.left,
+            cell: last.width,
+            square: Math.abs(last.width - last.height),
+            origin: new DOMPoint(32, 0).matrixTransform(matrix).x + element.scrollLeft - viewport.x,
+            height: drawing.height,
+            viewportHeight: viewport.height,
+          };
+        });
+        expect(Math.abs(geometry.gap), path).toBeLessThan(1);
+        expect(geometry.origin, path).toBeLessThan(75);
+        expect(geometry.left, path).toBe(geometry.end);
+        expect(geometry.lastRight, path).toBeLessThanOrEqual(1);
+        expect(geometry.lastLeft, path).toBeGreaterThanOrEqual(0);
+        expect(geometry.cell, path).toBeLessThanOrEqual(32.1);
+        expect(geometry.square, path).toBeLessThan(0.2);
+        expect(Math.abs(geometry.height - geometry.viewportHeight), path).toBeLessThan(1);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+}
