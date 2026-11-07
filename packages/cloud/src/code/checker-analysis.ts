@@ -319,8 +319,6 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                 }
           }
           if (["get", "post", "put", "delete", "all"].includes(method) && collecting) {
-            if (request.sdk.manifest.mode !== "resource")
-              report(node, "code_route_account_required", "Routen benötigen ein Code-Konto: verwende ressourcen- oder app-eigenen Code.");
             const paths = node.arguments[0] && literals(node.arguments[0]);
             const opts = node.arguments[2];
             // Public exposure must be an explicit literal, never a computed flag or spread.

@@ -28,7 +28,7 @@ components. The generated TypeScript configuration uses the SDK’s `jsx` factor
 see [Return a page](/en/docs/platform/code-sdk#return-a-page).
 
 The default owner is the current person. Personal Code starts with a schedule
-in `code.ts` and cannot host routes. `--owner-type` and `--owner-id`
+in `code.ts`; it can add routes, which only its owner opens unless one is public. `--owner-type` and `--owner-id`
 select a resource; `--app` selects an application owner. Creating resource or
 application Code requires administration of that owner. Editing and checking
 requires Code editor access and a write credential. Pull and diff require read
