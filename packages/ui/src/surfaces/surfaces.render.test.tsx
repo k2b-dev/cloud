@@ -593,7 +593,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     // A stale tile with "Reload" is no link, so the button never sits inside an anchor.
     expect(cell({ href: "/orders", stale: "As of 09:12", onRetry: () => undefined })).not.toContain('href="/orders"');
     expect(cell({ href: "/orders", stale: "As of 09:12" })).toContain('href="/orders"');
-    expect(parityCss).toContain('.k2b-ui .k2b-stat-cell[data-size="lg"]:not([data-wrap]) { height: 8.5rem; }');
+    expect(parityCss).toContain('.k2b-ui .k2b-stat-cell[data-size="lg"]:not([data-wrap]) { min-height: 8.5rem; }');
   });
 
   test("ships focus, responsive, dark, and reduced-motion parity hooks", () => {

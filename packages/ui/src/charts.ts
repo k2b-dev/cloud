@@ -6,3 +6,5 @@ export * from "./charts/core";
 export type * from "./charts/description";
 export type { ChartKindProps, ChartLabels, ChartProps, ChartRenderOptions } from "./content/Chart";
 export { type BarChartLayout, type BarChartOptions, barChartLayout, renderBarChartSvg } from "./content/chart-bar";
+
+export { calendarInspectionNavigation, mountCalendarScroll } from "./content/chart-calendar";

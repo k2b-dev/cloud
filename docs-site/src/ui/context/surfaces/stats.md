@@ -70,21 +70,27 @@ or less (one at 280 px or less). Tiles in a row share one height. Tiles keep
 | `href` | `string` | Makes the complete tile a link. |
 | `accent` | `StatCellAccent` | Adds a semantic icon or short status pill to the support line. |
 | `valueClass` | `string` | Overrides the value color. |
-| `title` | `string` | Adds a native title to a truncated value. |
+| `title` | `string` | Adds a native title to the value, such as its unrounded form. |
 | `trend` | `readonly number[]` | Adds a sparkline at the end of the support line, from oldest to newest, with tooltips and keyboard inspection. |
 | `trendTooltip` | `ChartTooltipFormatter` | Customizes the trend tooltip, for example with a period title or a unit. |
 | `size` | `"lg" \| "md" \| "sm"` | Overrides the inherited size for one tile. |
-| `wrap` | `boolean` | Wraps label, value, `sub` and accent instead of truncating them. |
+| `wrap` | `boolean` | Wraps label, `sub` and accent instead of truncating them (the value always wraps rather than being cut). |
 | `status` | `"loading" \| "error"` | Shows placeholders, or "Not loaded", in the tile's place. |
 | `onRetry` | `() => void` | Offers "Try again" after an error and "Reload" beside `stale`. |
 | `stale` | `string` | Replaces the support line with a warning such as "As of 09:12 · not current". |
 
-`size="lg"` is the dashboard tile: a 28 px figure in a tile of 136 px. When
-the grid is 600 px wide or less, the tile grows to 164 px and the change badge
-moves under the figure. A tile narrower than 230 px shrinks the figure to
-22 px, and below 200 px the trend steps back, so the figure stays whole on a
-phone. These adjustments follow the grid; a `StatCell` on its own keeps one
-layout. `md` and `sm` tiles take the height of their content.
+`size="lg"` is the dashboard tile: a 28 px figure in a tile of at least 136 px.
+When the grid is 600 px wide or less, the change badge moves under the figure
+in every size, and the `lg` tile grows to at least 164 px.
+
+The figure is never cut off. In a grid it shrinks with its tile's width within
+fixed bounds (`lg` 18–28 px, `md` 16–20 px, `sm` 14–16 px); a text value that
+still does not fit wraps at its spaces and the tile grows, instead of ending in
+an ellipsis. Where the badge moves under the figure, every size reserves the
+room of both in every state, so loading, error and data keep one height; only a
+text value long enough to wrap makes its tile taller. Below 200 px of tile width an `lg` tile drops its trend. These
+adjustments follow the grid; a `StatCell` on its own keeps its sizes and wraps.
+`md` and `sm` tiles take the height of their content.
 
 ### Change and comparison
 
@@ -139,7 +145,7 @@ focusable link. Keep its combined text useful at the destination.
 
 Icons, the change arrow, and sparklines supplement the text; they do not
 replace a status label or numeric value. The change badge has its own spoken
-label. Truncated values can expose their complete wording through `title`.
+label. Labels and support lines may end in an ellipsis; the value is never cut.
 
 A trend sparkline uses the tile's label as its accessible name. Its tooltip
 names each value after the tile label and formats it in the inherited locale.

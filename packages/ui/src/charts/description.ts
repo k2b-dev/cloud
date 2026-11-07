@@ -80,6 +80,16 @@ type Variants<N> =
   | { kind: "boxplot"; data: { label: string; values: N[] }[]; yAxis?: ChartDescriptionAxis; references?: Reference[] }
   | {
       kind: "heatmap";
+      layout: "calendar";
+      data: [string, N | null][];
+      scale: "sequential" | "diverging";
+      label?: string;
+      format?: ChartNumberFormat;
+      locale?: string;
+    }
+  | {
+      kind: "heatmap";
+      layout?: undefined;
       data: { x: string; y: string; value: N }[];
       format?: ChartNumberFormat;
       showValues?: boolean;
