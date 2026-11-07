@@ -250,7 +250,6 @@ export {
   cloudAiExplorerState,
   cloudAiStatsTiles,
   cloudAiTableTsv,
-  cloudAiViewDescription,
   cloudAiViewSummary,
   cloudAiViewTable,
   isAiViewFile,
