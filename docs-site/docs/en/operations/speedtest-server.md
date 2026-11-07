@@ -110,7 +110,9 @@ the oldest counted start expires; the UI and CLI display that waiting time.
 IPv6 also has a shared allowance of 32 starts per /48 in the same rolling
 minute, enough for sixteen /64 connections to use both starts. Cancellation
 counts in both allowances. A shared network limit also returns HTTP 429
-with the remaining wait.
+with the remaining wait. Unrelated customers can share a /48, so one busy
+connection can temporarily exhaust the allowance for its neighbours. Keep
+the aggregate ingress budget as the primary protection under heavy traffic.
 
 The engine requests admission with `POST /session?mode=quick` (or `accurate`).
 Its unpredictable, short-lived ticket travels in `X-Speedtest-Token`, never a

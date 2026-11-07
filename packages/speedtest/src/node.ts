@@ -28,7 +28,7 @@ export function createNodeTransport(server: string): Transport {
                 "http",
                 `Speedtest HTTP ${response.statusCode}`,
                 response.statusCode,
-                retry > 0 ? retry : undefined,
+                Number.isFinite(retry) && retry > 0 ? retry : undefined,
               );
               request.destroy(error);
               reject(error);
