@@ -1,7 +1,7 @@
 /* Cloud-faithful surface and widget contracts — the single owner of every
  * `.k2b-avatar`, `.k2b-link-card`, `.k2b-not-found`, `.k2b-notice-*`,
  * `.k2b-paper`, `.k2b-placeholder`, `.k2b-progress*`, `.k2b-resource-card*`, `.k2b-stat*`, `.k2b-status-badge*` and
- * `.k2b-widget*` rule in this package. index.css must not redeclare them: two
+ * `.k2b-widget*` and `.k2b-dashboard*` rule in this package. index.css must not redeclare them: two
  * partial rulesets at equal specificity merge into a third geometry that
  * matches neither Cloud nor either file.
  *
@@ -1468,4 +1468,97 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .k2b-skeleton { animation: none; }
+}
+
+/* ------------------------------------------------------------ Dashboard -- */
+/* Six columns measured on the dashboard itself, so a dashboard inside a side
+   panel or an app area folds the same way as one in a full window. */
+.k2b-ui .k2b-dashboard-grid {
+  container: k2b-dashboard / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-dashboard-section { min-width: 0; }
+
+.k2b-ui .k2b-dashboard-section__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.125rem 0.625rem;
+  min-width: 0;
+  margin: 0 0 0.75rem;
+}
+
+.k2b-ui .k2b-dashboard-section__icon {
+  flex: none;
+  color: var(--k2b-text-secondary);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-dashboard-section__title {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--k2b-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  letter-spacing: -0.01em;
+}
+
+.k2b-ui .k2b-dashboard-section__description {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+.k2b-ui .k2b-dashboard-section__grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1rem;
+  min-width: 0;
+}
+
+/* The key-figure row is one block of the grid; its tiles keep their own four
+   (two on a phone) columns. */
+.k2b-ui .k2b-dashboard-section__grid > .k2b-stat-grid { grid-column: 1 / -1; min-width: 0; }
+
+/* Every panel is one light frame; content inside never adds a second. */
+.k2b-ui .k2b-dashboard-panel {
+  container: k2b-dashboard-panel / inline-size;
+  position: relative;
+  min-width: 0;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
+  color: var(--k2b-text);
+}
+
+.k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel { grid-column: span 2; }
+.k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel[data-width="half"] { grid-column: span 3; }
+.k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel[data-width="twoThirds"] { grid-column: span 4; }
+.k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel[data-width="full"] { grid-column: span 6; }
+
+@container k2b-dashboard (max-width: 1000px) {
+  .k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel[data-width="third"] { grid-column: span 3; }
+  .k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel[data-width="twoThirds"] { grid-column: span 6; }
+}
+
+@container k2b-dashboard (max-width: 600px) {
+  .k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel:is([data-width="third"], [data-width="half"], [data-width="twoThirds"]) {
+    grid-column: span 6;
+  }
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-dashboard-panel { border-color: CanvasText; }
 }

@@ -4,6 +4,7 @@ import {
   type ChartCursor,
   ChartExplorer,
   type ChartSnapshot,
+  DashboardPanel as DashboardFrame,
   DataTable,
   Disclosure,
   IconButton,
@@ -109,7 +110,7 @@ export default function DashboardPanelView(props: {
       ariaLabel={props.panel.title}
       class="pulse-dashboard__table"
       density="compact"
-      surface="paper"
+      surface="plain"
       rows={data()?.rows ?? []}
       renderCell={({ value }) => dashboardCell(value, locale())}
       columns={(data()?.columns ?? []).map((column, index) => ({
@@ -180,11 +181,11 @@ export default function DashboardPanelView(props: {
     },
   ];
   return (
-    <article
+    <DashboardFrame
       class="pulse-dashboard__panel"
       data-panel={props.panel.id}
       data-kind={props.panel.kind}
-      data-width={props.panel.width}
+      width={props.panel.width}
       aria-label={props.panel.title}
       aria-busy={props.pending}
     >
@@ -402,6 +403,6 @@ export default function DashboardPanelView(props: {
           </Disclosure>
         </div>
       </Show>
-    </article>
+    </DashboardFrame>
   );
 }

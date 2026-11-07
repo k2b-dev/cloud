@@ -15,6 +15,7 @@ import {
   dashboardTestKinds,
   dashboardTestNow,
   dashboardTestPanelResult,
+  dashboardTestSectioned,
   dashboardTestSnapshot,
 } from "./workspace/dashboard-test-fixtures";
 import { buildPulseWorkspaceHref, readWorkspacePathState } from "./workspace/routes";
@@ -225,22 +226,23 @@ test("approved 3-column layout, stat tiles, linked keyboard tooltips, phone/tabl
       expect(await server.locator(".ti-server-2").count()).toBe(1);
       // Section icons are plain glyphs in their section colour, never a tinted tile.
       const sectionIcon = (section: typeof traefik) =>
-        section.locator(".pulse-dashboard__section-icon").evaluate((el) => {
+        section.locator(".k2b-dashboard-section__icon").evaluate((el) => {
           const style = getComputedStyle(el);
           return { color: style.color, background: style.backgroundColor };
         });
       const [traefikIcon, serverIcon] = await Promise.all([sectionIcon(traefik), sectionIcon(server)]);
       expect(traefikIcon.color).not.toBe(serverIcon.color);
       expect([traefikIcon.background, serverIcon.background]).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
-      expect(await traefik.getByText("Quelle Traefik · Raster 5 Min.", { exact: true }).isVisible()).toBe(width !== 390);
-      expect(await server.getByText("2 Quellen · Raster 5 Min.", { exact: true }).isVisible()).toBe(width !== 390);
+      // The description stays readable on a phone; it wraps under the title instead of disappearing.
+      expect(await traefik.getByText("Quelle Traefik · Raster 5 Min.", { exact: true }).isVisible()).toBe(true);
+      expect(await server.getByText("2 Quellen · Raster 5 Min.", { exact: true }).isVisible()).toBe(true);
       expect(await tab.locator("[data-panel]").count()).toBe(10);
       expect(await tab.locator(".pulse-dashboard__stats [data-panel]").count()).toBe(4);
       const panels = await Promise.all(["req", "e5", "p95"].map((id) => tab.locator(`[data-panel="${id}"]`).boundingBox()));
       if (width === 1440) {
         expect(panels[0]!.y).toBe(panels[1]!.y);
         expect(panels[1]!.y).toBe(panels[2]!.y);
-        expect(Math.abs(panels[1]!.x - panels[0]!.x - panels[0]!.width - 32)).toBeLessThan(1);
+        expect(Math.abs(panels[1]!.x - panels[0]!.x - panels[0]!.width - 16)).toBeLessThan(1);
       } else if (width === 390) expect(panels[0]!.y).toBeLessThan(panels[1]!.y);
       expect(
         await tab.locator('[data-panel="req"] .k2b-chart-explorer__viewport').evaluate((el) => el.getBoundingClientRect().height),
@@ -300,18 +302,27 @@ test("dashboard entries, section icons and tables follow the shared frame: plain
         expect({ tiles: icon.tiles, background: icon.background }).toEqual({ tiles: 0, background: "rgba(0, 0, 0, 0)" });
         expect(Math.abs(icon.start - icon.block)).toBeLessThanOrEqual(1);
       }
-      // A table panel is one framed table: the frame draws the edge, and the last row ends on it.
+      // A table runs to the edges of its panel: the panel draws the only frame, and the last row ends on it.
       const frame = await tab.locator('[data-panel="hosts"] .k2b-table-shell').evaluate((shell) => {
         const style = getComputedStyle(shell);
+        const panel = shell.closest(".k2b-dashboard-panel")!;
         const lastRow = shell.querySelector("tbody tr:last-child")!.getBoundingClientRect();
-        const box = shell.getBoundingClientRect();
+        const box = panel.getBoundingClientRect();
+        const table = shell.getBoundingClientRect();
         return {
           surface: shell.getAttribute("data-surface"),
-          border: style.borderTopWidth !== "0px" && style.borderTopStyle !== "none",
-          gap: box.bottom - lastRow.bottom,
+          border: style.borderLeftWidth !== "0px" && style.borderLeftStyle !== "none",
+          panelBorder: getComputedStyle(panel).borderTopWidth,
+          inset: [table.left - box.left, box.right - table.right],
+          gap: box.bottom - 1 - lastRow.bottom,
         };
       });
-      expect({ surface: frame.surface, border: frame.border }).toEqual({ surface: "paper", border: true });
+      expect({ surface: frame.surface, border: frame.border, panelBorder: frame.panelBorder }).toEqual({
+        surface: "plain",
+        border: false,
+        panelBorder: "1px",
+      });
+      expect(frame.inset).toEqual([1, 1]);
       expect(frame.gap).toBeGreaterThanOrEqual(0);
       expect(frame.gap).toBeLessThanOrEqual(2);
     } finally {
@@ -319,6 +330,55 @@ test("dashboard entries, section icons and tables follow the shared frame: plain
     }
   }
 }, 30_000);
+
+test("key figures sit in their section, two thirds take four of six columns and every panel and tile is framed", async () => {
+  for (const width of [1440, 820, 390]) {
+    const { tab } = await open({ dashboard: dashboardTestSectioned, width });
+    try {
+      await ready(tab);
+      // Numbers without a section stay in the top row; numbers with one open their section.
+      expect(
+        await tab
+          .locator(".k2b-dashboard-grid > .pulse-dashboard__stats [data-panel]")
+          .evaluateAll((all) => all.map((el) => el.getAttribute("data-panel"))),
+      ).toEqual(["latency-now"]);
+      const traefik = tab.getByRole("region", { name: "Traefik", exact: true });
+      const server = tab.getByRole("region", { name: "Server", exact: true });
+      expect(
+        await traefik.locator(".pulse-dashboard__stats [data-panel]").evaluateAll((all) => all.map((el) => el.getAttribute("data-panel"))),
+      ).toEqual(["requests-now", "errors-now"]);
+      expect(await server.locator(".pulse-dashboard__stats [data-panel]").count()).toBe(1);
+      const layout = await traefik.evaluate((section) => {
+        const grid = section.querySelector(".k2b-dashboard-section__grid")!.getBoundingClientRect();
+        const box = (id: string) => section.querySelector(`[data-panel="${id}"]`)!.getBoundingClientRect();
+        const tiles = section.querySelector(".pulse-dashboard__stats")!.getBoundingClientRect();
+        const framed = [...section.querySelectorAll("[data-panel]")].map((panel) => {
+          const style = getComputedStyle(panel);
+          return `${style.borderTopWidth} ${style.borderTopStyle} ${style.borderTopLeftRadius}`;
+        });
+        // Columns a panel spans, read from its width on the six-column grid with 16 px gaps.
+        const span = (id: string) => Math.round(((box(id).width + 16) / (grid.width + 16)) * 6);
+        return {
+          grid: grid.width,
+          tilesFirst: tiles.top < box("req").top,
+          tilesFull: Math.abs(tiles.width - grid.width) < 1,
+          tileColumns: Math.round(grid.width / box("requests-now").width),
+          spans: ["req", "e5", "p95"].map(span),
+          framed: [...new Set(framed)],
+        };
+      });
+      expect(layout.tilesFirst).toBe(true);
+      expect(layout.tilesFull).toBe(true);
+      // Four tiles to a row, two on a phone.
+      expect(layout.tileColumns).toBe(layout.grid <= 600 ? 2 : 4);
+      expect(layout.spans).toEqual(layout.grid <= 600 ? [6, 6, 6] : layout.grid <= 1000 ? [6, 3, 6] : [4, 2, 6]);
+      expect(layout.framed).toEqual(["1px solid 12px"]);
+      expect(await tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+    } finally {
+      await tab.close();
+    }
+  }
+}, 60_000);
 
 test("a line panel is a chart explorer with exact values, units and a table of every point", async () => {
   const { tab } = await open();
