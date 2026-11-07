@@ -446,7 +446,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 189;
+export const portableUiComponentCount = 190;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -486,6 +486,14 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  resolvePeriod: "Server-side PeriodPicker resolution to inclusive days; documented on the PeriodPicker page (/en/ui/input/period-picker).",
+  periodInstants: "Query bounds [from, to) for a resolved period in a time zone; documented on the PeriodPicker page.",
+  parsePeriodValue: "Validation of stored or URL period values; documented on the PeriodPicker page.",
+  periodContext: "Today and week start a period preset resolves against; documented on the PeriodPicker page.",
+  periodDayCount: "Calendar day count of an inclusive period; documented on the PeriodPicker page.",
+  formatPeriodDays: "The preset day label the PeriodPicker trigger shows; documented on the PeriodPicker page.",
+  formatPeriodRange: "The explicit range label the PeriodPicker trigger shows; documented on the PeriodPicker page.",
+  isPeriodDay: "Real calendar day key check used by parsePeriodValue; documented on the PeriodPicker page.",
   filterRows: "Search helper for complete table rows; documented in Search, groups, and order on the DataTable page.",
   sortRows: "Order helper for complete table rows by a typed column; documented on the DataTable page.",
   DETAILS_ICON: "The one Details icon class that DetailsToggle and AppWorkspace.Detail show; documented on the AppWorkspace page.",

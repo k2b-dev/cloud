@@ -2,9 +2,19 @@
 
 `PeriodPicker` is one control for the period an evaluation or a dashboard
 shows: presets such as **This month** plus a custom range, picked in the same
-popover. Use it in a card or page header where people switch what a view
-covers. Use `DateRangePicker` when the value is always two explicit days, for
-example a booking window in a form.
+popover.
+
+## Use a period picker
+
+Use it in a card or page header where people switch what a view covers. Use
+`DateRangePicker` when the value is always two explicit days, for example a
+booking window in a form.
+
+## Import
+
+```tsx
+import { PeriodPicker, type PeriodValue, periodPresets, resolvePeriod } from "@k2b/ui";
+```
 
 ## Choose presets
 
@@ -130,3 +140,26 @@ trigger. Typed errors are linked to their field and set `aria-invalid`.
 
 The trigger and its value render in server HTML. The list, the calendar, and
 the phone sheet need browser code.
+
+## Example
+
+```tsx
+const presets = [
+  periodPresets.today,
+  periodPresets.thisWeek,
+  periodPresets.thisMonth,
+  periodPresets.lastMonth,
+  periodPresets.thisYear,
+  periodPresets.all({ since: firstBookingDay }),
+];
+const [period, setPeriod] = createSignal<PeriodValue | null>({ preset: "this-month" });
+
+<PeriodPicker
+  aria-label="Zeitraum"
+  value={period()}
+  onValueChange={setPeriod}
+  presets={presets}
+  now={serverNow}
+  dateConfig={{ timeZone: base.timezone, weekStartsOn: 1 }}
+/>;
+```
