@@ -1,5 +1,5 @@
-import { AnchoredPopover, Button, IconButton, NoticeCard, RichSelect, TextInput, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, Show, untrack } from "solid-js";
+import { AnchoredPopover, Button, ChoiceSliderIndicator, IconButton, NoticeCard, RichSelect, TextInput, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch, untrack } from "solid-js";
 import {
   AI_MODEL_CLASSES,
   type AiModelClass,
@@ -8,7 +8,7 @@ import {
   type AiPeopleModels,
   aiModelClassFallbackChain,
 } from "../shared/ai-models";
-import { AiModelCard, type AiModelCardStop, aiModelClassLabel, aiModelClassSubtitle } from "./model-card";
+import { AiModelCard, AiModelCardError, type AiModelCardStop, aiModelClassLabel, aiModelClassSubtitle } from "./model-card";
 import { aiModelChooserMessages } from "./model-chooser-messages";
 import { AiModelIcon } from "./model-icon";
 
@@ -88,6 +88,8 @@ export function AiModelChooser(props: {
   /** An answer runs: the model stays as it is. */
   locked?: boolean;
   lockedReason?: string;
+  /** Loads the models again after an error; without it, "Try again" reloads the page. */
+  onRetry?: () => void;
 }): JSX.Element {
   const locale = useLocale();
   const t = () => aiModelChooserMessages.resolve([locale()]).t;
@@ -116,7 +118,7 @@ export function AiModelChooser(props: {
         },
       ];
     });
-  const single = () => (models()?.options.length ?? 0) <= 1;
+  const single = () => props.state.status === "ready" && props.state.models.options.length <= 1;
   /** Classes first in their order, then every other model alphabetically; each option once. */
   const ordered = createMemo(() => {
     const all = models()?.options ?? [];
@@ -151,6 +153,17 @@ export function AiModelChooser(props: {
   createEffect(() => {
     if (props.locked) untrack(close);
   });
+  // Models that arrive while the card is open, after "Try again", take the focus the gone retry button had.
+  const status = createMemo(() => props.state.status);
+  createEffect(
+    on(
+      status,
+      (next) => {
+        if (next === "ready" && untrack(anchor)) queueMicrotask(() => document.getElementById(sliderId)?.focus());
+      },
+      { defer: true },
+    ),
+  );
   const change = (request: AiModelRequest) => {
     if (!props.locked) props.onChange(request);
   };
@@ -163,6 +176,11 @@ export function AiModelChooser(props: {
     queueMicrotask(() => document.getElementById(sliderId)?.focus());
   };
   const listId = `${sliderId}-list`;
+  const retryId = `${sliderId}-retry`;
+  /** On a phone the card is a bottom sheet: 44 px buttons and the large slider. */
+  const cardSize = () => (typeof matchMedia === "function" && matchMedia("(max-width: 47.999rem)").matches ? "lg" : "md");
+  /** Without a host that reloads the models, a new page load reads them again; the page owns them. */
+  const retry = () => (props.onRetry ? props.onRetry() : location.reload());
   const searchId = `${sliderId}-search`;
   const focusList = () => (document.getElementById(searchId) ?? document.getElementById(listId))?.focus();
   const moveTo = (index: number) => {
@@ -204,22 +222,33 @@ export function AiModelChooser(props: {
   };
 
   const label = () => {
-    if (props.state.status === "loading") return "";
-    if (props.state.status === "error") return t().chipNotLoaded;
     if (!single() && choice()?.class) return aiModelClassLabel(locale(), choice()!.class!);
     return current()?.label ?? t().chipNone;
   };
+  /** The stop the trigger's level indicator stands on, as in the card's slider; `null` shows the model's icon. */
+  const level = (): number | null => {
+    if (single() || props.state.status !== "ready") return null;
+    const modelClass = cardClass();
+    const index = modelClass ? stops().findIndex((stop) => stop.class === modelClass) : -1;
+    return index < 0 || stops().length < 2 ? null : index;
+  };
   const ariaLabel = () =>
-    [
-      t().model,
-      choice()?.class ? aiModelClassLabel(locale(), choice()!.class!) : "",
-      current() ? optionName(current()!) : "",
-      issue() ?? "",
-    ]
-      .filter(Boolean)
-      .join(", ");
-  /** A class whose model is gone still opens the card, so the person can pick another. */
-  const disabled = () => props.state.status !== "ready" || (!current() && !choice()?.class) || props.locked;
+    props.state.status === "error"
+      ? t().chipNotLoaded
+      : [
+          t().model,
+          choice()?.class ? aiModelClassLabel(locale(), choice()!.class!) : "",
+          current() ? optionName(current()!) : "",
+          issue() ?? "",
+        ]
+          .filter(Boolean)
+          .join(", ");
+  /**
+   * A class whose model is gone still opens the card, so the person can pick another; so does a failed load, whose
+   * card offers to try again.
+   */
+  const disabled = () =>
+    props.state.status === "loading" || (props.state.status === "ready" && !current() && !choice()?.class) || props.locked;
   /** The stop the card shows: the class that answers, or none for a model outside the classes ("Own choice"). */
   const cardClass = (): AiModelClass | null => {
     const modelClass = choice()?.class ?? null;
@@ -239,44 +268,64 @@ export function AiModelChooser(props: {
       <button
         ref={chip}
         type="button"
-        class="ai-model-chip group inline-flex h-8 w-[148px] flex-none items-center justify-end border-0 bg-transparent p-0 outline-none"
+        class="ai-model-chip group inline-flex h-8 w-[148px] flex-none items-center border-0 bg-transparent p-0 outline-none"
         aria-haspopup={single() ? undefined : "dialog"}
         aria-expanded={single() ? undefined : anchor() !== null}
         aria-label={ariaLabel() || t().chooseModel}
         aria-busy={props.state.status === "loading" ? "true" : undefined}
         title={props.locked ? props.lockedReason : current() ? optionName(current()!) : undefined}
         disabled={disabled() || single()}
-        data-tone={issue() ? "warning" : undefined}
+        data-tone={issue() || props.state.status === "error" ? "warning" : undefined}
+        data-level={level() === null ? undefined : String(level())}
         onClick={(event) => setAnchor(anchor() ? null : event.currentTarget)}
       >
+        {/* Flush left at a fixed width: the level indicator always starts at the same x, whatever the label says. */}
         <span
-          class="inline-flex h-8 max-w-full min-w-0 items-center gap-1.5 rounded-[9px] px-1.5 text-[13px] text-(--k2b-text-secondary) group-hover:bg-(--k2b-surface-muted) group-hover:text-(--k2b-text) group-focus-visible:outline-2 group-focus-visible:outline-offset-1 group-focus-visible:outline-(--k2b-focus-ring) group-aria-expanded:bg-(--k2b-surface-muted) group-disabled:opacity-55 group-disabled:group-hover:bg-transparent"
+          class="relative inline-flex h-8 w-full min-w-0 items-center gap-[7px] rounded-[9px] px-1.5 text-[13px] text-(--k2b-text-secondary) group-hover:bg-(--k2b-surface-muted) group-hover:text-(--k2b-text) group-focus-visible:outline-2 group-focus-visible:outline-offset-1 group-focus-visible:outline-(--k2b-focus-ring) group-aria-expanded:bg-(--k2b-surface-muted) group-disabled:opacity-55 group-disabled:group-hover:bg-transparent"
           classList={{ "opacity-100!": single() && Boolean(current()) }}
         >
-          <Show
-            when={props.state.status !== "loading"}
+          <Switch
             fallback={
               <>
-                <span class="size-5 animate-pulse rounded-[6px] bg-(--k2b-surface-muted)" />
-                <span class="h-3 w-16 animate-pulse rounded bg-(--k2b-surface-muted)" />
+                <Show
+                  when={level() !== null}
+                  fallback={
+                    <span class="relative inline-grid flex-none" data-ai-model-chip-lead="icon">
+                      <Show when={current()} fallback={<i class="ti ti-sparkles text-sm" aria-hidden="true" />}>
+                        {(option) => <AiModelIcon icon={option().icon} size="xs" />}
+                      </Show>
+                      <Show when={issue()}>
+                        <span class="absolute -top-[3px] -right-[3px] size-[9px] rounded-full bg-(--k2b-warning-text) shadow-[0_0_0_2px_var(--k2b-surface)]" />
+                      </Show>
+                    </span>
+                  }
+                >
+                  <ChoiceSliderIndicator class="ai-model-chip__level" count={stops().length} index={level()} />
+                  <Show when={issue()}>
+                    <span class="absolute top-1 left-3 size-[9px] rounded-full bg-(--k2b-warning-text) shadow-[0_0_0_2px_var(--k2b-surface)]" />
+                  </Show>
+                </Show>
+                <span class="min-w-0 truncate" classList={{ "text-(--k2b-warning-text)": Boolean(issue()) }}>
+                  {label()}
+                </span>
+                <Show when={!single()}>
+                  <i class="ti ti-chevron-down text-xs" aria-hidden="true" />
+                </Show>
               </>
             }
           >
-            <span class="relative inline-grid flex-none">
-              <Show when={current()} fallback={<i class="ti ti-sparkles text-sm" aria-hidden="true" />}>
-                {(option) => <AiModelIcon icon={option().icon} size="xs" />}
-              </Show>
-              <Show when={issue()}>
-                <span class="absolute -top-[3px] -right-[3px] size-[9px] rounded-full bg-(--k2b-warning-text) shadow-[0_0_0_2px_var(--k2b-surface)]" />
-              </Show>
-            </span>
-            <span class="min-w-0 truncate" classList={{ "text-(--k2b-warning-text)": Boolean(issue()) }}>
-              {label()}
-            </span>
-            <Show when={!single()}>
+            <Match when={props.state.status === "loading"}>
+              <span class="h-3 w-6 flex-none animate-pulse rounded-[5px] bg-(--k2b-surface-muted)" />
+              <span class="h-3 w-16 flex-none animate-pulse rounded-[5px] bg-(--k2b-surface-muted)" />
+              <span class="flex-1" />
               <i class="ti ti-chevron-down text-xs" aria-hidden="true" />
-            </Show>
-          </Show>
+            </Match>
+            <Match when={props.state.status === "error"}>
+              <i class="ti ti-cloud-off w-6 flex-none text-center text-(--k2b-warning-text)" aria-hidden="true" />
+              <span class="min-w-0 truncate text-(--k2b-warning-text)">{t().chipNotLoadedShort}</span>
+              <i class="ti ti-chevron-down text-xs" aria-hidden="true" />
+            </Match>
+          </Switch>
         </span>
       </button>
       <AnchoredPopover
@@ -286,17 +335,18 @@ export function AiModelChooser(props: {
         align="end"
         plannedHeight={520}
         width="21.25rem"
-        initialFocus={() => document.getElementById(sliderId)}
+        initialFocus={() => document.getElementById(sliderId) ?? document.getElementById(retryId)}
       >
         <Show
-          when={step() === "card"}
+          when={step() === "card" || props.state.status !== "ready"}
           fallback={
             <div class="grid" role="group" aria-label={t().allModels} onKeyDown={onListKey}>
               <div class="flex items-center gap-1 px-2 pt-2">
                 <IconButton
                   type="button"
                   variant="ghost"
-                  size="sm"
+                  size={cardSize() === "lg" ? "lg" : "sm"}
+                  class={cardSize() === "lg" ? "size-11!" : undefined}
                   label={t().back}
                   onClick={() => {
                     setStep("card");
@@ -398,17 +448,22 @@ export function AiModelChooser(props: {
               }
             }}
           >
-            <AiModelCard
-              stops={stops()}
-              value={cardClass()}
-              own={current() ? { name: optionName(current()!), icon: current()!.icon, description: current()!.description } : undefined}
-              issue={issue()}
-              note={note()}
-              onChoose={(modelClass) => change({ class: modelClass })}
-              onOpenList={(models()?.options.length ?? 0) > 1 ? openList : undefined}
-              sliderId={sliderId}
-              size={typeof matchMedia === "function" && matchMedia("(max-width: 47.999rem)").matches ? "lg" : "md"}
-            />
+            <Show
+              when={props.state.status === "ready"}
+              fallback={<AiModelCardError retryId={retryId} busy={props.state.status === "loading"} onRetry={retry} size={cardSize()} />}
+            >
+              <AiModelCard
+                stops={stops()}
+                value={cardClass()}
+                own={current() ? { name: optionName(current()!), icon: current()!.icon, description: current()!.description } : undefined}
+                issue={issue()}
+                note={note()}
+                onChoose={(modelClass) => change({ class: modelClass })}
+                onOpenList={(models()?.options.length ?? 0) > 1 ? openList : undefined}
+                sliderId={sliderId}
+                size={cardSize()}
+              />
+            </Show>
           </div>
         </Show>
       </AnchoredPopover>

@@ -175,4 +175,129 @@ describe("model chooser in the composer", () => {
     expect(await page.locator(".k2b-chat-composer__send").isDisabled()).toBe(false);
     await page.close();
   });
+
+  /** The trigger, its level indicator and the indicator's thumb, unrounded. */
+  const trigger = (page: Page) =>
+    page.evaluate(() => {
+      const rect = (selector: string) => {
+        const element = document.querySelector(selector);
+        if (!element) return null;
+        const { x, y, width, height } = element.getBoundingClientRect();
+        return { x, y, width, height };
+      };
+      return {
+        chip: rect(".ai-model-chip"),
+        level: rect(".ai-model-chip .ai-model-chip__level"),
+        thumb: rect(".ai-model-chip .k2b-choice-slider__thumb"),
+        lead: rect(".ai-model-chip > span > :first-child"),
+      };
+    });
+
+  for (const width of [1440, 390])
+    test(`the trigger keeps its box at every level and its indicator starts at the same x (${width} px)`, async () => {
+      const seen = [];
+      for (const choice of ["fast", "balanced", "thorough", "maximum"]) {
+        const page = await open(width, `?choice=${choice}`);
+        expect(await page.locator(".ai-model-chip").textContent()).not.toBe("");
+        seen.push(await trigger(page));
+        await page.close();
+      }
+      const [first] = seen;
+      expect(first!.chip!.width).toBe(148);
+      for (const entry of seen) {
+        expect(entry.chip).toEqual(first!.chip);
+        expect(entry.level).toEqual(first!.level);
+        // The indicator stands flush left in the trigger, before the level's name.
+        expect(entry.level!.x - entry.chip!.x).toBe(6);
+      }
+      // The thumb moves right with the level, inside the same indicator.
+      const thumbs = seen.map((entry) => entry.thumb!.x);
+      expect([...thumbs].sort((left, right) => left - right)).toEqual(thumbs);
+      expect(new Set(thumbs).size).toBe(4);
+
+      // A model without a level shows its icon and name in the same place.
+      const own = await open(width, "?choice=gemini-flash");
+      const ownBox = await trigger(own);
+      expect(ownBox.chip).toEqual(first!.chip);
+      expect(ownBox.level).toBeNull();
+      expect(ownBox.lead!.x).toBe(first!.level!.x);
+      expect(await own.locator(".ai-model-chip").textContent()).toContain("Gemini Flash");
+      await own.close();
+    });
+
+  test("a failed load opens the card with Try again, and the models that arrive take its place", async () => {
+    const page = await open(1440, "?state=error");
+    const reference = await trigger(page);
+    const chip = page.locator(".ai-model-chip");
+    expect(await chip.isDisabled()).toBe(false);
+    expect(await chip.textContent()).toContain("Nicht geladen");
+    await chip.click();
+    const card = page.locator('.k2b-anchored-popover [data-ai-model-card="error"]');
+    expect(await card.textContent()).toContain("Modelle konnten nicht geladen werden.");
+    const retry = card.locator("button");
+    expect(await retry.textContent()).toContain("Erneut versuchen");
+    expect(await retry.evaluate((element) => element === document.activeElement)).toBe(true);
+    await retry.click();
+    const slider = page.locator(".k2b-anchored-popover [role=slider]");
+    await slider.waitFor();
+    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "slider");
+    expect(await chip.textContent()).toContain("Ausgewogen");
+    const after = await trigger(page);
+    expect(after.chip).toEqual(reference.chip);
+    expect(after.level!.x).toBe(reference.lead!.x);
+    await page.keyboard.press("Escape");
+    expect(await chip.evaluate((element) => element === document.activeElement)).toBe(true);
+    await page.close();
+  });
+
+  test("without a host that reloads the models, Try again loads the page again", async () => {
+    const page = await open(1440, "?state=error&retry=default");
+    await page.click(".ai-model-chip");
+    const reload = page.waitForEvent("load");
+    await page.click('.k2b-anchored-popover [data-ai-model-card="error"] button');
+    await reload;
+    await page.waitForSelector("body[data-ready=true] .ai-model-chip");
+    await page.close();
+  });
+
+  test("the screen reader hears the model, its level and a problem, never the indicator", async () => {
+    const spoken = async (query: string) => {
+      const page = await open(1440, query);
+      const snapshot = await page.locator(".ai-model-chip").ariaSnapshot();
+      await page.close();
+      // One button and nothing inside it of its own: the indicator is decoration, the name says it all.
+      expect(snapshot.split("\n")).toHaveLength(1);
+      return snapshot.match(/^- button "(.*)"/)?.[1];
+    };
+    expect(await spoken("?choice=thorough")).toBe("Modell, Gründlich, GPT-OSS · Gründlich");
+    expect(await spoken("?choice=gemini-flash")).toBe("Modell, Gemini Flash");
+    expect(await spoken("?state=budget")).toMatch(/^Modell, Maximal, Claude · Maximal, Budget aufgebraucht · wieder .+$/);
+    expect(await spoken("?state=error")).toBe("Modelle nicht geladen");
+    const running = await open(1440, "?state=running&choice=thorough");
+    const chip = running.locator(".ai-model-chip");
+    expect(await chip.isDisabled()).toBe(true);
+    expect(await chip.getAttribute("title")).toBe("Während eine Antwort läuft, bleibt das Modell gleich.");
+    await running.close();
+  });
+
+  test("on a phone the card is a sheet with 44 px buttons and the large slider", async () => {
+    const page = await open(390, "?choice=thorough");
+    await page.click(".ai-model-chip");
+    const popover = page.locator(".k2b-anchored-popover");
+    expect(await popover.getAttribute("data-sheet")).toBe("");
+    expect(await popover.locator(".k2b-choice-slider").getAttribute("data-size")).toBe("lg");
+    const size = (selector: string) =>
+      popover
+        .locator(selector)
+        .first()
+        .evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          return [box.width, box.height];
+        });
+    expect(await size('button[aria-label="Zurück zu „Ausgewogen“"]')).toEqual([44, 44]);
+    expect((await size('button[aria-label^="Alle Modelle"]'))[1]).toBe(44);
+    await page.click('.k2b-anchored-popover button[aria-label^="Alle Modelle"]');
+    expect(await size('button[aria-label="Zurück"]')).toEqual([44, 44]);
+    await page.close();
+  });
 });

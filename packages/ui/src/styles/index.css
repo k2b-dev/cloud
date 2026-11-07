@@ -10010,6 +10010,27 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0 1rem;
 }
 
+/* The indicator: the same rail, fill and thumb in 24 px for a trigger that
+   opens the slider. It never takes the pointer; the trigger does. */
+.k2b-ui .k2b-choice-slider[data-size="indicator"] {
+  display: inline-block;
+  flex: none;
+  width: 1.5rem;
+  height: 0.875rem;
+  vertical-align: middle;
+}
+
+.k2b-ui .k2b-choice-slider[data-size="indicator"] .k2b-choice-slider__track {
+  --k2b-choice-slider-overhang: 0rem;
+  --k2b-choice-slider-rail-height: 0.1875rem;
+  --k2b-choice-slider-thumb-size: 0.625rem;
+  display: block;
+  height: 100%;
+  margin: 0 0.125rem;
+  cursor: inherit;
+  pointer-events: none;
+}
+
 .k2b-ui .k2b-slider output,
 .k2b-ui .k2b-color-input code {
   min-width: 3.5rem;
