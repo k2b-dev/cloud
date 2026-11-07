@@ -24,9 +24,49 @@ const compileGlobal = () =>
   }));
 
 describe("Cloud tokens", () => {
+  test("AI primary mappings beat app accent declarations on hosts and canvases in both compiled themes", async () => {
+    const compiled = ruleBlocks(await compileGlobal());
+    const mappings = [
+      { property: "--k2b-row-selected", value: "var(--k2b-selected)" },
+      { property: "--k2b-link-accent", value: "var(--k2b-action)" },
+      { property: "--k2b-detail-panel-accent", value: "var(--k2b-action)" },
+      { property: "--k2b-app-workspace-active", value: "var(--k2b-action)" },
+      { property: "--k2b-app-workspace-selected", value: "var(--k2b-selected)" },
+    ];
+    for (const appClass of [".cloud-app-canvas", ".app-accent-scope"]) {
+      for (const placement of ["host", "descendant"]) {
+        const ai = placement === "host" ? `${appClass}[data-k2b-primary="ai"]` : `[data-k2b-primary="ai"] ${appClass}`;
+        for (const dark of [false, true]) {
+          const matching = [appClass, ai, ...(dark ? [`.dark ${appClass}`, `.dark ${ai}`] : [])];
+          // These selectors contain only classes and attributes. :is() contributes
+          // one class, so expand its equal-specificity alternatives before ranking.
+          const rules = compiled.flatMap(({ selector, declarations }, order) =>
+            selector
+              .replaceAll(":is(.cloud-app-canvas, .app-accent-scope)", appClass)
+              .split(",")
+              .map(normalize)
+              .filter((item) => matching.includes(item))
+              .map((item) => ({ selector: item, declarations, order, specificity: item.match(/\.[\w-]+|\[[^\]]+\]/g)!.length })),
+          );
+          // Require both scope forms explicitly, including the dark override.
+          expect(rules.some(({ selector }) => selector === (dark ? `.dark ${ai}` : ai))).toBe(true);
+          for (const { property, value } of mappings) {
+            const cascade = rules
+              .flatMap((rule) => rule.declarations.filter((item) => item.property === property).map((item) => ({ ...rule, ...item })))
+              .sort((a, b) => a.specificity - b.specificity || a.order - b.order);
+            expect(cascade.at(-1)?.value, `${dark ? "dark" : "light"} ${placement} ${appClass} ${property}`).toBe(value);
+          }
+        }
+      }
+    }
+  });
+
   test("AI scopes map Cloud selection and legacy focus onto primary tokens, including nested UI roots", async () => {
     const compiled = ruleBlocks(await compileGlobal());
-    const scope = compiled.find(({ selector }) => selector.includes('[data-k2b-primary="ai"]'));
+    const scope = compiled.find(
+      ({ selector, declarations }) =>
+        selector.includes('[data-k2b-primary="ai"]') && declarations.some(({ property }) => property === "--ui-selected"),
+    );
     expect(scope?.selector).toContain('[data-k2b-primary="ai"] .k2b-ui');
     expect(scope?.declarations).toEqual(
       expect.arrayContaining([

@@ -203,7 +203,7 @@ and `frame-ancestors 'none'`. In the browser, it registers the app's service
 worker, shows an offline notice, and keeps the app session alive. With
 Automatic, the status bar color follows the device's appearance.
 
-An AI part can declare [`appearance.primary: "ai"`](/en/docs/build/define-app#set-the-application-appearance)
+An AI part can declare [`appearance.primary: "ai"`](/en/docs/build/define-app#use-the-ai-primary-colour)
 to use the AI colour for primary actions, selection, and focus. `PwaLayout`
 applies the part's primary scope to its document, as on the web. Parts that
 omit the field, Start, and Settings keep blue.

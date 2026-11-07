@@ -229,6 +229,19 @@
   --k2b-link-accent: var(--ui-app-accent-text);
 }
 
+/* App hosts and nested canvases declare these roles locally. Keep them on the
+   primary family in AI scopes; dark selectors outrank the app's dark accent rule. */
+[data-k2b-primary="ai"] :is(.cloud-app-canvas, .app-accent-scope),
+:is(.cloud-app-canvas, .app-accent-scope)[data-k2b-primary="ai"],
+.dark [data-k2b-primary="ai"] :is(.cloud-app-canvas, .app-accent-scope),
+.dark :is(.cloud-app-canvas, .app-accent-scope)[data-k2b-primary="ai"] {
+  --k2b-row-selected: var(--k2b-selected);
+  --k2b-link-accent: var(--k2b-action);
+  --k2b-detail-panel-accent: var(--k2b-action);
+  --k2b-app-workspace-active: var(--k2b-action);
+  --k2b-app-workspace-selected: var(--k2b-selected);
+}
+
 /* Re-read primary tokens inside the scope (also on nested UI roots). The
    focus-ui utility consumes --ui-focus, so legacy Cloud controls follow it too. */
 [data-k2b-primary="ai"],

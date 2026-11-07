@@ -243,7 +243,8 @@ and fallback conventions.
 
 ## Set the application appearance
 
-`appearance` supplies the accent and optional page background:
+`appearance` supplies the accent and optional page background. AI applications
+can also [use the AI primary colour](#use-the-ai-primary-colour).
 
 ```ts
 appearance: {

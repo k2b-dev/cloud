@@ -207,6 +207,8 @@ test("the Help panel host scopes only an app that selects the AI primary", () =>
     expect(host).toContain("app-accent-scope");
     expect(host.includes('data-k2b-primary="ai"')).toBe(primary === "ai");
   }
+  // @ts-expect-error Untyped provider metadata must not emit unsupported primary scopes.
+  expect(serverPanel({ primary: "blue" })).not.toContain("data-k2b-primary");
 });
 
 test("server provider rejects missing, unknown and mismatched article seeds", () => {

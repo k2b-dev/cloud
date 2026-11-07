@@ -22,7 +22,7 @@ See [Mix semantic colors](/en/docs/frontend/styling-and-accessibility#mix-semant
 ## Enable an application's AI primary colour
 
 Rebuild and deploy applications that declare
-[`appearance.primary: "ai"`](/en/docs/build/define-app#set-the-application-appearance)
+[`appearance.primary: "ai"`](/en/docs/build/define-app#use-the-ai-primary-colour)
 with the matching Cloud and `@k2b/ui` packages. The application emits the
 primary scope; the UI stylesheet supplies the AI colours. Deploy Core with
 the matching shared stylesheet and Help panel renderer so that an AI app's
