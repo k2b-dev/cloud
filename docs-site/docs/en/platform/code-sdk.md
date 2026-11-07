@@ -125,7 +125,9 @@ answers with a page or a redirect:
 - `c.json` or `c.text` count as done; Cloud then loads the current page again.
 
 A failed form keeps its input and names the problem beside its button; a failed
-action names it in a notification. Cloud never repeats a POST by itself. Without
+action names it in a notification. When the answer is lost, the page says that
+the step may have run. Cloud never repeats a POST by itself. Focus continues at
+the first field with an `error`, or at the heading of a new page. Without
 JavaScript, forms and actions submit as normal HTML forms.
 
 `follow` lists up to eight event types, such as `grids.record.changed`, after
