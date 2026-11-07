@@ -52,6 +52,8 @@ test("a typed cell shows what its type reads, in the reader's language", () => {
   expect(tableCellText(4610, columns[5]!, "de")).toBe("4.610,00 €");
   expect(tableCellText(0.492, columns[4]!, "en")).toBe("49.2%");
   expect(tableCellText("2026-10-29", columns[2]!, "de")).toBe("29.10.2026");
+  // A time reads in the column's zone, so every reader and the server show the same clock.
+  expect(tableCellText("2026-10-20T14:32:00Z", { type: "date", timeZone: "Europe/Berlin" }, "de")).toBe("20.10.2026, 16:32");
   expect(tableCellText("delivered", columns[1]!, "en")).toBe("Delivered");
   // Flows read without a sign; their direction is the arrow. A delta is the signed change.
   expect(tableCellText(-120, { type: "flow", format: { currency: "EUR" } }, "en")).toBe("€120.00");

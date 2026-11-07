@@ -68,6 +68,8 @@ export type DataTableColumn<T> = {
   states?: DataTableTypedColumn["states"];
   /** The value a bar column fills its track at; defaults to its largest value. */
   max?: number;
+  /** The zone a date column with a time reads in; defaults to the reader's. */
+  timeZone?: string;
   /**
    * How much a narrow table needs the column: 1 (default) always shows; 3 hides below a table width of 560 px,
    * 2 below 420 px. Hidden values stay one tap away in the row's details.

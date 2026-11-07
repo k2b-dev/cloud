@@ -27,6 +27,8 @@ export type DataTableTypedColumn = {
   states?: Readonly<Record<string, DataTableStatusState>>;
   /** The value a bar column fills its track at; defaults to the largest value in the rows. */
   max?: number;
+  /** The IANA zone a date column with a time reads in, such as the zone of the data's owner; defaults to the reader's. */
+  timeZone?: string;
 };
 
 const numericTypes = new Set<DataTableColumnType>(["number", "amount", "bar", "flow", "delta"]);
@@ -64,14 +66,14 @@ export const formatTableNumber = (value: number, column: DataTableTypedColumn, l
 
 const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
 /** A date column reads ISO text, a timestamp or a Date; a day without a time stays that day in every zone. */
-export const formatTableDate = (value: unknown, locale: string): string | null => {
+export const formatTableDate = (value: unknown, locale: string, timeZone?: string): string | null => {
   if (typeof value === "string" && dateOnly.test(value)) {
     const day = new Date(`${value}T00:00:00Z`);
     return Number.isNaN(day.getTime()) ? null : new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(day);
   }
   const date = value instanceof Date ? value : typeof value === "string" || typeof value === "number" ? new Date(value) : null;
   if (!date || Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date);
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(date);
 };
 
 /** True when the value is missing: such a cell shows a dash, sorts last and never counts as zero. */
@@ -85,7 +87,7 @@ export const tableCellText = (value: unknown, column: DataTableTypedColumn, loca
   if (isEmptyCell(value)) return "";
   const type = column.type ?? "text";
   if (type === "status") return column.states?.[String(value)]?.label ?? String(value);
-  if (type === "date") return formatTableDate(value, locale) ?? String(value);
+  if (type === "date") return formatTableDate(value, locale, column.timeZone) ?? String(value);
   if (isNumericColumnType(type)) {
     const number = finite(value);
     if (number === null) return String(value);

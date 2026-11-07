@@ -70,7 +70,7 @@ values instead of formatted strings:
 | `text` | the string; breaks between words inside its cell | left |
 | `number` | the number in the reader's language, by `format` | right |
 | `amount` | money in `format.currency` | right |
-| `date` | ISO text, a timestamp, or a `Date` in the reader's language; a day without a time stays that day | left |
+| `date` | ISO text, a timestamp, or a `Date` in the reader's language and in `timeZone` when given; a day without a time stays that day | left |
 | `status` | a status badge with the label and tone from `states[value]` | left |
 | `bar` | the value and a short track filled to `max`, or to the column's largest value | right |
 | `flow` | the amount without a sign; the direction shows as in `FlowAmount` | right |
@@ -258,7 +258,7 @@ type DataTableColumn<T> = {
   value?: keyof T | ((row: T) => unknown); class?: string; headerClass?: string; cellClass?: string;
   align?: "left" | "center" | "right"; nowrap?: boolean; sortable?: boolean | string;
   type?: DataTableColumnType; format?: DataTableNumberFormat; states?: Record<string, DataTableStatusState>;
-  max?: number; priority?: 1 | 2 | 3;
+  max?: number; timeZone?: string; priority?: 1 | 2 | 3;
 };
 
 type DataTableColumnType = "text" | "number" | "date" | "status" | "bar" | "amount" | "flow" | "delta";
