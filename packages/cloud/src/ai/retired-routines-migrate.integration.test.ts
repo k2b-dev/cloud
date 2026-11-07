@@ -66,6 +66,9 @@ databaseSuite()("scheduled routine retirement", () => {
     const [revoked] = await sql`SELECT state, revision FROM auth.mandates WHERE id=${mandateId}::uuid`;
     expect(revoked.state).toBe("revoked");
     expect(Number(revoked.revision)).toBe(2);
+    const revocations = await sql`SELECT action, outcome, reason FROM audit.events
+      WHERE target_type='mandate' AND target_id=${mandateId}`;
+    expect([...revocations]).toEqual([{ action: "mandate.revoke", outcome: "allowed", reason: "Scheduled chat routines retired" }]);
     const [archive] = await sql`SELECT retired_mandate FROM ai.chat_tasks WHERE id=${taskId}::uuid`;
     expect(archive.retired_mandate.state).toBe("active");
     expect(archive.retired_mandate.policy.grants[0].kind).toBe("database");

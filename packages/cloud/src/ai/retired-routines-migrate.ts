@@ -5,34 +5,6 @@ import { sql } from "../runtime/clients";
 export async function retireChatRoutines(db: SQL = sql): Promise<void> {
   await db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('ai.retire-chat-routines-v1'))`;
-    // Snapshot authority as evidence before revocation or later owner deletion. The column is
-    // a one-time checkpoint: subsequent startups never write to the frozen archive.
-    await tx`DO $$ BEGIN
-      IF to_regclass('ai.chat_tasks') IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM information_schema.columns WHERE table_schema = 'ai' AND table_name = 'chat_tasks'
-          AND column_name = 'retired_mandate'
-      ) THEN
-        ALTER TABLE ai.chat_tasks ADD COLUMN retired_mandate JSONB;
-        UPDATE ai.chat_tasks task SET retired_mandate = to_jsonb(mandate)
-          FROM auth.mandates mandate WHERE mandate.id = task.mandate_id;
-      END IF;
-    END $$`;
-    await tx`
-      WITH revoked AS (
-        UPDATE auth.mandates SET state = 'revoked', revision = revision + 1, updated_at = now(),
-          revoked_at = now(), revoked_by_app_id = 'core', revoke_reason = 'Scheduled chat routines retired'
-        WHERE owner_app_id = 'core' AND workload_type = 'ai.chat-task' AND state <> 'revoked'
-        RETURNING id, workload_id
-      ) INSERT INTO audit.events(action, outcome, target_type, target_id, reason, metadata)
-        SELECT 'mandate.revoke', 'allowed', 'mandate', id::text, 'Scheduled chat routines retired',
-          jsonb_build_object('ownerAppId', 'core', 'workloadType', 'ai.chat-task', 'workloadId', workload_id)
-        FROM revoked`;
-    await tx`UPDATE ai.pending_actions SET status = 'aborted', resolved_at = COALESCE(resolved_at, now())
-      WHERE status = 'pending' AND turn_id IN (SELECT id FROM ai.turns WHERE (run_config ? 'background' OR run_config ? 'mandate'))`;
-    await tx`UPDATE ai.turns SET status = 'aborted', completed_at = COALESCE(completed_at, now()),
-      cancel_requested_at = COALESCE(cancel_requested_at, now()), lease_owner = NULL, lease_expires_at = NULL,
-      error = 'Scheduled chat routines retired'
-      WHERE (run_config ? 'background' OR run_config ? 'mandate') AND status IN ('queued', 'running', 'waiting_for_action')`;
     // Old Core replicas cannot insert or restart routine turns after the cut migration commits.
     await tx`CREATE OR REPLACE FUNCTION ai.reject_retired_routine_turn() RETURNS trigger AS $$
       BEGIN
@@ -54,6 +26,42 @@ export async function retireChatRoutines(db: SQL = sql): Promise<void> {
     await tx`DROP TRIGGER IF EXISTS ai_retired_routine_mandate ON auth.mandates`;
     await tx`CREATE TRIGGER ai_retired_routine_mandate BEFORE INSERT OR UPDATE ON auth.mandates
       FOR EACH ROW EXECUTE FUNCTION ai.reject_retired_routine_mandate()`;
+    // Snapshot authority as evidence before revocation or later owner deletion. The column is
+    // a one-time checkpoint: subsequent startups never write to the frozen archive.
+    await tx`DO $$ BEGIN
+      IF to_regclass('ai.chat_tasks') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns WHERE table_schema = 'ai' AND table_name = 'chat_tasks'
+          AND column_name = 'retired_mandate'
+      ) THEN
+        ALTER TABLE ai.chat_tasks ADD COLUMN retired_mandate JSONB;
+        UPDATE ai.chat_tasks task SET retired_mandate = to_jsonb(mandate)
+          FROM auth.mandates mandate WHERE mandate.id = task.mandate_id;
+      END IF;
+    END $$`;
+    const [authority] = await tx<{ present: boolean }[]>`SELECT EXISTS (
+      SELECT 1 FROM auth.mandates
+        WHERE owner_app_id = 'core' AND workload_type = 'ai.chat-task' AND state <> 'revoked'
+    ) AS present`;
+    // Fresh databases have no routine authority to revoke. They must not need
+    // Core's audit schema just to initialize AI; real revocations still require
+    // the audit insert to commit in the same transaction.
+    if (authority?.present)
+      await tx`
+      WITH revoked AS (
+        UPDATE auth.mandates SET state = 'revoked', revision = revision + 1, updated_at = now(),
+          revoked_at = now(), revoked_by_app_id = 'core', revoke_reason = 'Scheduled chat routines retired'
+        WHERE owner_app_id = 'core' AND workload_type = 'ai.chat-task' AND state <> 'revoked'
+        RETURNING id, workload_id
+      ) INSERT INTO audit.events(action, outcome, target_type, target_id, reason, metadata)
+        SELECT 'mandate.revoke', 'allowed', 'mandate', id::text, 'Scheduled chat routines retired',
+          jsonb_build_object('ownerAppId', 'core', 'workloadType', 'ai.chat-task', 'workloadId', workload_id)
+        FROM revoked`;
+    await tx`UPDATE ai.pending_actions SET status = 'aborted', resolved_at = COALESCE(resolved_at, now())
+      WHERE status = 'pending' AND turn_id IN (SELECT id FROM ai.turns WHERE (run_config ? 'background' OR run_config ? 'mandate'))`;
+    await tx`UPDATE ai.turns SET status = 'aborted', completed_at = COALESCE(completed_at, now()),
+      cancel_requested_at = COALESCE(cancel_requested_at, now()), lease_owner = NULL, lease_expires_at = NULL,
+      error = 'Scheduled chat routines retired'
+      WHERE (run_config ? 'background' OR run_config ? 'mandate') AND status IN ('queued', 'running', 'waiting_for_action')`;
     await tx`CREATE OR REPLACE FUNCTION ai.read_only_routine_archive() RETURNS trigger AS $$
       BEGIN RAISE EXCEPTION 'Retired routine history is read-only'; END $$ LANGUAGE plpgsql`;
     await tx`DO $$ DECLARE archive TEXT; fk RECORD;

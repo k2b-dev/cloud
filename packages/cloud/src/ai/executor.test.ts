@@ -392,6 +392,7 @@ test("website approvals apply only to a turn a person started in a signed-in ses
   // `cld`, an API key, or an inter-chat message starts a turn without the marker.
   expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run" })).toBe(false);
   expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run", signedInSession: true, mandate, background })).toBe(false);
+  expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run", signedInSession: true, background })).toBe(false);
   expect(aiTurnAllowsWebsiteApprovals({ kind: "compact" })).toBe(false);
   expect(aiTurnAllowsWebsiteApprovals(null)).toBe(false);
 });
@@ -409,6 +410,9 @@ test("remembered approvals reject mandate-backed chats even when kind is omitted
   const mandate = { id: crypto.randomUUID(), revision: 1 };
   expect(aiTurnAllowsRememberedApprovals({ input: "Run", mandate })).toBe(false);
   expect(aiTurnAllowsRememberedApprovals({ kind: "chat", input: "Run", mandate })).toBe(false);
+  expect(aiTurnAllowsRememberedApprovals({ input: "Run", background: { taskId: "task01", occurrenceId: "run001", context: [] } })).toBe(
+    false,
+  );
   expect(aiTurnAllowsRememberedApprovals({ input: "Run" })).toBe(true);
   expect(aiTurnAllowsRememberedApprovals({ kind: "compact" })).toBe(true);
 });
