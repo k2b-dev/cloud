@@ -25,5 +25,5 @@ test("the Chat parse path accepts a waterfall and preserves its running balances
 test("model-facing waterfall schema rejects missing movements and supplied closing balances", () => {
   expect(CloudAiChartInputSchema.safeParse({ ...spec, steps: [{ label: "Unknown", value: null }] }).success).toBe(false);
   expect(CloudAiChartInputSchema.safeParse({ ...spec, end: { label: "Closing", value: 140 } }).success).toBe(false);
-  expect(CloudAiChartInputSchema.safeParse({ charts: [spec, spec] }).success).toBe(true);
+  expect(CloudAiChartInputSchema.safeParse({ title: "Cash comparison", charts: [spec, spec] }).success).toBe(true);
 });
