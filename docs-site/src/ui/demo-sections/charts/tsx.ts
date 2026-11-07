@@ -85,15 +85,19 @@ export function specToTsx(spec: JsonValue): string {
       const { label, ...rest } = column;
       return { ...rest, header: label ?? "", value: column.id ?? "" };
     });
-    const props = without({ ...spec, columns, ariaLabel: spec.title ?? "Table" }, [
-      "block",
-      "title",
-      "subtitle",
-      "search",
-      "empty",
-      "groupBy",
-    ]);
-    return ['import { DataTable } from "@k2b/ui";', "", element("DataTable", props, 0)].join("\n");
+    const props = without({ ...spec, columns, ariaLabel: spec.title ?? "Table" }, ["block", "title", "subtitle", "search", "groupBy"]);
+    const hosted = [
+      spec.search === true ? "search narrows rows with filterRows(rows, columns, query, locale)" : "",
+      Array.isArray(spec.groupBy) && spec.groupBy.length ? "grouping passes one column id as groupBy" : "",
+      "sorting keeps sort and onSortChange",
+    ].filter(Boolean);
+    return [
+      'import { DataTable } from "@k2b/ui";',
+      "",
+      // Search, grouping and sorting are the host's state; the description names which ones the frame offers.
+      `// The host owns: ${hosted.join("; ")}.`,
+      element("DataTable", props, 0),
+    ].join("\n");
   }
   if (typeof spec.block === "string") {
     const name = blockComponents[spec.block];

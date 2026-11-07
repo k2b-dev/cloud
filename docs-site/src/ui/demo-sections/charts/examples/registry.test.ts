@@ -89,10 +89,30 @@ test("every showcase page has non-empty TSX and JSON, generated from the same de
     const json = JSON.stringify(example.spec, null, 2);
     // Both code views of every kind page, blocks included, show real code.
     expect(tsx.split("\n").length, `${example.id} TSX`).toBeGreaterThan(3);
-    expect(tsx, `${example.id} TSX`).toMatch(/^import \{ [A-Za-z, ]+ \} from "@k2b\/ui";\n\n<([A-Z]|>)/);
+    expect(tsx, `${example.id} TSX`).toMatch(/^import \{ [A-Za-z, ]+ \} from "@k2b\/ui";\n\n(<[A-Z>]|\/\/ )/);
     expect(json.length, `${example.id} JSON`).toBeGreaterThan(2);
     const spec = example.spec as Record<string, unknown>;
-    if (Array.isArray(example.spec) || typeof spec.block === "string") continue;
+    // Blocks keep their content: one tile per key figure, one amount per flow entry, the table's columns and rows.
+    if (Array.isArray(example.spec)) {
+      expect(tsx.match(/<FlowAmount\n/g)?.length, example.id).toBe(example.spec.length);
+      expect(tsx.endsWith("</>"), example.id).toBe(true);
+      continue;
+    }
+    if (spec.block === "stats") {
+      expect(tsx.match(/<StatCell\n/g)?.length, example.id).toBe((spec.items as unknown[]).length);
+      expect(tsx.endsWith("</StatGrid>"), example.id).toBe(true);
+      continue;
+    }
+    if (spec.block === "table") {
+      for (const key of ["columns={", "rows={", "ariaLabel="]) expect(tsx, `${example.id} ${key}`).toContain(key);
+      for (const column of spec.columns as { id: string }[]) expect(tsx, `${example.id} ${column.id}`).toContain(`value: "${column.id}"`);
+      continue;
+    }
+    if (typeof spec.block === "string") {
+      for (const key of Object.keys(spec).filter((key) => !["block", "title", "subtitle"].includes(key)))
+        expect(tsx, `${example.id}.${key}`).toMatch(new RegExp(`\\n  ${key}(=|\\n)`));
+      continue;
+    }
     // A kind with a typed component reads as Chart.Kind (F7); otherwise as the dispatcher with kind.
     expect(tsx).toMatch(
       new RegExp(`<Chart\\.${String(spec.kind)[0]!.toUpperCase()}${String(spec.kind).slice(1)}\\n|kind=${JSON.stringify(spec.kind)}`),

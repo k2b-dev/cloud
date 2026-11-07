@@ -5,6 +5,14 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../test/browser";
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
+/** The packaged icon font with its file inlined, so centring is measured on drawn glyphs, not empty icon boxes. */
+const iconCss = (() => {
+  const dist = resolve(import.meta.dir, "../../dist");
+  return readFileSync(resolve(dist, "tabler.css"), "utf8").replace(
+    /url\(\.\/([^)?]+\.woff2)[^)]*\)/g,
+    (_match, file: string) => `url(data:font/woff2;base64,${readFileSync(resolve(dist, file)).toString("base64")})`,
+  );
+})();
 const surfaces = ["--k2b-surface", "--k2b-surface-muted", "--k2b-hover", "--k2b-selected"];
 const glyph = '<i class="ti ti-file" aria-hidden="true"></i>';
 const tile = (className: string, attributes = "") => `<span class="${className} k2b-icon-tile" ${attributes}>${glyph}</span>`;
@@ -195,18 +203,31 @@ describe("standalone icon tiles", () => {
         const glyph = sample.querySelector(".k2b-icon-tile i")!.getBoundingClientRect();
         return {
           sample: sample.getAttribute("data-sample"),
+          size: Math.min(glyph.width, glyph.height),
           x: Math.abs(glyph.left + glyph.width / 2 - (tile.left + tile.width / 2)),
           y: Math.abs(glyph.top + glyph.height / 2 - (tile.top + tile.height / 2)),
         };
       }),
     );
 
+  /** Loads the icon font and waits until it draws, so every glyph has its real box. */
+  const withIcons = async (page: Page) => {
+    await page.addStyleTag({ content: iconCss });
+    await page.evaluate(async () => {
+      await document.fonts.load('16px "tabler-icons"');
+      await document.fonts.ready;
+    });
+    expect(await page.evaluate(() => document.fonts.check('16px "tabler-icons"'))).toBe(true);
+  };
+
   for (const theme of ["light", "dark"]) {
     test(`the glyph sits in the middle of every tile in ${theme}`, async () => {
       const page = await browser.newPage();
       try {
         await mount(page, theme);
+        await withIcons(page);
         for (const offset of await offsets(page)) {
+          expect(offset.size, `${offset.sample} glyph size`).toBeGreaterThan(4);
           expect(offset.x, `${offset.sample} x`).toBeLessThanOrEqual(1);
           expect(offset.y, `${offset.sample} y`).toBeLessThanOrEqual(1);
         }
@@ -224,7 +245,9 @@ describe("standalone icon tiles", () => {
       await page.setContent(
         `<!doctype html><html><head><style>${css} .host-heading span { display: block; margin-top: 0.35rem; line-height: 1.55; }</style></head><body><header class="host-heading k2b-ui"><section data-sample="host"><span class="k2b-icon-tile" style="width: 2.25rem; height: 2.25rem; font-size: 1.15rem">${glyph}</span></section><div><span>Lines over time</span></div></header></body></html>`,
       );
+      await withIcons(page);
       const [offset] = await offsets(page);
+      expect(offset!.size).toBeGreaterThan(4);
       expect(offset!.x).toBeLessThanOrEqual(1);
       expect(offset!.y).toBeLessThanOrEqual(1);
     } finally {
