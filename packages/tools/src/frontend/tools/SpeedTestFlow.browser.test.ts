@@ -256,6 +256,22 @@ test("finished tests fit their actual time span and leave an unwrapped complete 
     const page = await open("public", width);
     try {
       const initial = await geometry(page);
+      const expectTimeLabelsInside = async () => {
+        await settled(page);
+        const bounds = await page.locator(".tools-speedtest-chart .stdlib-chart-tick-label").evaluateAll((ticks) => {
+          const labels = ticks.filter((tick) => tick.textContent?.endsWith(" s"));
+          const svg = labels[0]!.closest("svg")!.getBoundingClientRect();
+          return labels.map((label, index) => {
+            const rect = label.getBoundingClientRect();
+            return {
+              inside: rect.left >= svg.left && rect.right <= svg.right,
+              separate: index === 0 || rect.left >= labels[index - 1]!.getBoundingClientRect().right,
+            };
+          });
+        });
+        expect(bounds.length).toBeGreaterThan(1);
+        expect(bounds.every((label) => label.inside && label.separate)).toBe(true);
+      };
       const axisEnd = async () =>
         page.locator(".tools-speedtest-chart .stdlib-chart-tick-label").evaluateAll((ticks) =>
           Math.max(
@@ -276,6 +292,7 @@ test("finished tests fit their actual time span and leave an unwrapped complete 
       expect(await geometry(page)).toEqual(initial);
       const end = await axisEnd();
       expect(end).toBeLessThan(14);
+      await expectTimeLabelsInside();
       expect(await page.locator(".tools-speedtest-eta").evaluate((node) => getComputedStyle(node).visibility)).toBe("hidden");
       expect(await page.getByRole("progressbar").count()).toBe(0);
       const terminal = await page.locator(".tools-speedtest-terminal").evaluate((node) => ({

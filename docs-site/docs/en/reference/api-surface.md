@@ -697,3 +697,8 @@ Use its supported entries rather than importing source files:
 
 See [Run a speedtest server](/en/docs/operations/speedtest-server) for duration,
 statistics, anonymous budgets and migration from Cloud's legacy script URLs.
+
+Core's routine definition export uses the framework-owned `exportChatTasks`,
+`ChatTaskExportPageSchema`, `ChatTaskExportEntrySchema`, `ChatTaskExportQuerySchema`
+and `ChatTaskExportForbiddenError` exports from `@k2b/cloud/ai`. See
+[Export automation definitions](/en/docs/operations/automation-definition-export).

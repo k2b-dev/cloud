@@ -1,10 +1,10 @@
 import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
-import { mailKeywordSchema } from "../contracts";
 import { normalizeEmailAddress } from "./address-normalization";
 import { automatedMailReasons, autoReplyFactsFromProtocol } from "./auto-reply-policy";
 import { sha256Json } from "./canonical";
+import { normalizeMailKeywords } from "./command-message-state";
 import type { ConnectorProtocolFacts } from "./connectors";
 import { parseMessageProtocolFacts } from "./message-protocol";
 
@@ -150,14 +150,6 @@ const standardFlagNames: Record<string, string> = {
 
 export const normalizeWorkflowFlags = (flags: readonly string[]): string[] =>
   flags.map((flag) => standardFlagNames[flag.toLowerCase()] ?? flag).sort();
-
-export const normalizeWorkflowKeywords = (keywords: readonly string[]): string[] =>
-  keywords
-    .flatMap((keyword) => {
-      const parsed = mailKeywordSchema.safeParse(keyword);
-      return parsed.success ? [parsed.data] : [];
-    })
-    .sort();
 
 const snapshotColumns = () => sql`
   rmr.id AS remote_message_ref_id,
@@ -312,7 +304,7 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
       remoteState: {
         modseq: row.modseq == null ? null : String(row.modseq),
         flags: flags.filter((flag) => ["seen", "answered", "flagged", "draft"].includes(flag)),
-        keywords: normalizeWorkflowKeywords(keywords),
+        keywords: normalizeMailKeywords(keywords),
       },
       conversation:
         row.conversation_id && conversation

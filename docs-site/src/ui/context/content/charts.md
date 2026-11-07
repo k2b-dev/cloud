@@ -272,8 +272,8 @@ over `autoVariant`. Non-finite coordinates are skipped.
 `ticks?: number` (suggested count, default 5), `scale?: "linear" | "log"`
 (default linear), `minorTicks?: boolean` (default false), and optional exact
 `domain?: [number, number]` comparison bounds. Exact linear bounds keep both
-endpoint labels and omit round ticks closer than half a regular interval to
-either endpoint. See the snapshot section for domain validation.
+endpoint labels and omit round ticks closer than a regular interval to
+either endpoint. Numeric X endpoint labels align inward so formatted units remain inside the plot. See the snapshot section for domain validation.
 For line and scatter charts, log axes exclude non-positive coordinates. `references` is an array of
 `{ value: number; axis?: "x" | "y"; label?: string }`; the default axis is Y.
 Categorical bars ignore X references. Use the
@@ -1124,3 +1124,7 @@ percentage axis and tooltips.
 The top legend starts with the final column's amount or share and follows the
 inspected column. A missing column (or a zero-sum normalized column) has no inspected values; the
 legend uses a dash when its final column is a gap.
+
+Stat-tile trends use the same sparkline SVG and interaction host as `Chart`,
+without importing the catalog dispatcher. Adding another chart kind therefore
+does not add its renderer to pages that only show stat trends.
