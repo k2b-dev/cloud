@@ -5,6 +5,8 @@ import { createCloud, type RuntimeContext } from "./cloud";
 import { CloudError } from "./errors";
 import { ensureRandomUuid } from "./random-uuid";
 
+declare const __CLOUD_CODE_RUNNER__: boolean;
+
 type Definition = (
   input: unknown,
   context: {
@@ -77,7 +79,38 @@ Object.defineProperty(globalThis, "__artifactInit", {
     booted = true;
     Object.assign(runtimeContext, context);
     inputFiles = files;
-    Object.defineProperty(globalThis, "cloud", { value: createCloud(rpc, runtimeContext, true), writable: false, configurable: false });
+    if (typeof __CLOUD_CODE_RUNNER__ !== "undefined" && __CLOUD_CODE_RUNNER__)
+      Object.defineProperty(globalThis, "__artifactHttp", {
+        value: (value: unknown) => {
+          const request = z
+            .object({ url: z.string(), method: z.string(), headers: z.record(z.string(), z.string()), body: z.string().optional() })
+            .strict()
+            .parse(value);
+          let binary = "";
+          if (request.body !== undefined) {
+            const bytes = new TextEncoder().encode(request.body);
+            for (let offset = 0; offset < bytes.length; offset += 8192)
+              binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+          }
+          const headers = Object.fromEntries(
+            Object.entries(request.headers).map(([name, value]) => {
+              const reference = /^(.*?)\[secret:([A-Za-z_][A-Za-z0-9_]{0,63})\]$/.exec(value);
+              return [name, reference ? { secret: reference[2], prefix: reference[1] } : value];
+            }),
+          );
+          return rpc("http.fetch", [{ ...request, headers, ...(request.body === undefined ? {} : { body: btoa(binary) }) }]);
+        },
+      });
+    Object.defineProperty(globalThis, "cloud", {
+      value: createCloud(
+        rpc,
+        runtimeContext,
+        true,
+        typeof __CLOUD_CODE_RUNNER__ !== "undefined" && __CLOUD_CODE_RUNNER__ ? (name) => import("./" + name + ".js") : undefined,
+      ),
+      writable: false,
+      configurable: false,
+    });
   },
 });
 let started = false;

@@ -23,6 +23,7 @@ export function createCodeCapabilityRoutes(
     getMandate?: typeof getMandate;
     dispatch?: typeof dispatchCapability;
     stream?: typeof dispatchCapabilityStream;
+    runner?: Hono<AuthContext>;
   } = {},
 ) {
   const store = dependencies.store ?? aiConversations;
@@ -92,6 +93,7 @@ export function createCodeCapabilityRoutes(
       }
       await next();
     })
+    .route("/:conversationId/:turnId/runner", dependencies.runner ?? new Hono<AuthContext>())
     .post("/:conversationId/:turnId/capabilities/v1/actions/:appId/:capabilityId/review", (c) => invoke(c, true))
     .post("/:conversationId/:turnId/capabilities/v1/:kind{queries|actions}/:appId/:capabilityId", (c) => invoke(c))
     .post("/:conversationId/:turnId/capabilities/v1/streams/:verb", async (c) => {
