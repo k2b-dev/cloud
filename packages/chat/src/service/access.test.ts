@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ServiceAccountSchema, UserSchema } from "@k2b/cloud/contracts";
 import type { RequestActor } from "@k2b/cloud/server";
-import { actingPrincipal, boundConversation, capPermission, subjectPrincipal } from "./access";
+import { actingPrincipal, boundConversation, capPermission, hasMutationScope, subjectPrincipal } from "./access";
 
 const id = "12345678-1234-4234-8234-123456789012";
 const person = UserSchema.parse({
@@ -65,6 +65,23 @@ describe("conversation credential authority", () => {
     }
     expect(actingPrincipal(delegated)).toEqual({ type: "service_account", id: account.id });
     expect(subjectPrincipal({ type: "user", userId: id, delegatedByServiceAccountId: account.id })).toEqual({ type: "user", id });
+  });
+  test("personal keys retain session mutation authority while OAuth and machines need write scope", () => {
+    expect(hasMutationScope({ actor: { kind: "user", user: person } })).toBeTrue();
+    expect(hasMutationScope({ actor: actor(["write"]), credentialScopes: ["read"] })).toBeFalse();
+    for (const scopes of [[], ["read"], ["write"], ["admin"]]) {
+      const delegated: RequestActor = {
+        kind: "service_account",
+        serviceAccount: { ...account, kind: "user_delegated", delegatedUserId: id },
+        delegatedUser: person,
+        scopes,
+      };
+      expect(hasMutationScope({ actor: delegated, credentialScopes: scopes })).toBeTrue();
+      const allowed = scopes.includes("write") || scopes.includes("admin");
+      expect(hasMutationScope({ actor: { kind: "user", user: person }, credentialScopes: scopes })).toBe(allowed);
+      expect(hasMutationScope({ actor: { ...delegated, oauthClientId: "oauth-client" }, credentialScopes: scopes })).toBe(allowed);
+      expect(hasMutationScope({ actor: actor(scopes), credentialScopes: scopes })).toBe(allowed);
+    }
   });
   test("requires the exact app and resource type for a resource binding", () => {
     const base = actor(["read"], "resource_bound");

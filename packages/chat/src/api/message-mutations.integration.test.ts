@@ -71,7 +71,7 @@ suiteFor(
       expect((await f.request(author.headers, path, "DELETE", deletion)).status).toBe(200);
     expect((await f.request(author.headers, path, "DELETE", { ...deletion, clientId: "new-limited" })).status).toBe(429);
   });
-  test("deleted replies disappear from For You, and expired or read-only mutations fail", async () => {
+  test("deleted replies disappear from For You, and expired mutations fail for sessions and personal keys", async () => {
     const author = await f.person("Lea");
     const other = await f.person("Nora");
     const chat = await f.fixture(author, [{ person: other, permission: "write" }]);
@@ -111,10 +111,10 @@ suiteFor(
     expect(
       (
         await f.request(await f.credential(author), `/${chat.shortId}/messages/${aged.id}`, "DELETE", {
-          clientId: "read-only",
+          clientId: "personal-key-old",
           revision: aged.contentRevision ?? 0,
         })
       ).status,
-    ).toBe(403);
+    ).toBe(409);
   });
 });
