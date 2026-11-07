@@ -17,7 +17,8 @@ const fixture = `
 import { createComponent, render } from "solid-js/web";
 import { Button, Chat, ColorInput, Combobox, DatePicker, NumberInput, Select, TagsInput, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const options = [{ value: "one", label: "First" }, { value: "two", label: "Second" }];
-// Both chat composer variants: the assistant prompt's card and the conversation's pill.
+// The conversation composer's pill. The assistant prompt's card takes the AI colour; chat-composer-edge.browser.test.ts
+// measures it.
 const composer = (variant, extra) =>
   createComponent(Chat.Composer, { variant, formatting: variant === "conversation", value: "Hello", onValueChange: () => {}, onSubmit: () => {}, ...extra });
 const fields = (invalid) => {
@@ -33,7 +34,6 @@ const fields = (invalid) => {
     ["date", createComponent(DatePicker, { label: "Due", value: "2026-11-02", onValueChange: () => {}, error })],
     ["color", createComponent(ColorInput, { label: "Colour", value: "#2563eb", onValueChange: () => {}, error })],
     ["compact", createComponent(TextInput, { "aria-label": "Width", variant: "compact", value: "120", error })],
-    ["composer", composer("default", { error })],
     ["conversation", composer("conversation", { error })],
   ];
 };
@@ -45,7 +45,6 @@ const disabled = () => [
   ["select", createComponent(Select, { label: "Kind", value: "one", options, onValueChange: () => {}, disabled: true })],
   ["date", createComponent(DatePicker, { label: "Due", value: "2026-11-02", onValueChange: () => {}, disabled: true, error: "Check this value" })],
   ["color", createComponent(ColorInput, { label: "Colour", value: "#2563eb", onValueChange: () => {}, disabled: true })],
-  ["composer", composer("default", { disabled: true })],
   ["conversation", composer("conversation", { disabled: true, error: "Check this value" })],
 ];
 render(() => [false, true].map((invalid) =>
@@ -87,11 +86,6 @@ const shells: Record<string, { edge: string; focus: string; text: string }> = {
   date: { edge: ".k2b-input-shell", focus: "input", text: "input" },
   color: { edge: ".k2b-color-input__value", focus: ".k2b-color-input__value", text: "code" },
   compact: { edge: ".k2b-input-shell", focus: "input", text: "input" },
-  composer: {
-    edge: ".k2b-chat-composer",
-    focus: "textarea:not(.k2b-chat-composer__measure)",
-    text: "textarea:not(.k2b-chat-composer__measure)",
-  },
   conversation: {
     edge: ".k2b-chat-composer__field",
     focus: "textarea:not(.k2b-chat-composer__measure)",
