@@ -173,9 +173,14 @@ test("hidden mailboxes fold into one quiet row, and the Mailboxes menu holds New
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "Altes Projekt wiederherstellen" }).waitFor();
     expect(await dialog.getByRole("button", { name: "Testpostfach 2 wiederherstellen" }).count()).toBe(1);
-    // Choosing one closes the list and asks before it restores, as before.
-    await dialog.getByRole("button", { name: "Altes Projekt wiederherstellen" }).click();
+    // Choosing one with the keyboard closes the list and asks before it restores, as before.
+    await dialog.getByRole("button", { name: "Altes Projekt wiederherstellen" }).focus();
+    await page.keyboard.press("Enter");
     await page.getByRole("button", { name: "Postfach wiederherstellen" }).waitFor();
+    // Cancelling returns focus to the menu that opened the list, not to the page body.
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Postfach wiederherstellen" }).waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Aktionen für die Postfachliste");
     expect(page.errors).toEqual([]);
   } finally {
     await close(page);

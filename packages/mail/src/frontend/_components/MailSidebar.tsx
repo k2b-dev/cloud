@@ -239,16 +239,26 @@ export default function MailSidebar(
     }
   };
   // The deleted mailboxes wait behind the Mailboxes menu; the dialog loads with the action that opens it.
+  // One restore at a time: a second one would drop the first one's result.
   const openDeletedMailboxes = async () => {
+    if (restoreMailbox.loading()) return;
     const dialog = await importOnDemand(() => import("./DeletedMailboxesDialog"));
     const mailboxId = await dialog?.openDeletedMailboxesDialog();
-    if (mailboxId) restoreMailbox.mutate(mailboxId);
+    if (!mailboxId) return;
+    // The closed list returns focus on the next frame; the confirmation opens after it, so Cancel returns focus there.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    restoreMailbox.mutate(mailboxId);
   };
   const mailboxActions = () => [
     ...(props.canCreate
       ? [{ label: messages().newMailbox, icon: "ti ti-mail-plus", disabled: creating(), action: () => void createMailbox() }]
       : []),
-    { label: overviewText().deletedMailboxes, icon: "ti ti-trash", action: () => void openDeletedMailboxes() },
+    {
+      label: overviewText().deletedMailboxes,
+      icon: "ti ti-trash",
+      disabled: restoreMailbox.loading(),
+      action: () => void openDeletedMailboxes(),
+    },
   ];
   type HealthDialog = typeof import("./MailboxHealthDialog");
   const restoreMailbox = mutations.create<{ mailbox: Mailbox; health?: HealthDialog } | null, string>({
@@ -704,7 +714,13 @@ export default function MailSidebar(
       ...(props.canCreate
         ? [{ id: "new-mailbox", label: messages().newMailbox, icon: "ti ti-mail-plus", action: "new-mailbox", disabled: creating() }]
         : []),
-      { id: "deleted-mailboxes", label: overviewText().deletedMailboxes, icon: "ti ti-trash", action: "deleted-mailboxes" },
+      {
+        id: "deleted-mailboxes",
+        label: overviewText().deletedMailboxes,
+        icon: "ti ti-trash",
+        action: "deleted-mailboxes",
+        disabled: restoreMailbox.loading(),
+      },
     ],
     onNavigate: (event) => {
       const url = new URL(event.href, window.location.origin);
