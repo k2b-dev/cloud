@@ -335,7 +335,7 @@ const loadReady = async (
           capability: string;
           target: { type: string; id: string } | null;
           refusal: string | null;
-          refusalCode?: "code_ai_budget_limit";
+          refusalCode?: "code_ai_budget_limit" | "code_ai_daily_budget_limit" | "code_ai_owner_daily_budget_limit";
         }[]
       | null,
   ) => {
@@ -441,20 +441,27 @@ const loadReady = async (
       entrypoint: entry.entrypoint,
       ...(entry.title === undefined ? {} : { title: entry.title }),
       kind: entry.kind,
+      ...(entry.route ? { route: entry.route } : {}),
       cron: entry.cron,
       ...(entry.at === undefined ? {} : { at: entry.at, timeZone: entry.timeZone }),
       isNew: isNew(entry.entrypoint),
       lastRun: lastRunOf(entry.entrypoint),
       nextRunAt: isNew(entry.entrypoint) ? null : (nextRuns.get(entry.entrypoint) ?? null),
     }));
-  const activeEntrypoints = new Set(activeManifest?.entrypoints.map((entry) => entry.entrypoint) ?? []);
+  const activeEntrypoints = new Map(activeManifest?.entrypoints.map((entry) => [entry.entrypoint, JSON.stringify(entry.route)]) ?? []);
   const automations =
     (code.activeVersionId && !activeManifest) || (waitingReceipt && !waitingManifest)
       ? null
       : [
           ...(activeManifest ? automationsFrom(activeManifest, () => false) : []),
           ...(waitingManifest
-            ? automationsFrom(waitingManifest, (entrypoint) => !activeEntrypoints.has(entrypoint)).filter((item) => item.isNew)
+            ? automationsFrom(
+                waitingManifest,
+                (entrypoint) =>
+                  !activeEntrypoints.has(entrypoint) ||
+                  activeEntrypoints.get(entrypoint) !==
+                    JSON.stringify(waitingManifest.entrypoints.find((entry) => entry.entrypoint === entrypoint)?.route),
+              ).filter((item) => item.isNew)
             : []),
         ];
 

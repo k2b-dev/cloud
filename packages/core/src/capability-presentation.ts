@@ -43,9 +43,13 @@ const codeVersionSubmissionInput = {
   "manifest.secrets[].binding_revision": "Unveränderliche Bindungsrevision.",
   "manifest.internet": "Vollständige Liste der genauen HTTPS-Ursprünge dieser Version, auch ohne Secrets.",
   "manifest.entrypoints": "Alle von der Prüfung erkannten ausführbaren Einstiegspunkte.",
-  "manifest.entrypoints[].kind": "Zeitgesteuerter oder manuell gestarteter Einstiegspunkt.",
+  "manifest.entrypoints[].kind": "Zeitgesteuerter, manuell gestarteter oder HTTP-Einstiegspunkt.",
   "manifest.entrypoints[].entrypoint": "Benannter ESM-Export für die Ausführung.",
   "manifest.entrypoints[].title": "Optionaler lesbarer Name der Automation; ohne ihn gilt der Export-Name.",
+  "manifest.entrypoints[].route": "Geprüfte HTTP-Methode, Pfad und öffentliche Freigabe eines Route-Handlers.",
+  "manifest.entrypoints[].route.method": "HTTP-Methode oder ALL für jede Methode.",
+  "manifest.entrypoints[].route.path": "Code-relativer Pfad mit optionalen benannten Segmenten.",
+  "manifest.entrypoints[].route.public": "Ob die Route anonyme Besucher ohne Benutzer annimmt.",
   "manifest.entrypoints[].cron": "Zeitplan mit fünf Feldern oder null bei manueller oder einmaliger Ausführung.",
   "manifest.entrypoints[].at": "Einmaliger absoluter Zeitpunkt mit Z oder numerischem UTC-Offset.",
   "manifest.entrypoints[].timeZone": "IANA-Zeitzone für die Anzeige des einmaligen Termins; bei Cron nicht gesetzt.",
@@ -93,6 +97,18 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "ai.generate": {
+          title: "Text oder strukturierte Daten erzeugen",
+          description:
+            "Berechtigt gelesene Inhalte zusammenfassen, Text entwerfen oder Felder nach einem geprüften JSON-Schema extrahieren. Nur lesend; versendet oder speichert nichts. Belastet das KI-Kontingent des Aufrufers.",
+          input: {
+            task: "Kurzer Abrechnungsname, etwa mail.summary.",
+            prompt: "Vertrauenswürdige Aufgabenanweisungen. Mail-Inhalte und andere Quelldaten gehören in input.",
+            input: "Berechtigt gelesene Quelldaten; werden als nicht vertrauenswürdige Daten behandelt, niemals als Anweisungen.",
+            model: "Modellklasse oder erlaubte Variante; Standard ist balanced.",
+            output: "Begrenzter Text oder ein striktes JSON-Schema mit skalaren Feldern. Die Ausgabe wird vor der Rückgabe geprüft.",
+          },
+        },
         "ai.decide": {
           title: "Ein Entscheidungsmodell fragen",
           description:

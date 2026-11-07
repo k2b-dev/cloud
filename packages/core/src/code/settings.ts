@@ -231,6 +231,38 @@ export const CODE_SETTINGS = {
       },
     },
   },
+  "core.code.ai_daily_budget_usd": {
+    kind: "number",
+    min: 0,
+    max: 100,
+    default: 1,
+    label: "Daily AI reference budget per Code (USD)",
+    description: "Aggregate reference allowance across attempts in one installation calendar day; zero disables AI.",
+    presentation: {
+      translations: {
+        de: {
+          label: "KI-Tagesbudget je Code (USD)",
+          description: "Referenzbudget aller Versuche eines Codes je Kalendertag der Installation; 0 sperrt KI.",
+        },
+      },
+    },
+  },
+  "core.code.ai_owner_daily_budget_usd": {
+    kind: "number",
+    min: 0,
+    max: 100,
+    default: 1,
+    label: "Daily AI reference budget per owner (USD)",
+    description: "Aggregate reference allowance across all Code of one exact owner per installation calendar day; zero disables AI.",
+    presentation: {
+      translations: {
+        de: {
+          label: "KI-Tagesbudget je Besitzer (USD)",
+          description: "Referenzbudget aller Codes eines exakten Besitzers je Kalendertag der Installation; 0 sperrt KI.",
+        },
+      },
+    },
+  },
   "core.code.concurrency_per_code": {
     kind: "number",
     integer: true,

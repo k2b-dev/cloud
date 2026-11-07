@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { CODE_REQUEST_LIMITS, type CodeRouteResponse, CodeRouteResponseSchema } from "@k2b/cloud/code";
 import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-token";
 import type { RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
@@ -61,7 +62,9 @@ async function enqueue(
   if (code.state !== "active" || !code.activeVersionId) throw new CodeDataError("CONFLICT", "Code is not active.");
   const [version] = await db<{ manifest: unknown }[]>`SELECT manifest FROM code.versions WHERE id=${code.activeVersionId}::uuid`;
   const manifest = CodeCheckedVersionManifestSchema.parse(version?.manifest);
-  const entry = manifest.entrypoints.find((entry) => entry.entrypoint === input.entrypoint && (!input.tick || entry.kind === "schedule"));
+  const entry = manifest.entrypoints.find(
+    (entry) => entry.entrypoint === input.entrypoint && entry.kind !== "route" && (!input.tick || entry.kind === "schedule"),
+  );
   if (!entry) {
     if (input.tick) return null;
     throw new CodeDataError("BAD_INPUT", "Unknown Code entrypoint.");
@@ -183,6 +186,7 @@ type ClaimedRun = {
   deadline_at: Date;
   lease_expires_at: Date;
   input: RunnerLease["input"];
+  trigger: string;
   bundle_hash: string;
   mandate_id: string;
   mandate_revision: number;
@@ -268,6 +272,11 @@ export async function codeRunnerLease(
   const code = await findCode(run.code_id);
   const budget = AbortSignal.timeout(CODE_RUN_HEARTBEAT_MS);
   const signal = options.signal ? AbortSignal.any([options.signal, budget]) : budget;
+  if (run.trigger === "path" && (!code?.serviceAccountId || code.owner.kind === "person")) {
+    await sql`UPDATE code.runs SET state='failed',outcome='code_route_account_required',ended_at=clock_timestamp(),lease_expires_at=NULL
+      WHERE id=${run.id}::uuid AND generation=${run.generation} AND state='running'`;
+    return null;
+  }
   let check = code ? options.ownerChecks?.get(code.id) : undefined;
   if (code && !check) {
     check = checkCodeOwnerBeforeRun(code, signal);
@@ -302,6 +311,7 @@ export async function codeRunnerLease(
     { deadlineAt },
   );
   return {
+    ...(run.trigger === "path" ? { kind: "request" as const } : {}),
     runId: run.id,
     codeId: run.code_id,
     versionId: run.version_id,
@@ -335,9 +345,9 @@ async function settleRun(runId: string, outcome: RunnerOutcome, limits: CodeRunL
   // An in-flight or uncertain Action is an effect boundary too. Never retry it automatically.
   const [result] = await db<{ retry: boolean; exhausted: boolean }[]>`SELECT
     (${outcome}<>'succeeded' AND generation<${limits.attempts} AND deadline_at>clock_timestamp()
-      AND NOT effect_started AND NOT EXISTS(SELECT 1 FROM code.calls WHERE run_id=r.id AND kind='action')) AS retry,
+      AND trigger<>'path' AND NOT effect_started AND NOT EXISTS(SELECT 1 FROM code.calls WHERE run_id=r.id AND kind='action')) AS retry,
     (${outcome}<>'succeeded' AND generation>=${limits.attempts} AND deadline_at>clock_timestamp()
-      AND NOT effect_started AND NOT EXISTS(SELECT 1 FROM code.calls WHERE run_id=r.id AND kind='action')) AS exhausted
+      AND trigger<>'path' AND NOT effect_started AND NOT EXISTS(SELECT 1 FROM code.calls WHERE run_id=r.id AND kind='action')) AS exhausted
     FROM code.runs r WHERE id=${runId}::uuid`;
   const retry = result?.retry ?? false;
   await db`UPDATE code.calls SET state='uncertain',ended_at=clock_timestamp(),result='{"ok":false,"error":{"code":"code_result_unknown"}}'::json
@@ -346,10 +356,21 @@ async function settleRun(runId: string, outcome: RunnerOutcome, limits: CodeRunL
     outcome=${retry ? null : result?.exhausted ? "retry_exhausted" : outcome}, ended_at=CASE WHEN ${retry} THEN NULL ELSE clock_timestamp() END,lease_expires_at=NULL WHERE id=${runId}::uuid`;
 }
 /** A reported failure before an Action can requeue within the ORIGINAL budgets; success is terminal. */
-export async function completeCodeRun(claims: CodeRunTokenClaims, outcome: RunnerOutcome): Promise<void> {
+export async function completeCodeRun(claims: CodeRunTokenClaims, outcome: RunnerOutcome, response?: CodeRouteResponse): Promise<void> {
   const limits = await readCodeRunLimits();
   await sql.begin(async (db) => {
     await requireCodeRunFence(claims, db);
+    const [run] = await db<{ trigger: string }[]>`SELECT trigger FROM code.runs WHERE id=${claims.runId}::uuid`;
+    if (run?.trigger === "path") {
+      const parsed = CodeRouteResponseSchema.safeParse(response);
+      if (
+        outcome === "succeeded" &&
+        (!parsed.success || Buffer.byteLength(JSON.stringify(parsed.data)) > CODE_REQUEST_LIMITS.responseBytes)
+      )
+        outcome = "failed";
+      if (outcome === "succeeded" && parsed.success)
+        await db`UPDATE code.runs SET output=${JSON.stringify(parsed.data)}::text::json WHERE id=${claims.runId}::uuid`;
+    }
     await settleRun(claims.runId, outcome, limits, db);
   });
 }
@@ -357,6 +378,9 @@ export async function completeCodeRun(claims: CodeRunTokenClaims, outcome: Runne
 export async function reconcileCodeRuns(): Promise<void> {
   const limits = await readCodeRunLimits();
   await sql.begin(async (db) => {
+    await db`UPDATE code.runs SET input='null'::jsonb,output=NULL WHERE id IN(
+      SELECT id FROM code.runs WHERE trigger='path' AND deadline_at<=clock_timestamp() AND (input<>'null'::jsonb OR output IS NOT NULL)
+      ORDER BY deadline_at,id LIMIT 100 FOR UPDATE SKIP LOCKED)`;
     const expired = await db<{ id: string; timed_out: boolean }[]>`SELECT id,deadline_at<=clock_timestamp() AS timed_out FROM code.runs
       WHERE state='running' AND (lease_expires_at<=clock_timestamp() OR deadline_at<=clock_timestamp())
       ORDER BY lease_expires_at,id LIMIT 100 FOR UPDATE SKIP LOCKED`;

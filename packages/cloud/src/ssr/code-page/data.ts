@@ -59,7 +59,8 @@ export const ManifestSchema = z.object({
   internet: CodeInternetOriginsSchema.optional(),
   entrypoints: z.array(
     z.object({
-      kind: z.enum(["schedule", "manual"]),
+      kind: z.enum(["schedule", "manual", "route"]),
+      route: z.object({ method: z.string(), path: z.string(), public: z.boolean() }).optional(),
       entrypoint: z.string(),
       title: z.string().optional(),
       cron: z.string().nullable(),
@@ -216,7 +217,7 @@ export type CodePageCall = {
   /** How the bridge classified its refusal; null for calls it did not refuse and for older records. */
   refusal: CodeBridgeRefusalKind | null;
   /** Stable budget refusal from Core, kept separately from the policy classification. */
-  refusalCode?: "code_ai_budget_limit";
+  refusalCode?: "code_ai_budget_limit" | "code_ai_daily_budget_limit" | "code_ai_owner_daily_budget_limit";
   state: "running" | "succeeded" | "failed" | "uncertain";
   /** A short readable summary of the result or error, never the full payload. */
   summary: string | null;
@@ -237,7 +238,8 @@ export type CodePageAutomation = {
   entrypoint: string;
   /** Reviewed human title; absent on older versions. */
   title?: string;
-  kind: "schedule" | "manual";
+  kind: "schedule" | "manual" | "route";
+  route?: { method: string; path: string; public: boolean };
   cron: string | null;
   at?: string;
   timeZone?: string;
@@ -258,7 +260,7 @@ export type CodePageRefusal = {
    * approval for it.
    */
   kind: Extract<CodeBridgeRefusalKind, "target_refused" | "policy" | "approval">;
-  code?: "code_ai_budget_limit";
+  code?: "code_ai_budget_limit" | "code_ai_daily_budget_limit" | "code_ai_owner_daily_budget_limit";
   runId: string;
   versionId: string;
   /** What the Code called; null for readers, who see no calls, because a target ID can come from runtime data. */

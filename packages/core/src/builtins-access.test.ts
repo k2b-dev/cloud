@@ -97,6 +97,7 @@ const service = (
 // whose credentials ordinary Cloud authentication must never consume.
 const publicPaths: Record<string, string[]> = {
   core: [
+    "/code/c_fixture/",
     "/_internal/apps/bootstrap",
     "/_internal/code/runner/call",
     "/_internal/code/runner/config",
@@ -271,6 +272,7 @@ const publicPaths: Record<string, string[]> = {
 };
 const protectedPaths: Record<string, string[]> = {
   core: [
+    "/code-other/c_fixture/",
     "/_internal/apps/bootstrap/private",
     "/_internal/code/runner/call/private",
     "/me",

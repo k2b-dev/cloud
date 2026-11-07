@@ -14,7 +14,7 @@ import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
 import { RunnerCallResponseSchema } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { ratelimit } from "@k2b/cloud/server";
-import { mandates } from "@k2b/cloud/services";
+import { coreSettings, mandates } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { CodeDataError } from "./access";
@@ -184,6 +184,7 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
       let issuanceRefusal: CodeBridgeRefusal | undefined;
       let aiReservation: string | null = null;
       let aiProfiles: AiModelProfile[] = [];
+      let aiFailure: unknown;
       try {
         const rate = await (
           options.checkRate ??
@@ -195,7 +196,11 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
           aiReservation = await sql.begin(async (tx) => {
             // Resolve current group policy before reserving; issuance rechecks it before the model is called.
             await authorizeCall(call, tx);
-            const reservation = await reserveCodeAiBudget(call.claims, ordinal, await codeSettings.get("core.code.ai_budget_usd"), tx);
+            const reservation = await reserveCodeAiBudget(call.claims, ordinal, await codeSettings.get("core.code.ai_budget_usd"), tx, {
+              code: await codeSettings.get("core.code.ai_daily_budget_usd"),
+              owner: await codeSettings.get("core.code.ai_owner_daily_budget_usd"),
+              timeZone: (await coreSettings.get<string>("app.timezone")) || "UTC",
+            });
             if (!reservation.ok) denied(reservation.code);
             return reservation.reserved;
           });
@@ -216,6 +221,9 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
         response = await execute({
           onRefusal: (kind) => {
             refusalKind = kind;
+          },
+          onFailure: (error) => {
+            aiFailure = error;
           },
           mandateId: call.claims.mandateId,
           mandateRevision: call.claims.mandateRevision,
@@ -238,7 +246,9 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
           await settleCodeAiBudget(
             call.claims,
             ordinal,
-            issuanceRefusal ? "0" : codeAiReferenceCost(call.call.capability, result, aiProfiles, aiReservation),
+            issuanceRefusal
+              ? "0"
+              : codeAiReferenceCost(call.call.capability, aiFailure ? { ok: false, error: aiFailure } : result, aiProfiles, aiReservation),
             tx,
           );
         await finishCodeCall(

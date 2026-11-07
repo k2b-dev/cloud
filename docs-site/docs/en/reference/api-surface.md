@@ -467,7 +467,8 @@ from `@k2b/ui` accepts `legend` entries typed as `ChartLegendEntry`
 height; see [Chart presentation and controls](/en/ui/content/charts#chart-presentation-and-controls).
 
 `@k2b/cloud/ai` exposes `AiTaskRequestSchema`, `AiTaskRequest`,
-`AiTaskRequestInput`, and `executeAiTask` for bounded text generation,
+`AiTaskRequestInput`, `AI_TASK_REQUEST_MAX_BYTES`, `assertAiTaskRequestSize`,
+and `executeAiTask` for bounded text generation,
 classification, and extraction. The schema and types are also available from
 `@k2b/cloud/ai/browser`. See [Structured and background AI](/en/docs/ai/structured-and-background-ai)
 for execution, model access, and usage accounting.

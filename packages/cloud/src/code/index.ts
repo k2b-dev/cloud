@@ -1,3 +1,4 @@
+export { type CodeRoute, CodeRouteSchema, codeOwnPath, matchCodeRoute } from "../contracts/code-routes";
 export type {
   CodeContext,
   CodeHandle,
@@ -29,6 +30,13 @@ export {
   CodeVersionManifestSchema,
 } from "./checker-contract";
 export { generateCodeSdk } from "./generator";
+export {
+  CODE_REQUEST_LIMITS,
+  type CodeRouteRequest,
+  CodeRouteRequestSchema,
+  type CodeRouteResponse,
+  CodeRouteResponseSchema,
+} from "./request-contract";
 export { codeSdkHash } from "./sdk-hash";
 export { createCodeTestBridge } from "./test-bridge";
 export type {

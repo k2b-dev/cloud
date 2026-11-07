@@ -3,6 +3,8 @@ export const CODE_SDK_RUNTIME = String.raw`
 const handles = new WeakMap();
 let bridge;
 const schedules = [];
+const routes = [];
+const routeResponses = new WeakMap();
 const diagnostics = [];
 const node = () => Object.create(null);
 function setPath(root, path, value) {
@@ -98,7 +100,15 @@ app.schedule = (when, fn, options) => {
   schedules.push({ entrypoint, ...timing, ...(title === undefined ? {} : { title }), handler: fn });
   return app;
 };
-for (const method of Object.keys(manifest.appMethods).filter(name => name !== "schedule")) app[method] = () => unavailable(method);
+for (const method of Object.keys(manifest.appMethods).filter(name => manifest.appMethods[name] !== 1)) app[method] = () => unavailable(method);
+for (const method of ["get", "post", "put", "delete", "all"]) app[method] = (path, handler, options) => {
+  if (typeof path !== "string" || typeof handler !== "function") throw new Error("code_sdk_invalid_route");
+  const route = { method: method.toUpperCase(), path, public: options?.public === true };
+  const entrypoint = "route:" + route.method + ":" + path;
+  if (routes.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_route");
+  routes.push({ entrypoint, route, handler });
+  return app;
+};
 Object.freeze(app);
 const secrets = new Proxy(node(), {
   get(_target, name) {
@@ -121,9 +131,31 @@ const __codeSdk = Object.freeze({
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
     bridge = cloud;
   },
-  entries: () => schedules.map(({ entrypoint, cron, at, timeZone, title }) => ({ kind: "schedule", entrypoint, cron, ...(at === undefined ? {} : { at, timeZone }), ...(title === undefined ? {} : { title }) })),
+  entries: () => [...schedules.map(({ entrypoint, cron, at, timeZone, title }) => ({ kind: "schedule", entrypoint, cron, ...(at === undefined ? {} : { at, timeZone }), ...(title === undefined ? {} : { title }) })),
+    ...routes.map(({ entrypoint, route }) => ({ kind: "route", entrypoint, route, cron: null }))],
   diagnostics: () => diagnostics.map(value => ({ ...value })),
-  async run(entrypoint) {
+  async run(entrypoint, input) {
+    const registered = routes.find(value => value.entrypoint === entrypoint);
+    if (registered) {
+      const raw = new Request("https://code.invalid" + input.path + input.query, {
+        method: input.method, headers: { "Content-Type": input.contentType },
+        ...(input.method === "GET" || input.method === "HEAD" ? {} : { body: input.body }),
+      });
+      const output = (value) => { const response = new Response(null); routeResponses.set(response, value); return response; };
+      const status = (value) => { if (!Number.isInteger(value) || value < 200 || value > 599) throw new Error("code_invalid_response"); return value; };
+      const c = {
+        user: registered.route.public ? null : input.user,
+        req: { raw, param: name => input.params[name] ?? "", query: name => new URL(raw.url).searchParams.get(name) ?? undefined,
+          json: () => raw.json(), text: () => raw.text(), formData: () => raw.formData() },
+        json: (value, code = 200) => output({ kind: "json", status: status(code), body: JSON.stringify(value) }),
+        text: (value, code = 200) => output({ kind: "text", status: status(code), body: String(value) }),
+        redirect: (location, code = 303) => output({ kind: "redirect", status: code, location }),
+      };
+      const response = await registered.handler(c);
+      const result = routeResponses.get(response);
+      if (!result) throw new Error("code_invalid_response");
+      return result;
+    }
     const schedule = schedules.find(value => value.entrypoint === entrypoint);
     if (!schedule) throw new Error("code_sdk_missing_entrypoint");
     return schedule.handler();

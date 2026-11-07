@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CodeInternetOriginSchema } from "../contracts/code-internet";
 import { CodeCheckResultSchema } from "./checker-contract";
+import { CodeRouteResponseSchema } from "./request-contract";
 import { CodeTestResultSchema } from "./test-contract";
 
 /** Private Core routes. Every POST uses a fresh cloud-app+jwt proof over its exact path and UTF-8 body. */
@@ -40,6 +41,7 @@ export type RunnerConfig = z.infer<typeof RunnerConfigSchema>;
 /** One attempt, fenced by Core's generation. The opaque token binds code, version, mandate revision and bundle hash. */
 export const RunnerLeaseSchema = z
   .object({
+    kind: z.literal("request").optional(),
     runId: id,
     codeId: id,
     versionId: id,
@@ -109,7 +111,10 @@ export type RunnerBundleRequest = z.infer<typeof RunnerBundleRequestSchema>;
 export const RunnerOutcomeSchema = z.enum(["succeeded", "failed", "wall_clock_limit", "memory_limit", "stalled", "lease_lost"]);
 export type RunnerOutcome = z.infer<typeof RunnerOutcomeSchema>;
 /** Terminal reports carry no exception text or result payload. */
-export const RunnerCompleteRequestSchema = RunnerLeaseProofSchema.extend({ outcome: RunnerOutcomeSchema }).strict();
+export const RunnerCompleteRequestSchema = RunnerLeaseProofSchema.extend({
+  outcome: RunnerOutcomeSchema,
+  response: CodeRouteResponseSchema.optional(),
+}).strict();
 export type RunnerCompleteRequest = z.infer<typeof RunnerCompleteRequestSchema>;
 /** The only sandbox binding. The supervisor attaches identity; code cannot select a token, run or generation. */
 export const RunnerCallRequestSchema = RunnerLeaseProofSchema.extend({ operation: id, input: z.json() }).strict();

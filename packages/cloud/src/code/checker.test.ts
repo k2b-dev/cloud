@@ -4,6 +4,7 @@ import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, rmdir, unlink, writeFile 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
+import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
 import { CODE_INITIAL_SOURCE } from "../../../core/src/code/authoring-contracts";
 import { readCodeCheckLimits } from "../../../core/src/code/runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "../../../core/src/code/settings";
@@ -169,6 +170,29 @@ export default app;`,
   if (!lasting.ok) throw new Error(JSON.stringify(lasting.diagnostics));
   expect(lasting.permissions).toMatchObject([{ operation: "core.ai.decide", target: null }]);
 });
+
+test("text and JSON generation SDK example passes the real checker as AI for one-off and lasting Code", async () => {
+  const manifests = [compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.generate": aiGenerationQuery } })];
+  const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
+  const source = docs.split("<!-- gate-1a-generation -->")[1]!.split("```ts\n")[1]!.split("```")[0]!.trim();
+  const aiOperations = ["core.ai.generate"];
+  const checked = await check(source, { sdk: generateCodeSdk(manifests, { mode: "code_run" }), aiOperations });
+  expect(checked).toMatchObject({ ok: true, manifest: { ai: true } });
+  if (!checked.ok) throw new Error(JSON.stringify(checked.diagnostics));
+  expect(checked.permissions.map((permission) => permission.operation)).toEqual(["core.ai.generate", "core.ai.generate"]);
+  const lasting = await check("", {
+    sdk: generateCodeSdk(manifests, { mode: "personal" }),
+    aiOperations,
+    files: {
+      "code.ts":
+        'import { app } from "@sdk"; import summarize from "./summary"; app.schedule("0 8 * * 1", async () => { await summarize(); }, { name: "summary" }); export default app;',
+      "summary.ts": source,
+    },
+  });
+  expect(lasting).toMatchObject({ ok: true, manifest: { ai: true } });
+  if (!lasting.ok) throw new Error(JSON.stringify(lasting.diagnostics));
+  expect(lasting.permissions.map((permission) => permission.operation)).toEqual(["core.ai.generate", "core.ai.generate"]);
+}, 30_000);
 
 test("checks imported literal constants, refs and finite unions, with source lines, new/existing status, AI and hashes", async () => {
   const result = await check("", {
@@ -494,7 +518,7 @@ test("rejects duplicate event/place subscriptions even though events also report
   });
 });
 
-test.each(["get", "post", "put", "delete", "all", "nav", "webhook", "on", "fetch"])("reports Phase 2/3 for app.%s", async (method) => {
+test.each(["nav", "webhook", "on", "fetch"])("reports Phase 2/3 for app.%s", async (method) => {
   const result = await check(`import { app as application } from "@sdk"; application.${method}("/", () => {});`);
   expect(result).toMatchObject({
     ok: false,
@@ -621,16 +645,18 @@ test("a titled schedule runs by its stable identifier and a title change changes
   expect(changed.manifest.hashes.bundle).not.toBe(result.manifest.hashes.bundle);
 });
 
-test("one-time schedules survive the real checker and bundle registration fence", async () => {
+test("one-time schedules coexist with routes through the real checker and bundle registration fence", async () => {
   const result = await check(
     `import { app } from "@sdk";
 app.schedule({ at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" }, async () => {}, { name: "reminder" });
+app.get("/reminder", c => c.text("Scheduled"));
 export default app;`,
     { limits: { ...CODE_CHECK_LIMITS, checkMs: 60_000 } },
   );
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   expect(result.ok).toBeTrue();
   expect(result.manifest.entrypoints[0]).toMatchObject({ cron: null, at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" });
+  expect(result.manifest.entrypoints[1]).toMatchObject({ kind: "route", route: { method: "GET", path: "/reminder", public: false } });
   const loaded = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
   await loaded.reminder(null, {
     async call() {
@@ -638,3 +664,28 @@ export default app;`,
     },
   });
 }, 90_000);
+
+test("checked route bundles execute the selected request handler without a web framework", async () => {
+  const result = await check(`import { app } from "@sdk";
+app.get("/hello/:name", c => c.json({ person: c.user?.id ?? null, name: c.req.param("name") }));
+app.post("/save", c => c.redirect("/hello/saved"));`);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  expect(result.manifest.entrypoints[0]).toMatchObject({ kind: "route", route: { method: "GET", path: "/hello/:name", public: false } });
+  const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
+  expect(
+    await module["route:GET:/hello/:name"](
+      {
+        method: "GET",
+        path: "/hello/Valentin",
+        query: "",
+        params: { name: "Valentin" },
+        contentType: "text/plain",
+        body: "",
+        user: { id: "visitor", groups: [] },
+      },
+      { call: async () => null },
+    ),
+  ).toEqual({ kind: "json", status: 200, body: JSON.stringify({ person: "visitor", name: "Valentin" }) });
+  expect(result.bundle).not.toContain("hono");
+}, 30_000);

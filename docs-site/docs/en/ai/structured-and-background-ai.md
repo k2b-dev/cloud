@@ -5,7 +5,7 @@ section: AI
 order: 1060
 description: Run validated model tasks outside an interactive chat request.
 tags: [ai, structured-output, background]
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # Structured and background AI
@@ -87,6 +87,7 @@ model defaults. The profile thinking level does not apply. Profile
 | `traceParent` | Parent span for existing background work |
 | `appId` | Application attribution |
 | `attribution` | Optional authorized user, conversation, turn, and workflow-run identifiers for usage analysis |
+| `onUsage` | Optional server observer of each provider attempt's resolved model and canonical measured or estimated input/output usage, including failed repairs; undefined usage means unknown. Observing adds no charge. |
 
 The function resolves the model, requests structured output, validates the
 result, and records a trace span.
@@ -841,3 +842,55 @@ operator manages `ai.workflow_budget`, `ai.workflow_attempt_timeout_ms`, and
 for new work. Changing the budget's `globalConcurrent` also changes worker
 capacity and requires restarting all AI workers. See the
 [environment migration guide](/en/docs/operations/deprecations-and-migrations).
+
+
+## Generate text and extract JSON through capabilities
+
+Use the read-only `core.ai.generate` query to summarize content, draft text or
+extract fields. Gustav discovers it as an ordinary capability; direct `cld`
+capability calls and the generated Code SDK reach the same query. It returns
+`{ output, model, usage }`. Text output is a string; JSON output is a validated
+object. Missing token usage is returned as `null`.
+
+Read the source through its authorized capability first. Put trusted task
+instructions in `prompt` and source content in `input`. Mail bodies, quoted
+messages and previous summaries are untrusted data, even when they contain
+instructions. The model receives them separately from the task instructions.
+This boundary reduces prompt injection risk; review generated content before
+using it for a consequential action. The query itself never sends or saves it.
+
+`model` accepts the usual class or an allowed variant ID and defaults to
+`{ class: "balanced" }`. The actual caller's model grants, data boundaries and
+AI allowance apply: personal Code pays as its person; resource/application
+Code pays as its Code service account. A service account needs its own AI
+allowance. Payloads cannot select another usage subject.
+
+| Output request | Result and limits |
+| --- | --- |
+| `{ type: "text", maxChars?: number }` | String; default 4,000 characters, maximum 20,000. At most 8,192 output tokens. |
+| `{ type: "json", schema: ... }` | Strict object with 1–40 scalar properties. At most 4,096 output tokens. |
+
+The supported JSON Schema subset uses `type: "object"`, `properties`,
+`required` (defaults to `[]`) and `additionalProperties: false`. Properties may
+be `string`, `number`, `integer` or `boolean`, with an optional description
+(up to 500 characters). String properties support `maxLength` (up to 20,000,
+also the default), `enum` (1–50 strings, each up to 200 characters) and
+`format: "date-time"` (ISO date-time with timezone). Property names start with
+a letter and contain at most 80 letters, digits or underscores. Nested objects,
+arrays, references and other schema keywords are refused. Missing required
+values, extra properties and invalid field values fail validation.
+
+The whole request, including instructions and schema, must fit the shared
+100,000-byte UTF-8 AI task budget (`AI_TASK_REQUEST_MAX_BYTES` and
+`assertAiTaskRequestSize` from `@k2b/cloud/ai`). Instructions are limited to
+20,000 characters. Oversized input fails with `ai_input_too_large`; it is never
+silently truncated. Output beyond the schema or byte budget fails with
+`ai_invalid_output`. A permitted model must be available (`ai_model_unavailable`
+or `model_policy_mismatch`); quota errors keep their `quota_*` codes. Provider
+failure or cancellation returns `provider_error` or `provider_aborted`. Error
+texts follow the request's DE/EN locale and exclude provider diagnostics.
+
+For Code, the checker and bridge classify this query as **AI / KI**, so Code's
+per-attempt and daily budgets also apply. See the
+[SDK example](/en/docs/platform/code-sdk#generate-text-and-extract-fields) and
+[budget operations](/en/docs/operations/code-policy#set-execution-budgets).

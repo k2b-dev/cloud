@@ -5,17 +5,23 @@ export type CodeHandle<Type extends string, Id extends string = string> = {
   readonly type: Type;
   readonly id: Id;
 };
-/** Core resolves the current person and groups before dispatching a future route. */
+/** Visitor identity is presentation and handler input, never the authority for SDK data calls. */
 export type CodeUser = { id: string; groups: string[] };
 /** Basic request helpers for future routes. No middleware system is part of Code. */
-export type CodeRequest = { raw: Request; param(name: string): string; query(name: string): string | undefined; json(): Promise<unknown> };
+export type CodeRequest = {
+  raw: Request;
+  param(name: string): string;
+  query(name: string): string | undefined;
+  json(): Promise<unknown>;
+  text(): Promise<string>;
+  formData(): Promise<FormData>;
+};
 /** Authenticated route context. */
 export type CodeContext = {
   req: CodeRequest;
-  user: CodeUser;
+  user: CodeUser | null;
   json(value: unknown, status?: number): Response;
   text(value: string, status?: number): Response;
-  html(value: unknown, status?: number): Response;
   redirect(location: string, status?: number): Response;
 };
 /** A webhook is anonymous and must verify its request explicitly. */

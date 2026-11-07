@@ -266,12 +266,12 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
   /** Phase 3; check reports code_phase_unavailable. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
+  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
   /** Phase 2; check reports code_phase_unavailable. */
-  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
-  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
-  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
-  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
-  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
   nav(handler: (user: CodeUser) => CodeNavigationItem[] | Promise<CodeNavigationItem[]>): CodeApp;
   /** Phase 3; check reports code_phase_unavailable. */
   webhook(path: string, handler: (c: CodeWebhookContext) => Response | Promise<Response>): CodeApp;

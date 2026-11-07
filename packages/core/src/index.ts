@@ -34,6 +34,7 @@ import identityOAuthDeviceApprovalRoutes, { terminalLogins } from "./api/identit
 import { createIdentityOAuthIssuanceRoutes } from "./api/identity-oauth-issuance";
 import { aiCapabilities } from "./capabilities";
 import { createCodeBridgeRoutes } from "./code/bridge";
+import { createCodeHostingRoutes } from "./code/hosting";
 import { createCodeRunnerRoutes } from "./code/runner-routes";
 import { app } from "./config";
 import { coreHelp } from "./help";
@@ -90,6 +91,7 @@ const router = new Hono<AuthContext>()
   .route("/api", coreApi)
   // The mobile app's phone-side identity endpoints; only Core receives the device key.
   .route("/pwa/_auth", createPwaPhoneRoutes({ notify: notificationSender.sendAppDevicePaired }))
+  .route("/", createCodeHostingRoutes())
   .route("/", pages);
 
 const result = await app.start({

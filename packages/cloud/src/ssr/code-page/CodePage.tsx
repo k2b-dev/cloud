@@ -750,11 +750,17 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
         }).format(new Date(props.automation.at)) + ` (${props.automation.timeZone})`
       : props.automation.kind === "schedule" && props.automation.cron
         ? describeCodeSchedule(props.automation.cron, props.text.locale())
-        : t().manualStart;
+        : props.automation.kind === "route"
+          ? props.automation.entrypoint.replace(/^route:/, "")
+          : t().manualStart;
   return (
     <div class="cloud-code__row cloud-code__row--automation" role="row">
       <span class="cloud-code__kind" aria-hidden="true">
-        <i class={props.automation.kind === "schedule" ? "ti ti-clock" : "ti ti-hand-finger"} />
+        <i
+          class={
+            props.automation.kind === "schedule" ? "ti ti-clock" : props.automation.kind === "route" ? "ti ti-route" : "ti ti-hand-finger"
+          }
+        />
       </span>
       <span class="cloud-code__cell" role="cell">
         <span class="cloud-code__title">
@@ -765,6 +771,7 @@ function AutomationRow(props: { data: CodePageData; state: CodePageReady; automa
         </span>
         <span class="cloud-code__sub">
           {schedule()}
+          <Show when={props.automation.route}> · {props.automation.route?.public ? t().routePublic : t().routePrivate}</Show>
           <Show when={props.automation.nextRunAt}>{(at) => <> · {t().nextRun({ when: props.text.when(at()) })}</>}</Show>
         </span>
         <span class="cloud-code__sub cloud-code__narrow">{status().label}</span>
@@ -971,7 +978,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
   const [loading, setLoading] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
   const [rerunning, setRerunning] = createSignal(false);
-  const afterAction = () => (calls() ?? []).some((call) => call.kind === "action");
+  const afterAction = () => run().trigger !== "path" && (calls() ?? []).some((call) => call.kind === "action");
   /** Only the complete call list proves that a failed run never reached an action. */
   const beforeFirstAction = () => calls() !== null && !afterAction() && next() === null;
   const canRerun = () =>
@@ -1334,7 +1341,10 @@ function ActivationDialog(props: {
   const newAutomations = () =>
     (props.state.automations ?? [])
       .filter((automation) => automation.isNew)
-      .map((automation) => `„${automation.title ?? automation.entrypoint}“`);
+      .map(
+        (automation) =>
+          `„${automation.title ?? automation.entrypoint}“${automation.route ? ` · ${automation.route.public ? t().routePublic : t().routePrivate}` : ""}`,
+      );
   // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
   // Only a confirmed terminal result or a refusal starts a new identity.
   const pending = pendingActivation(props.state.code.id, props.version.id);
