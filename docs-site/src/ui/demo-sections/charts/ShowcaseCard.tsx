@@ -58,7 +58,8 @@ export function ShowcaseCardChart(props: { example: ChartShowcaseExample; height
                 </div>
               </div>
               <Show when={slices().length}>
-                <ul class="k2b-chart-legend ui-charts-card__legend" aria-label="Legend">
+                {/* stdlib-chart: the drawing's own palette, so every swatch matches its slice. */}
+                <ul class="k2b-chart-legend ui-charts-card__legend stdlib-chart" aria-label="Legend">
                   <For each={slices()}>
                     {(label, index) => (
                       <li>

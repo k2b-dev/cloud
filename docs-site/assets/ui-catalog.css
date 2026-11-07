@@ -1761,8 +1761,9 @@
   display: none;
 }
 
-.ui-charts-card__legend {
+.k2b-ui .ui-charts-card__legend.stdlib-chart {
   justify-content: center;
+  color: var(--k2b-text-muted);
 }
 
 .ui-charts-card__chart[data-fit="whole"] svg text:not(.stdlib-chart-gauge-value, .stdlib-chart-stat-value) {
