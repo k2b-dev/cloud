@@ -6,7 +6,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser, settled } from "../../../../ui/test/browser";
 import { ChunkName, chunkSource } from "../runtime/chunks";
-import { buildBaseCss, buildPrelude } from "./build-assets";
+import { buildBaseCss, buildChartModule, buildPrelude } from "./build-assets";
 import type { AppFiles } from "./compose";
 
 const sinkHits: string[] = [];
@@ -37,9 +37,10 @@ beforeAll(async () => {
       data: () => {},
     },
   });
-  const [prelude, baseCss, harness] = await Promise.all([
+  const [prelude, baseCss, chartModule, harness] = await Promise.all([
     buildPrelude(),
     buildBaseCss(),
+    buildChartModule(),
     Bun.build({
       entrypoints: [new URL("./html-app-browser-harness.ts", import.meta.url).pathname],
       target: "browser",
@@ -50,7 +51,7 @@ beforeAll(async () => {
     }),
   ]);
   const preludeHash = `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'`;
-  const assets = `globalThis.assets=${JSON.stringify({ prelude, preludeHash, baseCss })};`;
+  const assets = `globalThis.assets=${JSON.stringify({ prelude, preludeHash, baseCss, chartModule })};`;
   server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
