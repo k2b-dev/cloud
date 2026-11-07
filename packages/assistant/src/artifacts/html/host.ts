@@ -1,9 +1,10 @@
 // Host side of an HTML app mount in a Cloud page: frames, bridge budgets,
 // reveal on ready, theme, hash mirroring, downloads, external links and the
 // rule that the app goes inert while Cloud asks the person something.
+
+import { CloudError, type CloudErrorCode, cloudError } from "../../chat-code/runtime/errors";
+import { APPROVAL_METHODS, createServiceCalls, fetchChunk, type RuntimeServices } from "../../chat-code/runtime/services";
 import { LIMITS } from "../contracts";
-import { CloudError, type CloudErrorCode, cloudError } from "../runtime/errors";
-import { APPROVAL_METHODS, createServiceCalls, type RuntimeServices } from "../runtime/services";
 import { type AppFiles, type ComposeOptions, composeApp, type LintIssue } from "./compose";
 import { FRAME_METHODS, type FrameLogLevel, type FrameToHost, type HostToFrame } from "./protocol";
 import { sanitizeSnapshot } from "./snapshot";
@@ -168,7 +169,7 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
       frame.inert = false;
     }
   };
-  const call = createServiceCalls(options.services(confirm));
+  const call = createServiceCalls({ chunk: fetchChunk("/api/assistant/artifacts/runtime"), ...options.services(confirm) });
 
   const rpc = async (id: number, method: string, args: unknown[]) => {
     const controller = new AbortController();

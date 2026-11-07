@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
 import { launchBrowser } from "../../../ui/test/browser";
-import { SecretSave, SecretView } from "./http-contracts";
+import { SecretSave, SecretView } from "../chat-code/http-contracts";
 
 test("trusted secret dialogs store directly, clear values, support replacement and never return credentials to chat", async () => {
   const build = Bun.spawn(["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "./secrets-browser-harness.tsx"], {

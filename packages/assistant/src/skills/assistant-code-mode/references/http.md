@@ -3,8 +3,7 @@
 Use `cloud.http.fetch` to call a public HTTPS API from code. Requests run on the
 Assistant server. The worker's native `fetch` still has no network access.
 A request asks the user to confirm its destination, method, headers, and body
-preview. For a read, the user may allow the website for the chat, or for a
-Studio app they manage. A read is GET or HEAD without a body whose headers are
+preview. For a read, the user may allow the website for the chat. A read is GET or HEAD without a body whose headers are
 only `Accept`, `Accept-Language`, `Range`, `User-Agent`, `If-None-Match`, or
 `If-Modified-Since`, each a plain string of at most 128 characters. Later reads
 from the exact same origin then run without asking, and the chat shows each
@@ -30,17 +29,13 @@ chat, `survey`, app fields or source.
 The user can change the proposed metadata. Use the returned name, and handle
 cancellation without asking for the value another way.
 
-Omit `resourceId` for a chat-scoped secret. Set it for an App.
-A one-off run with `resourceId` uses that resource's personal secrets; a saved
-run uses its resource's secrets. There is no fallback to other chats or apps.
-Every user supplies their own secrets, even in shared apps. Publishing does not
-copy secrets; forks start without them. Requests recheck resource and Project
-access. HTTP and secret tools are unavailable in chats with an `allowedTools`
-ceiling; they cannot bypass a restricted chat's capability scope.
-
-Users manage app secrets and allowed websites under **Advanced → Secrets &
-approvals** in Studio, and those of a chat through the workspace context menu. Replacing a value requires selecting
-the existing entry. Only metadata is loaded; the secret field stays empty.
+Secrets are scoped to this chat. `resourceId` is unavailable in chat tools;
+there is no fallback to other chats or Studio apps. HTTP and secret tools are
+unavailable in chats with an `allowedTools` ceiling. Use the trusted web UI to
+enter or manage chat secrets through the workspace context menu. CLI and
+unattended turns can use existing bindings but cannot open secret entry.
+Replacing a value requires selecting the existing entry. Only metadata is
+loaded; the secret field stays empty.
 The dialog supports 64 personal secrets per context. Removing or replacing a
 secret invalidates pending requests that depended on the previous value.
 

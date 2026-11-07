@@ -1,6 +1,6 @@
 import { api } from "@k2b/cloud/browser";
 import type { z } from "zod";
-import type { SecretSave } from "./http-contracts";
+import type { SecretSave } from "../chat-code/http-contracts";
 import type { machineApi } from "./machine-api";
 import type { MachineRights } from "./machine-contracts";
 

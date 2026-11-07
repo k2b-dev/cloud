@@ -1,9 +1,9 @@
 import { Button, Checkbox, NoticeCard, NumberInput, TagsInput, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { z } from "zod";
+import { artifactMessages } from "../chat-code/messages";
 import { artifactClient } from "./client";
 import type { DatabaseSettings } from "./database-contracts";
-import { artifactMessages } from "./messages";
 import type { StorageSettings } from "./storage-settings";
 
 type DatabaseView = Awaited<ReturnType<typeof artifactClient.admin.settings>>;

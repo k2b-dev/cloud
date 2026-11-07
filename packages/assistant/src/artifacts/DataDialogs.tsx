@@ -1,9 +1,9 @@
 import { files } from "@k2b/stdlib/browser";
 import { Button, ButtonLink, NoticeCard, Placeholder, prompts, Tabs, useLocale } from "@k2b/ui";
 import { createResource, createSignal, For, Show } from "solid-js";
+import { artifactMessages } from "../chat-code/messages";
 import { advancedMessages } from "./advanced-messages";
 import { artifactClient } from "./client";
-import { artifactMessages } from "./messages";
 
 export function openDataDialog(id: string, scope: "user" | "shared", title: string) {
   return prompts.dialog<void>(() => <DataDialog id={id} scope={scope} />, { title, size: "medium" });

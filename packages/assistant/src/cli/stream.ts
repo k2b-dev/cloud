@@ -1,7 +1,7 @@
 import type { AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
-import { CODE_RUNTIME_TOOL_NAMES, type CodeToolFailure, parseAiSse, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
+import { type CodeToolFailure, parseAiSse, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
-import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
+import type { CapabilityDecision, CodeApproval } from "../chat-code/runtime/capabilities";
 import { printCapabilityTable } from "./capability-table";
 import { createCloudLinkRewriter } from "./cloud-links";
 import { cliCodeHost, closeCliCodeHost } from "./code-host";
@@ -406,7 +406,7 @@ export const streamAssistantTurn = async (input: {
       keepClientCallReceipt(receipts, key, { state: "delivered" });
       return null;
     }
-    if (block.status === "awaiting_client" && CODE_RUNTIME_TOOL_NAMES.some((name) => name === block.name)) {
+    if (block.status === "awaiting_client" && block.name === "code_open") {
       if (executedCalls.has(block.callId)) return null;
       executedCalls.add(block.callId);
       let result: unknown;

@@ -15,8 +15,6 @@ import type { RequestAuthority } from "../server";
 import { discoverableAppEntries } from "../services/app-discovery";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { LOCALE_HEADER } from "../shared/locale";
-import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
-import { createCodeSourceTool } from "./code-source-tools";
 import { RECENT_SENT_REF_LIMIT } from "./recent-sent-refs";
 import { addCloudResourceHrefs } from "./resource-refs";
 import { aiSkills } from "./skills";
@@ -39,40 +37,12 @@ export const AiRecentResourceSchema: z.ZodType<AiRecentResource> = z
   .strict();
 
 const ReaderResult = capabilityResultSchema(z.unknown(), { consumer: true });
-const StudioData = z.object({
-  id: z.string(),
-  title: LinkedCloudResourceReferenceSchema.shape.title.unwrap(),
-  icon: LinkedCloudResourceReferenceSchema.shape.icon,
-  description: z.string().optional(),
-});
-const studioReader = async (input: {
-  id: string;
-  conversationId: string;
-  authority: RequestAuthority;
-  locale: string;
-  signal: AbortSignal;
-}): Promise<unknown> => {
-  const tool = createCodeSourceTool("code_read");
-  if (tool.location !== "server") throw new Error("Studio reader must run on the server.");
-  return tool.run(CODE_SOURCE_TOOLS.code_read.input.parse({ id: input.id }), {
-    actor: input.authority.actor,
-    conversationId: input.conversationId,
-    locale: input.locale,
-    signal: input.signal,
-    requestApproval: async () => false,
-    requestClientTool: async () => {
-      throw new Error("Recent resources cannot call client tools.");
-    },
-  });
-};
-
 export type AiRecentResourceDependencies = {
   store?: Pick<AiConversationService, "listRecentSentResourceRefs">;
   listRegistry?: () => Promise<CapabilityRegistryEntry[]>;
   listApps?: typeof listApps;
   dispatch?: (params: CapabilityDispatchParams) => Promise<Response>;
   skills?: Pick<typeof aiSkills, "list">;
-  studioReader?: typeof studioReader;
   timeoutMs?: number;
 };
 
@@ -150,50 +120,7 @@ export const listAiRecentResources = async (input: {
             appName: assistantName(input.locale),
           };
         }
-        if (ref.type === "assistant.artifact") {
-          const { actor, accessSubject, credentialKind, scopes } = input.authority;
-          // code_read reconstructs a user session authority. Only use it when that is
-          // exactly this request's authority; never widen scoped/delegated credentials.
-          if (
-            credentialKind !== "session" ||
-            scopes.length ||
-            actor.kind !== "user" ||
-            actor.delegation ||
-            actor.sessionKind === "app" ||
-            accessSubject.type !== "user" ||
-            accessSubject.userId !== actor.user.id
-          )
-            return null;
-          const answer = ReaderResult.parse(
-            await withinBudget(signal, () =>
-              (deps.studioReader ?? studioReader)({
-                id: ref.id,
-                conversationId: candidate.conversationId,
-                authority: input.authority,
-                locale: input.locale,
-                signal,
-              }),
-            ),
-          );
-          signal.throwIfAborted();
-          const data = StudioData.parse(answer.data);
-          if (data.id !== ref.id || !data.title.trim()) return null;
-          const matched = answer.refs?.find((entry) => entry.type === ref.type && entry.id === ref.id);
-          const ownRef = matched ? LinkedCloudResourceReferenceSchema.parse(matched) : undefined;
-          const href = ownRef?.href ?? answer.links?.find((link) => link.rel === "open")?.href;
-          return {
-            ref,
-            count,
-            title: data.title,
-            context: ownRef?.context,
-            status: ownRef?.status,
-            icon: ownRef?.icon ?? data.icon,
-            href,
-            preview: recentResourcePreview(ownRef?.preview ?? data.description),
-            kind: german(input.locale) ? "Studio-App" : "Studio app",
-            appName: assistantName(input.locale),
-          };
-        }
+        if (ref.type === "assistant.artifact") return null;
         const apps = await registry;
         signal.throwIfAborted();
         const appId = cloudResourceRefAppId(ref);

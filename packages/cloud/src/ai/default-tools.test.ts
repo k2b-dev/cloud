@@ -69,7 +69,8 @@ describe("turn Code Mode and client tools", () => {
 
   test("includes declared client tools without a mandate", () => {
     const names = createAiTurnCodeAndClientTools({ clientToolIds: [...clientToolIds] }).map((tool) => tool.def.name);
-    for (const name of clientToolIds) expect(names).toContain(name);
+    for (const name of ["code_secret", "local_bash"]) expect(names).toContain(name);
+    expect(names).not.toContain("code_open");
   });
 
   test("a mandate excludes app opening and secret entry even when declared by the client", () => {
@@ -86,10 +87,28 @@ describe("turn Code Mode and client tools", () => {
     expect(names).not.toContain("local_bash");
     expect(names).not.toContain("code_open");
     expect(names).not.toContain("code_secret");
-    for (const name of ["code_run", "code_action", "code_inspect", "code_stop", "code_check", "code_present", "code_export"]) {
+    for (const name of ["code_action", "code_check", "code_present"]) expect(names).not.toContain(name);
+    for (const name of ["code_run", "code_inspect", "code_stop", "code_export"]) {
       expect(names).toContain(name);
     }
   });
+});
+
+test("default discovery retains chat files and excludes Studio authoring tools", async () => {
+  await configure("");
+  const names = (await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "", accessSubject: subject })).map((tool) => tool.def.name);
+  for (const name of ["code_files", "code_file_stat", "code_file_copy"]) expect(names).toContain(name);
+  for (const name of [
+    "code_create",
+    "code_sql",
+    "code_database",
+    "code_read",
+    "code_write",
+    "code_list",
+    "code_publish",
+    "code_storage_list",
+  ])
+    expect(names).not.toContain(name);
 });
 
 describe("configured audio tools", () => {

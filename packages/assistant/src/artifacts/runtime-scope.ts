@@ -1,6 +1,6 @@
 import { aiConversations, aiProjects } from "@k2b/cloud/ai";
 import { z } from "zod";
-import { HttpScope } from "./http-contracts";
+import { HttpScope } from "../chat-code/http-contracts";
 import { ArtifactError, type ArtifactIdentity, artifacts, user } from "./service";
 
 export async function authorizeRuntimeScope(input: unknown, identity: ArtifactIdentity) {

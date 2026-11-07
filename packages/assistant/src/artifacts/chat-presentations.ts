@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { requireToolChat } from "./chat-access";
+import { requireToolChat } from "../chat-code/chat-access";
 import { ChatPresentation, ChatPresentationInput } from "./chat-presentation-contracts";
 import { LIMITS } from "./contracts";
 import { databaseConfigLock } from "./database-lock";

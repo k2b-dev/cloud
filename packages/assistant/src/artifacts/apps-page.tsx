@@ -1,12 +1,12 @@
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import { type AuthContext, expectUserBackedActor, getLocale, getTimeZone, loadPendingApprovals } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { artifactMessages } from "../chat-code/messages";
 import { ssr } from "../config";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
 import Apps from "./Apps.island";
 import { ArtifactPath } from "./contracts";
 import { artifactDatabase } from "./database";
-import { artifactMessages } from "./messages";
 import { ArtifactError, artifacts } from "./service";
 
 export default ssr<AuthContext>(async (c) => {

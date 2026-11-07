@@ -1,8 +1,8 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { Button, Dropdown, prompts, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
+import { artifactMessages } from "../chat-code/messages";
 import { advancedMessages } from "./advanced-messages";
-import { artifactMessages } from "./messages";
 import { runnerHref } from "./runner-contracts";
 
 /** Keep personal app controls available without loading Studio management. */

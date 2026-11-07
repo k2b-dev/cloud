@@ -2,7 +2,7 @@ import type { GeneratedCodeSdk } from "@k2b/cloud/code";
 import { env } from "@k2b/cloud/config";
 import { z } from "zod";
 import { ChunkName, chunkSource } from "./chunks";
-import { compileArtifact } from "./compile";
+import { compileScript } from "./compile";
 
 let prelude: Promise<string> | undefined;
 export function runnerPrelude() {
@@ -23,7 +23,7 @@ export function runnerPrelude() {
   return prelude;
 }
 export async function compileRunnerScript(source: unknown, sdk?: GeneratedCodeSdk) {
-  const compiled = await compileArtifact(source, undefined, sdk, true);
+  const compiled = await compileScript(source, sdk, true);
   const modules = Object.fromEntries(await Promise.all(ChunkName.options.map(async (name) => [`${name}.js`, await chunkSource(name)])));
   return {
     bundle: `${await runnerPrelude()}\nObject.defineProperty(globalThis, "__artifactBoot", { value: () => {\n${compiled.runtime}\n} });\nObject.defineProperty(globalThis, "__artifactExecute", { value: () => {\n${compiled.code}\n} });`,

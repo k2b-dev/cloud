@@ -8,7 +8,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { Show } from "solid-js";
-import { artifactMessages } from "./messages";
+import { artifactMessages } from "../chat-code/messages";
 import { SourceEditor } from "./SourceEditor";
 
 /** Highlights read-only source the way the FileView text preview does: by the file's extension. */

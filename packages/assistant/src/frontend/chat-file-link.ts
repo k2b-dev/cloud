@@ -1,4 +1,4 @@
-import { fileTab, workspaceSelectionHref } from "../artifacts/workspace-state";
+import { fileTab, workspaceSelectionHref } from "../chat-code/workspace-state";
 
 /** The chat's working folder: Cloud serves nothing below it, and the manifest lists its files only as counts. */
 const WORKING_FOLDER = "/temp/";
