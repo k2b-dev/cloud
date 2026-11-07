@@ -17295,3 +17295,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { direction: ltr; }
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-inspected] > rect,
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-selected] > rect { stroke-width: 1.5px; }
+
+/* Reverse only the calendar's scroll origin; inspection text keeps its reading direction. */
+.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) > .k2b-chart__tooltip { direction: ltr; }

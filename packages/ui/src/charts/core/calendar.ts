@@ -1,4 +1,4 @@
-import { type ChartOptions, chartDatumSvg, escapeXml, type HeatmapOptions, heatmap, svgRoot } from "./svg";
+import { type ChartOptions, chartDatumSvg, escapeXml, type HeatmapOptions, heatmap, renderHeader, svgRoot } from "./svg";
 export type CalendarHeatmapOptions = ChartOptions & {
   layout: "calendar";
   data: [string, number][];
@@ -30,7 +30,7 @@ export function calendarLayout(spec: CalendarHeatmapOptions, size = { width: spe
   const monday = first - ((new Date(first).getUTCDay() + 6) % 7) * DAY;
   const weeks = points.length ? Math.floor((points.at(-1)!.time - monday) / DAY / 7) + 1 : 0;
   const left = 28,
-    top = 22,
+    top = 22 + renderHeader(Math.max(spec.displayWidth ?? size.width, 28 + weeks * 15), spec.title, spec.subtitle).height,
     gap = 3,
     minWidth = left + weeks * 15;
   const width = Math.max(spec.displayWidth ?? size.width, minWidth);
@@ -51,6 +51,7 @@ export function calendarLayout(spec: CalendarHeatmapOptions, size = { width: spe
     max,
     absMax,
     cell,
+    top,
     cellWidth,
     cells: points.map((p) => {
       const day = Math.round((p.time - monday) / DAY);
@@ -74,17 +75,26 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
   const date = new Intl.DateTimeFormat(locale, { dateStyle: "full", timeZone: "UTC" });
   const weekday = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
   const month = new Intl.DateTimeFormat(locale, { month: "short", year: "numeric", timeZone: "UTC" });
-  const body: string[] = [];
+  const body: string[] = [
+    renderHeader(s.width, spec.title, spec.subtitle)
+      .svg.replace(/<text class="stdlib-chart-title"/g, '<text fill="var(--k2b-text,#27272a)" font-size="14" class="stdlib-chart-title"')
+      .replace(
+        /<text class="stdlib-chart-subtitle"/g,
+        '<text fill="var(--k2b-text-muted,#45454e)" font-size="11" class="stdlib-chart-subtitle"',
+      ),
+  ];
   for (const day of [0, 2, 4])
     body.push(
-      `<text x="0" y="${22 + day * (s.cell + 3) + s.cell - 2}" fill="var(--k2b-text-muted,#45454e)" font-size="11">${escapeXml(weekday.format(Date.UTC(2026, 0, 5 + day)))}</text>`,
+      `<text x="0" y="${s.top + day * (s.cell + 3) + s.cell - 2}" fill="var(--k2b-text-muted,#45454e)" font-size="11">${escapeXml(weekday.format(Date.UTC(2026, 0, 5 + day)))}</text>`,
     );
   let lastLabel = -Infinity,
     lastMonth = "";
   for (const c of s.cells) {
     const ym = c.date.slice(0, 7);
     if (ym !== lastMonth && c.x - lastLabel > 75) {
-      body.push(`<text x="${c.x}" y="12" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(month.format(c.time))}</text>`);
+      body.push(
+        `<text x="${c.x}" y="${s.top - 10}" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(month.format(c.time))}</text>`,
+      );
       lastLabel = c.x;
       lastMonth = ym;
     }
@@ -112,7 +122,7 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
   if (last)
     for (let day = last.weekday + 1; day < 7; day++)
       body.push(
-        `<rect x="${last.x + 0.5}" y="${22 + day * (s.cell + 3) + 0.5}" width="${s.cellWidth - 1}" height="${s.cell - 1}" rx="2" fill="none" stroke="var(--k2b-border,#e4e4e7)"/>`,
+        `<rect x="${last.x + 0.5}" y="${s.top + day * (s.cell + 3) + 0.5}" width="${s.cellWidth - 1}" height="${s.cell - 1}" rx="2" fill="none" stroke="var(--k2b-border,#e4e4e7)"/>`,
       );
   return svgRoot({ ...s, className: spec.className }, body.join("")).replace(
     "<svg ",

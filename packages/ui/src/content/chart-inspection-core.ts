@@ -246,10 +246,10 @@ export function createChartInspector(options: {
     }
     const rect = container.getBoundingClientRect(),
       point = screenPoint(entry);
-    anchor.style.left = `${point.x - rect.left}px`;
-    anchor.style.top = `${point.y - rect.top}px`;
+    anchor.style.left = `${point.x - rect.left + container.scrollLeft}px`;
+    anchor.style.top = `${point.y - rect.top + container.scrollTop}px`;
     updatePlotBounds();
-    container.style.setProperty("--k2b-chart-inspection-x", `${point.x - rect.left}px`);
+    container.style.setProperty("--k2b-chart-inspection-x", `${point.x - rect.left + container.scrollLeft}px`);
     container.setAttribute("data-inspecting", seriesChart() ? "series" : "datum");
     describe(container, tooltip.id, true);
     try {

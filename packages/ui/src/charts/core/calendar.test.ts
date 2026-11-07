@@ -37,3 +37,12 @@ test("calendar sorted metadata retains input indices, missing days stay absent, 
   const old = { data: [{ x: "Mon", y: "Queue", value: 4 }] };
   expect(renderHeatmapSvg(old)).toBe(heatmap(old));
 });
+
+test("calendar core headers reserve space without changing observation geometry", () => {
+  const s = calendarLayout({ ...spec, title: "Opens", subtitle: "Fictional" });
+  expect(s.cells[0]!.y).toBe(s.top);
+  expect(s.top).toBeGreaterThan(22);
+  const svg = renderCalendarSvg({ ...spec, title: "Opens", subtitle: "Fictional" });
+  expect(svg).toContain("stdlib-chart-title");
+  expect(svg).toContain("Fictional");
+});

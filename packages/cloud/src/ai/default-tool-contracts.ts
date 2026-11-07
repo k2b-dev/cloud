@@ -34,6 +34,7 @@ import {
   type ChartFormat as CloudAiFormat,
   type ChartNumberFormat as CloudAiNumberFormat,
   chartKinds,
+  chartLocaleSchema,
   chartParts,
   chartSchema,
   chartKindSchema as cloudAiChartKindSchema,
@@ -122,7 +123,7 @@ const flatChartSchema = () => {
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
     scale: z.enum(["sequential", "diverging"]).optional().describe("Calendar heatmap color scale; domain includes all days."),
-    locale: z.string().optional(),
+    locale: chartLocaleSchema().optional(),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
     data: z
       .union([

@@ -31,6 +31,19 @@ export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSche
 export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
+/** BCP 47 locale strings must be accepted by every Intl formatter used during rendering. */
+export const chartLocaleSchema = () =>
+  z
+    .string()
+    .min(1)
+    .refine((value) => {
+      try {
+        return Intl.getCanonicalLocales(value).length === 1;
+      } catch {
+        return false;
+      }
+    }, "Use a valid BCP 47 locale, such as de-DE.");
+
 export const chartKindSchema = () =>
   z.enum(["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
 
@@ -251,7 +264,7 @@ export const chartKinds = (limits?: ChartLimits) => {
           ),
           scale: z.enum(["sequential", "diverging"]),
           format: numberFormat.optional(),
-          locale: z.string().optional(),
+          locale: chartLocaleSchema().optional(),
         })
         .superRefine((spec, ctx) => {
           if (new Set(spec.data.map(([day]) => day)).size !== spec.data.length)

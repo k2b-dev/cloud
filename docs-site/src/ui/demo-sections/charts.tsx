@@ -557,7 +557,12 @@ export const ReferenceLineStylesDemo = () => (
 
 export function CalendarHeatmapDemo() {
   return (
-    <DemoCard title="Opens per day" description="Weeks as columns; scroll to the newest observations on a phone.">
+    <DemoCard
+      id="charts-calendar-heatmap"
+      chip={{ kind: "component", name: "Chart.Heatmap", from: "@k2b/ui" }}
+      description="Weeks as columns; scroll to the newest observations on a phone."
+      code={'<Chart kind="heatmap" layout="calendar" scale="sequential" data={observations} />'}
+    >
       <Chart
         kind="heatmap"
         layout="calendar"
