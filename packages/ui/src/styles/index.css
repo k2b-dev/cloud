@@ -17625,3 +17625,26 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { min-width: 0 !important; width: 100%; }
 }
 .k2b-ui .k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }
+
+/* Bubble radii must shrink with a narrow or short drawing: their centers are
+ * padded in SVG units, while the shared marker rule normally fixes pixel size. */
+.k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] circle {
+  --k2b-bubble-shrink: max(1, var(--k2b-chart-inverse-x), var(--k2b-chart-inverse-y));
+  scale: calc(var(--k2b-chart-inverse-x) / var(--k2b-bubble-shrink)) calc(var(--k2b-chart-inverse-y) / var(--k2b-bubble-shrink));
+}
+
+/* Keep the two average lines in pixels, even when the SVG is short. The short
+ * variant retains the average values in its accessible SVG title. */
+.k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] .k2b-chart-bubble-average-label {
+  transform: translateY(calc(11px - 11px / var(--k2b-chart-inverse-y)));
+}
+.k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] .k2b-chart-bubble-average-value {
+  transform: translateY(calc(25px - 25px / var(--k2b-chart-inverse-y)));
+}
+@container (max-height: 199px) {
+  .k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart-bubble-average-value { display: none; }
+}
+
+.k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] .k2b-chart-bubble-x-title {
+  transform: translateY(calc(14px - 14px / var(--k2b-chart-inverse-y)));
+}

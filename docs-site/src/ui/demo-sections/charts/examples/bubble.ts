@@ -26,7 +26,7 @@ export const bubbleExamples = [
     a11y: ["Names that cannot fit stay in the tooltip and table.", "Arrows inspect; Enter selects; Escape dismisses."],
     options: [
       { name: "averages", type: "boolean", description: "Show explicitly labelled unweighted averages." },
-      { name: "size", type: "number >= 0", description: "Bubble area is proportional to size." },
+      { name: "data[].size", type: "number >= 0", description: "Optional per-point field. Bubble area is proportional to size." },
     ],
   },
 ];

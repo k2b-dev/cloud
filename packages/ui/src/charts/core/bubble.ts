@@ -41,7 +41,7 @@ export function bubbleLayout(spec: BubbleOptions, size = { width: spec.width ?? 
     });
   const left = 48,
     right = width - 24,
-    top = header.height + (spec.averages ? 46 : 20);
+    top = header.height + (spec.averages ? 72 : 20);
   const bottom = height - 36 - (legend.length ? (row + 1) * 20 : 0);
   const domain = (values: number[]) => {
     let lo = Math.min(0, ...values),
@@ -55,11 +55,11 @@ export function bubbleLayout(spec: BubbleOptions, size = { width: spec.width ?? 
   };
   const xd = domain(spec.data.map((p) => p.x)),
     yd = domain(spec.data.map((p) => p.y));
-  const physicalWidth = spec.displayWidth ?? 296,
+  const physicalWidth = spec.displayWidth ?? Math.min(296, width),
     inverseX = width / physicalWidth;
   const maxRadius = Math.max(0, Math.min(21, physicalWidth / 20, (bottom - top - 4) / 2)),
     maxSize = Math.max(0, ...spec.data.map((p) => p.size ?? 0));
-  const padding = maxRadius * inverseX + 2;
+  const padding = Math.max(4.5, maxRadius) * inverseX + 2;
   const x = (value: number) => left + padding + ((value - xd[0]) / (xd[1] - xd[0])) * Math.max(0, right - left - padding * 2);
   const y = (value: number) => bottom - maxRadius - 2 - ((value - yd[0]) / (yd[1] - yd[0])) * Math.max(0, bottom - top - maxRadius * 2 - 4);
   const meanX = spec.data.reduce((sum, p) => sum + p.x / Math.max(1, spec.data.length), 0);
@@ -127,12 +127,12 @@ export function renderBubbleSvg(spec: BubbleOptions): string {
     );
   }
   body.push(
-    `<line class="stdlib-chart-axis" x1="${s.left}" x2="${s.left}" y1="${s.top}" y2="${s.bottom}" stroke="${border}"/><line class="stdlib-chart-axis" x1="${s.left}" x2="${s.right}" y1="${s.bottom}" y2="${s.bottom}" stroke="${border}"/><text x="${s.right}" y="${s.bottom + 30}" text-anchor="end" font-size="11" fill="${text}">${escapeXml(spec.xLabel)} →</text><text x="${s.left}" y="${s.top - 7}" font-size="11" fill="${text}">↑ ${escapeXml(spec.yLabel)}</text>`,
+    `<line class="stdlib-chart-axis" x1="${s.left}" x2="${s.left}" y1="${s.top}" y2="${s.bottom}" stroke="${border}"/><line class="stdlib-chart-axis" x1="${s.left}" x2="${s.right}" y1="${s.bottom}" y2="${s.bottom}" stroke="${border}"/><text x="${s.right}" y="${s.bottom + 30}" class="k2b-chart-bubble-x-title" text-anchor="end" font-size="11" fill="${text}">${escapeXml(spec.xLabel)} →</text><text x="${s.left}" y="${s.top - 7}" class="k2b-chart-bubble-y-title" font-size="11" fill="${text}">↑ ${escapeXml(spec.yLabel)}</text>`,
   );
   if (spec.averages) {
     const label = locale.startsWith("de") ? "Ungewichteter Durchschnitt" : "Unweighted average";
     body.push(
-      `<line class="k2b-chart-average" x1="${s.x(s.meanX)}" x2="${s.x(s.meanX)}" y1="${s.top}" y2="${s.bottom}" stroke="${text}" stroke-dasharray="4 4"/><line class="k2b-chart-average" x1="${s.left}" x2="${s.right}" y1="${s.y(s.meanY)}" y2="${s.y(s.meanY)}" stroke="${text}" stroke-dasharray="4 4"/><text x="${s.left}" y="${s.header.height + 11}" font-size="11" fill="${text}">${label}</text><text x="${s.left}" y="${s.header.height + 25}" font-size="11" fill="${text}">X: ${escapeXml(xf(s.meanX))} · Y: ${escapeXml(yf(s.meanY))}</text>`,
+      `<line class="k2b-chart-average" x1="${s.x(s.meanX)}" x2="${s.x(s.meanX)}" y1="${s.top}" y2="${s.bottom}" stroke="${text}" stroke-dasharray="4 4"/><line class="k2b-chart-average" x1="${s.left}" x2="${s.right}" y1="${s.y(s.meanY)}" y2="${s.y(s.meanY)}" stroke="${text}" stroke-dasharray="4 4"/><text x="${s.left}" y="${s.header.height + 11}" class="k2b-chart-bubble-average-label" font-size="11" fill="${text}">${label}<title>X: ${escapeXml(xf(s.meanX))} · Y: ${escapeXml(yf(s.meanY))}</title></text><text x="${s.left}" y="${s.header.height + 25}" class="k2b-chart-bubble-average-value" font-size="11" fill="${text}">X: ${escapeXml(xf(s.meanX))} · Y: ${escapeXml(yf(s.meanY))}</text>`,
     );
   }
   for (const p of [...s.points].sort((a, b) => b.radius - a.radius || a.index - b.index)) {

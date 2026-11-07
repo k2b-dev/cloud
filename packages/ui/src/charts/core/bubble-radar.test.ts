@@ -113,3 +113,16 @@ test("shared group tooltip text agrees with editor rows in both locales", () => 
   expect(resolveChartMessages("de-DE").chartFields({ key: "group" })).toBe("Bereich");
   expect(resolveChartMessages("en-US").chartFields({ key: "group" })).toBe("Group");
 });
+
+test("bubbles including unweighted points stay within narrow and short plot bounds", () => {
+  for (const width of [180, 240, 296, 480])
+    for (const height of [120, 160, 280]) {
+      const s = bubbleLayout({ ...bubble, width, height, legend: false, data: [...bubble.data, { ...bubble.data[1]!, size: undefined }] });
+      for (const p of s.points) {
+        expect(p.cx - p.radius).toBeGreaterThanOrEqual(s.left);
+        expect(p.cx + p.radius).toBeLessThanOrEqual(s.right);
+        expect(p.cy - p.radius).toBeGreaterThanOrEqual(s.top);
+        expect(p.cy + p.radius).toBeLessThanOrEqual(s.bottom);
+      }
+    }
+});

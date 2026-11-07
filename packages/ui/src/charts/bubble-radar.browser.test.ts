@@ -167,6 +167,50 @@ for (const spec of cases)
             expect(geometry.ratio).toBeCloseTo(4);
             expect(geometry.count).toBeLessThan(spec.data.length);
             expect(geometry.overlap).toBe(false);
+            for (const [width, height] of [
+              [240, 120],
+              [296, 160],
+              [480, 280],
+            ]) {
+              await page.locator("#mount").evaluate(
+                (e, size) => {
+                  e.style.width = `${size[0]}px`;
+                  e.style.height = `${size[1]}px`;
+                },
+                [width, height],
+              );
+              await settled(page);
+              const layout = await chart.evaluate((e) => {
+                const axes = [...e.querySelectorAll(".stdlib-chart-axis")].map((e) => e.getBoundingClientRect());
+                const label = e.querySelector(".k2b-chart-bubble-average-label")!.getBoundingClientRect();
+                const value = e.querySelector(".k2b-chart-bubble-average-value")!.getBoundingClientRect();
+                const title = e.querySelector(".k2b-chart-bubble-y-title")!.getBoundingClientRect();
+                const xTitle = e.querySelector(".k2b-chart-bubble-x-title")!.getBoundingClientRect();
+                const ticks = [...e.querySelectorAll('text[text-anchor="middle"][font-size="10"]')].map((t) => t.getBoundingClientRect());
+                return {
+                  gap: title.top - (value.width ? value.bottom : label.bottom),
+                  rowsGap: value.width ? value.top - label.bottom : 2,
+                  xGap: xTitle.top - Math.max(...ticks.map((t) => t.bottom)),
+                  xBottom: e.querySelector("svg")!.getBoundingClientRect().bottom - xTitle.bottom,
+                  labelTop: label.top - e.querySelector("svg")!.getBoundingClientRect().top,
+                  circles: [...e.querySelectorAll("[data-chart-datum] circle")].map((c) => {
+                    const b = c.getBoundingClientRect();
+                    return b.left >= axes[0]!.left && b.right <= axes[1]!.right && b.top >= axes[0]!.top && b.bottom <= axes[0]!.bottom;
+                  }),
+                };
+              });
+              expect(layout.gap).toBeGreaterThanOrEqual(2);
+              expect(layout.rowsGap).toBeGreaterThanOrEqual(1);
+              expect(layout.xGap).toBeGreaterThanOrEqual(0);
+              expect(layout.xBottom).toBeGreaterThanOrEqual(0);
+              expect(layout.labelTop).toBeGreaterThanOrEqual(0);
+              expect(layout.circles.every(Boolean)).toBe(true);
+            }
+            await page.locator("#mount").evaluate((e) => {
+              e.style.width = "";
+              e.style.height = "280px";
+            });
+            await settled(page);
           } else {
             expect(await chart.locator("[data-chart-datum]").count()).toBe(4);
             expect(await chart.locator(".k2b-chart-radar-axis").count()).toBe(4);

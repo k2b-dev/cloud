@@ -1092,7 +1092,7 @@ Sizes must be nonnegative and every point must name a declared group. A zero-siz
 
 Names appear only where they fit without overlapping another name or point. Every observation remains available
 through the tooltip, keyboard and table. `averages: true` adds two guides explicitly labelled **Unweighted average**:
-every observation contributes equally, regardless of bubble size. `sizeLabel` names the area measure.
+every observation contributes equally, regardless of bubble size. `size` belongs to each point, not to the chart. `sizeLabel` names the area measure. Narrow or short drawings reduce bubble radii together so every point remains inside the plot; the area ratios stay unchanged. Average labels have their own space above the Y-axis title. Below 200px drawing height, the numeric average row is available in the accessible SVG title; the unweighted-average label stays visible.
 
 JSON accepts `xFormat`, `yFormat` and `format` as number-format descriptions; typed props take formatter functions
 (`xFormat`, `yFormat`, `sizeFormat`). Explicit `locale` wins over the inherited UI locale. Measured hosts forward
