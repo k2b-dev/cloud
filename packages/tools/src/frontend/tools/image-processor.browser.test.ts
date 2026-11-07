@@ -40,7 +40,7 @@ afterAll(async () => {
   server?.stop(true);
 });
 const open = async (query = "", width = 1440) => {
-  const page = await browser.newPage({ viewport: { width, height: 950 } });
+  const page = await browser.newPage({ viewport: { width, height: 950 }, reducedMotion: "reduce" });
   const errors = pageErrors(page);
   await page.goto(`${server.url}?${query}`);
   if (!query.includes("empty")) await page.getByRole("button", { name: "Download", exact: true }).waitFor();

@@ -85,7 +85,7 @@ const setup = async (
     large?: boolean;
   } = {},
 ) => {
-  const page = await browser.newPage({ viewport: { width: options.width ?? 1440, height: 950 } });
+  const page = await browser.newPage({ viewport: { width: options.width ?? 1440, height: 950 }, reducedMotion: "reduce" });
   const errors = pageErrors(page);
   if (options.noWebp)
     await page.addInitScript(() => {
