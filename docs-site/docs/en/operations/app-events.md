@@ -124,7 +124,7 @@ These commands call the matching administrative endpoints:
 
 Spaces now publishes `spaces.item.created` and `spaces.item.completed`.
 Notebooks publishes `notebooks.notebook.created`, `notebooks.notebook.updated`,
-`notebooks.note.created`, and `notebooks.note.updated`. All are version 1
+`notebooks.note.created`, `notebooks.note.updated`, and `notebooks.comment.created`. All are version 1
 resource events with public refs and empty data. They are retained through the
 normal event pipeline, but **are not delivered to app subscribers**. Retrying,
 redelivering, or restarting does not remove the authorization block.
@@ -226,11 +226,16 @@ events. Core ingests serially under normal operation; deliveries are ordered
 by acceptance within each subscription and subject. Replaying ingestion dead
 letters can accept older events later, so handlers must tolerate that order.
 
+New page discussion posts publish one transactional event per post, without
+comment text. Edits and deletions publish none. This discrete write rate shares
+the aggregate capacity below; it does not use the coalesced note-update quota.
+
 ## Plan retention and outage capacity
 
 The stream budget is shared by **all producers**. The producer fixture tests
 measure compact JSON envelopes at **241 bytes** for `spaces.item.created`,
 **243 bytes** for `spaces.item.completed`, **256 bytes** for either note event,
+**262 bytes** for `notebooks.comment.created`,
 and **264 bytes** for either notebook event (six-character public IDs, a UUID
 event ID, fixed ISO timestamp, empty data, no cause). Mail's
 `mail.message.received` fixture is **292 bytes**, including its UUID receipt
