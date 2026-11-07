@@ -19,6 +19,7 @@ const cases = [
       { label: "Lights", group: "Other", value: 500 },
       { label: "Art", group: "Other", value: 330 },
       { label: "Other", group: "Other", value: 200 },
+      { label: "Zero", group: "Other", value: 0 },
     ],
   },
   {
@@ -26,10 +27,10 @@ const cases = [
     locale: "de",
     labels: ["Current", "Previous"] as [string, string],
     data: [
-      { label: "North", value: 1234.5, prev: 1000 },
+      { label: "Nordrhein", value: 1234.5, prev: 1000 },
       { label: "East", value: 900, prev: 700 },
       { label: "South", value: 500, prev: 600 },
-      { label: "Rest", value: 100, prev: 120 },
+      { label: "Rest", rest: true, value: 100, prev: 120 },
     ],
   },
 ];
@@ -99,10 +100,18 @@ for (const spec of cases)
             .first()
             .evaluate((e) => getComputedStyle(e).fill);
           const chart = page.locator("#mount .k2b-chart");
+          if (spec.kind === "pareto") {
+            const label = chart.locator("[data-chart-datum] text").first();
+            expect(await label.textContent()).toBe("Nordrhein");
+            const bounds = await label.boundingBox();
+            expect(bounds!.x).toBeGreaterThanOrEqual(realBox.x);
+          } else {
+            expect(await chart.locator('[data-chart-datum*="Zero"]').count()).toBe(0);
+          }
           await chart.focus();
           await settled(page);
           expect(await chart.locator("[data-inspected]").getAttribute("data-chart-datum")).toContain(
-            spec.kind === "treemap" ? "Chairs" : "North",
+            spec.kind === "treemap" ? "Chairs" : "Nordrhein",
           );
           expect(await chart.locator("[role=tooltip]").textContent()).toContain("1.234,5");
           expect(await chart.locator("[role=tooltip]").textContent()).toContain(spec.kind === "treemap" ? "Bereich" : "Current");
