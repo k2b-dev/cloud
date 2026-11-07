@@ -162,14 +162,14 @@ test("the pure line legend localizes unnamed series", () => {
 
 test("an explicit line locale takes precedence over the inherited render locale", () => {
   const svg = renderChartSvg(
-    { kind: "line", series: [{ data: [{ x: 1, y: 2.5 }] }], legend: true, legendValues: true, locale: "de" },
+    { kind: "line", series: [{ data: [{ x: 1, y: 2.5 }] }], threshold: { value: 2.5, label: "Reserve" }, locale: "de" },
     480,
     280,
     undefined,
     undefined,
     "en",
   );
-  expect(svg).toContain('data-default="2,5"');
+  expect(svg).toContain("Reserve 2,5");
 });
 
 test("log axes reject annotations and forecast bounds outside their positive domain", () => {

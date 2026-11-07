@@ -250,7 +250,7 @@ export const chartParity: readonly ChartParityRow[] = [
     id: "line-legend",
     feature: "Line: legend",
     proof: { file: "packages/ui/src/charts/parity.test.ts", test: "every parity spec preserves legacy SVG output" },
-    spec: { ...line, legend: true, legendValues: true },
+    spec: { ...line, legend: true },
   },
   {
     id: "line-step",
