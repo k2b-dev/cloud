@@ -264,7 +264,10 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
 /** Reserve horizontal rows before the offline renderer arrives. */
 export function pendingChartHeight(prepared: StoredChart, locale: string, width: number, height: number): number {
   if (prepared.input.kind !== "hbar") return height;
-  const mapped = cloudAiChartRenderOptions(prepared.input, locale, { width });
+  const mapped = cloudAiChartRenderOptions(prepared.input, locale, {
+    width,
+    formats: { x: prepared.xFormat, y: prepared.yFormat, value: prepared.format },
+  });
   return mapped.kind === "hbar"
     ? hbarLayout({ ...mapped, title: prepared.title, subtitle: prepared.input.subtitle }, { width, height }).height
     : height;
