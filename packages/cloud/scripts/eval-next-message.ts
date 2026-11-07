@@ -1,7 +1,12 @@
 import { parseArgs } from "node:util";
 import { complete } from "@k2b/nessi/ai";
 import { AI_NEXT_MESSAGE_DESCRIPTION, createAiNextMessageTool } from "../src/ai/next-message";
-import { checkNextMessageEval, NEXT_MESSAGE_EVAL_CASES, nextMessageEvalMessages } from "../src/ai/next-message.eval";
+import {
+  checkNextMessageEval,
+  NEXT_MESSAGE_EVAL_CASES,
+  nextMessageEvalInstruction,
+  nextMessageEvalMessages,
+} from "../src/ai/next-message.eval";
 import { resolveAiModel } from "../src/ai/settings";
 import { composeAiSystemPrompt } from "../src/ai/system-prompt";
 import { sql } from "../src/runtime/clients";
@@ -29,12 +34,13 @@ try {
   const results = [];
   for (const fixture of NEXT_MESSAGE_EVAL_CASES) {
     const generated = await complete(provider, {
-      systemPrompt: composeAiSystemPrompt({
-        globalInstructions: "",
-        now: new Date("2026-11-07T09:00:00Z"),
-        locale: fixture.language,
-        toolHints: [{ name: "suggest_next_message", hint: AI_NEXT_MESSAGE_DESCRIPTION }],
-      }),
+      systemPrompt:
+        composeAiSystemPrompt({
+          globalInstructions: "",
+          now: new Date("2026-11-07T09:00:00Z"),
+          locale: fixture.language,
+          toolHints: [{ name: "suggest_next_message", hint: AI_NEXT_MESSAGE_DESCRIPTION }],
+        }) + nextMessageEvalInstruction(fixture),
       messages: nextMessageEvalMessages(fixture),
       tools: [{ name: tool.def.name, description: tool.def.description, inputSchema: tool.def.inputSchema.toJSONSchema() }],
       temperature: 0,
@@ -51,7 +57,8 @@ try {
     console.log(`${fixture.id}: ${checked.pass ? "pass" : checked.problems.join(", ")} · ${JSON.stringify(checked.raw ?? null)}`);
   }
   const positives = results.filter((result) => result.id.startsWith("J") && result.pass).length;
-  const negativeSuggestions = results.filter((result) => result.id.startsWith("N") && result.text !== null).length;
+  // Only cases that expect no suggestion count; N8–N10 allow one (plan: other text, no number, German).
+  const negativeSuggestions = results.filter((result) => result.problems.includes("unwanted") && result.text !== null).length;
   const unwanted = results.filter((result) => result.id.startsWith("N") && result.problems.includes("unwanted")).length;
   const privacyOrRepetition = results.filter((result) =>
     result.problems.some((problem) => problem === "repetition" || problem.startsWith("private_data:") || problem.startsWith("name:")),

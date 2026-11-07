@@ -125,8 +125,11 @@ export const nextMessageEvalMessages = (fixture: NextMessageEvalCase): Message[]
         },
       ]
     : []),
-  { role: "assistant", content: [{ type: "text", text: fixture.answer }], stopReason: "stop" },
 ];
+
+/** The model writes the frozen final message itself, so the closing call happens in the same step as in a real turn. */
+export const nextMessageEvalInstruction = (fixture: NextMessageEvalCase) =>
+  `\n\n# Eval fixture\nIn this turn your final message to the user is exactly the following text. Write it verbatim, then act on your instructions for after the final message.\n<final_message>\n${fixture.answer}\n</final_message>`;
 
 const german =
   /\b(?:ja|bitte|entwirf|erstelle|erstell|leg|lege|schick|schicke|sende|verschieb|verschiebe|verlege|fass|fasse|lass|ruf|rufe|mach|mache|antwort|antworten|antwortentwurf|entwurf|anlegen|aufgaben|termin|zusammenfassen)\b/i;
