@@ -40,6 +40,7 @@ import {
 import { isQueryAdmissionError } from "./api/query-admission";
 import { toPublicWorkflowReceipt } from "./api/workflow-api-shared";
 import { PublicWorkflowInvocationReceiptSchema } from "./api/workflow-public-contracts";
+import { gridsEvents } from "./app-events";
 import {
   BaseCapabilityDataSchema,
   BaseListDataSchema,
@@ -1477,6 +1478,7 @@ const prepareViewCreate = async (input: z.infer<typeof ViewCreateInputSchema>, c
 
 export const gridsCapabilities = defineCapabilities({
   protocolVersion: 2,
+  events: gridsEvents,
   presentation: gridsCapabilityPresentation,
   types: {
     ...dailyCapabilities.types,

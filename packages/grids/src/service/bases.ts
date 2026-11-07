@@ -2,6 +2,7 @@ import { sql } from "@k2b/cloud";
 import { type AccessSubject, buildAccessPrincipalTierConditions } from "@k2b/cloud/server";
 import { logger, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { publishGridsLifecycleEvent } from "../app-events";
 import { DocumentDefaultsSchema } from "../contracts";
 import { grantAccess } from "./access";
 import { logAudit } from "./audit";
@@ -337,6 +338,7 @@ export const remove = async (id: string, actorId: string | null, locale?: string
     if (result.count === 0) return fail(err.notFound(messages.base));
     await logAudit({ baseId: id, userId: actorId, action: "deleted" }, tx);
     await publishMetadataChange(tx, id, "base.deleted");
+    await publishGridsLifecycleEvent(tx, "base.deleted", id);
     return ok();
   });
   if (!removed.ok) return removed;
@@ -369,6 +371,7 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
     if (!row) return fail(err.notFound(messages.base));
     await logAudit({ baseId: id, userId: actorId, action: "restored" }, tx);
     await publishMetadataChange(tx, id, "base.restored");
+    await publishGridsLifecycleEvent(tx, "base.restored", id);
     return ok(row);
   });
   if (!restored.ok) return restored;
