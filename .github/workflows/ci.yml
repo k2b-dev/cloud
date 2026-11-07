@@ -231,7 +231,7 @@ jobs:
   # through `playwright run-server`; contributing/testing.md runs the same
   # locally. Maxima from runs 42371812311, 42373338426 and 42377096341 cover
   # all 380 files, including completed suites from failed jobs (#1998).
-  # Fifteen shards need 10.97 min; fourteen need 11.75 min. The 11-min target
+  # Sixteen shards need 10.53 min with feat/code's browser files. The 11-min target
   # reserves the full 2-min warm-up plus the measured p95 1.61x slowdown:
   # 11 * 1.61 + 2 < 20. The runner tests enforce this 55%-of-budget guard.
   # The 20-min guard reserves the last third for setup and finalization;
@@ -244,7 +244,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     env:
       TEST_BROWSER: webkit
       TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/
