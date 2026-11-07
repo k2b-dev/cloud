@@ -32,7 +32,9 @@ retry at a smaller size.
 Choose the format, quality, and longest edge under **Export**. Only formats the
 browser can encode are offered. **Download** saves the active photo;
 **Download all as ZIP** creates one archive. Added photos keep their own edits.
-If saving fails, the error stays beside the save action with **Try again**.
+If saving fails, the error stays below the save action with **Try again**.
+If a ZIP fails because a photo is too large, accept its smaller size first, then
+choose **Download all as ZIP** again. Photos count as saved after the whole archive succeeds.
 
 **Cancel** removes the photo from this session and asks before losing unsaved
 edits. Closing, reloading, or navigating away also warns about unsaved edits.

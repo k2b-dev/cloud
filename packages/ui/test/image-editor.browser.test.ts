@@ -45,7 +45,7 @@ beforeAll(async () => {
       if (url.pathname === "/photo.jpg" || url.pathname === "/logo.png")
         return new Response(Bun.file(resolve(import.meta.dir, `../src/inputs/image-editor/fixtures${url.pathname}`)));
       return new Response(
-        `<!doctype html><html lang="${url.searchParams.get("locale") === "de" ? "de" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" data-theme="light" style="margin:0"><div id="editor" style="height:calc(100dvh - 1rem);min-height:34rem"></div><script src="/editor.js"></script></body></html>`,
+        `<!doctype html><html lang="${url.searchParams.get("locale") === "de" ? "de" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" data-theme="light" style="margin:0"><div data-nav-shell="editor-test" data-nav-scope="/"><a href="/destination" id="destination-link" ${url.searchParams.has("nav") ? "" : "hidden"}>Destination</a><main data-nav-root data-path="${url.pathname}"><div id="editor" style="height:calc(100dvh - 1rem);min-height:34rem"></div></main></div><script src="/editor.js"></script></body></html>`,
         { headers: { "content-type": "text/html" } },
       );
     },
@@ -85,15 +85,157 @@ const selectTool = async (page: Page, name: string) => {
 const stageBox = (page: Page) => page.locator(".k2b-image-editor__stage").boundingBox();
 
 describe("public ImageEditor interactions", () => {
+  test("caller save actions expose only browser-verified permitted encoders", async () => {
+    const { page, errors } = await open("actions=1&pngOnly=1");
+    try {
+      await page.waitForFunction("window.editorFixture.formats().length > 0");
+      expect(await fixture(page, "formats()")).toEqual(["image/png"]);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("confirmed dirty click and Back use enhanced navigation without adding a document load", async () => {
+    for (const back of [false, true]) {
+      const { page, errors } = await open("nav=1");
+      try {
+        const before = await page.evaluate(() => {
+          Object.assign(window, { navigationSentinel: true });
+          return history.length;
+        });
+        const entryIndex = await page.evaluate<number | undefined>("window.navigation?.currentEntry?.index");
+        await page.getByRole("button", { name: "Flip horizontally", exact: true }).click();
+        if (back) await page.evaluate(() => history.back());
+        else await page.locator("#destination-link").click();
+        const dialog = page.getByRole("dialog");
+        await dialog.getByText("Discard unsaved changes?", { exact: true }).waitFor();
+        await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+        await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+        expect(new URL(page.url()).pathname).toBe("/editing");
+        expect(await dirty(page)).toBe("true");
+        if (back) await page.evaluate(() => history.back());
+        else await page.locator("#destination-link").click();
+        await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+        await page.waitForFunction(
+          (path) => document.querySelector("[data-nav-root]")?.getAttribute("data-path") === path,
+          back ? "/" : "/destination",
+        );
+        expect(await page.evaluate<boolean>("window.navigationSentinel")).toBe(true);
+        expect(new URL(page.url()).pathname).toBe(back ? "/" : "/destination");
+        if (back) {
+          expect(await page.evaluate(() => history.length)).toBeLessThanOrEqual(before + 1);
+          if (entryIndex !== undefined) expect(await page.evaluate<number>("window.navigation.currentEntry.index")).toBe(entryIndex - 1);
+        }
+        await fixture(page, "dispose()");
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  test("locked widescreen survives rotation and export", async () => {
+    const { page, errors } = await open("minimal=1&wide=1");
+    try {
+      await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      await page.getByRole("button", { name: "Done", exact: true }).click();
+      await page.waitForFunction("window.editorFixture.results.length === 1");
+      const ratio = await page.evaluate<number>("window.editorFixture.results[0].width / window.editorFixture.results[0].height");
+      expect(Math.abs(ratio - 16 / 9)).toBeLessThan(0.005);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("aspect choice and orientation undo together with corner behavior", async () => {
+    const { page, errors } = await open();
+    try {
+      const choose = async (name: string) => {
+        await page.getByRole("combobox", { name: "Aspect ratio", exact: true }).click();
+        await page.getByRole("option", { name, exact: true }).click();
+      };
+      await choose("1:1");
+      await choose("16:9");
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      expect(await page.getByRole("combobox", { name: "Aspect ratio", exact: true }).innerText()).toContain("1:1");
+      const corner = page.locator('[data-corner="se"]');
+      await corner.press("ArrowLeft");
+      await settled(page);
+      const crop = (await page.locator(".k2b-image-editor__crop").boundingBox())!;
+      expect(Math.abs(crop.width / crop.height - 1)).toBeLessThan(0.005);
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      await choose("16:9");
+      await page.getByRole("button", { name: "Swap portrait and landscape", exact: true }).click();
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      await corner.press("ArrowLeft");
+      await settled(page);
+      const restored = (await page.locator(".k2b-image-editor__crop").boundingBox())!;
+      expect(Math.abs(restored.width / restored.height - 16 / 9)).toBeLessThan(0.005);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("portrait previews keep their aspect and crop hit targets clear the zoom bar", async () => {
+    for (const width of [1440, 390]) {
+      const { page, errors } = await open("", width);
+      try {
+        const source = await page.evaluate(async () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 300;
+          canvas.height = 600;
+          canvas.getContext("2d")!.fillRect(0, 0, 300, 600);
+          return canvas.toDataURL();
+        });
+        await page.evaluate((source) => Object.assign(window, { portrait: source }), source);
+        await fixture(page, "source(window.portrait)");
+        await page.getByText("300 × 600 px", { exact: true }).waitFor();
+        await settled(page);
+        const bar = await page.locator(".k2b-image-editor__zoom").boundingBox();
+        for (const corner of ["sw", "se"]) {
+          const bounds = await page.locator(`[data-corner=${corner}]`).boundingBox();
+          expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(bar!.y);
+        }
+        await selectTool(page, "Looks");
+        await settled(page);
+        expect(
+          await page.locator(".k2b-choice-tiles canvas").evaluateAll((canvases) =>
+            canvases.every((element) => {
+              const canvas = element as HTMLCanvasElement;
+              const bounds = canvas.getBoundingClientRect();
+              return canvas.width / canvas.height === 0.5 && Math.abs(bounds.width / bounds.height - 0.5) < 0.01;
+            }),
+          ),
+        ).toBe(true);
+        await selectTool(page, "Export");
+        expect(await page.getByRole("slider", { name: "Quality", exact: true }).count()).toBe(0);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
   test("dark desktop and phone keep every tool reachable with an unclipped shared selector", async () => {
     for (const width of [1440, 390]) {
       const { page, errors } = await open("dark=1", width);
       try {
         expect(await page.locator("body").getAttribute("data-theme")).toBe("dark");
         const before = await stageBox(page);
+        const toolField = (await page.getByRole("combobox", { name: "Tool", exact: true }).boundingBox())!;
+        const aspectField = (await page.getByRole("combobox", { name: "Aspect ratio", exact: true }).boundingBox())!;
+        expect(toolField.x + toolField.width).toBe(aspectField.x + aspectField.width);
         for (const tool of ["Adjust", "Looks", "Annotate", "Redact", "Export", "Crop"]) {
           await selectTool(page, tool);
-          await settled(page);
+          await page.waitForFunction(
+            (name) => document.querySelector(".k2b-image-editor__tools [role=combobox]")?.textContent?.includes(name),
+            tool,
+          );
           expect(await page.getByRole("combobox", { name: "Tool", exact: true }).innerText()).toContain(tool);
           expect(await page.locator(".k2b-image-editor__tools").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
             true,
@@ -343,6 +485,10 @@ describe("public ImageEditor interactions", () => {
       await notice.waitFor();
       expect(await notice.evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
       expect(await stageBox(page)).toEqual(before);
+      await settled(page);
+      const feedback = (await page.locator(".k2b-image-editor__error").boundingBox())!;
+      const upperCorner = (await page.locator('[data-corner="nw"]').boundingBox())!;
+      expect(upperCorner.y).toBeGreaterThanOrEqual(feedback.y + feedback.height);
       expect(await fixture(page, "attempts")).toBe(0);
       expect(await dirty(page)).toBe("true");
       await page.getByRole("button", { name: /Mit .* MP erneut speichern/ }).click();

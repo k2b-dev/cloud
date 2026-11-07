@@ -14,6 +14,7 @@ export const photoEditorMessages = i18n.define({
       retry: "Try again",
       loadFailed: "The photos could not be added. Try again.",
       pickerFailed: "The image picker could not be opened. Try again.",
+      archiveRetry: "Start Download all as ZIP again to save every photo together.",
       exportFailed: "The archive could not be created. Your edits are still here. Open the photo with the error and try again.",
     },
     de: {
@@ -28,6 +29,7 @@ export const photoEditorMessages = i18n.define({
       retry: "Erneut versuchen",
       loadFailed: "Die Fotos konnten nicht hinzugefügt werden. Versuche es erneut.",
       pickerFailed: "Die Bildauswahl konnte nicht geöffnet werden. Versuche es erneut.",
+      archiveRetry: "Starte Alle als ZIP herunterladen erneut, um alle Fotos gemeinsam zu speichern.",
       exportFailed:
         "Das Archiv konnte nicht erstellt werden. Deine Änderungen bleiben erhalten. Öffne das Foto mit dem Fehler und versuche es erneut.",
     },

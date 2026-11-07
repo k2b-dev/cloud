@@ -1,4 +1,4 @@
-import { navigateTo, onBeforeLeave } from "@k2b/ssr/nav";
+import { onBeforeLeave, swapPage } from "@k2b/ssr/nav";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Button, IconButton } from "../../actions/Button";
 import { prompts } from "../../feedback/prompts";
@@ -109,11 +109,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     const initial = cropOptions()?.defaultAspect;
     return initial && !values.includes(initial) ? [initial, ...values] : values;
   };
-  const [aspectIndex, setAspectIndex] = createSignal(0);
-  const [swapped, setSwapped] = createSignal(false);
-  const chosenAspect = () => aspects()[aspectIndex()] ?? "free";
-  const aspect = (): ImageCropAspect => {
-    const value = chosenAspect();
+  const aspectIndex = () => Math.max(0, aspects().indexOf(state().cropAspect));
+  const aspectFor = (edit: ImageEditorState): ImageCropAspect => {
+    const value = edit.cropAspect;
     const source = preview()?.sourceSize;
     if (value === "free") return "free";
     const result =
@@ -125,8 +123,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
               const [width, height] = value.split(":").map(Number);
               return { width: width ?? 1, height: height ?? 1 };
             })();
-    return swapped() ? { width: result.height, height: result.width } : result;
+    return edit.cropAspectSwapped ? { width: result.height, height: result.width } : result;
   };
+  const aspect = () => aspectFor(state());
   const [preview, setPreview] = createSignal<Awaited<ReturnType<typeof loadImageEditorPreview>>>();
   const [loading, setLoading] = createSignal(true);
   const [loadError, setLoadError] = createSignal(false);
@@ -152,6 +151,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   const [color, setColor] = createSignal("#ef4444");
   const [width, setWidth] = createSignal(6);
   const [inlineText, setInlineText] = createSignal<{ point: ImageEditorPoint; value: string; index?: number }>();
+  const [feedbackInset, setFeedbackInset] = createSignal(0);
+  let feedbackError: HTMLDivElement | undefined;
   const [viewport, setViewport] = createSignal({ width: 640, height: 420 });
   let stage: HTMLDivElement | undefined;
   let canvas: HTMLCanvasElement | undefined;
@@ -209,7 +210,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     const rs = renderedState();
     const rotated = source ? rotatedEditorSize(source, rs) : { width: 3, height: 2 };
     const ratio = (rotated.width * rs.crop.width) / (rotated.height * rs.crop.height);
-    const scale = Math.min(Math.max(1, viewport().width - 48) / ratio, Math.max(1, viewport().height - 48));
+    const scale = Math.min(Math.max(1, viewport().width - 48) / ratio, Math.max(1, viewport().height - feedbackInset() - 112));
     return { width: scale * ratio * zoom(), height: scale * zoom() };
   });
   const resetZoom = () => {
@@ -238,7 +239,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       y: edit.point.y * source.height,
     });
     const left = (viewport().width - display().width) / 2 + pan().x + p.x;
-    const top = (viewport().height - display().height) / 2 + pan().y + p.y;
+    const top = (viewport().height - 64 - feedbackInset() - display().height) / 2 + feedbackInset() + pan().y + p.y;
     return {
       left: `clamp(.5rem, ${left}px, max(.5rem, calc(100% - 15rem - .5rem)))`,
       top: `clamp(.5rem, ${top}px, max(.5rem, calc(100% - 3rem)))`,
@@ -287,14 +288,10 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
             setLoading(false);
             if (history().entries.length === 1 && props.features.crop) {
               const options = cropOptions();
-              const initial = options?.defaultAspect ?? (options?.locked ? aspects()[0] : "free");
+              const initial = options?.defaultAspect ?? (aspects().includes("free") ? "free" : aspects()[0]);
               if (initial && initial !== "free") {
-                const selected = aspects().indexOf(initial);
-                setAspectIndex(selected < 0 ? 0 : selected);
-                const next = {
-                  ...initialImageEditorState(),
-                  crop: getInitialImageCropRect(rotatedEditorSize(result.sourceSize, state()), aspect()),
-                };
+                const next = { ...initialImageEditorState(), cropAspect: initial };
+                next.crop = getInitialImageCropRect(rotatedEditorSize(result.sourceSize, next), aspectFor(next));
                 setHistory(createImageEditorHistory(next));
               }
             }
@@ -348,7 +345,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
         setHistory((h) => markImageEditorSaved(h));
         setDraft(undefined);
         setInlineText(undefined);
-        navigateTo(event.url.href);
+        if (event.delta !== undefined && event.delta < 0) window.history.go(event.delta);
+        else void swapPage(event.url.href);
       }
     });
   });
@@ -369,6 +367,22 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       observer.disconnect();
       window.removeEventListener("beforeunload", beforeUnload);
     });
+  });
+  createEffect(() => {
+    if (!error()) {
+      setFeedbackInset(0);
+      return;
+    }
+    const box = feedbackError;
+    const surface = stage;
+    if (!box || !surface) return;
+    // Keep the stage and tool regions fixed while giving a long retry notice its own photo inset.
+    const measure = () => setFeedbackInset(Math.max(0, box.getBoundingClientRect().bottom - surface.getBoundingClientRect().top));
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    observer.observe(surface);
+    measure();
+    onCleanup(() => observer.disconnect());
   });
   onCleanup(() => {
     alive = false;
@@ -421,6 +435,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   };
   const actions: ImageEditorSaveActions = {
     save,
+    get formats() {
+      return availableFormats();
+    },
     get dirty() {
       return dirty();
     },
@@ -443,8 +460,14 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     resetZoom();
   };
   const rotate = (right: boolean) => {
-    setSwapped((value) => !value);
-    change((state) => (right ? rotateEditorRight(state) : rotateEditorRight(rotateEditorRight(rotateEditorRight(state)))));
+    change((state) => {
+      const next = right ? rotateEditorRight(state) : rotateEditorRight(rotateEditorRight(rotateEditorRight(state)));
+      if (cropOptions()?.locked) {
+        next.cropAspectSwapped = false;
+        next.crop = getInitialImageCropRect(rotatedEditorSize(preview()!.sourceSize, next), aspectFor(next));
+      } else next.cropAspectSwapped = !state.cropAspectSwapped;
+      return next;
+    });
   };
   const setCrop = (rect: ImageCropRect) => setDraft({ ...state(), crop: rect });
   const cropKey = (event: KeyboardEvent, corner: ImageCropResizeHandle | "move") => {
@@ -578,6 +601,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       adjustments: { ...s.adjustments, [key]: value / 100 + (["brightness", "contrast", "saturation"].includes(key) ? 1 : 0) },
     }));
   const exportFeatures = () => (typeof props.features.export === "object" ? props.features.export : undefined);
+  const sourceType = () => preview()?.sourceSize.type ?? (typeof props.source === "string" ? undefined : props.source.type);
+  const losslessOutput = () =>
+    output().format === "image/png" || ((!output().format || output().format === "same") && sourceType() === "image/png");
   const availableFormats = () => formats().filter((format) => !exportFeatures()?.formats || exportFeatures()?.formats?.includes(format));
 
   return (
@@ -641,30 +667,28 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       </header>
       <div class="k2b-image-editor__status" aria-live="polite" aria-busy={busy()}>
         <div class="k2b-image-editor__feedback">
-          <Show
-            when={error()}
-            fallback={
-              <div>
-                <p class="k2b-image-editor__notice">
-                  {t().metadata} <Show when={dimensions()?.downscaled}>{t().smaller(dimensions()!)}</Show>
-                </p>
-                <span>{busy() ? t().saving : saved() ? t().saved : ""}</span>
-              </div>
-            }
-          >
-            <NoticeCard role="alert" tone="danger" icon title={error()} />
-          </Show>
+          <div>
+            <p class="k2b-image-editor__notice">
+              {t().metadata} <Show when={dimensions()?.downscaled}>{t().smaller(dimensions()!)}</Show>
+            </p>
+            <span>{busy() ? t().saving : saved() ? t().saved : ""}</span>
+          </div>
           <Show when={error()}>
-            <Button size="sm" variant="secondary" disabled={busy()} onClick={retry}>
-              {suggestedMP()
-                ? t().retrySmaller({ megapixels: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(suggestedMP() ?? 0) })
-                : t().retry}
-            </Button>
+            <div class="k2b-image-editor__error" ref={feedbackError}>
+              <NoticeCard role="alert" tone="danger" icon title={error()} />
+              <Button size="sm" variant="secondary" disabled={busy()} onClick={retry}>
+                {suggestedMP()
+                  ? t().retrySmaller({
+                      megapixels: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(suggestedMP() ?? 0),
+                    })
+                  : t().retry}
+              </Button>
+            </div>
           </Show>
         </div>
       </div>
       <div class="k2b-image-editor__workspace">
-        <div class="k2b-image-editor__stage" ref={stage}>
+        <div class="k2b-image-editor__stage" ref={stage} style={{ "padding-top": `${feedbackInset()}px` }}>
           <Show
             when={preview()}
             fallback={
@@ -796,8 +820,12 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                   disabled={cropOptions()?.locked || !preview()}
                   onValueChange={(value) => {
                     if (value === null) return;
-                    setAspectIndex(Number(value));
-                    change((s) => ({ ...s, crop: getInitialImageCropRect(size(), aspect()) }));
+                    const chosen = aspects()[Number(value)];
+                    if (chosen)
+                      change((s) => {
+                        const next = { ...s, cropAspect: chosen, cropAspectSwapped: false };
+                        return { ...next, crop: getInitialImageCropRect(size(), aspectFor(next)) };
+                      });
                   }}
                 />
                 <Show when={!cropOptions()?.locked}>
@@ -806,8 +834,10 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                     variant="ghost"
                     disabled={!preview() || aspect() === "free"}
                     onClick={() => {
-                      setSwapped((v) => !v);
-                      change((s) => ({ ...s, crop: getInitialImageCropRect(size(), aspect()) }));
+                      change((s) => {
+                        const next = { ...s, cropAspectSwapped: !s.cropAspectSwapped };
+                        return { ...next, crop: getInitialImageCropRect(size(), aspectFor(next)) };
+                      });
                     }}
                   >
                     {t().swap}
@@ -965,7 +995,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                   if (selected || format === "same") setOutput((v) => ({ ...v, format: selected ?? "same" }));
                 }}
               />
-              <Show when={exportFeatures()?.quality && output().format !== "image/png"}>
+              <Show when={exportFeatures()?.quality && !losslessOutput()}>
                 <Slider
                   label={t().quality}
                   min={40}
@@ -974,7 +1004,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                   onValueChange={(v) => setOutput((o) => ({ ...o, quality: v / 100 }))}
                 />
               </Show>
-              <Show when={output().format === "image/png"}>
+              <Show when={losslessOutput()}>
                 <p class="k2b-image-editor__hint">{t().lossless}</p>
               </Show>
               <Show when={exportFeatures()?.resize}>
@@ -1011,13 +1041,20 @@ function LookThumbnail(props: {
     const look = props.look;
     if (!image || !canvas) return;
     scratch ??= document.createElement("canvas");
-    canvas.width = 96;
-    canvas.height = 64;
+    const scale = 96 / Math.max(image.sourceSize.width, image.sourceSize.height);
+    canvas.width = Math.max(1, Math.round(image.sourceSize.width * scale));
+    canvas.height = Math.max(1, Math.round(image.sourceSize.height * scale));
     renderImageEditor(image.image, image.sourceSize, { ...initialImageEditorState(), look }, canvas, scratch);
   });
   onCleanup(() => {
     if (canvas) canvas.width = canvas.height = 0;
     if (scratch) scratch.width = scratch.height = 0;
   });
-  return <canvas ref={canvas} aria-hidden="true" style={{ display: "block", width: "4rem", height: "auto" }} />;
+  return (
+    <canvas
+      ref={canvas}
+      aria-hidden="true"
+      style={{ display: "block", "max-width": "4rem", "max-height": "4rem", width: "auto", height: "auto" }}
+    />
+  );
 }

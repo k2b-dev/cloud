@@ -57,7 +57,10 @@ formats before supplying them; Tools supplies its own HEIF conversion.
 
 - `crop` accepts `true` or `{ aspects, defaultAspect, locked }`. Aspects are
   `"free"`, `"original"`, `"1:1"`, `"4:5"`, `"3:2"`, `"4:3"`, `"16:9"`,
-  `"9:16"`, or `{ width, height, label }`.
+  `"9:16"`, or `{ width, height, label }`. The default is `"free"` when offered,
+  otherwise the first aspect. `defaultAspect` overrides it. Aspect selection
+  and portrait/landscape swaps share the edit history. `locked` preserves the
+  configured ratio, including after a quarter turn.
 - `rotate` enables quarter turns and horizontal/vertical flips.
 - `straighten` enables −45° through 45°. The image fills the crop without
   leaving empty corners.
@@ -90,6 +93,9 @@ Without `saveActions`, **Done** encodes the result and awaits `onSave`.
 `saveActions` replaces that button with caller-owned actions. Its `save`
 function encodes the captured history entry, then awaits `commit`.
 `busy` covers preview loading, encoding, and the caller's work.
+The reactive, read-only `formats` array starts empty and then lists the browser-verified
+encoders allowed by `features.export.formats`. Check it before offering a save
+that must preserve an existing file format.
 
 ```tsx
 <ImageEditor

@@ -34,7 +34,9 @@ bleiben Änderungen erhalten. Du kannst ausdrücklich mit kleinerer Größe erne
 Wähle Format, Qualität und lange Kante unter **Export**. Angeboten werden nur
 Formate, die der Browser ausgeben kann. **Herunterladen** speichert das aktive Foto;
 **Alle als ZIP herunterladen** erstellt ein Archiv. Jedes hinzugefügte Foto behält
-seine Bearbeitungen. Bei einem Fehler bleiben Meldung und **Erneut versuchen** neben der Speicheraktion.
+seine Bearbeitungen. Bei einem Fehler bleiben Meldung und **Erneut versuchen** unter der Speicheraktion.
+Scheitert ein ZIP an einem zu großen Foto, bestätige zuerst dessen kleinere Größe.
+Wähle dann erneut **Alle als ZIP herunterladen**. Erst das fertige Archiv zählt als gespeichert.
 
 **Abbrechen** entfernt das Foto aus dieser Sitzung und fragt vor dem Verwerfen
 ungespeicherter Änderungen. Auch Schließen, Neuladen und Wegnavigieren warnen bei ungespeicherten Änderungen.

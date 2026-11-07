@@ -64,6 +64,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   let nextId = Math.max(0, ...photos().map((photo) => photo.id));
   let alive = true;
   let queue: File[] = [];
+  let archiveRun: object | undefined;
   let loadingAbort: AbortController | undefined;
   const choose = () => chooseFiles({ accept: IMAGE_ACCEPT, multiple: true });
   const addFiles = (incoming: File[]) => {
@@ -134,6 +135,8 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   };
   const downloadAll = async () => {
     if (archiving() || loading()) return;
+    const run = {};
+    archiveRun = run;
     setArchiving(true);
     setError("");
     const selected = [...photos()];
@@ -153,6 +156,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       let accepted = false;
       await actions.save(async (result) => {
         if (!alive) throw new DOMException("Aborted", "AbortError");
+        if (archiveRun !== run) throw new Error(t().archiveRetry);
         archive = archive.slice(0, index);
         const names = new Set(archive.map((entry) => entry.filename));
         const filename = imageEditorOutputName(photo.file.name, result);
@@ -177,6 +181,8 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     } catch (failure) {
       if (alive) setError(failure instanceof Error ? failure.message : t().exportFailed);
     } finally {
+      archive = [];
+      if (archiveRun === run) archiveRun = undefined;
       if (alive) setArchiving(false);
     }
   };
@@ -192,6 +198,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   onCleanup(() => {
     document.removeEventListener("paste", paste);
     alive = false;
+    archiveRun = undefined;
     queue = [];
     for (const abort of controllers) abort.abort();
     controls.clear();

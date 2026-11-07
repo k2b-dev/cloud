@@ -36,6 +36,8 @@ export type ImageEditorResult = {
   downscaled: boolean;
 };
 export type ImageEditorSaveActions = {
+  /** Browser-verified encoders allowed by this editor, populated asynchronously. */
+  readonly formats: readonly ImageEditorFormat[];
   save: (commit: (result: ImageEditorResult) => Promise<void>, output?: ImageEditorOutput) => Promise<void>;
   dirty: boolean;
   busy: boolean;

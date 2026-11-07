@@ -90,6 +90,41 @@ describe("Tools public photo editor adoption", () => {
       await page.close();
     }
   });
+  test("a reduced per-photo retry cannot resume a failed ZIP and a fresh archive saves all entries", async () => {
+    const { page, errors } = await open();
+    try {
+      await page.getByRole("button", { name: "Flip horizontally", exact: true }).click();
+      await page.getByRole("combobox", { name: "Photo", exact: true }).click();
+      await page.getByRole("option", { name: "photo.jpg", exact: true }).nth(1).click();
+      await page.waitForFunction(() => document.querySelectorAll(".k2b-image-editor canvas").length === 2);
+      await page.getByRole("button", { name: "Flip horizontally", exact: true }).click();
+      await page.evaluate(() => {
+        const encode = HTMLCanvasElement.prototype.toBlob;
+        let exports = 0;
+        HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
+          if (this.width > 1 && ++exports === 2) {
+            callback(null);
+            return;
+          }
+          encode.call(this, callback, type, quality);
+        };
+      });
+      await page.getByRole("button", { name: "Download all as ZIP", exact: true }).click();
+      await page.getByRole("button", { name: /Save again at .* MP/ }).waitFor();
+      expect(await dirty(page)).toBe(2);
+      await page.getByRole("button", { name: /Save again at .* MP/ }).click();
+      await page.getByRole("alert").filter({ hasText: "Start Download all as ZIP again" }).waitFor();
+      expect(await page.evaluate<number>("window.photoFixture.downloads.length")).toBe(0);
+      expect(await dirty(page)).toBe(2);
+      await page.getByRole("button", { name: "Download all as ZIP", exact: true }).click();
+      await page.waitForFunction("window.photoFixture.downloads.length === 1");
+      await page.waitForFunction(() => !document.querySelector(".k2b-image-editor[data-dirty=true]"));
+      expect(await page.locator(".k2b-image-editor [role=alert]").count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
   test("an unvisited photo load failure ends ZIP visibly and preserves earlier captured edits", async () => {
     const { page, errors } = await open("brokenSecond=1");
     try {
