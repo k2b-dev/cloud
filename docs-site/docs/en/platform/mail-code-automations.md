@@ -126,8 +126,9 @@ input. Body readiness and `bodyTruncated` remain separate checks.
 
 ## Integrate these controls
 
-Mail supplies read-only `mail.message.catchup`, `mail.message.event`, and
-`mail.message.event-preview` queries at a `mail.mailbox` target. Core supplies
+Mail supplies read-only `mail.message.catchup` and
+`mail.message.event-preview` queries at a `mail.mailbox` target. Its
+`mail.message.event` query resolves a message ID. Core supplies
 `core.code.event.catchup`, `.cancel`, `.resume`, and `.read` at a `core.code`
 target. Mail declares `catchup: "message.event"` for the received event. Core
 resolves every selected subject through that source-owned query under the
