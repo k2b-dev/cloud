@@ -1,4 +1,4 @@
-import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, Show, untrack } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, onCleanup, Show, untrack } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import {
   type CommandContext,
@@ -14,16 +14,30 @@ import { useCommandMessages } from "./command-messages";
 /** The state of one open command list: its steps, the shown entries, and the marked one. */
 export type CommandNavigator = ReturnType<typeof createCommandNavigator>;
 
-/** The context without what the list adds itself: the query, the path, and the signal. */
-export type CommandPlace = Omit<CommandContext, "query" | "path" | "signal">;
+/** The context without what the list adds itself: the query, the path, the signal, and the reports. */
+export type CommandPlace = Omit<CommandContext, "query" | "path" | "signal" | "success" | "error">;
 
 /** A list whose entries come from a promise: pending, or failed with the message of its rejection. */
 export type CommandListLoad = { state: "ready" } | { state: "loading" } | { state: "failed"; message?: string };
 
-/** A command that returned a promise: busy while it runs, or failed with the message of its rejection. */
-export type CommandStatus =
-  | { key: string; label: string; state: "running" }
-  | { key: string; label: string; state: "failed"; message?: string };
+/** A command that returned a promise, busy while it runs. */
+export type CommandStatus = { key: string; label: string; state: "running" };
+
+/**
+ * What a finished command reported, shown in the list's place: a confirmation, an error (with a way to try again when
+ * the command threw or rejected), or the command running again after a retry.
+ */
+export type CommandOutcome =
+  | { state: "success"; message: string }
+  | { state: "error"; message?: string; retry?: () => void }
+  | { state: "running"; message: string };
+
+/** A confirmation or an error stays at least this long, even when the person types on at once. */
+export const COMMAND_OUTCOME_MIN_MS = 1200;
+/** A confirmation goes by itself after this long; an error stays until the person types, retries, or presses Escape. */
+export const COMMAND_OUTCOME_SUCCESS_MS = 4000;
+
+const ignoreReport = () => {};
 
 /**
  * Keeps the steps, the marked entry, and the running command of a command list. The host owns the query and the
@@ -40,27 +54,51 @@ export const createCommandNavigator = (options: {
   /** Whether the list is open; a closed list asks no source. */
   active: () => boolean;
   beforeRun?: () => void;
-  afterRun: () => void;
+  /** Runs once a command finished, before its outcome shows; `outcome` tells the host to keep its place for it. */
+  afterRun: (outcome: boolean) => void;
   onStep?: (depth: number) => void;
 }) => {
   const [status, setStatus] = createSignal<CommandStatus>();
+  const [outcome, setOutcome] = createSignal<CommandOutcome>();
+  let shownAt = 0;
+  let outcomeTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearOutcome = () => {
+    clearTimeout(outcomeTimer);
+    outcomeTimer = undefined;
+    setOutcome(undefined);
+  };
+  const showOutcome = (next: CommandOutcome) => {
+    clearTimeout(outcomeTimer);
+    outcomeTimer = undefined;
+    setOutcome(next);
+    shownAt = Date.now();
+    if (next.state === "success") outcomeTimer = setTimeout(clearOutcome, COMMAND_OUTCOME_SUCCESS_MS);
+  };
+  onCleanup(() => clearTimeout(outcomeTimer));
   let running: AbortController | undefined;
-  const run = (item: CommandItem) => {
+  const run = (item: CommandItem, path: readonly CommandItem[], again = false) => {
     const controller = new AbortController();
     running = controller;
     const key = commandKey(item);
     setStatus(undefined);
-    options.beforeRun?.();
+    if (!again) options.beforeRun?.();
+    // What the command reported; only a command still running can report.
+    let report: CommandOutcome | undefined;
+    const reporting = () => running === controller && !controller.signal.aborted;
     const settle = (failure?: { error: unknown }) => {
-      if (running !== controller || controller.signal.aborted) return;
+      if (!reporting()) return;
       running = undefined;
-      if (!failure) {
-        setStatus(undefined);
-        options.afterRun();
-        return;
-      }
-      const message = failure.error instanceof Error && failure.error.message ? failure.error.message : undefined;
-      setStatus({ key, label: item.label, state: "failed", message });
+      setStatus(undefined);
+      const next: CommandOutcome | undefined = failure
+        ? {
+            state: "error",
+            message: failure.error instanceof Error && failure.error.message ? failure.error.message : undefined,
+            retry: () => runAgain(item, path),
+          }
+        : report;
+      options.afterRun(next !== undefined);
+      if (next) showOutcome(next);
+      else clearOutcome();
     };
     let result: unknown;
     try {
@@ -71,8 +109,14 @@ export const createCommandNavigator = (options: {
         insert: (text: string) => {
           if (!controller.signal.aborted) base.insert(text);
         },
+        success: (message: string) => {
+          if (reporting()) report = { state: "success", message };
+        },
+        error: (message: string) => {
+          if (reporting()) report = { state: "error", message };
+        },
         query: options.query(),
-        path: steps(),
+        path,
         signal: controller.signal,
       });
     } catch (error) {
@@ -80,11 +124,17 @@ export const createCommandNavigator = (options: {
       return;
     }
     if (!(result instanceof Promise)) return settle();
-    setStatus({ key, label: item.label, state: "running" });
+    // A first run shows on its row; a retry runs where its error was.
+    if (again) showOutcome({ state: "running", message: item.label });
+    else setStatus({ key, label: item.label, state: "running" });
     result.then(
       () => settle(),
       (error: unknown) => settle({ error }),
     );
+  };
+  const runAgain = (item: CommandItem, path: readonly CommandItem[]) => {
+    clearOutcome();
+    run(item, path, true);
   };
   const [steps, setSteps] = createSignal<readonly CommandItem[]>([]);
   const step = () => steps().at(-1);
@@ -112,7 +162,14 @@ export const createCommandNavigator = (options: {
     const source = step()?.next?.items ?? options.items();
     if (typeof source !== "function") return { items: filterCommandItems(source, options.query()) };
     const controller = new AbortController();
-    const context: CommandContext = { ...place(), query: options.query(), path: steps(), signal: controller.signal };
+    const context: CommandContext = {
+      ...place(),
+      query: options.query(),
+      path: steps(),
+      signal: controller.signal,
+      success: ignoreReport,
+      error: ignoreReport,
+    };
     let result: readonly CommandItem[] | Promise<readonly CommandItem[]>;
     try {
       result = untrack(() => source(context));
@@ -190,7 +247,7 @@ export const createCommandNavigator = (options: {
     if (!item || item.disabled || status()?.state === "running") return;
     if (item.next) changeStep([...steps(), item]);
     else if (item.text !== undefined) options.onText(item);
-    else run(item);
+    else run(item, steps());
   };
   const changeStep = (next: readonly CommandItem[]) => {
     setSteps(next);
@@ -238,6 +295,26 @@ export const createCommandNavigator = (options: {
       running?.abort();
       running = undefined;
       setStatus(undefined);
+      if (outcome()?.state === "running") clearOutcome();
+    },
+    /** What the last command reported, shown in the list's place until it clears. */
+    outcome,
+    /** The person typed on: the outcome clears, but not before it showed for `COMMAND_OUTCOME_MIN_MS`. */
+    typedOn: () => {
+      const current = outcome();
+      if (!current || current.state === "running") return;
+      const left = COMMAND_OUTCOME_MIN_MS - (Date.now() - shownAt);
+      if (left <= 0) return clearOutcome();
+      clearTimeout(outcomeTimer);
+      outcomeTimer = setTimeout(clearOutcome, left);
+    },
+    /** Clears the outcome at once, for Escape or a new list; a retry still running is stopped. */
+    clearOutcome: () => {
+      if (outcome()?.state === "running") {
+        running?.abort();
+        running = undefined;
+      }
+      clearOutcome();
     },
     /** Leaves the second list; `false` when the first list shows. */
     back: () => {
@@ -274,6 +351,8 @@ export function CommandList(props: {
   query: Accessor<string>;
   /** Content between the back control and the list, such as a search field. */
   header?: JSX.Element;
+  /** Runs after Retry or Close on an outcome, so the host puts the focus back where the person writes. */
+  onOutcomeAction?: () => void;
 }): JSX.Element {
   const messages = useUiMessages();
   const commandMessages = useCommandMessages();
@@ -296,11 +375,18 @@ export function CommandList(props: {
     const current = nav.load();
     return current.state === "failed" ? (current.message ?? commandMessages().loadFailed) : "";
   };
-  const failure = () => {
-    const current = nav.status();
-    return current?.state === "failed" ? (current.message ?? commandMessages().failed) : "";
+  /** The outcome as one line of text: the report, or for an error without one, that it did not work. */
+  const outcomeText = (outcome: CommandOutcome) =>
+    outcome.state === "running"
+      ? commandMessages().running({ label: outcome.message })
+      : (outcome.message ?? (outcome.state === "error" ? commandMessages().failed : commandMessages().done));
+  const outcomeError = () => {
+    const current = nav.outcome();
+    return current?.state === "error" ? outcomeText(current) : "";
   };
   const status = () => {
+    const current = nav.outcome();
+    if (current) return current.state === "error" ? "" : outcomeText(current);
     if (runningLabel()) return runningLabel();
     const step = nav.step()?.next;
     const count = props.query().trim() || step ? messages().searchMatches({ count: matches() }) : "";
@@ -309,6 +395,8 @@ export function CommandList(props: {
 
   return (
     <>
+      {/* After a command reported, a status line of the same width takes the list's place until it clears. */}
+      <Show when={!nav.outcome()} fallback={<CommandOutcomeLine navigator={nav} text={outcomeText} onAction={props.onOutcomeAction} />}>
       <Show when={nav.step()}>
         {(item) => (
           <div class="k2b-command-list__step">
@@ -361,7 +449,6 @@ export function CommandList(props: {
                       aria-disabled={entry.item.disabled ? "true" : undefined}
                       aria-busy={statusOf(entry.item)?.state === "running" ? "true" : undefined}
                       data-active={entry.index === nav.active() && !entry.item.disabled ? "" : undefined}
-                      data-failed={statusOf(entry.item)?.state === "failed" ? "" : undefined}
                       onPointerMove={() => {
                         if (entry.index !== nav.active()) nav.setActive(entry.index);
                       }}
@@ -379,25 +466,14 @@ export function CommandList(props: {
                           )}
                         </Show>
                       </Show>
-                      {/* One line: the label, then quietly a failure, the reason it is unavailable, or what it does. */}
+                      {/* One line: the label, then quietly the reason it is unavailable, or what it does. */}
                       <span class="k2b-dropdown__copy k2b-command-list__text">
                         <span>{entry.item.label}</span>
-                        <Show
-                          when={statusOf(entry.item)?.state === "failed"}
-                          fallback={
-                            <Show when={entry.item.disabled ?? entry.item.description}>
-                              {(text) => <small class="k2b-command-list__description">{text()}</small>}
-                            </Show>
-                          }
-                        >
-                          {/* The alert below reads it in full; the title shows it where it is cut. */}
-                          <small class="k2b-command-list__description k2b-command-list__error" title={failure()} aria-hidden="true">
-                            <i class="ti ti-alert-circle" aria-hidden="true" />
-                            <span>{failure()}</span>
-                          </small>
+                        <Show when={entry.item.disabled ?? entry.item.description}>
+                          {(text) => <small class="k2b-command-list__description">{text()}</small>}
                         </Show>
                       </span>
-                      <Show when={statusOf(entry.item)?.state !== "failed" && entry.item.hint}>
+                      <Show when={entry.item.hint}>
                         {(hint) => (
                           <span class="k2b-command-list__hint" aria-hidden="true">
                             {hint()}
@@ -436,13 +512,89 @@ export function CommandList(props: {
           )}
         </Show>
       </div>
+      </Show>
+      {/* Announced once, when the text changes: a confirmation politely, an error at once. */}
       <span class="k2b-sr-only" role="status">
         {status()}
       </span>
       <span class="k2b-sr-only" role="alert">
-        {failure() || loadFailure()}
+        {outcomeError() || loadFailure()}
       </span>
     </>
+  );
+}
+
+/**
+ * A command's outcome in the list's place, one line: a confirmation in the status green, an error in the status red
+ * with Retry when the command threw or rejected, or a retry running. The live regions of the list announce its text,
+ * so the text is hidden here; its buttons are ordinary buttons, since the list it replaced is gone.
+ */
+function CommandOutcomeLine(props: {
+  navigator: CommandNavigator;
+  text: (outcome: CommandOutcome) => string;
+  onAction?: () => void;
+}): JSX.Element {
+  const messages = useUiMessages();
+  const outcome = () => props.navigator.outcome();
+  return (
+    <Show when={outcome()}>
+      {(current) => (
+        // biome-ignore lint/a11y/noStaticElementInteractions: it holds the focus only when a menu without a target has nowhere else to keep it.
+        <div
+          class="k2b-command-outcome"
+          data-state={current().state}
+          tabIndex={-1}
+          // Keys on the outcome itself are the person moving on, as typing in the text is.
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget || ["Escape", "Tab", "Shift"].includes(event.key)) return;
+            props.navigator.typedOn();
+          }}
+        >
+          <i
+            aria-hidden="true"
+            class={
+              current().state === "success"
+                ? "ti ti-circle-check"
+                : current().state === "error"
+                  ? "ti ti-alert-circle"
+                  : "ti ti-loader-2 k2b-spin"
+            }
+          />
+          <span class="k2b-command-outcome__text" title={props.text(current())} aria-hidden="true">
+            {props.text(current())}
+          </span>
+          <Show when={current().state === "error" ? (current() as { retry?: () => void }).retry : undefined}>
+            {(retry) => (
+              <button
+                type="button"
+                class="k2b-command-outcome__action"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  retry()();
+                  props.onAction?.();
+                }}
+              >
+                {messages().retry}
+              </button>
+            )}
+          </Show>
+          <Show when={current().state === "error"}>
+            <button
+              type="button"
+              class="k2b-command-outcome__close"
+              aria-label={messages().close}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                props.navigator.clearOutcome();
+                props.onAction?.();
+              }}
+            >
+              <i class="ti ti-x" aria-hidden="true" />
+            </button>
+          </Show>
+        </div>
+      )}
+    </Show>
   );
 }
 

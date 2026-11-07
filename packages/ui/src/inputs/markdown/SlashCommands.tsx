@@ -121,7 +121,7 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
         insert: (text: string) => edit(textarea.selectionStart, textarea.selectionEnd, text),
       };
     },
-    // A finished command leaves the focus in the text where the slash stood.
+    // A finished command leaves the focus in the text where the slash stood; its outcome, if any, shows in the list's place.
     afterRun: () => {
       const at = held()?.start;
       close();
@@ -174,6 +174,7 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
   // Entries on their way, or a list that could not load, show too, so the person sees what happens.
   const open = createMemo(
     () =>
+      nav.outcome() !== undefined ||
       held() !== undefined ||
       (context() !== null && (nav.step() !== undefined || nav.entries().length > 0 || nav.load().state !== "ready")),
   );
@@ -196,7 +197,26 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
       if (usable?.start !== dismissedAt) dismissedAt = null;
       close();
     }
-    if (usable && usable.start !== dismissedAt) setContext(usable);
+    if (usable && usable.start !== dismissedAt) {
+      // A new `/` takes the place at once, even from an outcome still in its least time.
+      if (usable.start !== context()?.start) nav.clearOutcome();
+      setContext(usable);
+    }
+  };
+  /** The person typed: an outcome clears once it showed long enough, and a new `/` opens the list. */
+  const typed = () => {
+    if (!editing) nav.typedOn();
+    detect();
+  };
+  /** An outcome's button leaves the focus in the text, where the person goes on writing. */
+  const backToText = () => {
+    if (document.activeElement === textarea) return;
+    moving = true;
+    try {
+      textarea.focus({ preventScroll: true });
+    } finally {
+      moving = false;
+    }
   };
 
   const position = () => {
@@ -209,7 +229,7 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
   createEffect(() => {
     const marked = nav.entries()[nav.active()];
     // In a further list the search field points at it instead.
-    const pointing = open() && depth() === 0;
+    const pointing = open() && depth() === 0 && !nav.outcome();
     const active = pointing && marked && !marked.disabled ? commandOptionId(id, nav.active()) : undefined;
     if (pointing) textarea.setAttribute("aria-controls", id);
     else if (textarea.getAttribute("aria-controls") === id) textarea.removeAttribute("aria-controls");
@@ -229,12 +249,15 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
       if (!open() || event.defaultPrevented) return;
       const current = context();
       if (event.key === "Escape" && !current) {
-        // Escape stops a running command and closes the list it held.
+        // Escape stops a running command and closes the list it held, or clears an outcome at once.
         event.preventDefault();
         nav.abort();
+        nav.clearOutcome();
         close();
         return;
       }
+      // An outcome is no list: other keys are the person writing on.
+      if (!current && nav.outcome()) return;
       if (commandListKey(nav, event, current?.query ?? "")) event.preventDefault();
       else if (event.key === "Escape" && current) {
         event.preventDefault();
@@ -251,14 +274,14 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
       dismissedAt = null;
     };
     textarea.addEventListener("keydown", key);
-    textarea.addEventListener("input", detect);
+    textarea.addEventListener("input", typed);
     textarea.addEventListener("blur", blur);
     document.addEventListener("selectionchange", selection);
     // A `/` typed while this module loaded opens the list now.
     detect();
     onCleanup(() => {
       textarea.removeEventListener("keydown", key);
-      textarea.removeEventListener("input", detect);
+      textarea.removeEventListener("input", typed);
       textarea.removeEventListener("blur", blur);
       document.removeEventListener("selectionchange", selection);
       popover?.hidePopover?.();
@@ -267,8 +290,23 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
 
   return (
     <Show when={open()}>
-      <div ref={popover} popover="manual" class="k2b-autocomplete__options" data-commands="" role="presentation">
+      <div
+        ref={popover}
+        popover="manual"
+        class="k2b-autocomplete__options"
+        data-commands=""
+        data-outcome={nav.outcome()?.state}
+        role="presentation"
+        // Escape on an outcome's button clears it, as it does in the text.
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || !nav.outcome() || event.target === searchField) return;
+          event.preventDefault();
+          nav.clearOutcome();
+          backToText();
+        }}
+      >
         <CommandList
+          onOutcomeAction={backToText}
           navigator={nav}
           id={id}
           label={messages().commands}
