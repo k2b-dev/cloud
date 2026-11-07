@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import type {} from "../../test/choice-slider.browser-harness";
 
 let browser: Browser;
@@ -53,6 +53,7 @@ const open = async () => {
   );
   await page.addScriptTag({ content: bundle });
   await page.waitForSelector('[data-case="lg-no-knob"] [role="slider"]');
+  await settled(page);
   return page;
 };
 
@@ -83,6 +84,7 @@ for (const size of ["md", "lg"] as const) {
       await page.keyboard.press("Home");
       for (let level = 0; level < 4; level += 1) {
         if (level > 0) await page.keyboard.press("ArrowRight");
+        await settled(page);
         expect(await slider.getAttribute("aria-valuenow")).toBe(String(level + 1));
         const { fillEnd, thumbCentre, rail, fill } = await slider.evaluate((element) => {
           const fill = element.querySelector(".k2b-choice-slider__fill")!.getBoundingClientRect();
@@ -111,6 +113,7 @@ for (const size of ["md", "lg"] as const) {
       await page.mouse.move(start.x, start.y);
       await page.mouse.down();
       await page.mouse.move(end.x, end.y, { steps: 4 });
+      await settled(page);
       expect(await track(page, `${size}-normal`).getAttribute("data-dragging")).toBe("");
       expect(await track(page, `${size}-normal`).getAttribute("aria-valuenow")).toBe("4");
       const thumbFill = await track(page, `${size}-normal`).evaluate(
@@ -123,6 +126,7 @@ for (const size of ["md", "lg"] as const) {
       ).toEqual([true, false]);
       expect(await boxes(page, `${size}-normal`)).toEqual(before);
       await page.mouse.up();
+      await settled(page);
       expect(await track(page, `${size}-normal`).getAttribute("data-dragging")).toBeNull();
       expect(await boxes(page, `${size}-normal`)).toEqual(before);
 
@@ -131,9 +135,11 @@ for (const size of ["md", "lg"] as const) {
       const blocked = await stopX(page, `${size}-unavailable`, 2);
       await page.mouse.move(blocked.x, blocked.y);
       await page.mouse.down();
+      await settled(page);
       expect(await page.locator(`[data-case="${size}-unavailable"] .k2b-choice-slider__line`).getAttribute("data-tone")).toBe("warning");
       expect(await boxes(page, `${size}-unavailable`)).toEqual(unavailable);
       await page.mouse.up();
+      await settled(page);
 
       // A warning and a missing thumb keep the geometry of the normal slider.
       const shape = (list: Awaited<ReturnType<typeof boxes>>) =>
@@ -153,6 +159,7 @@ for (const theme of ["light", "dark"] as const)
     const page = await open();
     try {
       if (theme === "dark") await page.evaluate(() => document.body.setAttribute("data-theme", "dark"));
+      await settled(page);
       const colours = await track(page, "md-normal").evaluate((element) => {
         const style = (selector: string) => getComputedStyle(element.querySelector(selector)!);
         return {
