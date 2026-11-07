@@ -335,7 +335,7 @@ const loadReady = async (
           capability: string;
           target: { type: string; id: string } | null;
           refusal: string | null;
-          refusalCode?: "code_ai_budget_limit";
+          refusalCode?: "code_ai_budget_limit" | "code_ai_daily_budget_limit" | "code_ai_owner_daily_budget_limit";
         }[]
       | null,
   ) => {

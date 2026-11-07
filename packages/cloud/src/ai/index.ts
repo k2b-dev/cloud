@@ -392,7 +392,13 @@ export {
   runAiStructured,
 } from "./structured";
 export { aiGlobalInstructionsContext, composeAiSystemPrompt, renderAiGlobalInstructions } from "./system-prompt";
-export { type AiTaskRequest, type AiTaskRequestInput, AiTaskRequestSchema } from "./task-contracts";
+export {
+  AI_TASK_REQUEST_MAX_BYTES,
+  type AiTaskRequest,
+  type AiTaskRequestInput,
+  AiTaskRequestSchema,
+  assertAiTaskRequestSize,
+} from "./task-contracts";
 export { executeAiTask } from "./task-execution";
 export { type AiToolApprovalState, type AiToolCallLocation, aiToolAudit } from "./tool-audit";
 export { defineAiTool, isFrontendToolMode, type PreparedAiTools, prepareAiTools } from "./tools";

@@ -32,6 +32,8 @@ export const codeBridgeLocalRefusalKind = (code: string): CodeBridgeRefusalKind 
     "code_disabled",
     "code_policy_never",
     "code_ai_budget_limit",
+    "code_ai_daily_budget_limit",
+    "code_ai_owner_daily_budget_limit",
     "code_sends_not_yet",
     "code_unattended_forbidden",
     "code_http_origin_forbidden",
@@ -58,6 +60,8 @@ export const codeBridgeDispatchRefusalKind = (code: string, targetStatus?: numbe
 export type CodeBridgeAuthority = {
   /** Internal observation only. Core persists this reason with the call result; never grants authority. */
   onRefusal?: (kind: CodeBridgeRefusalKind) => void;
+  /** Original capability error for Core accounting, before the runner's payload-free error projection. */
+  onFailure?: (error: unknown) => void;
   mandateId: string;
   mandateRevision: number;
   ownerAppId: "core";

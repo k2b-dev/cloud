@@ -215,7 +215,7 @@ export type CodePageCall = {
   /** How the bridge classified its refusal; null for calls it did not refuse and for older records. */
   refusal: CodeBridgeRefusalKind | null;
   /** Stable budget refusal from Core, kept separately from the policy classification. */
-  refusalCode?: "code_ai_budget_limit";
+  refusalCode?: "code_ai_budget_limit" | "code_ai_daily_budget_limit" | "code_ai_owner_daily_budget_limit";
   state: "running" | "succeeded" | "failed" | "uncertain";
   /** A short readable summary of the result or error, never the full payload. */
   summary: string | null;
@@ -256,7 +256,7 @@ export type CodePageRefusal = {
    * approval for it.
    */
   kind: Extract<CodeBridgeRefusalKind, "target_refused" | "policy" | "approval">;
-  code?: "code_ai_budget_limit";
+  code?: "code_ai_budget_limit" | "code_ai_daily_budget_limit" | "code_ai_owner_daily_budget_limit";
   runId: string;
   versionId: string;
   /** What the Code called; null for readers, who see no calls, because a target ID can come from runtime data. */

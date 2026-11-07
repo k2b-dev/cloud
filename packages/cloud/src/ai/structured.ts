@@ -38,6 +38,8 @@ export type RunAiStructuredInput<TOutput extends z.ZodType> = {
   usageSubject?: AccessSubject;
   /** Metadata-only attribution, supplied by the authorized caller. */
   attribution?: AiUsageAttribution;
+  /** Observe each provider attempt's canonical measured/estimated accounting, including failed repairs. No second charge. */
+  onUsage?: (call: { model: AiResolvedModelRef; usage: { input: number; output: number; estimated?: boolean } | undefined }) => void;
   /** Model resolution seam — tests inject a fake so they never touch shared settings. */
   resolveModel?: (model?: AiModelRequest) => Promise<AiResolvedModel>;
 };
@@ -96,6 +98,7 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
           },
         });
 
+        const modelRef = resolved.model;
         const result = await nessi.structured({
           provider: inferenceProvider(resolved.provider, resolved.profile, {
             kind: input.usageSubject ? "chat" : "background",
@@ -105,6 +108,7 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
             appId: input.appId,
             traceId: span.traceId,
             ...input.attribution,
+            onUsage: input.onUsage ? (usage) => input.onUsage?.({ model: modelRef, usage }) : undefined,
           }),
           systemPrompt: input.systemPrompt,
           input: input.input,

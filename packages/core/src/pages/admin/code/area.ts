@@ -111,6 +111,8 @@ export const CODE_LIMIT_KEYS = [
   "core.code.calls_per_second",
   "core.code.database_bytes",
   "core.code.ai_budget_usd",
+  "core.code.ai_daily_budget_usd",
+  "core.code.ai_owner_daily_budget_usd",
   "core.code.concurrency_per_code",
   "core.code.concurrency_per_owner",
 ] as const;
