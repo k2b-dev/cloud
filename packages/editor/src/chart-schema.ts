@@ -153,7 +153,7 @@ export const chartKinds = (limits?: ChartLimits) => {
   } = chartParts(limits);
   const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
   const numberFormat = chartNumberFormatSchema();
-  return z.discriminatedUnion("kind", [
+  return z.union([
     z
       .object({
         kind: z.literal("area"),
@@ -253,7 +253,7 @@ export const chartKinds = (limits?: ChartLimits) => {
       yAxis: ChartAxis.optional(),
       references: ChartReferences.optional(),
     }),
-    z.discriminatedUnion("layout", [
+    z.union([
       z
         .object({
           kind: z.literal("heatmap"),
@@ -290,7 +290,7 @@ export const chartKinds = (limits?: ChartLimits) => {
       z.object({
         kind: z.literal("heatmap"),
         ...ChartKindCommon,
-        layout: z.undefined().optional(),
+        layout: z.never().optional(),
         data: list(ChartCell, 1, limits?.maxMarks),
         format: numberFormat.optional(),
         showValues: z.boolean().optional(),

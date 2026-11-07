@@ -110,7 +110,7 @@ export function MailboxDeleteDialog(props: MailboxDeleteDialogProps) {
         </Button>
         <Button variant="danger" size="sm" type="submit" disabled={!matches()} loading={busy()}>
           <i class="ti ti-trash" aria-hidden="true" />
-          {t().moveToRecentlyDeleted}
+          {t().deleteMailbox}
         </Button>
       </div>
     </form>

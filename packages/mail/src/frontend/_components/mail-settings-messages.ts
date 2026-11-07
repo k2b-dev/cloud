@@ -183,7 +183,7 @@ export const mailSettingsMessages = i18n.define({
       codeUnknown: "Numbers are not available right now",
       codeAutomations: ({ n }: { n: number }) => (n === 1 ? "1 automation" : `${n} automations`),
       codeAccess: ({ n, title }: { n: number; title: string }) => (n === 1 ? `access to 1 ${title}` : `access to ${n} × ${title}`),
-      moveToRecentlyDeleted: "Move to recently deleted",
+      deleteMailbox: "Delete mailbox",
       mailboxSettings: "Mailbox settings",
       personal: "Personal",
       reading: "Reading",
@@ -260,7 +260,7 @@ export const mailSettingsMessages = i18n.define({
       lifecycle: "Lifecycle",
       dangerZone: "Danger zone",
       dangerZoneDescription: "Remove this mailbox from normal use.",
-      recentlyDeletedGroupDescription:
+      deleteMailboxGroupDescription:
         "Pause and hide the mailbox. Its Code is permanently deleted; provider mail and other Cloud data remain available for restoration under Mailboxes → … → Deleted mailboxes.",
       sent: "Sent",
       drafts: "Drafts",
@@ -1081,7 +1081,7 @@ export const mailSettingsMessages = i18n.define({
       codeUnknown: "Zahlen gerade nicht verfügbar",
       codeAutomations: ({ n }: { n: number }) => (n === 1 ? "1 Automation" : `${n} Automationen`),
       codeAccess: ({ n, title }: { n: number; title: string }) => (n === 1 ? `Zugriff auf 1 ${title}` : `Zugriff auf ${n} × ${title}`),
-      moveToRecentlyDeleted: "In „Kürzlich gelöscht“ verschieben",
+      deleteMailbox: "Postfach löschen",
       mailboxSettings: "Postfacheinstellungen",
       personal: "Persönlich",
       reading: "Lesen",
@@ -1159,7 +1159,7 @@ export const mailSettingsMessages = i18n.define({
       lifecycle: "Lebenszyklus",
       dangerZone: "Gefahrenbereich",
       dangerZoneDescription: "Dieses Postfach aus der normalen Verwendung entfernen.",
-      recentlyDeletedGroupDescription:
+      deleteMailboxGroupDescription:
         "Pausiert das Postfach und blendet es aus. Sein Code wird dauerhaft gelöscht. E-Mails beim Anbieter und andere Cloud-Daten bleiben zur Wiederherstellung unter „Postfächer“ → „…“ → „Gelöschte Postfächer“ erhalten.",
       sent: "Gesendet",
       drafts: "Entwürfe",

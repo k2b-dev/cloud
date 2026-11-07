@@ -359,7 +359,7 @@ test("generated SDKs compile with tsgo and accept dynamic resource IDs and rejec
     writeFile(join(dir, "ids.ts"), 'export const workshop = "imported-shop";\n'),
     writeFile(
       join(dir, "valid.ts"),
-      `import { app, work_shop, owner } from "@sdk";
+      `import { app, work_shop, owner, type CodeChartDescription } from "@sdk";
 import { work_shop as personal } from "./personal";
 import { work_shop as once } from "./once";
 import { workshop } from "./ids";
@@ -369,6 +369,10 @@ _eval.app(); _arguments.app(); manifest.app();
 callable.app("resource");
 callable.app().branch({ title: "x", idempotencyKey: "key" });
 callable.app().branch.child({ itemId: "i", destination: callable.workshop("one") });
+const grid: CodeChartDescription = { kind: "heatmap", title: "Grid", data: [{ x: "A", y: "B", value: 1 }] };
+const calendar: CodeChartDescription = { kind: "heatmap", title: "Calendar", layout: "calendar", data: [["2026-11-07", 1]], scale: "sequential" };
+// @ts-expect-error an unrecognized heatmap layout is forbidden
+const invalidChart: CodeChartDescription = { kind: "heatmap", title: "Invalid", layout: "other", data: [{ x: "A", y: "B", value: 1 }] };
 const ids = ["one", "two"] as const;
 const target = work_shop.workshop(ids[0]);
 work_shop.workshop(workshop);

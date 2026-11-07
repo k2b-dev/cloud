@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
 import { type ChartDatum, charts } from "@k2b/ui/charts/core";
+import { z } from "zod";
 import {
   type ChartInput,
   chartKinds,
@@ -23,6 +24,20 @@ const chartDatums = (svg: string): ChartDatum[] =>
     if (!isChartDatum(datum)) throw new Error("Invalid chart datum");
     return datum;
   });
+
+test("bounded chart schemas export to JSON Schema for generated consumers", () => {
+  const exported = z.fromJSONSchema(z.toJSONSchema(schema));
+  for (const input of [
+    { kind: "heatmap", title: "Grid", data: [{ x: "A", y: "B", value: 1 }] },
+    { kind: "heatmap", title: "Calendar", layout: "calendar", data: [["2026-11-07", 1]], scale: "sequential" },
+  ]) {
+    expect(schema.safeParse(input).success).toBeTrue();
+    expect(exported.safeParse(input).success).toBeTrue();
+  }
+  const invalid = { kind: "heatmap", title: "Invalid", layout: "other", data: [{ x: "A", y: "B", value: 1 }] };
+  expect(schema.safeParse(invalid).success).toBeFalse();
+  expect(exported.safeParse(invalid).success).toBeFalse();
+});
 
 describe("chart table", () => {
   test("has the same labels in every locale", () => {
