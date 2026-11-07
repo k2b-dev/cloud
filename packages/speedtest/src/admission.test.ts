@@ -48,6 +48,29 @@ test("ledger stays bounded and recovers after the rolling window", () => {
   now = 60_000;
   expect(budget.start("192.0.2.2", "quick")).toHaveProperty("token");
 });
+test("IPv6 network starts stay bounded across subnets, cancellations and rolling expiry", () => {
+  let now = 0;
+  const budget = new TestAdmission({ maxPeers: 64, maxActive: 20, now: () => now });
+  // Sixteen /64 connections may each use their two starts in one /48.
+  for (let subnet = 0; subnet < 16; subnet++) {
+    const ip = `2001:db8:1234:${subnet.toString(16)}::1`;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const session = budget.start(ip, "quick");
+      expect(session).toHaveProperty("token");
+      if ("token" in session) expect(budget.end(ip, session.token)).toBe(true);
+    }
+  }
+  now = 26_000;
+  expect(budget.start("2001:db8:1234:ffff::1", "quick")).toEqual({ status: 429, retryAfter: 34 });
+  const other = budget.start("2001:db8:abcd::1", "quick");
+  expect(other).toHaveProperty("token");
+  if ("token" in other) budget.end("2001:db8:abcd::1", other.token);
+  const ipv4 = budget.start("192.0.2.1", "quick");
+  expect(ipv4).toHaveProperty("token");
+  if ("token" in ipv4) budget.end("192.0.2.1", ipv4.token);
+  now = 60_000;
+  expect(budget.start("2001:db8:1234:ffff::1", "quick")).toHaveProperty("token");
+});
 test("aggregate byte bucket refills at configured capacity and is shared by tests and directions", () => {
   let now = 0;
   const budget = new TestAdmission({ maxPeers: 4, maxActive: 20, capacityMbps: 2, testMbps: 1, now: () => now });
