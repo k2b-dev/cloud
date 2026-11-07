@@ -1,8 +1,8 @@
 import { expect, spyOn, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { validateCodePage } from "@k2b/cloud/code";
+import { generateCodeSdk, validateCodePage } from "@k2b/cloud/code";
 import type { CodeCheckedVersionManifest } from "@k2b/cloud/contracts";
 import * as server from "@k2b/cloud/server";
 import { createConfig } from "@k2b/ssr";
@@ -15,6 +15,7 @@ Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 const { default: Page } = await import("./PageTree.island");
 const { createCodeHostingRoutes } = await import("./hosting");
 const { codePageFixture } = await import("./page.test-fixture");
+const { CODE_INITIAL_PAGE_SOURCE } = await import("./authoring-contracts");
 const tree = validateCodePage(
   {
     version: 1,
@@ -157,4 +158,29 @@ test("Core hosts a complete page document and rejects invalid trees before rende
   } finally {
     rate.mockRestore();
   }
+});
+
+test("the cld code init page runs through the SDK blocks and Core draws it", async () => {
+  // The template as Code runs it: TSX through the SDK's jsx factory, then the route's description.
+  const directory = mkdtempSync(join(tmpdir(), "core-code-init-page-"));
+  writeFileSync(join(directory, "sdk.js"), generateCodeSdk([], { mode: "personal" }).runtime);
+  const source = CODE_INITIAL_PAGE_SOURCE.replace('"@sdk"', '"./sdk.js"').replace("import { app,", "import { __codeSdk, app,");
+  const transpiler = new Bun.Transpiler({ loader: "tsx", tsconfig: { compilerOptions: { jsx: "react", jsxFactory: "jsx" } } });
+  writeFileSync(join(directory, "code.mjs"), `${transpiler.transformSync(source)}\nexport { __codeSdk };`);
+  const module = await import(join(directory, "code.mjs"));
+  const response = await module.__codeSdk.run("route:GET:/", {
+    method: "GET",
+    path: "/",
+    query: "",
+    contentType: "text/plain",
+    body: "",
+    params: {},
+    user: { id: "visitor", groups: [] },
+  });
+  const page = validateCodePage(response.tree, "c_init");
+  const html = renderToString(() => createComponent(Page, { tree: page, codeId: "c_init", csrf: "session-bound", locale: "en" }));
+  for (const kind of ["Stats", "Section", "Chart", "Form", "Table"]) expect(html).toContain(`data-code-block="${kind}"`);
+  expect(html).toContain("Done per day");
+  expect(html).toContain('name="title"');
+  expect(html).toContain("Order chairs");
 });

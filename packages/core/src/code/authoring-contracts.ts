@@ -13,26 +13,31 @@ import { CodeVersionDiffFileSchema, codeVersionContracts } from "./version-contr
 export const CODE_INITIAL_SOURCE =
   'import { app } from "@sdk";\n\napp.schedule("0 8 * * 1", async () => {\n}, { name: "monday" });\nexport default app;\n';
 /** Resource- and app-owned Code starts with a signed-in page. */
-export const CODE_INITIAL_PAGE_SOURCE = `import { app, jsx, Page, Stats, Section, Chart, Table, Form } from "@sdk";
+export const CODE_INITIAL_PAGE_SOURCE = `import { app, jsx, Page, Stats, Stat, Section, Chart, Table, Column, Form, Field } from "@sdk";
 
 // Example figures: replace them with data from your SDK calls.
+const latest = [{ title: "Order chairs", status: "Open" }, { title: "Fix the lamp", status: "Done" }];
+
 app.get("/", c => c.page(
   <Page title="Overview" subtitle="Example data" icon="ti ti-layout-dashboard">
-    <Stats items={[
-      { label: "Open", value: 12, delta: { value: 0.2, better: "down" }, compare: { label: "Last week", value: 10 } },
-      { label: "Done this week", value: 34, delta: { value: 0.133, better: "up" }, compare: { label: "Last week", value: 30 } },
-      { label: "On time", value: 0.92, format: { style: "percent" }, delta: { value: 0.04, unit: "points", better: "up" },
-        compare: { label: "Last week", value: 0.88 } },
-    ]} />
+    <Stats>
+      <Stat label="Open" value={12} delta={{ value: 0.2, better: "down" }} compare={{ label: "Last week", value: 10 }} />
+      <Stat label="Done this week" value={34} delta={{ value: 0.133, better: "up" }} compare={{ label: "Last week", value: 30 }} />
+      <Stat label="On time" value={0.92} format={{ style: "percent" }}
+        delta={{ value: 0.04, unit: "points", better: "up" }} compare={{ label: "Last week", value: 0.88 }} />
+    </Stats>
     <Section title="This week" icon="ti ti-calendar-week" color="blue">
       <Chart.Bar width="twoThirds" title="Done per day" data={[
         { label: "Mon", value: 6 }, { label: "Tue", value: 8 }, { label: "Wed", value: 5 },
         { label: "Thu", value: 9 }, { label: "Fri", value: 6 },
       ]} />
-      <Form width="third" title="Add an item" action="/items" submit="Add"
-        fields={[{ type: "text", name: "title", label: "Title", required: true }]} />
-      <Table title="Latest" columns={[{ key: "title", label: "Title" }, { key: "status", label: "Status" }]}
-        rows={[{ title: "Order chairs", status: "Open" }, { title: "Fix the lamp", status: "Done" }]} empty="Nothing yet." />
+      <Form width="third" title="Add an item" action="/items" submit="Add">
+        <Field.Text name="title" label="Title" required />
+      </Form>
+      <Table title="Latest" rows={latest} empty="Nothing yet.">
+        <Column key="title" label="Title" />
+        <Column key="status" label="Status" />
+      </Table>
     </Section>
   </Page>
 ));
