@@ -811,11 +811,17 @@ const runCapabilityDispatch = async (
       ? {
           appId: params.appId,
           capability: `${params.appId}.${params.capabilityId}`,
-          principal: params.appCaller
-            ? `app:${params.appCaller.appId}`
-            : claimPrincipal
-              ? `${claimPrincipal.type}:${claimPrincipal.id}`
-              : "anonymous",
+          // Chat delivery explicitly scopes its effects per Code run. Other Actions
+          // retain their cross-run business-key dedupe; the provider key is unchanged.
+          principal:
+            (params.appCaller
+              ? `app:${params.appCaller.appId}`
+              : claimPrincipal
+                ? `${claimPrincipal.type}:${claimPrincipal.id}`
+                : "anonymous") +
+            (params.codeRun && params.workloadRun && params.appId === "core" && params.capabilityId === "ai.chat.deliver"
+              ? `:code-run:${params.workloadRun}`
+              : ""),
           keyHash: capabilityIdempotencyKeyHash(idempotencyKey.data),
         }
       : null;

@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-06
+updated: 2026-11-07
 ---
 
 # Code SDK
@@ -247,6 +247,8 @@ matching the dispatcher contract. Choose a stable key from
 the business operation, such as a message ID and revision. Keys are trimmed,
 contain 1–200 visible ASCII characters, and cannot contain spaces. Repeating a key
 has the platform's existing 24-hour idempotency semantics.
+Chat result delivery explicitly scopes its key to one run, as described below;
+other Actions retain their cross-run business-key deduplication.
 
 Methods resolve the operation's domain `data`, typed from `dataSchema`.
 Bridge refusals reject the promise; catch a failure only when the Code can
@@ -264,6 +266,25 @@ Queries are absent from the SDK.
 `code_run` uses the same operation signatures for one chat execution. It has
 no schedule registrations, version or owner. The chat execution path still
 asks for writing Actions as required by the normal approval policy.
+
+## Schedule a recurring local time
+
+For a recurring local time, declare the cron expression and an IANA time zone
+on the first argument. Keep the declaration at module level and use constants,
+including imported `as const` objects:
+
+```ts
+app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" }, async () => {
+  // Runs at 09:00 in Berlin, including after a daylight-saving change.
+});
+```
+
+A string cron and an object without `timeZone` use UTC. The optional third
+argument still supplies a readable `title` and may supply the stable `name`;
+an inline `name` takes precedence. Cron uses the same normalizer and scheduler
+as workflows and Assistant routines: a local minute skipped by the spring clock
+change does not run, and a repeated autumn minute runs once, at its first
+occurrence. The checked manifest retains the declared `timeZone`.
 
 ## Run once at a chosen time
 
@@ -291,6 +312,42 @@ run is queued or running, the one-time date stays pending until that run ends
 or the recovery window expires. A consumed date does not run again after a restart or version
 activation. The automation list shows its `at`, `timeZone`, and a null
 `nextRunAt` once consumed or expired.
+
+## Deliver a result to your Gustav chat
+
+Personal Code can append a result to one of its owner's own active Assistant
+chats through `core.ai.chat.deliver`. Discover the actual chat ID and generated
+handle before writing the call:
+
+```ts
+import { app, core } from "@sdk";
+
+app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" }, async () => {
+  await core.ai.chat("Chat23").ai.chat.deliver({
+    text: "Your weekly report is ready.",
+    idempotencyKey: "weekly-report",
+  });
+});
+export default app;
+```
+
+`Chat23` is an example, not a destination to copy. Delivery appends an assistant
+message and marks the chat unread; it does not start another AI turn. Cloud
+keeps each delivery as its own answer. A result arriving during an interactive
+turn enters model context on the next turn and survives the current turn's
+compaction. Cloud
+creates the existing Assistant response notification on its next recovery pass,
+normally within one minute, subject to the owner's notification preferences.
+Text must contain 1–10,000 characters after trimming. Use one stable effect key
+per delivery: it is scoped to the current run, so retrying returns the original
+message instead of appending another. Reusing that key for different text or a
+different destination returns `IDEMPOTENCY_CONFLICT`.
+
+Only personal Code can use this Action. Resource- and app-owned Code, ordinary
+interactive callers, archived chats and another person's chats are refused.
+The Action uses the `silent: "you"` policy and appears in the run's normal
+capability call log. It performs no model inference and consumes no Code AI
+budget.
 
 ## Name an automation
 

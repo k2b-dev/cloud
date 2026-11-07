@@ -35,14 +35,18 @@ export const CodeVersionEntrypointSchema = z
     title: CodeAutomationTitleSchema.optional().describe("Optional reviewed display title; entrypoint remains the stable key."),
     cron: z.string().nullable().describe("Five-field cron expression; null for a one-time or manual entrypoint."),
     at: CodeOnceScheduleSchema.shape.at.optional().describe("One-time absolute date-time with Z or a numeric UTC offset."),
-    timeZone: CodeOnceScheduleSchema.shape.timeZone.optional().describe("IANA display time zone; required with at, absent for cron."),
+    timeZone: CodeOnceScheduleSchema.shape.timeZone
+      .optional()
+      .describe("IANA schedule time zone; required with at, defaults to UTC for cron."),
     file: z.string().min(1).describe("Relative source file containing this declaration or operation."),
     line: z.number().int().positive().describe("One-based source line."),
   })
   .superRefine((entry, context) => {
     if ((entry.kind === "route") !== (entry.route !== undefined))
       context.addIssue({ code: "custom", message: "Routes require a route descriptor; other entrypoints forbid it" });
-    const once = entry.at !== undefined || entry.timeZone !== undefined;
+    if (entry.timeZone !== undefined && entry.kind !== "schedule")
+      context.addIssue({ code: "custom", message: "Only schedules may carry a timeZone" });
+    const once = entry.at !== undefined || (entry.timeZone !== undefined && !entry.cron);
     if (once && (entry.kind !== "schedule" || entry.cron !== null || !entry.at || !entry.timeZone))
       context.addIssue({ code: "custom", message: "A one-time schedule needs at and timeZone, with cron null" });
   });

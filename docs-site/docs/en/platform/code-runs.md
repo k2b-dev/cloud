@@ -72,7 +72,9 @@ The lease routes return HTTP 409 with `runner_lease_lost`.
 ## Understand schedule ticks
 
 Core registers checked cron `app.schedule` entrypoints with the Sync scheduler,
-using the installation's `app.timezone`. One-time `{ at, timeZone }` schedules
+using each entrypoint's `timeZone` (UTC when omitted). A spring-forward gap
+skips the missing local minute; a repeated autumn minute runs once at its
+first occurrence. One-time `{ at, timeZone }` schedules
 use the existing Core recovery pass: a due instant is admitted once, normally
 within five seconds, including after downtime of up to seven days. They do not
 create recurring broker schedules. Runner count does not affect ticks.

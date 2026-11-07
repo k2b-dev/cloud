@@ -1027,3 +1027,12 @@ mobile-session limits. It is for the trusted runtime host, not an application
 credential exchange. `createCodeSourceTool` from `@k2b/cloud/ai/tools` exposes
 one existing Studio source tool so an overloaded host tool can preserve that
 tool's authenticated transport and revision behavior.
+
+For a result that starts no model turn, trusted hosts share
+`appendAiBackgroundMessage(db, { conversationId, text, meta? })` from
+`@k2b/cloud/ai/runtime`. Call it only inside an authorized transaction holding
+the destination conversation's row lock. It appends the assistant message and
+marks the conversation unread. The host owns idempotency and notification
+recovery in that same transaction. Core's routine finalizer and personal Code
+[chat delivery Action](/en/docs/platform/capabilities#deliver-personal-code-results-to-a-chat)
+use this seam; applications call the capability instead of this host helper.

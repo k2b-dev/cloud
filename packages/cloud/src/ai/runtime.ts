@@ -1,3 +1,5 @@
+export { appendAiBackgroundMessage } from "./background-message";
+
 import { isDeepStrictEqual } from "node:util";
 import type { InboundEvent, Input, Message } from "@k2b/nessi";
 import type { QueueMessage } from "@k2b/sync";
