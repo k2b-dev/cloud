@@ -276,7 +276,7 @@ suiteFor(
     const rules = [
       { scope: "*", hours: 24, anchor: "1970-01-01T00:00:00Z", grants: [{ principal: { type: "user", userId: owner }, limit: 0.07 }] },
     ];
-    await sql`UPDATE ai.cost_config SET enabled=true,rules=${JSON.stringify(rules)}::jsonb WHERE singleton`;
+    await sql`UPDATE ai.cost_config SET enabled=true,rules=${JSON.stringify(rules)}::text::jsonb WHERE singleton`;
     prepare.mockImplementation(async (input) => {
       await aiQuotas.assertAllowed(subject, profile.id, state);
       return prepareTurn(input);
@@ -393,7 +393,7 @@ suiteFor(
     const rules = [
       { scope: "*", hours: 24, anchor: "1970-01-01T00:00:00Z", grants: [{ principal: { type: "user", userId: owner }, limit: 1 }] },
     ];
-    await sql`UPDATE ai.cost_config SET enabled=true,rules=${JSON.stringify(rules)}::jsonb WHERE singleton`;
+    await sql`UPDATE ai.cost_config SET enabled=true,rules=${JSON.stringify(rules)}::text::jsonb WHERE singleton`;
     const call = await beginAiCall(
       profile,
       { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId: turn!.id },
