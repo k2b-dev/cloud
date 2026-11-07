@@ -270,6 +270,8 @@ describe("PeriodPicker", () => {
     expect(await sheet.getByRole("listbox").count()).toBe(0);
     await sheet.getByRole("button", { name: "Zurück zu den Vorgaben" }).click();
     await sheet.getByRole("option", { name: /^Letzter Monat/ }).click();
+    // The sheet commits once its close has finished, which WebKit reports after the sheet left the page.
+    await page.waitForFunction(() => window.periodCommits.length > 0);
     expect(await sheet.count()).toBe(0);
     expect(await page.evaluate(() => window.periodCommits)).toEqual([{ preset: "last-month" }]);
     expect(await trigger(page).textContent()).toContain("Letzter Monat · 1.–31. Okt.");

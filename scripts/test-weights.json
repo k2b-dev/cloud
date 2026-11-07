@@ -308,7 +308,7 @@
     "@k2b/ui src/inputs/file-drop-target.browser.test.ts": 6.8,
     "@k2b/ui src/inputs/icon-input.browser.test.ts": 3.9,
     "@k2b/ui src/inputs/number-input-fraction-pad.browser.test.ts": 1,
-    "@k2b/ui src/inputs/period-picker.browser.test.ts": 30,
+    "@k2b/ui src/inputs/period-picker.browser.test.ts": 7.4,
     "@k2b/ui src/inputs/qr-scanner.browser.test.ts": 14,
     "@k2b/ui src/inputs/rich-select.browser.test.ts": 20.4,
     "@k2b/ui src/inputs/signature-input.browser.test.ts": 7.8,
