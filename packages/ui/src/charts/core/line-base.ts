@@ -1,4 +1,6 @@
 /** The established line drawing; kept independent of opt-in line details for small hosts. */
+
+import type { LineOptions } from "./svg";
 import {
   collectAxisValues,
   collectSeriesLegend,
@@ -12,7 +14,6 @@ import {
   inspectionPoint,
   isOnAxis,
   LINE_DASH_PATTERNS,
-  type LineOptions,
   linePathD,
   normalizePadding,
   pickMapper,
@@ -27,7 +28,7 @@ import {
   smoothPathD,
   stepPathD,
   svgRoot,
-} from "./svg";
+} from "./svg-shared";
 
 export const lineBase = (opts: LineOptions): string => {
   const width = opts.width ?? DEFAULT_WIDTH;

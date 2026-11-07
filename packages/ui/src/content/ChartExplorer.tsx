@@ -149,7 +149,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
           ? "percent"
           : "value"
         : "y";
-    const sourceX = snapshot()?.kind === "line" ? snapshot()?.svg.match(/data-line-last-x="([^"]+)"/)?.[1] : undefined;
+    const sourceX = snapshot()?.kind === "line" ? snapshot()?.svg.match(/data-line-default-x="([^"]+)"/)?.[1] : undefined;
     const field = marks
       .find(
         (mark) =>

@@ -1708,6 +1708,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
 }
 
+/* The bottom Y label must clear the first centred date label in small cards. */
+@container (max-width: 400px) {
+  .k2b-ui .k2b-chart[data-chart-kind="line"] .k2b-chart__svg[data-stretch] > svg > .stdlib-chart-grid:nth-child(1 of .stdlib-chart-grid) + .stdlib-chart-tick-label {
+    translate: 0 calc(-6px * var(--k2b-chart-inverse-y));
+  }
+}
+
 .k2b-ui .k2b-chart__svg[data-stretch] :is(circle, .stdlib-chart-point, .stdlib-chart-legend) {
   transform-box: fill-box;
   transform-origin: center;

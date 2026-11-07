@@ -95,6 +95,25 @@ const open = async (width: number, dark = false, touch = false) => {
   await settled(page);
   return page;
 };
+
+test("the bottom Y tick clears the first date label in a phone-sized existing line", async () => {
+  const page = await open(390);
+  pages.push(page);
+  const chart = page.locator('[data-line-example="line-visitors"] .k2b-chart');
+  await chart.scrollIntoViewIfNeeded();
+  await settled(page);
+  const boxes = await chart.locator(".stdlib-chart-tick-label").evaluateAll((nodes) => {
+    const lowest = nodes
+      .filter((node) => node.getAttribute("text-anchor") === "end")
+      .sort((a, b) => Number(b.getAttribute("y")) - Number(a.getAttribute("y")))[0];
+    const first = nodes
+      .filter((node) => node.getAttribute("text-anchor") === "middle")
+      .sort((a, b) => Number(a.getAttribute("x")) - Number(b.getAttribute("x")))[0];
+    if (!lowest || !first) throw new Error("Missing origin tick labels");
+    return { y: lowest.getBoundingClientRect().toJSON(), x: first.getBoundingClientRect().toJSON() };
+  });
+  expect(boxes.y.bottom + 2).toBeLessThanOrEqual(boxes.x.top);
+});
 for (const width of [1440, 390])
   test(`Liquidity balance at ${width} renders its dated forecast and supports inspection`, async () => {
     const page = await open(width);
@@ -107,6 +126,24 @@ for (const width of [1440, 390])
     expect(await chart.locator(".k2b-line-threshold").count()).toBe(1);
     expect(await chart.locator(".k2b-line-marker").count()).toBe(1);
     expect(await page.locator(".liquidity [data-chart-legend-value]").count()).toBe(1);
+    expect(await page.locator(".liquidity [data-chart-legend-value]").textContent()).toBe("€21.14K");
+    const markerValue = await chart.locator(".k2b-chart__svg > svg").getAttribute("data-line-default-x");
+    const today = await chart.locator("[data-chart-datum]").evaluateAll((nodes, at) => {
+      for (const node of nodes) {
+        const datum = JSON.parse(node.getAttribute("data-chart-datum") ?? "{}");
+        if (datum.values?.some((field: { key: string; value: number }) => field.key === "x" && field.value === Number(at)))
+          return datum.values.find((field: { key: string }) => field.key === "y")?.value;
+      }
+      return null;
+    }, markerValue);
+    expect(today).toBe(21140);
+    const bandPath = await chart.locator(".k2b-line-forecast-band").getAttribute("d");
+    expect(bandPath).toContain(" C ");
+    expect(bandPath).not.toMatch(/[HV]/);
+    const thresholdLabel = chart.locator(".k2b-line-threshold-label");
+    const labelBox = (await thresholdLabel.boundingBox())!;
+    const plotTop = await chart.locator(".k2b-line-marker").evaluate((mark) => mark.getBoundingClientRect().top);
+    expect(labelBox.y + labelBox.height).toBeLessThan(plotTop);
     const before = await chart.boundingBox();
     await chart.focus();
     await settled(page);
@@ -121,6 +158,10 @@ for (const width of [1440, 390])
     expect(await chart.boundingBox()).toEqual(before);
     await page.keyboard.press("Escape");
     await settled(page);
+    await chart.blur();
+    await page.mouse.move(0, 0);
+    await settled(page);
+    expect(await page.locator(".liquidity [data-chart-legend-value]").textContent()).toBe("€21.14K");
     const frame = page.locator(".liquidity");
     const frameBefore = await documentBox(page, ".liquidity");
     for (const state of ["loading", "empty", "error", "stale", "data"]) {
@@ -317,6 +358,7 @@ for (const width of [1440, 390]) {
       if (legacy) expect(initial).toEqual([]);
       expect(initial.every((value) => value.length > 0)).toBe(true);
       if (host === "chat" || host === "notebook") expect(initial.every((value) => value.includes("€"))).toBe(true);
+      if (!legacy) expect(initial).toEqual(["15.000 €", "10.000 €"]);
       await page.mouse.move(0, 0);
       await settled(page);
       await chart.focus();

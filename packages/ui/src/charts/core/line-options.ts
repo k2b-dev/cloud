@@ -1,5 +1,13 @@
 import type { LineOptions } from "./svg";
 
+/** A dated marker is the resting cursor; otherwise use the latest shared X. */
+export const lineLegendX = (opts: Pick<LineOptions, "series" | "marker">) => {
+  if (opts.marker) return opts.marker.at;
+  let latest = -Infinity;
+  for (const series of opts.series) for (const point of series.data) if (Number.isFinite(point.x)) latest = Math.max(latest, point.x);
+  return latest;
+};
+
 /** Validate forecast bounds against the first series, sorted by X. Missing Y values retain their bound position. */
 export const lineForecastLayout = (opts: LineOptions) => {
   if (!opts.forecast) return [];

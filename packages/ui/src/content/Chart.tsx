@@ -16,7 +16,7 @@ import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
 import { calendarLayout } from "../charts/core/calendar";
-import { lineDetailsEnabled } from "../charts/core/line-options";
+import { lineDetailsEnabled, lineLegendX } from "../charts/core/line-options";
 import { chartKinds } from "../charts/core/registry";
 import { type ChartDrawingOptions, chartRenderHeight, preservesAspectRatio, renderChartSvg } from "../charts/core/render";
 import { suppressTextSelection } from "../internal/text-selection";
@@ -189,9 +189,8 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   const legendSeries = () => (props.kind === "line" || props.kind === "area" ? props.series : []);
   const legendValue = (index: number) => {
     if (props.kind === "line") {
-      let latest = -Infinity;
-      for (const series of props.series) for (const point of series.data) if (Number.isFinite(point.x)) latest = Math.max(latest, point.x);
-      const last = props.series[index]?.data.find((point) => point.x === latest);
+      const defaultX = lineLegendX(props);
+      const last = props.series[index]?.data.find((point) => point.x === defaultX);
       return last && Number.isFinite(last.y)
         ? (props.yAxis?.format?.(last.y) ?? new Intl.NumberFormat(props.locale ?? locale(), { maximumFractionDigits: 6 }).format(last.y))
         : "—";

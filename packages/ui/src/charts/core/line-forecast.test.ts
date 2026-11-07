@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { lineForecastLayout } from "./line-options";
+import { lineForecastLayout, lineLegendX } from "./line-options";
 import { renderChartSvg } from "./render";
 import { line } from "./svg";
 
@@ -101,6 +101,29 @@ test("both step directions and existing middle steps remain distinct", () => {
   const after = line({ ...spec, forecast: undefined, step: "after" });
   expect(before).not.toBe(after);
   expect(line({ ...spec, step: "middle" })).not.toMatch(/NaN|Infinity/);
+});
+
+test("forecast bounds use cubic curves for smooth lines and preserve explicit steps", () => {
+  const smooth = line({ ...spec, smooth: true });
+  const band = smooth.match(/class="k2b-line-forecast-band" d="([^"]+)"/)?.[1];
+  expect(band?.match(/ C /g)).toHaveLength(4);
+  expect(band).not.toMatch(/[HV]/);
+  const center = smooth.match(/class="stdlib-chart-line[^"]*" d="([^"]+)"/)?.[1];
+  expect(center).toContain(" C ");
+  const stepped = line({ ...spec, step: "after" }).match(/class="k2b-line-forecast-band" d="([^"]+)"/)?.[1];
+  expect(stepped?.match(/ L /g)).toHaveLength(9);
+  expect(stepped).not.toContain(" C ");
+});
+
+test("a marker owns the resting legend value and the threshold label clears the plot", () => {
+  expect(lineLegendX(spec)).toBe(2);
+  expect(lineLegendX({ series: spec.series })).toBe(4);
+  const svg = line({ ...spec, legend: true });
+  expect(svg).toContain('data-line-default-x="2"');
+  expect(svg).toContain('data-field="y" data-default="8"');
+  const markerTop = Number(svg.match(/class="k2b-line-marker"[^>]* y1="([^"]+)"/)?.[1]);
+  const labelY = Number(svg.match(/class="k2b-line-threshold-label"[^>]* y="([^"]+)"/)?.[1]);
+  expect(labelY).toBeLessThan(markerTop);
 });
 test("old line options still produce a drawing; bounds belong only to the first series", () => {
   const svg = line({ ...spec, series: [...spec.series, { label: "Other", data: spec.series[0]!.data }], inspect: true });

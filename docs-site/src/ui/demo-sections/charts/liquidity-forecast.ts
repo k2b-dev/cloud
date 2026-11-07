@@ -6,6 +6,9 @@ const balances = Array.from({ length: 96 }, (_, index) => {
   return Math.round((19800 + swing + trend + (index > 62 && index < 70 ? -6000 : 0)) / 10) * 10;
 });
 const today = 36;
+// Match today's booked balance while preserving the earlier history and later forecast anchors.
+const correction = 21140 - balances[today]!;
+const accountBalances = balances.map((value, index) => Math.round(value + correction * Math.max(0, 1 - Math.abs(index - today) / 12)));
 
 /** Portable JSON shared by the line example and the Liquidity dashboard. */
 export const liquidityForecastSpec = {
@@ -13,11 +16,11 @@ export const liquidityForecastSpec = {
   title: "Balance",
   subtitle: "Business account · forecast with range from today",
   legend: true,
-  series: [{ label: "Balance", data: balances.map((y, index) => ({ x: day(index), y })) }],
-  step: "after",
+  series: [{ label: "Balance", data: accountBalances.map((y, index) => ({ x: day(index), y })) }],
+  smooth: true,
   forecast: {
     from: day(today),
-    band: balances.slice(today).map((value, index) => [value - 600 - index * 70, value + 600 + index * 70]),
+    band: accountBalances.slice(today).map((value, index) => [value - 600 - index * 70, value + 600 + index * 70]),
   },
   threshold: { value: 10000, label: "Threshold" },
   marker: { at: day(today), label: "Today" },

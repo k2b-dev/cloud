@@ -97,7 +97,7 @@ const forecastExamples: ChartShowcaseExample[] = [
     a11y: ["Inspect every day with arrow keys, Home and End; the legend follows the cursor."],
     options: [
       { name: "forecast.from", type: "ISO date", description: "The first projected day, also marked as Today." },
-      { name: "step", type: '"after"', description: "A balance changes when its payment is booked." },
+      { name: "smooth", type: "true", description: "The balance and both forecast bounds follow the same smooth interpolation." },
     ],
   },
 ];

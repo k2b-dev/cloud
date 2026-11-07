@@ -499,7 +499,7 @@ export const renderNotebookChartFigure = (input: ChartInput, locale: string, opt
     const valueField = input.kind === "area" ? (input.normalize ? "percent" : "value") : "y";
     let lastX = -Infinity;
     for (const mark of snapshot.marks) lastX = Math.max(lastX, mark.datum.anchor[0]);
-    const sourceX = input.kind === "line" ? snapshot.svg.match(/data-line-last-x="([^"]+)"/)?.[1] : undefined;
+    const sourceX = input.kind === "line" ? snapshot.svg.match(/data-line-default-x="([^"]+)"/)?.[1] : undefined;
     const legendValue = (index: number) => {
       const field = snapshot.marks
         .find(
