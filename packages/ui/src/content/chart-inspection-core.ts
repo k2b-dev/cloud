@@ -74,6 +74,7 @@ export function createChartInspector(options: {
           /* Only valid renderer metadata participates in inspection. */
         }
       }
+      if (options.kind() === "sankey") entries.sort((a, b) => a.datum.index - b.datum.index);
       sortedPoints = entries.filter((entry) => entry.datum.role === "point").sort((a, b) => a.datum.anchor[0] - b.datum.anchor[0]);
     }
     return entries;

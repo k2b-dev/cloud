@@ -11,6 +11,7 @@ export {
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export * from "./inspection";
 export * from "./render";
+export * from "./sankey";
 export * from "./snapshot";
 export {
   type AxisOptions,

@@ -52,6 +52,7 @@ export const renderChartSvg = (
   mapViewport?: MapViewport,
   timelineViewport?: StateTimelineDomain,
 ): string => {
+  if (props.kind === "sankey") return responsiveChartSvg(chartRenderers.sankey({ ...props, width, height, inspect: true }));
   const {
     kind,
     zoomFocus: _zoomFocus,

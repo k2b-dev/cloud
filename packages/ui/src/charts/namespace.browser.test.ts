@@ -60,7 +60,7 @@ test("named charts preserve browser output and reactive data at desktop and phon
           .evaluateAll((sections) =>
             sections.map((section) => section.querySelector(".direct svg")?.outerHTML === section.querySelector(".named svg")?.outerHTML),
           );
-        expect(equal).toEqual(Array(14).fill(true));
+        expect(equal).toEqual(Array(Object.keys(chartFixtures).length).fill(true));
         if (process.env.CHART_SCREENSHOTS) {
           mkdirSync(process.env.CHART_SCREENSHOTS, { recursive: true });
           await page.screenshot({ path: resolve(process.env.CHART_SCREENSHOTS, `charts-light-${width}.png`), fullPage: true });

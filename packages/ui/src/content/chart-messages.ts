@@ -30,6 +30,8 @@ const chartMessages = i18n.define({
         const labels: Record<string, string> = {
           x: "X",
           y: "Y",
+          incoming: "Incoming",
+          outgoing: "Outgoing",
           value: "Value",
           percent: "Share",
           total: "Total",
@@ -93,6 +95,8 @@ const chartMessages = i18n.define({
         const labels: Record<string, string> = {
           x: "X",
           y: "Y",
+          incoming: "Eingang",
+          outgoing: "Ausgang",
           value: "Wert",
           percent: "Anteil",
           total: "Gesamt",
@@ -142,3 +146,5 @@ export const useChartMessages = (): (() => ChartMessages) => {
 };
 
 export const checkChartMessages = () => chartMessages.check();
+
+export const resolveChartMessages = (locale: string) => chartMessages.resolve([locale]).t;

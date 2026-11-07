@@ -2,6 +2,14 @@ import type { ChartProps } from "../../src/content/Chart";
 
 /** Shared fictional inputs for entry-point, renderer and hydration parity. */
 export const chartFixtures = {
+  sankey: {
+    kind: "sankey",
+    nodes: [
+      { id: "a", label: "Click" },
+      { id: "b", label: "Read" },
+    ],
+    links: [{ source: "a", target: "b", value: 42 }],
+  },
   line: {
     kind: "line",
     series: [

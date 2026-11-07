@@ -26,6 +26,7 @@ import {
   line,
   pie,
   renderBarChartSvg,
+  renderSankeySvg,
   scatter,
   sparkline,
   stat,
@@ -95,6 +96,9 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
     const common = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
     let svg: string;
     switch (mapped.kind) {
+      case "sankey":
+        svg = renderSankeySvg({ ...mapped, ...common, displayWidth: width });
+        break;
       case "bar": {
         // The title and subtitle take height too: lay out exactly what is drawn.
         const layout = barChartLayout({ ...mapped, ...common }, width);
@@ -240,7 +244,7 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="--k2b-chart-width:${width}px;--k2b-chart-height:${drawnHeight}px">${svg}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${input.kind === "sankey" ? ' style="overflow-x:auto;direction:rtl"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="${input.kind === "sankey" ? "min-width:620px;direction:ltr;" : ""}--k2b-chart-width:${input.kind === "sankey" ? Math.max(620, width) : width}px;--k2b-chart-height:${drawnHeight}px">${svg}</div></div>${values}`,
   );
 }
 

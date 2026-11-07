@@ -1032,3 +1032,19 @@ every number readable without a pointer. Countries too small for a shape appear
 as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
+
+## Sankey flows
+
+`Chart.Sankey` and `kind="sankey"` accept `nodes: {id,label,tone?}[]` and
+`links: {source,target,value}[]`. IDs are unique, endpoints exist, values are
+positive and the graph has no cycles. Invalid JSON is rejected before drawing.
+Stages follow the longest path from a source. A node's value is the larger of
+incoming and outgoing totals; unused capacity remains visible. Each band uses
+its source node's color. Optional `legend`, `format`, `locale` and
+`displayWidth` control presentation. Explicit locale takes precedence.
+
+The plot keeps at least 620 px and scrolls to the final stage on narrow screens.
+Hover strengthens one band without dimming others. Arrows inspect nodes and
+links, Home/End jump, Enter pins and Escape dismisses; tap shares this behavior.
+Use the host's fixed-height loading, empty, error/retry and stale-subtitle states.
+The newsletter showcase includes converging and diverging flows.

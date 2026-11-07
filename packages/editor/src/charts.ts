@@ -19,6 +19,8 @@ import {
   niceStep,
   pie,
   renderBarChartSvg,
+  renderSankeySvg,
+  type SankeyOptions,
   scatter,
   sparkline,
   stat,
@@ -29,9 +31,13 @@ import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTim
 export * from "./chart-schema";
 
 type RenderOptions = {
-  [K in ChartInput["kind"]]: { kind: K } & (K extends "bar"
-    ? BarChartOptions
-    : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+  [K in ChartInput["kind"]]: { kind: K } & (K extends "sankey"
+    ? SankeyOptions
+    : K extends "bar"
+      ? BarChartOptions
+      : K extends keyof typeof charts
+        ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+        : never);
 }[ChartInput["kind"]];
 
 /**
@@ -47,6 +53,8 @@ const labels = /* @__PURE__ */ i18n.define({
     en: {
       category: "Category",
       series: "Series",
+      incoming: "Incoming",
+      outgoing: "Outgoing",
       value: "Value",
       share: "Share",
       from: "From",
@@ -64,6 +72,8 @@ const labels = /* @__PURE__ */ i18n.define({
     de: {
       category: "Kategorie",
       series: "Datenreihe",
+      incoming: "Eingang",
+      outgoing: "Ausgang",
       value: "Wert",
       share: "Anteil",
       from: "Von",
@@ -234,6 +244,8 @@ const numberFormat = (format: ChartFormat | undefined) => (format && !("date" in
 /** The values a chart writes with its value format, for whole-number currency. */
 const formattedValues = (input: ChartInput): number[] => {
   switch (input.kind) {
+    case "sankey":
+      return input.links.map((link) => link.value);
     case "line":
     case "scatter":
       return [...input.series.flatMap((series) => series.data.map((point) => point.y)), ...chartReferenceValues(input, "y")];
@@ -336,6 +348,7 @@ export function chartRenderOptions(
     formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string };
   } = {},
 ): RenderOptions {
+  if (input.kind === "sankey") locale = input.locale ?? locale;
   const defaults = formats(input, locale);
   // Function formats must be measured with the same text the renderer will print.
   const format = {
@@ -348,6 +361,16 @@ export function chartRenderOptions(
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
   switch (input.kind) {
+    case "sankey":
+      return {
+        kind: "sankey",
+        nodes: input.nodes,
+        links: input.links,
+        legend: input.legend,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
     case "bar":
     case "boxplot": {
       const yAxis = referencedAxis(input, "y");
@@ -503,6 +526,8 @@ const decode = (value: string) =>
 export const drawChart = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
+    case "sankey":
+      return renderSankeySvg({ ...options, ...common });
     case "bar":
       return renderBarChartSvg({ ...options, ...common, height: barChartLayout(options).height });
     case "line":
@@ -574,6 +599,7 @@ export function chartRows(
   locale: string,
   options: { formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string } } = {},
 ) {
+  if (input.kind === "sankey") locale = input.locale ?? locale;
   const t = labels.resolve([locale]).t;
   const format = formats(input, locale);
   const valueFormat = input.tooltip?.format
@@ -636,6 +662,7 @@ export function chartRows(
           value,
           `${valueFormat(value)}${unit}`,
         );
+      else if (field.key === "incoming" || field.key === "outgoing") cell(field.key, t[field.key], value, valueFormat(value));
       else if (field.key === "delta") cell("delta", t.delta, value, `${value > 0 ? "+" : ""}${valueFormat(value)}`);
       else if (field.key === "q1" || field.key === "q2" || field.key === "q3" || field.key === "whiskerLow" || field.key === "whiskerHigh")
         cell(field.key, t[field.key], value, valueFormat(value));
@@ -667,6 +694,8 @@ export function chartTable(input: ChartInput, locale: string): ChartTable {
 /** Input values count against the budget, including observations summarized into boxes or bins. */
 export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
+    case "sankey":
+      return input.nodes.length + input.links.length;
     case "line":
     case "scatter":
       return input.series.reduce((sum, series) => sum + series.data.length, 0);

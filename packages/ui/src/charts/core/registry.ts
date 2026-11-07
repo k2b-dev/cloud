@@ -1,10 +1,12 @@
 import { renderBarChartSvg } from "../../content/chart-bar";
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
+import { renderSankeySvg } from "./sankey";
 import { charts } from "./svg";
 
 // Add one renderer here: its key defines the discriminator, ChartKind and the capitalized Chart namespace member.
 // Keep kind-specific adaptations in renderChartSvg and add a fixture to the namespace parity test.
 export const chartRenderers = {
+  sankey: renderSankeySvg,
   line: charts.line,
   bar: renderBarChartSvg,
   pie: charts.pie,

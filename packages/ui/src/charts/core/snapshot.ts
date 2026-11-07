@@ -33,7 +33,7 @@ export function prepareChartSnapshot(
     reference?: (selection: ChartSelection) => boolean;
   },
 ): ChartSnapshot {
-  const width = 480;
+  const width = options.kind === "sankey" ? Math.max(620, options.displayWidth ?? 480) : 480;
   const height = chartRenderHeight(options);
   const svg = renderChartSvg(options, width, height);
   const marks: ChartSnapshot["marks"][number][] = [];

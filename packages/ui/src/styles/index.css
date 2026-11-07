@@ -17290,3 +17290,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     transition: none;
   }
 }
+
+/* Flow geometry keeps readable stage labels on a narrow host. RTL scroll origin shows the newest stage at first paint. */
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] { overflow-x: auto; direction: rtl; }
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] > .k2b-chart__svg { min-width: 620px; direction: ltr; }
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] [data-inspected] > .k2b-chart-sankey-link,
+.k2b-ui .k2b-chart[data-chart-kind="sankey"] [data-selected] > .k2b-chart-sankey-link { fill-opacity: 0.6; stroke: none !important; }

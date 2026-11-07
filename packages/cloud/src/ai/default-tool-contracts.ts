@@ -121,6 +121,23 @@ const flatChartSchema = () => {
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
+    nodes: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          label: ChartLabel,
+          tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet"]).optional(),
+        }),
+      )
+      .max(CLOUD_AI_CHART_MAX_VALUES)
+      .optional()
+      .describe("sankey: unique nodes; labels name each stage."),
+    links: z
+      .array(z.object({ source: z.string(), target: z.string(), value: z.number().positive() }))
+      .max(CLOUD_AI_VIEW_MAX_MARKS)
+      .optional()
+      .describe("sankey: positive flows between existing node ids, without cycles."),
+    locale: z.string().optional(),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
     data: z
       .union([

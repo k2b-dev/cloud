@@ -30,7 +30,7 @@ import {
   closeChartInspectionOnOutside,
 } from "./chart-inspection-core";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
-import { useChartMessages } from "./chart-messages";
+import { resolveChartMessages, useChartMessages } from "./chart-messages";
 import {
   panStateTimelineViewport,
   type StateTimelineDomain,
@@ -136,6 +136,7 @@ export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../c
  *  block on truly empty inputs; partially-filled series get rendered
  *  as-is and the core handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
+  if (props.kind === "sankey") return !props.nodes.length || !props.links.length;
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);
   }
@@ -436,7 +437,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     select: (selection) => props.onSelect?.(selection),
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
-      const fields = chartMessages().chartFields;
+      const fields = props.kind === "sankey" ? resolveChartMessages(props.locale ?? locale()).chartFields : chartMessages().chartFields;
       const format = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 });
       return {
         title:
@@ -465,7 +466,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
     renderChartSvg(
-      drawingProps,
+      props.kind === "sankey" ? { ...props, locale: props.locale ?? locale() } : drawingProps,
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,
@@ -572,7 +573,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
           class="k2b-chart__svg"
           data-stretch={!preservesAspectRatio(props.kind) ? "true" : undefined}
           style={{
-            "--k2b-chart-width": `${size().width}px`,
+            "--k2b-chart-width": `${props.kind === "sankey" ? Math.max(620, props.displayWidth ?? size().width) : size().width}px`,
             "--k2b-chart-height": `${size().height}px`,
             "aspect-ratio": `${size().width} / ${size().height}`,
           }}
