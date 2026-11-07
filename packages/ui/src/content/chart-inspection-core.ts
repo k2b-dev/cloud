@@ -50,6 +50,7 @@ const describe = (container: HTMLElement, id: string, on: boolean) => {
 };
 
 /** Mark roles that stand for a whole category: hovering anywhere in its column (or row) inspects it. */
+const rowLayout = (container: HTMLElement | undefined) => Boolean(container?.querySelector('svg[data-bar-layout="rows"]'));
 const categoryRoles: Partial<Record<ChartKind, string>> = { bar: "item", histogram: "bin", boxplot: "box" };
 type CategoryBand = { entry: Entry; left: number; right: number; top: number; bottom: number };
 
@@ -275,7 +276,7 @@ export function createChartInspector(options: {
     const slot = categoryBands().find((candidate) => candidate.entry === entry);
     // A renderer that draws its own band inside the category's mark keeps it; the overlay only fills the others.
     const band = slot && !entry.element.querySelector(".k2b-chart-category-band") ? slot : undefined;
-    const rows = Boolean(container.querySelector('svg[data-bar-layout="rows"]'));
+    const rows = rowLayout(container);
     // A column's tooltip waits at the top of the plot, so it stays put while the pointer moves within the column.
     anchor.style.left = `${(slot && !rows ? (slot.left + slot.right) / 2 : point.x) - rect.left}px`;
     anchor.style.top = `${(slot && !rows ? slot.top : point.y) - rect.top}px`;
@@ -304,7 +305,7 @@ export function createChartInspector(options: {
     const role = categoryRoles[options.kind()];
     const container = options.container();
     if (!role || !container) return [];
-    const rows = Boolean(container.querySelector('svg[data-bar-layout="rows"]'));
+    const rows = rowLayout(container);
     const slots = records()
       .filter((entry) => entry.datum.role === role)
       .map((entry) => ({ entry, rect: entry.element.getBoundingClientRect() }));
@@ -392,7 +393,7 @@ export function createChartInspector(options: {
         }
       }
       if (loose) return loose;
-      const rows = Boolean(options.container()?.querySelector('svg[data-bar-layout="rows"]'));
+      const rows = rowLayout(options.container());
       const frame = options.container()?.getBoundingClientRect();
       const inside = frame && x >= frame.left && x <= frame.right && y >= frame.top && y <= frame.bottom;
       return inside
