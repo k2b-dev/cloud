@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   chatCommandKey,
+  chatSuggestionKeyAction,
   conversationEnterAction,
   executeChatAction,
   foldChatSearchText,
@@ -190,5 +191,44 @@ describe("command discovery", () => {
   test("uses the explicit stable key, defaulting to name", () => {
     expect(chatCommandKey({ id: "stable", name: "compact", description: "" })).toBe("stable");
     expect(chatCommandKey({ name: "compact", description: "" })).toBe("compact");
+  });
+});
+
+describe("chatSuggestionKeyAction", () => {
+  const key = (key: string, extra: Partial<Parameters<typeof chatSuggestionKeyAction>[0]> = {}) => ({
+    key,
+    shiftKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    isComposing: false,
+    keyCode: 0,
+    ...extra,
+  });
+  const idle = { composing: false, listOpen: false };
+
+  test("a plain Tab accepts and a plain Escape dismisses", () => {
+    expect(chatSuggestionKeyAction(key("Tab"), idle)).toBe("accept");
+    expect(chatSuggestionKeyAction(key("Escape"), idle)).toBe("dismiss");
+  });
+
+  test("Tab with a modifier keeps moving the focus", () => {
+    for (const modifier of ["shiftKey", "ctrlKey", "metaKey", "altKey"] as const)
+      expect(chatSuggestionKeyAction(key("Tab", { [modifier]: true }), idle)).toBeUndefined();
+  });
+
+  test("an input method's composition keeps its keys", () => {
+    expect(chatSuggestionKeyAction(key("Tab", { isComposing: true }), idle)).toBeUndefined();
+    expect(chatSuggestionKeyAction(key("Tab", { keyCode: 229 }), idle)).toBeUndefined();
+    expect(chatSuggestionKeyAction(key("Escape"), { ...idle, composing: true })).toBeUndefined();
+  });
+
+  test("an open command, emoji or people list keeps Tab and Escape", () => {
+    expect(chatSuggestionKeyAction(key("Tab"), { ...idle, listOpen: true })).toBeUndefined();
+    expect(chatSuggestionKeyAction(key("Escape"), { ...idle, listOpen: true })).toBeUndefined();
+  });
+
+  test("typing and other keys leave the suggestion to the field", () => {
+    for (const other of ["a", "Enter", "ArrowRight", " "]) expect(chatSuggestionKeyAction(key(other), idle)).toBeUndefined();
   });
 });

@@ -193,6 +193,7 @@
     "@k2b/ui src/chat/chat-activity-motion.browser.test.ts": 5.6,
     "@k2b/ui src/chat/chat-activity-steps.browser.test.ts": 16.7,
     "@k2b/ui src/chat/chat-activity-wrap.browser.test.ts": 4.8,
+    "@k2b/ui src/chat/chat-composer-suggestion.browser.test.ts": 8.2,
     "@k2b/ui src/chat/chat-composer.browser.test.ts": 52,
     "@k2b/ui src/chat/chat-decision.browser.test.ts": 13.3,
     "@k2b/ui src/content/calendar-days.browser.test.ts": 33.7,

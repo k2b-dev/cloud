@@ -53,7 +53,8 @@ them, are in [Colors and selection](/en/ui/surfaces/color).
 AI presentation has a separate semantic theme:
 `--k2b-ai-accent`, `--k2b-ai-accent-hover`, `--k2b-ai-border`,
 and `--k2b-ai-surface`, plus `--k2b-ai-edge-rest` and `--k2b-ai-glow` for the
-assistant prompt's edge. Override these roles when the assistant identity should
+assistant prompt's edge, and `--k2b-ai-suggestion` for a suggested next message
+in its empty field. Override these roles when the assistant identity should
 differ from the general application accent.
 
 Component APIs use the shared `IntentTone` vocabulary (`neutral`, `info`, `success`, `warning`, `danger`) when they describe user-facing intent, and `AccentColor` (`zinc`, `blue`, `emerald`, `amber`, `red`) for data presentation. Operational states such as `running`, `degraded`, and `error` remain a separate status vocabulary.

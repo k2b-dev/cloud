@@ -23,6 +23,7 @@ export type {
   ChatComposerPeople,
   ChatComposerProps,
   ChatComposerReply,
+  ChatComposerSuggestion,
   ChatFileSelection,
   ChatPasteHandler,
   ChatPersonSuggestion,

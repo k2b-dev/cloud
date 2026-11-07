@@ -84,6 +84,24 @@ export const conversationEnterAction = (
   return "send";
 };
 
+export type ChatSuggestionKey = ChatEnterKey & { key: string; isComposing: boolean; keyCode: number };
+
+/**
+ * What a key does to a suggested next message that stands in the empty field: a plain Tab accepts it and a plain
+ * Escape dismisses it. Tab with a modifier, a key that confirms an input method's composition, and any key while a
+ * command, emoji or people list is open keep their usual meaning.
+ */
+export const chatSuggestionKeyAction = (
+  key: ChatSuggestionKey,
+  context: { composing: boolean; listOpen: boolean },
+): "accept" | "dismiss" | undefined => {
+  if (key.isComposing || key.keyCode === 229 || context.composing || context.listOpen) return undefined;
+  if (key.shiftKey || key.altKey || key.ctrlKey || key.metaKey) return undefined;
+  if (key.key === "Tab") return "accept";
+  if (key.key === "Escape") return "dismiss";
+  return undefined;
+};
+
 /** Case- and accent-insensitive text for command discovery. */
 export const foldChatSearchText = (text: string): string => text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/ß/g, "ss");
 
