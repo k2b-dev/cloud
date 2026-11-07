@@ -1,7 +1,15 @@
 import { expect, test } from "bun:test";
 import { charts } from "@k2b/ui/charts/core";
+import { DashboardDefinitionSchema, DashboardSaveSchema } from "../../dashboard-contracts";
 import { dashboardRangeSearch } from "./dashboard-client";
-import { dashboardCategories, dashboardLine, dashboardLineExplorer, dashboardSections, readDashboardRange } from "./dashboard-data";
+import {
+  dashboardCategories,
+  dashboardLine,
+  dashboardLineExplorer,
+  dashboardSections,
+  dashboardTopNumbers,
+  readDashboardRange,
+} from "./dashboard-data";
 import { dashboardTestDashboard, dashboardTestKinds, dashboardTestPanelResult } from "./dashboard-test-fixtures";
 
 const berlin = { locale: "de", timeZone: "Europe/Berlin" };
@@ -14,11 +22,63 @@ test("custom ranges require both valid ordered endpoints and serialize without c
 });
 test("section order and explicit half/third widths survive without folding stat tiles into charts", () => {
   const groups = dashboardSections(dashboardTestDashboard.definition.panels);
-  expect(groups.map((group) => [group.name, group.panels.length])).toEqual([
-    ["Traefik", 3],
-    ["Server", 3],
+  expect(groups.map((group) => [group.name, group.numbers.length, group.panels.length])).toEqual([
+    ["Traefik", 0, 3],
+    ["Server", 0, 3],
+  ]);
+  expect(dashboardTopNumbers(dashboardTestDashboard.definition.panels).map((panel) => panel.id)).toEqual([
+    "requests-now",
+    "errors-now",
+    "latency-now",
+    "hosts-now",
   ]);
   expect(groups.flatMap((group) => group.panels).every((panel) => panel.width === "third")).toBe(true);
+});
+test("a number with a section joins that section's key figures; one without stays in the top row", () => {
+  const [requests, errors, latency, disk, ...charts] = dashboardTestDashboard.definition.panels;
+  // Saved before key figures moved into sections: the numbers carry section fields that were never checked.
+  // The display fixtures carry a parameter their SQL does not use; the stored contract rejects that, so drop it here.
+  const definition = DashboardDefinitionSchema.parse({
+    panels: [
+      { ...requests!, section: "Traefik", sectionIcon: "ti ti-world", sectionColor: "#000000" },
+      { ...errors!, section: "Traefik" },
+      latency,
+      { ...disk!, section: "Speicher", sectionIcon: "ti ti-database", sectionDescription: "nur Zahlen" },
+      ...charts,
+      { ...charts[0]!, id: "wide", width: "twoThirds" },
+    ].map((panel) => ({ ...panel, params: {} })),
+  });
+  expect(dashboardTopNumbers(definition.panels).map((panel) => panel.id)).toEqual(["latency-now"]);
+  const groups = dashboardSections(definition.panels);
+  expect(
+    groups.map((group) => ({
+      name: group.name,
+      numbers: group.numbers.map((panel) => panel.id),
+      panels: group.panels.map((panel) => panel.id),
+      icon: group.icon,
+      description: group.description,
+    })),
+  ).toEqual([
+    // The section reads its presentation from its first chart, not from the number that happens to come first.
+    {
+      name: "Traefik",
+      numbers: ["requests-now", "errors-now"],
+      panels: ["req", "e5", "p95", "wide"],
+      icon: "ti ti-router",
+      description: "Quelle Traefik · Raster 5 Min.",
+    },
+    // A section of numbers only takes its presentation from its first number.
+    { name: "Speicher", numbers: ["hosts-now"], panels: [], icon: "ti ti-database", description: "nur Zahlen" },
+    { name: "Server", numbers: [], panels: ["cpu", "disk", "hosts"], icon: "ti ti-server-2", description: "2 Quellen · Raster 5 Min." },
+  ]);
+  expect(definition.panels.at(-1)!.width).toBe("twoThirds");
+});
+test("the published website example stays valid and keeps its numbers on top", async () => {
+  const example = DashboardSaveSchema.parse(await Bun.file(new URL("../../../examples/website-dashboard.json", import.meta.url)).json());
+  expect(dashboardTopNumbers(example.definition.panels).map((panel) => panel.id)).toEqual(["views", "sessions", "contacts"]);
+  expect(dashboardSections(example.definition.panels).map((group) => [group.name, group.numbers.length, group.panels.length])).toEqual([
+    ["Traffic", 0, 4],
+  ]);
 });
 test("section presentation comes only from stored metadata and stays absent when unspecified", () => {
   const groups = dashboardSections(dashboardTestDashboard.definition.panels);

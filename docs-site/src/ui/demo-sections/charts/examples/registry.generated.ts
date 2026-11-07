@@ -6,6 +6,7 @@ import * as bar_basicExamples from "./bar-basic";
 import * as barGaugeExamples from "./barGauge";
 import * as boxplotExamples from "./boxplot";
 import * as budgetExamples from "./budget";
+import * as calendarExamples from "./calendar";
 import * as donutExamples from "./donut";
 import * as flowExamples from "./flow";
 import * as gaugeExamples from "./gauge";
@@ -21,6 +22,7 @@ import * as statExamples from "./stat";
 import * as stateTimelineExamples from "./stateTimeline";
 import * as statsExamples from "./stats";
 import * as treemapExamples from "./treemap";
+import * as tableExamples from "./table";
 
 export const exampleModules: Record<string, unknown>[] = [
   areaExamples,
@@ -29,6 +31,7 @@ export const exampleModules: Record<string, unknown>[] = [
   barGaugeExamples,
   boxplotExamples,
   budgetExamples,
+  calendarExamples,
   donutExamples,
   flowExamples,
   gaugeExamples,
@@ -44,4 +47,5 @@ export const exampleModules: Record<string, unknown>[] = [
   stateTimelineExamples,
   statsExamples,
   treemapExamples,
+  tableExamples,
 ];

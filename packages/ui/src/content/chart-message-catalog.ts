@@ -35,7 +35,7 @@ export const chartMessages = i18n.define({
         const labels: Record<string, string> = {
           x: "X",
           y: "Y",
-          group: "Group",
+
           previous: "Previous",
           change: "Change",
           cumulative: "Cumulative",
@@ -68,6 +68,7 @@ export const chartMessages = i18n.define({
           errX: "X error",
           errXHigh: "Upper X error",
           errXLow: "Lower X error",
+          group: "Group",
         };
         return labels[key] ?? key;
       },
@@ -109,7 +110,7 @@ export const chartMessages = i18n.define({
         const labels: Record<string, string> = {
           x: "X",
           y: "Y",
-          group: "Bereich",
+
           previous: "Vorher",
           change: "Änderung",
           cumulative: "Kumuliert",
@@ -142,6 +143,7 @@ export const chartMessages = i18n.define({
           errX: "X-Fehler",
           errXHigh: "Oberer X-Fehler",
           errXLow: "Unterer X-Fehler",
+          group: "Bereich",
         };
         return labels[key] ?? key;
       },

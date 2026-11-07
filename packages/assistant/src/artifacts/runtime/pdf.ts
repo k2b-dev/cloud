@@ -1,7 +1,7 @@
 import { checkPdfBytes, type PdfAttachInput, type PdfFacturXInput, type PdfRenderInput, PdfRequest } from "../pdf-contracts";
-import { type Html, html as markup } from "./lib";
+import { type Html, html as markup, resolveChartHtml } from "./lib";
 
-export function createPdf(rpc: (method: string, args: unknown[], signal?: AbortSignal) => Promise<unknown>) {
+export function createPdf(rpc: (method: string, args: unknown[], signal?: AbortSignal) => Promise<unknown>, locale = "en-US") {
   const call = async (input: unknown, options: { signal?: AbortSignal } = {}): Promise<Blob> => {
     options.signal?.throwIfAborted();
     const request = PdfRequest.parse(input);
@@ -19,8 +19,10 @@ export function createPdf(rpc: (method: string, args: unknown[], signal?: AbortS
       },
       options?: { signal?: AbortSignal },
     ) => {
+      options?.signal?.throwIfAborted();
       const { title, facturX, ...html } = input;
-      const content = html.html instanceof String ? String(html.html) : html.html;
+      const rawContent = html.html instanceof String ? String(html.html) : html.html;
+      const content = typeof rawContent === "string" ? await resolveChartHtml(rawContent, locale) : rawContent;
       if (title !== undefined && typeof title !== "string") throw new TypeError("PDF title must be a string.");
       return call(
         {
