@@ -83,10 +83,16 @@ export const appEvents = <const T extends CapabilityDefinitions>(definitions: T 
     localId: Key,
     input: AppEventPublishInput<T, Key>,
   ): Promise<AppEventEnvelope> => {
-    const envelope = buildAppEventEnvelope<T, Key>(definitions, localId, input, {
+    const original = buildAppEventEnvelope<T, Key>(definitions, localId, input, {
       id: crypto.randomUUID(),
       time: new Date().toISOString(),
     });
+    // Registration cutoffs use the same PostgreSQL clock. Process clock skew must not drop fresh resource events.
+    const [publication] = await tx<{ time: string }[]>`
+      SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS time`;
+    if (!publication) throw new Error("Event publication timestamp unavailable");
+    const envelope = AppEventEnvelopeSchema.parse({ ...original, time: publication.time });
+    assertAppEventSize(envelope);
     // A full valid resource ref can exceed the existing outbox's 600-character key bound.
     const orderingKey = capabilityHash(envelope.subject);
     await tx`SELECT events.enqueue(${envelope.id}::uuid, ${envelope.source}, 'event', ${orderingKey}, ${JSON.stringify(envelope)}::text::jsonb)`;

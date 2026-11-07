@@ -354,7 +354,13 @@ export function chartRenderOptions(
   const references = renderReferences(input);
   switch (input.kind) {
     case "area":
-      return { ...input, locale, format: format.value, legend: options.legend === "outside" ? false : input.legend };
+      return {
+        ...input,
+        displayWidth: options.width,
+        locale,
+        format: format.value,
+        legend: options.legend === "outside" ? false : input.legend,
+      };
     case "bar":
     case "boxplot": {
       const yAxis = referencedAxis(input, "y");

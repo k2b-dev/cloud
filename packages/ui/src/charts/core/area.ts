@@ -11,6 +11,8 @@ export type AreaOptions = {
   legend?: boolean;
   format?: (value: number) => string;
   locale?: string;
+  /** Narrowest displayed width in CSS pixels; measured hosts pass their actual width. */
+  displayWidth?: number;
 };
 export type AreaPoint = { index: number; amount: number; share: number; lower: number; upper: number };
 
@@ -59,13 +61,16 @@ export function areaLayout(spec: AreaOptions, size: { width: number; height: num
   const format = spec.format ?? new Intl.NumberFormat(spec.locale ?? "en", { maximumFractionDigits: 2 }).format;
   const percent = new Intl.NumberFormat(spec.locale ?? "en", { style: "percent", maximumFractionDigits: 1 }).format;
   const axisFormat = spec.normalize ? percent : format;
-  const left = Math.min(size.width * 0.6, Math.max(44, ...ticks.map((v) => axisFormat(v).length * 7 + 12)) * Math.max(1, size.width / 296));
+  const displayWidth = spec.displayWidth ?? 296;
+  if (!Number.isFinite(displayWidth) || displayWidth <= 0) throw new RangeError("Invalid area display width");
+  const ratio = size.width / displayWidth;
+  const left = Math.min(size.width * 0.6, Math.max(44, ...ticks.map((v) => axisFormat(v).length * 7 + 12)) * ratio);
   const right = size.width - 12,
     top = (spec.title || spec.subtitle ? 50 : 16) + (spec.legend === false ? 0 : 40);
   const bottom = Math.max(top + 1, size.height - 30);
   const projectX = (index: number) => (spec.x.length < 2 ? (left + right) / 2 : left + (index / (spec.x.length - 1)) * (right - left));
   const projectY = (value: number) => bottom - (value / max) * (bottom - top);
-  return { layers, totals, max, ticks, format, percent, axisFormat, left, right, top, bottom, projectX, projectY };
+  return { layers, totals, max, ticks, format, percent, axisFormat, ratio, left, right, top, bottom, projectX, projectY };
 }
 const f = (value: number) => String(Math.round(value * 100) / 100);
 const text = (x: number, y: number, label: string, anchor = "middle", extra = "") =>
@@ -97,7 +102,7 @@ export function renderAreaSvg(spec: AreaOptions & { width: number; height: numbe
       const color = `var(--stdlib-chart-c${(i % 8) + 1}, ${palette[i % 8]})`;
       const point = g.layers[i]?.at(-1);
       const value = point ? (spec.normalize ? g.percent(point.share) : g.format(point.amount)) : "—";
-      const room = Math.floor((cell * Math.min(1, 296 / spec.width)) / 6) - 4;
+      const room = Math.floor((cell * (1 / g.ratio)) / 6) - 4;
       const showValue = value.length + 3 < room;
       const maxChars = Math.max(1, room - (showValue ? value.length + 1 : 0));
       const label = series.label.length > maxChars ? series.label.slice(0, maxChars - 1) + "…" : series.label;
@@ -164,11 +169,11 @@ export function renderAreaSvg(spec: AreaOptions & { width: number; height: numbe
       );
     });
   });
-  const slot = ((g.right - g.left) / Math.max(1, spec.x.length)) * Math.min(1, 296 / spec.width);
+  const slot = ((g.right - g.left) / Math.max(1, spec.x.length)) * (1 / g.ratio);
   const labelWidth = Math.max(1, ...spec.x.map((x) => Math.min(24, String(x).length))) * 6;
   const stride = Math.max(1, Math.ceil(labelWidth / Math.max(1, slot)));
   spec.x.forEach((value, i) => {
-    if (i % stride !== 0 && i !== spec.x.length - 1) return;
+    if (i % stride !== 0) return;
     const label = String(value);
     parts.push(
       text(

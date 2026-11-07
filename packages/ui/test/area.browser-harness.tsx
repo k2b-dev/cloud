@@ -65,7 +65,22 @@ render(
         <section class="snapshot area-panel">
           <ChartExplorer
             title="Sales snapshot"
-            data={{ chart: snapshot, rows: snapshotRows }}
+            description={state() === "stale" ? "Veraltet · Studio sales" : "Studio sales"}
+            data={{ chart: snapshot, rows: state() === "data" || state() === "stale" ? snapshotRows : [] }}
+            empty={
+              state() === "loading" ? (
+                <p role="status">Daten werden geladen.</p>
+              ) : state() === "error" ? (
+                <div role="alert">
+                  Daten konnten nicht geladen werden.
+                  <button type="button" onClick={() => setState("data")}>
+                    Erneut versuchen
+                  </button>
+                </div>
+              ) : (
+                <p>Noch keine Umsätze.</p>
+              )
+            }
             columns={[{ id: "amount", label: "Sales", value: (row) => row.amount }]}
             legend={areaFixture.series.map((s, color) => ({ label: s.label, color }))}
             renderDetails={false}

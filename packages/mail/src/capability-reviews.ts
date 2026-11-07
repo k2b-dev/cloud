@@ -421,24 +421,40 @@ export const mailActionReviews = {
         : slots,
       options,
     ),
-  "conversation.status.update": (
-    status: "done" | "open",
+  "conversation.summary.write": (
     locale: string | undefined,
     slots: Record<"conversation", CapabilitySlot>,
     options: MailReviewOptions = {},
-  ) => buildMailReview(status === "done" ? "conversation.status.update.done" : "conversation.status.update.open", locale, slots, options),
+  ) => buildMailReview("conversation.summary.write", locale, slots, options),
+  "conversation.reference.ensure": (
+    locale: string | undefined,
+    slots: Record<"conversation", CapabilitySlot>,
+    options: MailReviewOptions = {},
+  ) => buildMailReview("conversation.reference.ensure", locale, slots, options),
+  "conversation.status.update": (
+    status: "done" | "open" | "waiting" | "needs_action",
+    locale: string | undefined,
+    slots: Record<"conversation", CapabilitySlot>,
+    options: MailReviewOptions = {},
+  ) => buildMailReview(`conversation.status.update.${status}`, locale, slots, options),
   "conversation.status.update.batch": (
-    status: "done" | "open",
+    status: "done" | "open" | "waiting" | "needs_action",
     locale: string | undefined,
     slots: Record<"count", CapabilitySlot>,
     options: MailReviewOptions = {},
-  ) =>
-    buildMailReview(
-      status === "done" ? "conversation.status.update.batch.done" : "conversation.status.update.batch.open",
-      locale,
-      slots,
-      options,
-    ),
+  ) => buildMailReview(`conversation.status.update.batch.${status}`, locale, slots, options),
+  "conversation.status.set": (
+    status: "done" | "open" | "waiting" | "needs_action",
+    locale: string | undefined,
+    slots: Record<"conversation", CapabilitySlot>,
+    options: MailReviewOptions = {},
+  ) => buildMailReview(`conversation.status.update.${status}`, locale, slots, options),
+  "conversation.status.set.batch": (
+    status: "done" | "open" | "waiting" | "needs_action",
+    locale: string | undefined,
+    slots: Record<"count", CapabilitySlot>,
+    options: MailReviewOptions = {},
+  ) => buildMailReview(`conversation.status.update.batch.${status}`, locale, slots, options),
   "conversation.snooze": (
     until: string | null | undefined,
     locale: string | undefined,

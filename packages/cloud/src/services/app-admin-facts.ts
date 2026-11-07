@@ -108,7 +108,7 @@ export const appAdminFacts = async (authority: RequestAuthority, appIds: readonl
     sql<{ app_id: string; hears: number; sends: number; failed: number; waiting: number }[]>`
       WITH subscriptions AS (
         SELECT app_id, count(*) FILTER (WHERE state = 'active')::int AS hears
-        FROM events.app_subscriptions WHERE app_id IN ${sql(ids)} GROUP BY app_id
+        FROM events.app_subscriptions WHERE resource_binding IS NULL AND app_id IN ${sql(ids)} GROUP BY app_id
       ), declarations AS (
         SELECT app_id, count(*)::int AS sends
         FROM events.app_declarations WHERE app_id IN ${sql(ids)} AND retired_at IS NULL GROUP BY app_id
@@ -117,7 +117,7 @@ export const appAdminFacts = async (authority: RequestAuthority, appIds: readonl
           count(*) FILTER (WHERE delivery.state IN ('pending', 'retrying'))::int AS waiting
         FROM events.app_subscriptions subscription
         JOIN events.app_deliveries delivery ON delivery.subscription_id = subscription.id
-        WHERE subscription.app_id IN ${sql(ids)} AND delivery.state IN ('failed', 'pending', 'retrying')
+        WHERE subscription.resource_binding IS NULL AND subscription.app_id IN ${sql(ids)} AND delivery.state IN ('failed', 'pending', 'retrying')
         GROUP BY subscription.app_id
       )
       SELECT COALESCE(s.app_id, d.app_id, f.app_id) AS app_id, COALESCE(s.hears, 0) AS hears,

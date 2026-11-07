@@ -73,3 +73,10 @@ test("pure-host legends carry final values and remain bounded for many series", 
   expect(svg).toContain("+37");
   expect(svg).toContain('data-chart-legend-value data-series-index="0" data-field="value" data-default="2"');
 });
+
+test("measured wide hosts reserve tick space in CSS pixels", () => {
+  const spec = { layout: "stacked" as const, x: [1, 2], series: [{ label: "Sales", data: [10, 20] }] };
+  const size = { width: 900, height: 280 };
+  expect(areaLayout({ ...spec, displayWidth: 900 }, size).left).toBeLessThan(100);
+  expect(areaLayout({ ...spec, displayWidth: 900 }, size).left).toBeLessThan(areaLayout(spec, size).left);
+});

@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
+import { createComponent } from "solid-js";
+import { renderToString } from "solid-js/web";
 import { areaFixture } from "../../test/area-fixture";
 import { launchBrowser, settled } from "../../test/browser";
-import { renderAreaSvg } from "../charts/core/area";
-import { responsiveChartSvg } from "./chart-svg";
 
 let browser: Browser, bundle: string, css: string;
+const ssr: string[] = [];
 const pages: Page[] = [];
 beforeAll(async () => {
   const { transformAsync } = await import("@babel/core");
@@ -38,6 +39,19 @@ beforeAll(async () => {
   if (!build.success) throw new AggregateError(build.logs, "Area harness failed");
   bundle = await build.outputs[0]!.text();
   css = await Bun.file(resolve(import.meta.dir, "../../dist/styles.css")).text();
+  const { default: ServerChart } = await import(resolve(import.meta.dir, "../../dist/ssr/content/Chart.js"));
+  const { LocaleProvider } = await import(resolve(import.meta.dir, "../../dist/ssr/intl/locale.js"));
+  for (const normalize of [false, true])
+    ssr.push(
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(ServerChart, { kind: "area", ...areaFixture, normalize });
+          },
+        }),
+      ),
+    );
   browser = await launchBrowser();
   pages.push(await open(1440, false, true));
 }, 30000);
@@ -62,17 +76,16 @@ for (const width of [1440, 390])
     await page.setViewportSize({ width, height: 1100 });
     await settled(page);
     const chart = page.locator('.area-frame [data-chart-kind="area"]');
-    const expected = responsiveChartSvg(
-      renderAreaSvg({ ...areaFixture, legend: false, width: 480, height: 280, locale: "de", inspect: true }),
-    );
+    const expected = ssr[1]!;
     expect(
       await chart.locator(".k2b-chart__svg > svg").evaluate((svg, expected) => {
         const host = document.createElement("div");
         host.innerHTML = expected;
-        return svg.outerHTML === host.firstElementChild?.outerHTML;
+        return svg.outerHTML === host.querySelector("svg")?.outerHTML;
       }, expected),
     ).toBe(true);
-    const before = await page.locator(".area-panel").first().boundingBox();
+    const before = await page.locator(".snapshot").boundingBox();
+    const viewportBefore = await page.locator(".snapshot .k2b-chart-explorer__viewport").boundingBox();
     const plot = await chart.locator(".k2b-chart__svg").boundingBox();
     await page.mouse.move(plot!.x + plot!.width * 0.55, plot!.y + plot!.height * 0.3);
     await page.waitForFunction(() => document.querySelector('[role="tooltip"]:popover-open')?.textContent?.includes("Subscriptions"));
@@ -97,8 +110,9 @@ for (const width of [1440, 390])
     for (const state of ["loading", "empty", "error", "stale", "data"]) {
       await page.getByRole("button", { name: state, exact: true }).click();
       await settled(page);
-      expect(await page.locator(".area-panel").first().boundingBox()).toEqual(before);
-      if (state === "error") await page.getByRole("button", { name: "Erneut versuchen" }).click();
+      expect(await page.locator(".snapshot").boundingBox()).toEqual(before);
+      expect(await page.locator(".snapshot .k2b-chart-explorer__viewport").boundingBox()).toEqual(viewportBefore);
+      if (state === "error") await page.locator(".snapshot").getByRole("button", { name: "Erneut versuchen" }).click();
     }
     const swatches = await chart.locator(".k2b-chart__legend rect").evaluateAll((nodes) => nodes.map((e) => getComputedStyle(e).fill));
     expect(new Set(swatches).size).toBe(3);
@@ -130,5 +144,6 @@ test("area tap pins at a category; dark and unscoped paths remain painted", asyn
   await page.evaluate(() => document.body.classList.remove("k2b-ui"));
   await settled(page);
   const fills = await chart.locator(".k2b-area-layer").evaluateAll((nodes) => nodes.map((e) => getComputedStyle(e).fill));
+  expect(new Set(fills).size).toBe(3);
   expect(fills.every((c) => c !== "rgb(0, 0, 0)" && c !== "none")).toBe(true);
 });

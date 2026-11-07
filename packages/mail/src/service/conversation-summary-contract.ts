@@ -7,7 +7,7 @@ export const conversationSummaryStateSchema = z.object({
   summary: z.string().nullable(),
   summaryRevision: z.number().int().positive(),
   conversationRevision: z.number().int().positive(),
-  source: z.enum(["person", "workflow", "manual_ai"]).nullable(),
+  source: z.enum(["person", "workflow", "manual_ai", "automation"]).nullable(),
   author: source.extend({ kind: z.enum(["user", "workflow"]) }).nullable(),
   ai: z.boolean(),
   generatedAt: z.string().nullable(),

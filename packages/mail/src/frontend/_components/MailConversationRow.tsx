@@ -102,6 +102,9 @@ export default function MailConversationRow(props: {
     </Tooltip.Anchor>
   );
   const [menuOpen, setMenuOpen] = createSignal(false);
+  const [dropdownOpen, setDropdownOpen] = createSignal(false);
+  // While the "…" or right-click menu is open, the row keeps its hover tone and drops its tooltip, which would cover it.
+  const menuShown = () => menuOpen() || dropdownOpen();
   let activation: "keyboard" | "pointer" = "keyboard";
   let selectRange = false;
   let link: HTMLAnchorElement | undefined;
@@ -171,7 +174,7 @@ export default function MailConversationRow(props: {
         aria-keyshortcuts={quickLook ? "Space" : undefined}
         class="mail-list-row focus-ui"
         // The open card already names sender and subject; a native tooltip would cover the row.
-        title={peeking() ? undefined : `${correspondents().join(", ")}: ${props.item.subject || t().noSubject}`}
+        title={peeking() || menuShown() ? undefined : `${correspondents().join(", ")}: ${props.item.subject || t().noSubject}`}
         draggable={state().canWrite && Boolean(props.item.conversationId && props.item.activeFolderIds.length > 0)}
         on:keydown={(event) => {
           // Runs on the link before the shared row anchor handles Space. Reopening
@@ -450,7 +453,7 @@ export default function MailConversationRow(props: {
       </Show>
       <Show when={!state().selectionMode && props.item.conversationId}>
         <div class="k2b-progressive-action absolute right-3 top-2 z-10">
-          <Dropdown.Root lazy position="bottom-left" width="16rem" items={menuItems()}>
+          <Dropdown.Root lazy position="bottom-left" width="16rem" items={menuItems()} onOpenChange={setDropdownOpen}>
             <Dropdown.Trigger
               iconOnly
               size="sm"
@@ -483,6 +486,7 @@ export default function MailConversationRow(props: {
         "mail-list-entry-selected": bulkSelected(),
         "mail-list-entry-selection-mode": state().selectionMode,
         "mail-list-entry-peek": peeking(),
+        "mail-list-entry-menu-open": menuShown(),
       }}
       onPointerEnter={(event) => {
         if (event.pointerType === "mouse") {

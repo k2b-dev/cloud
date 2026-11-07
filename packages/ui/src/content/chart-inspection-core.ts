@@ -1,8 +1,8 @@
-import type { ChartDatum, charts } from "@k2b/stdlib";
+import { type ChartDatum, type ChartKind, chartDatumRoles } from "../charts/core";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartCursor, ChartCursorState } from "./chart-cursor";
 
-export type ChartKind = keyof typeof charts | "area";
+export type { ChartKind } from "../charts/core";
 
 export type ChartDatumRef = Pick<ChartDatum, "role" | "index" | "seriesIndex">;
 export const sameChartDatum = (a: ChartDatumRef, b: ChartDatumRef) =>
@@ -16,7 +16,7 @@ type Entry = { element: SVGGraphicsElement; datum: ChartDatum };
 const object = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const pair = (value: unknown): value is [number, number] =>
   Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === "number" && Number.isFinite(n));
-const roles = new Set(["point", "item", "bin", "box", "outlier", "value", "cell", "interval"]);
+const roles: ReadonlySet<string> = new Set(chartDatumRoles);
 export function isChartDatum(value: unknown): value is ChartDatum {
   return (
     object(value) &&
@@ -113,7 +113,7 @@ export function createChartInspector(options: {
               : ".stdlib-chart-sparkline, .stdlib-chart-stat-sparkline",
           )
       : (item.element.querySelector(".stdlib-chart-bar-gauge-fill, .stdlib-chart-gauge-fill, .stdlib-chart-stat-value") ??
-        item.element.querySelector("rect, path, circle"));
+        item.element.querySelector(":is(rect, path, circle):not(.k2b-chart-category-band)"));
     const paint = source ? source.ownerDocument.defaultView?.getComputedStyle(source) : undefined;
     const color =
       (point || item.element.hasAttribute("data-chart-reference") ? paint?.stroke : paint?.fill) ||
