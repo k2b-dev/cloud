@@ -4150,6 +4150,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 auto;
 }
 
+/* A row's own checkbox, such as "done": in the icon column on the section's
+   text edge, with the row's usual gap before its title or icon. It always
+   shows, since it carries the row's state. */
+.k2b-ui .k2b-detail-panel__action-row > .k2b-detail-panel__action-check {
+  width: 1.25rem;
+  flex: 0 0 1.25rem;
+  align-items: flex-start;
+  justify-content: center;
+  margin-inline-end: 0.625rem;
+}
+
 .k2b-ui .k2b-button.k2b-detail-panel__action-secondary,
 .k2b-ui .k2b-button.k2b-detail-panel__action-menu-trigger {
   min-width: 2.25rem;
@@ -10008,6 +10019,27 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-choice-slider-thumb-size: 1.75rem;
   height: 2.75rem;
   margin: 0 1rem;
+}
+
+/* The indicator: the same rail, fill and thumb in 24 px for a trigger that
+   opens the slider. It never takes the pointer; the trigger does. */
+.k2b-ui .k2b-choice-slider[data-size="indicator"] {
+  display: inline-block;
+  flex: none;
+  width: 1.5rem;
+  height: 0.875rem;
+  vertical-align: middle;
+}
+
+.k2b-ui .k2b-choice-slider[data-size="indicator"] .k2b-choice-slider__track {
+  --k2b-choice-slider-overhang: 0rem;
+  --k2b-choice-slider-rail-height: 0.1875rem;
+  --k2b-choice-slider-thumb-size: 0.625rem;
+  display: block;
+  height: 100%;
+  margin: 0 0.125rem;
+  cursor: inherit;
+  pointer-events: none;
 }
 
 .k2b-ui .k2b-slider output,

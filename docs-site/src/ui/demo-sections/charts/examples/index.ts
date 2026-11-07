@@ -44,7 +44,8 @@ export const pageKind = (example: ChartShowcaseExample): string => {
 
 /** One page per kind, in registry order; a known catalog name titles it, the first example describes it. */
 export const chartShowcaseKinds: readonly ChartShowcaseKind[] = [...new Set(chartShowcaseExamples.map(pageKind))].map((kind) => {
-  const examples = chartShowcaseExamples.filter((example) => pageKind(example) === kind);
+  const all = chartShowcaseExamples.filter((example) => pageKind(example) === kind);
+  const examples = [...all.filter((example) => example.lead), ...all.filter((example) => !example.lead)];
   const first = examples[0]!;
   const title = plannedChartKinds.find((planned) => planned.kind === kind)?.title ?? first.title;
   return { kind, slug: slug(kind), title, summary: first.summary, question: first.question, examples };

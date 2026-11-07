@@ -41,7 +41,10 @@ const render = async <E extends AuthContext>(c: Context<E>, address: PwaAddress)
   if (record) await aiConversations.markConversationViewed({ conversationId: record.id, ownerUserId: user.id });
   const conversation = record ? { ...record, unreadCompletion: false } : null;
   const [detail, timeline] = conversation
-    ? await Promise.all([loadAiStreamState(conversation), aiConversations.listConversationTimeline({ conversationId: conversation.id })])
+    ? await Promise.all([
+        loadAiStreamState(conversation, c.get("actor").kind === "user" ? user.id : null),
+        aiConversations.listConversationTimeline({ conversationId: conversation.id }),
+      ])
     : [null, []];
   if (address.level === "chat" && !conversation) c.status(404);
   // Every chat or the archive: its first page and the archive's size, read with the same owner rule as the web list.

@@ -1,5 +1,5 @@
-import { ChoiceSlider, IconButton, useLocale } from "@k2b/ui";
-import { createSignal, type JSX, Show } from "solid-js";
+import { Button, ChoiceSlider, IconButton, useLocale } from "@k2b/ui";
+import { createSignal, createUniqueId, type JSX, Show } from "solid-js";
 import { AI_MODEL_CLASSES, type AiModelClass, type AiPeopleModelIcon } from "../shared/ai-models";
 import { aiModelChooserMessages } from "./model-chooser-messages";
 import { AiModelIcon } from "./model-icon";
@@ -19,6 +19,45 @@ export const aiModelClassLabel = (locale: string, modelClass: AiModelClass): str
   aiModelChooserMessages.resolve([locale]).t[`class_${modelClass}`];
 export const aiModelClassSubtitle = (locale: string, modelClass: AiModelClass): string =>
   aiModelChooserMessages.resolve([locale]).t[`classSub_${modelClass}`];
+
+/**
+ * The card when the models could not be loaded: what happened and one way on. The trigger still opens it, so a failed
+ * load is never a dead end.
+ */
+export function AiModelCardError(props: {
+  onRetry: () => void;
+  /** The models load again; the button waits. */
+  busy?: boolean;
+  size?: "md" | "lg";
+  /** The button's id, so the opener can move focus to it. */
+  retryId?: string;
+}): JSX.Element {
+  const locale = useLocale();
+  const t = () => aiModelChooserMessages.resolve([locale()]).t;
+  const described = `ai-model-error-${createUniqueId()}`;
+  return (
+    <div class="grid justify-items-center gap-2 px-2 py-1.5 text-center text-[0.84375rem]" data-ai-model-card="error">
+      <i class="ti ti-cloud-off text-[1.375rem] text-(--k2b-text-muted)" aria-hidden="true" />
+      <span class="grid gap-1" id={described}>
+        <b class="font-semibold">{t().loadFailed}</b>
+        <span class="text-xs text-(--k2b-text-muted)">{t().loadFailedSub}</span>
+      </span>
+      <Button
+        id={props.retryId}
+        type="button"
+        variant="secondary"
+        size={props.size === "lg" ? "lg" : "md"}
+        class={props.size === "lg" ? "min-h-11!" : undefined}
+        loading={props.busy}
+        aria-describedby={described}
+        onClick={() => props.onRetry()}
+      >
+        <i class="ti ti-refresh" aria-hidden="true" />
+        {t().retry}
+      </Button>
+    </div>
+  );
+}
 
 /**
  * The model card: the class in accent colour, the model behind it, one fixed line that always says what the class
@@ -66,14 +105,24 @@ export function AiModelCard(props: {
         entry.unavailable ?? aiModelClassSubtitle(locale(), entry.class),
       ].join(", "),
     }));
+  const lg = () => props.size === "lg";
   const atDefault = () => props.value === "balanced" || !props.stops.some((entry) => entry.class === "balanced");
   return (
     <div class="grid gap-0.5" data-ai-model-card={props.preview ? "preview" : ""} aria-hidden={props.preview ? "true" : undefined}>
-      <div class="grid grid-cols-[2rem_minmax(0,1fr)_2rem] items-center">
-        <i class="ti ti-gauge grid place-items-center text-(--k2b-text-muted)" aria-hidden="true" />
+      {/* The left column stays empty, so the level stands in the middle between it and the reset. */}
+      <div
+        class="grid items-center"
+        classList={{ "grid-cols-[2rem_minmax(0,1fr)_2rem]": !lg(), "grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]": lg() }}
+      >
+        <span />
         <span
-          class="truncate text-center text-[1.0625rem] leading-snug font-semibold tracking-tight"
-          classList={{ "text-(--k2b-action)": !warn(), "text-(--k2b-warning-text)": warn() }}
+          class="truncate text-center leading-snug font-semibold tracking-tight"
+          classList={{
+            "text-[1.0625rem]": !lg(),
+            "text-[1.1875rem]": lg(),
+            "text-(--k2b-action)": !warn(),
+            "text-(--k2b-warning-text)": warn(),
+          }}
         >
           {level()}
         </span>
@@ -81,7 +130,8 @@ export function AiModelCard(props: {
           <IconButton
             type="button"
             variant="ghost"
-            size="sm"
+            size={lg() ? "lg" : "sm"}
+            class={lg() ? "size-11!" : undefined}
             label={t().resetTo}
             tabIndex={atDefault() || props.preview ? -1 : undefined}
             onClick={() => props.onChoose?.("balanced")}
@@ -103,6 +153,7 @@ export function AiModelCard(props: {
           <button
             type="button"
             class="inline-flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-sm text-(--k2b-text-secondary) hover:bg-(--k2b-surface-muted) hover:text-(--k2b-text) focus-visible:outline-2 focus-visible:outline-(--k2b-focus-ring)"
+            classList={{ "min-h-11": lg() }}
             aria-label={`${t().allModels}: ${name()}`}
             disabled={props.disabled}
             onClick={() => props.onOpenList?.()}
