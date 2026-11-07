@@ -419,7 +419,10 @@ Read `cld pulse reference dashboards.md` for a complete website example.
 The Assistant asks before saving. Updates use the revision from
 `dashboard.read` or `dashboards get` so a stale edit cannot overwrite a newer one.
 
-A dashboard groups number, line, bar, table, funnel, and map panels into sections.
+A dashboard groups numbers, charts, tables, funnels, and maps into sections.
+Charts also include pie, donut, scatter, histogram, box plot, heatmap, gauge,
+bar gauge, and sparkline. See [Dashboard chart columns](/en/docs/ai/pulse-dashboard-charts)
+for each kind's SQL column mapping and limits.
 A named section can include an icon, color, and caption describing its sources
 or cadence; these come from the saved definition.
 A map panel shades countries by one value and lists the same numbers. Its `x`

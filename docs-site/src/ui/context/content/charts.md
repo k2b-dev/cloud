@@ -1079,3 +1079,12 @@ every number readable without a pointer. Countries too small for a shape appear
 as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
+
+## SQL dashboard consumers
+
+Pulse maps selected SQL columns to the same portable chart description as
+Chat and Notebooks, validates it with the unbounded Editor chart schema, and
+keeps its own eight-series, 480-point and 3,840-produced-mark limits. Null SQL
+values stay gaps. The line host retains its base-zone ticks, stable series
+IDs and ChartExplorer row keys. See [Pulse dashboard chart columns](/en/docs/ai/pulse-dashboard-charts)
+for the available mappings.

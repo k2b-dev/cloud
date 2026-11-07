@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { launchBrowser } from "../../../ui/test/browser";
 import type { Dashboard } from "../dashboard-contracts";
+import type { DashboardPanelData } from "../dashboard-result";
 import {
   baseOverviewFixture,
   buildWorkspaceHarness,
@@ -46,6 +47,7 @@ const open = async (
     width?: number;
     dark?: boolean;
     dashboard?: Dashboard;
+    panelData?: Record<string, DashboardPanelData>;
     public?: boolean;
     empty?: boolean;
     deferred?: Promise<void>;
@@ -100,7 +102,9 @@ const open = async (
       const id = decodeURIComponent(path.split("/").at(-1)!);
       const panel = dashboard.definition.panels.find((panel) => panel.id === id);
       if (!panel) return route.fulfill({ status: 404, json: { code: "NOT_FOUND" } });
-      const reply = panels.get(id) ?? { json: dashboardTestPanelResult(panel) };
+      const fixture = dashboardTestPanelResult(panel);
+      if (fixture.lastGood && options.panelData?.[id]) fixture.lastGood.data = options.panelData[id]!;
+      const reply = panels.get(id) ?? { json: fixture };
       if (reply.wait) await reply.wait;
       if (reply.abort) return route.abort("failed");
       return route.fulfill({ status: reply.status, json: reply.json });
@@ -1318,5 +1322,90 @@ test("a dashboard-change 404 clears old values and reloads without claiming acce
     expect(await tab.locator('[data-panel="req"] .k2b-chart').count()).toBe(1);
   } finally {
     await tab.close();
+  }
+}, 30_000);
+
+test("catalog SQL charts keep their frame through empty, invalid and recovered results", async () => {
+  const source = dashboardTestKinds.definition.panels[1]!;
+  const panels = (["pie", "donut", "scatter", "histogram", "boxplot", "heatmap", "gauge", "barGauge", "sparkline"] as const).map(
+    (kind) => ({
+      ...source,
+      id: kind,
+      title: kind,
+      kind,
+      columns: kind === "heatmap" ? ["x", "row", "value"] : ["histogram", "gauge", "sparkline"].includes(kind) ? ["value"] : ["x", "value"],
+      x: ["histogram", "gauge", "sparkline"].includes(kind) ? undefined : "x",
+      series: kind === "heatmap" ? "row" : undefined,
+    }),
+  );
+  const fixture = { ...dashboardTestKinds, id: "Catalog", definition: { panels } };
+  const panelData = Object.fromEntries(
+    panels.map((panel) => [
+      panel.id,
+      {
+        columns: panel.columns.map((name) => ({ name, type: "Float64" })),
+        rows:
+          panel.kind === "heatmap"
+            ? [
+                ["A", "North", 4],
+                ["B", "North", null],
+                ["A", "South", 8],
+              ]
+            : panel.kind === "gauge"
+              ? [[42]]
+              : panel.columns.length === 1
+                ? [[1], [2], [3]]
+                : panel.kind === "scatter"
+                  ? [
+                      [1, 2],
+                      [2, null],
+                      [3, 4],
+                    ]
+                  : [
+                      ["A", 4],
+                      ["B", 8],
+                    ],
+      },
+    ]),
+  );
+  for (const [width, dark] of [
+    [1440, false],
+    [390, false],
+    [390, true],
+  ] as const) {
+    const view = await open({ width, dark, dashboard: fixture, panelData });
+    const errors: string[] = [];
+    view.tab.on("pageerror", (error) => errors.push(error.message));
+    try {
+      await ready(view.tab);
+      expect(await view.tab.locator(".pulse-dashboard__plot .k2b-chart").count()).toBe(panels.length);
+      expect(await view.tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+      const target = view.tab.locator('[data-panel="pie"]');
+      await target.scrollIntoViewIfNeeded();
+      const readyBox = await target.boundingBox();
+      const chart = target.locator(".k2b-chart");
+      await chart.focus();
+      await chart.press("ArrowRight");
+      await target.locator('[role="tooltip"]:popover-open').waitFor();
+      const good = {
+        ...dashboardTestPanelResult(panels[0]!),
+        lastGood: { ...dashboardTestPanelResult(panels[0]!).lastGood!, data: panelData.pie! },
+      };
+      view.panels.set("pie", { json: { ...good, status: "error", error: "PANEL_RESULT_INVALID", lastGood: null } });
+      await view.tab.reload();
+      await target.getByRole("alert").waitFor();
+      expect((await target.boundingBox())!.height).toBe(readyBox!.height);
+      view.panels.set("pie", { json: { ...good, lastGood: { ...good.lastGood!, data: { ...panelData.pie!, rows: [] } } } });
+      await target.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+      await target.getByText("Keine Werte in diesem Zeitraum").waitFor();
+      expect((await target.boundingBox())!.height).toBe(readyBox!.height);
+      view.panels.set("pie", { json: good });
+      await view.tab.reload();
+      await target.locator(".k2b-chart").waitFor();
+      expect((await target.boundingBox())!.height).toBe(readyBox!.height);
+      expect(errors).toEqual([]);
+    } finally {
+      await view.tab.close();
+    }
   }
 }, 30_000);
