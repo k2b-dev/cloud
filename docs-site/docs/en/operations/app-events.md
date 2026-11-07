@@ -125,9 +125,10 @@ These commands call the matching administrative endpoints:
 Spaces publishes `spaces.item.created`, `spaces.item.completed`,
 `spaces.comment.created`, `spaces.item.updated`, and `spaces.item.due`.
 Notebooks publishes `notebooks.notebook.created`, `notebooks.notebook.updated`,
-`notebooks.note.created`, and `notebooks.note.updated`. All are version 1
-resource events with public refs. Only `spaces.item.updated` carries data:
-`changed` lists `assignees`, `due`, or `status`, with no old or new values. They are retained through the
+`notebooks.note.created`, `notebooks.note.updated`, and `notebooks.comment.created`.
+All are version 1 resource events with public refs. Only `spaces.item.updated`
+carries data: `changed` lists `assignees`, `due`, or `status`, with no old or new
+values. They are retained through the
 normal event pipeline, but **are not delivered to app subscribers**. Retrying,
 redelivering, or restarting does not remove the authorization block.
 
@@ -245,13 +246,18 @@ events. Core ingests serially under normal operation; deliveries are ordered
 by acceptance within each subscription and subject. Replaying ingestion dead
 letters can accept older events later, so handlers must tolerate that order.
 
+New page discussion posts publish one transactional event per post, without
+comment text. Edits and deletions publish none. This discrete write rate shares
+the aggregate capacity below; it does not use the coalesced note-update quota.
+
 ## Plan retention and outage capacity
 
 The stream budget is shared by **all producers**. The producer fixture tests
 measure compact JSON envelopes at **241 bytes** for `spaces.item.created`,
 **243 bytes** for `spaces.item.completed`, **247 bytes** for
-`spaces.comment.created`, **237 bytes** for `spaces.item.due`, and **279 bytes**
-for `spaces.item.updated` with all three change categories, **256 bytes** for either note event,
+`spaces.comment.created`, **237 bytes** for `spaces.item.due`, **279 bytes** for
+`spaces.item.updated` with all three change categories, **256 bytes** for either
+note event, **262 bytes** for `notebooks.comment.created`,
 and **264 bytes** for either notebook event (six-character public IDs, a UUID
 event ID, fixed ISO timestamp, empty data except the change categories, no cause). Mail's
 `mail.message.received` fixture is **292 bytes**, including its UUID receipt
@@ -305,6 +311,16 @@ receipts and other events. Sustained writes above that allowance require more
 capacity or a shorter outage target. Subscriber fan-out and handler duration
 can delay delivery after publication. A missed or expired event requires domain
 reconciliation.
+
+Grids record events are discrete transactional facts with empty data and public
+record/base refs. Each base transaction publishes up to 10,000 individual record
+events, then one bounded overflow summary per affected table. The event budget
+never rejects a domain write. Table/base deletion and restoration emit one
+parent event each, without record fan-out. There is no cross-transaction throttle. Include
+imports and bulk edits when planning peak ingestion, delivery fan-out, and
+outage retention. See [Grids events](/en/docs/reference/grids-events) for the
+mutation and rollback contract. This producer uses the existing platform outbox
+and broker; it needs no additional service or configuration.
 
 Core retains unresolved deliveries for **30 days** from creation or the latest
 administrator redelivery, then marks them

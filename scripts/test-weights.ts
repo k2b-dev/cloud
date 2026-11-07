@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { discoverTestSuites, planShards, suiteWeight, type TestSuite, type TestWeights } from "./run-tests";
+import { discoverTestSuites, planShards, shardTargetMinutes, suiteWeight, type TestSuite, type TestWeights } from "./run-tests";
 
 /** Read only completed suite timing lines, keeping the slowest observation of each suite. */
 export const parseSuiteTimes = (log: string): Map<string, number> => {
@@ -72,10 +72,10 @@ export const jobMode = (name: string): keyof TestWeights | undefined => {
 };
 
 /** A shard cannot split a suite, even when more runners are available. */
-export const recommendShardCount = (suites: TestSuite[], table: Record<string, number>): number | undefined => {
-  if (suites.some((suite) => suiteWeight(suite.name, table) > 15 * 60)) return undefined;
+export const recommendShardCount = (suites: TestSuite[], table: Record<string, number>, targetMinutes = 15): number | undefined => {
+  if (suites.some((suite) => suiteWeight(suite.name, table) > targetMinutes * 60)) return undefined;
   for (let total = 1; total <= suites.length; total += 1) {
-    if (planShards(suites, total, table).every((shard) => shard.seconds <= 15 * 60)) return total;
+    if (planShards(suites, total, table).every((shard) => shard.seconds <= targetMinutes * 60)) return total;
   }
   return undefined;
 };
@@ -93,7 +93,9 @@ Writes scripts/test-weights.json with the maximum seconds per suite in the selec
 previous measurements when the selected runs have no complete observation. Only
 completed suites count; an interrupted suite's runtime is a lower bound.
 Plans the current checkout, excluding Grids from integration, and prints the
-smallest shard count at or below 15 minutes (half the 30-minute job limit).`);
+smallest shard count at or below 11 minutes for WebKit, 15 for unit/integration.
+The WebKit target reserves 2 minutes for warm-up and a measured 1.61x slowdown
+within the unchanged 20-minute execution budget (contributing/testing.md).`);
     return;
   }
   let selectedModes: readonly (keyof TestWeights)[] = modes;
@@ -158,16 +160,17 @@ smallest shard count at or below 15 minutes (half the 30-minute job limit).`);
       console.log("  No suites selected in the current checkout.");
       continue;
     }
-    const smallest = recommendShardCount(suites, weights[mode]);
+    const target = shardTargetMinutes(mode === "browser");
+    const smallest = recommendShardCount(suites, weights[mode], target);
     if (smallest === undefined) {
-      console.log("  No fitting matrix; split any suite above 15 min before adding shards.");
+      console.log(`  No fitting matrix; split any suite above ${target} min before adding shards.`);
       continue;
     }
     for (let total = 1; total <= smallest; total += 1) {
       const minutes = Math.max(...planShards(suites, total, weights[mode]).map((shard) => shard.seconds)) / 60;
       console.log(`  ${total} shard(s): ${minutes.toFixed(1)} min`);
     }
-    console.log(`  Smallest count at or below 15 min (half the 30-minute job limit): ${smallest}`);
+    console.log(`  Smallest count at or below ${target} min: ${smallest}`);
   }
   writeFileSync(new URL("./test-weights.json", import.meta.url), `${JSON.stringify(weights, null, 2)}\n`);
   console.log("\nWrote scripts/test-weights.json");
