@@ -41,6 +41,10 @@ beforeAll(async () => {
   css = await Bun.file(resolve(import.meta.dir, "../../dist/styles.css")).text();
   const { default: ServerChart } = await import(resolve(import.meta.dir, "../../dist/ssr/content/Chart.js"));
   const { LocaleProvider } = await import(resolve(import.meta.dir, "../../dist/ssr/intl/locale.js"));
+  const { chartMessages } = await import(resolve(import.meta.dir, "../../dist/ssr/content/chart-messages.js"));
+  const messages = chartMessages.resolve(["de"]).t;
+  expect(messages.chartFields({ key: "total" })).toBe("Gesamt");
+  expect(messages.chartFields({ key: "areaTotal" })).toBe("Zusammen");
   for (const normalize of [false, true])
     ssr.push(
       renderToString(() =>
