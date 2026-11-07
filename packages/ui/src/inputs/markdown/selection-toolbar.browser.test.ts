@@ -17,6 +17,7 @@ render(
   () => [
     createComponent(MarkdownEditor, { label: "Note", toolbar: "selection", lines: 4, value: "Hello world, this is a short note.", onValueChange: (value) => (globalThis.text = value) }),
     createComponent(MarkdownEditor, { label: "Fixed", lines: 2, value: "Fixed toolbar" }),
+    createComponent(MarkdownEditor, { label: "Long", toolbar: "selection", lines: 3, value: Array.from({ length: 30 }, (_, index) => "Line " + (index + 1)).join("\\n") }),
   ],
   document.getElementById("app"),
 );
@@ -81,8 +82,12 @@ describe("MarkdownEditor toolbar=selection", () => {
       expect(await box(page, ".k2b-markdown-editor")).toEqual(before);
       await toolbar(page).getByRole("button", { name: "Bold" }).click();
       expect(await page.getByRole("textbox", { name: "Note" }).inputValue()).toBe("Hello **world**, this is a short note.");
-      // The toolbar follows the selection, which stays on the word.
+      // The toolbar follows the selection, which stays on the word, and Bold now reads as pressed.
       expect(await toolbar(page).isVisible()).toBe(true);
+      await page.waitForFunction(
+        () => document.querySelector(".k2b-selection-toolbar [aria-label='Bold']")?.getAttribute("aria-pressed") === "true",
+      );
+      expect(await toolbar(page).getByRole("button", { name: "Italic" }).getAttribute("aria-pressed")).toBe("false");
       expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(null);
     } finally {
       await page.context().close();
@@ -104,6 +109,14 @@ describe("MarkdownEditor toolbar=selection", () => {
       await shown(page);
       await page.keyboard.press("ArrowRight");
       await hidden(page);
+      // Escape forgets its selection once it collapses: the same words selected again show the toolbar.
+      await page.keyboard.press("Shift+ArrowLeft");
+      await shown(page);
+      await page.keyboard.press("Escape");
+      await hidden(page);
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("Shift+ArrowRight");
+      await shown(page);
       await select(page, 8, 5);
       await shown(page);
       await page.locator("#elsewhere").focus();
@@ -131,6 +144,27 @@ describe("MarkdownEditor toolbar=selection", () => {
       await page.keyboard.press("ArrowRight");
       await page.keyboard.press("Enter");
       await noteIs(page, "Hello *world*, this is a short note.");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("it hides while the selected line is scrolled out of the text and returns with it", async () => {
+    const page = await load();
+    try {
+      const long = page.getByRole("textbox", { name: "Long" });
+      await long.focus();
+      await long.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(0, 0));
+      for (let index = 0; index < 4; index++) await page.keyboard.press("Shift+ArrowRight");
+      await shown(page);
+      await long.evaluate((element: HTMLTextAreaElement) => {
+        element.scrollTop = 300;
+      });
+      await hidden(page);
+      await long.evaluate((element: HTMLTextAreaElement) => {
+        element.scrollTop = 0;
+      });
+      await shown(page);
     } finally {
       await page.context().close();
     }

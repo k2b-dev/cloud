@@ -30,6 +30,8 @@ export type ToolbarActionProps = {
   /** 1 is most important. Larger numbers move first; ties move later DOM actions first. Omit to keep fixed. */
   priority?: number;
   disabled?: boolean;
+  /** Makes the action a toggle and exposes its state as `aria-pressed`, such as Bold over bold text. */
+  pressed?: boolean;
   onClick?: () => void;
 };
 export type ToolbarLabelProps = { children: JSX.Element; class?: string };
@@ -128,6 +130,7 @@ const ToolbarAction = (props: ToolbarActionProps): JSX.Element => {
       variant="ghost"
       tooltip={tooltip()}
       aria-keyshortcuts={ariaShortcut(props.keys, platform())}
+      aria-pressed={props.pressed === undefined ? undefined : props.pressed ? "true" : "false"}
       data-priority={props.priority}
       disabled={props.disabled}
       onClick={() => props.onClick?.()}

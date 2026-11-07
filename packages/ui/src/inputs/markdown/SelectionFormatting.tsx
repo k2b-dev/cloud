@@ -1,4 +1,4 @@
-import { batch, createSignal, type JSX, onCleanup, onMount } from "solid-js";
+import { batch, createEffect, createSignal, type JSX, onCleanup, onMount } from "solid-js";
 import { SelectionToolbar } from "../../actions/SelectionToolbar";
 import { Toolbar } from "../../actions/Toolbar";
 import { insertLink, toggleBold, toggleBulletList, toggleCode, toggleItalic, toggleNumberedList, toggleQuote } from "./actions";
@@ -49,6 +49,8 @@ export function SelectionFormatting(props: {
   /** Changes whenever the text, the selection, or the presentation layer changed. */
   revision: () => unknown;
   disabled?: boolean;
+  /** The formats at the selection, such as `bold`, shown as each action's pressed state. */
+  activeFormats: () => Set<string>;
   /** Receives the handlers the textarea forwards. */
   bind: (handlers: { blur: (next: Element | null) => void; focus: () => void; escape: () => boolean }) => void;
 }): JSX.Element {
@@ -74,6 +76,14 @@ export function SelectionFormatting(props: {
     if (dismissed() === selectionKey()) return null;
     return textRangeBox(layer, surface, textarea.selectionStart, textarea.selectionEnd);
   };
+
+  // Escape closes the toolbar for that one selection: a collapsed selection forgets it, so selecting the same words
+  // again shows it again.
+  createEffect(() => {
+    props.revision();
+    const textarea = props.textarea();
+    if (textarea && textarea.selectionStart === textarea.selectionEnd) setDismissed(undefined);
+  });
 
   props.bind({
     focus: () => setTextFocused(true),
@@ -106,10 +116,19 @@ export function SelectionFormatting(props: {
       document.addEventListener("pointerup", release, true);
       document.addEventListener("pointercancel", release, true);
     };
+    // Selection changes can arrive as one event, so the next key or press that may select again forgets Escape too.
+    const forget = (event: Event) => {
+      if (event instanceof KeyboardEvent && ["Escape", "Shift", "Control", "Meta", "Alt"].includes(event.key)) return;
+      setDismissed(undefined);
+    };
     textarea?.addEventListener("pointerdown", press);
+    textarea?.addEventListener("pointerdown", forget);
+    textarea?.addEventListener("keydown", forget);
     onCleanup(() => {
       query.removeEventListener("change", update);
       textarea?.removeEventListener("pointerdown", press);
+      textarea?.removeEventListener("pointerdown", forget);
+      textarea?.removeEventListener("keydown", forget);
     });
   });
 
@@ -135,14 +154,49 @@ export function SelectionFormatting(props: {
           if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setToolbarFocused(false);
         }}
       >
-        <Toolbar.Action label={messages().bold} icon="ti ti-bold" keys="mod+b" onClick={run(toggleBold)} />
-        <Toolbar.Action label={messages().italic} icon="ti ti-italic" keys="mod+i" onClick={run(toggleItalic)} />
-        <Toolbar.Action label={messages().inlineCode} icon="ti ti-code" keys="mod+e" onClick={run(toggleCode)} />
+        <Toolbar.Action
+          label={messages().bold}
+          icon="ti ti-bold"
+          pressed={props.activeFormats().has("bold")}
+          keys="mod+b"
+          onClick={run(toggleBold)}
+        />
+        <Toolbar.Action
+          label={messages().italic}
+          icon="ti ti-italic"
+          pressed={props.activeFormats().has("italic")}
+          keys="mod+i"
+          onClick={run(toggleItalic)}
+        />
+        <Toolbar.Action
+          label={messages().inlineCode}
+          icon="ti ti-code"
+          pressed={props.activeFormats().has("code")}
+          keys="mod+e"
+          onClick={run(toggleCode)}
+        />
         <Toolbar.Action label={messages().link} icon="ti ti-link" keys="mod+k" onClick={run(insertLink)} />
         <Toolbar.Separator />
-        <Toolbar.Action label={messages().bulletList} icon="ti ti-list" keys="mod+shift+8" onClick={run(toggleBulletList)} />
-        <Toolbar.Action label={messages().numberedList} icon="ti ti-list-numbers" keys="mod+shift+7" onClick={run(toggleNumberedList)} />
-        <Toolbar.Action label={messages().quote} icon="ti ti-quote" onClick={run(toggleQuote)} />
+        <Toolbar.Action
+          label={messages().bulletList}
+          icon="ti ti-list"
+          pressed={props.activeFormats().has("bullet")}
+          keys="mod+shift+8"
+          onClick={run(toggleBulletList)}
+        />
+        <Toolbar.Action
+          label={messages().numberedList}
+          icon="ti ti-list-numbers"
+          pressed={props.activeFormats().has("ordered")}
+          keys="mod+shift+7"
+          onClick={run(toggleNumberedList)}
+        />
+        <Toolbar.Action
+          label={messages().quote}
+          icon="ti ti-quote"
+          pressed={props.activeFormats().has("quote")}
+          onClick={run(toggleQuote)}
+        />
       </div>
     </SelectionToolbar>
   );

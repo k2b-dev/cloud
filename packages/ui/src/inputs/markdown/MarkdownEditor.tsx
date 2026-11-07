@@ -591,6 +591,8 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
                 preview.scrollTop = event.currentTarget.scrollTop;
                 preview.scrollLeft = event.currentTarget.scrollLeft;
               }
+              // The selection toolbar hides while its line is scrolled away and shows again when it returns.
+              bumpSelection();
             }}
             onFocus={() => selectionHandlers?.focus()}
             onCompositionStart={() => setComposing(true)}
@@ -619,6 +621,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
               layer={() => preview}
               surface={() => surface}
               revision={selectionRevision}
+              activeFormats={activeFormats}
               disabled={props.disabled}
               bind={(handlers) => {
                 selectionHandlers = handlers;
