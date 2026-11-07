@@ -17,7 +17,7 @@ export default new Hono<MailApiContext>().post(
   "/mailboxes/:mailboxId/conversations/completion",
   describeRoute({
     tags: ["Mail:Conversations"],
-    summary: "Mark conversations done or reopen them",
+    summary: "Update conversation work status",
     ...requiresAuth,
     responses: {
       200: jsonResponse(conversationCompletionResultSchema, "Conversation results"),

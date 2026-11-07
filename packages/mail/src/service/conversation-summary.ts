@@ -19,8 +19,8 @@ export type ConversationContentSummary = {
   summary: string | null;
   summaryRevision: number;
   conversationRevision: number;
-  /** `person` = a person wrote or edited the text; `workflow` = a rule's AI step; `manual_ai` = AI on a person's request. */
-  source: "person" | "workflow" | "manual_ai" | null;
+  /** `person` = a person wrote or edited the text; `workflow` = a rule's AI step; `manual_ai` = AI on a person's request; `automation` = prepared capability output. */
+  source: "person" | "workflow" | "manual_ai" | "automation" | null;
   author: ConversationSummaryAuthor | null;
   /** The current text was written by AI. */
   ai: boolean;
@@ -163,14 +163,18 @@ const applyConversationSummaryInTransaction = async (params: {
   input: UpdateConversationSummary;
   db: SqlClient;
   activityMetadata?: Record<string, unknown>;
+  automated?: boolean;
+  expectedRevision?: number;
 }): Promise<Result<ConversationSummaryMutation>> => {
   const current = await loadConversationSummary({ ...params, lock: true });
   if (!current) return fail(err.notFound("Conversation"));
+  if (params.expectedRevision !== undefined && Number(current.revision) !== params.expectedRevision)
+    return fail(err.conflict("Conversation was changed by another collaborator"));
   if (Number(current.summary_revision) !== params.input.expectedSummaryRevision) {
     return fail(err.conflict("Conversation summary was changed by another collaborator"));
   }
   // Even clearing a summary or accepting unchanged AI text is a person's decision.
-  if (params.context === null && current.summary_metadata.source === "person") {
+  if ((params.context === null || params.automated) && current.summary_metadata.source === "person") {
     return ok({ value: mapConversationSummary(current), event: null, skipped: "edited_by_person" });
   }
   const person = params.context ? userBackedActor(params.context) : null;
@@ -179,14 +183,27 @@ const applyConversationSummaryInTransaction = async (params: {
     ? await params.db<{ id: string; name: string }[]>`SELECT w.id, w.name FROM workflows.workflow w
         JOIN workflows.version v ON v.workflow_id = w.id WHERE v.id = ${workflowVersionId}::uuid`
     : [];
+  // Sync may link envelopes before hydration advances the conversation revision.
+  // Automated text must not claim to cover messages whose body is still unavailable.
+  const [coverage] = params.automated
+    ? await params.db<{ message_count: number; last_message_seq: string | null }[]>`
+        SELECT count(*)::int AS message_count, max(m.link_seq)::text AS last_message_seq
+        FROM mail.conversation_messages m
+        JOIN mail.message_contents content ON content.id = m.message_id
+        WHERE m.conversation_id = ${params.conversationId}::uuid
+          AND content.hydration_status = 'complete'
+          AND NOT ${isUnsentOutboundMessage(sql`m.message_id`)}
+      `
+    : [current];
+  if (!coverage) return fail(err.internal("Conversation summary coverage could not be loaded"));
   const metadata: SummaryMetadata = {
-    source: params.context ? "person" : "workflow",
+    source: params.automated ? "automation" : params.context ? "person" : "workflow",
     author: person ? { kind: "user", id: person.id, name: person.displayName } : workflow ? { kind: "workflow", ...workflow } : null,
     ai: false,
     generatedAt: new Date().toISOString(),
-    coveredMessageCount: current.message_count,
-    coveredThrough: current.last_message_seq,
-    snapshotMessageCount: current.message_count,
+    coveredMessageCount: coverage.message_count,
+    coveredThrough: coverage.last_message_seq,
+    snapshotMessageCount: coverage.message_count,
     truncated: false,
     nextStep: null,
   };
@@ -253,6 +270,8 @@ export const updateConversationSummaryInTransaction = async (params: {
   db: SqlClient;
   actorOverride?: ActorRef;
   activityMetadata?: Record<string, unknown>;
+  automated?: boolean;
+  expectedRevision?: number;
 }): Promise<Result<ConversationSummaryMutation>> => {
   const allowed = await requireConversationCollaborationPermission(
     params.context,
@@ -289,6 +308,30 @@ export const updateConversationSummary = async (params: {
     if (!result.ok) return result;
     if (result.data.event) mailLive.wake();
     return getConversationSummary(params);
+  } catch {
+    return fail(err.internal("Failed to update conversation summary"));
+  }
+};
+
+/** Writes caller-supplied automation output without replacing a person's text, including a cleared summary. */
+export const writeAutomatedConversationSummary = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  conversationId: string;
+  input: UpdateConversationSummary & { expectedRevision: number };
+}): Promise<Result<{ value: ConversationContentSummary; skipped: "edited_by_person" | null }>> => {
+  try {
+    const result = await sql.begin((db) =>
+      updateConversationSummaryInTransaction({
+        ...params,
+        db,
+        automated: true,
+        expectedRevision: params.input.expectedRevision,
+      }),
+    );
+    if (!result.ok) return result;
+    if (result.data.event) mailLive.wake();
+    return ok({ value: result.data.value, skipped: result.data.skipped ?? null });
   } catch {
     return fail(err.internal("Failed to update conversation summary"));
   }
