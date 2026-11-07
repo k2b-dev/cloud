@@ -254,6 +254,22 @@ describe("Cloud invocation JWT", () => {
     expect(await verify(partial)).toBeNull();
   });
 
+  test("event visibility proofs require a complete mandate and cannot authorize Actions", async () => {
+    const proof = {
+      ...baseClaims(),
+      credential_kind: "mandate" as const,
+      mandate_id: "10ec1c74-858b-4a98-9ba7-ab2276754c69",
+      mandate_revision: 1,
+      workload_type: "fixture",
+      workload_id: "one",
+      workload_event: "10ec1c74-858b-4a98-9ba7-ab2276754c70",
+    };
+    expect(await verify(await token(proof))).toMatchObject({ workload_event: proof.workload_event });
+    expect(await verify(await token({ ...baseClaims(), workload_event: proof.workload_event }))).toBeNull();
+    const action = "capability.action.run:message.read";
+    expect(await verify(await token({ ...proof, op: action }), { operation: action })).toBeNull();
+  });
+
   test("rejects wrong audience, operation, and schema binding", async () => {
     const signed = await token();
     expect(await verify(signed, { targetAppId: "spaces" })).toBeNull();

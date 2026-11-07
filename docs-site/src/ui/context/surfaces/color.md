@@ -237,7 +237,7 @@ A person has one color wherever they appear: the tint behind their avatar
 initials, their cursor in a shared text, and the passages they comment on.
 `personColor(name)` returns it from the display name, and `Avatar` uses the
 same palette (`PERSON_COLORS`), so build person colors from it instead of a
-second palette. The palette has no cyan, which means AI, and no yellow, which
+second palette. The palette has no plum, which means AI, and no yellow, which
 reads as a text highlight. Two people can share a color, so the name always
 appears next to it.
 
@@ -251,11 +251,12 @@ six-digit accent works. See
 [Define an application](/en/docs/build/define-app#set-the-application-appearance) and
 [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#keep-color-roles-independent).
 
-Cyan means AI. `--k2b-ai-accent` marks AI surfaces, which also carry ✦ or the
+Plum means AI. `--k2b-ai-accent` (`#8e1b6f` light, `#f0abdc` dark) and
+`--k2b-ai-surface` mark AI surfaces, which also carry ✦ or the
 word "KI", so no app color may look like it: keep the accent and every
 background stop at least 20° of OKLCH hue away from both AI accents. Near-gray
 colors carry no hue and are fine. Only the Assistant, the AI app itself, may
-use cyan. In the Cloud repository the `ai-color` check enforces this for every
+use plum. In the Cloud repository the `ai-color` check enforces this for every
 built-in app and for the launchpad's fallback tile colors.
 
 ## Import

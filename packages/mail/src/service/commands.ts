@@ -1,7 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { audit, logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
-import { workflowEffectKey } from "@k2b/cloud/workflows/store";
+import { workflowEffectKey } from "@k2b/cloud/shared";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
 import {

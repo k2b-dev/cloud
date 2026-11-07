@@ -2362,6 +2362,15 @@ create or change visible content. Existing stored content is not backfilled.
 This adds no permission and needs no operator configuration. See
 [App capabilities](/en/docs/platform/capabilities).
 
+## Chat posting Action after the upgrade
+
+Deploy Chat with `chat.message.post` to let authorized background callers post
+results into existing Chat conversations and channels. It uses current write
+access and the normal Chat rate limits; its explicit policy grants no access.
+No new service, setting, secret or data migration is required. Existing item
+discussions keep `chat.discussion.post`. See [Post a message to a Chat
+conversation](/en/docs/platform/chat-discussions#post-a-message-to-a-chat-conversation).
+
 ## Enroll an application before its first start
 
 An administrator can register Ed25519 public keys for stopped and third-party

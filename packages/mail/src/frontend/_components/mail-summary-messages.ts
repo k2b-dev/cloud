@@ -22,6 +22,8 @@ export const mailSummaryMessages = i18n.define({
       onRequestOf: ({ name }: { name: string }) => `AI on request of ${name}`,
       byPerson: ({ name }: { name: string }) => `Written by ${name}`,
       editedByPerson: "Written by a person",
+      byAutomation: "Written by an automation",
+      whyAutomation: "Prepared by an automation. Editing or clearing the summary protects your version from automated replacement.",
       failed_timeout: "The summary was not written: the AI did not answer in time. The conversation is unchanged.",
       failed_provider_unavailable: "The summary was not written: the AI is not reachable right now. The conversation is unchanged.",
       failed_input_too_large: "The summary was not written: the conversation is too long for the AI. The conversation is unchanged.",
@@ -63,6 +65,9 @@ export const mailSummaryMessages = i18n.define({
       onRequestOf: ({ name }: { name: string }) => `KI auf Wunsch von ${name}`,
       byPerson: ({ name }: { name: string }) => `Von ${name} geschrieben`,
       editedByPerson: "Von einer Person geschrieben",
+      byAutomation: "Von einer Automation geschrieben",
+      whyAutomation:
+        "Von einer Automation vorbereitet. Wenn du die Zusammenfassung bearbeitest oder leerst, bleibt deine Fassung vor automatischem Überschreiben geschützt.",
       failed_timeout:
         "Die Zusammenfassung ist nicht entstanden: Die KI hat nicht rechtzeitig geantwortet. Die Unterhaltung ist unverändert.",
       failed_provider_unavailable:

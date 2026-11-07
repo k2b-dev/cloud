@@ -17,9 +17,9 @@ const hue = (hex: string): number => {
 const distance = (x: number, y: number) => Math.min(Math.abs(x - y), 360 - Math.abs(x - y));
 
 describe("person colors", () => {
-  test("stay away from the AI cyan and from highlight yellow", () => {
+  test("stay away from the AI plum and from highlight yellow", () => {
     // `--k2b-ai-accent` in light and dark, and the yellow of a Markdown highlight and the Notebooks accent.
-    const reserved = ["#0891b2", "#22d3ee", "#eab308", "#facc15"].map(hue);
+    const reserved = ["#8e1b6f", "#f0abdc", "#eab308", "#facc15"].map(hue);
     for (const color of PERSON_COLORS) {
       for (const taken of reserved) expect(distance(hue(color), taken), color).toBeGreaterThan(20);
     }

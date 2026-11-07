@@ -48,6 +48,15 @@
       ]
     },
     {
+      "id": 31,
+      "prompt": "Authorize many live channel readers using grants and group memberships changed in the caller transaction.",
+      "expected_output": "Passes the same transaction to getEffectivePermissions(params, tx) and resource junction reads; does not cache permission results or claim the resolver locks grants.",
+      "files": [],
+      "expectations": [
+        "Passes the same transaction to getEffectivePermissions(params, tx) and resource junction reads; does not cache permission results or claim the resolver locks grants."
+      ]
+    },
+    {
       "id": 5,
       "prompt": "Rename a private helper inside the Mail application without changing its behavior.",
       "expected_output": "Keeps ownership in Mail, performs a focused refactor, verifies existing behavior, and explicitly avoids unnecessary public documentation changes.",
@@ -349,6 +358,15 @@
         "Native same-origin POST forms use a same-origin Referrer-Policy, while fetch mutations keep their browser-supplied Origin.",
         "The webhook validates its own credential and its narrow sessionlessRoutes declaration strips attached Cloud session cookies; publicRoutes alone grants no exception.",
         "Does not disable the guard, substitute Host or Referer, or grant a Bearer request fallback authority from a browser cookie."
+      ]
+    },
+    {
+      "id": 30,
+      "prompt": "Prepare a standalone Cloud app test database whose triggers call events.enqueue, without running Core.",
+      "expected_output": "Uses installLiveOutbox(db) from @k2b/cloud/events/testing before app migrations, refuses non-_test databases, and removes copied outbox DDL.",
+      "files": [],
+      "expectations": [
+        "Uses installLiveOutbox(db) from @k2b/cloud/events/testing before app migrations, refuses non-_test databases, and removes copied outbox DDL."
       ]
     }
   ]

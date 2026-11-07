@@ -152,7 +152,26 @@ try {
     }
   `;
   run([process.execPath, "--no-install", "-e", chartsSmoke], consumer);
+  // Browser conditions also run in DOM-free script/sandbox consumers.
+  run([process.execPath, "--no-install", "--conditions=browser", "-e", chartsSmoke], consumer);
   run([process.execPath, "--no-install", "--conditions=browser", "-e", inspectionSmoke], consumer);
+
+  const chartCoreSmoke = `
+    const resolved = import.meta.resolve("@k2b/ui/charts/core");
+    const mode = process.env.CHART_CORE_BROWSER ? "browser" : "ssr";
+    if (!resolved.includes("/node_modules/@k2b/ui/dist/" + mode + "/charts/core/index.js")) {
+      throw new Error("chart core did not resolve inside the packed package: " + resolved);
+    }
+    const core = await import("@k2b/ui/charts/core");
+    if (!core.chartDatumRoles.includes("interval") || "chartRenderers" in core || "chartKinds" in core) {
+      throw new Error("packed chart core has the wrong portable runtime exports");
+    }
+  `;
+  run([process.execPath, "--no-install", "-e", chartCoreSmoke], consumer);
+  run([process.execPath, "--no-install", "--conditions=browser", "-e", chartCoreSmoke], consumer, {
+    ...process.env,
+    CHART_CORE_BROWSER: "1",
+  });
 
   const inspectionEntry = join(consumer, "inspection-entry.ts");
   await Bun.write(inspectionEntry, 'export { inspectChart } from "@k2b/ui/chart-inspection";\n');
