@@ -5,7 +5,7 @@ section: Platform services
 order: 590
 description: Render documents from application data with shared template and PDF services.
 tags: [pdf, templates, gotenberg]
-updated: 2026-10-22
+updated: 2026-11-07
 ---
 
 # PDF and templates
@@ -222,7 +222,82 @@ template stack traces to end users.
 `mergePdfs()` accepts one or more `Uint8Array` PDF files and returns one PDF.
 Cloud preserves input order.
 
-An empty file list fails with `bad_input`.
+An empty file list fails with `bad_input`. Combined input bytes must fit
+`maxPdfBytes`; Cloud checks the total before copying files or contacting the
+renderer. Input filenames do not affect merge order.
+
+## Extract, split, rotate and reorder pages
+
+Use `runPdfTool()` from `@k2b/cloud/services/pdf` for bounded operations on
+existing PDF files. It uses the same operator-configured Gotenberg connection,
+authentication and shared admission as rendering. These operations require the
+PDF engine and metadata routes available in Gotenberg 8.36.0, including
+ExifTool page counts. No additional service or setting is needed.
+
+```ts
+import { runPdfTool } from "@k2b/cloud/services/pdf";
+
+const result = await runPdfTool({
+  files: [uploadedPdf], // Blob, application/pdf or an unspecified MIME type
+  operation: { kind: "reorder", pages: [3, 1, 2] },
+}, { signal: request.signal });
+// result: { data: Uint8Array, contentType, extension: "pdf" | "zip" }
+```
+
+Page numbers start at one. Cloud reads the source page counts before changing
+anything. A missing page, duplicate selection, or invalid operation fails the
+whole request.
+
+| Operation | Input and result |
+| --- | --- |
+| `{ kind: "merge" }` | One or more files, combined in input order into one PDF. |
+| `{ kind: "extract", pages: [1, 3] }` | One file; distinct pages in ascending source order, returned as one PDF. |
+| `{ kind: "split", groups: [[3], [1, 2]] }` | One file; at least two groups, each in ascending source order. No page may occur twice across groups. Returns a ZIP with `part-000001.pdf`, `part-000002.pdf`, etc., in group order. Groups may select a subset of the source. |
+| `{ kind: "rotate", angle: 90, pages: [2] }` | One file; turn selected pages clockwise by 90, 180 or 270 degrees. Omit `pages` to turn every page. |
+| `{ kind: "reorder", pages: [3, 1, 2] }` | One file; every source page exactly once, in the desired output order. |
+
+Extraction preserves source order. To change order, use `reorder`: a Gotenberg
+page selection alone does not guarantee the submitted order with every engine.
+Cloud extracts ascending runs and merges those runs in the requested order.
+
+### Budget a whole operation
+
+`pdfToolLimits(config)` derives limits from the existing renderer settings.
+`validatePdfToolInput(input, config)` checks file sizes, MIME types and selection
+counts before work. `runPdfToolWithConfig(input, config, options)` supports an
+explicit operator configuration and test transport. These helpers are exported
+from `@k2b/cloud/services/pdf`.
+
+- Total source bytes and final PDF or ZIP bytes must each fit `maxPdfBytes`.
+- Repeated source uploads, intermediate merge inputs and all other renderer
+  uploads together have a budget of twice `maxPdfBytes`. Intermediate PDF
+  downloads and the final output together have the same budget; retained
+  intermediate PDFs must fit `maxPdfBytes`.
+- File count and total source page count are each limited by the smaller of
+  `floor(maxHtmlBytes / 8192)` and `floor(timeoutMs / 100) - 1`, with a minimum
+  of one. The first reserves the existing 8 KiB multipart metadata envelope
+  per slot; the second uses the configuration's 100 ms minimum timeout as a
+  work unit. It is a count bound, not a renderer speed estimate.
+- All renderer calls together are limited to `floor(timeoutMs / 100)` (at
+  least two). Inspection and the final merge count too. Metadata fits
+  `maxHtmlBytes`. Configuration values use the existing registry ranges.
+- One configured deadline and the caller's signal cover the whole operation.
+  Every renderer call uses the existing shared two-place admission without
+  a queue. A busy renderer fails the operation; no partial archive is returned.
+
+At the default settings, source and final output are each limited to 10 MiB,
+with 20 MiB for aggregate uploads and PDF downloads, 99 files or source pages,
+and 100 renderer calls. A large file can therefore merge or rotate successfully
+but exceed the work budget when split or reordered. Use smaller documents,
+fewer groups, or an order with fewer ascending runs.
+
+Applications must authenticate and authorize app access before reading an
+upload. Bound the actual request stream before parsing multipart data, including
+requests without `Content-Length`. Reserve local memory admission before
+reading; forward the original request's abort signal and raise its idle timeout
+while waiting for the result. Return a private, non-cacheable PDF or ZIP with
+an attachment filename. The helpers retain no files and accept no user-chosen
+renderer URL or path.
 
 ## Handle renderer errors
 
@@ -231,10 +306,10 @@ An empty file list fails with `bad_input`.
 | Code | Meaning |
 | --- | --- |
 | `busy` | Both shared renderer places are occupied, or admission is unavailable; retry later (503) |
-| `bad_input` | A PDF merge request has no files |
+| `bad_input` | Invalid files, page selection or operation |
 | `not_configured` | The renderer URL or limits are invalid |
 | `html_too_large` | HTML exceeds the deployment limit |
-| `pdf_too_large` | Output exceeds the deployment limit |
+| `pdf_too_large` | Input, output, source pages or aggregate PDF work exceeds the deployment limit |
 | `request_failed` | The renderer could not be reached |
 | `bad_response` | The renderer returned an unsuccessful response |
 | `timeout` | The request exceeded its timeout |
