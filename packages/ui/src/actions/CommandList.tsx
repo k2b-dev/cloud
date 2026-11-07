@@ -164,7 +164,7 @@ export function CommandList(props: {
                     <div
                       id={commandOptionId(props.id, entry.index)}
                       role="option"
-                      class="k2b-dropdown__item k2b-command-list__option"
+                      class="k2b-dropdown__item"
                       aria-selected={entry.index === nav.active()}
                       aria-disabled={entry.item.disabled ? "true" : undefined}
                       data-active={entry.index === nav.active() ? "" : undefined}
