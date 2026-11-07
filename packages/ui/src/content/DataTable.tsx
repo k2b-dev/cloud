@@ -570,6 +570,13 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     return props.rowClass ?? "";
   };
 
+  // A heading given as a JSX node lives in the head; each details line needs its own copy, so it takes text or a fresh call.
+  const detailLabel = (col: DataTableColumn<T>) =>
+    typeof col.header === "function"
+      ? col.header({ col })
+      : typeof col.header === "string" || typeof col.header === "number"
+        ? col.header
+        : col.id;
   const cellContent = (row: T, col: DataTableColumn<T>, value: unknown) =>
     props.renderCell ? props.renderCell({ row, col, value, render: (v) => renderTypedValue(col, v) }) : renderTypedValue(col, value);
 
@@ -646,7 +653,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                 <For each={hiddenColumns()}>
                   {(col) => (
                     <div data-priority={priorityAttr(col)}>
-                      <dt>{renderColumnPart(col.header, col)}</dt>
+                      <dt>{detailLabel(col)}</dt>
                       <dd>{cellContent(row, col, valueOf(row, col))}</dd>
                     </div>
                   )}
@@ -888,6 +895,31 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                       <td class="k2b-data-table__footer-cell k2b-data-table__details-toggle" />
                     </Show>
                   </tr>
+                  {/* Totals of hidden columns stay readable under the totals row while the width hides them. */}
+                  <Show when={detailsPriority()}>
+                    <tr class="k2b-data-table__details k2b-data-table__footer-details">
+                      <td colspan={columnCount()}>
+                        <dl>
+                          <For each={hiddenColumns()}>
+                            {(col) => (
+                              <div data-priority={priorityAttr(col)}>
+                                <dt>{detailLabel(col)}</dt>
+                                <dd>
+                                  {footer().renderCell
+                                    ? footer().renderCell!({
+                                        col,
+                                        value: footer().values?.[col.id],
+                                        render: (v) => renderTypedValue(col, v),
+                                      })
+                                    : renderTypedValue(col, footer().values?.[col.id])}
+                                </dd>
+                              </div>
+                            )}
+                          </For>
+                        </dl>
+                      </td>
+                    </tr>
+                  </Show>
                 </tfoot>
               )}
             </Show>

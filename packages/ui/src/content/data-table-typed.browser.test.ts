@@ -185,10 +185,19 @@ test("narrow tables drop priority 3 below 560 px and 2 below 420 px; row details
     await page.keyboard.press("Enter");
     expect(await toggle.getAttribute("aria-expanded")).toBe("false");
     expect(await next.evaluate((row) => row.getBoundingClientRect().top)).toBe(before);
-    // Wide again: no toggle, no details line, nothing hidden.
+    // Wide again with a row still open: no toggle, no details line, nothing hidden, and the row keeps its line.
+    await page.keyboard.press("Enter");
     await page.locator("#host").evaluate((host) => {
       host.style.width = "900px";
     });
+    expect(
+      await page
+        .locator("tbody tr.k2b-data-table__row")
+        .first()
+        .locator("td")
+        .first()
+        .evaluate((cell) => getComputedStyle(cell).boxShadow),
+    ).toContain("inset");
     expect(await toggle.isVisible()).toBe(false);
     expect(await visibleHeaders(page)).toEqual(["Campaign", "Status", "Sent", "Recipients", "Opened", "Revenue"]);
   } finally {

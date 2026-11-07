@@ -10496,14 +10496,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
 }
 
-/* An open row hands its line to its details; the last row with its details closed ends on the frame. */
-.k2b-ui .k2b-data-table__row[data-details-open="true"] > td,
-.k2b-ui .k2b-data-table__row[data-last="true"]:not([data-details-open]) > td {
+/* The last row ends on the frame although its closed details line follows it. */
+.k2b-ui .k2b-data-table__row[data-last="true"] > td {
   box-shadow: none;
 }
 
-.k2b-ui .k2b-data-table__row[data-details-open="true"] > td + td,
-.k2b-ui .k2b-data-table__row[data-last="true"]:not([data-details-open]) > td + td {
+.k2b-ui .k2b-data-table__row[data-last="true"] > td + td {
   box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
 }
 
@@ -10512,6 +10510,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @container k2b-data-table (max-width: 560px) {
+  /* An open row hands its line to its details, only while they show. */
+  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td {
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td + td {
+    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-last="true"][data-details-open="true"] + .k2b-data-table__details > td {
+    box-shadow: none;
+  }
+
   .k2b-ui .k2b-data-table :is(th, td)[data-priority="3"] {
     display: none;
   }
@@ -10530,6 +10541,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @container k2b-data-table (max-width: 420px) {
+  /* An open row hands its line to its details, only while they show. */
+  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td {
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td + td {
+    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-last="true"][data-details-open="true"] + .k2b-data-table__details > td {
+    box-shadow: none;
+  }
+
   .k2b-ui .k2b-data-table :is(th, td)[data-priority="2"] {
     display: none;
   }

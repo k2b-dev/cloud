@@ -101,7 +101,13 @@ Pass `groupBy` with a column id: each group becomes its own `<tbody>` under a
 row-group header (`scope="rowgroup"`) with the group's shown value and its
 count, in the order the groups first appear. Pass the search text as `query`
 and a way back as `onClearQuery`: with no row left, the table says “No row
-matches “…”.” and offers **Clear search** at a fixed height instead of `empty`.
+matches “…”.” and offers **Clear search** at a fixed height instead of `empty`. Clearing removes the button the
+reader pressed, so move focus back to the search field in `onClearQuery`.
+With `groupBy`, `createDataTableView` returns the rows in the order the groups
+show them, so keyboard selection follows the screen. Below a priority's width,
+the totals of hidden columns show in a line under the totals row.
+A date with a time reads in the reader's zone; pass `timeZone` when the server
+renders the table or the data belongs to a zone, so both show the same clock.
 
 ```tsx
 const view = createDataTableView({ rows: () => campaigns, columns: () => columns });
@@ -126,7 +132,10 @@ const view = createDataTableView({ rows: () => campaigns, columns: () => columns
     onSortChange={view.setSort}
     groupBy={view.groupBy() ?? undefined}
     query={view.query()}
-    onClearQuery={() => view.setQuery("")}
+    onClearQuery={() => {
+      view.setQuery("");
+      searchField.focus();
+    }}
   />
 </DashboardPanel>
 ```

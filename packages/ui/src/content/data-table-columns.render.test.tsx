@@ -13,6 +13,8 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: DataTable } = await import("./DataTable");
 const { LocaleProvider } = await import("../intl/locale");
 const { filterRows, groupRows, sortRows, tableCellText } = await import("./data-table-columns");
+const { createDataTableView } = await import("./DataTableTools");
+const { createRoot } = await import("solid-js");
 
 type Campaign = { name: string; status: string; date: string; to: number; open: number | null; rev: number | null };
 // Invented campaigns.
@@ -84,6 +86,30 @@ test("sorting puts missing values last in both directions and keeps ties in thei
   expect(sortRows(rows, columns, { key: "date", direction: "desc" }, "en").map((row) => row.date)[0]).toBe("2026-11-12");
 });
 
+test("a grouped view lists its rows in the order the table shows them, so selection follows the screen", () => {
+  createRoot((dispose) => {
+    // The server build of Solid computes once, so the group comes in as the starting state.
+    const view = createDataTableView({ rows: () => rows, columns: () => columns, groupBy: "status" });
+    expect(view.rows().map((row) => row.name)).toEqual([
+      "Autumn selection",
+      "Weekly letter 44",
+      "Neue Ware im Lager",
+      "Trade fair invitation",
+    ]);
+    dispose();
+  });
+});
+
+test("dates sort by time whether they come as ISO text or as epoch milliseconds", () => {
+  const stamps = [{ at: Date.UTC(2026, 9, 2) }, { at: Date.UTC(2026, 10, 6) }, { at: Date.UTC(2026, 9, 22) }];
+  const at = [{ id: "at", value: "at" as const, type: "date" as const }];
+  expect(sortRows(stamps, at, { key: "at", direction: "desc" }, "en").map((row) => row.at)).toEqual([
+    Date.UTC(2026, 10, 6),
+    Date.UTC(2026, 9, 22),
+    Date.UTC(2026, 9, 2),
+  ]);
+});
+
 test("groups keep the order they first appear in and take their label from the shown value", () => {
   expect(groupRows(rows, columns[1]!, "en").map((group) => [group.label, group.rows.length])).toEqual([
     ["Sending", 1],
@@ -125,6 +151,13 @@ test("priorities add one details toggle per row whose details list the columns a
   expect(details).toContain('<div data-priority="3"><dt>Sent</dt>');
   expect(details).toContain('<div data-priority="2"><dt>Revenue</dt>');
   expect(details).not.toContain("<dt>Campaign</dt>");
+  // Each details line gets its own label, also from a heading function, and hidden totals stay under the totals row.
+  const labelled = render({
+    columns: columns.map((column) => (column.id === "rev" ? { ...column, header: () => "Revenue (EUR)" } : column)),
+    footer: { values: { name: "Total", rev: 13130 } },
+  });
+  expect(labelled.match(/<dt>Revenue \(EUR\)<\/dt>/g)?.length).toBe(5);
+  expect(labelled).toMatch(/k2b-data-table__footer-details.*?<dt>Revenue \(EUR\)<\/dt><dd>€13,130.00<\/dd>/);
   // Without priorities nothing is added.
   const plain = render({ columns: columns.map(({ priority: _priority, ...column }) => column) });
   expect(plain).not.toContain("k2b-data-table__details");

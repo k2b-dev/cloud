@@ -3,7 +3,7 @@ import Select from "../inputs/Select";
 import TextInput from "../inputs/TextInput";
 import { useLocale } from "../intl/locale";
 import type { DataTableColumn, DataTableSort } from "./DataTable";
-import { filterRows, sortRows } from "./data-table-columns";
+import { filterRows, groupRows, sortRows } from "./data-table-columns";
 import { useDataTableMessages } from "./data-table-messages";
 
 export type DataTableViewOptions<T> = {
@@ -33,9 +33,12 @@ export function createDataTableView<T>(options: DataTableViewOptions<T>): DataTa
   const [query, setQuery] = createSignal("");
   const [sort, setSort] = createSignal<DataTableSort | null>(options.sort ?? null);
   const [groupBy, setGroupBy] = createSignal<string | null>(options.groupBy ?? null);
-  const rows = createMemo(() =>
-    sortRows(filterRows(options.rows(), options.columns(), query(), locale()), options.columns(), sort(), locale()),
-  );
+  // Grouped rows come in the order the table shows them, so keyboard selection follows the screen.
+  const rows = createMemo(() => {
+    const ordered = sortRows(filterRows(options.rows(), options.columns(), query(), locale()), options.columns(), sort(), locale());
+    const column = groupBy() ? options.columns().find((entry) => entry.id === groupBy()) : undefined;
+    return column ? groupRows(ordered, column, locale()).flatMap((group) => group.rows) : ordered;
+  });
   return { query, setQuery, sort, setSort, groupBy, setGroupBy, rows };
 }
 

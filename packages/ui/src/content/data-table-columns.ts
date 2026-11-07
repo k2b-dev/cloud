@@ -106,7 +106,7 @@ export const tableSortValue = (value: unknown, column: DataTableTypedColumn, loc
   const type = column.type ?? "text";
   if (isNumericColumnType(type)) return finite(value);
   if (type === "date") {
-    const time = value instanceof Date ? value.getTime() : Date.parse(String(value));
+    const time = value instanceof Date ? value.getTime() : typeof value === "number" ? value : Date.parse(String(value));
     return Number.isFinite(time) ? time : null;
   }
   if (typeof value === "number") return value;
