@@ -142,6 +142,32 @@ describe(`ImageEditor shared renderer and export (${browserName})`, () => {
     }
   });
 
+  test("export passes the documented quality default and explicit override to the actual encoder", async () => {
+    const page = await open();
+    try {
+      const qualities = await run(page, async (api) => {
+        await api.supportedImageEditorFormats();
+        const original = HTMLCanvasElement.prototype.toBlob;
+        const qualities: (number | undefined)[] = [];
+        HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
+          qualities.push(quality);
+          return original.call(this, callback, type, quality);
+        };
+        try {
+          for (const output of [{ format: "image/jpeg" as const }, { format: "image/jpeg" as const, quality: 0 }]) {
+            await api.exportImageEditor({ source: "/photo.jpg", features: {} }, api.initialImageEditorState(), output);
+          }
+          return qualities;
+        } finally {
+          HTMLCanvasElement.prototype.toBlob = original;
+        }
+      });
+      expect(qualities).toEqual([0.9, 0]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("caller preview keeps the original unloaded until export and keeps original dimensions", async () => {
     const page = await open();
     try {

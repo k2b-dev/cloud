@@ -78,6 +78,34 @@ describe("shared image editor model", () => {
     const adjusted = { ...base, look: "faded" as const, adjustments: { ...base.adjustments, brightness: 1.2 }, lookStrength: 1 };
     expect(effectiveEditorAdjustments(adjusted).brightness).toBeCloseTo(1.32, 10);
   });
+  test("crop aspect and orientation belong to history and survive rotations unchanged", () => {
+    const initial = initialImageEditorState();
+    expect(initial.cropAspect).toBe("free");
+    expect(initial.cropAspectSwapped).toBe(false);
+    const cropState = {
+      ...initial,
+      cropAspect: "16:9" as const,
+      cropAspectSwapped: true,
+      crop: { x: 0.1, y: 0.2, width: 0.7, height: 0.5 },
+    };
+    let history = createImageEditorHistory();
+    history = commitImageEditorState(history, cropState);
+    history = commitImageEditorState(history, rotateEditorRight(cropState));
+    expect(currentImageEditorEntry(history).state.cropAspect).toBe("16:9");
+    expect(currentImageEditorEntry(history).state.cropAspectSwapped).toBe(true);
+    history = undoImageEditor(history);
+    expect(currentImageEditorEntry(history).state).toEqual(cropState);
+    history = undoImageEditor(history);
+    expect(currentImageEditorEntry(history).state).toEqual(initial);
+    history = redoImageEditor(history);
+    expect(currentImageEditorEntry(history).state).toEqual(cropState);
+    let rotated: ReturnType<typeof initialImageEditorState> = cropState;
+    for (let turn = 0; turn < 4; turn++) {
+      rotated = rotateEditorRight(rotated);
+      expect(rotated.cropAspect).toBe(cropState.cropAspect);
+      expect(rotated.cropAspectSwapped).toBe(cropState.cropAspectSwapped);
+    }
+  });
   test("quarter turns preserve the selected source region", () => {
     const state = { ...initialImageEditorState(), crop: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 } };
     const rotated = rotateEditorRight(state);

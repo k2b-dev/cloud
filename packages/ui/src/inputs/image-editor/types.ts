@@ -75,6 +75,8 @@ export type ImageEditorAdjustments = {
 };
 export type ImageEditorLook = "original" | "vivid" | "soft" | "mono" | "warm" | "cool" | "mono-hard" | "faded" | "vintage";
 export type ImageEditorState = {
+  cropAspect: ImageEditorAspect;
+  cropAspectSwapped: boolean;
   crop: ImageCropRect;
   rotation: ImageCropRotation;
   straighten: number;

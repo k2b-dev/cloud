@@ -6,6 +6,8 @@ export const IMAGE_EDITOR_PREVIEW_LONG_EDGE = 2048;
 // Preserve Tools' existing 50-step undo budget, now shared by every kind of edit.
 const HISTORY_LIMIT = 50;
 export const initialImageEditorState = (): ImageEditorState => ({
+  cropAspect: "free",
+  cropAspectSwapped: false,
   crop: { x: 0, y: 0, width: 1, height: 1 },
   rotation: 0,
   straighten: 0,

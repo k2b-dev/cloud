@@ -213,7 +213,7 @@ export async function exportImageEditor(
       context.fillStyle = "#ffffff";
       context.fillRect(0, 0, size.width, size.height);
     }
-    const blob = await encode(canvas, format, output?.quality, signal);
+    const blob = await encode(canvas, format, output?.quality ?? 0.9, signal);
     return { blob, ...size, type: format, originalWidth: decoded.size.width, originalHeight: decoded.size.height };
   } finally {
     decoded.dispose();
