@@ -1,4 +1,4 @@
-import { chartDatumSvg, computeDomain, escapeXml, extendDomainToNice, mapRange, niceStep, svgRoot } from "../charts/core/svg";
+import { chartDatumSvg, computeDomain, escapeXml, extendDomainToNice, mapRange, niceStep, svgRoot } from "../charts/core/svg-renderers";
 
 export type StateTimelineDomain = readonly [number, number];
 

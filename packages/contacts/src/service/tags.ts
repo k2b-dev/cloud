@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
+import { contactEventState, publishContactUpdated } from "../app-events";
 import { withShortId } from "../lib/short-id";
 import { publishContactChange } from "./live";
 import { isUuid, type SqlExecutor, toPgUuidArray } from "./shared";
@@ -253,6 +254,7 @@ export const changeAssignments = async (config: {
       FOR UPDATE
     `;
     if (!contact) return fail(err.notFound("Contact"));
+    const before = await contactEventState(tx, config.contactId);
 
     const requested = [...new Set([...addTagIds, ...removeTagIds])];
     if (requested.length > 0) {
@@ -286,6 +288,7 @@ export const changeAssignments = async (config: {
       WHERE assignment.contact_id = ${config.contactId}::uuid
       ORDER BY LOWER(t.name) ASC, t.id ASC
     `;
+    await publishContactUpdated(tx, before);
     await publishContactChange(tx, { type: "contact.updated", bookId: config.bookId, contactId: config.contactId });
     return ok(rows.map(mapTag));
   });
