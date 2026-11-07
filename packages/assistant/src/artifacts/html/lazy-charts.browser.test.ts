@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { AppFrameAssets } from "./assets";
 import { buildBaseCss, buildChartModule, buildPrelude } from "./build-assets";
 import type { AppFiles } from "./compose";
@@ -391,3 +391,35 @@ test("narrow pending charts retain the eager logical width and PDF styles accept
     await context.close();
   }
 });
+
+for (const width of [1200, 390])
+  test(`horizontal rows reserve height before offline drawing at ${width}px`, async () => {
+    const script = `document.querySelector("#draw").addEventListener("click",()=>{
+      document.querySelector("#charts").innerHTML=cloud.chart({kind:"hbar",title:"Regional orders",subtitle:"Fictional",series:["Current","Prior"],rows:Array.from({length:20},(_,i)=>({group:"Shops",label:"Region "+(i+1),values:[i,i+1]}))});
+    });`;
+    const { page, context, requests } = await open(width, delayed + assets.chartModule, "light", script);
+    const errors = pageErrors(page);
+    try {
+      await app(page).locator("#draw").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const loading = await boxes(page);
+      expect(loading.height).toBeGreaterThan(600);
+      await release(page);
+      await app(page).locator('[data-chart-kind="hbar"] svg').waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(loading);
+      expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
+      expect(await app(page).locator(".k2b-chart-group-heading").textContent()).toBe("Shops");
+      expect(await app(page).locator(".k2b-chart__table tbody tr").count()).toBe(20);
+      expect(requests).toEqual([]);
+      expect(errors).toEqual([]);
+      expect(
+        await page.evaluate(() =>
+          globalThis.lazyChartHarness.events.filter((event) => event.type === "error" || (event.type === "log" && event.level === "error")),
+        ),
+      ).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });

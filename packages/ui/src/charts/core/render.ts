@@ -10,6 +10,7 @@ import {
 import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
 import { type AreaOptions, renderAreaSvg } from "./area";
+import { type HorizontalBarOptions, hbarLayout, renderHbarSvg } from "./hbar";
 import { chartRenderers } from "./registry";
 import type { MapViewport } from "./svg";
 import type { ChartKind } from "./types";
@@ -38,11 +39,13 @@ export type ChartDrawingOptions = {
 }[ChartKind];
 export type ChartRenderOptions = RenderOptions<ChartDrawingOptions>;
 
-/** Keep the fixed 28-unit bar-gauge rows inside the shared SSR/browser coordinate space. */
-export const chartRenderHeight = (props: ChartRenderOptions): number => {
+/** Standard logical height, or compact bar-gauge rows for a host without an explicit height. */
+export const chartRenderHeight = (props: ChartRenderOptions, sizing: { contentHeight?: boolean } = {}): number => {
   if (props.kind === "stateTimeline") return stateTimelineHeight(props.rows.length, props.legend !== false);
   if (props.kind === "bar") return barChartLayout(props).height;
-  if (props.kind === "barGauge") return Math.max(280, (props.title || props.subtitle ? 42 : 16) + props.data.length * 28 + 14);
+  if (props.kind === "hbar") return hbarLayout(props).height;
+  if (props.kind === "barGauge")
+    return Math.max(sizing.contentHeight ? 80 : 280, (props.title || props.subtitle ? 42 : 16) + props.data.length * 28 + 14);
   return 280;
 };
 
@@ -78,6 +81,7 @@ export const renderChartSvg = (
       }),
     );
   }
+  if (kind === "hbar") return responsiveChartSvg(renderHbarSvg({ ...(opts as HorizontalBarOptions), width, height, inspect: true }));
   if (kind === "area")
     return responsiveChartSvg(
       renderAreaSvg({

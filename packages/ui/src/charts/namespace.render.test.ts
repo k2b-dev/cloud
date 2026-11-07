@@ -32,6 +32,7 @@ describe("Chart namespace", () => {
 
 /** Typechecked without invoking hooks outside a Solid owner. */
 function namespaceTypes() {
+  Chart.Hbar({ series: ["Visits"], rows: [{ label: "Mail", values: [42] }] });
   Chart.Pie({ data: [{ label: "Queue", value: 4 }] });
   Chart.Line({ series: [{ data: [{ x: 1, y: 2 }] }] });
   // @ts-expect-error Pie takes slices, not Cartesian series.

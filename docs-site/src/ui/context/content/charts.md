@@ -67,8 +67,23 @@ import { Chart } from "@k2b/ui";
 DOM dependencies. Use `layout(spec, { width, height })` and `toSvg(scene)` for
 a fixed logical scene, or `renderChartSvg(spec, width, height)` for the same SVG
 that `Chart` displays. `chartRenderHeight(spec)` calculates the standard height.
+For a bar gauge in a host without an explicit height, opt into its compact row
+height with `chartRenderHeight(spec, { contentHeight: true })` and pass the result
+to both the drawing and its container. The standard calculation keeps its
+280-unit minimum; explicit-height drawings keep their existing geometry.
+
+```ts
+const spec = { kind: "barGauge" as const, data: [
+  { label: "CPU", value: 65 }, { label: "Memory", value: 72 },
+] };
+const height = chartRenderHeight(spec, { contentHeight: true });
+const svg = renderChartSvg(spec, 480, height);
+```
+
 `prepareChartSnapshot` prepares that drawing and its keyed inspection data for
-`ChartSnapshotView` and `ChartExplorer`. Existing root imports remain supported.
+`ChartSnapshotView` and `ChartExplorer`. Its optional third argument forwards
+`{ contentHeight: true }` to the height calculation for unsized bar-gauge hosts.
+Existing root imports remain supported.
 
 ```ts
 import { layout, toSvg } from "@k2b/ui/charts/core";
@@ -190,6 +205,40 @@ Axis, category and value text uses the UI font with tabular figures.
   yAxis={{ label: "Umsatz", format: (v) => euro.format(v) }} />
 ```
 
+## Several bar series and period comparison
+
+Keep category labels in `x` and pass one equally long `data` array per series.
+`null` means a gap. Grouped bars each start at zero. Stacked bars accumulate
+nonnegative segments; negative stacks are rejected at the portable JSON entry.
+With `normalize`, positive totals fill 100%; a zero total stays a gap.
+
+```tsx
+<Chart kind="bar" layout="stacked" x={["Q1", "Q2"]}
+  series={[{ label: "Store", data: [35, 42] }, { label: "Web", data: [24, 31] }]} />
+```
+
+Add `compare={{ label: "Previous", data: [28, 39] }}` to a single current
+series. The previous bars appear hatched on the left; current bars appear solid
+on the right. Both totals remain in the legend until inspection shows the
+category values. The tooltip includes the percentage change; a zero previous
+value has no defined percentage and displays `–`.
+
+Use `kind="hbar"` for horizontal stacks with `series: string[]` and
+`rows: { group?: string; label: string; values: (number | null)[] }[]`.
+Each row ends with its total; segment values print only where they fit.
+Group headings follow first appearance. All source values remain in the
+accessible table, including values that do not fit on a segment.
+
+`Chart.Bar` exposes grouped, stacked and compared columns; `Chart.Hbar` exposes horizontal segments. The matching JSON kinds are `bar` and `hbar`, and both use the portable `@k2b/ui/charts/core` renderer.
+
+Both renderers inspect whole categories. A calm band appears behind the active
+category on pointer hover without outlining its segments. Keyboard inspection
+and controlled selection outline the marks using their series color. Arrow keys move between categories,
+Home/End jump to the edges, Enter pins and Escape closes inspection. A tap
+selects only when it has not become a swipe.
+
+Category hover bands carry a transparent SVG presentation fill, so standalone SVGs and base-styled print or app frames retain the same drawing. Series legends keep each value six pixels after its label, use at most one quarter of the frame, and truncate long names; the tooltip and data table retain full names. Dense grouped bars drop their inner gap before reducing bar width. Category labels stay whole and thin to fit. Missing totals display “–”; zero observations remain zero. Comparison changes and total labels inherit the UI locale.
+
 ## Props reference
 
 Use the discriminated `ChartProps` union to type data builders without widening
@@ -247,7 +296,7 @@ Solid signal. Boolean options default to `false` unless stated otherwise.
 | --- | --- | --- |
 | `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`. |
 | `scatter` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`, `autoVariant=false`, `trendline=false`; `sizeRange?: [number, number]`, default `[3, 12]`, applies only if a point has finite `size`. No `pointRadius` prop. UI markers have a fixed visual enlargement independent of plot width. |
-| `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string; ordered?: boolean }` titles the categories, and `ordered` keeps days or steps in columns with sparse labels; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. No grouped/stacked bar mode. See [Bar charts](#bar-charts). |
+| `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string; ordered?: boolean }` titles the categories, and `ordered` keeps days or steps in columns with sparse labels; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. Aligned `x` and `series` support `layout="grouped"` or `"stacked"`; `normalize` shows 100% shares. See [Bar charts](#bar-charts). |
 | `pie`, `donut` | `data: { label: string; value: number }[]` | `showLabels=false`, `legend=false`, `innerRadius?: number` (outer-radius fraction, clamped to 0–0.95; defaults: pie 0, donut 0.6). Items accept `colorIndex?: number`. Only positive finite values produce slices. Prefer a legend for many small slices. |
 | `sparkline` | `data: number[]` or `Point[]` | `smooth=true`, `area=false`, `showLast=false`, `showMinMax=false`. Numeric arrays use the original array index as X; points sort by X. |
 | `histogram` | `data: number[]` of observations | `bins?: number` (equal-width bin count) or `number[]` (ordered bin edges); omitted uses `ceil(log2(n)) + 1`. `xAxis`, `yAxis`, `references`. Supply at least two distinct finite edges. Bins exclude the upper boundary except for the last bin. |

@@ -134,11 +134,11 @@ export type Padding = { top: number; right: number; bottom: number; left: number
  */
 
 /** Wrap renderer-owned geometry with escaped, inert inspection metadata. */
-export const chartDatumSvg = (svg: string, datum: ChartDatum, inspect?: boolean): string => {
+export const chartDatumSvg = (svg: string, datum: ChartDatum, inspect?: boolean, titleText?: string): string => {
   if (!inspect || !datum.anchor.every(Number.isFinite)) return svg;
-  const title = [datum.label, ...datum.values.map((field) => `${field.key}: ${field.formatted ?? field.value}`)]
-    .filter(Boolean)
-    .join(" · ");
+  const title =
+    titleText ??
+    [datum.label, ...datum.values.map((field) => `${field.key}: ${field.formatted ?? field.value}`)].filter(Boolean).join(" · ");
   return `<g data-chart-role="${escapeXml(datum.role)}" data-chart-datum="${escapeXml(JSON.stringify(datum))}"><title>${escapeXml(title)}</title>${svg}</g>`;
 };
 
