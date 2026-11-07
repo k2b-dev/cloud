@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { auth } from "@k2b/cloud/server";
 import { accounts } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -31,7 +32,9 @@ suiteFor(
   const source =
     '# exact spacing and comment\nsteps:\n  - aiGenerateText:\n      prompt: "Summarize only supplied facts"\n      maxOutputChars: 1000\n';
   beforeAll(async () => {
-    setSystemTime(new Date("2026-11-07T00:00:00.000Z"));
+    // Session issuance uses the JS clock; live session expiry uses Postgres now().
+    const [clock] = await sql<{ now: Date }[]>`SELECT clock_timestamp() AS now`;
+    setSystemTime(clock!.now);
     await migrate();
     const context = async (uid: string, isAdmin = false): Promise<MailRequestContext> => {
       const [row] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name, admin)
@@ -43,6 +46,8 @@ suiteFor(
     };
     owner = await context("mail-export-owner");
     ownerSession = await createTestSession(users[0]!);
+    const sessionProbe = new Hono().use(auth.requireRole("authenticated")).get("/", (c) => c.text("authenticated"));
+    expect((await sessionProbe.request("/", { headers: { cookie: `session_token=${ownerSession}` } })).status).toBe(200);
     writer = await context("mail-export-writer");
     admin = await context("mail-export-admin", true);
     const mailbox = await createMailbox(owner, { name: "Automation export fixture" });
@@ -116,7 +121,8 @@ suiteFor(
   });
   test("writers cannot export a mailbox and ordinary people cannot export the installation", async () => {
     expect((await router(writer).request(`/mailboxes/${mailboxShortId}/automation-export`)).status).toBe(403);
-    expect((await router(owner).request("/admin/automation-export", { headers: { cookie: `session_token=${ownerSession}` } })).status).toBe(
+    expect((await exportRoutes.request("/admin/automation-export")).status).toBe(401);
+    expect((await exportRoutes.request("/admin/automation-export", { headers: { cookie: `session_token=${ownerSession}` } })).status).toBe(
       403,
     );
     expect(await exportMailAutomation(owner, {})).toMatchObject({ ok: false, error: { status: 403 } });
