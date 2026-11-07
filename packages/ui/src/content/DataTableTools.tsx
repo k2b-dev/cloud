@@ -44,7 +44,7 @@ export type DataTableToolsProps = {
   label: string;
   query?: string;
   onQueryChange?: (query: string) => void;
-  /** Columns the reader may group by; without them no group choice shows. */
+  /** Columns the reader may group by; without them no group choice shows. An empty list keeps the choice in place while it loads. */
   groups?: readonly { id: string; label: string }[];
   groupBy?: string | null;
   onGroupByChange?: (id: string | null) => void;
@@ -76,7 +76,7 @@ export function DataTableTools(props: DataTableToolsProps): JSX.Element {
           disabled={props.disabled}
         />
       </Show>
-      <Show when={props.groups?.length && props.onGroupByChange}>
+      <Show when={props.groups && props.onGroupByChange}>
         <Select
           class="k2b-data-table-tools__group"
           aria-label={t().groupRows}
