@@ -1078,14 +1078,14 @@
     pointer-events: none;
   }
 
-  .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
+  .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle):not(.k2b-chart-category-band) {
     stroke: var(--k2b-chart-inspection-color);
     stroke-width: 2px;
     vector-effect: non-scaling-stroke;
   }
 
-  /* Category inspection paints the band instead of outlining every segment. */
-  .k2b-chart [data-inspected]:has(> .k2b-chart-category-band) > :is(rect,path,circle) { stroke: none; }
+  /* Pointer hover paints the band instead of outlining every segment. */
+  .k2b-chart [data-inspected="hover"]:not([data-selected]):has(> .k2b-chart-category-band) > :is(rect,path,circle):not(.k2b-chart-category-band) { stroke: none; }
 
   .k2b-chart [data-inspected] > .stdlib-chart-inspection-point {
     fill: var(--k2b-chart-inspection-color);

@@ -17283,10 +17283,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-/* Category inspection keeps every mark unchanged; only the category band appears. */
+/* Pointer hover paints only the band; keyboard inspection and selection outline the marks. */
 .k2b-ui .k2b-chart-category-band { stroke: none; }
 .k2b-ui .k2b-chart [data-inspected] > .k2b-chart-category-band { fill: color-mix(in srgb, currentColor 5%, transparent); }
-.k2b-ui .k2b-chart [data-inspected]:has(> .k2b-chart-category-band) > :is(rect,path,circle) { stroke: none !important; }
+.k2b-ui .k2b-chart [data-inspected="hover"]:not([data-selected]):has(> .k2b-chart-category-band) > :is(rect,path,circle):not(.k2b-chart-category-band) { stroke: none !important; }
 
 .k2b-ui .k2b-chart-funnel :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) {
   font-size: 12.5px;

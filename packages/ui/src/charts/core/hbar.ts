@@ -35,7 +35,7 @@ export function hbarLayout(spec: HorizontalBarOptions, size = { width: 480, heig
     format,
     size.width,
     296,
-    size.height * 0.25,
+    70, // One legend budget even when rows grow the initial 280-unit drawing.
   );
   const header = headerHeight({ title: spec.title, subtitle: spec.subtitle });
   const top = header + (spec.legend === false ? 0 : legend.height);
