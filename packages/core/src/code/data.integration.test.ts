@@ -8,6 +8,7 @@ import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
+import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateEvents } from "../migrate/core/events";
 import * as access from "./access";
 import { clearCodeAttentionCache, readCodeAttention } from "./attention";
@@ -98,6 +99,8 @@ databaseSuite()("Core Code data and Query authorization", () => {
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${name},'local','user',${name === "admin"})`;
     // Forward migration over an already populated identity database.
     await migrateCode();
+    // The public run list also reads event admission receipts from the scheduling schema.
+    await migrateScheduling();
     settingsSpy = spyOn(codeSettings, "get").mockImplementation(async (key) => {
       const definition = Object.entries(CODE_SETTINGS).find(([name]) => name === key)?.[1];
       if (!definition) throw new Error(`Unexpected setting ${key}`);
@@ -195,7 +198,10 @@ databaseSuite()("Core Code data and Query authorization", () => {
           expect(run.data.data.contents?.nextCursor).toBe(1);
         }
       }
-      if (runs.ok) expect(JSON.stringify(runs)).not.toContain("private");
+      if (runs.ok) {
+        expect(runs.data.data.eventDeliveries).toEqual([]);
+        expect(JSON.stringify(runs)).not.toContain("private");
+      }
       if (version.ok) expect(version.data.data.content?.text).toBe("export default 'source';");
     }
     const second = await aiCapabilities.queries["code.run.read"].run(
