@@ -3,7 +3,7 @@ import { bindProcessSync, sql, unbindProcessSync } from "@k2b/cloud";
 import * as catalogProvider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
-import { CloudResourceRefSchema, type CodeCheckedVersionManifest } from "@k2b/cloud/contracts";
+import { CloudResourceRefSchema, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import type { AppEventEnvelope } from "@k2b/cloud/contracts/app-events";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
 import { appEventFixture } from "@k2b/cloud/events/testing";
@@ -166,7 +166,7 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
     number++;
     const files = { "code.ts": `fixture ${number}` },
       bundle = "export default {};";
-    const manifest: CodeCheckedVersionManifest = {
+    const manifest = CodeCheckedVersionManifestSchema.parse({
       version: 1,
       entry: "code.ts",
       hashes: { source: codeSourceHash(files, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
@@ -182,8 +182,8 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       ],
       permissions: [],
       ai,
-      policyRows: ["read"],
-    };
+      policyRows: ai ? ["ai", "read"] : ["read"],
+    });
     const [row] = await sql<
       { id: string }[]
     >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
@@ -565,12 +565,12 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
     await activate();
     expect(binding.place).toEqual(mailbox);
     expect(await findCode(codeId)).toMatchObject({ owner: { kind: "resource", ref: mailbox }, serviceAccountId: principal });
-    const envelope = {
-      ...appEventFixture(mailCapabilities, "message.received", { subject: "Msg123", place: mailbox.id, data: { receiptId: id(51) } }),
-      id: id(50),
-      time,
-      data: { receiptId: id(51) },
-    };
+    const envelope = appEventFixture(
+      mailCapabilities,
+      "message.received",
+      { subject: "Msg123", place: mailbox.id, data: { receiptId: id(51) } },
+      { appId: "mail", id: id(50), time },
+    );
     await broker.accept(envelope, ++sequence);
     const accepted = await sql<
       { state: string; code: string | null }[]
@@ -584,7 +584,7 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
     expect(await runs()).toEqual([
       expect.objectContaining({ input: envelope, entrypoint: "event:mail.message.received@1", version_id: versionId }),
     ]);
-    expect((await claimCodeRuns(3, limits))[0]?.input).toEqual(envelope);
+    expect((await claimCodeRuns(3, limits))[0]?.input).toEqual(z.json().parse(envelope));
   });
   test("catch-up cancels, resumes a pinned snapshot and recovers a dispatch committed before checkpoint without broadcast", async () => {
     const catalog = spyOn(catalogProvider, "getCapabilityCatalogApp").mockResolvedValue({
@@ -661,7 +661,7 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       await publish(402, "live-with-reserved-capacity");
       await broker.work();
       expect(await sql`SELECT * FROM code.run_requests WHERE request_key=${`event:${id(402)}`}`).toHaveLength(1);
-      await cancelCodeEventCatchup(codeId, id(65), editor);
+      expect(await cancelCodeEventCatchup(codeId, id(65), editor)).toMatchObject({ status: "canceled", dispatched: 1, total: 2 });
       await stop();
       stop = undefined;
       await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp()`;
@@ -697,10 +697,13 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
           editor,
         ),
       ).rejects.toMatchObject({ code: "BAD_INPUT" });
+      // Isolate the account fence from AI approval and the original canceled operation.
+      await version();
+      await activate();
       await sql`UPDATE auth.service_accounts SET status='disabled' WHERE id=${principal}::uuid`;
       await expect(
         codeEventCatchupPumpConfig.dispatch({
-          input: { ...input, versionId, codeId, requestDigest: "fixture", capacityDeadline: Date.parse(time) },
+          input: { ...input, operationId: id(66), versionId, codeId, requestDigest: "fixture", capacityDeadline: Date.parse(time) },
           item: { key: "disabled-account", event: event(999, "message-899") },
           signal: new AbortController().signal,
         }),

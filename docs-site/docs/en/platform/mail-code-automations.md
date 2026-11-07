@@ -96,7 +96,8 @@ It creates ordinary Code runs directly; it never republishes
 historical events to other subscribers. Message data is read when each run
 executes, so this is not a historical content snapshot.
 
-Progress counts references admitted or already present. **Runs** shows actual
+Progress counts references admitted or already present, including messages
+admitted before the operation starts waiting for capacity. **Runs** shows actual
 execution outcomes, including failures after effects. A permanent receipt per
 version and message prevents repeated admission in either direction when live
 delivery overlaps catch-up. It survives run-detail retention. A new version can be

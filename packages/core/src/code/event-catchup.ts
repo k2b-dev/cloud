@@ -4,6 +4,7 @@ import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cl
 import { type CodeEventCatchupInput, CodeEventCatchupInputSchema, CodeEventCatchupStatusSchema } from "@k2b/cloud/code";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { AppEventEnvelopeSchema } from "@k2b/cloud/contracts/app-events";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { authorizeResourceEvent, type ResourceEventBinding } from "@k2b/cloud/services/app-events";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import type { PumpConfig, PumpState } from "@k2b/sync";
@@ -109,18 +110,24 @@ export const codeEventCatchupPumpConfig: PumpConfig<Input, number, Item> = {
 };
 const mutationMutex = lazySync((sync) => sync.mutex({ id: "core:code-event-catchup-start", ttlMs: 30_000, retry: { maxAttempts: 1 } }));
 const pump = lazySync((sync) => sync.pump(codeEventCatchupPumpConfig));
-const status = (state: PumpState<Input, number>) =>
-  CodeEventCatchupStatusSchema.parse({
+const status = async (state: PumpState<Input, number>) => {
+  // Sync checkpoints the page count only after the whole page finishes. Receipts
+  // show committed progress while a later message waits for backlog capacity.
+  const keys = state.input.events.map((event) => codeEventTargetKey(state.input.versionId, event));
+  const [admitted] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.run_requests
+    WHERE code_id=${state.input.codeId} AND request_key=ANY(${toPgTextArray(keys)}::text[])`;
+  return CodeEventCatchupStatusSchema.parse({
     operationId: state.input.operationId,
     versionId: state.input.versionId,
     status: state.status,
     total: state.input.events.length,
-    dispatched: state.dispatched,
+    dispatched: Math.max(state.dispatched, admitted?.count ?? 0),
     failureCount: state.failureCount,
     lastError: state.lastError ?? null,
     createdAt: new Date(state.createdAt).toISOString(),
     updatedAt: new Date(state.updatedAt).toISOString(),
   });
+};
 async function editor(codeId: string, context: CodeContext) {
   codePerson(context, true);
   const { code } = await readCode(codeId, context);
@@ -131,7 +138,7 @@ export async function readCodeEventCatchup(codeId: string, operationId: string, 
   await editor(codeId, context);
   const state = await pump().get({ key: key(codeId, z.uuid().parse(operationId)) });
   if (!state) throw new CodeDataError("NOT_FOUND", "Catch-up operation not found.");
-  const result = status(state);
+  const result = await status(state);
   if (state.status === "running") {
     const budget = await codeSettings.get("core.code.event_backlog");
     const [waiting] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.runs
