@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-05
+updated: 2026-11-07
 ---
 
 # API surface
@@ -33,6 +33,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
 | `@k2b/cloud/app-proof` | Advanced, server-only | Sign each private Core transmission with `signAppProof`; [runner bridge contract](/en/docs/operations/code-runner#integrate-the-bridge) |
 | `@k2b/cloud/code/run-token` | Preview, platform-owned | Core-signed attempt tokens; [Code bridge](/en/docs/platform/code-bridge) |
+| `@k2b/cloud/code/chat-run` | Preview, platform-owned | Assistant chat-job payloads and tagged value codec; [Code bridge](/en/docs/platform/code-bridge#one-off-chat-authority) |
 | `@k2b/cloud/code/runner` | Preview, portable | Strict run/job protocol schemas and lease types; [Code runner](/en/docs/operations/code-runner) |
 | `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, opt-in staff push to registered devices (`registeredDevices`), registration visit summaries and renaming, and their closed router |
 | `@k2b/cloud/app-pwa/browser` | Supported, browser | Strict App-PWA QR parsing and fragment clearing |

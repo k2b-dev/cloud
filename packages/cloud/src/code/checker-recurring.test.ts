@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { CodeCheckedVersionManifestSchema, CodeVersionEntrypointSchema } from "../contracts/code-version";
 import { analyzeCode } from "./checker-analysis";
 import { generateCodeSdk } from "./generator";
+import { sdkFixture } from "./sdk.test-fixture";
 
 const sdk = generateCodeSdk([], { mode: "personal" });
 const source = (when: string) => `import { app } from "@sdk"; app.schedule(${when}, async () => {}); export default app;`;
@@ -81,4 +82,37 @@ test("runner SDK carries recurring zone/name and runs only the selected handler"
   expect(() => runtime.app.schedule({ cron: "0 9 * * *", timeZone: "Mars/Olympus", name: "invalid" }, () => {})).toThrow(
     "invalid_schedule",
   );
+});
+
+test("an event registered before a zoned schedule preserves its kind and the schedule's index", async () => {
+  const fixture = sdkFixture();
+  fixture.events![0]!.place = "workshop";
+  const resourceSdk = generateCodeSdk([fixture], {
+    mode: "resource",
+    owner: { kind: "resource", ref: { type: "work-shop.workshop", id: "owner-shop" } },
+  });
+  const checked = analyzeCode({
+    sdk: resourceSdk,
+    entry: "code.ts",
+    aiOperations: [],
+    files: {
+      "code.ts": `import { app } from "@sdk";
+app.on("work-shop.changed", () => {});
+app.schedule({ cron: "0 9 * * *", timeZone: "Europe/Berlin" }, () => {});
+export default app;`,
+    },
+  });
+  expect(checked.diagnostics).toEqual([]);
+  const runtime = await import(`data:text/javascript;base64,${Buffer.from(resourceSdk.runtime).toString("base64")}`);
+  let calls = 0;
+  runtime.app.on("work-shop.changed", () => {});
+  runtime.app.schedule({ cron: "0 9 * * *", timeZone: "Europe/Berlin" }, () => calls++);
+  expect(runtime.__codeSdk.entries()).toEqual(checked.entrypoints.map(({ file: _file, line: _line, ...entry }) => entry));
+  expect(runtime.__codeSdk.entries()[1]).toMatchObject({
+    kind: "schedule",
+    entrypoint: "schedule:0",
+    timeZone: "Europe/Berlin",
+  });
+  await runtime.__codeSdk.run("schedule:0");
+  expect(calls).toBe(1);
 });

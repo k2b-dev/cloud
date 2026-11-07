@@ -780,8 +780,9 @@ asking only if all of these hold:
 - the request has the exact same origin, so scheme, host, and port match;
 - it is GET or HEAD without a body, with only the headers above and no secret
   reference;
-- a person started the turn in a signed-in browser session, not a
-  routine, a mandate, `cld`, an API key, or another delegated credential;
+- a person started the turn in a signed-in browser session, or their personal
+  Code started an owner-authorized turn with `core.ai.chat.run`; routines,
+  mandates, `cld`, API keys and other delegated credentials do not qualify;
 - the code is the chat's own code or a Studio app the person manages, never an
   app they only use or HTML presented in the chat.
 

@@ -40,6 +40,8 @@ export async function migrateAiQuotas() {
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS headers_ms INTEGER`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS first_byte_ms INTEGER`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS first_block_ms INTEGER`;
+    // Stable Code attribution survives chat, turn and Code deletion; no Code schema dependency.
+    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS code_id TEXT`;
     await db`CREATE INDEX IF NOT EXISTS inference_calls_workflow ON ai.inference_calls(workflow_run_id,started_at)`;
     await db`CREATE INDEX IF NOT EXISTS inference_calls_started ON ai.inference_calls(started_at)`;
     await db`CREATE INDEX IF NOT EXISTS inference_calls_turn ON ai.inference_calls(turn_id,started_at,id) WHERE kind='chat'`;

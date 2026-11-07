@@ -1036,3 +1036,11 @@ marks the conversation unread. The host owns idempotency and notification
 recovery in that same transaction. Core's routine finalizer and personal Code
 [chat delivery Action](/en/docs/platform/capabilities#deliver-personal-code-results-to-a-chat)
 use this seam; applications call the capability instead of this host helper.
+
+Trusted hosts may pass their open database transaction as the second argument
+to `aiConversations.submitChatTurn(input, db)` to commit a turn and a
+host-owned receipt together. Hold the authorized conversation lock first and
+enqueue with `enqueueExistingAiTurn` only after committing. Core uses this seam
+for [Code-started chat turns](/en/docs/platform/capabilities#start-personal-code-chat-turns).
+The optional host-owned `runConfig.codeOrigin` is copied to the user message
+and turn record for attribution; it grants no tool authority.

@@ -102,11 +102,25 @@ app.schedule = (when, fn, options) => {
   const timing = once ? { cron: null, at: when.at, timeZone: when.timeZone } : recurring ? { cron: when.cron, ...(when.timeZone === undefined ? {} : { timeZone: when.timeZone }) } : { cron: when };
   const name = recurring && when.name !== undefined ? when.name : options?.name;
   if ((options !== undefined || (recurring && when.name !== undefined)) && (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))) throw new Error("code_sdk_invalid_schedule_name");
-  const entrypoint = name ?? "schedule:" + schedules.length;
+  const entrypoint = name ?? "schedule:" + schedules.filter(value => value.kind === "schedule").length;
   if (schedules.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_schedule_name");
   const title = typeof options?.title === "string" ? options.title.trim() : options?.title;
   if (options?.title !== undefined && (typeof title !== "string" || !title || title.length > 200 || /[<>\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(title))) throw new Error("code_sdk_invalid_schedule_title");
-  schedules.push({ entrypoint, ...timing, ...(title === undefined ? {} : { title }), handler: fn });
+  schedules.push({ kind: "schedule", entrypoint, ...timing, ...(title === undefined ? {} : { title }), handler: fn });
+  return app;
+};
+app.on = (...args) => {
+  const explicit = args.length === 3;
+  const eventType = args[explicit ? 1 : 0];
+  const fn = args[explicit ? 2 : 1];
+  const place = explicit ? handles.get(args[0]) : manifest.owner?.kind === "resource" ? manifest.owner.ref : undefined;
+  const spec = manifest.events.find(event => event.type === eventType);
+  if (typeof fn !== "function" || !spec || manifest.owner?.kind !== "resource" || !place ||
+      spec.place !== manifest.owner.ref.type || place.type !== manifest.owner.ref.type || place.id !== manifest.owner.ref.id)
+    throw new Error("code_event_owner");
+  const entrypoint = "event:" + eventType + "@" + spec.version;
+  if (schedules.some(value => value.entrypoint === entrypoint)) throw new Error("code_duplicate_on");
+  schedules.push({ kind: "event", entrypoint, cron: null, event: { type: eventType, version: spec.version, place: { type: place.type, id: place.id } }, handler: fn });
   return app;
 };
 for (const method of Object.keys(manifest.appMethods).filter(name => manifest.appMethods[name] !== 1)) app[method] = () => unavailable(method);
@@ -140,7 +154,7 @@ const __codeSdk = Object.freeze({
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
     bridge = cloud;
   },
-  entries: () => [...schedules.map(({ entrypoint, cron, at, timeZone, title }) => ({ kind: "schedule", entrypoint, cron, ...(at === undefined ? {} : { at }), ...(timeZone === undefined ? {} : { timeZone }), ...(title === undefined ? {} : { title }) })),
+  entries: () => [...schedules.map(({ kind, entrypoint, cron, at, timeZone, title, event }) => ({ kind, entrypoint, cron, ...(at === undefined ? {} : { at }), ...(timeZone === undefined ? {} : { timeZone }), ...(event === undefined ? {} : { event }), ...(title === undefined ? {} : { title }) })),
     ...routes.map(({ entrypoint, route }) => ({ kind: "route", entrypoint, route, cron: null }))],
   diagnostics: () => diagnostics.map(value => ({ ...value })),
   async run(entrypoint, input) {
@@ -191,6 +205,12 @@ const __codeSdk = Object.freeze({
     }
     const schedule = schedules.find(value => value.entrypoint === entrypoint);
     if (!schedule) throw new Error("code_sdk_missing_entrypoint");
+    if (schedule.kind === "event") {
+      if (!input || input.type !== schedule.event.type || input.version !== schedule.event.version ||
+          input.place?.type !== schedule.event.place.type || input.place.id !== schedule.event.place.id || typeof input.id !== "string")
+        throw new Error("code_event_input");
+      return schedule.handler(input);
+    }
     return schedule.handler();
   },
 });

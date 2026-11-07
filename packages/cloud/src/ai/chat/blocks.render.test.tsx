@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { type Accessor, createComponent, createRoot, createSignal } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { aiAttachmentMarker } from "../attachments";
 import type { AiActiveTurn } from "../client/projection";
 import type { AiTurnBlock } from "../protocol";
 import type { AiStoredMessage } from "../types";
@@ -2236,4 +2237,62 @@ test("the series filter shows chart colors only when the shown view colors its s
   expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count", series: "region" }])).toBe(2);
   // Without a series column every line is one region mix, so a region color would describe nothing the chart draws.
   expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count" }])).toBe(0);
+});
+
+test("Code-started turns show their localized origin beside the prompt", () => {
+  const entry: AiStoredMessage = {
+    id: "code-input",
+    shortId: "Input2",
+    conversationId: "chat",
+    seq: 1,
+    kind: "message",
+    message: { role: "user", content: [{ type: "text", text: "Review my open work." }] },
+    loopId: "turn",
+    modelId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: null,
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    createdAt: "2026-11-07T09:00:00Z",
+    meta: null,
+  };
+  for (const label of ["Started by Code Morning review", "Gestartet von Code Morgenübersicht"]) {
+    const attributed = {
+      ...entry,
+      meta: { codeOrigin: { codeId: "c_morning", title: "Morning review", runId: "run", requestId: "request", label } },
+    };
+    const html = renderToString(() =>
+      createComponent(AiChatActionsProvider, {
+        actions: {},
+        get children() {
+          return createAiChatTimeline({ messages: () => [attributed], activeTurn: () => null })().map((item) => item.content);
+        },
+      }),
+    );
+    expect(html).toContain(label);
+    expect(html).toContain("Review my open work.");
+  }
+  renderToString(() =>
+    createComponent(AiChatActionsProvider, {
+      actions: {},
+      get children() {
+        const imageOnly: AiStoredMessage = {
+          ...entry,
+          message: {
+            role: "user",
+            content: [{ type: "text", text: aiAttachmentMarker({ path: "/image.png", mediaType: "image/png", size: 32 }) }],
+          },
+        };
+        const item = createAiChatTimeline({ messages: () => [imageOnly], activeTurn: () => null })()[0];
+        expect(item?.kind).toBe("message");
+        if (item?.kind === "message") {
+          expect(item.content).toBeUndefined();
+          expect(item.attachments).toMatchObject([{ name: "image.png", kind: "image" }]);
+        }
+        return undefined;
+      },
+    }),
+  );
 });

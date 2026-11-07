@@ -25,13 +25,14 @@ export class Cloud extends WorkerEntrypoint {
 export default {
   async fetch(request, env, ctx) {
     if (new URL(request.url).pathname === "/ping") return new Response("pong");
-    const { runId, source, entrypoint, input } = await request.json();
+    const { runId, source, entrypoint, input, modules } = await request.json();
     // load() is unnamed: every attempt gets a fresh isolate, even for an identical bundle.
     const worker = env.LOADER.load({
       compatibilityDate: "2026-10-01",
       compatibilityFlags: ["disallow_importable_env", "nodejs_compat_do_not_populate_process_env", "disable_nodejs_fs_module"],
       mainModule: "entry.js",
       modules: {
+        ...modules,
         "bundle.js": source,
         "entry.js": `import {WorkerEntrypoint} from 'cloudflare:workers';
           import * as bundle from './bundle.js';

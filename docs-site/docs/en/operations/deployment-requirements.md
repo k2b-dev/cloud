@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-11-02
+updated: 2026-11-07
 ---
 
 # Deployment requirements
@@ -656,19 +656,25 @@ See [Identity key operations](/en/docs/operations/identity-key-operations) for
 signing-key rotation, KEK recovery and revocation. Keep these secrets independent;
 `APP_SECRET` is not a signing key or an OAuth broker credential.
 
-Managed Assistant code hosts serve every Assistant turn that runs code,
-including API clients, `cld assistant --detach`, and routines (scheduled tasks). They
-validate `CLOUD_CORE_INTERNAL_ORIGIN` when a host is created, before launching
-Chromium. It must be an HTTP(S) origin reachable
-from the Assistant service. Each host also uses an authenticated ephemeral
-loopback HTTP listener inside that service; allow local networking without
-publishing these ports. Binary bodies preserve backpressure across this hop.
-Eight simultaneous host requests per process are admitted; excess requests
-receive `operation_busy`. Size memory for the existing 50 MiB per-file and
-250 MiB per-run code budgets plus Chromium; streaming transport does not remove
-the memory occupied by files loaded for analysis. View files are ordinary chat
-files under `/views` and count toward the per-chat file budget; they need no
-configuration or migration.
+Managed chat `code_run`, including API clients, `cld assistant --detach` and
+routine background turns, executes on the Code runner pool. Deploy Core,
+Assistant and the runner together with the current schema. An unavailable or
+saturated runner produces a visible tool error; the Assistant never falls back
+to Chromium. Existing routine HTTP grants still apply, while Studio RSQL
+`database` grants are unavailable in runner chat scripts. Use application
+capabilities for data access.
+
+Chat jobs share runner admission and execution budgets. Their fixed wall-clock
+budget includes queue and approval time; the JSON bridge also limits each file
+or capability transfer, including base64 overhead. See
+[One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs) for exact
+limits. View files remain ordinary chat files under `/views` and count toward
+the per-chat file budget.
+
+The remaining Studio host validates `CLOUD_CORE_INTERNAL_ORIGIN` before
+launching Chromium. Its authenticated loopback listener stays private to the
+Assistant service. Size memory for the legacy 50 MiB per-file and 250 MiB
+per-run budgets plus Chromium when enabling Studio operations.
 
 Assistant's `cloud.chart()` draws Studio app, chat app, script and PDF charts
 through the same options mapping as chat charts. Existing charts keep drawing:
@@ -701,18 +707,18 @@ the runtime-default seccomp profile. Chromium's inner sandbox stays off, so no
 custom seccomp profile, unprivileged user namespaces or node preparation is
 needed, and the service needs neither privileged mode, root, `SYS_ADMIN`, a
 Docker socket nor nested containers. Existing custom Assistant deployments must
-adopt these settings before using Code Mode. The equivalent Kubernetes
+adopt these settings before using the remaining Studio host. The equivalent Kubernetes
 `securityContext` is `runAsNonRoot: true` with a non-root `runAsUser`,
 `capabilities.drop: [ALL]`, `allowPrivilegeEscalation: false` and
 `seccompProfile.type: RuntimeDefault`.
 
-Each foreground chat host and scheduled turn has a separate browser process
-and ephemeral host credential. This is process isolation within one
+Each legacy Studio host has a separate browser process and ephemeral host
+credential. Managed chat scripts and routine code runs use workerd instead. This is process isolation within one
 capability-free application container, not a separate VM per user; the
 residual risk of an unsandboxed renderer inside that container is accepted and
 tracked in [#47](https://github.com/k2b-dev/cloud/issues/47), which moves
 Chromium into a dedicated sidecar. Keep one Assistant replica for now: Code
-Mode hosts and their approval waits live in the Assistant process, so a poll or
+Mode approval waits and Studio hosts live in the Assistant process, so a poll or
 an approval that reaches another replica marks the call lost. Lost hosts are not
 replayed. Studio previews continue running in the user's browser.
 

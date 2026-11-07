@@ -11,6 +11,7 @@ import type {
   ToolContext,
 } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
+import type { SQL } from "bun";
 import type { z } from "zod";
 import type { CapabilitySentenceField } from "../_internal/capability-sentences";
 import type {
@@ -276,6 +277,8 @@ export type AiConversationProjectUpdateResult =
   | { ok: true; conversation: AiConversation }
   | { ok: false; reason: "not_found" | "active_turn" | "already_assigned" };
 
+export type AiCodeOrigin = { codeId: string; title: string; runId: string; requestId: string; label: string };
+
 export type AiStoredMessage = {
   id: string;
   shortId: string;
@@ -299,6 +302,7 @@ export type AiStoredMessage = {
   meta: {
     /** The atomically consumed composer revision, used to confirm a local send. */
     submittedDraftRevision?: number;
+    codeOrigin?: AiCodeOrigin;
     modelRequest?: AiModelRequest;
     modelResolved?: AiResolvedModelRef;
     modelReplacement?: { kind: "model_replaced"; previousLabel: string; nextLabel: string };
@@ -404,6 +408,7 @@ export type AiTurnFinalizedEvent = {
 };
 
 export type AiTurn = {
+  codeOrigin?: AiCodeOrigin;
   deadline?: string | null;
   runBudgetMs?: number | null;
   cancelRequestedAt?: string | null;
@@ -663,6 +668,8 @@ export type AiBackgroundRunContext = {
 };
 
 export type AiChatTurnRunConfig = {
+  /** Trusted host attribution; never grants tool authority. */
+  codeOrigin?: AiCodeOrigin;
   background?: AiBackgroundRunContext;
   selectedSkillIds?: string[];
   /** Server-owned marker: model grants apply only to interactive Assistant chat. */
@@ -970,23 +977,26 @@ export type AiConversationService = {
   /** Create a queued compaction turn. Chat turns must use submitChatTurn. */
   createCompactionTurn(input: { conversationId: string; modelId: string; runConfig: AiCompactionTurnRunConfig }): Promise<AiTurn>;
   /** Persist the user message and create its turn in one transaction. */
-  submitChatTurn(input: {
-    queuedMessageId?: string;
-    conversationId: string;
-    modelId: string;
-    runConfig: AiChatTurnRunConfig;
-    userMessage: Message;
-    /** Atomically consume this saved draft revision when present. */
-    expectedDraftRevision?: number;
-    /** Conversation Project observed while resolving this turn's immutable snapshot. */
-    expectedProjectId?: string | null;
-    /** Delete active messages with seq >= truncateFromSeq first (retry-in-place). */
-    truncateFromSeq?: number;
-    /** Resources introduced by this user message, indexed in the same transaction. */
-    resources?: AiConversationResourceObservation[];
-    /** Retry source whose immutable turn-file bytes are copied into the new turn. */
-    retrySourceTurnId?: string;
-  }): Promise<{ turn: AiTurn; message: AiStoredMessage }>;
+  submitChatTurn(
+    input: {
+      queuedMessageId?: string;
+      conversationId: string;
+      modelId: string;
+      runConfig: AiChatTurnRunConfig;
+      userMessage: Message;
+      /** Atomically consume this saved draft revision when present. */
+      expectedDraftRevision?: number;
+      /** Conversation Project observed while resolving this turn's immutable snapshot. */
+      expectedProjectId?: string | null;
+      /** Delete active messages with seq >= truncateFromSeq first (retry-in-place). */
+      truncateFromSeq?: number;
+      /** Resources introduced by this user message, indexed in the same transaction. */
+      resources?: AiConversationResourceObservation[];
+      /** Retry source whose immutable turn-file bytes are copied into the new turn. */
+      retrySourceTurnId?: string;
+    },
+    db?: SQL,
+  ): Promise<{ turn: AiTurn; message: AiStoredMessage }>;
   getTurnRunConfig(input: { conversationId: string; turnId: string }): Promise<AiTurnRunConfig | null>;
   getLatestTurn(input: { conversationId: string; kind?: AiTurnRunConfig["kind"] }): Promise<AiTurn | null>;
   getTurn(input: { conversationId: string; turnId: string }): Promise<AiTurn | null>;

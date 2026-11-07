@@ -60,3 +60,32 @@ within one minute, and retries with a stable key after failures. Keep that
 worker running; a failed notification never repeats the chat message. Delivery
 receipts follow Code run retention; the chat message remains ordinary chat
 history. Inspect the run's capability calls to diagnose a refused delivery.
+
+## Rebuild scheduled Assistant routines
+
+Rebuild an open-ended routine as personal Code with `app.schedule` and
+`core.ai.chat.run`, preserving its prompt, destination and explicit time zone.
+Use `{ at, timeZone }` for one-time work and `{ cron, timeZone }` for recurring
+work. Review and activate the new Code before the cut, then stop the old routine before
+enabling its replacement schedule. Do not run both for the same occurrence.
+Existing routines stay unchanged until that cut.
+
+The replacement starts a normal turn in the owner's chat. Required approvals
+wait there and the Code run ends promptly; this differs from routines that
+refuse approval-needed tools. Each provider call uses the owner's normal
+interactive AI budget and settles to actual usage. The existing Assistant USD
+budget rules, when enabled, supply the bound and reset window; no new count
+setting is added. Disabled Assistant budgets retain normal unlimited owner usage.
+The existing Code and Code-owner daily USD limits also count these actual
+costs. A turn never allocates the full Code attempt allowance, so several cheap
+turns can run without consuming the full allowance for `core.ai.generate` and
+`core.ai.decide`. The normal loop and step limits still bound each turn. See the
+[capability contract](/en/docs/platform/capabilities#start-personal-code-chat-turns)
+for states, budget codes and a cost example. Bounded text tasks can keep
+`core.ai.generate` instead of starting a tool-using turn.
+
+Core adds `code.chat_runs` without altering routine definitions. Receipts
+follow Code run retention; ordinary chat messages and turns retain their own
+history. Keep the normal AI worker and sweep running so committed queued turns
+recover after a failed wake-up. A waiting turn appears in the chat and remains
+subject to its normal wait and execution limits.

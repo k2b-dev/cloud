@@ -17,6 +17,7 @@ export type RuntimeSdkCallOptions = z.infer<typeof RuntimeSdkCallOptions>;
 
 /** Host services behind `cloud.*`, shared by script runs and HTML app frames. Each one rechecks access on the server. */
 export type RuntimeServices = {
+  stream?: typeof runStream;
   /** Loads a lazy runtime chunk; the default reads the authenticated artifacts API. */
   chunk?: (name: string, signal: AbortSignal) => Promise<string>;
   capability?: (name: string, input: unknown, signal: AbortSignal, options?: RuntimeSdkCallOptions) => Promise<unknown>;
@@ -82,7 +83,7 @@ export function createServiceCalls(services: RuntimeServices) {
           if (streamBytes + ref.size > LIMITS.inputBytes) throw new CloudError("limit", "Stream transfers exceed the 250 MiB run budget.");
           streamBytes += ref.size;
         }
-        return runStream(ref, verb, args[2] instanceof Blob ? args[2] : undefined, signal);
+        return (services.stream ?? runStream)(ref, verb, args[2] instanceof Blob ? args[2] : undefined, signal);
       }
       case "http.fetch":
         if (!services.http) throw new CloudError("unavailable", "Server HTTP unavailable");

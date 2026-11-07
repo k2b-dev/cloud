@@ -5,6 +5,11 @@ load-tools: [code_run]
 ---
 # Assistant code mode
 
+Managed chat `code_run` executes on the Code runner, including unattended routine
+turns. Its bridge limits apply to file transfers too. Studio RSQL `cloud.db`
+is unavailable in this path; use application capabilities. Read
+[runtime limits](references/runtime.md) before running a script.
+
 Choose the smallest useful result: a one-off answer, a view, an exported file,
 or a Studio App. A tool the person will use, such as a calculator or a form,
 is a Studio App, even when it keeps no data; views show a result, and an

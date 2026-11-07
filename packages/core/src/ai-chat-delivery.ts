@@ -5,27 +5,12 @@ import { type CapabilityExecutionContext, CapabilityIdempotencyKeySchema, capabi
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { codeChatDestination, ownedCodeRunChat, personalCodeRun } from "./ai-code-chat";
 
 // Match the existing inter-chat message budget, comfortably below the capability envelope.
 export const aiChatDeliveryInput = z.strictObject({
   text: z.string().trim().min(1).max(10_000).describe("Result text to append to your own chat; at most 10,000 characters."),
 });
-const destination = (context: CapabilityExecutionContext) => (context.target?.type === "core.ai.chat" ? context.target.id : "");
-const personalRun = (context: CapabilityExecutionContext) => {
-  const delegation = context.actor.delegation;
-  return context.actor.kind === "user" &&
-    context.user?.id === context.actor.user.id &&
-    context.accessSubject.type === "user" &&
-    context.accessSubject.userId === context.user.id &&
-    delegation?.credentialKind === "mandate" &&
-    delegation.workloadType === "code.version" &&
-    delegation.workloadId &&
-    delegation.workloadRun &&
-    ["core", "runner"].includes(delegation.callingAppId)
-    ? { userId: context.user.id, versionId: delegation.workloadId, runId: delegation.workloadRun }
-    : null;
-};
-
 /** Core's capability boundary: the delegated Code owner and destination owner must be the same person. */
 export const aiChatDeliveryAction = {
   target: "ai.chat",
@@ -42,13 +27,9 @@ export const aiChatDeliveryAction = {
   idempotency: "required" as const,
   policy: { silent: "you" as const },
   async review(_input: z.infer<typeof aiChatDeliveryInput>, context: CapabilityExecutionContext) {
-    const run = personalRun(context);
+    const run = personalCodeRun(context);
     if (!run) return fail(err.forbidden("Chat delivery requires personal Code"));
-    const [chat] = await sql<{ title: string }[]>`SELECT conversation.title FROM ai.conversations conversation
-      JOIN code.runs run ON run.id=${run.runId}::uuid JOIN code.codes code ON code.id=run.code_id
-      WHERE run.version_id=${run.versionId}::uuid AND code.owner_kind='person' AND code.owner_user_id=${run.userId}::uuid
-        AND conversation.short_id=${destination(context)} AND conversation.created_by_user_id=${run.userId}::uuid
-        AND conversation.archived_at IS NULL`;
+    const chat = await ownedCodeRunChat(context, sql);
     if (!chat) return fail(err.notFound("Chat"));
     const de = context.locale.split("-")[0] === "de";
     return ok({
@@ -64,25 +45,18 @@ export const aiChatDeliveryAction = {
     });
   },
   async run(input: z.infer<typeof aiChatDeliveryInput>, context: CapabilityExecutionContext) {
-    const run = personalRun(context);
+    const run = personalCodeRun(context);
     if (!run) return fail(err.forbidden("Chat delivery requires personal Code"));
     const effectKey = CapabilityIdempotencyKeySchema.safeParse(context.idempotencyKey);
     if (!effectKey.success) return fail(err.badInput("A valid idempotency key is required"));
     const parsed = aiChatDeliveryInput.safeParse(input);
     if (!parsed.success) return fail(err.badInput("Supply 1–10,000 characters of result text"));
     const key = effectKey.data;
-    const requestHash = approvalArgsDigest({ chat: destination(context), text: parsed.data.text });
+    const requestHash = approvalArgsDigest({ chat: codeChatDestination(context), text: parsed.data.text });
     return sql.begin(async (db) => {
       // Serialize one effect key even if concurrent retries name different destination chats.
       await db`SELECT pg_advisory_xact_lock(hashtextextended(${`code.chat.deliver:${run.runId}:${key}`},0))`;
-      const [chat] = await db<
-        { id: string; short_id: string; code_id: string }[]
-      >`SELECT conversation.id,conversation.short_id,code.id AS code_id
-        FROM ai.conversations conversation JOIN code.runs run ON run.id=${run.runId}::uuid
-        JOIN code.codes code ON code.id=run.code_id
-        WHERE run.version_id=${run.versionId}::uuid AND code.owner_kind='person' AND code.owner_user_id=${run.userId}::uuid
-          AND conversation.short_id=${destination(context)} AND conversation.created_by_user_id=${run.userId}::uuid
-          AND conversation.archived_at IS NULL FOR UPDATE OF conversation`;
+      const chat = await ownedCodeRunChat(context, db, { lock: true });
       if (!chat) return fail(err.notFound("Chat"));
       const [previous] = await db<{ request_hash: string; message_short_id: string }[]>`SELECT request_hash,message_short_id
         FROM code.chat_deliveries WHERE run_id=${run.runId}::uuid AND key=${key}`;

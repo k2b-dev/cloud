@@ -54,6 +54,7 @@ import { principalLabel } from "@k2b/cloud/shared";
 import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { aiChatDeliveryAction } from "./ai-chat-delivery";
+import { aiChatRunAction, aiChatRunReadQuery } from "./ai-chat-run";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
 import { aiDecisionQuery } from "./ai-decision-capability";
 import { aiGenerationQuery } from "./ai-generation-capability";
@@ -64,6 +65,7 @@ import { CodeDataError, codePerson } from "./code/access";
 import { codeAttentionContracts, listCodeAttention, readCodeAttention, readCodeSummary } from "./code/attention";
 import { codeAutomationContracts, listCodeAutomations } from "./code/automations";
 import { codeQueryContracts } from "./code/contracts";
+import { listCodeRunsWithEvents, replayCodeEventDelivery } from "./code/events";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
@@ -71,7 +73,7 @@ import { startCodeRun } from "./code/scheduling";
 import { codeSchedulingContracts } from "./code/scheduling-contracts";
 import { codeSecretContracts } from "./code/secret-contracts";
 import { deleteCodeSecret, listCodeSecrets, reviewCodeSecretDeletion, setCodeSecret } from "./code/secrets";
-import { countOwnCodeRuns, listCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import { countOwnCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
   decideCodeVersion,
@@ -92,7 +94,7 @@ import { taskGrantReview } from "./task-grant-presentation";
 const reviewCodeOperation = async (
   input: { codeId: string; entrypoint?: string },
   context: CapabilityExecutionContext,
-  operation: "run" | "submit" | "pause" | "resume",
+  operation: "run" | "submit" | "pause" | "resume" | "redeliver",
 ) => {
   const result = await runCodeQuery(context, async (ctx) => {
     codePerson(ctx, true);
@@ -109,7 +111,7 @@ const reviewCodeOperation = async (
         confirm: t.codeOperationConfirm({ operation }),
         decline: t.codeOperationDecline,
       },
-      ...(operation === "run"
+      ...(operation === "run" || operation === "redeliver"
         ? { ask: "app_asks" as const }
         : operation === "resume"
           ? { ask: "keeps_working" as const }
@@ -791,6 +793,7 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "ai.chat.run.read": aiChatRunReadQuery,
     "ai.decide": aiDecisionQuery,
     "ai.generate": aiGenerationQuery,
     "code.secret.list": {
@@ -899,7 +902,7 @@ export const aiCapabilities = defineCapabilities({
       description: "List attempt metadata without run inputs, outputs or capability call contents.",
       ...codeQueryContracts.runList,
       openWorld: false,
-      run: (input, context) => runCodeQuery(context, (ctx) => listCodeRuns(input, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeRunsWithEvents(input, ctx)),
     },
     "code.run.read": {
       title: "Read a Code run",
@@ -1374,6 +1377,7 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "ai.chat.run": aiChatRunAction,
     "code.run": {
       title: "Run Code",
       description: "Start the active checked Code entrypoint. Reuse the request key to recover its receipt; use a new key to run again.",
@@ -1391,6 +1395,21 @@ export const aiCapabilities = defineCapabilities({
         const idempotencyKey = `capability:${new Bun.CryptoHasher("sha256").update(JSON.stringify(["core.code.run", context.accessSubject, context.idempotencyKey])).digest("hex")}`;
         return runCodeQuery(context, (ctx) => startCodeRun({ ...input, codeId: codeTargetId(context), idempotencyKey }, ctx));
       },
+    },
+    "code.event.redeliver": {
+      title: "Retry Code event delivery",
+      description: "Retry one failed platform event delivery of active Code. Already admitted events never create a second run.",
+      target: "code",
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      input: z.object({ deliveryId: z.uuid().describe("Failed delivery UUID returned by core.code.run.list.") }).strict(),
+      data: z.object({ deliveryId: z.uuid() }).strict(),
+      policy: { ask: "app_asks" },
+      review: (input, context) =>
+        reviewCodeOperation({ codeId: codeTargetId(context), entrypoint: input.deliveryId }, context, "redeliver"),
+      run: (input, context) => runCodeQuery(context, (ctx) => replayCodeEventDelivery(codeTargetId(context), input.deliveryId, ctx)),
     },
     "code.secret.set": {
       title: "Set Code secret",

@@ -1558,6 +1558,66 @@ text or destination returns `IDEMPOTENCY_CONFLICT`. Each call uses the ordinary
 Code call log. See [Code SDK](/en/docs/platform/code-sdk#deliver-a-result-to-your-gustav-chat)
 for the generated handle and an example.
 
+## Start personal Code chat turns
+
+Core's `core.ai.chat.run` Action targets `core.ai.chat` and takes
+`{ prompt, context? }`. The prompt has 1–10,000 characters after trimming;
+source context has at most 10,000 characters. Invocation metadata supplies a
+required idempotency key. The Action uses `silent: "you"` and accepts only a
+delegated personal Code run whose owner owns the active target chat. Review
+and execution both check that binding. It never selects or creates a chat.
+
+It creates one ordinary durable Assistant turn with the owner's current
+permissions, model grants, loop and step limits, and approval rules. Tool requests that need approval
+wait in the chat. Code receives `{ id, chatId, status, reason, origin }` and an
+open link promptly; it does not wait for a human. `core.ai.chat.run.read`, on
+the same chat target with `{ id }`, returns a current snapshot of that turn.
+States are `queued`, `running`, `waiting_for_approval`, `waiting_for_input`,
+`completed` and `failed`. A failed turn includes its reason. A retry of the
+same Action key recovers the original turn; the dispatcher may replay the
+admission reply. Use `ai.chat.run.read` for its current state. Different
+instructions, context or destination under that key return
+`IDEMPOTENCY_CONFLICT`. A chat with another active turn or pending/failed queued
+messages returns `chat_busy`. A Project change during preparation returns
+`chat_changed`; reread the chat before trying again.
+
+Turn admission uses the owner's normal interactive Assistant budget. Each
+provider call reserves only affordable input/output and settles to its actual
+reported usage, exactly as an interactive turn does. An exhausted owner budget
+returns `quota_exhausted`; unknown priced usage returns `quota_usage_unknown`.
+The existing Assistant budget rules determine the amount and reset window
+(including a daily rule when configured). As with interactive chat, disabled
+Assistant budgets or unpriced models have no owner cost ceiling. There is no new turn-count setting
+or flat charge. Normal per-turn loop and step limits bound each invocation.
+
+The existing `core.code.ai_daily_budget_usd` and
+`core.code.ai_owner_daily_budget_usd` limits also include the actual costs of
+Code-started chat calls, alongside text AI usage, per installation calendar day
+in `app.timezone`. Live inference reservations count until they settle; unknown
+priced chat costs block new turn admission. They do not create an extra unknown-usage
+block for text AI calls; those retain the normal owner quota rules. Unknown
+Code chat costs block new turns until the next installation calendar day; an
+Assistant allowance reset does not reset the Code daily check. These limits
+default to 1 each and return
+`code_ai_daily_budget_limit` or `code_ai_owner_daily_budget_limit` when exhausted.
+For example, three turns costing 0.02 each use 0.06 of the daily allowance,
+leaving 0.94 for further turns or `core.ai.generate` / `core.ai.decide`.
+The Code daily checks refuse new invocations once that allowance is spent;
+an already admitted turn can exceed the remaining Code allowance. Its owner
+quota still applies at each provider call. Compaction retains normal background
+accounting and is excluded from these chat costs.
+Turns never allocate the full `core.code.ai_budget_usd` attempt allowance:
+that setting continues to bound the separate text AI calls. A receipt retry
+starts no inference and adds no cost. Model admission can also return
+`ai_disabled`, `ai_no_model` or `model_policy_mismatch` before starting a turn.
+
+Turn creation and its receipt commit together. The
+ordinary AI queue and sweep recover work after a failed queue wake-up. Chat
+history and the turn record retain the Code name, Code run and invocation
+request ID. Code call logging remains the standard bridge log. Read a later
+state once or show the chat link; never keep a Code run polling for approval.
+See the [SDK example](/en/docs/platform/code-sdk#start-a-gustav-turn-in-your-own-chat).
+
 ## Write valid contracts
 
 Cloud validates the declaration at startup:

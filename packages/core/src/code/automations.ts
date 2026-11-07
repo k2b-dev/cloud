@@ -21,7 +21,7 @@ export const CodeAutomationSchema = z
   .object({
     entrypoint: z.string(),
     title: CodeAutomationTitleSchema.optional(),
-    kind: z.enum(["schedule", "manual", "route"]),
+    kind: z.enum(["schedule", "manual", "event", "route"]),
     cron: z.string().nullable(),
     at: z.iso.datetime({ offset: true }).optional(),
     timeZone: z.string().optional(),

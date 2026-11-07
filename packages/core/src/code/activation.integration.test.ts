@@ -8,12 +8,14 @@ import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.tes
 import { z } from "zod";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
+import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateActivation } from "../migrate/core/code-activation";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
+import { migrate as migrateEvents } from "../migrate/core/events";
 import { migrate as migratePwa } from "../migrate/core/pwa";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
@@ -158,6 +160,8 @@ databaseSuite()("durable Code activation", () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_activation");
     await migrateAuth();
+    await migrateEvents();
+    await migrateAppEvents();
     readersSpy = spyOn(provider, "readResourcePrincipals").mockImplementation(async (input) => ({
       state: "checked",
       readable: [...input.principals],

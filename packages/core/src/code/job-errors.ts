@@ -7,6 +7,7 @@ export class CodeJobError extends Error {
       | "code_job_output_limit"
       | "code_job_time_limit"
       | "code_job_cancelled"
+      | "code_job_call_limit"
       | "code_job_failed",
   ) {
     super(code);

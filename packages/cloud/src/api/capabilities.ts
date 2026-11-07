@@ -530,7 +530,7 @@ const runCapabilityDispatch = async (
   }
   const invocationBody = capabilityInvocationBody(call);
   const boundCall = operation.target !== undefined || operation.refs !== undefined;
-  // A mandate-derived nested call must return through the same current-policy check.
+  // Execution mandates retain their policy check. Event visibility dependencies use the claimed proof and ordinary read grants.
   if (params.parentInvocation?.credential_kind === "mandate" && !params.parentInvocation.workload_event && !params.mandate)
     return errorResponse("MANDATE_POLICY_DENIED", "A current mandate is required", 403);
 
@@ -811,15 +811,17 @@ const runCapabilityDispatch = async (
       ? {
           appId: params.appId,
           capability: `${params.appId}.${params.capabilityId}`,
-          // Chat delivery explicitly scopes its effects per Code run. Other Actions
-          // retain their cross-run business-key dedupe; the provider key is unchanged.
+          // Chat delivery and turn receipt keys are per Code run; business-key Actions keep cross-run dedupe.
           principal:
             (params.appCaller
               ? `app:${params.appCaller.appId}`
               : claimPrincipal
                 ? `${claimPrincipal.type}:${claimPrincipal.id}`
                 : "anonymous") +
-            (params.codeRun && params.workloadRun && params.appId === "core" && params.capabilityId === "ai.chat.deliver"
+            (params.codeRun &&
+            params.workloadRun &&
+            params.appId === "core" &&
+            ["ai.chat.deliver", "ai.chat.run"].includes(params.capabilityId)
               ? `:code-run:${params.workloadRun}`
               : ""),
           keyHash: capabilityIdempotencyKeyHash(idempotencyKey.data),

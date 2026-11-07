@@ -16,6 +16,7 @@ import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "
 import { Runner } from "../../../runner/src/runner";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
+import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
@@ -23,6 +24,7 @@ import { migrate as migrateJobs } from "../migrate/core/code-jobs";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
+import { migrate as migrateEvents } from "../migrate/core/events";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { FixtureEngine } from "./acceptance.test-fixture";
 import type { CodeContext } from "./access";
@@ -212,6 +214,8 @@ suiteFor(
   beforeAll(async () => {
     database = await useFreshDatabase("code_c13");
     await migrateAuth();
+    await migrateEvents();
+    await migrateAppEvents();
     await migrateAudit();
     await migrateSettings();
     await migrateAppApproval();

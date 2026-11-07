@@ -247,7 +247,7 @@ matching the dispatcher contract. Choose a stable key from
 the business operation, such as a message ID and revision. Keys are trimmed,
 contain 1–200 visible ASCII characters, and cannot contain spaces. Repeating a key
 has the platform's existing 24-hour idempotency semantics.
-Chat result delivery explicitly scopes its key to one run, as described below;
+Chat result delivery and chat turns scope their keys to one run, as described below;
 other Actions retain their cross-run business-key deduplication.
 
 Methods resolve the operation's domain `data`, typed from `dataSchema`.
@@ -349,6 +349,62 @@ The Action uses the `silent: "you"` policy and appears in the run's normal
 capability call log. It performs no model inference and consumes no Code AI
 budget.
 
+## Start a Gustav turn in your own chat
+
+Personal Code uses `core.ai.chat.run` when the task needs Gustav to choose and
+use tools. Discover the owner's chat ID and the generated handle first:
+
+```ts
+import { app, core } from "@sdk";
+
+app.schedule(
+  { at: "2026-12-01T09:00:00+01:00", timeZone: "Europe/Berlin" },
+  async () => {
+    const run = await core.ai.chat("Chat23").ai.chat.run({
+      prompt: "Review my open work and prepare a short plan in this chat.",
+      idempotencyKey: "morning-review",
+    });
+    console.log(run.id, run.status);
+  },
+  { name: "morning-review", title: "Review open work" },
+);
+export default app;
+```
+
+`Chat23` is a fictional destination. Keep the routine's actual time zone.
+For recurring routines, use `{ cron, timeZone }` to preserve the routine's time
+zone. The Action accepts a trimmed prompt of
+1–10,000 characters and optional `context` of at most 10,000 characters.
+Context is source data, not additional authority or trusted instructions.
+
+The result contains `id`, `chatId`, `status`, `reason` and `origin`. It returns
+promptly with `queued`, `running`, `waiting_for_approval`, `waiting_for_input`,
+`completed` or `failed`. A later
+`core.ai.chat("Chat23").ai.chat.run.read({ id: run.id })` reads one current
+snapshot. Finish the Code run when approval is needed; the owner decides in
+the chat, and the ordinary chat worker continues the same turn. Do not poll
+until the owner answers. A busy chat returns `chat_busy`; try a later schedule
+or manual run after its current turn ends.
+
+Only the personal Code owner may target their own active chat. Sharing Code
+with a reader grants no chat authority. Resource- and app-owned Code cannot
+start these turns. Each turn uses the owner's current model grants, tools and
+approval rules, without passing the Code mandate to its tools. Billable
+inference charges actual usage to the owner's normal interactive Assistant allowance,
+with no flat Code attempt debit. Existing daily Code USD limits include that
+actual cost; normal model step
+and turn time limits still apply. The chat and run show “Started by Code
+{name}” (or “Gestartet von Code {name}”). The invoking Code keeps its ordinary
+capability call log.
+
+One stable key identifies one intended turn in a Code run. Repeating it recovers
+the original turn, even after its allowance is exhausted; the admission reply
+may be replayed. Read `ai.chat.run.read` to get the current state.
+Changing the prompt, context or destination under that key returns
+`IDEMPOTENCY_CONFLICT`. A new run can use the same key for its next occurrence.
+See [chat turn capability](/en/docs/platform/capabilities#start-personal-code-chat-turns)
+for the daily admission cap and budget error codes.
+
 ## Name an automation
 
 Give a schedule a stable name for manual execution and an optional readable
@@ -372,6 +428,37 @@ Titles need not be unique; the stable name identifies the automation.
 Names contain letters,
 digits, dots, underscores or hyphens, start with a letter or digit, and must be
 unique in the module. Keep the name across versions to identify the same task.
+
+## React to resource events
+
+Resource-owned Code can register a declared automation event at its own place:
+
+```ts
+import { app, owner } from "@sdk";
+
+app.on("inventory.item.changed", async (event) => {
+  // event.subject identifies the changed item; event.place is this Code's owner.
+  // Read current data through the SDK before deciding what to do.
+});
+```
+
+Use an event actually offered by the generated SDK. `app.on(owner, event, handler)`
+is the explicit form. The event name and place must be constants at module level.
+Only one handler per event is allowed. Personal Code and app-owned Code cannot
+subscribe. Events without a place, events at another place, and declarations
+with `automation: false` cannot start this Code.
+
+The handler receives the typed reference envelope: `id`, `type`, `version`,
+`source`, `time`, `subject`, `place`, optional `cause`, and `data`. Data stays
+reference-only; the event grants no access to the referenced resource. Cloud
+checks the Code account's current read permission at the place before admitting
+a run. Actual SDK calls still check their current target permissions.
+
+Checking records the exact event version and owner place in the immutable
+manifest. Activation installs those subscriptions with the approved version's
+execution mandate. The stable entrypoint is `event:<event-type>@<version>`.
+See [Code runs](/en/docs/platform/code-runs#understand-event-deliveries) for
+pause, replay, deduplication and queue behavior.
 
 ## Serve routes
 
@@ -437,8 +524,8 @@ calls. Visitor input and response payloads are transient.
 
 ## Recognize later-phase APIs
 
-`nav` and `fetch` registrations still report Phase 2; `on` and `webhook`
-report Phase 3. The runtime refuses these registrations too. Eligible event
+`nav` and `fetch` registrations still report Phase 2; `webhook`
+reports Phase 3. The runtime refuses these registrations too. Eligible event
 payloads come from event schemas; events with `automation: false` are absent.
 
 ## Generate and host an SDK
@@ -511,12 +598,26 @@ permission changes, and the runner's ESM bundle.
 ## One-off chat runs
 
 Gustav's one-off `code_run` compiler supplies the same `generateCodeSdk` output
-with `mode: "code_run"`. It binds normalized targets, refs and idempotency
-metadata to the existing capability host, preserving its access checks and
-approvals. SDK methods return domain data; the older `cloud.capabilities.run`
+with `mode: "code_run"` and executes it in the Code runner's isolated workerd
+runtime. It binds normalized targets, refs and idempotency metadata to the
+current person's Assistant turn, preserving capability access checks and
+approvals. It does not create a lasting Code, version or version mandate.
+SDK methods return domain data; the older `cloud.capabilities.run`
 keeps returning its capability envelope. This mode has no `app` or `owner`,
 and accepts dynamic IDs. The host also exports its existing `cloud.sheet`
 helpers as `sheet` from `@sdk`. Other package imports remain unavailable.
+`http` and `secrets` use the person's existing chat HTTP approvals and secret
+bindings. Secret values remain in the Assistant host. Files, views, progress,
+logs, return values and script errors keep their chat result format.
+
+One-off runs share runner capacity and use its fixed wall-clock, memory and
+bridge budgets; see [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs).
+Background turns use the same runner path. Their capability and HTTP calls
+still require the routine's current mandate and exact grants; they cannot ask
+for interactive approval. Studio RSQL `database` grants are unavailable in
+runner `code_run`, including when `resourceId` or a saved script is supplied.
+Use an application's permission-aware capabilities for application data.
+There is no automatic replacement database or grant migration.
 
 See [Gustav Code tools](/en/docs/platform/gustav-code-tools) for a one-call CSV
 example and the lasting-Code workflow.

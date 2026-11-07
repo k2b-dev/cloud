@@ -69,6 +69,7 @@ async function enqueue(
     if (input.tick) return null;
     throw new CodeDataError("BAD_INPUT", "Unknown Code entrypoint.");
   }
+  if (entry.kind === "event" && !input.tick) throw new CodeDataError("BAD_INPUT", "Event entrypoints only accept platform deliveries.");
   if (input.tick?.cron !== undefined && (input.tick.cron !== entry.cron || (input.tick.timeZone ?? "UTC") !== (entry.timeZone ?? "UTC")))
     return null;
   if (input.tick?.at !== undefined && (input.tick.at !== entry.at || input.tick.timeZone !== entry.timeZone)) return null;
@@ -212,7 +213,10 @@ export async function claimCodeRuns(
       const [candidate] = await db<{ id: string }[]>`
         SELECT c.id FROM code.codes c WHERE c.state='active'
         AND EXISTS(SELECT 1 FROM code.runs r WHERE r.code_id=c.id AND r.state='queued'
-          AND r.version_id=c.active_version_id AND (r.deadline_at IS NULL OR r.deadline_at>clock_timestamp()))
+          AND r.version_id=c.active_version_id AND (r.deadline_at IS NULL OR r.deadline_at>clock_timestamp())
+          AND (r.event_subject_key IS NULL OR NOT EXISTS(SELECT 1 FROM code.runs earlier WHERE earlier.code_id=r.code_id
+            AND earlier.event_subject_key=r.event_subject_key AND earlier.state IN ('queued','running')
+            AND (earlier.state='running' OR earlier.event_sequence<r.event_sequence))))
         AND (SELECT count(*) FROM code.runs r WHERE r.code_id=c.id AND r.state='running')<${limits.perCode}
         AND (SELECT count(*) FROM code.runs r JOIN code.codes o ON o.id=r.code_id WHERE r.state='running'
           AND ROW(o.owner_kind,o.owner_user_id,o.owner_type,o.owner_id,o.owner_app_id)
@@ -243,8 +247,11 @@ export async function claimCodeRuns(
         continue;
       }
       const [run] = await db<ClaimedRun[]>`WITH next AS (
-        SELECT id FROM code.runs WHERE code_id=${code.id} AND version_id=${code.activeVersionId}::uuid AND state='queued'
-        AND (deadline_at IS NULL OR deadline_at>clock_timestamp()) ORDER BY created_at,id LIMIT 1 FOR NO KEY UPDATE
+        SELECT r.id FROM code.runs r WHERE r.code_id=${code.id} AND r.version_id=${code.activeVersionId}::uuid AND r.state='queued'
+        AND (r.deadline_at IS NULL OR r.deadline_at>clock_timestamp())
+        AND (r.event_subject_key IS NULL OR NOT EXISTS(SELECT 1 FROM code.runs earlier WHERE earlier.code_id=r.code_id
+          AND earlier.event_subject_key=r.event_subject_key AND earlier.state IN ('queued','running')
+          AND (earlier.state='running' OR earlier.event_sequence<r.event_sequence))) ORDER BY r.created_at,r.id LIMIT 1 FOR NO KEY UPDATE
       ), leased AS (
         UPDATE code.runs r SET state='running',generation=generation+1,runner_instance_id=${instanceId ?? null}::uuid,
           ai_reference_cost=0,ai_reserved_cost=0,ai_budget_call=NULL,
@@ -395,7 +402,7 @@ export async function reconcileCodeRuns(): Promise<void> {
     for (const run of expired) await settleRun(run.id, run.timed_out ? "wall_clock_limit" : "lease_lost", limits, db);
     await db`UPDATE code.runs r SET state='failed',outcome=CASE WHEN r.deadline_at<=clock_timestamp() THEN 'wall_clock_limit' ELSE 'code_not_active' END,ended_at=clock_timestamp()
       WHERE r.id IN(SELECT q.id FROM code.runs q JOIN code.codes c ON c.id=q.code_id WHERE q.state='queued'
-        AND (c.state<>'active' OR q.version_id IS DISTINCT FROM c.active_version_id OR q.deadline_at<=clock_timestamp())
+        AND ((c.state<>'active' AND NOT(q.trigger='event' AND q.generation=0)) OR q.version_id IS DISTINCT FROM c.active_version_id OR q.deadline_at<=clock_timestamp())
         ORDER BY q.created_at,q.id LIMIT 100 FOR UPDATE OF q SKIP LOCKED)`;
     // Periodic outbox repair covers queue retention, delivery exhaustion and a ticket consumed while all Codes were busy.
     await db`INSERT INTO code.run_outbox(run_id) SELECT id FROM code.runs WHERE state='queued'

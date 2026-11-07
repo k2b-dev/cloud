@@ -149,13 +149,14 @@ export async function beginAiCall(
     const userId = context.subject?.type === "user" ? context.subject.userId : context.userId;
     const serviceId = context.subject?.type === "service_account" ? context.subject.serviceAccountId : null;
     await db`INSERT INTO ai.inference_calls(id,user_id,service_account_id,credential_id,model_profile_id,model_id,requested_class,resolved_class,provider_model,kind,task,
-      turn_id,turn_attempt,conversation_id,workflow_run_id,step_key,trace_id,app_id,workflow_id,workflow_name,workflow_version,pricing,reserved,lease_expires_at)
+      turn_id,turn_attempt,conversation_id,workflow_run_id,step_key,trace_id,app_id,workflow_id,workflow_name,workflow_version,pricing,reserved,lease_expires_at,code_id)
       VALUES(${id}::uuid,CASE WHEN ${serviceId}::uuid IS NULL THEN COALESCE(${userId ?? null}::uuid,(SELECT created_by_user_id FROM ai.conversations WHERE id=${context.conversationId ?? null}::uuid)) ELSE NULL END,
         ${serviceId}::uuid,${context.credentialId ?? null}::uuid,${profile.id},${profile.modelId},${context.modelRef?.requestedClass ?? null},${context.modelRef?.class ?? null},${profile.model},${context.kind},${context.task},${context.turnId ?? null}::uuid,
         (SELECT attempt FROM ai.turns WHERE id=${context.turnId ?? null}::uuid),${context.conversationId ?? null}::uuid,
         ${context.workflowRunId ?? null}::uuid,${context.stepKey ?? null},${context.traceId ?? null},COALESCE(${workflow?.app ?? context.appId ?? null},(SELECT launched_by_app_id FROM ai.conversations WHERE id=${context.conversationId ?? null}::uuid),'core'),${workflow?.id ?? null}::uuid,${workflow?.name ?? null},${workflow?.revision ?? null},
         (${profile.pricing ? JSON.stringify(profile.pricing) : null}::text)::jsonb,${reserved}::numeric,
-        now()+CASE WHEN ${context.kind}='live-transcription' THEN interval '10 minutes 10 seconds' ELSE interval '2 minutes' END)`;
+        now()+CASE WHEN ${context.kind}='live-transcription' THEN interval '10 minutes 10 seconds' ELSE interval '2 minutes' END,
+        (SELECT run_config->'codeOrigin'->>'codeId' FROM ai.turns WHERE id=${context.turnId ?? null}::uuid))`;
     return { id, maxOutputTokens };
   });
   if (result.error) throw result.error;

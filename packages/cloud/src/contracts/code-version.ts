@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CapabilityQualifiedIdSchema, CloudResourceRefSchema } from "./capabilities";
 import { CodeInternetOriginsSchema } from "./code-internet";
 import { CodeRouteSchema } from "./code-routes";
 import { CodeSecretVersionBindingSchema } from "./code-secrets";
@@ -27,9 +28,19 @@ export const CodeOnceScheduleSchema = z.strictObject({
     }, "Use a valid IANA time zone")
     .describe("IANA time zone for displaying the scheduled instant."),
 });
+/** Exact checked resource event registration. It carries no resource grants. */
+export const CodeEventTriggerSchema = z
+  .object({
+    type: CapabilityQualifiedIdSchema.describe("Qualified event type from the capability catalog."),
+    version: z.number().int().positive().describe("Exact declared event version."),
+    place: CloudResourceRefSchema.describe("Exact resource owner whose events this registration accepts."),
+  })
+  .strict();
+
 export const CodeVersionEntrypointSchema = z
   .strictObject({
-    kind: z.enum(["schedule", "manual", "route"]).describe("Scheduled, manually invoked or HTTP entrypoint."),
+    kind: z.enum(["schedule", "manual", "event", "route"]).describe("Scheduled, manually invoked, event-triggered or HTTP entrypoint."),
+    event: CodeEventTriggerSchema.optional().describe("Exact event version and owner place for an event entrypoint."),
     route: CodeRouteSchema.optional().describe("Checked method, path and public declaration for a route handler."),
     entrypoint: z.string().min(1).describe("Named ESM export selected by the runner."),
     title: CodeAutomationTitleSchema.optional().describe("Optional reviewed display title; entrypoint remains the stable key."),
@@ -42,6 +53,12 @@ export const CodeVersionEntrypointSchema = z
     line: z.number().int().positive().describe("One-based source line."),
   })
   .superRefine((entry, context) => {
+    if (
+      entry.kind === "event"
+        ? !entry.event || entry.cron !== null || entry.entrypoint !== `event:${entry.event.type}@${entry.event.version}`
+        : !!entry.event
+    )
+      context.addIssue({ code: "custom", message: "Event metadata and stable entrypoint must match the registration kind" });
     if ((entry.kind === "route") !== (entry.route !== undefined))
       context.addIssue({ code: "custom", message: "Routes require a route descriptor; other entrypoints forbid it" });
     if (entry.timeZone !== undefined && entry.kind !== "schedule")
