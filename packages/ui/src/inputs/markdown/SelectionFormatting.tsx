@@ -1,5 +1,5 @@
 import { i18n } from "@k2b/stdlib";
-import { batch, createEffect, createSignal, type JSX, onCleanup, onMount } from "solid-js";
+import { batch, createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { SelectionToolbar } from "../../actions/SelectionToolbar";
 import { Toolbar } from "../../actions/Toolbar";
 import { insertLink, toggleBold, toggleBulletList, toggleCode, toggleItalic, toggleNumberedList, toggleQuote } from "./actions";
@@ -174,50 +174,60 @@ export function SelectionFormatting(props: SelectionFormattingProps): JSX.Elemen
   const run = (format: (textarea: HTMLTextAreaElement) => void) => () => format(textarea);
   const pressed = (format: string) => props.activeFormats().has(format);
 
+  // Touch devices keep their own selection menu: the toolbar is not rendered there at all, so nothing of it mounts
+  // or animates.
   return (
-    <SelectionToolbar
-      label={messages().selectionFormatting}
-      anchor={anchor}
-      onEscape={() => {
-        setDismissed(selectionKey());
-        textarea.focus();
-      }}
-    >
-      <div
-        ref={root}
-        style={{ display: "contents" }}
-        onFocusIn={() => setToolbarFocused(true)}
-        onFocusOut={(event) => {
-          if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setToolbarFocused(false);
+    <Show when={finePointer()}>
+      <SelectionToolbar
+        label={messages().selectionFormatting}
+        anchor={anchor}
+        onEscape={() => {
+          setDismissed(selectionKey());
+          textarea.focus();
         }}
       >
-        <Toolbar.Action label={messages().bold} icon="ti ti-bold" pressed={pressed("bold")} keys="mod+b" onClick={run(toggleBold)} />
-        <Toolbar.Action
-          label={messages().italic}
-          icon="ti ti-italic"
-          pressed={pressed("italic")}
-          keys="mod+i"
-          onClick={run(toggleItalic)}
-        />
-        <Toolbar.Action label={messages().inlineCode} icon="ti ti-code" pressed={pressed("code")} keys="mod+e" onClick={run(toggleCode)} />
-        <Toolbar.Action label={messages().link} icon="ti ti-link" keys="mod+k" onClick={run(insertLink)} />
-        <Toolbar.Separator />
-        <Toolbar.Action
-          label={messages().bulletList}
-          icon="ti ti-list"
-          pressed={pressed("bullet")}
-          keys="mod+shift+8"
-          onClick={run(toggleBulletList)}
-        />
-        <Toolbar.Action
-          label={messages().numberedList}
-          icon="ti ti-list-numbers"
-          pressed={pressed("ordered")}
-          keys="mod+shift+7"
-          onClick={run(toggleNumberedList)}
-        />
-        <Toolbar.Action label={messages().quote} icon="ti ti-quote" pressed={pressed("quote")} onClick={run(toggleQuote)} />
-      </div>
-    </SelectionToolbar>
+        <div
+          ref={root}
+          style={{ display: "contents" }}
+          onFocusIn={() => setToolbarFocused(true)}
+          onFocusOut={(event) => {
+            if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setToolbarFocused(false);
+          }}
+        >
+          <Toolbar.Action label={messages().bold} icon="ti ti-bold" pressed={pressed("bold")} keys="mod+b" onClick={run(toggleBold)} />
+          <Toolbar.Action
+            label={messages().italic}
+            icon="ti ti-italic"
+            pressed={pressed("italic")}
+            keys="mod+i"
+            onClick={run(toggleItalic)}
+          />
+          <Toolbar.Action
+            label={messages().inlineCode}
+            icon="ti ti-code"
+            pressed={pressed("code")}
+            keys="mod+e"
+            onClick={run(toggleCode)}
+          />
+          <Toolbar.Action label={messages().link} icon="ti ti-link" keys="mod+k" onClick={run(insertLink)} />
+          <Toolbar.Separator />
+          <Toolbar.Action
+            label={messages().bulletList}
+            icon="ti ti-list"
+            pressed={pressed("bullet")}
+            keys="mod+shift+8"
+            onClick={run(toggleBulletList)}
+          />
+          <Toolbar.Action
+            label={messages().numberedList}
+            icon="ti ti-list-numbers"
+            pressed={pressed("ordered")}
+            keys="mod+shift+7"
+            onClick={run(toggleNumberedList)}
+          />
+          <Toolbar.Action label={messages().quote} icon="ti ti-quote" pressed={pressed("quote")} onClick={run(toggleQuote)} />
+        </div>
+      </SelectionToolbar>
+    </Show>
   );
 }

@@ -176,7 +176,8 @@ describe("MarkdownEditor toolbar=selection", () => {
       expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
       await select(page, 6, 5);
       await settled(page);
-      expect(await toolbar(page).isVisible()).toBe(false);
+      // Not hidden but absent: nothing of the toolbar mounts on touch.
+      expect(await page.locator(".k2b-selection-toolbar").count()).toBe(0);
       await page.keyboard.press("ControlOrMeta+b");
       expect(await page.getByRole("textbox", { name: "Note" }).inputValue()).toBe("Hello **world**, this is a short note.");
     } finally {
