@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
+import { charts } from "@k2b/ui/charts/core";
 import { DashboardDefinitionSchema, DashboardSaveSchema } from "../../dashboard-contracts";
 import { dashboardRangeSearch } from "./dashboard-client";
 import {

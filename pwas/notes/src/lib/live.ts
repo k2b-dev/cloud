@@ -10,9 +10,8 @@ import { createSignal } from "solid-js";
 import * as awarenessProtocol from "y-protocols/awareness";
 import * as syncProtocol from "y-protocols/sync";
 import * as Y from "yjs";
+import { frame, message, readReply, updateFrame } from "../../protocol";
 import { api } from "./api";
-
-const message = { sync: 0, awareness: 1, queryAwareness: 3, update: 4, ack: 5, reject: 6, identity: 7 } as const;
 
 export type LiveStatus = "connecting" | "live" | "offline" | "unsaved" | "gone" | "full";
 export type RemotePerson = { awarenessId: number; writerId: number | null; name: string; color: string };
@@ -61,22 +60,14 @@ export function connectLive(options: {
   const send = (bytes: Uint8Array) => {
     if (socket?.readyState === WebSocket.OPEN) socket.send(new Uint8Array(bytes));
   };
-  const sendUpdate = (id: string, update: Uint8Array) =>
-    send(
-      (() => {
-        const encoder = encoding.createEncoder();
-        encoding.writeVarUint(encoder, message.update);
-        encoding.writeVarString(encoder, id);
-        encoding.writeVarUint8Array(encoder, update);
-        return encoding.toUint8Array(encoder);
-      })(),
-    );
+  const sendUpdate = (id: string, update: Uint8Array) => send(updateFrame(id, update));
   const sendAwareness = () => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    const encoder = encoding.createEncoder();
-    encoding.writeVarUint(encoder, message.awareness);
-    encoding.writeVarUint8Array(encoder, awarenessProtocol.encodeAwarenessUpdate(awareness, [doc.clientID]));
-    send(encoding.toUint8Array(encoder));
+    send(
+      frame(message.awareness, (encoder) =>
+        encoding.writeVarUint8Array(encoder, awarenessProtocol.encodeAwarenessUpdate(awareness, [doc.clientID])),
+      ),
+    );
   };
   const refreshPeople = () => {
     const list: RemotePerson[] = [];
@@ -197,17 +188,16 @@ export function connectLive(options: {
       applyRemoteAwareness(decoding.readVarUint8Array(decoder));
       return;
     }
-    if (type === message.ack) {
-      pending.delete(decoding.readVarString(decoder));
+    const reply = type === message.ack || type === message.reject ? readReply(data) : null;
+    if (reply?.type === "ack") {
+      pending.delete(reply.id);
       setPendingCount(pending.size);
       if (synced && pending.size === 0 && status() !== "unsaved") setStatus("live");
       return;
     }
-    if (type === message.reject) {
-      const id = decoding.readVarString(decoder);
-      const code = decoding.readVarString(decoder);
-      if (code === "text_limit" || code === "state_limit") setStatus("full");
-      else if (id) setStatus("unsaved");
+    if (reply?.type === "reject") {
+      if (reply.code === "text_limit" || reply.code === "state_limit") setStatus("full");
+      else if (reply.id) setStatus("unsaved");
     }
   };
 
@@ -226,10 +216,7 @@ export function connectLive(options: {
     socket = ws;
     ws.onopen = () => {
       attempt = 0;
-      const encoder = encoding.createEncoder();
-      encoding.writeVarUint(encoder, message.sync);
-      syncProtocol.writeSyncStep1(encoder, doc);
-      ws.send(new Uint8Array(encoding.toUint8Array(encoder)));
+      ws.send(new Uint8Array(frame(message.sync, (encoder) => syncProtocol.writeSyncStep1(encoder, doc))));
       sendAwareness();
     };
     ws.onmessage = (event) => {
