@@ -63,22 +63,12 @@ render(
         <section class="snapshot line-forecast-panel">
           <ChartExplorer
             title="Cash snapshot"
-            description={state() === "stale" ? "Veraltet · Studio cash" : "Studio cash"}
+            description="Studio cash"
+            request={{ status: state() === "loading" ? "loading" : state() === "error" || state() === "stale" ? "error" : "idle" }}
+            asOf="09:12"
+            onRetry={() => setState("data")}
             data={{ chart: snapshot, rows: state() === "data" || state() === "stale" ? snapshotRows : [] }}
-            empty={
-              state() === "loading" ? (
-                <p role="status">Daten werden geladen.</p>
-              ) : state() === "error" ? (
-                <div role="alert">
-                  Daten konnten nicht geladen werden.
-                  <button type="button" onClick={() => setState("data")}>
-                    Erneut versuchen
-                  </button>
-                </div>
-              ) : (
-                <p>Noch keine Umsätze.</p>
-              )
-            }
+            empty="Noch keine Umsätze."
             columns={[{ id: "amount", label: "Cash", value: (row) => row.amount }]}
             legend={lineForecastFixture.series.map((series, color) => ({ label: series.label, color }))}
             renderDetails={false}

@@ -32,3 +32,8 @@ test("core entry bundles for server and browser without Solid, DOM or upstream d
   expect(Object.keys(chartKinds)).toHaveLength(14);
   expect(chartDatumRoles).toContain("interval");
 });
+
+test("the core message catalogue imports only localization from stdlib", async () => {
+  const source = await Bun.file(resolve(import.meta.dir, "../../content/chart-message-catalog.ts")).text();
+  expect(source.match(/import[^;]+from ["\']@k2b\/stdlib[^;]*;/g)).toEqual(['import { i18n } from "@k2b/stdlib";']);
+});
