@@ -16,6 +16,7 @@ import {
   loadConversationSummary,
   updateConversationSummary,
   updateWorkflowConversationSummaryInTransaction,
+  writeAutomatedConversationSummary,
 } from "./conversation-summary";
 import * as summaryAi from "./conversation-summary-ai";
 import {
@@ -197,6 +198,51 @@ suite("durable conversation summaries", () => {
       nextStep: output.nextStep,
       author: { kind: "workflow", id: source.id, name: source.name },
     });
+  });
+
+  test("prepared automation summaries protect person text and both revisions", async () => {
+    const scope = await conversation();
+    const write = (summary: string, expectedRevision: number, expectedSummaryRevision: number) =>
+      writeAutomatedConversationSummary({ ...scope, context, input: { summary, expectedRevision, expectedSummaryRevision } });
+    const first = unwrap(await write("Prepared summary", 1, 1));
+    expect(first).toMatchObject({
+      skipped: null,
+      value: { summary: "Prepared summary", source: "automation", summaryRevision: 2, conversationRevision: 2 },
+    });
+    const staleText = await write("Stale text", 2, 1);
+    expect(!staleText.ok && staleText.error.code).toBe("CONFLICT");
+    await sql`UPDATE mail.conversations SET revision = revision + 1 WHERE id = ${scope.conversationId}::uuid`;
+    const staleSource = await write("Stale source", 2, 2);
+    expect(!staleSource.ok && staleSource.error.code).toBe("CONFLICT");
+    unwrap(await updateConversationSummary({ ...scope, context, input: { summary: "Human text", expectedSummaryRevision: 2 } }));
+    let current = await state(scope);
+    expect(unwrap(await write("Replace person", current.conversationRevision, current.summaryRevision)).skipped).toBe("edited_by_person");
+    expect((await state(scope)).summary).toBe("Human text");
+    unwrap(
+      await updateConversationSummary({ ...scope, context, input: { summary: null, expectedSummaryRevision: current.summaryRevision } }),
+    );
+    current = await state(scope);
+    expect(unwrap(await write("Replace clear", current.conversationRevision, current.summaryRevision)).skipped).toBe("edited_by_person");
+    expect(await state(scope)).toMatchObject({ summary: null, source: "person", summaryRevision: current.summaryRevision });
+  });
+
+  test("automation coverage excludes pending and failed bodies even with unchanged conversation revision", async () => {
+    const scope = await conversation(3);
+    // The pending envelope is older than a complete body; a failed body is newer.
+    await sql`UPDATE mail.message_contents content
+      SET hydration_status = CASE WHEN link.position = 0 THEN 'envelope' ELSE 'failed' END
+      FROM mail.conversation_messages link
+      WHERE link.message_id = content.id AND link.conversation_id = ${scope.conversationId}::uuid
+        AND link.position IN (0, 2)`;
+    const result = unwrap(
+      await writeAutomatedConversationSummary({
+        ...scope,
+        context,
+        input: { summary: "Only the loaded message", expectedRevision: 1, expectedSummaryRevision: 1 },
+      }),
+    );
+    expect(result.value).toMatchObject({ coveredMessageCount: 1, newMessagesSince: 2, source: "automation" });
+    expect(await state(scope)).toMatchObject({ coveredMessageCount: 1, newMessagesSince: 2 });
   });
 
   test("a person's edit and clear both permanently skip a rule", async () => {

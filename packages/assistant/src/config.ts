@@ -32,10 +32,10 @@ export const app = defineApp({
     },
   },
   appearance: {
-    accent: "#14b8a6",
+    accent: "#8e1b6f",
     background: {
-      from: "#14b8a6",
-      to: "#3b82f6",
+      from: "#8e1b6f",
+      to: "#c4519f",
       angle: 135,
     },
   },

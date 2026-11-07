@@ -129,6 +129,9 @@ export function ContextMenuBase(
   const close = () => {
     detachOpenListeners();
     if (!isOpen()) return;
+    // An activated entry closes the menu before its action runs: focus goes back to where the menu opened from, as
+    // Escape returns it, so the keyboard never lands on the page body.
+    if (menu?.contains(document.activeElement)) returnFocus(opener?.isConnected ? opener : host, hostRing);
     setPosition();
     if (closeActiveContextMenu === close) closeActiveContextMenu = undefined;
     props.onClose?.();
