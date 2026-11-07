@@ -75,7 +75,7 @@ test("standalone production page serves localized SSR and local assets without c
       expect(css.status).toBe(200);
       expect(css.headers.get("content-type")).toContain("text/css");
       expect(css.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
-      expect(await css.text()).toContain("tools-speedtest-controls");
+      expect(await css.text()).toContain("tools-speedtest-measure");
       const prefix = html.match(/data-ssr-assets="([^"<>]+)"/)?.[1];
       expect(prefix).toMatch(/^\/_ssr\/[a-z0-9]+$/);
       const scripts = [...html.matchAll(/data-id="([a-z0-9]+)"/g)].map((match) => `${prefix}/${match[1]}.js`);

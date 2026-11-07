@@ -23,12 +23,12 @@ export async function renderPublicPage(locale: SiteLocale, publicUrl: string, st
               </a>
             </nav>
           </header>
-          <p class="speedtest-site-notice">{text.limits}</p>
           <Speedtest server={publicUrl} />
           <noscript>
             <p>{text.noScript}</p>
           </noscript>
           <footer class="speedtest-site-footer">
+            <p>{text.limits}</p>
             <p>{text.privacy}</p>
             <p>
               <a href="https://cloud.k2b.dev" rel="noreferrer">

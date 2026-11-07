@@ -1,5 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { oauthTokens, settingsService } from "@k2b/cloud/services";
+import { sql } from "@k2b/cloud";
+import { audit, oauthTokens, SETTINGS_MAP, settingsService } from "@k2b/cloud/services";
 import { buildProjectedUser } from "@k2b/cloud/services/session/user";
 import { ok } from "@k2b/stdlib";
 import { assertAdminWriteAuthorization } from "../../../../scripts/fixtures/admin-read";
@@ -23,7 +24,7 @@ test("Tools settings require write scope and a current administrator, with audit
         routes.request(`/admin/settings/${key}`, {
           method: "PUT",
           headers: { ...headers, "content-type": "application/json" },
-          body: JSON.stringify({ value, replaceUnreadable: true }),
+          body: JSON.stringify({ value, replaceUnreadable: true, key: "app.name", audit: { actor: { userId: "forged" } } }),
         }),
       () => update.mock.calls.length,
     );
@@ -51,6 +52,10 @@ test("Tools rejects cross-owner keys, malformed input and invalid declared value
   });
   spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", user, scopes: ["write"], payload: {} });
   const update = spyOn(settingsService.entry, "update");
+  const begin = spyOn(sql, "begin").mockImplementation(() => {
+    throw new Error("Rejected settings must not start a write transaction");
+  });
+  const record = spyOn(audit, "record");
   const headers = { authorization: "Bearer unchanged-token", "content-type": "application/json" };
   for (const [key, body] of [
     ["mail.contact_directory.app", { value: "tools" }],
@@ -69,5 +74,36 @@ test("Tools rejects cross-owner keys, malformed input and invalid declared value
   ]) {
     const response = await routes.request(`/admin/settings/${key}`, { method: "PUT", headers, body: JSON.stringify({ value }) });
     expect(response.status).toBe(400);
+  }
+  expect(begin).not.toHaveBeenCalled();
+  expect(record).not.toHaveBeenCalled();
+});
+
+test("Tools only writes settings declared by its application, even if another key shares the prefix", async () => {
+  stubRouterInfrastructure();
+  const user = buildProjectedUser({
+    id: "11111111-1111-4111-8111-111111111111",
+    provider: "local",
+    profile: "user",
+    effective_admin: true,
+  });
+  spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", user, scopes: ["write"], payload: {} });
+  const update = spyOn(settingsService.entry, "update").mockResolvedValue(ok(undefined));
+  const definition = SETTINGS_MAP.get("tools.speedtest_enabled");
+  if (!definition) throw new Error("Missing declared Tools setting");
+  const key = "tools.not_declared";
+  const previous = SETTINGS_MAP.get(key);
+  SETTINGS_MAP.set(key, { ...definition, key });
+  try {
+    const response = await routes.request(`/admin/settings/${key}`, {
+      method: "PUT",
+      headers: { authorization: "Bearer unchanged-token", "content-type": "application/json" },
+      body: JSON.stringify({ value: false }),
+    });
+    expect(response.status).toBe(400);
+    expect(update).not.toHaveBeenCalled();
+  } finally {
+    if (previous) SETTINGS_MAP.set(key, previous);
+    else SETTINGS_MAP.delete(key);
   }
 });

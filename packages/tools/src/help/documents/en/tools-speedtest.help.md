@@ -10,7 +10,8 @@ order: 115
 ## Run a test {icon="player-play"}
 
 Open **Speed test**, check the **Measurement server**, then choose
-**Quick · up to 14 s** or **Accurate · up to 29 s**. Press **Start test**.
+**Quick · 14 s** or **Accurate · 29 s**; that is the longest a test can take.
+Press **Start test**.
 The test runs ping, download and upload in order. The remaining time decreases;
 a stable result can finish early. **Stop** cancels the active transfers.
 
@@ -27,8 +28,9 @@ two starts, the countdown shows when you can run another test.
 
 ## Read and keep the result {icon="chart-line"}
 
-The tiles and terminal show the same measurements. Throughput excludes the
-initial ramp-up. Ping is the median; jitter is the mean difference between
+The large reading shows the download; the tiles show upload, ping, jitter and
+loaded latency. The terminal shows the same measurements. The history draws the
+initial ramp-up as a thin gray line; it is excluded from the throughput. Ping is the median; jitter is the mean difference between
 consecutive pings. **Loaded latency** measures response time during transfers.
 A dash means no completed sample is available.
 
