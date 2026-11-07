@@ -1,14 +1,15 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { resolve } from "node:path";
-import tailwind from "../../../../cloud/scripts/tailwind";
+import { basename, resolve } from "node:path";
 import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import { buildHarness } from "./image-intake/browser-harness";
 
 setDefaultTimeout(30_000);
+const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../../ui")))).default;
 const script = await buildHarness(new URL("./image-processor.browser-harness.tsx", import.meta.url));
 const styles = await Bun.build({ entrypoints: [resolve(import.meta.dir, "image-processor.browser.css")], plugins: [tailwind] });
 if (!styles.success) throw new AggregateError(styles.logs, "Could not build Tools photo editor styles");
 const css = await styles.outputs[0]!.text();
+const cssAssets = new Map(styles.outputs.slice(1).map((asset) => [basename(asset.path), asset]));
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 type Page = Awaited<ReturnType<Browser["newPage"]>>;
 let browser: Browser;
@@ -19,6 +20,8 @@ beforeAll(async () => {
     port: 0,
     fetch(request) {
       const path = new URL(request.url).pathname;
+      const asset = cssAssets.get(basename(path));
+      if (asset) return new Response(asset);
       if (path === "/editor.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
       if (path === "/styles.css") return new Response(css, { headers: { "content-type": "text/css" } });
       if (path === "/photo.jpg")

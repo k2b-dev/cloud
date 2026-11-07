@@ -8,6 +8,14 @@ order: 100
 
 Dateien öffnet mit **Alle Ablagen**: eine Kachel für jede Ablage, die du erreichst, darunter deine zuletzt geöffneten Dateien. Öffne eine Kachel, um in dieser Ablage zu arbeiten. Dort legst du Ordner an und lädst Dateien hoch; die Übersicht bietet keine Aktion zum Anlegen. Hast du nur eine Ablage, öffnet Dateien direkt in ihr. Die Beschriftung neben dem Ablagenamen nennt die Herkunft.
 
+## Ein Foto bearbeiten {icon="photo-edit"}
+
+Öffne die Vorschau eines Bildes und wähle **Bild bearbeiten**. Dafür musst du die Datei bearbeiten dürfen. Schneide das Foto zu, drehe es, passe es an, beschrifte es oder decke vertrauliche Stellen ab. Öffne danach **Speichern**. Kann dein Browser das Format nicht öffnen, erscheint ein Fehler mit **Erneut versuchen**.
+
+**Neue Version speichern** gibt es in einer versionierten Ablage, wenn der Browser den ursprünglichen Typ JPEG, PNG oder WebP schreiben kann. Sonst wählst du **Kopie speichern**; dafür brauchst du das Recht, Dateien im Ordner anzulegen. Die Kopie heißt etwa `Foto (bearbeitet).jpg`, bei Bedarf mit einer Nummer. Existiert dieser Name schon, wähle erneut **Kopie speichern**, um den nächsten Namen zu verwenden. Die Ausgabe ist standardmäßig auf 16,7 MP begrenzt. Der Editor meldet eine Verkleinerung. Beim Speichern entfernt er die Metadaten der Quelle.
+
+Das Original bleibt während der Bearbeitung fest. Wurde die Datei inzwischen geändert, bleiben deine Änderungen erhalten; speichere eine Kopie. Speichern ist erst fertig, wenn die Ablage den Upload bestätigt hat. Ist das Ergebnis unklar, prüft **Upload prüfen** denselben Vorgang vor einem weiteren Speichern. Beim Schließen mit ungespeicherten Änderungen fragt der Editor vor dem Verwerfen.
+
 ## Ordnerbeschreibungen und Vorschauen {icon="file-description"}
 
 Lege eine `README.md` in einem Ordner ab, um zu erklären, was dort hingehört. Groß- und Kleinschreibung spielen dabei keine Rolle. Der Inhalt erscheint in einem kompakten Bereich über Liste oder Grid. Im Baum entfällt diese Vorschau; dort kannst du die README weiterhin als normale Datei öffnen. Lange Beschreibungen werden unten mit einem Verlauf ausgeblendet. Über **Alles anzeigen** öffnest du die vollständige Beschreibung. Die README bleibt eine normale Datei, die du bearbeiten, verschieben oder löschen kannst.

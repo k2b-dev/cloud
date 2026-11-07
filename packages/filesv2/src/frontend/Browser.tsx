@@ -1035,6 +1035,12 @@ export default function Browser(props: {
       onEdit: editable(entry) ? () => open(entry) : undefined,
       readOnly: entry.actions?.write === false,
       onNotPdf,
+      imageEditing: {
+        canCreate: canCreate(),
+        onSaved: (saved) => {
+          void refresh(saved.entry.path).catch(() => toast.error(t().unavailable));
+        },
+      },
     });
   // Entering or leaving select mode starts clean; outside it a click only highlights one entry for its details.
   const toggleSelecting = (on: boolean) => {

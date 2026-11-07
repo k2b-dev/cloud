@@ -1202,3 +1202,9 @@ dialog[open]:has(.filesv2-export-dialog) {
 .k2b-file-grid__preview > .filesv2-thumbnail img {
   border-radius: 0;
 }
+
+/* Photo editing shares the preview frame; all controls and surfaces belong to @k2b/ui. */
+.filesv2-image-editing { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
+.filesv2-image-editing > .k2b-image-editor { flex: 1 1 auto; }
+
+.filesv2-image-save-actions { display: flex; justify-content: flex-end; min-width: 7.5rem; }
