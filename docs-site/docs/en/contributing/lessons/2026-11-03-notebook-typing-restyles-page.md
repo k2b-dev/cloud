@@ -1,0 +1,6 @@
+### Typing in a note restyled the whole page on every key
+
+- **What happened:** In Notebooks, typed characters appeared in bursts of five to ten. On the production build, every key spent about 200 ms recalculating styles. Two passes per key restyled the whole page, about 3,400 elements each. Release 0.61 measured the same, so the lag was not new in 0.63.
+- **Root cause:** Every key changed elements outside the text that nobody saw. The hidden table menus of the shared text editor rebuilt their entries whenever the Notebook re-checked table actions after an edit, which inserted new shortcut hints each time. The detail panel also drew its header line again on each sync step and its outline rows again after each pause. In Chromium, each inserted or removed element below the shell's `:has()` anchors restyles the whole page (see #2420), so these small changes cost a full pass each.
+- **Error class:** UI that keeps rendering for hidden or unchanged state. It is harmless on a small test page, but each change of an element restyles the whole real page.
+- **Guard:** `shared-text-editor.browser.test.ts` types into a Notebook while table actions come and go, and fails if any element outside the text changes. `NotebookDetailPanel.behavior.test.tsx` fails if repeated sync states or outlines replace the header or outline elements.

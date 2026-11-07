@@ -71,7 +71,11 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(html).toMatch(/<a[^>]*href="\/devices"[^>]*aria-current="page"/);
     const source = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
     expect(source).toMatch(
-      /@container k2b-app-area \(min-width: 64rem\) \{[^}]*\[aria-current="page"\][^}]*> \.k2b-app-workspace__head\[data-trail="up"\] \{[^}]*clip-path: inset\(50%\)/,
+      /@container k2b-app-area \(min-width: 64rem\) \{[^}]*\[aria-current="page"\][^}]*~ \.k2b-app-workspace__head\s*\)\[data-trail="up"\] \{[^}]*clip-path: inset\(50%\)/,
+    );
+    // A sidebar item marked `active="ancestor"` is the way up as well, so the head hides beside it too.
+    expect(source).toMatch(
+      /@container k2b-app-area \(min-width: 64rem\) \{[^}]*\.k2b-app-workspace__sidebar-item-main\)\[aria-current="true"\][^}]*~ \.k2b-app-workspace__head\s*\)\[data-trail="up"\] \{[^}]*clip-path: inset\(50%\)/,
     );
   });
 
@@ -822,6 +826,32 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(appWorkspaceResizeLimits({ kind: "detail", workspaceSize: 1000, reservedSize: 0 }).max).toBe(640);
     // 700 − 0 reserved − 240 main (height budget)
     expect(appWorkspaceResizeLimits({ kind: "drawer", workspaceSize: 700, reservedSize: 0 }).max).toBe(460);
+  });
+
+  test("renders a level title that switches places as a menu button before hydration", () => {
+    const html = renderToString(() =>
+      createComponent(AppWorkspace.Main, {
+        level: "list",
+        get children() {
+          return createComponent(AppWorkspace.MainPane, {
+            id: "list",
+            label: "Workshop",
+            href: "/spaces/workshop",
+            lead: "•",
+            switcher: { label: "Switch Space", items: [{ label: "My tasks", href: "/spaces" }] },
+            children: "Rows",
+          });
+        },
+      }),
+    );
+    const heading = html.match(/<h2[^>]*>.*?<\/h2>/s)?.[0] ?? "";
+    expect(heading).toContain('aria-haspopup="menu"');
+    expect(heading).toContain('aria-label="Workshop, Switch Space"');
+    expect(heading).toContain("k2b-app-workspace__level-lead");
+    expect(heading).toContain("ti-chevron-down");
+    // The menu stands beside the heading, never inside it.
+    expect(heading).not.toContain('role="menu"');
+    expect(html).toContain('role="menu" aria-label="Switch Space"');
   });
 
   test("lets one bounded child own scrolling without nesting workspace scrollports", () => {

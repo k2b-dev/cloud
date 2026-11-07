@@ -4,7 +4,8 @@ import { jsonFetch } from "../http";
 
 export type { DashboardPanelResult, PublicDashboardPanel };
 export type DashboardPage = { items: Dashboard[]; total: number; nextOffset: number | null };
-export type PublicDashboard = { id: string; name: string; revision: number; panels: PublicDashboardPanel[] };
+/** `timeZone` is the base's zone, so a published dashboard reads its times like the private one. */
+export type PublicDashboard = { id: string; name: string; revision: number; timeZone: string; panels: PublicDashboardPanel[] };
 export type DashboardTarget = { baseId: string; dashboardId: string } | { token: string };
 export type DashboardSnapshot = {
   items: Dashboard[];

@@ -13,6 +13,15 @@ describe("Mail conversation toolbar preferences", () => {
     expect(normalizeMailConversationToolbarActions("reply")).toEqual(DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS);
   });
 
+  test("reads the stored previous default as today's, so Done replaces Archive", () => {
+    expect(normalizeMailConversationToolbarActions(["reply", "reply_all", "forward", "archive", "spam", "trash"])).toEqual(
+      DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS,
+    );
+    expect(DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS).toContain("done");
+    expect(DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS).not.toContain("archive");
+    expect(normalizeMailConversationToolbarActions(["reply", "archive"])).toEqual(["reply", "archive"]);
+  });
+
   test("accepts an intentionally empty toolbar", () => {
     expect(normalizeMailConversationToolbarActions([])).toEqual([]);
   });

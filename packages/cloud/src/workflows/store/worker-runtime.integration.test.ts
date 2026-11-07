@@ -47,7 +47,7 @@ suiteFor("nats")("workflow worker wake transport", () => {
       let recoveryTick: (() => void) | undefined;
       try {
         await worker.start();
-        const handler = intervals.mock.calls.findLast(([, ms]) => ms === 5_000)?.[0];
+        const handler = intervals.mock.calls.findLast(([, ms]) => ms === 30_000)?.[0];
         if (typeof handler === "function") recoveryTick = () => handler();
       } finally {
         intervals.mockRestore();

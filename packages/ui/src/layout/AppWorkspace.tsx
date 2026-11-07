@@ -1,3 +1,7 @@
+import { AppWorkspaceSidebarItemStatus, type AppWorkspaceSidebarItemStatusProps } from "./AppWorkspaceSidebarItemStatus";
+
+export type { AppWorkspaceSidebarItemStatusProps } from "./AppWorkspaceSidebarItemStatus";
+
 import { Link, type LinkNavigateEvent, type NavigationScrollMode } from "@k2b/ssr/nav";
 import {
   children,
@@ -19,6 +23,7 @@ import {
 } from "solid-js";
 import { Dynamic, isServer } from "solid-js/web";
 import { Button, ButtonLink, IconButton, IconButtonLink } from "../actions/Button";
+import { Dropdown, type DropdownItem, type DropdownSearch } from "../actions/Dropdown";
 import { useFilterMessages } from "../actions/filter-messages";
 import { dialogCore } from "../feedback/dialog-core";
 import { Tooltip } from "../feedback/Tooltip";
@@ -59,6 +64,7 @@ import {
   isAppWorkspaceWidthShare,
 } from "./app-workspace-width";
 import BottomSheet, { bottomSheetAdaptiveOptions } from "./BottomSheet";
+import { DETAILS_ICON } from "./DetailsToggle";
 import { PageTitle, usePageTrail } from "./PageTitle";
 import type { ScrollAreaProps } from "./ScrollArea";
 import { SidebarItemPreview } from "./SidebarItemPreview";
@@ -309,6 +315,12 @@ export type AppWorkspaceMainPaneProps = {
   /** Controls at the end of the level head. */
   actions?: JSX.Element;
   /**
+   * Levels mode: the title opens a menu of places to switch to, such as the person's work and each Space; on a phone
+   * it opens as a sheet. The title stays the level's heading and gains a chevron; the server HTML already says that
+   * it opens a menu.
+   */
+  switcher?: AppWorkspaceLevelSwitcher;
+  /**
    * Levels mode: `"page"` marks the level that holds the page itself, such as a settings form or the list of an
    * area, rather than a column that leads there or a detail beside it. Its title takes the page step of the type
    * scale, above every group title in it, and its content starts at the title's edge without an inset of its own.
@@ -330,6 +342,13 @@ export type AppWorkspaceMainPaneProps = {
   scroll?: boolean;
   scrollFade?: boolean;
   children: JSX.Element;
+};
+/** The places a level title switches between; `label` names the menu, such as "Switch Space". */
+export type AppWorkspaceLevelSwitcher = {
+  label: string;
+  items: readonly DropdownItem[];
+  /** A search field above the places, for a long list. */
+  search?: DropdownSearch;
 };
 export type AppWorkspaceDetailWidth = "sm" | "md" | "lg" | "xl";
 export type AppWorkspaceDetailProps = {
@@ -483,7 +502,8 @@ export type AppWorkspaceSidebarItemProps = {
   /**
    * Marks the current page (`aria-current="page"`). On a page deeper than the
    * sidebar lists, pass `"ancestor"` for the item that contains it: it keeps
-   * the highlight, and the page keeps its back link.
+   * the highlight and, while the sidebar shows, is the way up, so the head
+   * drops its back link as beside the current page.
    */
   active?: boolean | "ancestor";
   activeClass?: string;
@@ -544,31 +564,6 @@ export type AppWorkspaceSidebarItemActionProps = {
 export type AppWorkspaceSidebarItemActionsProps = {
   children: JSX.Element;
   visibility?: AppWorkspaceSidebarAccessoryVisibility;
-};
-/**
- * Unread state for the trailing `meta` slot. Every mark keeps a fixed width,
- * so the row keeps its height and the label its start in every state.
- */
-export type AppWorkspaceSidebarItemStatusProps = {
-  /**
-   * A positive number shows a count (above 99 as "99+") and sets the label in
-   * a stronger weight; `true` shows a quiet dot for new activity that should
-   * not draw attention, such as in a muted conversation.
-   */
-  unread?: number | boolean;
-  /** Marks unread items that mention the person with "@". */
-  mention?: boolean;
-  /**
-   * Shows a muted bell, and the item reads as set aside: its label in the muted ink without unread weight, and a
-   * mention count without its fill.
-   */
-  muted?: boolean;
-  /**
-   * Items that wait for the person, such as requests to approve, in the unread slot instead of `unread`. `label` is
-   * the phrase a screen reader hears, for example "3 waiting". `0` stays as a muted count, for a count that dropped
-   * to zero while the row is still shown; leave the prop out when nothing waits.
-   */
-  waiting?: { count: number; label: string };
 };
 export type AppWorkspaceNavTreeProps = {
   children: JSX.Element;
@@ -662,6 +657,7 @@ function LevelHead(props: {
   description?: JSX.Element;
   actions?: JSX.Element;
   lead?: JSX.Element;
+  switcher?: AppWorkspaceLevelSwitcher;
   children: JSX.Element;
 }): JSX.Element {
   // Read each slot once: every read of a JSX prop builds it again, and the
@@ -669,16 +665,49 @@ function LevelHead(props: {
   const description = children(() => props.description);
   const actions = children(() => props.actions);
   const lead = children(() => props.lead);
+  let switchButton: HTMLButtonElement | undefined;
+  const title = () => (
+    <>
+      <Show when={lead()}>
+        <span class="k2b-app-workspace__level-lead">{lead()}</span>
+      </Show>
+      <span class="k2b-truncate-fade">{props.label}</span>
+    </>
+  );
   return (
     <header class="k2b-app-workspace__level-head">
       {props.children}
       <div class="k2b-app-workspace__level-title">
-        <h2 tabIndex={-1}>
-          <Show when={lead()}>
-            <span class="k2b-app-workspace__level-lead">{lead()}</span>
+        <h2 tabIndex={-1} data-switcher={props.switcher ? "" : undefined}>
+          <Show when={props.switcher} fallback={title()}>
+            {(switcher) => (
+              <button
+                ref={switchButton}
+                type="button"
+                class="k2b-app-workspace__level-switch"
+                aria-haspopup="menu"
+                aria-label={`${props.label}, ${switcher().label}`}
+              >
+                {title()}
+                <i class="ti ti-chevron-down k2b-app-workspace__level-switch-chevron" aria-hidden="true" />
+              </button>
+            )}
           </Show>
-          <span class="k2b-truncate-fade">{props.label}</span>
         </h2>
+        {/* The menu stands beside the heading, so its entries never become part of the title. */}
+        <Show when={props.switcher}>
+          {(switcher) => (
+            <Dropdown
+              items={switcher().items}
+              label={switcher().label}
+              search={switcher().search}
+              phone="sheet"
+              variant="touch"
+              position="bottom-left"
+              attach={() => switchButton}
+            />
+          )}
+        </Show>
         <Show when={description()}>
           <p class="k2b-truncate-fade">{description()}</p>
         </Show>
@@ -937,6 +966,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                           description={pane.props.description}
                           actions={pane.props.actions}
                           lead={pane.props.lead}
+                          switcher={pane.props.switcher}
                         >
                           <Show
                             when={pane.props.back}
@@ -1052,9 +1082,9 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
           data-app-workspace-detail-toggle=""
           data-workspace-detail-reopen={props.onOpen ? "true" : undefined}
           disabled={props.available === false}
-          class="k2b-app-workspace__detail-toggle"
+          class="k2b-app-workspace__detail-toggle k2b-details-toggle"
         >
-          <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
+          <i class={DETAILS_ICON} aria-hidden="true" />
           {workspaceMessages().details}
         </Button>
       </Show>
@@ -1468,71 +1498,6 @@ const AppWorkspaceSidebarItemActions = (props: AppWorkspaceSidebarItemActionsPro
     {props.children}
   </div>
 );
-const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps): JSX.Element => {
-  const workspaceMessages = useWorkspaceMessages();
-  const waiting = () => (props.waiting && Number.isFinite(props.waiting.count) ? Math.max(0, Math.floor(props.waiting.count)) : null);
-  const count = () => waiting() ?? (typeof props.unread === "number" && props.unread >= 1 ? Math.floor(props.unread) : 0);
-  const dot = () => waiting() === null && props.unread === true;
-  // The marks are decorative; the row's accessible name gets one phrase instead,
-  // which says no more than the "99+" a capped count shows.
-  const description = () =>
-    [
-      waiting() !== null
-        ? (props.waiting?.label ?? "")
-        : count() > 99
-          ? workspaceMessages().sidebarUnreadMany
-          : count()
-            ? workspaceMessages().sidebarUnread({ count: count() })
-            : dot()
-              ? workspaceMessages().sidebarNewActivity
-              : "",
-      props.mention ? workspaceMessages().sidebarMentioned : "",
-      props.muted ? workspaceMessages().sidebarMuted : "",
-    ]
-      .filter(Boolean)
-      .join(", ");
-  // The unread slot stays reserved at the end, and the marks that change most
-  // often sit outermost, so new activity or a mention never moves another mark.
-  // The element itself stays when there is nothing to show: empty, it takes no
-  // space, and it still keeps the row's label on one line, so the first count
-  // never re-wraps the label and moves the rows below.
-  return (
-    <span
-      class="k2b-app-workspace__sidebar-status"
-      data-unread={waiting() !== null ? undefined : count() ? "count" : dot() ? "dot" : undefined}
-      data-waiting={waiting() === null ? undefined : waiting() ? "count" : "zero"}
-      data-muted={props.muted ? "true" : undefined}
-    >
-      <Show when={description()}>
-        <Show when={props.mention}>
-          <span class="k2b-app-workspace__sidebar-status-mention" aria-hidden="true">
-            @
-          </span>
-        </Show>
-        <Show when={props.muted}>
-          <span class="k2b-app-workspace__sidebar-status-muted" aria-hidden="true">
-            <i class="ti ti-bell-off" />
-          </span>
-        </Show>
-        <span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true">
-          <Show
-            when={count() || waiting() === 0}
-            fallback={
-              <Show when={dot()}>
-                <span class="k2b-app-workspace__sidebar-status-dot" />
-              </Show>
-            }
-          >
-            <span class="k2b-app-workspace__sidebar-status-count" data-mention={props.mention ? "true" : undefined}>
-              {count() > 99 ? "99+" : count()}
-            </span>
-          </Show>
-        </span>
-        <span class="k2b-sr-only">, {description()}</span>
-      </Show>
-    </span>
-  );
-};
 
 type AppWorkspaceSidebarRowProps = {
   children: JSX.Element;
@@ -2389,7 +2354,8 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
  * host's page title with the way up (see `PageTitle`); the page's own
  * `PageTitle` takes its place. The visible title is no heading, because many
  * pages render their own `h1`. From 64 rem a sidebar that marks the current
- * page names it already: the title and the way up hide, and only on a page
+ * page, or the item a deeper page belongs to, names it already and links the
+ * way up: the title and the way up hide, and only on a page
  * without its own `h1` its heading stays for assistive technology. With an
  * `AppWorkspace.Head` slot the row is always there and also carries the
  * views, the filters, the result count, and the actions; only its title
@@ -2463,7 +2429,13 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
           <div class="k2b-app-workspace__head-views">{resolvedViews()}</div>
         </Show>
         <Show when={resolvedFilters.toArray().some(Boolean) || props.head?.filtered}>
-          <div class="k2b-app-workspace__head-filters" role="group" aria-label={filters().filters}>
+          <div
+            class="k2b-app-workspace__head-filters"
+            role="group"
+            aria-label={filters().filters}
+            data-scroll-fade-mode="both"
+            data-scroll-fade-axis="horizontal"
+          >
             {resolvedFilters()}
             <Show when={props.head?.filtered}>
               <Show

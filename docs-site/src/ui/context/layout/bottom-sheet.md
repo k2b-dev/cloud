@@ -46,7 +46,9 @@ more than 60 px requests dismissal once. Dragging the body scrolls its content.
 There are no snap points or second modal lifecycle. `dismissDisabled` disables the handle;
 use the shared dismiss guard to protect Escape, backdrop, and header dismissal
 as well. Set `handle={false}` to omit the handle, or `dismissLabel` to override
-its inherited locale label.
+its inherited locale label. `tone` gives the sheet a
+[dialog tone](/en/ui/layout/panel-dialog#tone); on a phone the edge runs along
+all four sides of the sheet.
 
 `Header`, `Body`, `Footer`, `Section`, and `Tabs` use the same props as
 `PanelDialog`. The sheet keeps one body scrollport, a bounded viewport height,
@@ -59,6 +61,49 @@ surface reaches the physical screen edge and its actions stay above the home
 indicator. Otherwise, the sheet pads its content by the inset. Installed web
 apps need `viewport-fit=cover` in their viewport meta tag for the inset to
 apply.
+
+## Drag a non-modal sheet between heights
+
+A sheet that is not a dialog, such as Cloud's panel on a phone, can rest at
+more than one height. `attachSheetHandle(handle, options)` turns its handle
+button into a drag handle between named heights (detents):
+
+```ts
+import { attachSheetHandle } from "@k2b/ui";
+
+const dispose = attachSheetHandle(handle, {
+  sheet,
+  detents: ["half", "full"],
+  initial: "full",
+  onChange: (detent) => handle.setAttribute("aria-label", detent === "full" ? "Shrink panel" : "Enlarge panel"),
+  onDismiss: close,
+});
+```
+
+The sheet carries the current detent in `data-sheet-detent`; the stylesheet
+gives each detent its height, and `initial` names the height the stylesheet
+draws while the attribute is absent, as in the server's markup. So the first
+frame is right without script, and a rotation moves the sheet with CSS
+alone. List `detents` from the lowest height to the highest.
+
+- A press, by pointer, Enter, or Space, moves the sheet to the next detent up,
+  and from the highest back to the lowest. The handle stays a button in the
+  tab order; rename it in `onChange` so its name says which way it goes.
+- A drag follows the pointer with an inline height and sets
+  `data-sheet-dragging` on the sheet. On release the sheet snaps to the
+  nearest detent, taking the pointer's speed into account; a pointer that
+  rested before it lifted carries no speed. The click after a drag does not
+  move the sheet again.
+- Without `onDismiss`, the drag stops at the lowest detent. With it, a release
+  well below the lowest detent calls `onDismiss` instead; keep the sheet's
+  own close path behind it, including its guards.
+- The handle gets `touch-action: none`, so a drag on a touch screen moves the
+  sheet and never scrolls the page.
+
+Give the sheet a `height` transition with `--k2b-motion-sheet`: the snap uses
+it, a drag turns it off with an inline style, and reduced motion, from the
+system or `data-k2b-motion="reduced"`, makes the snap instant. The function
+returns a disposer that removes its listeners and inline styles.
 
 ## Accessibility
 

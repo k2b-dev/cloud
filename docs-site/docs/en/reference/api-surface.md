@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-01
+updated: 2026-11-05
 ---
 
 # API surface
@@ -31,7 +31,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
-| `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, and their closed router |
+| `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, opt-in staff push to registered devices (`registeredDevices`), registration visit summaries and renaming, and their closed router |
 | `@k2b/cloud/app-pwa/browser` | Supported, browser | Strict App-PWA QR parsing and fragment clearing |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
 | `@k2b/ui/text-editor` | Supported, SolidJS | [Markdown editor with editable table cells](/en/ui/input/text-editor); application-injected collaboration |
@@ -320,7 +320,7 @@ inferring support from autocomplete.
 | --- | --- | --- |
 | `@k2b/cloud` | `defineApp`, `appAccess`, declaration types, typed notifications | Registry, heartbeat, and runtime composition are platform-owned |
 | `@k2b/cloud/services` | Feature services used by capability guides | Raw stores, lifecycle starters, gateway telemetry, and migrations are maintainer APIs |
-| `@k2b/cloud/ai` | `getLiveDictationStatus` with `LiveDictationStatus` for [live dictation availability](/en/docs/ai/live-dictation); structured model calls, durable application tasks through `runApplicationAiTask`, `releaseApplicationAiTask`, `listUnreleasedApplicationAiTaskSources`, and [`deleteApplicationAiTasks`](/en/docs/ai/structured-and-background-ai#reuse-durable-ai-from-an-application-job), local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
+| `@k2b/cloud/ai` | `getLiveDictationStatus` with `LiveDictationStatus` for [live dictation availability](/en/docs/ai/live-dictation); [`runAiDecision` with typed probability answers](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions), structured model calls, durable application tasks through `runApplicationAiTask`, `releaseApplicationAiTask`, `listUnreleasedApplicationAiTaskSources`, and [`deleteApplicationAiTasks`](/en/docs/ai/structured-and-background-ai#reuse-durable-ai-from-an-application-job), local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
 | `@k2b/cloud/browser` | Typed Hono client factory | Utility helpers are outside the documented typed-client contract |
 | `@k2b/cloud/shared` | Cloud-specific helpers named by feature guides | Generic utility re-exports are compatibility-only |
 | `@k2b/cloud/cli` | APIs for application CLI modules | Built-in account, application, and admin modules are platform-owned |
@@ -364,6 +364,16 @@ application uses this rendering mode for previews, signatures, provider draft
 copies, and outgoing messages. Its mailbox CSS may override column alignment. Omitting
 `output` keeps the existing Cloud rendering, including computed table
 formulas; `links: "plain"` alone does not disable formula evaluation.
+
+### Render math in the browser
+
+On the server, `markdown.render()` and `markdown.renderSync()` render `$…$`,
+`$$…$$`, and `math` fences with KaTeX right away. In the browser, KaTeX loads
+only when content has math. Until it arrives, each formula's LaTeX source
+stands at its place. A render inside a Solid memo or JSX expression runs again
+by itself once KaTeX has loaded and then returns the same HTML as the server.
+While a server-rendered page hydrates, it keeps the server's formulas. Render
+Markdown that can contain math in a reactive scope.
 
 ### Evaluate Markdown table cells
 
@@ -454,17 +464,18 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting, model access, and masked request-header names for administration | [Models and providers](/en/docs/ai/models-and-providers), [Observability](/en/docs/operations/observability) |
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
 | `@k2b/cloud/approvals/ui` | Supported, SolidJS | `Approvals`, `ApprovalsNavStatus`, and `approvalNavCount` for open Action requests | [Action approvals](/en/docs/identity/approvals#show-approvals-in-your-app) |
+| `@k2b/cloud/access/members` | Supported | `accessMemberEntries` turns a resource's `AccessMember` list into `DetailAccess` rows in the words of the access dialog, without loading the access dialog's controls | [Detail panels](/en/docs/frontend/detail-panels) |
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls; `principalLabel` for localized principal names (also in `@k2b/cloud/shared`); `isManagerEntry` and `ManagerCandidate` for paged grant lists | [Resource API keys](/en/docs/identity/resource-api-keys), [Last manager](/en/docs/identity/authorization#show-the-last-manager) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
 | `@k2b/cloud/events` | Supported, server-only | `appEvents`: publish declared app events in a transaction; `defineLive`: transactional live updates; `routes(channels)` serves them over one socket per application with access checked at delivery | [App events](/en/docs/platform/app-events), [Live updates](/en/docs/automation/live-updates) |
-| `@k2b/cloud/events/testing` | Supported, tests only | `appEventFixture` and `deliverAppEvent` validate event fixtures and subscriber handlers; real live engine, memory topic controls and integration outbox startup | [Test app events](/en/docs/platform/app-events#test-a-handler-locally), [Test channels](/en/docs/automation/live-updates#test-channels) |
+| `@k2b/cloud/events/testing` | Supported, tests only | `appEventFixture` and `deliverAppEvent` validate event fixtures and subscriber handlers; `installLiveOutbox(db)` installs Core’s events schema in `*_test` databases; real live engine, memory topic controls and integration outbox startup | [Test app events](/en/docs/platform/app-events#test-a-handler-locally), [Test channels](/en/docs/automation/live-updates#test-channels) |
 | `@k2b/cloud/browser/app-badges` | Supported, browser | `refreshAppBadges` reads the app bar's badge counts again after a change | [Layout and navigation](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 | `@k2b/cloud/browser/app-approval` | Supported, browser | Authenticator namespace for pairing links, device keys and signed API calls | [App approval](/en/docs/operations/app-approval) |
 | `@k2b/cloud/browser/mermaid` | Supported, browser | Mermaid configuration that follows Cloud's light and dark colors | [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#render-mermaid-diagrams-with-cloud-colors) |
 | `@k2b/cloud/browser/notifications` | Supported, browser | Browser notification state | [Notifications](/en/docs/platform/notifications) |
 | `@k2b/cloud/browser/hints` | Supported, browser | `markHintSeen`: remembers a moved-path hint in the browser cookie before dismissal or navigation | [One-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/browser/pwa-drafts` | Preview, browser | `pwaDrafts`: keep plain typed text per account and field across Cloud app restarts; remove it after saving | [Keep drafts](/en/docs/frontend/mobile-app-pages#keep-drafts) |
-| `@k2b/cloud/browser/reload` | Supported, browser | `reloadOnce`: bounded automatic page reload that cannot loop and, under an open modal dialog, offers the reload once the dialog closes; `importOnDemand`: load code when an action needs it and offer a reload when it cannot load | [Realtime UI](/en/docs/frontend/realtime-ui#preserve-reload-behavior), [Islands](/en/docs/frontend/islands-and-hydration#keep-the-first-load-small) |
+| `@k2b/cloud/browser/reload` | Supported, browser | `reloadOnce`: bounded automatic page reload that cannot loop and, under an open modal dialog, offers the reload once the dialog closes; `importOnDemand`: load code when an action needs it and offer a reload when it cannot load; `beginAppAction`: hold automatic Cloud app update reloads during a write the platform does not track, such as an upload with progress | [Realtime UI](/en/docs/frontend/realtime-ui#preserve-reload-behavior), [Islands](/en/docs/frontend/islands-and-hydration#keep-the-first-load-small) |
 | `@k2b/cloud/browser/resource-links` | Supported, browser | Recognize pasted Cloud URLs with `resolveCloudUrl()` and read the canonical `cloudOrigin()` | [Resource copy and paste](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link) |
 | `@k2b/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
 | `@k2b/cloud/browser/cloud-id` | Supported, browser | "Copy Cloud ID" entry for a resource's "…" menu | [Resource copy and paste](/en/docs/platform/resource-references#copy-a-cloud-id) |

@@ -2,7 +2,7 @@
 id: accounts-cli
 title: CLI
 icon: ti ti-terminal-2
-description: Agententaugliche Befehle für Konten, Gruppen, Anfragen, Audit-Ereignisse und Dienstkonten nutzen.
+description: Agententaugliche Befehle für Konten, Gruppen, Anfragen, Audit-Ereignisse, Agenten und API Keys nutzen.
 order: 120
 ---
 
@@ -14,8 +14,8 @@ Die CLI der App Zugänge nutzt dieselben APIs wie die App. Agenten können Konto
 - **users:** Personen auflisten, prüfen, erstellen, ändern und löschen. Anbieter, Profil und Administrationsstatus ändern. Avatare lesen, setzen und entfernen, IPA-Passwörter zurücksetzen, mit `users login-token` ein **Anmeldetoken** erstellen und mit `users send-login-link` einen Anmeldelink senden. Erlaubt die Installation lokale Konten ohne E-Mail-Adresse, erstellt `users create` ein lokales Vollkonto auch ohne `--email`, und `users update --remove-email` entfernt eine Adresse.
 - **groups:** Gruppen auflisten, prüfen, erstellen, ändern, in POSIX-Gruppen umwandeln und löschen. Mitglieder und Verantwortliche auflisten, hinzufügen und entfernen.
 - **requests:** Kontoanfragen auflisten, prüfen und ablehnen.
-- **audit:** Audit-Ereignisse auflisten, gefiltert nach handelnder Person, Ziel, Aktion, Aktionsgruppe, Dienstkonto, Ergebnis, Anbieter und Zeitraum.
-- **service-accounts:** API-Schlüssel von Dienstkonten auflisten und aktive Zugangsdaten widerrufen.
+- **audit:** Audit-Ereignisse auflisten, gefiltert nach handelnder Person, Ziel, Aktion, Aktionsgruppe, Agent oder Dienstkonto, Ergebnis, Anbieter und Zeitraum.
+- **service-accounts:** API Keys auflisten und aktive Zugangsdaten widerrufen.
 :::
 
 :::info Ausgabeformat wählen
@@ -35,7 +35,7 @@ Um eine lokale Gruppe mit GID in einem Schritt zu erstellen, führe `cld account
 
 ## Maschinenkonto einer lokalen Gruppe hinzufügen {icon="users-group"}
 
-Die Gruppenverwaltung und Administration können aktive eigenständige Dienstkonten und Agenten zu lokalen Gruppen hinzufügen. Öffne **Mitglieder**, wähle **Hinzufügen** und suche das Konto über seinen Namen. Aktiviere den Filter **Dienstkonten**, um Maschinenmitglieder zu sehen und direkte Mitgliedschaften zu entfernen. Name und Kontotyp unterscheiden sie von Personen und Gruppen.
+Die Gruppenverwaltung und Administration können aktive Agenten zu lokalen Gruppen hinzufügen. Öffne **Mitglieder**, wähle **Hinzufügen** und suche das Konto über seinen Namen. Aktiviere den Filter **Agenten**, um Maschinenmitglieder zu sehen und direkte Mitgliedschaften zu entfernen. Name und Kontotyp unterscheiden sie von Personen und Gruppen.
 
 Im CLI verwendest du `cld accounts groups members add <gruppe> --service-account <name-oder-id> --yes`. Mit `remove` statt `add` entfernst du die Mitgliedschaft. `list --type service_account --recursive` zeigt auch geerbte Mitgliedschaften. Namen müssen genau und eindeutig passen; verwende bei mehreren Treffern die ID.
 

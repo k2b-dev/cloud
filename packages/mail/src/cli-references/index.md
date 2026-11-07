@@ -93,7 +93,7 @@ cld --json mail ls Support --view mine
 cld --json mail ls "Support:Projekte / 2025" --status needs_action --limit 20
 ```
 
-Without a folder, `ls` lists the mailbox's conversations across folders. `--view` takes `needs_action`, `mine`, `unassigned`, `waiting`, `done`, `snoozed`, `recently_active`, or `kept`; `--status` takes `needs_action`, `waiting`, or `done`. The follow-up views leave out conversations that are only in Trash or Junk, `unassigned` includes conversations with no eligible assignee, including when every stored assignee has lost access or expired, and `kept` lists the kept conversations from every folder. Each item carries `kept`. The JSON result is `{ "items": [...], "nextCursor": ... }`; pass `--cursor` for the next page.
+Without a folder, `ls` lists the mailbox's conversations across folders. `--view` takes `needs_action`, `mine`, `unassigned`, `waiting`, `done`, `snoozed`, `recently_active`, or `kept`; `--status` takes `needs_action`, `waiting`, or `done`. The follow-up views leave out conversations that are only in Trash or Junk, `unassigned` includes conversations with no eligible assignee, including when every stored assignee has lost access or expired, and `kept` lists the kept conversations from every folder. `mine` lists the conversations that need action before those waiting for a reply, each group newest first; its cursor continues in the group where the page ended. Each item carries `kept`. The JSON result is `{ "items": [...], "nextCursor": ... }`; pass `--cursor` for the next page.
 
 Show one conversation with its summary, status, assignees, tags, and latest messages, then print one message:
 
@@ -279,7 +279,7 @@ cld mail use <mailbox-id>
 cld --json mail current
 ```
 
-Pin or hide mailboxes in your own overview. The lists belong to the signed-in person or service account, apply on every device, and hold up to 200 mailboxes each; a hidden mailbox leaves the web overview and its Focus but stays connected:
+Pin or hide mailboxes in your own mailbox list. The lists belong to the signed-in person or service account, apply on every device, and hold up to 200 mailboxes each; a hidden mailbox leaves the list in Mail's sidebar and Mail no longer opens it on its own, but it stays connected:
 
 ```bash
 cld --json mail mailbox preferences
@@ -813,3 +813,27 @@ Structured CLI output has the same shape. Read
 and results. `mail.summary.allowance_exhausted` leaves the conversation
 unchanged. Allowance presentation contains only `unlimited`, `usedPercent`
 and `resetsAt`.
+
+## Prepared summaries and protected claims
+
+Save prepared text through the shared Mail capability path, with explicit
+conversation and summary revisions and a stable retry key:
+
+```bash
+cld mail conversation summary write <conversation> --mailbox <mailbox> \
+  --revision 7 --summary-revision 3 --body-file summary.md \
+  --idempotency-key summary-42
+cld mail conversation update <conversation> --revision 7 --status waiting
+cld mail assign <conversation> --to ada --only-if-unassigned --revision 7
+```
+
+`summary write` never replaces text a person edited or cleared. Its structured
+result reports `skipped: "edited_by_person"` without changing either revision.
+It does not generate text. Both revisions must match; reread after a conflict.
+`conversation update --status` accepts `needs_action`, `waiting`, `done`, or
+`open`; `open` derives the next step from verified mail flow. Do not combine
+`--status` with `--done`, `--reopen`, or snooze changes.
+
+`assign --only-if-unassigned` requires one conversation, a nonempty `--to`, and
+`--revision`. Mail checks the revision and complete assignee set atomically;
+existing assignments and stale revisions return a conflict without changes.

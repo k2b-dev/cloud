@@ -1,6 +1,6 @@
 // Playwright is an existing @k2b/ui devDependency in this isolated-linker workspace.
 import { createRequire } from "node:module";
-import type { Browser, BrowserContext, CDPSession, Locator, Page, Request } from "playwright";
+import type { Browser, BrowserContext, CDPSession, Locator, Page } from "playwright";
 import { TIMEZONE_COOKIE } from "../../packages/cloud/src/shared/time";
 import {
   aggregateMetrics,
@@ -214,6 +214,43 @@ export function trackHostScripts(page: ScriptSource) {
       pending.clear();
       urls.clear();
       lastScript = performance.now();
+    },
+    stop() {
+      page.off("request", begin);
+      page.off("requestfinished", finish);
+      page.off("requestfailed", finish);
+    },
+  };
+}
+
+/** Mutation settling belongs to the current host document, not departed pages or embedded providers. */
+export function trackHostNetwork(page: ScriptSource) {
+  const pending = new Set<ScriptRequest>();
+  const documents = new WeakMap<ScriptRequest, number>();
+  let document = 0;
+  let last = performance.now();
+  const begin = (request: ScriptRequest) => {
+    if (request.frame() !== page.mainFrame() || !["script", "stylesheet", "document", "fetch", "xhr"].includes(request.resourceType()))
+      return;
+    pending.add(request);
+    documents.set(request, document);
+    last = performance.now();
+  };
+  const finish = (request: ScriptRequest) => {
+    if (pending.delete(request)) last = performance.now();
+  };
+  page.on("request", begin);
+  page.on("requestfinished", finish);
+  page.on("requestfailed", finish);
+  return {
+    pending,
+    document: () => document,
+    documentOf: (request: ScriptRequest) => documents.get(request),
+    last: () => last,
+    reset() {
+      pending.clear();
+      document++;
+      last = performance.now();
     },
     stop() {
       page.off("request", begin);
@@ -459,7 +496,12 @@ export function installPwaProbe() {
       ) {
         record.titleAt = now;
         record.titleFrame = true;
-      } else if (visible(heading) && !shell && heading?.textContent?.trim() === expectedTitle) {
+      } else if (
+        !shell &&
+        [...document.querySelectorAll<HTMLElement>(".k2b-mobile-shell :is(h1, .k2b-app-workspace__level-head h2)")].some(
+          (title) => visible(title) && title.innerText.trim() === expectedTitle,
+        )
+      ) {
         record.titleAt = now;
         record.titleFrame = false;
       }
@@ -552,8 +594,50 @@ export function installPwaProbe() {
 type PwaOptions = { runs: number; deviceName: string; remote: boolean; results: PwaProfileResult[] };
 type PwaCapture = { documents: PwaDocument[]; statuses: Map<string, number>; errors: string[] };
 // The tab bar on a phone, the sidebar from 48rem: the shell renders both, and only the shown one is tapped.
+export const browserFailure = (error: unknown) =>
+  (error instanceof Error ? error.message : String(error)).replace(/\nCall log:[\s\S]*$/, "").trim();
+
+// Same narrow exception as packages/ui/test/browser.ts (Playwright #43120): WebKit
+// reports a handled same-origin load refused during a controlled navigation as a pageerror.
+// Real CORS failures, ordinary page errors and errors outside that navigation still fail.
+export function navigationRefusal(engine: Engine, error: Pick<Error, "name" | "message">, from: string | null) {
+  if (engine !== "webkit" || from === null) return false;
+  const url = /^(?:Fetch API|XMLHttpRequest) cannot load (\S+) due to access control checks\.$/.exec(
+    `${error.name}:/${error.message}`,
+  )?.[1];
+  if (!url) return false;
+  try {
+    return new URL(url).origin === new URL(from).origin;
+  } catch {
+    return false;
+  }
+}
+
+export function departingResourceCancellation(
+  type: string,
+  url: string,
+  error: string | undefined,
+  from: string | null,
+  departing: boolean,
+) {
+  if (
+    !from ||
+    !departing ||
+    !["script", "stylesheet"].includes(type) ||
+    !["Load request cancelled", "net::ERR_ABORTED"].includes(error ?? "")
+  )
+    return false;
+  try {
+    return new URL(url).origin === new URL(from).origin;
+  } catch {
+    return false;
+  }
+}
+
 const startTab = 'a[data-tab="start"]:visible';
 const spacesTab = 'a[data-tab="spaces"]:visible';
+const chatTab = 'a[data-tab="chat"]:visible';
+const assistantTab = 'a[data-tab="assistant"]:visible';
 const settingsLink = ':is(.k2b-mobile-shell__actions a[href="/pwa/settings"], a[data-tab="settings"]):visible';
 
 export class Browsers {
@@ -688,7 +772,7 @@ export class Browsers {
             }
             await this.pwaContext(browser, origin, phone, result, run, serviceWorker, options);
           } catch (error) {
-            failures.push(`Run ${run}, worker ${serviceWorker}: ${error instanceof Error ? error.message : String(error)}`);
+            failures.push(`Run ${run}, worker ${serviceWorker}: ${browserFailure(error)}`);
             result.status = "failed";
             result.reason = failures.join("; ");
             this.signal.throwIfAborted();
@@ -748,35 +832,46 @@ export class Browsers {
       await context.addInitScript({ content: `(${installProbe.toString()})(${engine === "chromium"});(${installPwaProbe.toString()})();` });
       const seen = new Set<string>();
       let scripts: ReturnType<typeof trackHostScripts> | undefined;
-      const pendingNetwork = new Set<Request>();
-      let lastNetwork = performance.now();
+      let network: ReturnType<typeof trackHostNetwork> | undefined;
       let capture: PwaCapture | null = null;
+      let navigatingFrom: string | null = null;
+      let departingDocument: number | null = null;
+      let departingFrom: string | null = null;
       const newPage = async () => {
         const page = await context.newPage();
         page.setDefaultTimeout(measurementTimeoutMs);
         page.setDefaultNavigationTimeout(measurementTimeoutMs);
         const hostScripts = trackHostScripts(page);
+        const hostNetwork = trackHostNetwork(page);
         scripts = hostScripts;
+        network = hostNetwork;
         page.on("framenavigated", (frame) => {
-          if (frame === page.mainFrame()) hostScripts.reset();
-        });
-        page.on("close", () => hostScripts.stop());
-        page.on("request", (request) => {
-          if (["script", "stylesheet", "document", "fetch", "xhr"].includes(request.resourceType())) {
-            pendingNetwork.add(request);
-            lastNetwork = performance.now();
+          if (frame === page.mainFrame()) {
+            hostScripts.reset();
+            hostNetwork.reset();
           }
         });
-        const finished = (request: Request) => {
-          if (pendingNetwork.delete(request)) lastNetwork = performance.now();
-        };
-        page.on("requestfinished", finished);
+        page.on("close", () => {
+          hostScripts.stop();
+          hostNetwork.stop();
+        });
         page.on("requestfailed", (request) => {
-          finished(request);
+          if (
+            departingResourceCancellation(
+              request.resourceType(),
+              request.url(),
+              request.failure()?.errorText,
+              departingFrom,
+              departingDocument !== null && hostNetwork.documentOf(request) === departingDocument,
+            )
+          )
+            return;
           const error = failedRequestError(request.resourceType(), request.url(), request.failure()?.errorText);
           if (error) capture?.errors.push(error);
         });
-        page.on("pageerror", (error) => capture?.errors.push(error.message));
+        page.on("pageerror", (error) => {
+          if (!navigationRefusal(engine, error, navigatingFrom)) capture?.errors.push(error.message);
+        });
         page.on("response", (response) => {
           if (!capture) return;
           const request = response.request();
@@ -818,7 +913,7 @@ export class Browsers {
           "PWA islands mounted and scripts quiet",
           async () => {
             if (capture?.errors.length) return true;
-            if (!scripts) throw new Error("PWA page has no script tracker");
+            if (!scripts || !network) throw new Error("PWA page has no request trackers");
             const state = await page.evaluate(
               (urls) => {
                 const p = window.__cloudPerf;
@@ -842,9 +937,9 @@ export class Browsers {
               interactive({
                 initial: state.initial,
                 mounted: state.mounted,
-                pendingScripts: allNetwork ? pendingNetwork.size : scripts.pending.size,
+                pendingScripts: allNetwork ? network.pending.size : scripts.pending.size,
                 untimedScripts: state.untimedScripts,
-                quietMs: performance.now() - (allNetwork ? lastNetwork : scripts.last()),
+                quietMs: performance.now() - (allNetwork ? network.last() : scripts.last()),
               })
             );
           },
@@ -868,6 +963,8 @@ export class Browsers {
           throw new Error(`Mobile app did not arrive at a paired page: ${url.pathname}${url.search}`);
         if (!(await page.locator(startTab).isVisible()) || !(await page.locator(spacesTab).isVisible()))
           throw new Error("Mobile app did not render the paired tab bar with Start and Spaces");
+        if (!options.remote && !(await page.locator(chatTab).isVisible()))
+          throw new Error("Local mobile fixture did not render the Chat part");
       };
       const measure = async (
         id: PwaStep["id"],
@@ -879,6 +976,7 @@ export class Browsers {
         let timedOut = false;
         // The wait a timeout interrupted; the report names it.
         let phase = "action";
+        let arrival = "";
         const timeout = setTimeout(() => {
           timedOut = true;
           if (phase === "quiet")
@@ -903,26 +1001,49 @@ export class Browsers {
               window.__cloudPwaLaunch = config;
               window.__cloudPwa?.launch(config);
             }, probeConfig);
+          navigatingFrom = config.action === "navigation" ? page.url() : null;
+          departingFrom = navigatingFrom;
+          departingDocument = config.action === "navigation" ? (network?.document() ?? null) : null;
           await action();
           phase = "arrival";
           await waitFor(
             `PWA ${id} arrival`,
             async () => {
               if (current.errors.length) return true;
-              return page.evaluate(
+              const state = await page.evaluate(
                 ({ mode, previousOrigin, action }) => {
                   const record = window.__cloudPwa.read();
-                  if (mode === "history") return record.show !== null && record.hide !== null;
-                  if (mode === "launch") return document.readyState !== "loading" && record.titleAt !== null;
-                  if (action !== "navigation") return record.done !== null;
-                  return performance.timeOrigin !== previousOrigin && document.readyState !== "loading";
+                  const arrived =
+                    mode === "history"
+                      ? record.show !== null && record.hide !== null
+                      : mode === "launch"
+                        ? document.readyState !== "loading" && record.titleAt !== null
+                        : action !== "navigation"
+                          ? record.done !== null
+                          : performance.timeOrigin !== previousOrigin && document.readyState !== "loading" && record.titleAt !== null;
+                  const heading = document.querySelector<HTMLElement>(".k2b-mobile-shell__title");
+                  return {
+                    arrived,
+                    path: location.pathname,
+                    sameDocument: performance.timeOrigin === previousOrigin,
+                    expectedTitle: record.title,
+                    visibleTitle: heading?.innerText,
+                    titleAt: record.titleAt,
+                    titleRects: heading?.getClientRects().length,
+                    titleVisibility: heading ? getComputedStyle(heading).visibility : null,
+                    switching: document.querySelector(".k2b-mobile-shell[data-k2b-switching]") !== null,
+                    nextTitle: heading?.getAttribute("data-k2b-next-title"),
+                  };
                 },
                 { mode, previousOrigin, action: config.action },
               );
+              arrival = JSON.stringify(state);
+              return state.arrived;
             },
             this.signal,
             measurementTimeoutMs,
           );
+          navigatingFrom = null;
           phase = "reload";
           if (id === "launch-timezone")
             await waitFor("PWA timezone reload", async () => current.documents.length >= 2, this.signal, measurementTimeoutMs);
@@ -981,6 +1102,7 @@ export class Browsers {
                   initiator: entry.initiatorType,
                   transferSize: entry.transferSize,
                   encodedBodySize: entry.encodedBodySize,
+                  decodedBodySize: entry.decodedBodySize,
                   status: status(entry),
                 },
               ];
@@ -989,6 +1111,13 @@ export class Browsers {
               record,
               nav,
               resources,
+              requests: performance.getEntriesByType("resource").length + 1,
+              shifts: p.shifts,
+              lastScript: Math.max(
+                0,
+                ...p.resources.filter((entry) => /\.m?js(?:\?|$)/.test(entry.name)).map((entry) => entry.responseEnd),
+              ),
+              lastLongTask: Math.max(0, ...p.longtasks.map((entry) => entry.start + entry.duration)),
               fcp: p.fcp === null ? null : window.__cloudPwa.epoch + p.fcp,
               mounted: p.initial?.length
                 ? window.__cloudPwa.epoch + Math.max(...p.initial.map((element) => p.mounted.get(element) ?? 0))
@@ -1035,6 +1164,7 @@ export class Browsers {
                   status,
                   transferSize: entry.transferSize ?? null,
                   encodedBodySize: entry.encodedBodySize ?? null,
+                  decodedBodySize: entry.decodedBodySize ?? null,
                   state: assetCacheState({ transferSize: entry.transferSize, status }),
                   // A file seen before under another cache-busting query is a repeat too: the browser loads it again.
                   repeat: seen.has(url.pathname),
@@ -1053,6 +1183,17 @@ export class Browsers {
             titleFrame: record.titleFrame,
             contentMs: restored ? relative(record.restoredFrame) : hasDocument ? relative(snapshot.fcp) : null,
             mountedMs: hasDocument ? relative(snapshot.mounted) : null,
+            interactiveMs: hasDocument
+              ? relative(
+                  Math.max(
+                    snapshot.fcp ?? 0,
+                    snapshot.mounted ?? 0,
+                    (snapshot.nav?.epoch ?? start) + Math.max(snapshot.lastScript, snapshot.lastLongTask),
+                  ),
+                )
+              : null,
+            requests: hasDocument ? snapshot.requests + current.documents.length - 1 : null,
+            cls: hasDocument ? cumulativeLayoutShift(snapshot.shifts) : null,
             selectedMs: relative(record.selected),
             doneMs: id === "relaunch-start-url" ? relative(record.titleAt) : relative(record.done),
             persisted: mode === "history" ? record.persisted : null,
@@ -1077,10 +1218,13 @@ export class Browsers {
           phone.takeBrowserCookies(await context.cookies());
         } catch (error) {
           throw new Error(
-            `${id}: ${timedOut ? `step timed out after ${measurementTimeoutMs} ms waiting for ${phase}` : error instanceof Error ? error.message : String(error)}`,
+            `${id}: ${timedOut ? `step timed out after ${measurementTimeoutMs} ms waiting for ${phase}${phase === "arrival" ? ` (${arrival})` : ""}` : error instanceof Error ? error.message : String(error)}`,
           );
         } finally {
           capture = null;
+          navigatingFrom = null;
+          departingDocument = null;
+          departingFrom = null;
           await page.evaluate(() => window.__cloudPwa.stop()).catch(() => {});
           clearTimeout(timeout);
         }
@@ -1114,6 +1258,18 @@ export class Browsers {
         await measure(id, round, "tap", () => tap(page.locator(selector)), navigation(title));
       };
       for (const round of [1, 2] as const) {
+        if (await page.locator(chatTab).count()) {
+          await tab("tab-start-chat", round, chatTab);
+          await tab("tab-chat-start", round, startTab);
+        }
+        // The Assistant part, where the installation shows it: into it from Start, and from it into Chat. The way back
+        // to Start is not timed, so tab-chat-start keeps one sample per round.
+        if ((await page.locator(assistantTab).count()) && (await page.locator(chatTab).count())) {
+          await tab("tab-start-assistant", round, assistantTab);
+          await tab("tab-assistant-chat", round, chatTab);
+          await Promise.all([page.waitForURL(`${origin}/pwa/`), tap(page.locator(startTab))]);
+          await quiet();
+        }
         await tab("tab-start-spaces", round, spacesTab);
         await tab("tab-spaces-start", round, startTab);
         await tab("tab-start-settings", round, settingsLink);
@@ -1123,9 +1279,12 @@ export class Browsers {
         await measure("history-back", 2, "history", () => page.goBack({ waitUntil: "domcontentloaded" }), navigation(settingsTitle));
         await measure("history-forward", 2, "history", () => page.goForward({ waitUntil: "domcontentloaded" }), navigation(startTitle));
       }
-      const manifestResponse = await context.request.get(`${origin}/pwa/manifest.webmanifest`);
-      if (!manifestResponse.ok()) throw new Error(`PWA manifest returned HTTP ${manifestResponse.status()}`);
-      const startUrl = pwaStartUrl(await manifestResponse.json(), origin);
+      const manifest = await page.evaluate(async () => {
+        const response = await fetch("/pwa/manifest.webmanifest", { signal: AbortSignal.timeout(30_000) });
+        if (!response.ok) throw new Error(`PWA manifest returned HTTP ${response.status}`);
+        return response.json();
+      });
+      const startUrl = pwaStartUrl(manifest, origin);
       await page.close();
       page = await newPage();
       await measure("relaunch-start-url", 2, "launch", () => page.goto(startUrl, { waitUntil: "domcontentloaded" }), navigation(null));

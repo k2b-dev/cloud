@@ -6,6 +6,7 @@ import type {
   ConversationCompletionResult,
   CreateConversationComment,
   DeleteConversationComment,
+  MailActivityKind,
   UpdateConversationCollaboration,
   UpdateConversationComment,
 } from "../contracts";
@@ -20,6 +21,7 @@ import {
   requireVisibleConversation,
   requireVisibleMessages,
 } from "./access";
+import { activityFeedCondition } from "./activity-feed";
 import { projectActivityItems } from "./activity-public";
 import { actorRefFromRequest, type MailRequestContext, personalPrincipal } from "./auth";
 import { invalidateAutomationEffects } from "./automation-effect-state";
@@ -92,7 +94,13 @@ export type MailActivityEvent = {
   targetId: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
+  /** The subject of the event's conversation, so a mailbox-wide feed can name it; null without a conversation. */
+  conversationSubject: string | null;
+  /** Who was assigned before and after an assignment change, as principal references; null for every other event. */
+  assignees: { before: MailActivityPerson[]; after: MailActivityPerson[] } | null;
 };
+
+export type MailActivityPerson = Pick<MailCollaborator, "id" | "displayName" | "avatarHash" | "type">;
 
 type CollaborationRow = {
   id: string;
@@ -137,6 +145,7 @@ type ActivityRow = {
   target_id: string | null;
   conversation_reference_value: string | null;
   mailbox_short_id: string;
+  conversation_subject: string | null;
   metadata: Record<string, unknown> | string;
   created_at: Date | string;
 };
@@ -615,7 +624,7 @@ const applyConversationCollaborationInTransaction = async (params: {
   }
 
   let nextStatus = "workStatus" in params.input && params.input.workStatus ? params.input.workStatus : current.work_status;
-  if ("completion" in params.input && params.input.completion === "done") nextStatus = "done";
+  if ("completion" in params.input && params.input.completion && params.input.completion !== "open") nextStatus = params.input.completion;
   if ("completion" in params.input && params.input.completion === "open") {
     const [latest] = await params.db<
       {
@@ -686,7 +695,7 @@ const applyConversationCollaborationInTransaction = async (params: {
 
   const covers =
     ("workStatus" in params.input && (params.input.workStatus === "done" || params.input.workStatus === "waiting")) ||
-    ("completion" in params.input && params.input.completion === "done") ||
+    ("completion" in params.input && (params.input.completion === "done" || params.input.completion === "waiting")) ||
     Boolean(requestedSnooze);
   const assigneesChanged =
     nextAssigneeIds.length !== currentAssigneeIds.length || nextAssigneeIds.some((id) => !currentAssigneeIds.includes(id));
@@ -898,6 +907,8 @@ export const applyConversationAssignments = async (params: {
   conversationIds: readonly string[];
   assigneeUserIds: readonly string[];
   mode: "add" | "remove" | "replace";
+  onlyIfUnassigned?: boolean;
+  expectedRevision?: number;
 }): Promise<
   Result<{
     result: ConversationAssignmentResult;
@@ -909,6 +920,14 @@ export const applyConversationAssignments = async (params: {
     return fail(err.badInput(`Pass 1 to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations`));
   if (params.assigneeUserIds.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
     return fail(err.badInput(`A conversation can have at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees`));
+  if (
+    params.onlyIfUnassigned &&
+    (params.mode !== "add" ||
+      params.assigneeUserIds.length === 0 ||
+      params.conversationIds.length !== 1 ||
+      params.expectedRevision === undefined)
+  )
+    return fail(err.badInput("Unassigned-only assignment requires one conversation, a revision, and a nonempty add"));
   const userIds = [...new Set(params.assigneeUserIds)];
   if (params.mode !== "replace" && userIds.length === 0) return fail(err.badInput("Add and remove require at least one user"));
   const requestedIds = [...new Set(params.conversationIds)];
@@ -943,6 +962,9 @@ export const applyConversationAssignments = async (params: {
       const addedIds = new Set<string>();
       for (const row of rows) {
         const current = await loadConversationAssigneeIds(tx, row.id);
+        if (params.expectedRevision !== undefined && Number(row.revision) !== params.expectedRevision)
+          return fail(err.conflict("Conversation was changed by another collaborator"));
+        if (params.onlyIfUnassigned && current.length > 0) return fail(err.conflict("Conversation already has an assignee"));
         const ids =
           params.mode === "replace"
             ? userIds
@@ -1023,7 +1045,8 @@ export const applyConversationCompletions = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   conversationIds: readonly string[];
-  completion: "done" | "open";
+  completion: "done" | "open" | "waiting" | "needs_action";
+  expectedRevisions?: Record<string, number>;
 }): Promise<Result<ConversationCompletionResult>> => {
   if (params.conversationIds.length === 0 || params.conversationIds.length > MAIL_CONVERSATION_BATCH_LIMIT)
     return fail(err.badInput(`Pass 1 to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations`));
@@ -1071,6 +1094,9 @@ export const applyConversationCompletions = async (params: {
               ).map((row) => row.id),
             );
       const rows = visibleIds ? locked.filter((row) => visibleIds.has(row.id)) : locked;
+      // Check every requested fence before any write, so a conflict leaves the batch unchanged.
+      if (params.expectedRevisions && rows.some((row) => params.expectedRevisions?.[row.short_id] !== Number(row.revision)))
+        return fail(err.conflict("Conversation was changed by another collaborator"));
       const collaborations = new Map<string, ConversationCollaboration>();
       let changed = false;
       for (const row of rows) {
@@ -1659,12 +1685,25 @@ export const deleteConversationComment = async (params: {
   }
 };
 
+/** The assignees an activity snapshot names, including snapshots from before conversations had several. */
+const activityAssigneeIds = (snapshot: unknown): string[] => {
+  if (!snapshot || typeof snapshot !== "object") return [];
+  const value = snapshot as { assigneeUserIds?: unknown; assigneeUserId?: unknown };
+  if (Array.isArray(value.assigneeUserIds)) return value.assigneeUserIds.filter((id): id is string => typeof id === "string");
+  return typeof value.assigneeUserId === "string" ? [value.assigneeUserId] : [];
+};
+
 export const listActivity = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   conversationId?: string | null;
   cursor?: string;
   limit?: number;
+  /** Feed filters, applied before the page limit; the cursor stays valid across them. */
+  kinds?: readonly MailActivityKind[];
+  actorId?: string | null;
+  /** Only events that concern the caller. */
+  mine?: boolean;
 }): Promise<Result<{ items: MailActivityEvent[]; nextCursor: string | null }>> => {
   const allowed = params.conversationId
     ? await requireMailboxAccess(params.context, params.mailboxId, "read")
@@ -1703,10 +1742,13 @@ export const listActivity = async (params: {
       activity.target_id,
       activity_reference.value AS conversation_reference_value,
       activity_mailbox.short_id AS mailbox_short_id,
+      activity_conversation.subject AS conversation_subject,
       activity.metadata,
       activity.created_at
     FROM mail.activity_events activity
     JOIN mail.mailboxes activity_mailbox ON activity_mailbox.id = activity.mailbox_id
+    LEFT JOIN mail.conversations activity_conversation
+      ON activity_conversation.id = activity.conversation_id AND activity_conversation.mailbox_id = activity.mailbox_id
     LEFT JOIN mail.conversation_references activity_reference
       ON activity.target_type = 'conversation_reference'
       AND activity_reference.id = activity.target_id
@@ -1748,12 +1790,32 @@ export const listActivity = async (params: {
           )
         )
       ))
+      AND ${activityFeedCondition({
+        kinds: params.kinds,
+        actorId: params.actorId,
+        concernsPrincipalId: params.mine ? personalPrincipal(params.context).id : null,
+      })}
       AND (${cursor.data ?? null}::bigint IS NULL OR activity.id < ${cursor.data ?? null}::bigint)
     ORDER BY activity.id DESC
     LIMIT ${limit + 1}
   `;
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
+  const assigneeChanges = new Map(
+    pageRows.flatMap((row) => {
+      if (row.action !== "conversation.collaboration_updated") return [];
+      const metadata = parseMetadata(row.metadata);
+      const before = activityAssigneeIds(metadata.before);
+      const after = activityAssigneeIds(metadata.after);
+      return before.join() === after.join() ? [] : [[String(row.id), { before, after }] as const];
+    }),
+  );
+  const people = new Map(
+    (await listAssigneeCollaborators([...assigneeChanges.values()].flatMap((change) => [...change.before, ...change.after]))).map(
+      (person) => [person.id, { id: person.id, displayName: person.displayName, avatarHash: person.avatarHash, type: person.type }],
+    ),
+  );
+  const resolvePeople = (ids: readonly string[]): MailActivityPerson[] => ids.flatMap((id) => people.get(id) ?? []);
   const items = await projectActivityItems(
     pageRows.map((row) => ({
       id: String(row.id),
@@ -1775,6 +1837,11 @@ export const listActivity = async (params: {
             : row.target_id,
       metadata: parseMetadata(row.metadata),
       createdAt: toIso(row.created_at),
+      conversationSubject: row.conversation_id ? (row.conversation_subject ?? null) : null,
+      assignees: (() => {
+        const change = assigneeChanges.get(String(row.id));
+        return change ? { before: resolvePeople(change.before), after: resolvePeople(change.after) } : null;
+      })(),
     })),
   );
   const last = items.at(-1);

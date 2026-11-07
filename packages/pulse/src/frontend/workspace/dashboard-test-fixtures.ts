@@ -1,3 +1,4 @@
+import { DBIP_ATTRIBUTION } from "@k2b/cloud/contracts";
 import type { Dashboard, DashboardPanel } from "../../dashboard-contracts";
 import type { DashboardPanelResult, DashboardSnapshot } from "./dashboard-client";
 
@@ -169,6 +170,8 @@ export const dashboardTestPanelResult = (panel: DashboardPanel): DashboardPanelR
   error: null,
   nextRefreshAt: "2026-10-20T14:33:00.000Z",
   variant: "fixture",
+  // The map shows saved ipCountry() results from the bundled DB-IP database.
+  attribution: panel.kind === "map" ? DBIP_ATTRIBUTION : null,
   lastGood: {
     at: dashboardTestNow,
     slot: "2026-10-20T14:32:00.000Z",

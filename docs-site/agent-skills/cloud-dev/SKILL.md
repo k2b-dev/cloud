@@ -39,13 +39,13 @@ exports, types, and focused tests.
 ## Own the application boundary
 
 Cloud owns identity, access semantics, routing, registration, and shared
-services. The application owns its domain, permissions, Hono routes, pages,
-and durable data.
+services. The application owns its domain, permissions, Hono routes, pages, and durable data.
+An app has no permissions of its own on objects: alone, it reaches objects only through an agent or an object API key stored in a setting.
 
-- Use `defineApp()` for the declaration, the Hono router for requests, and
-  `app.start()` for registration and lifecycle. App domains reach only `app.public` of their own app; link `subject`s are not principals.
+- Use `defineApp()` for the declaration, the Hono router for requests, and `app.start()` for registration and lifecycle. App domains reach only `app.public` of their own app; link `subject`s are not principals.
 - Declare `access` for app use; Cloud applies it before app code and to discovery. Keep resource checks in services.
   Read **App access** (`/en/docs/identity/app-access`) for public routes and migration.
+- `app.start()` requires the canonical public Origin for cookie-authorized POST, PUT, PATCH, DELETE and WebSocket upgrades before route dispatch, including SSR forms. Ordinary `access.publicRoutes` keep this guard. Assigned app domains receive no Cloud credential cookies. Narrow `sessionlessRoutes` must validate their own credentials and never authorize actions from a Cloud session. Read **Route policies** (`/en/docs/identity/route-policies`).
 - Keep declared prefixes, mounted routes, and registration aligned. A running
   process alone does not prove route readiness.
 - Cloud authenticates requests and resolves `actor` (identity and audit) and `accessSubject` (grants). Application services enforce resource permissions on every path;
@@ -174,6 +174,6 @@ Build the smallest end-to-end behavior through its public seam. Avoid
 speculative paths, one-off abstractions, and unrelated cleanup. Start with the
 fastest relevant check, then verify each affected permission, data,
 registration, and SSR/browser boundary. Integration tests gate on `CLOUD_TEST_*`
-variables and never touch a database whose name does not end in `_test`. Before
+variables and never touch a database whose name does not end in `_test`. For live-trigger tests, use `installLiveOutbox(db)` from `@k2b/cloud/events/testing` before app migrations (see **Live updates**), instead of copying platform DDL. Before
 release, test against the target Cloud version with the production package version. Update the application's docs when observable behavior changes; finish
 when code, focused tests, and documentation describe one contract.

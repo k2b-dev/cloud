@@ -1938,6 +1938,8 @@ export const listDraftFolder = async (params: {
       to_addresses: MailAddress[] | string;
       cc_addresses: MailAddress[] | string;
       bcc_addresses: MailAddress[] | string;
+      revision: string | number;
+      attachment_count: number;
       updated_at_cursor: string;
     })[]
   >`
@@ -1950,6 +1952,11 @@ export const listDraftFolder = async (params: {
       d.to_addresses,
       d.cc_addresses,
       d.bcc_addresses,
+      d.revision,
+      (
+        SELECT COUNT(*)::int FROM mail.draft_attachments attachment
+        WHERE attachment.draft_id = d.id AND attachment.removed_at IS NULL
+      ) AS attachment_count,
       LEFT(d.body_markdown, ${DRAFT_BODY_PREVIEW_SOURCE_LENGTH}) AS body_preview_source,
       COALESCE(
         NULLIF(author_user.display_name, ''),
@@ -1995,6 +2002,8 @@ export const listDraftFolder = async (params: {
       to: parseArray(row.to_addresses),
       cc: parseArray(row.cc_addresses),
       bcc: parseArray(row.bcc_addresses),
+      revision: Number(row.revision),
+      attachmentCount: row.attachment_count,
       bodyPreview: draftBodyPreview(row.body_preview_source),
       createdByDisplayName: row.created_by_display_name,
       updatedAt: toIso(row.updated_at),

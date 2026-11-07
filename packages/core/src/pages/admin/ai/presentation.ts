@@ -46,9 +46,9 @@ export const AI_PROVIDER_TYPES: {
   { id: "openai-compatible", url: "required", key: "optional", boundary: "private", headers: true, effortField: "reasoning_effort" },
   { id: "openrouter", url: "optional", key: "required", boundary: "hosted", headers: false, effortField: "reasoning.effort" },
   { id: "openai", url: "optional", key: "required", boundary: "hosted", headers: false, effortField: "reasoning_effort" },
-  { id: "anthropic", url: "optional", key: "required", boundary: "hosted", headers: false, effortField: "output_config.effort" },
+  { id: "anthropic", url: "optional", key: "required", boundary: "hosted", headers: false, effortField: "reasoning_effort" },
   { id: "mistral", url: "optional", key: "required", boundary: "hosted", headers: false, effortField: "reasoning_effort" },
-  { id: "gemini", url: "optional", key: "required", boundary: "hosted", headers: false, effortField: "thinkingConfig.thinkingLevel" },
+  { id: "gemini", url: "optional", key: "required", boundary: "hosted", headers: false, effortField: "reasoning_effort" },
   {
     id: "ollama",
     url: "optional",
@@ -56,7 +56,7 @@ export const AI_PROVIDER_TYPES: {
     key: "none",
     boundary: "private",
     headers: false,
-    effortField: "think",
+    effortField: "reasoning_effort",
   },
   {
     id: "vllm",
@@ -107,6 +107,7 @@ export const aiSlotLabel = (t: AiAreaMessages, slot: AiModelSlot): string =>
     vision: t.slot_vision,
     audio: t.slot_audio,
     liveAudio: t.slot_liveAudio,
+    decision: t.slot_decision,
   })[slot];
 
 export const aiClassSubtitle = (t: AiAreaMessages, modelClass: AiModelClass): string =>

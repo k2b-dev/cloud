@@ -280,6 +280,11 @@ A disabled button loses keyboard focus. When a chip that had focus is
 disabled, by `disabled` or `loading`, focus returns to it once it is enabled
 again, unless focus moved somewhere else in the meantime.
 
+Set `stableWidth` when the chip sits in a row that must not move, such as a
+header beside a wrapping title. The trigger then keeps the width of its longest
+option label, so a new choice never rewraps or shifts its neighbours.
+`ChartExplorer` uses it for its view switcher.
+
 Selection popovers dismiss synchronously. Do not add a generic host-level
 `[popover]` display or overlay transition around them; `@k2b/ui` explicitly
 keeps interactive choice surfaces immediate.
@@ -427,11 +432,18 @@ itself grows instead of reaching into its neighbour; devices without a touch
 screen keep the compact options, and grid tiles are already larger.
 `SelectChip` uses menu items, which follow the same rule.
 
+A `Combobox` option with `disabled: true` stays in the results, greyed and not
+pickable; arrow keys pass over it. Say why in its `description`, such as
+someone who is already on a list.
+
 The option list of `Select`, `MultiSelectInput`, `AutocompleteSelect`, and
-`Combobox` keeps the trigger's width, so it lines up with its field. A long
-option label or description wraps there instead of ending in an ellipsis;
-grid tiles keep their two-line clamp and hyphenate long words in the page
-language. A `Select` with groups or the view switch is at least `26rem` wide,
+`Combobox` starts at its trigger's left edge and sizes like a menu: it is at
+least `12rem` and never narrower than the trigger, and it grows so that each
+option label stays on one line until the viewport ends. A description wraps at
+`16rem` instead of widening the list. While the list is open it never gets
+narrower, so typing a search does not move its edges. Nothing ends in an
+ellipsis; grid tiles keep their two-line clamp and hyphenate long words in the
+page language. A `Select` with groups or the view switch is at least `26rem` wide,
 whatever its trigger, so the chips and tiles have room; it never grows past the
 viewport and spans a phone's width. Its height stays fixed while the results
 change, so it never moves or flips during a search.

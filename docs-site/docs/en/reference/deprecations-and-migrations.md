@@ -5,10 +5,76 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-30
+updated: 2026-11-05
 ---
 
 # Deprecations and migrations
+
+## Geo uses a global budget
+
+`geo.person_daily_credits` and the admin budget field `personDailyCredits`
+have been removed. Stored daily values are ignored. Use
+`geo.monthly_budget_credits` for the installation-wide credit budget and
+`geo.plan` (or `geo.custom_rps` for Custom) for the shared request rate.
+The retained capability result field `person.exhausted` is always `false`.
+
+App servers may call `geoClient.autocomplete(input)` without an app key or
+session through the private Core origin. Existing caller arguments remain
+supported. See [Geo rollout](/en/docs/operations/runtime-configuration#anonymous-internal-geo-autocomplete).
+
+## AI providers use their OpenAI-compatible endpoints
+
+Cloud now uses Nessi 1.1, which has one chat adapter for OpenAI-compatible
+endpoints. Every provider type keeps its name, stored connection and context
+window. An address stored for a native API reaches the same service's
+OpenAI-compatible API: Anthropic and Ollama addresses get `/v1`, and a Gemini
+address ending in `/v1beta` or `/v1beta/models` uses `/v1beta/openai`. Review
+these differences:
+
+- **Anthropic** runs through Anthropic's OpenAI SDK compatibility at
+  `https://api.anthropic.com/v1`. It returns no thinking text, ignores the
+  thinking level, and supports structured output only as a strict JSON schema.
+  Anthropic describes this layer as meant for testing and comparison. Budget
+  reservations no longer assume an output limit of 8,192 tokens.
+- **Gemini** receives the thinking level as `reasoning_effort` instead of
+  `thinkingConfig`; structured tasks send `none`. Thought signatures of tool
+  calls are kept and sent back, as Gemini 3 requires.
+- **Ollama** is reached under `/v1` of its stored address. A profile's
+  `contextWindow` is no longer sent as `num_ctx`; set the context length in
+  Ollama itself, for example with `OLLAMA_CONTEXT_LENGTH` or the model's
+  Modelfile.
+- `top_p` from the OpenAI-compatible API is passed on as `top_p` for every
+  provider type.
+- A response cut off at the output limit runs none of its tool calls. The
+  malformed-call limit now counts responses in a row, and a message the person
+  sends during the turn starts it again.
+- Read-only capability Queries of one response run at the same time, at most
+  four at once.
+
+See [Models and providers](/en/docs/ai/models-and-providers#set-the-thinking-level)
+and [Failed turns](/en/docs/ai/chat-runtime-and-streaming#failed-turns).
+
+## Authenticated grants apply only to people
+
+**Breaking:** “All signed-in people” (`authenticated`) now includes people
+and guests, with their delegated credentials, and excludes agents and other
+service accounts. Public grants keep their behavior. Give affected machines
+a direct or group grant before upgrading. Third-party apps using an older
+`@k2b/cloud` keep the previous behavior until their dependency is updated and
+they are redeployed. Run the read-only
+[pre-switch inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people)
+and review app-owned copies of the predicate before switching.
+
+## New agent API keys act as their account
+
+For standalone and agent keys, `POST /api/admin/identity/service-accounts/<id>/api-keys`
+with `access: "full"` and no `scopes` now stores `read`, `write`, and `admin`.
+Explicit scopes are deprecated for new keys but remain accepted unchanged.
+Existing keys, including empty-scope keys, keep their limits. No migration
+widens issued keys. New OAuth clients from `cld admin agents create` also
+include `admin`; existing clients are unchanged. Scopes do not grant roles or
+resource permissions. See [Standalone service accounts and agents](/en/docs/identity/service-accounts)
+for issuance and the `cld admin agents keys` commands.
 
 ## Application deployment moves to key files
 

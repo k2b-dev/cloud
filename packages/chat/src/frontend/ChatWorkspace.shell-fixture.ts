@@ -123,7 +123,7 @@ export const chatShellPage = async (snapshot: (request: Request) => ChatWorkspac
       return new Response(
         html
           .replace("</head>", '<link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/styles.css"></head>')
-          .replace("</body>", '<script src="/harness.js"></script></body>'),
+          .replace("</body>", '<script type="module" src="/harness.js"></script></body>'),
         { headers: { "Content-Type": "text/html" } },
       );
     },

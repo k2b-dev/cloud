@@ -87,7 +87,7 @@ const load = async (
   await page.evaluate(
     ({ props, notice }) => {
       document.documentElement.lang = "de";
-      window.mountChat(notice ? { ...props, deviceNotice: notice } : props, "de");
+      return window.mountChat(notice ? { ...props, deviceNotice: notice } : props, "de");
     },
     { props: harness.props(address), notice: extra.deviceNotice ?? null },
   );

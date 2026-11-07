@@ -69,6 +69,35 @@ test("OAuth scopes never grant the administrator role", async () => {
   }
 });
 
+test("agent OAuth admin scope never grants an administrator role", async () => {
+  const verify = spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
+    kind: "service_account",
+    oauthClientId: "agent-client",
+    serviceAccount: {
+      id: "22222222-2222-4222-8222-222222222222",
+      name: "Agent",
+      kind: "agent",
+      status: "active",
+      delegatedUserId: null,
+      appId: null,
+      resourceType: null,
+      resourceId: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      createdBy: user.id,
+    },
+    delegatedUser: null,
+    scopes: ["read", "write", "admin"],
+    payload: {},
+  });
+  try {
+    const app = new Hono<AuthContext>().use(auth.requireRole("admin")).all("/*", (c) => c.text("handler"));
+    for (const method of ["GET", "POST", "DELETE"])
+      expect((await app.request("/", { method, headers: { authorization: "Bearer fixture" } })).status).toBe(403);
+  } finally {
+    verify.mockRestore();
+  }
+});
+
 test("user-delegated OAuth keeps the same administrator mutation ceiling", async () => {
   const verify = spyOn(oauthTokens, "verifyAccessToken");
   try {

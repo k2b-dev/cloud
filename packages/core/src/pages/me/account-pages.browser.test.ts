@@ -407,7 +407,7 @@ describe("account pages in a browser", () => {
     expect(inherited).toContain('href="/me/access"');
   });
 
-  test("mark the current account section with Core's navigation fill and ink, in light and dark", async () => {
+  test("mark the current account section with the selected edge and fill in Core's ink, in light and dark", async () => {
     for (const dark of [false, true])
       for (const path of tabs) {
         const tab = await open(desktop, path, "en", dark);
@@ -418,13 +418,18 @@ describe("account pages in a browser", () => {
             const canvas = document.querySelector(".cloud-app-canvas")!;
             const probe = document.createElement("span");
             probe.style.cssText =
-              "position:absolute;visibility:hidden;background:var(--ui-app-selected-nav);color:var(--ui-app-accent-text)";
+              "position:absolute;visibility:hidden;background:color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));color:var(--ui-app-accent-text)";
             canvas.append(probe);
             const appFill = getComputedStyle(probe).backgroundColor;
             const appInk = getComputedStyle(probe).color;
             probe.style.background = "var(--ui-selected)";
             const platformFill = getComputedStyle(probe).backgroundColor;
+            probe.style.background = "var(--k2b-tray)";
+            const tray = getComputedStyle(probe).backgroundColor;
             probe.remove();
+            // The notification views are a segment: a grey track, the current view the selected thumb without a shadow.
+            const segment = canvas.querySelector(".account-tabs--segment");
+            const thumb = segment?.querySelector('[aria-current="page"]');
             const current = canvas.querySelector('.account-tabs [aria-current="page"]')!;
             return {
               href: current.getAttribute("href"),
@@ -433,6 +438,14 @@ describe("account pages in a browser", () => {
               appFill,
               appInk,
               platformFill,
+              segment: segment
+                ? {
+                    track: getComputedStyle(segment).backgroundColor,
+                    tray,
+                    thumb: thumb ? getComputedStyle(thumb).backgroundColor : null,
+                    shadow: thumb ? getComputedStyle(thumb).boxShadow : null,
+                  }
+                : null,
               otherFills: Array.from(canvas.querySelectorAll('.account-tabs a:not([aria-current="page"])')).map(
                 (link) => getComputedStyle(link).backgroundColor,
               ),
@@ -442,6 +455,11 @@ describe("account pages in a browser", () => {
           expect(colors.fill).toBe(colors.appFill);
           expect(colors.ink).toBe(colors.appInk);
           expect(colors.fill).not.toBe(colors.platformFill);
+          if (path === "/me/notifications") {
+            expect(colors.segment?.track).toBe(colors.segment?.tray);
+            expect(colors.segment?.thumb).toBe(colors.appFill);
+            expect(colors.segment?.shadow?.split(/,(?![^(]*\))/).every((part) => part.includes("inset"))).toBe(true);
+          }
           expect(colors.otherFills.length).toBeGreaterThan(0);
           expect(colors.otherFills.every((fill) => fill === "rgba(0, 0, 0, 0)")).toBe(true);
         } finally {

@@ -46,7 +46,7 @@ The action buttons show what you can do now. A turned-off action names the reaso
 - **Rebuild search** replaces only the derived search chunks.
 - **Repair thread projection** links orphaned messages and refreshes summaries. It removes copies of Mail's own drafts that an earlier synchronization imported as messages. It keeps manual thread overrides, comments, references, assignments, and conversation state.
 
-When the result of a command at the provider is unclear, Mail offers only **Reconcile effect**. Reconciliation checks the state at the provider before it decides the result. Mail offers no blind retry after a provider effect might have started, because a blind retry could run the action twice. **Retry work** and **Cancel work** are available only for maintenance commands that read from the provider and whose provider effect did not start.
+When the result of a command at the provider is unclear, Mail offers only **Reconcile effect**. Reconciliation checks the state at the provider before it decides the result. For a send, Mail uses the recorded answer of the mail server or looks for the message in the Sent folder, and it never sends the message again. Mail offers no blind retry after a provider effect might have started, because a blind retry could run the action twice. **Retry work** and **Cancel work** are available only for maintenance commands that read from the provider and whose provider effect did not start.
 
 Cloud administrators can review the same redacted summary in **Admin → Mail**. It contains counts, states, timestamps, available capabilities, IDs, and error codes. It contains no subjects, addresses, bodies, attachment names, provider endpoints, credentials, or raw provider errors.
 
@@ -183,7 +183,7 @@ Agents can change provider subscriptions with `cld mail folder subscribe` and `c
 - **View** for reading, search, comments, and personal reminders.
 - **Edit** for sending, provider mail operations, and collaboration changes.
 - **Manage** for transport, sharing, rules, workflows, and the mailbox lifecycle.
-- **View assigned only** or **Edit assigned only** for people, groups, agents, and standalone service accounts that work only on the conversations assigned to them. [Work together in a mailbox](/app/mail/help/mail-collaboration) explains what they can do.
+- **View assigned only** or **Edit assigned only** for people, groups, and agents that work only on the conversations assigned to them. [Work together in a mailbox](/app/mail/help/mail-collaboration) explains what they can do.
 
 **Automatic reply management access** is a mailbox setting above the access list:
 
@@ -222,7 +222,7 @@ The CLI offers the same recovery tools:
 
 - `cld mail admin mailbox list` finds mailboxes, including mailboxes that the current administrator cannot open.
 - `cld mail admin mailbox get <mailbox>` shows one redacted operations record.
-- `cld mail admin mailbox access list|grant|set|revoke <mailbox>` changes direct access for users, groups, or service accounts.
+- `cld mail admin mailbox access list|grant|set|revoke <mailbox>` changes direct access for users, groups, agents, or service accounts.
 - `cld mail admin storage show|reconcile` reads or refreshes the storage data.
 
 **Refresh storage snapshot** queues a background reconciliation. The page and `cld mail admin storage show` continue to show the last completed snapshot until that job finishes. Queuing the job does not update the numbers immediately. These values are observability data, not storage quotas, and they offer no drilldown into content.

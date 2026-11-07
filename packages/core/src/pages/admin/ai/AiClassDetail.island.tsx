@@ -7,6 +7,7 @@ import {
   type AiModelClass,
   type AiModelSlot,
   type AiModelVariant,
+  type AiProvider,
   aiModelClassFallbackChain,
   aiModelSupportsSlot,
 } from "@k2b/cloud/shared";
@@ -28,7 +29,7 @@ type Assignment = {
   effectiveClass: AiModelClass | null;
   usage: { class: string; app: string | null; task: string; calls: number }[];
 };
-type Provider = { id: string; label: string; state: AiProviderState };
+type Provider = { id: string; label: string; dataBoundary: AiProvider["dataBoundary"]; state: AiProviderState };
 const NONE = "__none";
 
 /** A5 detail: which model a class or tool uses, what happens when it is empty, who uses it, and what people see. */
@@ -68,7 +69,8 @@ export default function AiClassDetail(props: {
     props.variants.flatMap((variant) => {
       const model = props.models.find((candidate) => candidate.id === variant.modelId);
       const provider = model ? props.providers.find((candidate) => candidate.id === model.providerId) : undefined;
-      if (!model || !provider || !model.enabled) return [];
+      // Classes and tools serve people, so models without a data-protection commitment never fill them.
+      if (!model || !provider || !model.enabled || provider.dataBoundary === "restricted") return [];
       if (!aiModelSupportsSlot(props.slot, model)) return [];
       if (props.slot === "vision" && !model.capabilities.includes("vision")) return [];
       const others = (Object.keys(props.assignments) as AiModelSlot[]).filter(
@@ -283,15 +285,17 @@ export default function AiClassDetail(props: {
 }
 
 const aiClassSubtitleForTool = (t: ReturnType<typeof aiAreaMessages.resolve>["t"], slot: AiModelSlot) =>
-  slot === "liveAudio"
-    ? t.slotd_liveAudio
-    : slot === "vision"
-      ? t.slotd_vision
-      : slot === "audio"
-        ? t.slotd_audio
-        : isAiModelClass(slot)
-          ? aiClassSubtitle(t, slot)
-          : "";
+  slot === "decision"
+    ? t.slotd_decision
+    : slot === "liveAudio"
+      ? t.slotd_liveAudio
+      : slot === "vision"
+        ? t.slotd_vision
+        : slot === "audio"
+          ? t.slotd_audio
+          : isAiModelClass(slot)
+            ? aiClassSubtitle(t, slot)
+            : "";
 
 const AiModelIconFor = (props: { model: AiModel; provider: Provider }) => (
   <AiModelIcon icon={aiModelDisplayIcon(props.model.icon, props.provider)} size="xs" />

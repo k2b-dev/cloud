@@ -54,6 +54,7 @@ export const createDashboardController = (input: { target: DashboardTarget; pane
           nextRefreshAt: new Date(Date.now() + DASHBOARD_REFRESH_MS).toISOString(),
           lastGood: old[panel.id]?.lastGood ?? null,
           variant: old[panel.id]?.variant ?? "",
+          attribution: old[panel.id]?.attribution ?? null,
         },
       }));
     } finally {

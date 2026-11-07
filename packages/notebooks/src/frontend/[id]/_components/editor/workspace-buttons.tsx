@@ -1,4 +1,4 @@
-import { appWorkspaceDetailElementId, IconButton, Tooltip, useLocale } from "@k2b/ui";
+import { appWorkspaceDetailElementId, DetailsToggle, IconButton, Tooltip, useLocale } from "@k2b/ui";
 import { notebookWorkspaceMessages } from "../../messages";
 import { NOTEBOOK_DETAIL_ID } from "../detail/events";
 import { NOTEBOOK_NAVIGATION_ID } from "../sidebar/navigation-visibility";
@@ -37,16 +37,15 @@ export function DetailsButton() {
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   return (
     <Tooltip.Anchor content={t().detailPanel}>
-      <IconButton
+      <DetailsToggle
         label={t().detailPanel}
         tooltip={false}
         size="xs"
         class="text-dimmed shrink-0"
+        iconClass="text-sm"
         aria-controls={appWorkspaceDetailElementId(NOTEBOOK_DETAIL_ID)}
         data-app-workspace-detail-toggle=""
-      >
-        <i class="ti ti-layout-sidebar-right text-sm" aria-hidden="true" />
-      </IconButton>
+      />
     </Tooltip.Anchor>
   );
 }

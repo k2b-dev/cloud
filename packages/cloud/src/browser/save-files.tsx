@@ -3,7 +3,7 @@ import { createSignal, type JSX, splitProps } from "solid-js";
 import type { FileProviderList } from "./FileChooser";
 import type { SavedFile } from "./FileSaver";
 import { fileChooserMessages } from "./file-chooser-messages";
-import type { FileProviderCaller, SaveFileSource } from "./file-providers";
+import type { FileProviderCaller, FileProviderSource, SaveFileSource } from "./file-providers";
 import type { ProviderList } from "./provider-list";
 import { importOnDemand } from "./reload";
 
@@ -30,15 +30,26 @@ export const createFileSaving = (
     if (files.length === 0 || options.signal?.aborted) return [];
     // Only a refusal leaves an empty list without a request; asking again lets a renewed session find its apps.
     const known = list.known()?.length === 0 && !list.requested() ? undefined : list.known();
+    // The kept list shows at once and the catalog is read again behind it, once per open; a failed refresh keeps it.
     const [providers, setProviders] = createSignal<FileProviderList>(known ? { state: "ready", providers: known } : { state: "loading" });
+    let open = true;
+    // Closing stops the catalog reads this dialog started.
+    const discovery = new AbortController();
+    const settle = (request: Promise<readonly FileProviderSource[]>) =>
+      request.then(
+        (value) => {
+          if (open) setProviders({ state: "ready", providers: value });
+        },
+        () => {
+          if (open) setProviders({ state: "error" });
+        },
+      );
     const load = () => {
       setProviders({ state: "loading" });
-      list.providers().then(
-        (value) => setProviders({ state: "ready", providers: value }),
-        () => setProviders({ state: "error" }),
-      );
+      void settle(list.providers(discovery.signal));
     };
-    if (!known) load();
+    if (known) void settle(list.refresh(discovery.signal));
+    else load();
     const saved: SavedFile[] = [];
     const running = new Set<Promise<void>>();
     let abort = () => {};
@@ -50,7 +61,10 @@ export const createFileSaving = (
         if (options.signal?.aborted) abort();
       }),
     ]).finally(() => options.signal?.removeEventListener("abort", abort));
-    if (!saver) return [];
+    if (!saver) {
+      discovery.abort();
+      return [];
+    }
     await dialogCore.open<void>(
       (close) => (
         <saver.FileSaver
@@ -66,12 +80,14 @@ export const createFileSaving = (
       {
         ...panelDialogWorkspaceOptions,
         panelClassName: `${panelDialogWorkspaceOptions.panelClassName} cloud-file-chooser-dialog`,
-        // While the folder still loads, the dialog itself holds focus; its first row takes it once it arrives.
-        initialFocus: (dialog) => dialog.querySelector<HTMLElement>('[role="gridcell"][tabindex="0"]') ?? dialog,
+        // Focus starts on the open application, or on the dialog itself while the catalog still loads.
+        initialFocus: (dialog) => dialog.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]') ?? dialog,
         signal: options.signal,
         history: true,
       },
     );
+    open = false;
+    discovery.abort();
     // Closing stops the transfers; a receipt that was already on its way still counts.
     await Promise.all(running);
     const first = saved[0];

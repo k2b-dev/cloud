@@ -17,14 +17,31 @@ import * as watcher from "./runtime-watcher";
 import * as workload from "./workload-credential";
 
 describe("application startup readiness", () => {
-  for (const mode of ["package", "links", "setup", "start", "ready", "advertise", "workload", "calendar", null, "skip"] as const) {
+  for (const mode of [
+    "package",
+    "links",
+    "setup",
+    "settings",
+    "start",
+    "ready",
+    "advertise",
+    "workload",
+    "calendar",
+    null,
+    "skip",
+    "budget",
+    "spent-budget",
+  ] as const) {
     const skipSetup = mode === "skip";
-    const failure = skipSetup ? null : mode;
-    test(`advertises only ready resources and cleans up ${failure ?? (skipSetup ? "skipped setup" : "successful startup")}`, async () => {
+    const failure = skipSetup || mode === "budget" || mode === "spent-budget" ? null : mode;
+    test(`advertises only ready resources and cleans up ${mode ?? "successful startup"}`, async () => {
       const events: string[] = [];
       let publishCatalogs: ((force?: boolean) => Promise<void>) | undefined;
       const helpWrite = spyOn(helpStore, "registerHelp").mockResolvedValue(undefined);
       const skillWrite = spyOn(appSkills, "registerAppSkills").mockResolvedValue(true);
+      let elapsed = 0;
+      const timeout = spyOn(AbortSignal, "timeout");
+      let settingsSignal: AbortSignal | undefined;
 
       const signals = ["SIGTERM", "SIGINT"] as const;
       const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
@@ -40,7 +57,7 @@ describe("application startup readiness", () => {
           ready: () => step("setup-lock-ready"),
           acquire: async ({ resource }: { resource: string }) => {
             await step("setup-lock-acquire");
-            return { resource, ownerToken: "startup-test", fence: 1n, expiresAt: new Date(Date.now() + 60_000) };
+            return { resource, ownerToken: "startup-test", fence: 1n, expiresAt: new Date("2026-01-01T00:01:00Z") };
           },
           release: () => step("setup-lock-release").then(() => true),
         }),
@@ -54,6 +71,10 @@ describe("application startup readiness", () => {
         exists,
         helpWrite,
         skillWrite,
+        timeout,
+        spyOn(performance, "now").mockImplementation(() => elapsed),
+        // The setup mutex always acquires immediately; its fixed lease uses this clock.
+        spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T00:00:00Z")),
         spyOn(workload, "createAppWorkloadCredential").mockImplementation(() => ({
           start: () => step("workload"),
           refresh: async () => {},
@@ -62,7 +83,8 @@ describe("application startup readiness", () => {
           },
         })),
         stubConnections(),
-        spyOn(linksRuntime, "startLinksRuntime").mockImplementation(async () => {
+        spyOn(linksRuntime, "startLinksRuntime").mockImplementation(async (applicationId) => {
+          expect(applicationId).toBe("startup-test");
           await step("links");
           return async () => {
             events.push("stop-links");
@@ -72,6 +94,8 @@ describe("application startup readiness", () => {
         spyOn(processSync, "startProcessSync").mockImplementation(async () => {
           processSync.bindProcessSync(sync);
           events.push("connect");
+          if (mode === "budget") elapsed = 4 * 60_000;
+          if (mode === "spent-budget") elapsed = 5 * 60_000;
           return {
             sync,
             stop: async () => {
@@ -110,7 +134,12 @@ describe("application startup readiness", () => {
             events.push("stop-notifications");
           };
         }),
-        spyOn(settingsService, "loadCache").mockImplementation(() => step("settings")),
+        spyOn(settingsService, "loadCache").mockImplementation((signal) => {
+          settingsSignal = signal;
+          if (mode === "budget") expect(timeout.mock.calls.at(-1)).toEqual([60_000]);
+          if (mode === "spent-budget") expect(timeout.mock.calls.at(-1)).toEqual([0]);
+          return step("settings");
+        }),
       ];
       try {
         const app = defineApp({
@@ -201,6 +230,7 @@ describe("application startup readiness", () => {
           await publishCatalogs!();
           expect(helpWrite).toHaveBeenCalledTimes(5);
           expect(skillWrite).toHaveBeenCalledTimes(5);
+          expect(settingsSignal).toBeInstanceOf(AbortSignal);
           if (skipSetup) {
             expect(events).not.toContain("setup");
             expect(events).not.toContain("setup-lock-ready");

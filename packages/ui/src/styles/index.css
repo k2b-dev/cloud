@@ -39,12 +39,14 @@
   --k2b-danger-500: #ef4444;
   --k2b-danger-600: #dc2626;
 
-  --k2b-ai-accent: #0891b2;
-  --k2b-ai-accent-hover: #0e7490;
-  --k2b-ai-border: #06b6d4;
-  --k2b-ai-surface: #ecfeff;
-  --k2b-ai-solid: #0e7490;
-  --k2b-ai-solid-hover: #155e75;
+  /* Plum means AI. Text contrast (WCAG): accent 8.3:1 on the surface and 7.6:1 on the AI surface, on-solid 8.3:1;
+     the border keeps 4.2:1 on the surface. */
+  --k2b-ai-accent: #8e1b6f;
+  --k2b-ai-accent-hover: #701556;
+  --k2b-ai-border: #c4519f;
+  --k2b-ai-surface: #fcf3f8;
+  --k2b-ai-solid: #8e1b6f;
+  --k2b-ai-solid-hover: #701556;
   --k2b-ai-on-solid: #ffffff;
 
   --k2b-surface-canvas: var(--k2b-neutral-50);
@@ -134,6 +136,9 @@
   --k2b-edge-width: 2px;
   --k2b-edge-focus: var(--k2b-accent-700);
   --k2b-edge-danger: var(--k2b-danger-500);
+  /* Dialog tones; each keeps 3:1 against the dialog surface. */
+  --k2b-edge-success: var(--k2b-success-600);
+  --k2b-edge-warning: #d97706;
   --k2b-edge-hover-bg: color-mix(in srgb, var(--k2b-text) 4%, var(--k2b-surface));
   /* A selected choice or active filter: a light edge and fill in the app's
      selection ink. The share is mixed where it is used, so an app scope that
@@ -311,6 +316,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-focus-fill: color-mix(in srgb, var(--k2b-focus-ring) 55%, var(--k2b-surface));
   --k2b-focus-inset: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-fill);
   --k2b-edge-focus: var(--k2b-accent-300);
+  --k2b-edge-success: var(--k2b-success-500);
+  --k2b-edge-warning: var(--k2b-warning-500);
   --k2b-edge-selected-share: 55%;
   --k2b-control-border-soft: #46505c;
   --k2b-tray: #1a2028;
@@ -323,13 +330,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-warning-text: #fcd34d;
   --k2b-danger-surface: #450a0a;
   --k2b-danger-text: #fca5a5;
-  --k2b-ai-accent: #22d3ee;
-  --k2b-ai-accent-hover: #67e8f9;
-  --k2b-ai-border: #22d3ee;
-  --k2b-ai-surface: #083344;
-  --k2b-ai-solid: #22d3ee;
-  --k2b-ai-solid-hover: #67e8f9;
-  --k2b-ai-on-solid: #083344;
+  /* Accent 10.1:1 on the surface and 9.0:1 on the AI surface, on-solid 9.0:1, border 7.9:1. */
+  --k2b-ai-accent: #f0abdc;
+  --k2b-ai-accent-hover: #f7cdea;
+  --k2b-ai-border: #e98bcd;
+  --k2b-ai-surface: #3a0f2e;
+  --k2b-ai-solid: #f0abdc;
+  --k2b-ai-solid-hover: #f7cdea;
+  --k2b-ai-on-solid: #3a0f2e;
   --k2b-shadow-surface: none;
   --k2b-shadow-frame:
     0 -3px 10px -8px rgb(0 0 0 / 0.32), 0 0 16px -9px rgb(0 0 0 / 0.56), 0 16px 40px -30px rgb(0 0 0 / 0.48), 0 1px 7px rgb(0 0 0 / 0.14);
@@ -1407,7 +1415,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-app-workspace__sidebar-item-label:is(
     [data-lines="1"],
     :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
-    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
+    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > .k2b-app-workspace__sidebar-item-label
   )::after {
   display: none;
 }
@@ -1416,7 +1424,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-app-workspace__sidebar-item-label:is(
     [data-lines="1"],
     :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
-    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
+    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > .k2b-app-workspace__sidebar-item-label
   )
   > .k2b-app-workspace__sidebar-item-label-text {
   --k2b-truncate-fade-lines: 1;
@@ -2020,6 +2028,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
+/* A destructive text action, such as Remove at the foot of a menu, takes the
+   danger ink that destructive menu items use, at rest and on hover. */
+.k2b-ui .k2b-button[data-variant="text"][data-danger="true"],
+.k2b-ui .k2b-button[data-variant="text"][data-danger="true"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-danger-text);
+}
+
 .k2b-ui .k2b-button[data-variant="input"] {
   --k2b-edge-color: var(--k2b-edge);
   min-height: 2.25rem;
@@ -2125,7 +2140,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-.k2b-ui .k2b-button:has(> .k2b-button__busy) > .k2b-button__label {
+/* The label asks its next sibling, not the button its children: `:has()` before
+   a later part puts that part into a set Chromium restyles on every page change. */
+.k2b-ui .k2b-button > .k2b-button__label:has(+ .k2b-button__busy) {
   opacity: 0;
 }
 
@@ -2136,6 +2153,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   justify-content: center;
   pointer-events: none;
+}
+
+/* Copy and Copied share one cell, so the button keeps the wider word's width.
+   The other word is generated content with empty alternative text: it stays
+   out of the text and the accessible name. */
+.k2b-ui .k2b-copy-button__label {
+  display: inline-grid;
+}
+
+.k2b-ui .k2b-copy-button__label > *,
+.k2b-ui .k2b-copy-button__label::after {
+  grid-area: 1 / 1;
+}
+
+.k2b-ui .k2b-copy-button__label::after {
+  content: attr(data-reserve) / "";
+  visibility: hidden;
 }
 
 .k2b-ui .k2b-icon-button {
@@ -2381,11 +2415,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    flex rows, grids without descriptions, fill fields, and browsers without
    subgrid keep the stacked layout. */
 @supports (grid-template-rows: subgrid) {
+  .k2b-ui .k2b-field {
+    --k2b-field-control-row: initial;
+    --k2b-field-control-height: initial;
+  }
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) {
     display: grid;
     grid-template-rows: subgrid;
     grid-row: span 4;
     align-content: start;
+    align-items: start;
+    --k2b-field-control-row: 3;
+    --k2b-field-control-height: max-content;
   }
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__label {
     grid-row: 1;
@@ -2399,18 +2440,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label)) > .k2b-field__description {
     grid-row: 1 / 3;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > :not(.k2b-field__label, .k2b-field__description, .k2b-field__error) {
-    grid-row: 3;
-    align-self: start;
+  /* The control's row travels in a custom property. A rule after :has() whose
+     last part names no class, such as this :not(), makes every :has() change
+     restyle the whole document: seconds per click in a mailbox. */
+  .k2b-ui .k2b-field > :not(.k2b-field__label, .k2b-field__description, .k2b-field__error) {
+    grid-row: var(--k2b-field-control-row);
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__error)) > :not(.k2b-field__label, .k2b-field__description, .k2b-field__error) {
-    grid-row: 3 / 5;
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__error)) {
+    --k2b-field-control-row: 3 / 5;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__description)) > :not(.k2b-field__error) {
-    grid-row: 1 / 5;
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__description)) {
+    --k2b-field-control-row: 1 / 5;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__description)):has(> .k2b-field__error) > :not(.k2b-field__error) {
-    grid-row: 1 / 4;
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__description)):has(> .k2b-field__error) {
+    --k2b-field-control-row: 1 / 4;
   }
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__error {
     grid-row: 4;
@@ -2421,8 +2464,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
      and the actions below it. A start-aligned control measures its content
      anyway; saying so explicitly keeps the rows tall enough there and changes
      nothing in a grid. Zero specificity keeps any control's own height. */
-  :where(.k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"])) > :where(:not(.k2b-field__label, .k2b-field__description, .k2b-field__error)) {
-    height: max-content;
+  :where(.k2b-ui .k2b-field) > :where(:not(.k2b-field__label, .k2b-field__description, .k2b-field__error)) {
+    height: var(--k2b-field-control-height);
   }
 }
 
@@ -2769,8 +2812,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-check > input:checked:focus-visible + .k2b-check__control,
 .k2b-ui .k2b-check[data-indeterminate="true"] > input:focus-visible + .k2b-check__control,
-.k2b-ui .k2b-switch > input:checked:focus-visible + .k2b-switch__track,
-.k2b-ui .k2b-checkbox-card > input:checked:focus-visible + .k2b-checkbox-card__control {
+.k2b-ui .k2b-switch > input:checked:focus-visible + .k2b-switch__track {
   outline-color: var(--k2b-focus-on-fill, var(--k2b-focus-ring));
   /* A band of the fill still outlines the small control. */
   outline-offset: min(var(--k2b-focus-offset), calc(var(--k2b-focus-offset) * 1.5));
@@ -3187,14 +3229,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* With a kind line, it takes the first row beside the compact actions, and
    the title and subtitle move one row down. */
-.k2b-ui .k2b-detail-panel__header-main:has(> .k2b-detail-panel__heading > .k2b-detail-panel__kind) > .k2b-detail-panel__heading > h2 {
+.k2b-ui .k2b-detail-panel__header-main > .k2b-detail-panel__heading > .k2b-detail-panel__kind ~ h2 {
   grid-row: 2;
 }
 
 .k2b-ui
-  .k2b-detail-panel__header-main:has(> .k2b-detail-panel__heading > .k2b-detail-panel__kind)
+  .k2b-detail-panel__header-main
   > .k2b-detail-panel__heading
-  > .k2b-detail-panel__supporting {
+  > .k2b-detail-panel__kind
+  ~ .k2b-detail-panel__supporting {
   grid-row: 3;
 }
 
@@ -3672,7 +3715,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   place-items: center;
 }
 
-.k2b-ui :is(.k2b-discussion__avatar, .k2b-detail-panel__action-leading) .k2b-avatar {
+/* Every avatar slot of a detail panel or discussion draws a round 20 px avatar, whatever size the app passed.
+   `[data-size]` keeps the slot ahead of Avatar's own size rules, which load later with the same specificity. */
+.k2b-ui
+  :is(.k2b-discussion__avatar, .k2b-detail-panel__action-leading, .k2b-detail-presence__face, .k2b-detail-properties__leading)
+  .k2b-avatar[data-size] {
   width: 1.25rem;
   height: 1.25rem;
   font-size: 0.5rem;
@@ -3927,28 +3974,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-bottom: 0.5rem;
 }
 
-/* One text edge: in a panel section with an icon, content starts where the
-   title does. Rows with their own leading column (actions and discussion
-   entries with an avatar) step back, so their icon or avatar sits in the
-   section's icon column and their text on the same edge. Sections outside a
-   panel, such as the form sections of an editor dialog, keep their full
-   width. */
-.k2b-ui .k2b-detail-panel .k2b-detail-panel__section[data-icon="true"] > .k2b-detail-panel__section-body {
+/* One edge per section (03.11.): in a panel section or discussion with an
+   icon, everything below its heading starts where the title text does —
+   chips, sub-labels, rows with their icons and avatars, comments,
+   properties. Nothing sits under the section icon. Hover fills may reach past
+   the edge; text and icons never do. Only a real sub-level, such as an H3 in
+   an outline, indents further. Sections outside a panel, such as the form
+   sections of an editor dialog, keep their full width. */
+.k2b-ui .k2b-detail-panel .k2b-detail-panel__section[data-icon="true"] > .k2b-detail-panel__section-body,
+.k2b-ui .k2b-detail-panel .k2b-discussion[data-icon="true"] > .k2b-discussion__body {
   padding-inline-start: 1.875rem;
-}
-
-.k2b-ui
-  .k2b-detail-panel
-  .k2b-detail-panel__section[data-icon="true"]
-  > .k2b-detail-panel__section-body
-  :is(.k2b-button.k2b-detail-panel__action, .k2b-detail-panel__action-row):not(.k2b-detail-panel__action-row > .k2b-detail-panel__action) {
-  width: calc(100% + 1.875rem);
-  max-width: none;
-  margin-inline-start: -1.875rem;
-}
-
-.k2b-ui .k2b-detail-panel .k2b-detail-panel__section[data-icon="true"] > .k2b-detail-panel__section-body .k2b-discussion__item[data-has-avatar="true"] {
-  margin-inline-start: -1.875rem;
 }
 
 /* A text action in a heading ends on the trailing edge, like a count or a time. */
@@ -4118,20 +4153,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   justify-content: flex-start;
 }
 
-/* Without a section icon there is no icon column: a row without `leading`
-   starts its title on the section's text edge. */
-.k2b-ui .k2b-detail-panel__section:not([data-icon="true"]) .k2b-detail-panel__action-leading:empty {
+/* A row without `leading` starts its title on the section's text edge. */
+.k2b-ui .k2b-detail-panel__action-leading:empty {
   display: none;
 }
 
-/* The section icon's column: icons and 20 px avatars center in it, and the
-   title starts where the section title does. */
+/* A row's own icon column, on the section's text edge: icons start on the
+   edge and 20 px avatars fill the column; the row's text follows it. */
 .k2b-ui .k2b-detail-panel__action-leading {
   display: inline-flex;
   width: 1.25rem;
   flex: 0 0 1.25rem;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   color: var(--k2b-text-muted);
   font-size: 0.875rem;
   /* The title's line: an icon or an empty slot never makes a row taller than its text. */
@@ -4188,6 +4222,393 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Open or not collapsible, a section's body sits the same gap below its heading. */
 .k2b-ui .k2b-detail-panel__section[data-open="true"] > .k2b-detail-panel__section-body {
   margin-top: 0;
+}
+
+/* A row that only shows something, such as a person and their role: the
+   columns and type of `DetailPanel.Action`, without a command or hover. */
+.k2b-ui .k2b-detail-panel__row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.375rem 0;
+  color: var(--k2b-text-secondary);
+}
+
+/* Shared detail sections (DetailSections.tsx). Every one keeps its content
+   on the section's text edge and its height while data changes. */
+.k2b-ui .k2b-detail-section-rows {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.k2b-ui .k2b-detail-section-group + .k2b-detail-section-group {
+  margin-top: 0.25rem;
+}
+
+.k2b-ui .k2b-detail-section-label {
+  padding: 0.25rem 0 0.125rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-detail-section-note {
+  margin: 0;
+  padding: 0.25rem 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-detail-section-error {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .k2b-detail-section-error > i {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-detail-row-skeleton__face {
+  display: block;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-detail-row-skeleton {
+  display: block;
+  width: 60%;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+}
+
+/* "Here now": two fixed lines in every state, so people coming, going, or
+   moving never shift the panel. The chips line wraps into a clipped second
+   line; those chips count as "+n", whose slot is always reserved. */
+.k2b-ui .k2b-detail-presence {
+  --k2b-detail-presence-chip: 1.75rem;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-detail-presence {
+    --k2b-detail-presence-chip: 2rem;
+  }
+}
+
+.k2b-ui .k2b-detail-presence__strip {
+  display: flex;
+  min-width: 0;
+  height: calc(var(--k2b-detail-presence-chip) + 0.125rem);
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-detail-presence__chips {
+  display: flex;
+  min-width: 0;
+  height: var(--k2b-detail-presence-chip);
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  overflow: hidden;
+  /* The first avatar, not the chip's padding, stands on the text edge. */
+  margin-inline-start: -0.1875rem;
+}
+
+.k2b-ui .k2b-detail-presence__chip,
+.k2b-ui .k2b-detail-presence__self {
+  display: inline-flex;
+  height: var(--k2b-detail-presence-chip);
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0 0.5rem 0 0.1875rem;
+  border: 0;
+  border-radius: 999px;
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-detail-presence__chip-content,
+.k2b-ui .k2b-detail-presence__self {
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-detail-presence__chip-content {
+  display: inline-flex;
+  align-items: center;
+}
+
+.k2b-ui button.k2b-detail-presence__chip {
+  cursor: pointer;
+}
+
+.k2b-ui button.k2b-detail-presence__chip:hover,
+.k2b-ui .k2b-detail-presence__all .k2b-avatar-stack__trigger:hover .k2b-detail-presence__self {
+  background: var(--k2b-app-workspace-hover);
+}
+
+.k2b-ui button.k2b-detail-presence__chip:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+.k2b-ui .k2b-detail-presence__self {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-detail-presence[data-state="offline"] .k2b-detail-presence__chip {
+  opacity: 0.45;
+}
+
+/* The live dot lies over the avatar's corner, so it never takes room. */
+.k2b-ui .k2b-detail-presence__face {
+  position: relative;
+  display: inline-grid;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: 0 0 1.25rem;
+}
+
+.k2b-ui .k2b-detail-presence__dot {
+  position: absolute;
+  right: -0.125rem;
+  bottom: -0.125rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--k2b-success-500);
+  box-shadow: 0 0 0 2px var(--k2b-surface);
+  opacity: 0;
+}
+
+.k2b-ui .k2b-detail-presence__face[data-live="true"] > .k2b-detail-presence__dot {
+  opacity: 1;
+}
+
+.k2b-ui .k2b-detail-presence__activity {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-detail-presence__activity[data-activity="writing"] {
+  color: var(--k2b-person-color, var(--k2b-text-muted));
+}
+
+.k2b-ui .k2b-detail-presence__all .k2b-avatar-stack__trigger {
+  height: var(--k2b-detail-presence-chip);
+  border-radius: 999px;
+}
+
+.k2b-ui .k2b-avatar-stack__custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-detail-presence__more {
+  display: inline-grid;
+  min-width: 1.75rem;
+  height: 1.5rem;
+  place-items: center;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-detail-presence__more[data-empty="true"] {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-detail-presence__where {
+  height: 1.375rem;
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.375rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-detail-presence__where strong {
+  color: var(--k2b-text-secondary);
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-detail-presence__swatch {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-inline-end: 0.25rem;
+  border-radius: 2px;
+  background: var(--k2b-person-color);
+}
+
+.k2b-ui .k2b-detail-presence__problem {
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .k2b-detail-presence__problem > i {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-detail-presence__retry {
+  margin-inline-start: auto;
+}
+
+.k2b-ui .k2b-detail-presence__skeleton {
+  display: block;
+  width: 4.75rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-detail-presence__skeleton-line {
+  display: inline-block;
+  width: 60%;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+  vertical-align: middle;
+}
+
+/* Who works at a row, such as an outline heading: a slot of one width
+   whether it holds nobody, one, or several. */
+.k2b-ui .k2b-detail-presence-slot {
+  --k2b-faces-size: 1.125rem;
+  --k2b-faces-overlap: 0.3125rem;
+  display: inline-flex;
+  width: 2.5rem;
+  flex: 0 0 2.5rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.k2b-ui .k2b-detail-presence-slot > .k2b-avatar[data-size] {
+  font-size: 0.4375rem;
+}
+
+.k2b-ui .k2b-detail-presence-slot__more {
+  margin-inline-start: 0.1875rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Properties: quiet labels in one column, values on the next. */
+.k2b-ui .k2b-detail-properties {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 6rem) minmax(0, 1fr);
+  column-gap: 0.75rem;
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-detail-properties__item {
+  display: contents;
+}
+
+.k2b-ui .k2b-detail-properties dt {
+  padding: 0.375rem 0;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-detail-properties dd {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0.375rem 0;
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .k2b-detail-properties__leading {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.k2b-ui .k2b-detail-properties__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-detail-properties__link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--k2b-link-accent);
+  text-underline-offset: 3px;
+}
+
+.k2b-ui .k2b-detail-properties__link:focus-visible {
+  border-radius: 2px;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+/* Tags: quiet chips with a 1 px edge that never darkens; hover fills them. */
+.k2b-ui .k2b-detail-tags {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0.125rem 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-detail-tag {
+  display: inline-flex;
+  height: 1.5rem;
+  align-items: center;
+  padding: 0 0.625rem;
+  border-radius: 999px;
+  color: var(--k2b-text-secondary);
+  box-shadow: inset 0 0 0 1px var(--k2b-border);
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+
+.k2b-ui a.k2b-detail-tag:hover {
+  background: var(--k2b-app-workspace-hover);
+}
+
+.k2b-ui a.k2b-detail-tag:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .k2b-panel-dialog-frame {
@@ -4314,6 +4735,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 2rem;
   color: var(--k2b-app-workspace-active);
   font-size: 1.125rem;
+}
+
+/* A toned dialog's icon chip takes the tone's text colour. */
+.k2b-ui .k2b-panel-dialog__icon[data-tone="success"] {
+  color: var(--k2b-success-text);
+}
+
+.k2b-ui .k2b-panel-dialog__icon[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-panel-dialog__icon[data-tone="danger"] {
+  color: var(--k2b-danger-text);
 }
 
 .k2b-ui .k2b-panel-dialog__heading {
@@ -5447,7 +5881,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
         > .k2b-app-workspace__nav-tree-row,
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
     ):not([data-variant="object"]:has(.k2b-app-workspace__sidebar-item-meta)):has(
-      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child > :nth-child(2 of :not([popover]))
+      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child
+        > :nth-child(2 of .k2b-button, .k2b-dropdown, .k2b-tooltip-wrapper)
     )
     > .k2b-app-workspace__sidebar-item-main {
     --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 3.5rem) + 0.75rem);
@@ -5525,8 +5960,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible),
     .k2b-ui
       .k2b-app-workspace__sidebar-item
-      > .k2b-app-workspace__sidebar-item-actions:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
-      > :nth-last-child(1 of :not([popover])) {
+      > .k2b-app-workspace__sidebar-item-actions[data-preview-focus]
+      > :is(.k2b-button, .k2b-dropdown, .k2b-tooltip-wrapper):not(:has(~ :is(.k2b-button, .k2b-dropdown, .k2b-tooltip-wrapper))) {
       opacity: 0;
       pointer-events: none;
     }
@@ -5891,6 +6326,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-dropdown__item[data-danger="true"] {
   color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-dropdown__item[data-danger="true"]:is(:hover, :focus-visible) {
+  background: var(--k2b-danger-surface);
 }
 
 .k2b-ui .k2b-dropdown__item:disabled {
@@ -6708,6 +7147,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-height: none;
 }
 
+/* A popover placed by its trigger sizes like a menu: a name stays on one line
+   until the viewport ends, a second line wraps at 16rem instead of widening
+   it. It is never narrower than 12rem, its trigger, or what it already was
+   while open, so filtering never narrows it. A toolbar keeps its 26rem. */
+.k2b-ui .k2b-choice-popover[data-width="fit"] {
+  width: max-content;
+  min-width: max(min(12rem, calc(100vw - 1rem)), var(--k2b-choice-min-width, 0px));
+}
+
+.k2b-ui .k2b-choice-popover[data-width="fit"][data-toolbar="true"] {
+  min-width: max(min(26rem, calc(100vw - 1rem)), var(--k2b-choice-min-width, 0px));
+}
+
 .k2b-ui .k2b-choice-search {
   display: flex;
   min-height: 2rem;
@@ -6861,14 +7313,21 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-/* ChoiceList: rows with a radio, a label and a sentence; choosing changes only paint, so no row moves. */
+/* ChoiceList: a card per choice, with a radio, a label and a sentence. Cards
+   share the edge contract (see `--k2b-edge`): a 2 px inset edge whose colour
+   alone marks rest, focus and the chosen card, so choosing changes only
+   paint and no card moves. A chosen card keeps platform blue, like the radio
+   and every other control. Cards sit side by side while each gets 11rem and
+   stack on narrow surfaces; rows in one line share their height. */
 .k2b-ui .k2b-choice-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  grid-auto-flow: row dense;
+  gap: 0.5rem;
 }
 
 .k2b-ui .k2b-choice-list__option {
+  --k2b-edge-color: var(--k2b-edge);
   display: flex;
   width: 100%;
   align-items: flex-start;
@@ -6877,31 +7336,68 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border: 0;
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
-  background: transparent;
+  background: var(--k2b-surface);
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color);
   font: inherit;
   text-align: start;
   cursor: pointer;
+  transition:
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out;
 }
 
-/* Only real hover: a tap on a touch screen must not leave a row looking chosen. */
+/* Only real hover: a tap on a touch screen must not leave a card looking chosen. */
 @media (hover: hover) {
   .k2b-ui .k2b-choice-list__option:hover:not(:disabled) {
-    background: var(--k2b-hover);
+    background: var(--k2b-edge-hover-bg);
+  }
+
+  .k2b-ui .k2b-choice-list__option[aria-checked="true"]:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-hover-fill), var(--k2b-surface));
   }
 }
 
 .k2b-ui .k2b-choice-list__option[aria-checked="true"] {
-  background: var(--k2b-selected);
+  --k2b-edge-color: color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-share), var(--k2b-surface));
+  background: color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-fill), var(--k2b-surface));
 }
 
+/* Focus turns the same edge blue, also on the chosen card. */
 .k2b-ui .k2b-choice-list__option:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: min(var(--k2b-focus-offset), 1px);
+  --k2b-edge-color: var(--k2b-edge-focus);
+  outline: none;
 }
 
+/* A disabled card drops its edge and sits as a muted well; the radio still
+   shows the chosen one. */
 .k2b-ui .k2b-choice-list__option:disabled {
+  --k2b-edge-color: transparent;
+  background: var(--k2b-surface-muted);
   cursor: default;
   opacity: 0.55;
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-choice-list__option {
+    outline: 1px solid CanvasText;
+    outline-offset: -1px;
+  }
+
+  .k2b-ui .k2b-choice-list__option[aria-checked="true"] {
+    outline: var(--k2b-edge-width) solid Highlight;
+    outline-offset: calc(-1 * var(--k2b-edge-width));
+  }
+
+  .k2b-ui .k2b-choice-list__option:focus-visible {
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: calc(-1 * var(--k2b-focus-width));
+  }
+
+  /* A checkbox card keeps its system border; focus adds a ring outside it. */
+  .k2b-ui .k2b-checkbox-card:has(> input:focus-visible) {
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: var(--k2b-focus-offset);
+  }
 }
 
 .k2b-ui .k2b-choice-list__radio {
@@ -6926,6 +7422,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   background: var(--k2b-action-solid);
   content: "";
+}
+
+/* The icon sits on the label's line and takes the action ink on the chosen card. */
+.k2b-ui .k2b-choice-list__icon {
+  flex: 0 0 auto;
+  color: var(--k2b-text-secondary);
+  font-size: 1.125rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-choice-list__option[aria-checked="true"] .k2b-choice-list__icon {
+  color: var(--k2b-action-solid);
 }
 
 .k2b-ui .k2b-choice-list__text {
@@ -6970,9 +7478,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1.35;
 }
 
-/* Follow-up controls of the chosen row, aligned with its text. */
+/* Follow-up controls of the chosen card take the whole line under its row of
+   cards, aligned with the card text. */
 .k2b-ui .k2b-choice-list__details {
-  padding: 0.25rem 0.5rem 0.375rem 2.125rem;
+  grid-column: 1 / -1;
+  padding: 0 0.5rem 0.25rem 2.125rem;
+}
+
+.k2b-ui .k2b-choice-list__option:has(> .k2b-choice-list__icon) + .k2b-choice-list__details {
+  padding-left: 3.875rem;
 }
 
 @media (pointer: coarse) {
@@ -7339,7 +7853,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: pointer;
 }
 
-.k2b-ui .k2b-choice-option:not(:disabled):hover,
+.k2b-ui .k2b-choice-option:not(:disabled):not([aria-disabled="true"]):hover,
 .k2b-ui .k2b-choice-option[data-focused="true"] {
   color: var(--k2b-text);
   background: var(--k2b-hover);
@@ -7348,6 +7862,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-choice-option[aria-selected="true"] {
   color: var(--k2b-text);
   background: var(--k2b-selected);
+}
+
+/* Shown but not pickable, such as someone already on the list: quiet, and the reason stays readable. */
+.k2b-ui .k2b-choice-option[aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .k2b-ui .k2b-choice-option:disabled {
@@ -7380,8 +7900,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
 }
 
-/* The list keeps the trigger's width, so a long option wraps instead of
-   truncating; grid tiles clamp their own text. */
+/* Every option stays readable: a long name widens the popover up to the
+   viewport, then wraps, and a long unbroken word breaks rather than
+   overflowing. Grid tiles clamp their own text. */
 .k2b-ui .k2b-choice-option strong {
   font-size: 0.75rem;
   font-weight: 600;
@@ -7392,6 +7913,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
   overflow-wrap: anywhere;
+}
+
+/* A second line, such as an address, wraps at 16rem instead of widening the popover, as in a menu. */
+.k2b-ui .k2b-choice-options:not([data-view="grid"]) .k2b-choice-option small {
+  max-inline-size: 16rem;
 }
 .k2b-ui .k2b-choice-option__checkbox {
   display: flex;
@@ -8109,29 +8635,53 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0.625rem;
+  --k2b-edge-color: var(--k2b-edge);
   padding: 0.625rem;
-  border: 1px solid var(--k2b-border);
+  /* The edge contract (see `--k2b-edge`): a 1 px border plus a 1 px inset
+     shadow in one colour. States set only that colour or the fill, so the
+     card and its text stay put; a checked card keeps platform blue like the
+     checkbox in it. The `input` variant is the same card now that fields are
+     white with the same edge. */
+  border: 1px solid var(--k2b-edge-color);
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface);
+  box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color);
   cursor: pointer;
+  transition:
+    background-color 150ms ease-out,
+    border-color 150ms ease-out,
+    box-shadow 150ms ease-out;
 }
 
-.k2b-ui .k2b-checkbox-card[data-variant="input"] {
-  border-color: transparent;
-  background: var(--k2b-field-surface, var(--k2b-surface-muted));
+@media (hover: hover) {
+  .k2b-ui .k2b-checkbox-card:not(:has(input:disabled)):hover {
+    background: var(--k2b-edge-hover-bg);
+  }
+
+  .k2b-ui .k2b-checkbox-card[data-state="checked"]:not(:has(input:disabled)):hover {
+    background: color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-hover-fill), var(--k2b-surface));
+  }
 }
 
 .k2b-ui .k2b-checkbox-card[data-state="checked"] {
-  border-color: var(--k2b-action);
+  --k2b-edge-color: color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-share), var(--k2b-surface));
+  background: color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-fill), var(--k2b-surface));
 }
 
 .k2b-ui .k2b-checkbox-card[data-state="invalid"] {
-  border-color: var(--k2b-danger-500);
-  background: var(--k2b-danger-surface);
+  --k2b-edge-color: var(--k2b-edge-danger);
+}
+
+/* Focus turns the card's edge blue, also when it is checked or invalid; an
+   error keeps its message. */
+.k2b-ui .k2b-checkbox-card:has(> input:focus-visible) {
+  --k2b-edge-color: var(--k2b-edge-focus);
 }
 
 .k2b-ui .k2b-checkbox-card:has(input:disabled) {
+  --k2b-edge-color: transparent;
+  background: var(--k2b-surface-muted);
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -8160,11 +8710,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-color: var(--k2b-action-solid);
   color: #fff;
   background: var(--k2b-action-solid);
-}
-
-.k2b-ui .k2b-checkbox-card > input:focus-visible + .k2b-checkbox-card__control {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .k2b-checkbox-card__icon {
@@ -8455,6 +9000,151 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
+/* The typed date field. Its edge, hover, focus, error and disabled looks come from the shared input shell; these
+   rules only lay out the parts. The status line always keeps its one line, so nothing below the field moves. */
+.k2b-ui .k2b-date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-date-field .k2b-input {
+  padding-left: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Each half is as wide as one date and gives up its padding first when a phone has less room. */
+.k2b-ui .k2b-date-field[data-range="true"] .k2b-input {
+  flex: 0 1 calc(10ch + 0.75rem);
+  width: auto;
+  min-width: 10ch;
+  padding-inline: 0.375rem;
+}
+
+.k2b-ui .k2b-date-field__icon {
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-date-field[data-open="true"] .k2b-date-field__icon {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-date-field[data-readonly="true"] .k2b-date-field__icon {
+  cursor: default;
+}
+
+.k2b-ui .k2b-date-field__arrow {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-date-field__spacer {
+  flex: 1;
+}
+
+.k2b-ui .k2b-date-field__clear {
+  margin-right: 0;
+}
+
+/* A hidden clear button keeps its slot, so the text never moves. */
+.k2b-ui .k2b-date-field__clear[data-hidden="true"] {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-date-field__toggle,
+.k2b-ui .k2b-date-field__lock {
+  position: relative;
+  display: flex;
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-right: 0.1875rem;
+  align-items: center;
+  justify-content: center;
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-date-field__toggle {
+  padding: 0;
+  border: 0;
+  border-radius: 0.375rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-date-field__toggle:hover:not(:disabled) {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-date-field__toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.k2b-ui .k2b-date-field__toggle > i {
+  transition: transform var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-date-field[data-open="true"] .k2b-date-field__toggle > i {
+  transform: rotate(180deg);
+}
+
+/* On phones the toggle opens the calendar sheet; its touch target reaches past the drawn button. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-date-field__toggle::after {
+    content: "";
+    position: absolute;
+    /* Up to the field's edge on the right, so the shell keeps its width. */
+    inset: -0.25rem -0.1875rem -0.25rem -0.25rem;
+  }
+
+  .k2b-ui .k2b-date-field[data-range="true"] .k2b-input {
+    padding-inline: 0.25rem;
+  }
+}
+
+.k2b-ui .k2b-date-field .k2b-date-popover {
+  cursor: default;
+}
+
+/* A fixed height, not a minimum: an empty line and a line with text then measure the same to the subpixel. */
+.k2b-ui .k2b-date-status {
+  height: 0.9625rem;
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 0.9625rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-date-status[data-tone="draft"] {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-date-status[data-tone="error"] {
+  color: var(--k2b-danger-text);
+}
+
+/* Days on the phone sheet are full touch targets. */
+.k2b-ui .k2b-date-sheet .k2b-date-calendar__header {
+  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+}
+
+.k2b-ui .k2b-date-sheet .k2b-date-calendar__nav {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+.k2b-ui .k2b-date-sheet .k2b-date-grid button {
+  min-height: 2.75rem;
+  font-size: 0.9375rem;
+}
+
 .k2b-ui .k2b-date-popover {
   position: fixed;
   z-index: 1000;
@@ -8652,6 +9342,32 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    mixes the hover tint into the band instead. */
 .k2b-ui .k2b-date-grid button[data-weekend="true"]:hover:not([aria-selected="true"], [data-in-range="true"]) {
   background: color-mix(in srgb, var(--k2b-action) 9%, var(--k2b-date-weekend));
+}
+
+/* Days outside min/max stay in place but are locked and struck through. */
+.k2b-ui .k2b-date-grid button:disabled,
+.k2b-ui .k2b-date-grid button:disabled:hover {
+  background: transparent;
+  cursor: not-allowed;
+  opacity: 0.35;
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
+}
+
+.k2b-ui .k2b-date-calendar__nav:disabled,
+.k2b-ui .k2b-date-calendar__nav:disabled:hover {
+  background: transparent;
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.k2b-ui .k2b-date-calendar__limits {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
 }
 
 .k2b-ui .k2b-date-grid button[data-outside="true"] {
@@ -9463,6 +10179,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-data-table :is(th, td)[data-align="right"] {
   @apply text-right;
+}
+
+/* Right-aligned values are numbers and amounts: equal-width digits keep places under each other. */
+.k2b-ui .k2b-data-table td[data-align="right"] {
+  font-variant-numeric: tabular-nums;
 }
 
 .k2b-ui .k2b-data-table td[data-valign="top"] {
@@ -11880,7 +12601,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     line-height: 1.25rem;
   }
 
-  .k2b-ui .k2b-chat-activity__copy:not(:has(> small)) > strong {
+  .k2b-ui .k2b-chat-activity__copy > strong:not(:has(~ small)) {
     overflow: visible;
     overflow-wrap: anywhere;
     white-space: normal;
@@ -11900,7 +12621,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     line-height: 1.25rem;
   }
 
-  .k2b-ui .k2b-chat-activity__copy:not(:has(> small)) > strong {
+  .k2b-ui .k2b-chat-activity__copy > strong:not(:has(~ small)) {
     overflow: visible;
     overflow-wrap: anywhere;
     white-space: normal;
@@ -12432,16 +13153,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-chat-preview__faces {
+  --k2b-faces-size: 1.5rem;
+  --k2b-faces-overlap: 0.1875rem;
   display: inline-flex;
   flex: none;
-}
-
-.k2b-ui .k2b-chat-preview__faces > .k2b-avatar {
-  box-shadow: 0 0 0 2px var(--k2b-surface);
-}
-
-.k2b-ui .k2b-chat-preview__faces > .k2b-avatar + .k2b-avatar {
-  margin-inline-start: -0.1875rem;
 }
 
 /* New and removed words. The fill follows the host's `--k2b-mark-accent`. */
@@ -12608,18 +13323,46 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 100%;
   gap: 0.375rem;
   padding: 0.5rem;
-  border: 1px solid var(--k2b-border-strong);
   border-radius: calc(var(--k2b-radius-surface) + 0.25rem);
-  background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-surface);
+}
+
+/* The field a person types into keeps the shared field edge (see `--k2b-edge`): the card of the assistant prompt and
+   the pill of the conversation composer. 2 px drawn inside as a 1 px border plus a 1 px inset in one colour, no drop
+   shadow; hover darkens the fill, focus turns the edge blue, an error red, and disabled drops it to a muted well. A
+   state sets only `--k2b-edge-color` or the fill, so the box and the text stay put. */
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]),
+.k2b-ui .k2b-chat-composer__field {
+  --k2b-edge-color: var(--k2b-edge);
+  border: 1px solid var(--k2b-edge-color);
+  background: var(--k2b-surface);
+  box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color);
   transition:
+    background-color 120ms ease,
     border-color 120ms ease,
     box-shadow 120ms ease;
 }
 
-.k2b-ui .k2b-chat-composer:focus-within {
-  border-color: var(--k2b-ai-border);
-  box-shadow: var(--k2b-shadow-surface);
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):hover,
+.k2b-ui .k2b-chat-composer__field:hover {
+  background: var(--k2b-edge-hover-bg);
+}
+
+.k2b-ui .k2b-chat-composer[data-invalid="true"]:not([data-variant="conversation"]),
+.k2b-ui .k2b-chat-composer[data-invalid="true"] .k2b-chat-composer__field {
+  --k2b-edge-color: var(--k2b-edge-danger);
+}
+
+/* Focus wins over an error, as in every field; the error line stays. */
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):focus-within,
+.k2b-ui .k2b-chat-composer .k2b-chat-composer__field:focus-within {
+  --k2b-edge-color: var(--k2b-edge-focus);
+  background: var(--k2b-surface);
+}
+
+.k2b-ui .k2b-chat-composer[data-disabled="true"]:not([data-variant="conversation"]),
+.k2b-ui .k2b-chat-composer[data-disabled="true"] .k2b-chat-composer__field {
+  --k2b-edge-color: transparent;
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-chat-composer-shell { position: relative; display: grid; gap: 0.5rem; min-width: 0; }
@@ -13105,6 +13848,28 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
 }
 
+/* A failed upload offers its way out in the danger colour; an action that waits, such as for the network, reads as
+   the attachment's state rather than as a dimmed button. */
+.k2b-ui .k2b-chat-composer__attachment-action[data-tone="danger"] {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-chat-composer__attachment-action[data-waiting]:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.k2b-ui .k2b-chat-composer__attachment-progress {
+  gap: 0.375rem;
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-chat-composer__attachment-progress .k2b-progress-ring {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
 .k2b-ui .k2b-chat-composer__input {
   position: relative;
   min-width: 0;
@@ -13308,23 +14073,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem;
 }
 
-/* A quiet well: muted at rest, the surface with a ring while focused. Only paint changes, never the box. */
+/* The pill carries the shared field edge (see `.k2b-chat-composer__field` above). */
 .k2b-ui .k2b-chat-composer__field {
   display: flex;
   flex: 1 1 0;
   min-width: 0;
   align-items: flex-end;
-  border: 1px solid transparent;
   border-radius: 1.125rem;
-  background: var(--k2b-surface-muted);
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease;
-}
-
-.k2b-ui .k2b-chat-composer__field:focus-within {
-  border-color: var(--k2b-border-strong);
-  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__input {
@@ -13374,12 +14129,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: flex-end;
 }
 
-/* The tools lie over the pill's 1px border, so they are as tall as the pill. */
+/* The tools lie over the pill's 1px border, so they are as tall as the pill. Their own transparent 2 px border keeps
+   a fill, such as the listening microphone's, off the pill's edge. */
 .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__icon-action {
   width: 2rem;
   height: 2.25rem;
   margin-block: -1px;
+  border: var(--k2b-edge-width) solid transparent;
   border-radius: 999px;
+  background-clip: padding-box;
 }
 
 .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__icon-action.k2b-chat-composer__microphone-menu {
@@ -14658,6 +15416,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
 }
 
+/* `stableWidth`: every option label shares one grid cell and only the chosen one shows, so the chip keeps the
+   width of its longest option. */
+.k2b-ui .k2b-select-chip > span[data-stable-width="true"] {
+  display: grid;
+}
+
+.k2b-ui .k2b-select-chip > span[data-stable-width="true"] > span {
+  grid-area: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-select-chip > span[data-stable-width="true"] > span[aria-hidden="true"] {
+  visibility: hidden;
+}
+
 .k2b-ui .k2b-spotlight-button:hover,
 .k2b-ui .k2b-select-chip:hover {
   color: var(--k2b-text);
@@ -14970,6 +15745,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-variant-numeric: tabular-nums;
 }
 
+.k2b-ui .k2b-view-tabs__badge {
+  padding: 0 0.3125rem;
+  border-radius: 0.3125rem;
+  color: var(--k2b-app-workspace-active);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+  font-size: 0.6875rem;
+  font-weight: 650;
+  line-height: 1rem;
+}
+
 .k2b-ui .k2b-view-tabs__tab:hover:not([aria-current="page"]) {
   color: var(--k2b-text);
   background: var(--k2b-app-workspace-hover);
@@ -14989,6 +15774,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: inherit;
 }
 
+.k2b-ui .k2b-view-tabs__tab[aria-current="page"] .k2b-view-tabs__badge {
+  background: var(--k2b-surface);
+}
+
 .k2b-ui .k2b-view-tabs__tab:focus-visible {
   --k2b-edge-color: var(--k2b-edge-focus);
   outline: none;
@@ -14999,10 +15788,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* The wide strip shows "More" only when views wait behind it; the compact
-   strip shows its own count (see the head row). */
-.k2b-ui .k2b-view-tabs__more:not([data-wide]),
-.k2b-ui .k2b-view-tabs__more-count[data-level="compact"] {
+   strip shows its own count (see the head row). Views that do not fit the
+   wide strip's room wait behind it too, and More then shows the fitted count. */
+.k2b-ui .k2b-view-tabs__more:not([data-wide], [data-fit]),
+.k2b-ui .k2b-view-tabs__more-count[data-level="compact"],
+.k2b-ui .k2b-view-tabs__more:not([data-fit]) .k2b-view-tabs__more-count[data-level="fit"] {
   display: none;
+}
+
+/* Outweighs the compact levels of the head row and the narrow lead. */
+.k2b-ui .k2b-view-tabs__list > .k2b-view-tabs__more[data-fit] .k2b-view-tabs__more-count:not([data-level="fit"]),
+.k2b-ui .k2b-view-tabs__list > .k2b-view-tabs__item.k2b-view-tabs__item[data-fit-hidden] {
+  display: none;
+}
+
+.k2b-ui .k2b-view-tabs__list > .k2b-view-tabs__more[data-fit] {
+  display: flex;
 }
 
 @media (forced-colors: active) {
@@ -15622,6 +16423,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__legend,
 .k2b-ui .k2b-chart-explorer__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .k2b-ui .k2b-chart-explorer__header { justify-content: space-between; }
+/* The actions move below the title only when the title itself does not fit beside them. A long description
+   adds no width of its own: it wraps in the space the title leaves, so explorers side by side keep one layout. */
+.k2b-ui .k2b-chart-explorer > .k2b-chart-explorer__header > :first-child { flex: 1 1 auto; min-width: 0; }
+.k2b-ui .k2b-chart-explorer__description { contain: inline-size; }
 .k2b-ui .k2b-chart-explorer__title { margin: 0; font-size: 1rem; font-weight: 600; }
 .k2b-ui .k2b-chart-explorer__legend:has(> .k2b-chart-explorer__pin) { flex-wrap: nowrap; }
 /* Labels come from data: the series filter keeps one line and truncates, and next to the pin it takes at most half
@@ -15825,7 +16630,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: pointer;
 }
 .k2b-ui .k2b-app-workspace__sidebar-section-toggle > i { margin-inline-start: auto; }
-.k2b-ui .k2b-app-workspace__sidebar-section-toggle:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-accent); outline-offset: var(--k2b-focus-offset); }
+.k2b-ui .k2b-app-workspace__sidebar-section-toggle:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
 .k2b-ui .k2b-app-workspace__sidebar-preview-body {
   max-height: min(calc(32rem - 2px), calc(100dvh - 1rem - 2px));
   padding: 1rem;
@@ -15968,12 +16773,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Object rows: one resource per row with a title, a description line, and
-   stacked trailing counts. The leading icon sits in a soft accent chip. */
+   stacked trailing counts. The leading icon sits in a soft accent chip with
+   the same inset before it as above and below it, so the chip sits evenly in
+   the row's hover and selection fill. */
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"]:not(.has-action),
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-main {
   min-height: 2.75rem;
   gap: 0.625rem;
-  padding: 0.375rem 0.5625rem;
+  padding-block: 0.375rem;
+  padding-inline: 0.375rem 0.5625rem;
   color: var(--k2b-text);
 }
 /* The current object row reads the selected ink, as every current row does. */

@@ -340,3 +340,19 @@ test("names the server importer, or that no island imports the module", async ()
     await rm(root, { recursive: true, force: true });
   }
 });
+
+for (const entry of ["@k2b/ui", "@k2b/ui/charts"]) {
+  test.each([
+    ["Chart", "Chart.Bar"],
+    ["Chart as Plot", "Plot.Pie"],
+  ])(`requires an island for ${entry} named namespace member %s`, async (binding, tag) => {
+    const source = `import { ${binding} } from '${entry}';\nexport const Panel = () => <${tag} data={[]} />;`;
+    expect(await findings({ [panelPath]: source })).toEqual([panelFinding]);
+    expect(
+      await findings({ [panelPath]: source, "packages/demo/src/frontend/Page.island.tsx": "import { Panel } from './Panel';" }),
+    ).toEqual([]);
+  });
+  test.each(["UI.Chart", "UI.Chart.Line", "UI.Chart.StateTimeline"])(`requires an island for ${entry} module namespace %s`, async (tag) => {
+    expect(await findings({ [panelPath]: `import * as UI from '${entry}';\nconst Panel = () => <${tag} />;` })).toEqual([panelFinding]);
+  });
+}

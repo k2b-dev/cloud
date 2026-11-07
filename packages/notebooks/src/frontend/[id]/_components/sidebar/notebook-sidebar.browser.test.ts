@@ -138,6 +138,7 @@ const ctx = (homepageNoteId: string | null = "Home01"): NotebookContext => ({
   attachmentCount: 0,
   favoriteNoteIds: [],
   tags: [],
+  pageTemplates: [],
   workspaceCursor: null,
   dateConfig: { locale: "en", timeZone: "UTC" },
   sidebarFilter: {},
@@ -178,7 +179,13 @@ const parentOf = (nodes: NoteTreeNode[], id: string): string | null => {
 const handleApi = async (request: Request, path: string): Promise<Response> => {
   const query = new URL(request.url).searchParams;
   if (path === "workspace-state")
-    return Response.json({ notebook: api.notebook, favoriteNoteIds: api.favoriteNoteIds, tags: api.tags, attachmentCount: 0 });
+    return Response.json({
+      notebook: api.notebook,
+      favoriteNoteIds: api.favoriteNoteIds,
+      tags: api.tags,
+      attachmentCount: 0,
+      pageTemplates: [],
+    });
   if (path === "tree/levels") {
     const levels = (query.get("levels") ?? "").split(",").filter(Boolean);
     return Response.json({
@@ -424,7 +431,7 @@ describe("One notebook sidebar with quick filters", () => {
     { width: 1440, height: 900 },
     { width: 390, height: 844 },
   ]) {
-    test(`pressed sidebar chips use the notebook navigation fill and ink at ${viewport.width}px`, async () => {
+    test(`pressed sidebar chips use the selected edge and fill in the notebook ink at ${viewport.width}px`, async () => {
       const page = await open({ viewport, reducedMotion: "reduce" }, filtered());
       try {
         await page.clock.setFixedTime(new Date("2026-10-01T12:00:00Z"));
@@ -448,11 +455,31 @@ describe("One notebook sidebar with quick filters", () => {
           }, theme);
           await settled(page);
           const colors = await page.evaluate(() => {
-            const chip = getComputedStyle(document.querySelector('.notebook-sidebar-chip[aria-pressed="true"]')!);
+            const pressed = document.querySelector<HTMLElement>('.notebook-sidebar-chip[aria-pressed="true"]')!;
+            const chip = getComputedStyle(pressed);
             const old = getComputedStyle(document.querySelector("#old-chip")!);
-            return { fill: chip.backgroundColor, ink: chip.color, oldFill: old.backgroundColor };
+            // The selected edge and fill mix the notebook ink in the chip's own scope.
+            const probe = document.createElement("span");
+            pressed.parentElement!.append(probe);
+            const mix = (share: string) => {
+              probe.style.backgroundColor = `color-mix(in srgb, var(--k2b-app-workspace-active) var(${share}), var(--k2b-surface))`;
+              return getComputedStyle(probe).backgroundColor;
+            };
+            const result = {
+              fill: chip.backgroundColor,
+              edge: chip.borderTopColor,
+              inset: chip.boxShadow,
+              ink: chip.color,
+              oldFill: old.backgroundColor,
+              selectedFill: mix("--k2b-edge-selected-fill"),
+              selectedEdge: mix("--k2b-edge-selected-share"),
+            };
+            probe.remove();
+            return result;
           });
-          expect(colors.fill, theme).toBe(rgb(appColors("#eab308")[theme].selectedNav));
+          expect(colors.fill, theme).toBe(colors.selectedFill);
+          expect(colors.edge, theme).toBe(colors.selectedEdge);
+          expect(colors.inset, theme).toContain("inset");
           expect(colors.ink, theme).toBe(rgb(appColors("#eab308")[theme].ink));
           expect(colors.fill).not.toBe(colors.oldFill);
         }

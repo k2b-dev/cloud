@@ -10,20 +10,32 @@ const startupRetryable = (error: unknown): boolean => {
   const code =
     "errno" in error && typeof error.errno === "string" ? error.errno : "code" in error && typeof error.code === "string" ? error.code : "";
   return (
-    ["42P01", "3F000", "57P03", "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EAI_AGAIN"].includes(code) ||
+    [
+      "42P01",
+      "3F000",
+      "57P03",
+      "ECONNREFUSED",
+      "ECONNRESET",
+      "ETIMEDOUT",
+      "ENOTFOUND",
+      "EAI_AGAIN",
+      "ERR_REDIS_CONNECTION_CLOSED",
+      "ERR_REDIS_CONNECTION_TIMEOUT",
+    ].includes(code) ||
     code.startsWith("08") ||
-    code.startsWith("ERR_POSTGRES_CONNECTION")
+    code.startsWith("ERR_POSTGRES_CONNECTION") ||
+    (code === "ERR_REDIS_SERVER_ERROR" && "message" in error && typeof error.message === "string" && /^-?LOADING\b/.test(error.message))
   );
 };
 const readStartupState = async (signal: AbortSignal) => {
   for (;;) {
     signal.throwIfAborted();
     try {
-      await loadCache();
+      await loadCache(signal);
       return await read("gateway.trusted_proxies");
     } catch (error) {
       if (!startupRetryable(error)) throw error;
-      console.warn("[gateway] Settings database or schema is not ready; waiting for Core before serving HTTP.");
+      console.warn("[gateway] Settings database, schema or Valkey is not ready; waiting before serving HTTP.");
       await delay(1_000, undefined, { signal });
     }
   }
@@ -36,7 +48,7 @@ export const loadTrustedProxies = async (signal = AbortSignal.timeout(SETTINGS_S
       onAbort = () =>
         reject(
           new Error(
-            "Gateway settings were not ready within the startup budget; HTTP remains closed. Check Core and the settings database.",
+            "Gateway settings were not ready within the startup budget; HTTP remains closed. Check Core, the settings database and Valkey.",
             { cause: signal.reason },
           ),
         );

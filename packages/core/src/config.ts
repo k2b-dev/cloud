@@ -5,6 +5,12 @@ import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
   id: "core",
+  // These protocols validate their own credentials and never use Cloud session authority.
+  sessionlessRoutes: [
+    "/api/auth/app-approval/v1/pairings/claim",
+    "/api/auth/app-approval/v1/pairings/result",
+    "/api/auth/app-approval/v1/device",
+  ],
   // These routes keep their own authentication, including workload and models-only credentials.
   access: appAccess.signedIn({
     publicRoutes: [
@@ -41,6 +47,8 @@ export const app = defineApp({
       "/.well-known/cloud-invocation-jwks.json",
       "/.well-known/oauth-protected-resource/api/mcp/v1",
       "/api/_internal/ip-country",
+      // Anonymous Geo is confined to the private network and gateway-blocked namespace.
+      "/api/_internal/geo/v1/autocomplete",
       "/api/_internal/identity/v1/invoke",
       "/api/_internal/identity/v1/invoke-child",
       "/api/_internal/ai/code/*",

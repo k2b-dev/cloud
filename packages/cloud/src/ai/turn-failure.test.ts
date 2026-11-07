@@ -1,10 +1,9 @@
 import { expect, test } from "bun:test";
 import { defineTool, memoryStore, nessi, type Provider } from "@k2b/nessi";
-import { openAICompatible } from "@k2b/nessi/ai";
+import { complete, openAICompatible } from "@k2b/nessi/ai";
 import { z } from "zod";
 import { aiTurnErrorCanContinue, aiTurnErrorText } from "./chat/turn-error";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
-import { completeThroughStream } from "./provider";
 import { AiQuotaError } from "./quotas";
 import {
   AiTurnFailure,
@@ -53,9 +52,6 @@ const throwing = (error: unknown): Provider => ({
   family: "openai-compatible",
   model: "fixture",
   capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-  complete: async () => {
-    throw error;
-  },
   async *stream() {
     throw error;
   },
@@ -72,13 +68,13 @@ test("an error a model call throws is remembered by its reason and still ends th
     if (reason) reasons.push(reason);
   };
   const quota = rememberProviderErrors(throwing(new AiQuotaError("quota_exhausted", "Chat usage limit reached.")), remember);
-  await expect(quota.complete({ messages: [] })).rejects.toThrow("Chat usage limit reached.");
+  await expect(complete(quota, { messages: [] })).rejects.toThrow("Chat usage limit reached.");
   const reset = rememberProviderErrors(throwing(new Error("socket hang up")), remember);
   await expect(drain(reset.stream({ messages: [] }))).rejects.toThrow("socket hang up");
   // A stop is not a failure.
   const stopped = new AbortController();
   stopped.abort();
-  await expect(reset.complete({ messages: [], signal: stopped.signal })).rejects.toThrow();
+  await expect(complete(reset, { messages: [], signal: stopped.signal })).rejects.toThrow();
   expect(reasons).toEqual([{ error: { code: "quota_exhausted" } }, { error: { code: "model_unavailable" } }]);
 });
 
@@ -103,21 +99,17 @@ test.each(["first_byte", "idle"] as const)(
     try {
       const reasons: (AiTurnFailureReason | null)[] = [];
       const provider = rememberProviderErrors(
-        completeThroughStream(
-          openAICompatible({
-            name: "stalled",
-            model: "mock",
-            baseURL: `http://localhost:${server.port}/v1`,
-            timeouts: { firstByteMs: 200, idleMs: 200 },
-          }),
-        ),
+        openAICompatible({
+          name: "stalled",
+          model: "mock",
+          baseURL: `http://localhost:${server.port}/v1`,
+          timeouts: { firstByteMs: 200, idleMs: 200 },
+        }),
         (reason) => reasons.push(reason),
       );
       const startedAt = Date.now();
-      // nessi reports an idle stall after streamed text as an unexpected end of the stream, not as a timeout.
-      await expect(provider.complete({ messages: [] })).rejects.toThrow(
-        stall === "first_byte" ? /first byte timeout/i : /ended unexpectedly/i,
-      );
+      // Both stalls surface as nessi timeouts (an idle stall after streamed text too, since nessi 0.19.0).
+      await expect(complete(provider, { messages: [] })).rejects.toThrow(stall === "first_byte" ? /first byte timeout/i : /idle timeout/i);
       expect(Date.now() - startedAt).toBeLessThan(3_000);
       expect(reasons).toEqual([null, { error: { code: "model_unavailable" } }]);
     } finally {
@@ -156,19 +148,17 @@ test("a slow model that keeps making progress through Cloud's provider completes
   try {
     const reasons: (AiTurnFailureReason | null)[] = [];
     const provider = rememberProviderErrors(
-      completeThroughStream(
-        openAICompatible({
-          name: "progressing",
-          model: "mock",
-          baseURL: `http://localhost:${server.port}/v1`,
-          // Chunks arrive every 100 ms, well inside each timeout; the whole answer takes longer than both together.
-          timeouts: { firstByteMs: 400, idleMs: 400 },
-        }),
-      ),
+      openAICompatible({
+        name: "progressing",
+        model: "mock",
+        baseURL: `http://localhost:${server.port}/v1`,
+        // Chunks arrive every 100 ms, well inside each timeout; the whole answer takes longer than both together.
+        timeouts: { firstByteMs: 400, idleMs: 400 },
+      }),
       (reason) => reasons.push(reason),
     );
     const startedAt = Date.now();
-    const result = await provider.complete({ messages: [] });
+    const result = await complete(provider, { messages: [] });
     expect(result.message.content).toEqual([{ type: "text", text: chunks.join("") }]);
     expect(result.finishReason).toBe("stop");
     expect(result.usage).toMatchObject({ input: 3, output: 10 });
@@ -220,12 +210,11 @@ test("a provider-stopped answer keeps its reason through nessi's loop-only issue
     async *stream() {
       yield { type: "usage" as const, finishReason: "error" as const, usage: { input: 8, output: 2, total: 10 } };
     },
-    complete: async () => ({ message: { role: "assistant" as const, content: [] }, finishReason: "error" as const }),
   };
   const reasons: (AiTurnFailureReason | null)[] = [];
   const wrapped = rememberProviderErrors(provider, (reason) => reasons.push(reason));
   await drain(wrapped.stream({ messages: [] }));
-  await wrapped.complete({ messages: [] });
+  await complete(wrapped, { messages: [] });
   expect(reasons).toEqual([null, { error: { code: "provider_stopped" } }, null, { error: { code: "provider_stopped" } }]);
 });
 
@@ -283,9 +272,6 @@ for (const kind of ["invalid-arguments", "unknown-tool"] as const)
       family: "openai-compatible",
       model: "fixture",
       capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
-      complete: async () => {
-        throw new Error("Unused complete");
-      },
       async *stream() {
         yield {
           type: "block_end",

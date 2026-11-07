@@ -70,6 +70,9 @@ const data: MailboxPageData = {
   draftsMode: false,
   draftsPage: null,
   draftsError: null,
+  eventsMode: false,
+  eventsPage: null,
+  eventsError: null,
   activeView: null,
   savedViewId: null,
   savedViews: [],
@@ -85,6 +88,7 @@ const data: MailboxPageData = {
   nextListCursor: null,
   listError: null,
   hiddenDone: null,
+  assignedGroups: null,
   listTitle: "Needs action",
   conversationRowState: null,
   detailMessages: [],
@@ -228,6 +232,7 @@ describe("Mail workspace search return", () => {
       nextListCursor: activeView === "needs_action" && !params.has("cursor") ? "needs-action-next" : null,
       listError: searching && invalidSearch ? "invalid_search" : null,
       hiddenDone: null,
+      assignedGroups: null,
       selectedConversationId: conversation,
       selectedMessageId: params.get("message"),
       selectedSubject: conversation ? "one" : "",
@@ -465,13 +470,13 @@ describe("Mail workspace search return", () => {
     };
     builderResult = { action: "apply", state, serialized: JSON.stringify(state) };
     if (!input()) dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!.click();
+    dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!.click();
     await settle();
     expect(new URL(location.href).searchParams.get("searchFrom")).toBe("view=needs_action&conversation=one");
     expect(title()).toBe("Search results");
     builderResult = { action: "clear" };
     if (!input()) dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!.click();
+    dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!.click();
     await settle();
     assertRoute("view=needs_action&conversation=one", "Needs action");
   });

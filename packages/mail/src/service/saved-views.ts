@@ -473,6 +473,7 @@ export const listSavedViewConversations = async (params: {
       activeFolderIds: item.activeFolderIds,
       flagged: item.flagged,
       hasAttachments: item.hasAttachments,
+      attachmentCount: item.attachmentCount,
       messageCount: item.messageCount,
       preview: item.snippet,
       folderId: item.sourceFolderId,

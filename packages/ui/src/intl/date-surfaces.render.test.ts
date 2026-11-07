@@ -23,8 +23,17 @@ const provided = (locale: string, child: () => JSX.Element): JSX.Element =>
   });
 
 describe("date surfaces inherit the render locale", () => {
-  test("DatePicker uses the provider locale for labels and weekdays", () => {
-    const html = renderToString(() => provided("de", () => createComponent(DatePicker, { label: "Datum", value: "2026-07-27" })));
+  test("DatePicker uses the provider locale for its text, status line and weekdays", () => {
+    const typed = renderToString(() => provided("de", () => createComponent(DatePicker, { label: "Datum", value: "2026-07-27" })));
+    // A typed field shows the numeric date, the pattern and the weekday in the inherited locale.
+    expect(typed).toContain('value="27.07.2026"');
+    expect(typed).toContain('placeholder="TT.MM.JJJJ"');
+    expect(typed).toMatch(/class="k2b-date-status"[^>]*>Montag, /);
+    expect(typed).toContain('aria-label="Kalender öffnen"');
+
+    const html = renderToString(() =>
+      provided("de", () => createComponent(DatePicker, { label: "Datum", value: "2026-07-27", appearance: "plain" })),
+    );
     const expected = dates.formatDate("2026-07-27T12:00", { locale: "de", weekStartsOn: 1 });
     const english = dates.formatDate("2026-07-27T12:00", { locale: "en", weekStartsOn: 1 });
     expect(expected).not.toBe(english);
@@ -38,14 +47,24 @@ describe("date surfaces inherit the render locale", () => {
   });
 
   test("an explicit dateConfig.locale wins over the provider", () => {
-    const html = renderToString(() =>
+    const typed = renderToString(() =>
       provided("de", () => createComponent(DatePicker, { label: "Datum", value: "2026-07-27", dateConfig: { locale: "en" } })),
+    );
+    expect(typed).toContain('value="07/27/2026"');
+    expect(typed).toMatch(/class="k2b-date-status"[^>]*>Monday, /);
+    const html = renderToString(() =>
+      provided("de", () =>
+        createComponent(DatePicker, { label: "Datum", value: "2026-07-27", dateConfig: { locale: "en" }, appearance: "plain" }),
+      ),
     );
     expect(html).toContain(dates.formatDate("2026-07-27T12:00", { locale: "en", weekStartsOn: 1 }));
   });
 
   test("keeps the fallback locale without a provider", () => {
-    const html = renderToString(() => createComponent(DatePicker, { label: "Date", value: "2026-07-27" }));
+    const typed = renderToString(() => createComponent(DatePicker, { label: "Date", value: "2026-07-27" }));
+    expect(typed).toContain('value="07/27/2026"');
+    expect(typed).toContain('placeholder="MM/DD/YYYY"');
+    const html = renderToString(() => createComponent(DatePicker, { label: "Date", value: "2026-07-27", appearance: "plain" }));
     expect(html).toContain(dates.formatDate("2026-07-27T12:00", { locale: "en", weekStartsOn: 1 }));
   });
 

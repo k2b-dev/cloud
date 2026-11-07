@@ -279,7 +279,9 @@ Core's [geo Queries](/en/docs/platform/places-and-maps) need outbound HTTPS to
 **Administration → Places and maps**. Core checks it with one provider lookup
 before storing it as the secret `geo.api_key`. There is no endpoint setting or
 new environment variable.
-Choose `geo.plan`, then review the monthly and per-person daily credit limits.
+Choose `geo.plan`, then review the installation-wide monthly credit budget and
+request rate. Address autocomplete can be called anonymously only through
+`CLOUD_CORE_INTERNAL_ORIGIN`; keep Core private behind the gateway.
 Core creates its durable geo ledger during startup migrations.
 Routing shares these settings and counters. Core atomically reserves its full
 provider chain using straight-line distance times a fixed detour factor of 2.0.
@@ -371,6 +373,41 @@ container environment and private service network accordingly.
 Keep Core's identity key-encryption keys and the Core/OAuth broker secret out
 of the gateway. Their absence does not make it a separate trust boundary.
 See [runtime configuration](/en/docs/operations/runtime-configuration#set-infrastructure-variables).
+
+## Preserve the browser mutation origin
+
+All Cloud applications require an `Origin` exactly equal to the public origin
+of the stored `app.url` setting for cookie-bearing `POST`, `PUT`, `PATCH` and
+`DELETE` requests and cookie-authenticated WebSocket upgrades. Preserve `Origin`
+and `Sec-Fetch-Site` through the reverse proxy and gateway. Foreign and same-site sibling origins are
+rejected with `403 INVALID_ORIGIN` for HTTP mutations, including logout and SSR
+form actions. A missing or `null` Origin passes only with `Sec-Fetch-Site:
+same-origin`, which a page with `Referrer-Policy: no-referrer` sends with its
+own form posts; without either header the request is rejected. Refused WebSocket upgrades lose session authority; live sockets
+close with `1008 forbidden_origin` to stop reconnecting.
+Do not replace these headers with the proxy's or upstream service's address.
+
+When upgrading, check `app.url` against the address people use. Scripts that
+mutate state with session cookies must send that canonical Origin; prefer an
+explicit Bearer credential for integrations. WOPI, OAuth protocol endpoints,
+signed app-approval commands, token-bound shares, webhooks and ingest retain
+their own credential checks. Their declared sessionless paths cannot gain
+session authority from an attached Cloud cookie. See [Route policies](/en/docs/identity/route-policies#send-browser-mutations-from-the-cloud-origin)
+for the application contract.
+
+Application authors must run their own state-changing Cloud cookie routes through
+`app.start()` too. A separate HTTP server needs the same exact Origin check
+against the public Cloud origin before authenticating cookies or reading the
+body. Pages on another origin cannot mutate Cloud state with Cloud session
+cookies. Keep cookie-authenticated actions on the Cloud origin. For requests
+from a cross-origin embed, use a protocol with its own credential and narrowly
+declared `sessionlessRoutes`; those routes receive no Cloud session authority. Adding a
+CORS allowance or an `access.publicRoutes` entry does not exempt a cookie route.
+
+OAuth clients navigating to `/oauth/logout` now show a confirmation before the
+browser signs out. Cloud server capability and sync-operations transports set
+the canonical Origin when forwarding a session to Core; the originating
+application has already applied the same mandatory ingress check.
 
 ## Prepare the common infrastructure
 
@@ -724,7 +761,7 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |
 | HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts; [keep Gotenberg offline](#keep-gotenberg-offline) | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). `GOTENBERG_URL` can bootstrap `gotenberg.url`; Dev Compose sets it to `http://gotenberg:3000`. A saved setting wins. Without a URL, Grids tells users that an administrator must configure PDF rendering. |
 | Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test native notification delivery to an opted-in browser with Cloud visible and with no open Cloud tab. Notification history does not depend on browser push. |
-| City search | Core’s Geoapify EU service (`geo.api_key`) | Sign-in required. Core `address.autocomplete` suggests up to five German cities for at least three characters and charges the caller’s geo budget. `GEO_NOT_CONFIGURED` means an administrator must configure Core. `GEO_BUDGET_EXHAUSTED` includes its scope and reset time. Forecasts for known coordinates remain independent. |
+| City search | Core’s Geoapify EU service (`geo.api_key`) | Sign-in required. Core `address.autocomplete` suggests up to five German cities for at least three characters and charges the installation-wide geo budget. `GEO_NOT_CONFIGURED` means an administrator must configure Core. `GEO_BUDGET_EXHAUSTED` includes its scope and reset time. Forecasts for known coordinates remain independent. |
 
 For S3 snapshots, enter credentials in the individual notebook's snapshot
 configuration, not invented global S3 credential environment keys. Snapshots upload
@@ -985,6 +1022,11 @@ fields. Core adds nullable columns to its existing Assistant reference index
 through its normal startup migration; no operator configuration is needed.
 See [result references](/en/docs/platform/capabilities).
 
+Universal Search result metadata may now carry a `format` for dates. Upgrade
+Core before the apps: Core accepts the search of apps built by earlier
+releases, but an earlier Core leaves out the search of an app built by this
+release until Core is upgraded. See [Search](/en/docs/platform/search).
+
 During the rollout to this release, and during a rollback to the previous
 version, replicas of the previous version write no liveness key. While they
 run, a replica that stops can still delete the shared registry entry once, and
@@ -1075,6 +1117,18 @@ needed. Verify source discovery and one authorized event read after upgrading;
 a healthy container alone does not prove that the caller can read a calendar.
 The aggregate reader has a 42-day view range, 100-calendar selection,
 60-call/six-concurrent-call budget, 4 MiB page budget, and caller deadline.
+
+### Upgrade Spaces task writes
+
+Spaces creates `spaces.item_create_requests` on startup for actor-scoped,
+24-hour create receipts. Task creation, its receipt and outbox commit together.
+The Spaces lifecycle starts an hourly NATS scheduler that removes expired
+receipts in bounded batches and drains on shutdown.
+Ship the matching server, browser and CLI assets together so new callers can
+use assignment deltas, title preconditions and retry keys. No configuration or
+new service is required. Verify one title conflict and one keyed create replay
+after upgrading. See [Spaces task writes](/en/docs/reference/spaces-task-mutations)
+for request fields, error codes and the retry window.
 
 ### Upgrade Spaces task deadlines
 
@@ -1566,11 +1620,11 @@ and gives up on one after a minute; requests asked for meanwhile share one
 read after it. Hidden tabs send nothing. Count these requests when sizing the
 application.
 
-### Show app badges in the phone bar
+### Show app badges in the phone's app menu
 
-On phones, the floating bar shows the same count on an application's icon as
-the rail. It reads no extra route: the counts come from the rail's reads. No
-migration or configuration change is required.
+On phones, the web shell has no bottom bar. The app menu shows the same count
+on an application's icon as the rail. It reads no extra route: the counts come
+from the rail's reads. No migration or configuration change is required.
 
 ### Let widgets declare settings
 
@@ -2315,3 +2369,19 @@ apps through `cld admin apps keys` or Core’s administrator API. Enrollment use
 the same app-bound service account as workload credentials. Keep the current
 runtime configuration when enrolling; see [App keys](/en/docs/operations/app-keys)
 for the supported commands and recovery steps.
+
+### Cloud app static assets
+
+Rebuild applications to let the Cloud app retain their versioned static files.
+`defineApp()` supplies an internal build catalog at `/_internal/pwa-assets`; the
+Cloud app reads it directly from registered Core, shell, and part services. No
+new gateway route or operator setting is needed. Deploy the complete `_ssr` and
+`public` output beside the server bundle as before. The catalog hashes the final
+uncompressed files, including any build rewrites.
+
+The network-served worker pins the active catalogs and verifies SHA-256 on every
+cache read. An app whose catalog does not answer is left out until the next worker
+update; its files then load from the network. Worker updates remove entries absent from those builds. Static cache
+storage is limited to 16 MiB; storage denial or eviction falls back to the network.
+Pages and API responses remain network-only. See
+[Offline and updates](/en/docs/frontend/mobile-app-pages#offline-and-updates).

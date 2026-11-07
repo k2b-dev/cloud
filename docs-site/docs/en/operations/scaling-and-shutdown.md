@@ -273,9 +273,21 @@ The registry has no conditional delete. If NATS applies a stopping replica's
 delete only after its lock lease ended, the delete can remove an entry that a
 new replica has just written. That replica writes it again within 60 seconds.
 
-The gateway rebuilds its route table when registry entries change. It renews
-its own operations snapshot every five seconds, including when the registry is
-idle, so its 30-second presence lease and request counters stay current.
+Gateway route and request-counter snapshots renew every 30 seconds with a
+90-second presence lease. Registry changes refresh routes immediately; committed
+app-domain assignments wake every gateway. A 30-second reconciliation repairs
+missed domain hints. With an older Core that does not publish hints, every
+domain change waits for reconciliation, up to 30 seconds. Changes to `app.url`
+and `gateway.ingress_cert_resolver` also take up to 30 seconds to reach gateways.
+
+Gateway Ops stores app metadata only when its content changes or an app
+reappears. Live status comes from the registry. Registry notifications also
+checkpoint each app's last observed heartbeat at most once every five minutes:
+20 unchanged apps average four timestamp updates per minute, with no content
+upserts. On departure, Gateway Ops persists the final observed heartbeat once.
+After a restart that misses the departure, offline durations use the saved
+checkpoint and can overestimate downtime by one checkpoint interval plus the
+registry heartbeat cadence. Database write failures can extend this gap.
 
 Use the orchestrator, not the Cloud registry, to measure replica health and
 count.
@@ -288,10 +300,17 @@ Keep database changes backward-compatible until the rollout completes.
 Platform live updates and application events wake outbox dispatchers across
 instances after their database transaction commits. Core wakes event delivery
 across its instances after accepting an event. Grids and Mail workflow workers
-also use distributed wake signals. These workers retain a **five-second safety scan** for missed
-signals, due retries, deadlines, and expired claims. Under idle conditions this
-means twelve safety scans per minute per dispatcher, plus startup; workflow
-workers also probe their execution slots before and after recovery.
+also use distributed wake signals. Outbox dispatchers and Core event delivery
+retain a **five-second safety scan** for missed signals. Workflow workers use a
+**30-second safety scan** for missed signals, due retries, deadlines and expired
+claims. Under idle conditions this means twelve scans per minute per outbox
+and two per workflow worker, plus startup. Workflow workers probe their execution
+slots before and after recovery. With C free execution slots, this costs at
+most 4 × C slot probes per idle minute. Grids probes both execution and dry-run
+queues, so its claim-query budget is 8 × C; Mail probes execution only.
+Local and distributed workflow hints still wake workers immediately. A lost
+hint, a due retry or deadline, or an expired claim may wait up to 30 seconds
+for the next workflow recovery scan, before backlog and execution time.
 This counts safety scans, not all database queries. Core also reconciles
 declarations and wakes delivery on registry updates, including each app
 instance's minute heartbeat. Near idle, those heartbeats add roughly one wake
@@ -307,6 +326,39 @@ scan. Backlogs, claims, and unavailable dependencies can add delay. Postgres
 retains the work, and the existing claim and retry rules still apply. Core's
 event gap and retention checks run once per minute, independently of signal
 volume. No new service or operator setting is required.
+
+Grids starts its 32 record-event workflow partition readers only while at least
+one enabled record-event workflow exists in a base outside the trash. Workflow
+changes and base trash/restore actions wake the runtime across replicas; the existing minute reconciliation
+recovers missed hints. Readers drain when the last such workflow is disabled,
+removed, or its base is trashed. A drain runs outside the runtime topic reader,
+so it does not hold up schedule changes or subsequent hints.
+
+The PostgreSQL record-event outbox also supplies the change feed and snapshot
+anchors. These rows keep their existing retention even without workflows.
+Before forwarding an event to NATS, the dispatcher checks committed workflow
+demand for its base and occurrence time in its existing database read. Without
+an eligible workflow, it completes that outbox entry without publishing workflow
+work. Enabling a workflow before writing records guarantees that its first
+event can be queued even before any replica starts the readers. An activation
+still in an uncommitted transaction does not claim events already dispatched
+without it; activation does not replay earlier record changes.
+
+The durable queue, partition positions, delivery budgets, and per-record
+ordering remain. During a mixed-version rollout, older publishers can still
+queue idle events. On activation, readers acknowledge historical messages
+without a workflow SQL query when both their occurrence and publication times
+precede the earliest active workflow's activation. Recently published events,
+delayed outbox publications, and manual replays still query current definitions;
+this also covers activations not yet reflected in a reader's cached minimum.
+Existing backlogs still require transport reads and acknowledgments.
+The existing 30-day / 1 GiB queue limit remains, and older
+publishers must finish rolling out before idle writes stop adding queue work.
+
+Only Core registers the hourly [one-time link cleanup](/en/docs/identity/one-time-links#operations-notes).
+Other applications still provision the shared links table before setup.
+Cleanup waits for Core to return during an outage; expired links remain invalid.
+No migration or new operator setting is required.
 
 ## Roll out replicas
 

@@ -1,10 +1,11 @@
 import { text } from "@k2b/stdlib";
-import { Button, createCollectionSelection, FileGrid, Format, PanelDialog, Placeholder, ProgressBar, TextInput, useLocale } from "@k2b/ui";
+import { Button, createCollectionSelection, FileGrid, Format, Placeholder, ProgressBar, TextInput, useLocale } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, createUniqueId, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { createStore } from "solid-js/store";
 import { FILE_PROVIDER_NAME_CONFLICT } from "../contracts/file-provider";
-import { entryIcon, type FileProviderList, localTimeZone } from "./FileChooser";
+import { EntryFacts, EntryTile, type FileProviderList } from "./FileChooser";
 import { fileChooserMessages } from "./file-chooser-messages";
+import { FileDialogFrame, type FileDialogSource, FileDialogSources } from "./file-dialog";
 import {
   eachLimited,
   type FileProviderCaller,
@@ -69,37 +70,61 @@ export function FileSaver(props: {
   const t = () => fileChooserMessages.resolve([locale()]).t;
   let root: HTMLDivElement | undefined;
 
+  /** Applications that answered 403 or 404 at their root; they leave the list for this dialog. */
+  const [gone, setGone] = createSignal<ReadonlySet<string>>(new Set());
+  const [goneNote, setGoneNote] = createSignal<string>();
   const savers = createMemo(() => {
     const list = props.providers();
-    return list.state === "ready" ? list.providers.filter((provider) => provider.save) : [];
+    return list.state === "ready" ? list.providers.filter((provider) => provider.save && !gone().has(provider.appId)) : [];
   });
-  /** With one provider, the dialog opens straight into it and the path starts there. */
-  const single = () => props.providers().state === "ready" && savers().length === 1;
 
   const refocus = () => {
     queueMicrotask(() => {
       const active = document.activeElement;
       if (active && root?.contains(active) && active.isConnected && active.tagName !== "DIALOG") return;
-      const first = folder.location() ? folder.items()[0]?.id : sourceRows()[0]?.appId;
-      if (first) (folder.location() ? selection : sourceSelection).focus(first);
+      const source = root?.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]');
+      const first = folder.items()[0]?.id;
+      // Discovery can finish after the dialog opens; its initial root still starts on the source.
+      if (folder.location()?.trail.length === 1 && source) source.focus();
+      else if (folder.location() && first) selection.focus(first);
+      else source?.focus();
     });
   };
-  const folder = createProviderFolder({ caller: props.caller, t, settled: refocus });
-  const sourceRows = createMemo(() => {
-    const needle = folder.filter().trim().toLocaleLowerCase();
-    return needle ? savers().filter((provider) => provider.name.toLocaleLowerCase().includes(needle)) : savers();
+  const folder = createProviderFolder({
+    caller: props.caller,
+    t,
+    settled: refocus,
+    gone: (provider) => {
+      setGone(new Set([...gone(), provider.appId]));
+      setGoneNote(t().sourceGone({ app: provider.name }));
+    },
   });
+  // The dialog opens in the first application that stores files, like a system save dialog in its last place.
   createEffect(
-    on(single, (only) => {
-      if (only && !folder.location()) folder.openProvider(savers()[0]!);
+    on(savers, (list) => {
+      const first = list[0];
+      if (first && !folder.location() && !saving()) folder.openProvider(first);
     }),
   );
+  // Rows keep their identity by app, so a refreshed catalog does not re-create the row that has focus.
+  const rowCache = new Map<string, FileDialogSource>();
+  const sourceRows = createMemo(() =>
+    savers().map((provider) => {
+      const kept = rowCache.get(provider.appId);
+      if (kept && kept.name === provider.name && kept.icon === provider.icon) return kept;
+      const row = { id: provider.appId, name: provider.name, icon: provider.icon };
+      rowCache.set(provider.appId, row);
+      return row;
+    }),
+  );
+  const openSaver = (appId: string) => {
+    const provider = savers().find((entry) => entry.appId === appId);
+    const open = folder.location();
+    if (!provider || (open?.provider.appId === appId && open.trail.length === 1)) return;
+    setGoneNote(undefined);
+    folder.openProvider(provider);
+  };
 
-  const sourceSelection = createCollectionSelection({
-    ids: () => sourceRows().map((provider) => provider.appId),
-    multiple: false,
-    checklist: true,
-  });
   // Files stay visible, so the person sees which names are taken, but only folders open.
   const selection = createCollectionSelection({
     ids: () => folder.items().map((entry) => entry.id),
@@ -226,182 +251,159 @@ export function FileSaver(props: {
   const saving = () => target() !== null;
 
   return (
-    <PanelDialog>
-      {/* `display: contents`, so header, body, and footer stay the panel's own rows. */}
-      <div ref={root} class="cloud-file-chooser">
-        <PanelDialog.Header title={title()} close={props.close} />
-        <FolderToolbar folder={folder} t={t} disabled={saving()} sources={!single()} />
-        <PanelDialog.Body>
-          <Switch>
-            <Match when={saving()}>
-              <ul class="cloud-file-chooser__downloads" aria-label={t().saving({ done: done(), total: items.length, failed: attention() })}>
-                <For each={items}>
-                  {(item, index) => {
-                    const stateId = createUniqueId();
-                    return (
-                      <li>
-                        <div class="cloud-file-chooser__download-line">
-                          <span class="cloud-file-chooser__download-name" title={item.name}>
-                            {item.name}
-                          </span>
-                          <span
-                            id={stateId}
-                            class="cloud-file-chooser__download-state"
-                            data-state={item.state === "conflict" ? "error" : item.state}
-                          >
-                            <Switch fallback={<Format.Percent value={item.progress} clamp />}>
-                              <Match when={item.state === "waiting"}>{t().waiting}</Match>
-                              <Match when={item.state === "done"}>{t().saved}</Match>
-                              <Match when={item.state === "conflict" && !isSaveableName(item.draft)}>{t().invalidName}</Match>
-                              <Match when={item.state === "conflict"}>{t().nameTaken}</Match>
-                              <Match when={item.state === "error"}>{problemText(item.problem)}</Match>
-                            </Switch>
-                          </span>
-                        </div>
-                        {/* Every row keeps room for a name field, so a taken name never moves the rows below it. */}
-                        <div class="cloud-file-saver__slot">
-                          <Show
-                            when={item.state === "conflict"}
-                            fallback={
-                              <ProgressBar
-                                size="xs"
-                                tone={item.state === "error" ? "danger" : item.state === "done" ? "success" : "info"}
-                                value={item.progress * 100}
-                                label={t().saveProgress({ name: item.name })}
-                              />
-                            }
-                          >
-                            <div class="cloud-file-saver__rename">
-                              <TextInput
-                                aria-label={t().newName({ name: item.name })}
-                                maxLength={255}
-                                value={() => item.draft}
-                                onValueChange={(value) => setItems(index(), "draft", value)}
-                                onSubmit={() => rename(index())}
-                                aria-describedby={stateId}
-                              />
-                              <Button variant="secondary" disabled={!canRename(item)} onClick={() => rename(index())}>
-                                {t().save}
-                              </Button>
-                            </div>
-                          </Show>
-                        </div>
-                      </li>
-                    );
-                  }}
-                </For>
-              </ul>
-            </Match>
-            <Match when={!folder.location()}>
-              <Switch>
-                <Match when={props.providers().state === "loading"}>
-                  <Placeholder state="loading" variant="panel" class="cloud-file-chooser__state" description={t().saveProvidersLoading} />
-                </Match>
-                <Match when={props.providers().state === "error"}>
-                  <Placeholder
-                    state="error"
-                    variant="panel"
-                    class="cloud-file-chooser__state"
-                    description={t().saveProvidersFailed}
-                    action={
-                      <Button size="sm" variant="secondary" onClick={props.retryProviders}>
-                        {t().retry}
-                      </Button>
-                    }
-                  />
-                </Match>
-                <Match when={savers().length === 0}>
-                  <Placeholder
-                    variant="panel"
-                    class="cloud-file-chooser__state"
-                    icon="ti ti-folder-off"
-                    title={t().noSaveProviders}
-                    description={t().noSaveProvidersHint}
-                  />
-                </Match>
-                <Match when={true}>
-                  <FileGrid
-                    rows={sourceRows()}
-                    getRowId={(provider) => provider.appId}
-                    selection={sourceSelection}
-                    label={t().saveSourceList}
-                    layout="list"
-                    renderPreview={(provider) => <i class={`${provider.icon} cloud-file-chooser__icon`} aria-hidden="true" />}
-                    renderLabel={(provider) => provider.name}
-                    onRowClick={(provider) => {
-                      sourceSelection.clear();
-                      folder.openProvider(provider);
-                    }}
-                    onOpen={(provider) => {
-                      sourceSelection.clear();
-                      folder.openProvider(provider);
-                    }}
-                  />
-                </Match>
-              </Switch>
-            </Match>
-            <Match when={true}>
-              <FolderContents folder={folder} t={t}>
-                <FileGrid
-                  rows={folder.items()}
-                  getRowId={(entry) => entry.id}
-                  selection={selection}
-                  label={t().entries({ folder: folder.folderName() })}
-                  layout="list"
-                  renderPreview={(entry) => <i class={`${entryIcon(entry)} cloud-file-chooser__icon`} aria-hidden="true" />}
-                  renderLabel={(entry) => <span title={entry.name}>{entry.name}</span>}
-                  renderMeta={(entry) =>
-                    entry.kind === "file" ? (
-                      <span class="cloud-file-chooser__meta">
-                        <Format.Bytes value={entry.size} />
-                        <Show when={entry.updatedAt}>
-                          {(updated) => (
-                            <>
-                              <span aria-hidden="true">·</span>
-                              <Format.Date value={updated()} timeZone={localTimeZone()} />
-                            </>
-                          )}
-                        </Show>
-                      </span>
-                    ) : null
-                  }
-                  onRowClick={(entry) => {
-                    if (entry.kind === "folder") folder.openFolder(entry);
-                  }}
-                  onOpen={(entry) => {
-                    if (entry.kind === "folder") folder.openFolder(entry);
-                  }}
-                />
-              </FolderContents>
-            </Match>
-          </Switch>
-        </PanelDialog.Body>
-        <PanelDialog.Footer>
-          <span class="cloud-file-chooser__status" role="status">
-            <Switch>
-              <Match when={saving()}>{t().saving({ done: done(), total: items.length, failed: attention() })}</Match>
-              <Match when={!folder.location() || folder.status() !== "ready"}>{null}</Match>
-              <Match when={!parent()}>{t().chooseFolder}</Match>
-              <Match when={!folder.writable()}>{t().notWritable}</Match>
-              <Match when={true}>{t().savesInto({ folder: folder.folderName() })}</Match>
-            </Switch>
-          </span>
+    <FileDialogFrame
+      ref={(element) => {
+        root = element;
+      }}
+      title={title()}
+      close={props.close}
+      sources={
+        <FileDialogSources
+          label={t().saveSourceList}
+          rows={sourceRows()}
+          current={folder.location()?.provider.appId}
+          state={props.providers().state}
+          loading={t().saveProvidersLoading}
+          failed={t().saveProvidersFailed}
+          retry={t().retry}
+          disabled={saving()}
+          onOpen={(row) => openSaver(row.id)}
+          onRetry={props.retryProviders}
+        />
+      }
+      toolbar={folder.location() ? <FolderToolbar folder={folder} t={t} disabled={saving()} /> : undefined}
+      status={
+        <Switch>
+          <Match when={saving()}>{t().saving({ done: done(), total: items.length, failed: attention() })}</Match>
+          <Match when={goneNote()}>{goneNote()}</Match>
+          <Match when={!folder.location() || folder.status() !== "ready"}>{null}</Match>
+          <Match when={!parent()}>{t().chooseFolder}</Match>
+          <Match when={!folder.writable()}>{t().notWritable}</Match>
+          <Match when={true}>{t().savesInto({ folder: folder.folderName() })}</Match>
+        </Switch>
+      }
+      statusError={saving() && attention() > 0}
+      actions={
+        <>
           {/* Labels never change, so the buttons keep their place. Cancel stops what is still running; Save tries failed files again. */}
-          <div class="cloud-file-chooser__actions">
-            <Button variant="ghost" data-file-saver-cancel onClick={props.close}>
-              {t().cancel}
-            </Button>
-            <Button
-              variant="primary"
-              data-file-saver-save
-              disabled={saving() ? running() > 0 || !items.some((item) => item.state === "error") : !canSave()}
-              onClick={() => (saving() ? retry() : start())}
-            >
-              {t().save}
-            </Button>
-          </div>
-        </PanelDialog.Footer>
-      </div>
-    </PanelDialog>
+          <Button variant="secondary" data-file-saver-cancel onClick={props.close}>
+            {t().cancel}
+          </Button>
+          <Button
+            class="cloud-file-chooser__add"
+            variant="primary"
+            data-file-saver-save
+            disabled={saving() ? running() > 0 || !items.some((item) => item.state === "error") : !canSave()}
+            onClick={() => (saving() ? retry() : start())}
+          >
+            {t().save}
+          </Button>
+        </>
+      }
+    >
+      <Switch>
+        <Match when={saving()}>
+          <ul class="cloud-file-chooser__downloads" aria-label={t().saving({ done: done(), total: items.length, failed: attention() })}>
+            <For each={items}>
+              {(item, index) => {
+                const stateId = createUniqueId();
+                return (
+                  <li>
+                    <div class="cloud-file-chooser__download-line">
+                      <span class="cloud-file-chooser__download-name" title={item.name}>
+                        {item.name}
+                      </span>
+                      <span
+                        id={stateId}
+                        class="cloud-file-chooser__download-state"
+                        data-state={item.state === "conflict" ? "error" : item.state}
+                      >
+                        <Switch fallback={<Format.Percent value={item.progress} clamp />}>
+                          <Match when={item.state === "waiting"}>{t().waiting}</Match>
+                          <Match when={item.state === "done"}>{t().saved}</Match>
+                          <Match when={item.state === "conflict" && !isSaveableName(item.draft)}>{t().invalidName}</Match>
+                          <Match when={item.state === "conflict"}>{t().nameTaken}</Match>
+                          <Match when={item.state === "error"}>{problemText(item.problem)}</Match>
+                        </Switch>
+                      </span>
+                    </div>
+                    {/* Every row keeps room for a name field, so a taken name never moves the rows below it. */}
+                    <div class="cloud-file-saver__slot">
+                      <Show
+                        when={item.state === "conflict"}
+                        fallback={
+                          <ProgressBar
+                            size="xs"
+                            tone={item.state === "error" ? "danger" : item.state === "done" ? "success" : "info"}
+                            value={item.progress * 100}
+                            label={t().saveProgress({ name: item.name })}
+                          />
+                        }
+                      >
+                        <div class="cloud-file-saver__rename">
+                          <TextInput
+                            aria-label={t().newName({ name: item.name })}
+                            maxLength={255}
+                            value={() => item.draft}
+                            onValueChange={(value) => setItems(index(), "draft", value)}
+                            onSubmit={() => rename(index())}
+                            aria-describedby={stateId}
+                          />
+                          <Button variant="secondary" disabled={!canRename(item)} onClick={() => rename(index())}>
+                            {t().save}
+                          </Button>
+                        </div>
+                      </Show>
+                    </div>
+                  </li>
+                );
+              }}
+            </For>
+          </ul>
+        </Match>
+        <Match when={!folder.location()}>
+          <Show when={props.providers().state === "ready" && savers().length === 0}>
+            <Placeholder
+              variant="panel"
+              class="cloud-file-chooser__state"
+              icon="ti ti-folder-off"
+              title={t().noSaveProviders}
+              description={t().noSaveProvidersHint}
+            />
+          </Show>
+        </Match>
+        <Match when={true}>
+          <FolderContents folder={folder} t={t}>
+            <FileGrid
+              rows={folder.items()}
+              getRowId={(entry) => entry.id}
+              selection={selection}
+              label={t().entries({ folder: folder.folderName() })}
+              layout="list"
+              renderPreview={(entry) => <EntryTile entry={entry} />}
+              renderLabel={(entry) => (
+                <span class="cloud-file-dialog__name" title={entry.name}>
+                  {entry.name}
+                </span>
+              )}
+              renderMeta={(entry) => (
+                <span class="cloud-file-chooser__meta">
+                  <EntryFacts entry={entry} folder={t().folder} />
+                </span>
+              )}
+              renderActions={(entry) =>
+                entry.kind === "folder" ? <i class="ti ti-chevron-right cloud-file-dialog__chevron" aria-hidden="true" /> : null
+              }
+              onRowClick={(entry) => {
+                if (entry.kind === "folder") folder.openFolder(entry);
+              }}
+              onOpen={(entry) => {
+                if (entry.kind === "folder") folder.openFolder(entry);
+              }}
+            />
+          </FolderContents>
+        </Match>
+      </Switch>
+    </FileDialogFrame>
   );
 }

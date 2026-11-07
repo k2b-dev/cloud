@@ -34,7 +34,7 @@ export default function SearchBar(props: SearchBarProps) {
   });
 
   return (
-    <form action={target().action} method="get" role="search" class="group/search w-full">
+    <form action={target().action} method="get" role="search" class="cloud-search w-full">
       <For each={target().fields}>{([name, value]) => <input type="hidden" name={name} value={value} />}</For>
       <TextInput
         name={param()}
@@ -47,13 +47,7 @@ export default function SearchBar(props: SearchBarProps) {
         disabled={props.disabled}
         suffix={
           <Show when={!props.disabled}>
-            <IconButtonLink
-              href={target().clear}
-              label={t().clearSearch}
-              size="xs"
-              tooltip={false}
-              class="group-has-[input:placeholder-shown]/search:invisible"
-            >
+            <IconButtonLink href={target().clear} label={t().clearSearch} size="xs" tooltip={false} class="cloud-search-clear">
               <i class="ti ti-x" aria-hidden="true" />
             </IconButtonLink>
           </Show>

@@ -7,7 +7,7 @@ import { GeoError } from "./errors";
 import type { GeoBudgetSubject } from "./identity";
 import type { GeoConfig } from "./settings";
 
-export type GeoBudgetConfig = Pick<GeoConfig, "timezone" | "monthlyCredits" | "personDailyCredits">;
+export type GeoBudgetConfig = Pick<GeoConfig, "timezone" | "monthlyCredits">;
 export type GeoPeriod = { period: string; resetsAt: string };
 export const geoPeriods = (now: Date, timezone: string): { person: GeoPeriod; cloud: GeoPeriod } => {
   const format = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" });
@@ -33,21 +33,23 @@ export const geoPeriods = (now: Date, timezone: string): { person: GeoPeriod; cl
   };
 };
 export const geoSubjectKey = (subject: GeoBudgetSubject) =>
-  subject.type === "app"
-    ? `app:${subject.appId}`
-    : subject.type === "user"
-      ? `user:${subject.userId}`
-      : `service_account:${subject.serviceAccountId}`;
+  subject.type === "none"
+    ? "anonymous"
+    : subject.type === "app"
+      ? `app:${subject.appId}`
+      : subject.type === "user"
+        ? `user:${subject.userId}`
+        : `service_account:${subject.serviceAccountId}`;
 export type GeoReservation = {
   cost: number;
   group: string;
-  rows: Array<{ scope: "cloud" | "person"; subject: string; period: string; resetsAt: string; limit: number }>;
+  rows: Array<{ scope: "cloud" | "person"; subject: string; period: string; resetsAt: string; limit: number | null }>;
 };
 const rowsFor = (subject: GeoBudgetSubject, config: GeoBudgetConfig, now: Date) => {
   const periods = geoPeriods(now, config.timezone);
   return [
     { scope: "cloud", subject: "*", ...periods.cloud, limit: config.monthlyCredits * 1000 },
-    { scope: "person", subject: geoSubjectKey(subject), ...periods.person, limit: config.personDailyCredits * 1000 },
+    { scope: "person", subject: geoSubjectKey(subject), ...periods.person, limit: null },
   ] satisfies GeoReservation["rows"];
 };
 export const createGeoLedger = (injectedDb?: SQL) => {
@@ -57,7 +59,7 @@ export const createGeoLedger = (injectedDb?: SQL) => {
       if (!Number.isSafeInteger(cost) || cost < 0) throw new Error("Invalid geo reservation");
       const rows = rowsFor(subject, config, now);
       await db().begin(async (tx) => {
-        // Fixed order across upserts, updates, shares and settlement: Cloud first, person second.
+        // Cloud admission first; daily subject rows only account for usage.
         for (const row of rows)
           await tx`INSERT INTO geo.usage(scope,subject,period) VALUES(${row.scope},${row.subject},${row.period}) ON CONFLICT DO NOTHING`;
         for (const row of rows) {
@@ -65,9 +67,9 @@ export const createGeoLedger = (injectedDb?: SQL) => {
           const [balance] = await tx<{ used: number }[]>`SELECT used::float8 AS used FROM geo.usage
           WHERE scope=${row.scope} AND subject=${row.subject} AND period=${row.period} FOR UPDATE`;
           const changed = await tx`UPDATE geo.usage SET used=used+${cost} WHERE scope=${row.scope} AND subject=${row.subject}
-          AND period=${row.period} AND used+${cost}<=${row.limit} RETURNING used`;
+          AND period=${row.period} AND (${row.limit}::bigint IS NULL OR used+${cost}<=${row.limit}) RETURNING used`;
           if (!changed.length) {
-            const available = row.limit - (balance?.used ?? 0);
+            const available = (row.limit ?? 0) - (balance?.used ?? 0);
             throw new GeoError("GEO_BUDGET_EXHAUSTED", {
               scope: row.scope,
               resetsAt: row.resetsAt,
@@ -104,14 +106,17 @@ export const createGeoLedger = (injectedDb?: SQL) => {
       for (const row of rowsFor(subject, config, now)) {
         const [used] = await db()<{ used: number }[]>`SELECT used::float8 AS used FROM geo.usage
         WHERE scope=${row.scope} AND subject=${row.subject} AND period=${row.period}`;
-        balances.push({ exhausted: (used?.used ?? 0) >= row.limit, resetsAt: row.resetsAt });
+        balances.push({ exhausted: row.limit !== null && (used?.used ?? 0) >= row.limit, resetsAt: row.resetsAt });
       }
       return { cloud: balances[0]!, person: balances[1]! };
     },
     async recordTransition(
       event: "provider_key_rejected" | "monthly_budget_exhausted" | "route_cost_overrun",
       timezone: string,
-      context: { actor: CapabilityExecutionContext["actor"] | CapabilityAppExecutionContext["actor"] | AppPwaActor; requestId?: string },
+      context: {
+        actor: CapabilityExecutionContext["actor"] | CapabilityAppExecutionContext["actor"] | AppPwaActor | undefined;
+        requestId?: string;
+      },
       now: Date,
       metadata: Record<string, number> = {},
     ) {
@@ -123,11 +128,11 @@ export const createGeoLedger = (injectedDb?: SQL) => {
             : await tx`INSERT INTO geo.audit_transitions(event,period) VALUES(${event},${period}) ON CONFLICT DO NOTHING RETURNING event`;
         if (!inserted.length) return;
         const actor =
-          context.actor.kind === "device" || context.actor.kind === "visit"
+          !context.actor || context.actor.kind === "device" || context.actor?.kind === "visit"
             ? null
-            : context.actor.kind === "app"
+            : context.actor?.kind === "app"
               ? { uid: `app:${context.actor.appId}`, provider: "app", roles: [] }
-              : context.actor.kind === "user"
+              : context.actor?.kind === "user"
                 ? {
                     userId: context.actor.user.id,
                     uid: context.actor.user.uid,
@@ -143,17 +148,18 @@ export const createGeoLedger = (injectedDb?: SQL) => {
             requestId: context.requestId,
             metadata: {
               period,
+              ...(!context.actor ? { caller: "anonymous", internal: true } : {}),
               ...metadata,
-              ...(context.actor.kind === "app" ? { appId: context.actor.appId, keyId: context.actor.keyId } : {}),
-              ...(context.actor.kind === "device" || context.actor.kind === "visit"
+              ...(context.actor?.kind === "app" ? { appId: context.actor.appId, keyId: context.actor.keyId } : {}),
+              ...(context.actor?.kind === "device" || context.actor?.kind === "visit"
                 ? {
                     appId: context.actor.appId,
                     subject: { type: "user", userId: context.actor.ownerUserId },
                     via: {
-                      kind: context.actor.kind,
+                      kind: context.actor?.kind,
                       appId: context.actor.appId,
                       deviceId: context.actor.deviceId,
-                      ...(context.actor.kind === "visit" ? { visitId: context.actor.visitId } : {}),
+                      ...(context.actor?.kind === "visit" ? { visitId: context.actor.visitId } : {}),
                     },
                   }
                 : {}),

@@ -9,6 +9,7 @@ import type {
 import { z } from "zod";
 import { contactResolveMatchSchema, normalizedContactEmailSchema } from "./app-integration-contracts";
 import { MAX_COMMAND_OUTCOME_IDS, MAX_CONVERSATION_ACTION_MESSAGES } from "./command-outcomes";
+import { MAIL_ACTIVITY_KINDS, type MailActivityKind } from "./mail-activity-kinds";
 import { RESOURCE_SHORT_ID_PATTERN } from "./resource-short-id";
 
 export const DEFAULT_CONVERSATION_REFERENCE_PATTERN = "REF-{{ short_id }}";
@@ -2056,6 +2057,9 @@ export const conversationViewSchema = z.enum([
 ]);
 export type ConversationView = z.infer<typeof conversationViewSchema>;
 
+export const mailActivityKindSchema = z.enum(MAIL_ACTIVITY_KINDS);
+export type { MailActivityKind };
+
 export const mergeConversationsInputSchema = z
   .object({
     sourceConversationId: ResourceShortIdSchema,
@@ -2100,7 +2104,7 @@ export const updateConversationCollaborationSchema = z
       .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
       .optional()
       .describe("User or service-account UUIDs. Replace the complete assignee set; an empty array clears it."),
-    completion: z.enum(["done", "open"]).optional(),
+    completion: z.enum(["done", "open", "waiting", "needs_action"]).optional(),
     snoozedUntil: z.string().datetime().nullable().optional(),
   })
   .refine(
@@ -2124,9 +2128,24 @@ export const assignConversationsSchema = z
       .array(z.uuid())
       .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
       .describe("User or service-account UUIDs to add, remove, or replace; replace with an empty array clears all assignees."),
+    onlyIfUnassigned: z.boolean().optional(),
+    expectedRevision: z.number().int().positive().optional(),
     mode: z.enum(["add", "remove", "replace"]).describe("Add to, remove from, or replace each conversation’s assignee set."),
   })
   .strict()
+  .refine(
+    (value) =>
+      !value.onlyIfUnassigned ||
+      (value.mode === "add" &&
+        value.assigneeUserIds.length > 0 &&
+        value.conversationIds.length === 1 &&
+        value.expectedRevision !== undefined),
+    "Unassigned-only assignment requires one conversation, a revision, and a nonempty add",
+  )
+  .refine(
+    (value) => value.expectedRevision === undefined || (value.onlyIfUnassigned === true && value.conversationIds.length === 1),
+    "An assignment revision requires an unassigned-only claim on one conversation",
+  )
   .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one principal");
 export type AssignConversations = z.infer<typeof assignConversationsSchema>;
 
@@ -2138,13 +2157,20 @@ export const completeConversationsSchema = z
       .max(MAIL_CONVERSATION_BATCH_LIMIT)
       .refine((ids) => new Set(ids).size === ids.length, "Conversation ids must be unique")
       .describe(`Up to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations of one mailbox.`),
-    completion: z.enum(["done", "open"]).describe("Mark the conversations done or reopen them."),
+    expectedRevisions: z.record(ResourceShortIdSchema, z.number().int().positive()).optional(),
+    completion: z
+      .enum(["done", "open", "waiting", "needs_action"])
+      .describe("Set a work status, or reopen using the latest message direction."),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) => !value.expectedRevisions || value.conversationIds.every((id) => value.expectedRevisions?.[id] !== undefined),
+    "Supply a revision for every conversation",
+  );
 
 export const conversationCompletionResultSchema = z
   .object({
-    completion: z.enum(["done", "open"]),
+    completion: z.enum(["done", "open", "waiting", "needs_action"]),
     results: z.array(
       z.discriminatedUnion("status", [
         z
@@ -3455,8 +3481,9 @@ export type ConversationDraftSummary = Pick<MailDraft, "id" | "intent" | "subjec
   createdByDisplayName: string;
 };
 
-/** A draft as the Drafts folder lists it. */
-export type DraftFolderItem = ConversationDraftSummary & Pick<MailDraft, "conversationId" | "to" | "cc" | "bcc">;
+/** A draft as the Drafts folder lists it; `revision` lets the list delete exactly the draft it shows. */
+export type DraftFolderItem = ConversationDraftSummary &
+  Pick<MailDraft, "conversationId" | "to" | "cc" | "bcc" | "revision"> & { attachmentCount: number };
 
 export type DraftFolderPage = {
   items: DraftFolderItem[];

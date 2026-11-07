@@ -18,7 +18,12 @@ const values = (rule: CssRule) => [...cssDeclarations(rule.body).values()].flat(
 const consumes = (hook: string) => rules.filter((rule) => values(rule).some((value) => value.includes(`var(${hook})`)));
 const nav = blocks(consumes("--k2b-app-workspace-selected"));
 // Tabs, segments, and active filters mix their selected edge from the host ink instead of the navigation fill.
-const edgeSelected = blocks(consumes("--k2b-edge-selected-share"));
+// Choice cards mix the same share from platform blue; they are controls (see "Controls stay platform blue").
+const edgeSelected = blocks(
+  consumes("--k2b-edge-selected-share").filter((rule) =>
+    values(rule).some((value) => value.includes("var(--k2b-edge-selected-share)") && value.includes("var(--k2b-app-workspace-active)")),
+  ),
+);
 const row = blocks(consumes("--k2b-row-selected"));
 // A dropdown menu control is not a drag-and-drop target.
 const isDropTarget = (rule: CssRule) => /drop(?!down)/.test(rule.selector);

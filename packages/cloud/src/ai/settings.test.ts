@@ -30,7 +30,7 @@ describe("model class resolution", () => {
     expect(resolveAiModelRef(aiSettingsFixture())).toEqual({ requestedClass: "balanced", class: "balanced", id: "chat" });
     expect(() => resolveAiModelRef(aiSettingsFixture({ assignments: [] }))).toThrow("No AI model class");
     expect(() => resolveAiModelRef(aiSettingsFixture({ enabled: false }))).toThrow("AI is disabled");
-    expect(() => selectAiModelProfile(aiSettingsFixture(), { kind: "selectable" }, { id: "missing" })).toThrow("missing, disabled");
+    expect(() => selectAiModelProfile(aiSettingsFixture(), { kind: "selectable" }, { id: "missing" })).toThrow("does not exist");
   });
   test("an assigned disabled, forbidden or incompatible model never falls back", () => {
     const state = aiSettingsFixture({

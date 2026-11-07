@@ -64,6 +64,7 @@ const state: Extract<SpacesWorkspaceState, { kind: "ok" }> = {
   currentView: "list",
   hasOverride: false,
   isAdmin: false,
+  accessVisible: true,
   canWrite: false,
   query: "",
   icalBaseUrl: "https://cloud.test",

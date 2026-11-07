@@ -1,9 +1,21 @@
 import type { MapViewport } from "@k2b/stdlib";
-import { charts } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
-import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  mergeProps,
+  onCleanup,
+  onMount,
+  Show,
+  splitProps,
+  untrack,
+} from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
+import { chartKinds, chartRenderers } from "../charts/core/registry";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -30,6 +42,7 @@ import {
   zoomStateTimelineViewport,
 } from "./chart-state-timeline";
 import { responsiveChartSvg, responsiveMapSvg, selectedChartSvg } from "./chart-svg";
+import { type ChartTimeAxis, timeAxisSvg } from "./chart-time-axis";
 import { useViewportMessages } from "./viewport-messages";
 
 /**
@@ -130,13 +143,18 @@ export type ChartProps = {
           /** Largest connected X distance; positive, finite, without area/errorBand fills. */ maxGap?: number;
           /** Wrap the legend above the plot inside the caller's total chart height. Requires legend=true. */
           legendPlacement?: "top-start";
+          /**
+           * X values are instants (Unix ms): ticks land on round times in this zone, such as full hours or days,
+           * instead of decimal steps. `xAxis.format` still labels them; `xAxis.ticks` sets roughly how many.
+           */
+          timeAxis?: ChartTimeAxis;
         }
       : {}) &
     (K extends "stateTimeline"
       ? StateTimelineChartOptions
       : K extends "bar"
         ? BarChartOptions
-        : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+        : Omit<Parameters<(typeof chartRenderers)[K]>[0], "width" | "height" | "inspect">);
 }[ChartKind];
 
 /** Pure renderer options: component layout, events and inspection are configured elsewhere. */
@@ -181,9 +199,11 @@ export const renderChartSvg = (
     cursor: _cursor,
     zoomFocus: _zoomFocus,
     legendPlacement: _legendPlacement,
+    timeAxis: _timeAxis,
     ...opts
   } = props as ChartProps & {
     legendPlacement?: "top-start";
+    timeAxis?: ChartTimeAxis;
     interactive?: boolean;
     zoomFocus?: Pick<MapViewport, "latitude" | "longitude">;
   };
@@ -199,9 +219,13 @@ export const renderChartSvg = (
     );
   }
   if (kind === "bar") return responsiveChartSvg(renderBarChartSvg({ ...(opts as BarChartOptions), width, height, inspect: true }));
+  // A time axis needs an explicit X domain: it maps its round ticks onto the axis the renderer drew over it.
+  const timeAxis = props.kind === "line" ? props.timeAxis : undefined;
+  const timeDomain = timeAxis && props.kind === "line" ? lineTimeDomain(props) : undefined;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let svg = (charts[kind] as (o: unknown) => string)({
+  let svg = (chartRenderers[kind] as (o: unknown) => string)({
     ...(opts as any),
+    ...(timeDomain && props.kind === "line" ? { xAxis: { ...props.xAxis, domain: timeDomain, format: () => "" } } : {}),
     ...(props.kind === "line" && props.legend && props.legendPlacement === "top-start" ? { legend: false } : {}),
     ...(kind === "map" ? { viewport: DEFAULT_MAP_VIEWPORT } : {}),
     width,
@@ -212,8 +236,20 @@ export const renderChartSvg = (
     if (props.area || props.errorBand) throw new Error("Chart maxGap does not support area or errorBand fills");
     svg = lineGapsSvg(svg, props.maxGap, props);
   }
+  if (timeAxis && timeDomain && props.kind === "line")
+    svg = timeAxisSvg(svg, timeDomain, timeAxis, (props.xAxis?.ticks ?? 3) + 2, props.xAxis?.format);
   if (props.kind === "map") return responsiveMapSvg(svg, width, height, normalizeMapViewport(mapViewport ?? props.viewport));
   return preservesAspectRatio(kind) ? svg : responsiveChartSvg(svg);
+};
+
+/** The given X domain, or the span of the plotted instants. */
+const lineTimeDomain = (props: Extract<ChartProps, { kind: "line" }>): [number, number] | undefined => {
+  if (props.xAxis?.domain) return props.xAxis.domain;
+  const xs = props.series.flatMap((series) => series.data.map((point) => point.x)).filter(Number.isFinite);
+  if (!xs.length) return undefined;
+  const lo = Math.min(...xs),
+    hi = Math.max(...xs);
+  return lo < hi ? [lo, hi] : undefined;
 };
 
 const preservesAspectRatio = (kind: ChartKind) => kind === "map" || kind === "pie" || kind === "donut" || kind === "gauge";
@@ -241,7 +277,7 @@ const isEmpty = (props: ChartProps): boolean => {
   return false;
 };
 
-const Chart = (props: ChartProps): JSX.Element => {
+const ChartRoot = (props: ChartProps): JSX.Element => {
   const [, drawingProps] = splitProps(props, ["selected", "onSelect", "tooltip", "cursor"]);
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
@@ -693,4 +729,21 @@ const Chart = (props: ChartProps): JSX.Element => {
   );
 };
 
+export type ChartKindProps<K extends ChartKind> = Omit<Extract<ChartProps, { kind: K }>, "kind">;
+
+type ChartComponents = {
+  [Name in keyof typeof chartKinds]: (props: ChartKindProps<(typeof chartKinds)[Name]>) => JSX.Element;
+};
+
+// Add a renderer to charts/core/registry.ts; its key defines the namespace member and discriminator.
+// Both entry styles share ChartRoot, preserving the same owner, markup and reactive props.
+const chartComponent =
+  (kind: ChartKind) =>
+  (props: Omit<ChartProps, "kind">): JSX.Element =>
+    // Public namespace types correlate each discriminator with its options.
+    ChartRoot(mergeProps(props, { kind }) as ChartProps);
+const components = Object.fromEntries(
+  Object.entries(chartKinds).map(([name, kind]) => [name, chartComponent(kind)]),
+) as unknown as ChartComponents;
+const Chart = Object.assign(ChartRoot, components);
 export default Chart;

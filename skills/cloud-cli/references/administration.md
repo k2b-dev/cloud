@@ -10,6 +10,23 @@ inspect the relevant `nats`, `sync`, `apps status`, `capabilities`, `telemetry
 browser`, `retention show`, or app plugin command. Existing resource
 permissions still apply. No separate diagnostics grant is required.
 
+## Agent API keys
+
+```bash
+cld admin agents keys create "Release agent" --name automation
+cld admin agents keys create "Release agent" --name models --models --expires 2027-01-01T00:00:00Z
+cld admin agents keys list "Release agent"
+cld admin agents keys revoke "Release agent" <key-id> --yes
+```
+
+Use the agent's ID or exact name. Creation prints the token once; store stdout
+securely. New full keys act as their account; no scope flags are offered.
+Listing shows metadata and `full`, `models`, or `legacy, limited` access. Use
+`--page` and `--per-page` for pagination. Older keys keep their limits; issue a
+new key and revoke the old one to replace one. New OAuth clients from
+`cld admin agents create` include `admin`; existing clients are unchanged.
+Scopes never grant an administrator role or resource permissions.
+
 ## Settings and secrets
 
 ```bash

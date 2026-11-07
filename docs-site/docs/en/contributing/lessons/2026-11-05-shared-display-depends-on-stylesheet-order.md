@@ -1,0 +1,6 @@
+### The access dialog showed its "New" mark twice next to an app stylesheet
+
+- **What happened:** In the access dialog, a staged row showed its mark both beside the name and in the line below it. An Assistant browser test found it when it loaded the Assistant stylesheet after the global one.
+- **Root cause:** The two marks used `contents max-sm:hidden` and `contents sm:hidden`. Every app sheet repeats common utilities such as `contents` and `hidden` in the same `utilities` layer, and a media query adds no specificity. When the app sheet comes after the shared one, its `contents` overrides `max-sm:hidden`. Cloud pages link the app sheet first, so live pages were not affected, but many app browser fixtures append it after the shared sheet. The shared shell had the same pattern 12 more times, for example the rail's `hidden md:flex`.
+- **Error class:** A shared class list mixes a plain display utility with a breakpoint-scoped one, so its result depends on stylesheet order.
+- **Guard:** Convention UI-28 and the `breakpoint-display` check reject a plain display next to a breakpoint-scoped display in `packages/cloud/src` and `packages/ui/src`. `AccessDialog.browser.test.ts` loads an app-like sheet after the global one and counts one visible mark per staged row at 390 px and 1440 px.

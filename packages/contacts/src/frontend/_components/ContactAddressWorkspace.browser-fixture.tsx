@@ -54,6 +54,7 @@ export default function ContactAddressWorkspace(props: { scenario: Scenario }) {
             bookNames={{ team: "Kunden" }}
             writableBooks={writableBooks()}
             adminBookIds={[]}
+            memberBookIds={[]}
             currentUserId="user-1"
             showEmpty={false}
             initialFavoriteKeys={[]}

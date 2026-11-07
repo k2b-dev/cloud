@@ -76,7 +76,7 @@ export const createWorkflowWorker = (options: {
         },
       });
       // Repair missed hints, due deadlines and expired leases; execution wakes immediately.
-      timer = setInterval(wake, 5_000);
+      timer = setInterval(wake, 30_000);
       wake();
     },
     stop: async () => {

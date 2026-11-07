@@ -5,7 +5,7 @@ section: Automation
 order: 645
 description: Write an application's live updates in the transaction that makes the change and serve them to its open tabs over one socket.
 tags: [live, realtime, outbox, transactions, websocket]
-updated: 2026-10-09
+updated: 2026-10-31
 ---
 
 # Live updates
@@ -221,12 +221,12 @@ refused handshake would only reach the browser as a retryable `1012`.
 | Code | Cause |
 | --- | --- |
 | `login_required` | No credential, or the session or token has ended |
-| `forbidden_origin` | A session whose `Origin` differs from the origin of the `app.url` setting |
+| `forbidden_origin` | A cookie session with a missing, null or foreign `Origin`, or `Sec-Fetch-Site: same-site` or `cross-site`; a session Bearer with a foreign Origin |
 | `missing_scope` | An OAuth token without `read` (or `admin`), as on other read routes |
 
 Browsers send `Origin` with every socket, and the gateway forwards it. A
-socket without `Origin` comes from a client that is not a web page, and it is
-served like any other request with that credential.
+cookie-authenticated socket without `Origin` is refused too. Non-browser clients
+must send the canonical public Origin or use an explicit Bearer credential.
 
 An API key reads what the application's `authorize` allows for its scopes,
 as on the API.
@@ -370,6 +370,37 @@ topic.publish({ v: 1, k: "one", d: { type: "item.changed", itemId: "item" } });
 // … assert on `frames`, then
 engine.stop();
 ```
+
+### Prepare an app test database
+
+Before running app migrations or writing through restored app triggers, call
+`installLiveOutbox(db)` from `@k2b/cloud/events/testing` with your owned Bun
+`SQL` pool. It installs only `events.outbox`, its indexes and
+`events.enqueue()`, using the same DDL as Core. It creates no identity or
+other platform schemas.
+
+```ts
+import { SQL } from "bun";
+import { installLiveOutbox } from "@k2b/cloud/events/testing";
+
+const db = new SQL(testDatabaseUrl); // Your isolated app database, named *_test.
+try {
+  await installLiveOutbox(db);
+  // Run your app migrations, then exercise writes and database triggers.
+} finally {
+  await db.close();
+}
+```
+
+The helper checks `current_database()` on the transaction's connection before
+any DDL and rejects names without the literal `_test` suffix. Installation is
+transactional, repeatable, and uses Core's migration lock. Pass a pool, outside
+an existing transaction. The caller owns database cleanup and pool shutdown.
+
+Replace copied test outbox SQL with this setup call. Recreate test databases
+that used an incomplete copy: the installer follows Core's migration and does
+not repair arbitrary application-owned schema differences. Keep production
+startup on Core's migration; this helper is only for tests.
 
 A test may shorten the intervals and bounds in `LIVE_LIMITS`, such as the
 window size, and must restore them afterwards. An integration test that

@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-10-31
+updated: 2026-11-05
 ---
 
 # Define an application
@@ -88,7 +88,7 @@ See [SSR pages and routing](/en/docs/frontend/ssr-pages-and-routing).
 ## Keep the shell during page navigation
 
 Set `pageSwap: true` to swap `Layout` pages within the app. The default is
-`false`. The rail, phone tab bar, panel slot, and provider document stay mounted.
+`false`. The rail, panel slot, and provider document stay mounted.
 The next server page replaces the content column and its islands.
 
 `focusMode` pages and links to other apps load a document. So does a page
@@ -129,7 +129,7 @@ nav: {
 | `match` | No | `href` without its query | Path used for active navigation |
 | `requiresAuth` | No | — | Hide the link from anonymous visitors |
 | `requiresRoles` | No | — | Show the link, the application's [Help](/en/docs/platform/help#who-can-read-help), and its [Assistant Skills](/en/docs/platform/assistant-skills#who-can-use-an-app-skill) only for matching platform roles; `guest` matches guests |
-| `badge` | No | — | Route whose count the app bar, the phone bar, and the app grid show on the icon; see [Show a count on the app icon](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
+| `badge` | No | — | Route whose count the app bar and the app grid, also the phone's app menu, show on the icon; see [Show a count on the app icon](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 
 Navigation visibility is not authorization. Protect the destination with
 [route policies](/en/docs/identity/route-policies).
@@ -195,13 +195,16 @@ controls only visibility; routes and services still authorize. `badge` is an
 optional count route for the part's sidebar entry and tab, answered like
 `nav.badge`. `summary` is an optional route for the part's line on Start,
 answered with `{ "count": n, "text": "…" }`. Both must be below one of the
-app's own paths and may be the same route.
+app's own paths and may be the same route. `order` is an optional positive
+integer: parts with one come first, lowest first, before the parts sorted by
+name.
 
 `/pwa` is reserved. `defineApp()` throws at startup when `routes` lists `/pwa`
 or a path below it; the only exceptions are the Cloud app's own `/pwa` and
 Core's `/pwa/_auth`. It also throws when an application declares `pwa` with the
 id `pwa`, `settings`, or `offline`, or with an id that is not lowercase letters,
-digits, and hyphens starting with a letter.
+digits, and hyphens starting with a letter, or with an `order` that is not a
+positive integer.
 
 ## Add a standalone App-PWA
 
@@ -269,7 +272,7 @@ link text stays body ink, and only its underline takes the app ink. See
 [Colors and selection](/en/ui/surfaces/color).
 The accent also reaches dialogs and sheets opened from the app's pages,
 with no application code.
-Cyan is reserved for AI surfaces, so keep the accent and background colors
+Plum is reserved for AI surfaces, so keep the accent and background colors
 clearly apart from it; see
 [Colors and selection](/en/ui/surfaces/color#app-color-in-cloud).
 

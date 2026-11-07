@@ -154,6 +154,10 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
         return invalid(`pwa.${field}`, "a same-origin path below one of the app's routes");
       }
     }
+    const order = value.pwa.order;
+    if (order !== undefined && (typeof order !== "number" || !Number.isSafeInteger(order) || order < 1)) {
+      return invalid("pwa.order", "a positive integer");
+    }
   }
   if (value.widgets !== undefined) {
     if (

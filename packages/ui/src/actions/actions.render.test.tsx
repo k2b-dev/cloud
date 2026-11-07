@@ -766,6 +766,14 @@ describe("@k2b/ui complete action migrations", () => {
     expect(forced).not.toContain("<span>Copy value</span>");
   });
 
+  test("CopyButton with a visible label reserves the width of Copied and announces it", () => {
+    const html = renderToString(() => createComponent(CopyButton, { text: "value", iconOnly: false }));
+    // Both words share one cell; CSS draws the other one hidden, so it stays out of the text and the accessible name.
+    expect(html).toContain('<span class="k2b-copy-button__label" data-reserve="Copied"><span>Copy</span></span>');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).not.toContain("aria-label=");
+  });
+
   test("CopyButton reflects loading and disabled state on the button element", () => {
     const loading = renderToString(() =>
       createComponent(CopyButton, { text: "value", label: "Copy value", loading: true, loadingLabel: "Copying…" }),
@@ -903,7 +911,7 @@ describe("@k2b/ui complete action migrations", () => {
 
     const css = rule(".k2b-ui .k2b-button__busy");
     expect(css).toContain("position: absolute");
-    expect(rule(".k2b-ui .k2b-button:has(> .k2b-button__busy) > .k2b-button__label")).toContain("opacity: 0");
+    expect(rule(".k2b-ui .k2b-button > .k2b-button__label:has(+ .k2b-button__busy)")).toContain("opacity: 0");
   });
 
   test("gives every spotlight trigger variant a styled surface", () => {
@@ -1077,12 +1085,34 @@ describe("workspace head navigation", () => {
     count: index,
   }));
   test("overflow replaces the last slot with the current view at both levels", () => {
-    expect(viewTabsLayout(items, "7")).toEqual({ wide: [0, 1, 2, 3, 6], compact: [0, 1, 6], wideHidden: 3, compactHidden: 5 });
+    expect(viewTabsLayout(items, "7")).toEqual({ wide: [0, 1, 2, 3, 6], compact: [0, 1, 6], pinned: [], wideHidden: 3, compactHidden: 5 });
     expect(viewTabsLayout(items, "missing").wide).toEqual([0, 1, 2, 3, 4]);
-    expect(viewTabsLayout(items.slice(0, 2), "2")).toEqual({ wide: [0, 1], compact: [0, 1], wideHidden: 0, compactHidden: 0 });
-    expect(viewTabsLayout(items, "8", 2)).toEqual({ wide: [0, 7], compact: [0, 7], wideHidden: 6, compactHidden: 6 });
-    expect(viewTabsLayout([], undefined)).toEqual({ wide: [], compact: [], wideHidden: 0, compactHidden: 0 });
+    expect(viewTabsLayout(items.slice(0, 2), "2")).toEqual({ wide: [0, 1], compact: [0, 1], pinned: [], wideHidden: 0, compactHidden: 0 });
+    expect(viewTabsLayout(items, "8", 2)).toEqual({ wide: [0, 7], compact: [0, 7], pinned: [], wideHidden: 6, compactHidden: 6 });
+    expect(viewTabsLayout([], undefined)).toEqual({ wide: [], compact: [], pinned: [], wideHidden: 0, compactHidden: 0 });
     for (const max of [0, -1, NaN, Infinity]) expect(viewTabsLayout(items, "7", max).wide).toContain(6);
+  });
+  test("a pinned view takes no overflow slot and stays after More at every level, also while it is current", () => {
+    const withPinned = [...items.slice(0, 7), { ...items[7]!, pinned: true, badge: "New" }];
+    expect(viewTabsLayout(withPinned, "2")).toEqual({
+      wide: [0, 1, 2, 3, 4],
+      compact: [0, 1, 2],
+      pinned: [7],
+      wideHidden: 2,
+      compactHidden: 4,
+    });
+    expect(viewTabsLayout(withPinned, "8")).toEqual({
+      wide: [0, 1, 2, 3, 4],
+      compact: [0, 1, 2],
+      pinned: [7],
+      wideHidden: 2,
+      compactHidden: 4,
+    });
+    const html = renderToString(() => createComponent(ViewTabs, { label: "Views", items: withPinned, current: "8" }));
+    expect([...html.matchAll(/data-view-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(["1", "2", "3", "4", "5", "8"]);
+    expect(html.indexOf('data-view-tab="8"')).toBeGreaterThan(html.indexOf("k2b-view-tabs__more"));
+    expect(html).toMatch(/class="k2b-view-tabs__badge"[^>]*>New</);
+    expect(html).toMatch(/href="\?view=8" aria-current="page"/);
   });
   test("SSR renders ordinary view links and both CSS overflow levels", () => {
     const html = renderToString(() => createComponent(ViewTabs, { label: "Views", items, current: "7", class: "custom" }));

@@ -103,7 +103,7 @@ describe("@k2b/ui intl browser behavior", () => {
 
     const input = dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!;
     // Raw editable text: locale decimal separator, never grouping.
-    expect(input.value).toBe("1234,5");
+    expect(input.value).toBe("1234,50");
 
     input.focus();
     input.value = "3.14";
@@ -129,9 +129,108 @@ describe("@k2b/ui intl browser behavior", () => {
     expect(changes.at(-1)).toBe(-2.5);
     input.blur();
     expect(commits.at(-1)).toBe(-2.5);
-    expect(input.value).toBe("-2,5");
+    expect(input.value).toBe("-2,50");
 
     dispose();
+    dom.cleanup();
+  });
+
+  test("NumberInput pads on blur without moving the caret or emitting another change", async () => {
+    const dom = createDomTestHarness();
+    const { NumberInput } = await import("../src/inputs/NumberInput");
+    const changes: Array<number | null> = [];
+    const commits: Array<number | null> = [];
+    const [value, setValue] = createSignal<number | null>(321.4);
+    const [locale, setLocale] = createSignal("de");
+    const [precision, setPrecision] = createSignal(2);
+    const dispose = render(
+      () =>
+        createComponent(NumberInput, {
+          value,
+          step: 0.01,
+          get decimalPlaces() {
+            return precision();
+          },
+          get locale() {
+            return locale();
+          },
+          onValueChange: (next) => {
+            changes.push(next);
+            setValue(next);
+          },
+          onValueCommit: (next) => commits.push(next),
+        }),
+      dom.root,
+    );
+    const input = dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!;
+    expect(input.value).toBe("321,40");
+    expect(changes).toEqual([]);
+    input.focus();
+    input.value = "321,4";
+    input.setSelectionRange(3, 3);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(input.value).toBe("321,4");
+    expect(input.selectionStart).toBe(3);
+    input.blur();
+    expect(input.value).toBe("321,40");
+    expect(changes).toEqual([321.4]);
+    expect(commits).toEqual([321.4]);
+    input.focus();
+    input.blur();
+    expect(changes).toEqual([321.4]);
+    setLocale("en");
+    expect(input.value).toBe("321.40");
+    setPrecision(3);
+    expect(input.value).toBe("321.400");
+    setValue(1.23456);
+    expect(input.value).toBe("1.235");
+    expect(changes).toEqual([321.4]);
+    setValue(null);
+    expect(input.value).toBe("");
+    dispose();
+    dom.cleanup();
+  });
+
+  test("NumberInput round-trips padded negatives, zero, integer precision and large values", async () => {
+    const dom = createDomTestHarness();
+    const { NumberInput } = await import("../src/inputs/NumberInput");
+    for (const [initial, precision, text] of [
+      [-321.4, 2, "-321,40"],
+      [0, 2, "0,00"],
+      [42, 0, "42"],
+      [1234567890123.5, 2, "1234567890123,50"],
+      [1e21, 2, "1000000000000000000000,00"],
+      [1e21, 0, "1000000000000000000000"],
+    ] as const) {
+      const changes: Array<number | null> = [];
+      const commits: Array<number | null> = [];
+      const [value, setValue] = createSignal<number | null>(initial);
+      const dispose = render(
+        () =>
+          createComponent(NumberInput, {
+            value,
+            locale: "de",
+            decimalPlaces: precision,
+            step: precision === 0 ? 1 : 0.01,
+            onValueChange: (next) => {
+              changes.push(next);
+              setValue(next);
+            },
+            onValueCommit: (next) => commits.push(next),
+          }),
+        dom.root,
+      );
+      const input = dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!;
+      expect(input.value).toBe(text);
+      input.focus();
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.blur();
+      expect(value()).toBe(initial);
+      expect(input.value).toBe(text);
+      expect(changes).toEqual([initial]);
+      expect(commits).toEqual([initial]);
+      dispose();
+    }
     dom.cleanup();
   });
 

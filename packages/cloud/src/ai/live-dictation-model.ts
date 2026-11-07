@@ -20,6 +20,7 @@ export const resolveLiveDictationModel = async (subject: AccessSubject | null): 
   const profile = state.profiles.find((profile) => profile.id === id);
   if (
     !profile?.enabled ||
+    profile.dataBoundary === "restricted" ||
     profile.provider !== "vllm-realtime" ||
     !profile.baseURL ||
     profile.capabilities.length !== 1 ||

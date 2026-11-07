@@ -164,7 +164,7 @@ and checked cards.
 | Keyboard-active or selected option | `Select`, `Combobox`, `MultiSelectInput` | `k2b-choice-option` |
 | Checked choice chip in a field or picker filter | `ChoiceChips`, `Select` | `k2b-choice-groups` |
 | Chosen tile with a preview | `ChoiceTiles` | `k2b-choice-tiles` |
-| Chosen row with its sentence | `ChoiceList` | `k2b-choice-list` |
+| Chosen card with its sentence | `ChoiceList` | `k2b-choice-list` |
 | Chosen icon of a few | `IconChoices` | `k2b-icon-choices` |
 | Keyboard-active suggestion | `AutocompleteEditor` | `k2b-autocomplete` |
 | Current page | `Pagination` | `k2b-pagination` |
@@ -175,6 +175,15 @@ and checked cards.
 | Pressed formatting tool | `MarkdownEditor` | `k2b-markdown-editor` |
 | Selected table size | `TableSizePicker` | `k2b-ste-size-row` |
 | Enabled table header | `TextEditor` | `k2b-ste-header-choice` |
+
+Choice cards (`ChoiceList` and `CheckboxCard`) are cards on the field edge:
+a 2 px grey edge at rest, `--k2b-edge-hover-bg` on hover, and a strong blue
+`--k2b-edge-focus` edge on focus, also when chosen. A chosen or checked card
+mixes `--k2b-edge-selected-share` of `--k2b-action` into its edge and
+`--k2b-edge-selected-fill` into its fill (`--k2b-edge-selected-hover-fill` on
+hover), in platform blue like the radio or checkbox inside it. An invalid
+checkbox card has the `--k2b-edge-danger` edge; a disabled card has no edge on
+`--k2b-surface-muted`. Only colours change, so no card or text moves.
 
 `TextEditor` and `TableSizePicker` use the optional `@k2b/ui/text-editor`
 entry point. The header switch is a checked menu control; it is not a drop
@@ -228,7 +237,7 @@ A person has one color wherever they appear: the tint behind their avatar
 initials, their cursor in a shared text, and the passages they comment on.
 `personColor(name)` returns it from the display name, and `Avatar` uses the
 same palette (`PERSON_COLORS`), so build person colors from it instead of a
-second palette. The palette has no cyan, which means AI, and no yellow, which
+second palette. The palette has no plum, which means AI, and no yellow, which
 reads as a text highlight. Two people can share a color, so the name always
 appears next to it.
 
@@ -242,11 +251,12 @@ six-digit accent works. See
 [Define an application](/en/docs/build/define-app#set-the-application-appearance) and
 [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#keep-color-roles-independent).
 
-Cyan means AI. `--k2b-ai-accent` marks AI surfaces, which also carry ✦ or the
+Plum means AI. `--k2b-ai-accent` (`#8e1b6f` light, `#f0abdc` dark) and
+`--k2b-ai-surface` mark AI surfaces, which also carry ✦ or the
 word "KI", so no app color may look like it: keep the accent and every
 background stop at least 20° of OKLCH hue away from both AI accents. Near-gray
 colors carry no hue and are fine. Only the Assistant, the AI app itself, may
-use cyan. In the Cloud repository the `ai-color` check enforces this for every
+use plum. In the Cloud repository the `ai-color` check enforces this for every
 built-in app and for the launchpad's fallback tile colors.
 
 ## Import

@@ -175,6 +175,32 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
     }, 30_000);
   }
 
+  test("a file's glyph stays centred in its tile while the tile stands on the section's text edge", async () => {
+    const page = await load(1440, "light");
+    try {
+      const offsets = await page.locator(".att .k2b-file-type-icon").evaluateAll((tiles) =>
+        tiles.map((tile) => {
+          const box = tile.getBoundingClientRect();
+          const glyph = tile.querySelector("i")!.getBoundingClientRect();
+          const preview = tile.closest(".k2b-file-grid__preview")!.getBoundingClientRect();
+          return {
+            x: glyph.left + glyph.width / 2 - (box.left + box.width / 2),
+            y: glyph.top + glyph.height / 2 - (box.top + box.height / 2),
+            edge: box.left - preview.left,
+          };
+        }),
+      );
+      expect(offsets).toHaveLength(5);
+      for (const { x, y, edge } of offsets) {
+        expect(Math.abs(x)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(y)).toBeLessThanOrEqual(0.5);
+        expect(edge).toBe(0);
+      }
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("with a mouse, row actions show on hover and focus inside the row's surface without moving anything", async () => {
     const page = await load(1440, "light");
     try {

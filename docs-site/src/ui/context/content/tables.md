@@ -35,7 +35,7 @@ import {
 
 ## Rows and columns
 
-Each column has a stable `id`, a `header`, and usually a `value` key or function. Numeric values align right by default. `renderCell` and `renderHeader` customize presentation without changing the underlying row model.
+Each column has a stable `id`, a `header`, and usually a `value` key or function. Numeric values align right by default, with tabular figures, and the default renderer formats numbers and bigints in the inherited locale (`48.210` in German, `48,210` in English; at most three decimals). Identifiers that are numbers, such as ports, years, or Unix IDs, are no quantities: pass them as strings or render them in `renderCell` so they keep their digits unchanged. `renderCell` and `renderHeader` customize presentation without changing the underlying row model.
 
 The default cell wrapper keeps every value on one line and truncates it.
 With `cellContentClass`, values can wrap, and a column's `nowrap` decides:

@@ -18,25 +18,25 @@ const rules = {
   assistant: "signedIn",
   capabilities: "signedIn",
   chat: "signedIn",
-  contacts: "signedIn",
+  contacts: "noGuests",
   dashboard: "signedIn",
   faq: "signedIn",
   filesv2: "signedIn",
   "gateway-ops": "roles",
-  grids: "signedIn",
+  grids: "noGuests",
   "ipa-hosts": "roles",
-  mail: "signedIn",
+  mail: "noGuests",
   notebooks: "signedIn",
   oauth: "roles",
   "proxy-auth": "roles",
-  pulse: "signedIn",
+  pulse: "noGuests",
   pwa: "signedIn",
   quotes: "signedIn",
-  spaces: "signedIn",
+  spaces: "noGuests",
   tools: "signedIn",
-  venue: "signedIn",
+  venue: "noGuests",
   weather: "signedIn",
-} satisfies Record<string, "signedIn" | "roles">;
+} satisfies Record<string, "signedIn" | "noGuests" | "roles">;
 const apps: AppMeta[] = await Promise.all(
   appIds()
     .filter((id) => id !== "gateway")
@@ -151,6 +151,7 @@ const publicPaths: Record<string, string[]> = {
     "/open/notebooks.notebook/~fixture",
     "/api/resources/resolve",
     "/api/_internal/ip-country",
+    "/api/_internal/geo/v1/autocomplete",
     "/api/_internal/identity/v1/invoke",
     "/api/_internal/identity/v1/invoke-child",
     "/api/_internal/ai/code/execute",
@@ -275,6 +276,7 @@ const protectedPaths: Record<string, string[]> = {
     "/api/admin/identity",
     "/api/ai/tasks",
     "/api/_internal/identity/v1/other",
+    "/api/_internal/geo/v1/autocomplete/other",
     "/api/_internal/identity/v1/oauth/private",
     "/api/_internal/identity/v1/oauth/jwks/private",
     "/api/capabilities/v1/streams/other",
@@ -335,15 +337,24 @@ test("every workspace built-in declares an intentional fixed policy; gateway rem
 
 for (const app of apps)
   describe(`${app.id} access migration`, () => {
-    const adminOnly = Object.entries(rules).some(([id, kind]) => id === app.id && kind === "roles");
+    const rule = Object.entries(rules).find(([id]) => id === app.id)?.[1];
+    const adminOnly = rule === "roles";
+    // Apps whose pages were already closed to guests close API and CLI to them too.
+    const noGuests = rule === "noGuests";
     test("requires resolved identity and preserves supported person and service-account categories", async () => {
-      expect(app.access?.kind).toBe(adminOnly ? "roles" : "signedIn");
+      expect(app.access?.kind).toBe(rule);
       if (adminOnly) expect(app.access).toMatchObject({ roles: ["admin"] });
       expect(await canUseApp(null, app)).toBe(false);
       expect(await canUseApp(person(["user", "admin"]), app)).toBe(true);
-      for (const authority of [person(), person(["guest"], true), person([], true), person(["user"], false, true)]) {
-        expect(await canUseApp(authority, app)).toBe(!adminOnly);
-        expect((await discoverableApps(authority, [app])).length).toBe(adminOnly ? 0 : 1);
+      for (const [authority, guest] of [
+        [person(), false],
+        [person(["guest"], true), true],
+        [person([], true), true],
+        [person(["user"], false, true), false],
+      ] as const) {
+        const allowed = !adminOnly && !(noGuests && guest);
+        expect(await canUseApp(authority, app)).toBe(allowed);
+        expect((await discoverableApps(authority, [app])).length).toBe(allowed ? 1 : 0);
       }
       for (const kind of ["standalone", "agent", "resource_bound"] as const) {
         expect(await canUseApp(service(app.id, kind), app)).toBe(!adminOnly);

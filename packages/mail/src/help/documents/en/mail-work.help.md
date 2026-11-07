@@ -15,7 +15,7 @@ To narrow the search, use the search-in button. Choose any combination of **Send
 
 **Place** starts at **Whole mailbox**. If you started in a folder, choose that folder to search only there. After you open search with the magnifier or `/`, clearing or deleting the text restores the starting view and keeps the field open. **Reset**, **Cancel**, or Escape returns to the view where you started; closing an open options menu with Escape leaves search open until you press Escape again.
 
-For more conditions, such as dates, recipients, attachments, folders, tags, or collaboration state, choose **Search filters**.
+For more conditions, such as dates, recipients, attachments, folders, tags, or collaboration state, choose **More filters**. On a phone, **Search in**, **Place**, and **More filters …** share one menu, and its button names the current choice, such as **Everything · Whole mailbox**.
 
 The filter dialog shows the current search as conditions that you can edit. Choose **Add filter** for another field. When several filters are active, choose whether all filters or any filter must match. **Advanced conditions** stays collapsed until you need alternative or nested groups.
 
@@ -53,7 +53,7 @@ When extracted attachment text matches, the result names the attachment and show
 
 ## Use follow-up, assignment, and folders for different purposes {icon="layout-list"}
 
-The view tabs in the head show what happens next and who owns the work. Open **More** for Later, Done, Recent activity, Kept, and saved views. Except for **Done**, these views leave out conversations that are only in Trash or Junk. Examples are spam that your provider filed there, or mail that someone deleted. When you move such a conversation back, it appears again with its next step.
+The view tabs in the head show what happens next and who owns the work. Views that do not fit the head, such as Later, Done, Recent activity, Kept, or saved views, are under **More**. Except for **Done**, these views leave out conversations that are only in Trash or Junk. Examples are spam that your provider filed there, or mail that someone deleted. When you move such a conversation back, it appears again with its next step.
 
 | Place | View | What it shows |
 | --- | --- | --- |
@@ -108,12 +108,12 @@ To act on several conversations, select their checkboxes. Hold **Shift** while y
 - **Partial result:** If Mail can queue only some commands, it keeps the failed conversations selected and reports each failure.
 :::
 
-Choose **Assign** to change the assignees of the selected conversations. Choose **Assign to me**, **Remove me**, or **Remove all assignees**, or search for a person, agent, or standalone service account that can be assigned. A person that you add joins the other assignees and receives one notification for the whole selection. Mail confirms how many conversations changed and offers **Undo**. **Undo** reverses the change only in the conversations that it changed. **Remove all assignees** has no **Undo**. If a conversation no longer belongs to the mailbox, Mail says how many conversations did not change.
+Choose **Assign** to change the assignees of the selected conversations. Choose **Assign to me**, **Remove me**, or **Remove all assignees**, or search for a person or agent that can be assigned. A person that you add joins the other assignees and receives one notification for the whole selection. Mail confirms how many conversations changed and offers **Undo**. **Undo** reverses the change only in the conversations that it changed. **Remove all assignees** has no **Undo**. If a conversation no longer belongs to the mailbox, Mail says how many conversations did not change.
 
 ### Work from Needs action
 
 We recommend **Needs action** as your inbox. Use folders for filing; filing and archiving change no work status.
-To empty the Inbox in other mail clients too, also choose **Archive**. Archive does not mark **Done**.
+To empty the Inbox in other mail clients too, also choose **Archive** in the conversation's **…** menu. Archive does not mark **Done**.
 
 - **Personal mailbox:** Work from **Needs action**. Use automations to mark noise **Done** and file it. Mark finished work **Done**.
   **Waiting for reply** follows a confirmed human reply automatically. Use **Show later** for date-dependent work.
@@ -138,13 +138,15 @@ A quick look never marks a conversation as read, never creates a summary, and ne
 
 ## Read a complete thread {icon="route"}
 
-The reader keeps its subject above the messages while you scroll. The message count appears on wider screens. Use its first button to hide or show the list on a wide screen. On a phone, Back returns to the list and its workspace head.
+The reader keeps its subject above the messages while you scroll. The message count appears on wider screens. When no list stands beside the reader, **×** at the end of its toolbar and Esc return to the list. The list is where you left it, and the conversation you had open has the focus. On a phone, Back returns to the list and its workspace head.
 
-Choose a conversation row to open its thread. Each message has its own sender, recipients, date, body, and attachments. Expand an older message when you need its full content.
+Choose a conversation row to open its thread. Each message has its own sender, recipients, date, body, and attachments. Expand an older message when you need its full content. An open message shows its attachments above its text: the number, the first three files with a preview or their type, and **Show all**. A collapsed message shows the number of its attachments next to its date. Images that the text already shows are not in the list.
 
 An optional conversation summary appears in a highlighted card above the messages. To keep it current with Markdown formatting, use **Edit summary** or **More conversation actions → Create summary**. Summaries are shared Mail context, and an automation can also update them.
 
 If the conversation has unfinished drafts, the Reply action shows an indicator. Open **Conversation details** to see who created the newest draft and when it changed. You can continue it there.
+
+In a mailbox that several people use, **Here now** at the top of Conversation details shows who has the conversation open and who is writing a reply. With access to the whole mailbox, **More about this conversation** › **Access** lists who has access and with which role. People who see only their assigned conversations do not see that list.
 
 Conversation details also shows a small **Related mail** section for the conversation as a whole. Mail ranks other conversations from the same mailbox that share an external participant or the same normalized subject. Each result shows why it matches. The **Related Mail** action on a Contact card is different: it opens an exact search for that one participant. Neither feature finds similar mail from message bodies, attachments, or calendar events.
 
@@ -154,7 +156,7 @@ By default, Mail shows the HTML version of a message and adapts its colors to da
 
 HTML messages keep a limited set of layout, typography, color, spacing, and table styles. Scripts, forms, embedded objects, external stylesheets, and other active content are removed. Remote images stay blocked separately until you choose to load them.
 
-Mail collapses the quoted history of earlier messages. Choose **Show quoted text** to expand it and **Hide quoted text** to collapse it again. An expanded quote stays open while new activity or other live updates arrive.
+Mail collapses the quoted history of earlier messages at the end of a message. Choose **Show quoted text** to expand it and **Hide quoted text** to collapse it again. Quotes between the lines of a reply and forwarded messages stay visible. An expanded quote stays open while new activity or other live updates arrive.
 
 The top actions take the conversation out of the folder that you view, such as Inbox. This also applies when your newest reply is stored in Sent. In views that span folders, such as **All mail** or **Needs action**, they take it out of every folder where it is filed. Your copies in Sent and Drafts stay where they are, and so do messages in Junk, Trash, or the **All Mail** folder of Gmail. The exception is a conversation that is only there.
 
@@ -200,7 +202,7 @@ Another Cloud app can keep a reference to a conversation or a message. To give i
 
 Mail confirms the copy. Paste the Cloud ID into the other app. It is a link such as `https://cloud.example.com/open/mail.message/~Ab12Cd`, and it opens the mail. The Cloud ID gives no access: the other app shows the mail only to people who can open it in Mail.
 
-A right-click in the conversation opens the same menu as its **…** button. A right-click on a message opens the menu of that message. Links, text fields, the body of an HTML message, and selected text keep the menu of the browser, so you can copy text as usual. With the keyboard, press Shift+F10 or the context menu key.
+A right-click on a conversation in the list, or in the open conversation, opens the same menu as its **…** button. The menu starts with **Reply** and **Reply in new window**. A right-click on a message opens the menu of that message. Links, text fields, the body of an HTML message, and selected text keep the menu of the browser, so you can copy text as usual. With the keyboard, press Shift+F10 or the context menu key.
 
 ## Keep conversations that must not be deleted {icon="lock"}
 
@@ -286,7 +288,7 @@ For composing, drafts, attachments, signatures, and delivery options, see [Write
 
 ## Create reusable views and local tags {icon="layout-list"}
 
-Open **… → Settings → Organization** to create a saved view from folder and collaboration filters. Open saved views under **More** in the head. A view can filter by folder, assignee, next step, local tag, and whether the conversation is in **Later**. A filter for conversations without an assignee works like **Unassigned**: it also finds conversations whose assignees can no longer work on them.
+Open **… → Settings → Organization** to create a saved view from folder and collaboration filters. Saved views are tabs in the head, under **More** when the head has no room for them. A view can filter by folder, assignee, next step, local tag, and whether the conversation is in **Later**. A filter for conversations without an assignee works like **Unassigned**: it also finds conversations whose assignees can no longer work on them.
 
 - **Only me** creates a private view.
 - **Everyone with mailbox access** creates a mailbox view and requires **Edit** access.

@@ -58,7 +58,7 @@ describe("user actions", () => {
   beforeEach(async () => {
     dom = createDomTestHarness();
     ({ prompts } = await import("@k2b/ui"));
-    spyOn(navigation, "refreshCurrentPath").mockImplementation(() => {});
+    spyOn(navigation, "swapPage").mockResolvedValue();
   });
   afterEach(() => {
     unmount();

@@ -7,7 +7,9 @@ import {
   ACTIVE_HEADING_EVENT,
   PRESENCE_EVENT,
   PRESENCE_LOCATIONS_EVENT,
+  PRESENCE_STATUS_EVENT,
   type PresenceLocationsEventDetail,
+  type PresenceStatusEventDetail,
   SYNC_STATE_EVENT,
 } from "./events";
 import NotebookDetailPanel from "./NotebookDetailPanel.island";
@@ -19,6 +21,7 @@ import type { TocItem } from "./toc";
  */
 export type DetailPanelHarness = {
   presence: (count: number) => void;
+  presenceStatus: (status: PresenceStatusEventDetail["status"]) => void;
   offline: (on: boolean) => void;
   heading: (id: string | null) => void;
 };
@@ -145,15 +148,18 @@ const locations: PresenceLocationsEventDetail = {
   [LENA]: { writing: false, headingId: null, headingText: null },
 };
 
+const presenceStatus = (status: PresenceStatusEventDetail["status"]) =>
+  window.dispatchEvent(new CustomEvent<PresenceStatusEventDetail>(PRESENCE_STATUS_EVENT, { detail: { status } }));
 const presence = (count: number) => {
   const others = everyone.filter((person) => person.userId !== ME).slice(0, count);
+  presenceStatus("live");
   window.dispatchEvent(new CustomEvent(PRESENCE_EVENT, { detail: [...others, everyone.at(-1)!] }));
   window.dispatchEvent(new CustomEvent(PRESENCE_LOCATIONS_EVENT, { detail: locations }));
 };
 const offline = (on: boolean) =>
   window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail: { connected: !on, lastSavedAt: on ? minutesAgo(6) : null } }));
 const heading = (id: string | null) => window.dispatchEvent(new CustomEvent(ACTIVE_HEADING_EVENT, { detail: { id } }));
-window.harness = { presence, offline, heading };
+window.harness = { presence, presenceStatus, offline, heading };
 
 const title =
   state === "longtitle"
@@ -235,6 +241,33 @@ render(
                   ]
                 : []
             }
+            relations={
+              empty
+                ? { outgoing: [], tags: [] }
+                : {
+                    outgoing: many
+                      ? [
+                          {
+                            noteId: "n5",
+                            title: "Lagerplätze",
+                            notebookId: "book01",
+                            notebookName: "Handbuch Logistik",
+                            updatedAt: minutesAgo(60),
+                          },
+                          {
+                            noteId: "n6",
+                            title: "Glossar",
+                            notebookId: "book01",
+                            notebookName: "Handbuch Logistik",
+                            updatedAt: minutesAgo(90),
+                          },
+                        ]
+                      : [],
+                    tags: many ? ["wareneingang", "kühlkette", "rampe", "schulung"] : ["wareneingang"],
+                  }
+            }
+            accessVisible={state !== "publiclink"}
+            canManageAccess={state !== "readonly"}
             currentNotebookId="book01"
             notebookId="book01"
             noteId="note01"

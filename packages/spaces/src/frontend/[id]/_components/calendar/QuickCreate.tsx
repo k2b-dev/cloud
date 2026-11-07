@@ -134,6 +134,7 @@ export default function QuickCreate(props: {
         ]
       : []),
   ];
+  let createAttempt: { input: string; key: string } | undefined;
   const [error, setError] = createSignal("");
   const [submitting, setSubmitting] = createSignal(false);
 
@@ -217,6 +218,9 @@ export default function QuickCreate(props: {
           : { location: draft.location, url: draft.url }),
       } satisfies Partial<ItemFormData>);
     }
+    const input = JSON.stringify(data);
+    if (createAttempt?.input !== input) createAttempt = { input, key: crypto.randomUUID() };
+    data.requestKey = createAttempt.key;
     setSubmitting(true);
     try {
       props.onCreated(await createSpaceItem(props.spaceId, data, t.createItemFailed));

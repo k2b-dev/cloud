@@ -25,6 +25,7 @@ Use `prompts.form` for a small form. Use `prompts.dialog` for a simple picker. U
 import {
   Button,
   confirmDiscardIfDirty,
+  type DialogTone,
   dialogCore,
   PanelDialog,
   panelDialogFixedOptions,
@@ -135,6 +136,38 @@ be direct or an accessor; the application updates it through `onValueChange`.
 Between header and body the tabs share the dialog's horizontal inset; inside
 the body or a section they start at the content edge.
 
+## Tone
+
+Set `tone` to `success`, `warning`, or `danger` when the dialog reports an
+outcome or a risk and stays a normal dialog, for example an invoice that was
+created and can now be printed or sent. The dialog frame gets a 2 px edge in
+the tone's colour, drawn inside the frame: the frame keeps its size and
+nothing in it moves. The header shows the tone's icon (a check, a warning
+triangle, or a stop sign) in the tone's colour instead of its own `icon`, and
+screen readers hear the tone ("Success", "Warning", or "Caution" from the
+inherited locale) as the dialog's description. The heading keeps exactly its
+title, so its accessible name does not change. Each edge colour keeps 3:1 against the
+dialog surface in both themes.
+
+The tone belongs to the dialog's moment, not its content: use it for the
+result of an action or for a consequential decision, not to decorate an
+ordinary editor. Prompts carry the same tone through their `variant`; see
+[Prompts](/en/ui/feedback/prompts). A toned dialog with an untoned dialog
+stacked above it shows only the upper one's frame. A `floating` panel draws
+the edge on its own frame.
+
+```tsx
+<PanelDialog tone="success">
+  <PanelDialog.Header title="Invoice RE-2026-0142 created" subtitle="Mueller Antik GmbH" close={() => close()} />
+  <PanelDialog.Body>…</PanelDialog.Body>
+  <PanelDialog.Footer>
+    <Button variant="secondary" onClick={print}>Print</Button>
+    <Button variant="secondary" onClick={send}>Send by email</Button>
+    <Button onClick={() => close()}>Done</Button>
+  </PanelDialog.Footer>
+</PanelDialog>
+```
+
 ## Close ownership
 
 Header and footer sit flat on the dialog surface: no grey band and no divider
@@ -175,8 +208,10 @@ dismissal entirely.
 ```ts
 type PanelDialogSurface = "contained" | "floating";
 
+type DialogTone = "success" | "warning" | "danger";
+
 type PanelDialogProps = {
-  children: JSX.Element; surface?: PanelDialogSurface;
+  children: JSX.Element; surface?: PanelDialogSurface; tone?: DialogTone;
 };
 
 type PanelDialogHeaderProps = {

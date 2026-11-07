@@ -108,6 +108,7 @@ suite("mail baseline schema", () => {
   test("adds tables and indexes created after the baseline to a database installed before them", async () => {
     await migrate();
     await sql`DROP TABLE mail.personal_mailbox_preferences`;
+    await sql`DROP TABLE mail.personal_preferences`;
     await sql`DROP INDEX mail.message_contents_hydration_claim_idx`;
     await sql`DROP INDEX mail.sync_runs_resource_not_completed_idx`;
     await sql`ALTER TABLE mail.outbox_submissions DROP COLUMN sent_copy_pending`;
@@ -117,6 +118,7 @@ suite("mail baseline schema", () => {
     const [shape] = await sql<
       {
         table_exists: boolean;
+        personal_preferences_exists: boolean;
         claim_index_exists: boolean;
         sync_run_state_index_exists: boolean;
         sent_copy_index_exists: boolean;
@@ -129,6 +131,7 @@ suite("mail baseline schema", () => {
     >`
       SELECT
         to_regclass('mail.personal_mailbox_preferences') IS NOT NULL AS table_exists,
+        to_regclass('mail.personal_preferences') IS NOT NULL AS personal_preferences_exists,
         to_regclass('mail.message_contents_hydration_claim_idx') IS NOT NULL AS claim_index_exists,
         to_regclass('mail.sync_runs_resource_not_completed_idx') IS NOT NULL AS sync_run_state_index_exists,
         to_regclass('mail.outbox_sent_copy_pending_idx') IS NOT NULL AS sent_copy_index_exists,
@@ -156,6 +159,7 @@ suite("mail baseline schema", () => {
     // Compatible additions leave the baseline and the existing compatibility marker unchanged.
     expect(shape).toEqual({
       table_exists: true,
+      personal_preferences_exists: true,
       claim_index_exists: true,
       sync_run_state_index_exists: true,
       sent_copy_index_exists: true,

@@ -337,6 +337,28 @@
         "Handles 429 and Retry-After while preserving per-app and shared operational budgets.",
         "Keeps person-owned resource operations under an interactive identity or mandate."
       ]
+    },
+    {
+      "id": 29,
+      "prompt": "A native POST form in our standalone Cloud app gets INVALID_ORIGIN, while a signed webhook must accept external calls. Explain and implement both using the platform contracts.",
+      "expected_output": "Uses the mandatory app.start session-origin boundary, keeps browser mutations on the canonical public origin, preserves Origin for native forms, and declares only the independently authenticated webhook path sessionless.",
+      "files": [],
+      "expectations": [
+        "Reads the current route-policies guide and treats the platform guard as the default for built-in and third-party apps.",
+        "Browser mutations with session_token or pwa_session require the exact stored app.url origin; missing, null, foreign and same-site sibling origins fail before body parsing.",
+        "Native same-origin POST forms use a same-origin Referrer-Policy, while fetch mutations keep their browser-supplied Origin.",
+        "The webhook validates its own credential and its narrow sessionlessRoutes declaration strips attached Cloud session cookies; publicRoutes alone grants no exception.",
+        "Does not disable the guard, substitute Host or Referer, or grant a Bearer request fallback authority from a browser cookie."
+      ]
+    },
+    {
+      "id": 30,
+      "prompt": "Prepare a standalone Cloud app test database whose triggers call events.enqueue, without running Core.",
+      "expected_output": "Uses installLiveOutbox(db) from @k2b/cloud/events/testing before app migrations, refuses non-_test databases, and removes copied outbox DDL.",
+      "files": [],
+      "expectations": [
+        "Uses installLiveOutbox(db) from @k2b/cloud/events/testing before app migrations, refuses non-_test databases, and removes copied outbox DDL."
+      ]
     }
   ]
 }

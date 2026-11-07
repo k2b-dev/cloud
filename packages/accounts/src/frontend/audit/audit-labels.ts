@@ -6,6 +6,7 @@ const actionSections = [
     label: "users",
     entries: [
       ["accounts.user.create", "createUserAudit", "ti ti-user-plus"],
+      ["accounts.user.reactivate", "reactivateUserAudit", "ti ti-user-check"],
       ["accounts.user.update", "updateUserAudit", "ti ti-user-edit"],
       ["accounts.user.password_reset", "resetPasswordAudit", "ti ti-key"],
       ["accounts.user.set_expiry", "setExpiryAudit", "ti ti-calendar-due"],

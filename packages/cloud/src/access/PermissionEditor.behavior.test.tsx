@@ -35,21 +35,21 @@ const installPopoverApi = (dom: DomTestHarness) => {
 const labels = {
   en: {
     agent: "Agent",
-    standalone: "Service account",
-    resource_bound: "Resource-bound service account",
-    user_delegated: "User-bound service account",
+    standalone: "Agent (API key only)",
+    resource_bound: "API key",
+    user_delegated: "Personal",
   },
   de: {
     agent: "Agent",
-    standalone: "Dienstkonto",
-    resource_bound: "Ressourcengebundenes Dienstkonto",
-    user_delegated: "Benutzergebundenes Dienstkonto",
+    standalone: "Agent (nur API Key)",
+    resource_bound: "API Key",
+    user_delegated: "Persönlich",
   },
 } as const;
 const icons: Record<ServiceAccountKind, string> = {
   agent: "ti-robot",
   standalone: "ti-key",
-  resource_bound: "ti-box",
+  resource_bound: "ti-key",
   user_delegated: "ti-user-key",
 };
 const kinds = Object.keys(icons) as ServiceAccountKind[];
@@ -322,9 +322,10 @@ describe("PermissionEditor service accounts", () => {
         try {
           for (const kind of kinds) {
             const row = rowOf(`Granted ${kind}`)!;
-            // Every service account row shows the account's robot or photo in a square, never a bare icon.
-            const picture = row.querySelector(`img[src="/api/accounts/users/granted-${kind}/avatar"]`);
-            expect(picture?.getAttribute("data-shape")).toBe("square");
+            // Every service account row shows its picture in a square, never a bare icon; an API key without one its key.
+            if (kind === "resource_bound") expect(row.querySelector('[data-shape="square"] .ti-key')).not.toBeNull();
+            else
+              expect(row.querySelector(`img[src="/api/accounts/users/granted-${kind}/avatar"]`)?.getAttribute("data-shape")).toBe("square");
             expect(row.textContent).toContain(`(${labels[locale][kind]})`);
           }
           // An entry whose consumer did not resolve the kind makes no claim about it.
@@ -655,7 +656,9 @@ describe("PermissionEditor last manager", () => {
     // The level menu of each row stays in the document as a closed popover.
     const levelsOf = (name: string) => Array.from(rowOf(name).querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"));
     try {
-      expect(rowOf("Alle Benutzer einschließlich Gäste")).toBeDefined();
+      expect(rowOf("Alle angemeldeten Personen")).toBeDefined();
+      // The account behind the key shows the key, never the robot of a service account.
+      expect(rowOf("Import key").querySelector('[data-shape="square"] .ti-key')).not.toBeNull();
       expect(dom.root.textContent).not.toContain("All users (incl. guests)");
 
       expect(removeButton("Quentin Dorn").disabled).toBe(true);
@@ -1030,7 +1033,7 @@ describe("PermissionEditor group coverage", () => {
         await waitFor(() => view.panel().querySelectorAll("li").length === 1, "machine member");
         view.toggle().click();
         expect(view.panel().textContent).toContain("Research helper");
-        expect(view.panel().textContent).toContain(kind === "agent" ? "Agent" : "Service account");
+        expect(view.panel().textContent).toContain(kind === "agent" ? "Agent" : "Agent (API key only)");
         expect(view.panel().textContent).toContain("1 account receives access");
         expect(view.panel().textContent).not.toContain("machine-member");
         expect(view.panel().querySelector(kind === "agent" ? ".ti-robot" : ".ti-key")).not.toBeNull();
@@ -1874,15 +1877,8 @@ describe("PermissionEditor principal names", () => {
       try {
         assertNoIds(dom.root);
         for (const label of locale === "en"
-          ? ["Unknown person", "Deleted group", "Unknown agent", "All users (including guests)", "Public", "finance-team"]
-          : [
-              "Unbekannte Person",
-              "Gelöschte Gruppe",
-              "Unbekannter Agent",
-              "Alle Benutzer einschließlich Gäste",
-              "Öffentlich",
-              "Finance-Team",
-            ])
+          ? ["Unknown person", "Deleted group", "Unknown agent", "All signed-in people", "Public", "finance-team"]
+          : ["Unbekannte Person", "Gelöschte Gruppe", "Unbekannter Agent", "Alle angemeldeten Personen", "Öffentlich", "Finance-Team"])
           expect(dom.root.textContent).toContain(label);
         const row = Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) =>
           row.textContent?.includes("Ada Example"),

@@ -1,3 +1,4 @@
+export type { ChartDateFormat, ChartDatum, ChartDatumRole, ChartFormat, ChartNumberFormat } from "../charts/core";
 export type {
   CalendarAttendee,
   CalendarCommand,
@@ -6,6 +7,7 @@ export type {
   CalendarDayBadge,
   CalendarEvent,
   CalendarEventColor,
+  CalendarEventLink,
   CalendarEventRenderContext,
   CalendarEventTimeChange,
   CalendarExternalDrag,
@@ -20,7 +22,7 @@ export type {
 } from "./Calendar";
 export { default as Calendar } from "./Calendar";
 
-export type { ChartKind, ChartLabels, ChartProps, ChartRenderOptions } from "./Chart";
+export type { ChartKind, ChartKindProps, ChartLabels, ChartProps, ChartRenderOptions } from "./Chart";
 export { default as Chart } from "./Chart";
 export type { ChartExplorerColumn, ChartExplorerProps, ChartLegendEntry } from "./ChartExplorer";
 export { ChartExplorer } from "./ChartExplorer";
@@ -51,6 +53,7 @@ export type {
   StateTimelineRow,
   StateTimelineState,
 } from "./chart-state-timeline";
+export type { ChartTimeAxis } from "./chart-time-axis";
 export { highlightSql } from "./code-highlight";
 export { type CollectionSelection, createCollectionSelection, type SelectionModifiers } from "./collection-selection";
 export type {

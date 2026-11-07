@@ -33,6 +33,7 @@ import { deriveNoteTitle } from "../../../../lib/note-title";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
 import { notebookTableOptions } from "../../../../lib/table-options";
 import type { Backlink } from "../../../../service/links";
+import type { NoteDetailRelations } from "../../../../service/route-state";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
 import { cloudLinkPasteExtension } from "../../../lib/editor/cloud-link-paste";
@@ -92,11 +93,13 @@ import { openAttachmentPicker } from "./AttachmentPicker";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
+import { EmptyNoteTemplates } from "./EmptyNoteTemplates";
 import { caretFormat, sameCaretFormat } from "./editor-actions";
 import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
 import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { NOTE_PREVIEW_ID } from "./note-preview";
 import { createNotePrintCopy } from "./note-print-copy";
+import { isBlankNoteText } from "./page-templates";
 import { participantCursors, presenceLocations } from "./presence-locations";
 import { keepReadingPosition, previewReadingPosition, type ReadingPosition, scrollToReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
@@ -158,6 +161,7 @@ type SoftNavigatedDetail = {
   taskProgress: ReturnType<typeof extractTaskProgress>;
   attachments: Attachment[];
   backlinks: Backlink[];
+  relations: NoteDetailRelations;
   namedBlocks: ReturnType<typeof extractNamedBlockSummaries>;
 };
 
@@ -698,6 +702,16 @@ function EditorInstance(
     focus: !props.readOnly,
   });
   addExtension(linkedHeadingJump.extension);
+
+  // A note that holds at most its title offers templates below it; the offer follows the title line.
+  const [blankNote, setBlankNote] = createSignal(isBlankNoteText(baseText));
+  const [layoutTick, setLayoutTick] = createSignal(0);
+  addExtension(
+    EditorView.updateListener.of((update) => {
+      if (update.docChanged) setBlankNote(isBlankNoteText(update.state.doc));
+      if (update.docChanged || update.geometryChanged || update.viewportChanged) setLayoutTick((tick) => tick + 1);
+    }),
+  );
 
   addExtension(editor.basicExtensions());
   // Custom formatting commands dispatch changes even in a read-only state.
@@ -1507,6 +1521,9 @@ function EditorInstance(
               editorState.attach(controller.view, { controller, controls });
             }}
           />
+          <Show when={!props.readOnly && props.canWrite && deviceReady() && !syncEnded.ended() && blankNote()}>
+            <EmptyNoteTemplates view={editorView} host={() => commentsHost} notebookId={props.notebookId} layout={layoutTick} />
+          </Show>
           {comments.margin(
             () => commentsHost,
             () => commentsHost?.closest<HTMLElement>(".notebook-document-surface") ?? undefined,

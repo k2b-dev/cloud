@@ -27,10 +27,7 @@ export default ssr<AuthContext>(async (c) => {
   const categoryPolicy = await readAccountCategoryPolicy();
   const requestId = c.req.query("request");
   let accountRequest: AccountRequest | null = null;
-  const pendingRequestsPage = await accountsService.accountRequest.list({
-    access: { userId: user.id, isAdmin: true },
-    filter: { status: "pending" },
-  });
+  const pendingRequests = await accountsService.accountRequest.countPending();
 
   if (requestId) {
     const requestResult = await accountsService.accountRequest.get({
@@ -65,13 +62,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.newUser },
       ]}
     >
-      <AccountsWorkspace
-        active="users"
-        ancestor
-        isAdmin={true}
-        pendingRequests={pendingRequestsPage.total}
-        scrollPreserveKey="accounts-user-new"
-      >
+      <AccountsWorkspace active="users" ancestor isAdmin={true} pendingRequests={pendingRequests} scrollPreserveKey="accounts-user-new">
         <div class="max-w-2xl mx-auto w-full">
           {accountRequest && (
             <NoticeCard tone="info" class="mb-4" bodyClass="flex flex-col gap-3">

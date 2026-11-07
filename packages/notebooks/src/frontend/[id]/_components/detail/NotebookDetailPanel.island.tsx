@@ -2,7 +2,7 @@ import { CloudAvatar, cloudAvatarSource } from "@k2b/cloud/account/ui";
 import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { SaveFilesButton } from "@k2b/cloud/browser/files";
-import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
+import type { AccessMember, NotebookPresenceParticipant } from "@k2b/cloud/contracts";
 import type { NamedBlockSummary } from "@k2b/editor/markdown";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates, type Paginated } from "@k2b/stdlib";
@@ -10,10 +10,19 @@ import { clipboard, files } from "@k2b/stdlib/browser";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
-  AvatarStack,
-  type AvatarStackPerson,
   Button,
+  DetailAccess,
+  type DetailAccessEntry,
+  type DetailLinkItem,
+  DetailLinks,
   DetailPanel,
+  DetailPresence,
+  type DetailPresencePerson,
+  DetailPresenceSlot,
+  type DetailPresenceState,
+  DetailProperties,
+  type DetailProperty,
+  DetailTags,
   type DropdownItem,
   FileGrid,
   FileTypeIcon,
@@ -28,17 +37,18 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicNoteComment } from "@/api/public-resources";
 import { notebookCommandMessages } from "../../../../commands";
 import type { NoteAuthors, NotebookActivityActor } from "../../../../lib/activity-actions";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { Backlink } from "../../../../service/links";
+import type { NoteDetailRelations } from "../../../../service/route-state";
 import { describeNoteActivity } from "../../../activity-messages";
 import { attachmentPreviewKind, openAttachment } from "../../../lib/attachment-preview";
 import { buildAttachmentContentUrl } from "../../../lib/editor/attachment-url";
-import { buildGraphUrl, buildVersionsUrl } from "../../../params";
+import { buildGraphUrl, buildNoteUrl, buildTagPageUrl, buildVersionsUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import type { Attachment } from "../editor/attachments-client";
 import { CONNECT_SETTLE_MS } from "../editor/sync-state";
@@ -61,9 +71,14 @@ import {
   NOTE_SOFT_NAVIGATED_EVENT,
   NOTE_TITLE_CHANGED_EVENT,
   NOTEBOOK_DETAIL_ID,
+  OPEN_NOTEBOOK_SETTINGS_EVENT,
+  type OpenNotebookSettingsEventDetail,
   PRESENCE_EVENT,
   PRESENCE_LOCATIONS_EVENT,
+  PRESENCE_RETRY_EVENT,
+  PRESENCE_STATUS_EVENT,
   type PresenceLocationsEventDetail,
+  type PresenceStatusEventDetail,
   RECONNECT_EVENT,
   REVEAL_COMMENT_EVENT,
   RICH_MODE_CHANGED_EVENT,
@@ -78,6 +93,7 @@ import {
 import NoteCommentsSection from "./NoteCommentsSection";
 import { openNotePdfDialog } from "./NotePdfDialog";
 import { launchNotebookNoteAssistant } from "./notebook-assistant-launch";
+import { useSaveAsTemplate } from "./save-as-template";
 import type { TaskProgress } from "./tasks";
 import type { TocItem } from "./toc";
 import { ViewMenu } from "./ViewMenu";
@@ -94,6 +110,12 @@ type Props = {
    *  hydration. Live updates flow through `ATTACHMENTS_UPDATE_EVENT`. */
   attachments: Attachment[];
   backlinks: Backlink[];
+  /** What the note links to and its tags. */
+  relations: NoteDetailRelations;
+  /** Whether this person may see who else has access: everyone with access of their own, never public access alone. */
+  accessVisible: boolean;
+  /** Whether "Manage access" leads to the notebook's access settings. */
+  canManageAccess: boolean;
   currentNotebookId: string;
   notebookId: string;
   noteId: string;
@@ -125,6 +147,7 @@ type SoftNavigatedDetail = {
   taskProgress: TaskProgress;
   attachments: Attachment[];
   backlinks: Backlink[];
+  relations: NoteDetailRelations;
   namedBlocks: NamedBlockSummary[];
 };
 
@@ -147,6 +170,10 @@ const NEWEST_ACTIVITY = 4;
 const ACTIVITY_PAGE_SIZE = 10;
 const NO_AUTHORS: NoteAuthors = { createdBy: null, lastEditedBy: null };
 const isImage = (attachment: Attachment) => attachmentPreviewKind(attachment) === "image";
+/** Words read per minute for the reading time in the properties. */
+const WORDS_PER_MINUTE = 200;
+const countWords = (markdown: string | null) => (markdown ?? "").trim().split(/\s+/).filter(Boolean).length;
+const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 const REFERENCE_ICONS: Partial<Record<NamedBlockSummary["type"], string>> = {
   table: "ti-table",
   list: "ti-list",
@@ -174,6 +201,7 @@ export default function NotebookDetailPanel(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const duplicateNote = useDuplicateNote(props.notebookId);
+  const saveAsTemplate = useSaveAsTemplate(props.notebookId);
   const [open, setOpen] = createSignal(props.initiallyOpen);
   const [tocItems, setTocItems] = createSignal<TocItem[]>(props.tocItems);
   const [activeHeading, setActiveHeading] = createSignal<string | null>(null);
@@ -183,6 +211,7 @@ export default function NotebookDetailPanel(props: Props) {
   const [contentMd, setContentMd] = createSignal(props.contentMd);
   const [historyIncomplete, setHistoryIncomplete] = createSignal(props.historyIncomplete);
   const [backlinks, setBacklinks] = createSignal<Backlink[]>(props.backlinks);
+  const [relations, setRelations] = createSignal<NoteDetailRelations>(props.relations);
   const [createdAt, setCreatedAt] = createSignal(props.createdAt);
   const [updatedAt, setUpdatedAt] = createSignal(props.updatedAt);
   const [lockedAt, setLockedAt] = createSignal(props.lockedAt);
@@ -299,6 +328,13 @@ export default function NotebookDetailPanel(props: Props) {
   });
   const [participants, setParticipants] = createSignal<NotebookPresenceParticipant[]>([]);
   const [locations, setLocations] = createSignal<PresenceLocationsEventDetail>({});
+  // Unknown until the workspace socket reports, so the server render and the first client render both show loading.
+  const [presenceStatus, setPresenceStatus] = createSignal<PresenceStatusEventDetail["status"]>("connecting");
+  /** The people last seen live and when, shown pale while offline. */
+  const [lastLive, setLastLive] = createSignal<{ participants: NotebookPresenceParticipant[]; at: string | null }>({
+    participants: [],
+    at: null,
+  });
   // Mirrors the editor's richMode signal — kept in sync via window events.
   // Default `true` matches the editor's initial state, so SSR and the first
   // client render agree even if the editor's broadcast hasn't arrived yet.
@@ -472,7 +508,13 @@ export default function NotebookDetailPanel(props: Props) {
     };
     const onPresenceUpdate = (event: Event) => {
       const detail = (event as CustomEvent<NotebookPresenceParticipant[]>).detail;
-      if (Array.isArray(detail)) setParticipants(detail);
+      if (!Array.isArray(detail)) return;
+      setParticipants(detail);
+      if (presenceStatus() === "live") setLastLive({ participants: detail, at: new Date().toISOString() });
+    };
+    const onPresenceStatus = (event: Event) => {
+      const status = (event as CustomEvent<PresenceStatusEventDetail>).detail?.status;
+      if (status === "connecting" || status === "live" || status === "down") setPresenceStatus(status);
     };
     const onLocations = (event: Event) => {
       const detail = (event as CustomEvent<PresenceLocationsEventDetail>).detail;
@@ -506,6 +548,7 @@ export default function NotebookDetailPanel(props: Props) {
       if (detail.noteId !== noteId()) {
         setParticipants([]);
         setLocations({});
+        setLastLive({ participants: [], at: null });
       }
       setNoteId(detail.noteId);
       setNoteTitle(detail.noteTitle);
@@ -520,6 +563,7 @@ export default function NotebookDetailPanel(props: Props) {
       setActiveHeading(null);
       setTasks(detail.taskProgress);
       setBacklinks(detail.backlinks);
+      setRelations(detail.relations);
       setActivityExpanded(false);
       const ids = detail.attachments.map((attachment) => attachment.id);
       setAttachmentSnapshot({ source: buildAttachmentSource(detail.noteId, ids), attachments: detail.attachments });
@@ -543,6 +587,7 @@ export default function NotebookDetailPanel(props: Props) {
     window.addEventListener(ATTACHMENTS_UPDATE_EVENT, onAttachmentsUpdate);
     window.addEventListener(NAMED_BLOCKS_UPDATE_EVENT, onNamedBlocksUpdate);
     window.addEventListener(PRESENCE_EVENT, onPresenceUpdate);
+    window.addEventListener(PRESENCE_STATUS_EVENT, onPresenceStatus);
     window.addEventListener(PRESENCE_LOCATIONS_EVENT, onLocations);
     window.addEventListener(SYNC_STATE_EVENT, onSyncState);
     window.addEventListener(DETAIL_PANEL_TOGGLE_EVENT, onToggle);
@@ -560,6 +605,7 @@ export default function NotebookDetailPanel(props: Props) {
       window.removeEventListener(ATTACHMENTS_UPDATE_EVENT, onAttachmentsUpdate);
       window.removeEventListener(NAMED_BLOCKS_UPDATE_EVENT, onNamedBlocksUpdate);
       window.removeEventListener(PRESENCE_EVENT, onPresenceUpdate);
+      window.removeEventListener(PRESENCE_STATUS_EVENT, onPresenceStatus);
       window.removeEventListener(PRESENCE_LOCATIONS_EVENT, onLocations);
       window.removeEventListener(SYNC_STATE_EVENT, onSyncState);
       window.removeEventListener(DETAIL_PANEL_TOGGLE_EVENT, onToggle);
@@ -584,31 +630,175 @@ export default function NotebookDetailPanel(props: Props) {
   const isSelf = (actor: NotebookActivityActor | null | undefined) => actor?.kind === "user" && actor.id === props.currentUserId;
   const actorName = (actor: NotebookActivityActor | null | undefined) => (isSelf(actor) ? t().you : (actor?.displayName ?? ""));
 
-  const others = createMemo(() => participants().filter((participant) => participant.userId !== props.currentUserId));
-  const people = createMemo<AvatarStackPerson[]>(() =>
-    participants().map((participant) => {
+  const presenceState = (): DetailPresenceState => {
+    if (offline()) return "offline";
+    const status = presenceStatus();
+    return status === "live" ? "live" : status === "down" ? "unavailable" : "loading";
+  };
+  const shownParticipants = () => (presenceState() === "offline" ? lastLive().participants : participants());
+  const presencePeople = createMemo<DetailPresencePerson[]>(() =>
+    shownParticipants().map((participant) => {
       const self = participant.userId === props.currentUserId;
       const location = locations()[participant.userId];
-      const heading = self ? outline().find((item) => item.id === activeHeading())?.text : location?.headingText;
       const writing = !self && location?.writing === true;
+      const place = self ? outline().find((item) => item.id === activeHeading())?.text : location?.headingText;
       return {
         id: participant.userId,
-        name: self ? t().you : participant.displayName,
+        name: participant.displayName,
+        shortName: firstName(participant.displayName),
         src: cloudAvatarSource(participant.userId, participant.avatarHash),
+        color: participant.color,
+        activity: writing ? "writing" : "reading",
+        place: place ?? undefined,
         self,
-        detailIcon: self ? undefined : writing ? "ti ti-pencil" : "ti ti-eye",
-        detail: self ? (heading ?? undefined) : [writing ? t().presenceWriting : t().presenceReading, heading].filter(Boolean).join(" · "),
         trailing: participant.peerCount > 1 ? t().tabs({ count: participant.peerCount }) : undefined,
-        onSelect:
-          !self && location?.writing
-            ? () => window.dispatchEvent(new CustomEvent(JUMP_TO_PARTICIPANT_EVENT, { detail: { userId: participant.userId } }))
-            : undefined,
+        onSelect: writing
+          ? () => window.dispatchEvent(new CustomEvent(JUMP_TO_PARTICIPANT_EVENT, { detail: { userId: participant.userId } }))
+          : undefined,
       };
     }),
   );
-  const presenceLabel = () => {
-    const names = others().map((participant) => participant.displayName);
-    return t().hereNowLabel({ names: names.slice(0, 3).join(", "), more: Math.max(0, names.length - 3) });
+  /** Who writes under each heading, for the outline's fixed presence slot. */
+  const writersByHeading = createMemo(() => {
+    const byHeading = new Map<string, DetailPresencePerson[]>();
+    if (presenceState() !== "live") return byHeading;
+    for (const person of presencePeople()) {
+      const headingId = locations()[person.id]?.headingId;
+      if (person.self || person.activity !== "writing" || !headingId) continue;
+      byHeading.set(headingId, [...(byHeading.get(headingId) ?? []), person]);
+    }
+    return byHeading;
+  });
+  const presenceNote = (): JSX.Element => {
+    if (presenceState() === "unavailable") return t().presenceKeepsSaving;
+    if (presenceState() === "offline") {
+      const at = lastLive().at ?? sync().lastSavedAt;
+      return (
+        <>
+          <i class="ti ti-wifi-off" aria-hidden="true" />{" "}
+          {at ? t().presenceOffline({ time: dates.formatTime(at, props.dateConfig) }) : t().offline}
+        </>
+      );
+    }
+    return t().presenceAlone;
+  };
+  const copyNoteLink = () =>
+    void clipboard.copy(new URL(buildNoteUrl(props.notebookId, noteId()), window.location.origin).href).then(
+      () => toast.success(t().noteLinkCopied),
+      () => toast.error(t().noteLinkCopyFailed),
+    );
+
+  // Who has access loads after the first paint, once per page: it covers the whole notebook, not one note, and its
+  // closed summary names the first people.
+  const [access, setAccess] = createSignal<{ state: "idle" | "loading" | "ready" | "error"; members: AccessMember[] }>({
+    state: "idle",
+    members: [],
+  });
+  let accessAbort: AbortController | undefined;
+  const loadAccess = async () => {
+    accessAbort?.abort();
+    const request = new AbortController();
+    accessAbort = request;
+    setAccess((previous) => ({ state: "loading", members: previous.members }));
+    try {
+      const response = await apiClient[":id"].access.members.$get(
+        { param: { id: props.notebookId } },
+        { init: { signal: request.signal } },
+      );
+      if (!response.ok) throw new Error(String(response.status));
+      const members = await response.json();
+      if (!request.signal.aborted) setAccess({ state: "ready", members });
+    } catch {
+      if (!request.signal.aborted) setAccess((previous) => ({ state: "error", members: previous.members }));
+    }
+  };
+  onMount(() => {
+    if (props.accessVisible) void loadAccess();
+  });
+  onCleanup(() => accessAbort?.abort());
+  const roleLabel = (permission: AccessMember["permission"]) =>
+    permission === "admin" ? t().roleAdmin : permission === "write" ? t().roleWrite : t().roleRead;
+  const accessEntries = createMemo<DetailAccessEntry[]>(() =>
+    access()
+      .members.filter((member) => member.permission !== "none")
+      .map((member, index) => {
+        const principal = member.principal;
+        const role = roleLabel(member.permission);
+        if (principal.type === "user")
+          return {
+            id: `user:${principal.userId}`,
+            name: member.displayName ?? "?",
+            kind: "person",
+            src: cloudAvatarSource(principal.userId, member.avatarHash),
+            role,
+            self: principal.userId === props.currentUserId,
+          };
+        if (principal.type === "group") return { id: `group:${principal.groupId}`, name: member.displayName ?? "?", kind: "group", role };
+        if (principal.type === "service_account")
+          return {
+            id: `service:${principal.serviceAccountId}`,
+            name: member.displayName ?? "?",
+            kind: "service",
+            detail: t().serviceAccount,
+            role,
+          };
+        if (principal.type === "authenticated") return { id: `everyone:${index}`, name: t().everyoneSignedIn, kind: "everyone", role };
+        return { id: `public:${index}`, name: t().publicAccess, kind: "public", role };
+      }),
+  );
+
+  const linkItem = (link: Backlink): DetailLinkItem => ({
+    id: `${link.notebookId}:${link.noteId}`,
+    title: link.title || t().untitled,
+    href: `/app/notebooks/${link.notebookId}/notes/${link.noteId}`,
+    trailing: link.notebookId !== props.currentNotebookId ? link.notebookName : undefined,
+  });
+
+  const words = () => countWords(contentMd());
+  const properties = (): DetailProperty[] => {
+    const creator = authors().createdBy;
+    const editor = lastEditor();
+    const textBytes = new TextEncoder().encode(contentMd() ?? "").length;
+    const attachmentBytes = visibleAttachments().reduce((sum, attachment) => sum + attachment.sizeBytes, 0);
+    return [
+      {
+        id: "created",
+        label: t().created,
+        leading: creator ? <ActorAvatar actor={creator} /> : undefined,
+        value: (
+          <>
+            {creator ? `${actorName(creator)} · ` : ""}
+            <Time value={createdAt()} />
+          </>
+        ),
+      },
+      {
+        id: "edited",
+        label: t().edited,
+        leading: editor ? <ActorAvatar actor={editor} /> : undefined,
+        value: (
+          <>
+            {editor ? `${actorName(editor)} · ` : ""}
+            <Time value={editedAt()} />
+          </>
+        ),
+      },
+      {
+        id: "length",
+        label: t().extent,
+        value: `${t().words({ count: words() })} · ${t().readingMinutes({ count: Math.max(1, Math.round(words() / WORDS_PER_MINUTE)) })}`,
+      },
+      {
+        id: "size",
+        label: t().size,
+        value: t().sizeWithAttachments({
+          text: formatFileViewSize(textBytes, locale()),
+          count: visibleAttachments().length,
+          attachments: formatFileViewSize(attachmentBytes, locale()),
+        }),
+      },
+      { id: "history", label: t().history, value: t().openVersionHistory, href: buildVersionsUrl(props.notebookId, noteId()) },
+    ];
   };
 
   const cloudId = useCloudIdCopy();
@@ -635,6 +825,11 @@ export default function NotebookDetailPanel(props: Props) {
                 label: t().duplicate,
                 icon: "ti ti-copy-plus",
                 action: () => window.dispatchEvent(new CustomEvent(DUPLICATE_NOTE_EVENT, { detail: { noteId: noteId() } })),
+              },
+              {
+                label: t().saveAsTemplate,
+                icon: "ti ti-template",
+                action: () => void saveAsTemplate.save({ id: noteId(), title: noteTitle() }),
               },
             ],
           },
@@ -688,16 +883,32 @@ export default function NotebookDetailPanel(props: Props) {
     />
   );
 
-  /** "Jana Berger · edited 12 min ago", or the state that matters more: offline, locked, read only. */
+  /**
+   * "Jana Berger · edited 12 min ago", or the state that matters more: offline, locked, read only. Every sync event
+   * and edit re-reads these states; only a change of branch renders new elements, because each inserted element
+   * restyles the whole page through the shared `:has()` rules.
+   */
   const metaLine = (): JSX.Element => {
     const edited = (lead: boolean) => (
       <>
         {lead ? t().editedAtStart : t().editedAt} <Time value={editedAt()} focusable />
       </>
     );
-    if (offline())
-      return (
-        <>
+    return (
+      <Switch
+        fallback={
+          <Show when={lastEditor()} fallback={edited(true)}>
+            {(person) => (
+              <>
+                <span class="notebook-meta-name">{actorName(person())}</span>
+                {" · "}
+                {edited(false)}
+              </>
+            )}
+          </Show>
+        }
+      >
+        <Match when={offline()}>
           <span class="notebook-meta-state" data-tone="warning">
             <i class="ti ti-cloud-off" aria-hidden="true" /> {t().offline}
           </span>
@@ -709,39 +920,26 @@ export default function NotebookDetailPanel(props: Props) {
               </>
             )}
           </Show>
-        </>
-      );
-    if (lockedAt())
-      return (
-        <>
-          <Tooltip.Anchor content={t().lockedSince({ time: exact(lockedAt()!) })} class="notebook-meta-state" data-tone="warning">
-            <span tabIndex={0}>
-              <i class="ti ti-lock" aria-hidden="true" /> {t().locked}
-            </span>
-          </Tooltip.Anchor>
-          {" · "}
-          {edited(false)}
-        </>
-      );
-    if (!props.canWrite)
-      return (
-        <>
+        </Match>
+        <Match when={lockedAt()}>
+          {(locked) => (
+            <>
+              <Tooltip.Anchor content={t().lockedSince({ time: exact(locked()) })} class="notebook-meta-state" data-tone="warning">
+                <span tabIndex={0}>
+                  <i class="ti ti-lock" aria-hidden="true" /> {t().locked}
+                </span>
+              </Tooltip.Anchor>
+              {" · "}
+              {edited(false)}
+            </>
+          )}
+        </Match>
+        <Match when={!props.canWrite}>
           <span class="notebook-meta-state">{t().readOnlyShort}</span>
           {" · "}
           {edited(false)}
-        </>
-      );
-    const editor = lastEditor();
-    return (
-      <Show when={editor} fallback={edited(true)}>
-        {(person) => (
-          <>
-            <span class="notebook-meta-name">{actorName(person())}</span>
-            {" · "}
-            {edited(false)}
-          </>
-        )}
-      </Show>
+        </Match>
+      </Switch>
     );
   };
 
@@ -788,12 +986,6 @@ export default function NotebookDetailPanel(props: Props) {
           kind={<span>{t().noteKind}</span>}
           title={noteTitle() || t().untitled}
           subtitle={metaLine()}
-          meta={
-            // Only with others here and a live connection; the line keeps its height either way.
-            <Show when={props.mode === "edit" && !offline() && others().length > 0}>
-              <AvatarStack people={people()} title={t().hereNow} label={presenceLabel()} hint={t().hereNowHint} />
-            </Show>
-          }
           menu={moreItems()}
           menuLabel={t().moreActions}
           actions={
@@ -857,9 +1049,35 @@ export default function NotebookDetailPanel(props: Props) {
         />
 
         <DetailPanel.Body scrollPreserveKey="notebook-detail">
+          {/* Order of use: who is here, what people say, what is in the note, what it connects to; rarely needed
+              facts wait under "More about this note". */}
+          <DetailPresence
+            people={presencePeople()}
+            state={presenceState()}
+            note={presenceNote()}
+            onRetry={() => window.dispatchEvent(new CustomEvent(PRESENCE_RETRY_EVENT))}
+            listHint={t().hereNowHint}
+            actions={
+              <Button variant="ghost" size="xs" onClick={copyNoteLink}>
+                <i class="ti ti-link" aria-hidden="true" /> {t().copyNoteLink}
+              </Button>
+            }
+          />
+
+          <NoteCommentsSection
+            notebookId={props.notebookId}
+            noteId={noteId()}
+            currentUserId={props.currentUserId}
+            canWrite={props.canWrite}
+            initialCommentsPage={props.initialCommentsPage}
+            dateConfig={props.dateConfig}
+            offline={offline()}
+          />
+
           <Show when={tasks().total > 0}>
             <DetailPanel.Section
               title={t().tasks}
+              icon="ti ti-list-check"
               class="notebook-tasks"
               meta={t().tasksDone({ done: tasks().done, total: tasks().total })}
             >
@@ -868,61 +1086,57 @@ export default function NotebookDetailPanel(props: Props) {
           </Show>
 
           <Show when={outline().length >= 2}>
-            <DetailPanel.Section title={t().contents} count={outline().length} collapsible defaultOpen>
+            <DetailPanel.Section
+              title={t().contents}
+              icon="ti ti-list-tree"
+              count={outline().length}
+              collapsible
+              defaultOpen
+              summary={outline().find((item) => item.id === activeHeading())?.text}
+            >
               <div class="notebook-panel-rows">
-                <For each={outline()}>
+                {/* The editor sends a new outline after each pause in typing. Rows keep their elements and only take the
+                    new values: a row inserted for the same heading would restyle the whole page through `:has()`. Each
+                    row keeps a fixed slot for the people writing there, so presence never moves a title. */}
+                <Index each={outline()}>
                   {(item) => (
                     <DetailPanel.Action
-                      href={`#${item.id}`}
+                      href={`#${item().id}`}
                       class="notebook-outline-row"
-                      data-depth={Math.min(2, item.level - outlineBase())}
-                      current={activeHeading() === item.id}
-                      onClick={(event) => onTocItemClick(event, item.id)}
-                      title={item.text || t().untitled}
+                      data-depth={Math.min(2, item().level - outlineBase())}
+                      current={activeHeading() === item().id}
+                      onClick={(event) => onTocItemClick(event, item().id)}
+                      title={item().text || t().untitled}
+                      trailing={<DetailPresenceSlot people={writersByHeading().get(item().id) ?? []} />}
                     />
                   )}
-                </For>
+                </Index>
               </div>
             </DetailPanel.Section>
           </Show>
 
-          <Show when={namedBlocks().length > 0}>
-            <DetailPanel.Section title={t().references} count={namedBlocks().length} collapsible defaultOpen>
-              <div class="notebook-panel-rows">
-                <For each={namedBlocks()}>
-                  {(block) => (
-                    <DetailPanel.Action
-                      type="button"
-                      onClick={() => scrollToNamedBlock(block)}
-                      leading={<i class={`ti ${REFERENCE_ICONS[block.type] ?? "ti-at"}`} aria-hidden="true" />}
-                      title={<code class="notebook-reference-name">@{block.name}</code>}
-                      trailing={t().referenceType({ type: block.type })}
-                    />
-                  )}
-                </For>
-              </div>
-            </DetailPanel.Section>
-          </Show>
+          <DetailTags
+            tags={relations().tags.map((tag) => ({
+              id: tag,
+              label: tag,
+              href: buildTagPageUrl(props.notebookId, tag, props.presentationMode),
+            }))}
+            emptyHint={props.canWrite ? t().tagsHint : undefined}
+          />
 
-          <Show when={backlinks().length > 0}>
-            <DetailPanel.Section title={t().linkedBy} count={backlinks().length} collapsible defaultOpen>
-              <div class="notebook-panel-rows">
-                <For each={backlinks()}>
-                  {(bl) => (
-                    <DetailPanel.Action
-                      href={`/app/notebooks/${bl.notebookId}/notes/${bl.noteId}`}
-                      leading={<i class="ti ti-file-text" aria-hidden="true" />}
-                      title={bl.title || t().untitled}
-                      trailing={bl.notebookId !== props.currentNotebookId ? bl.notebookName : undefined}
-                    />
-                  )}
-                </For>
-              </div>
-            </DetailPanel.Section>
-          </Show>
+          <DetailLinks incoming={backlinks().map(linkItem)} outgoing={relations().outgoing.map(linkItem)} />
 
           <Show when={visibleAttachments().length > 0 || attachmentMetadata.error()}>
-            <DetailPanel.Section title={t().attachments} count={visibleAttachments().length > 0 ? visibleAttachments().length : undefined}>
+            <DetailPanel.Section
+              title={t().attachments}
+              icon="ti ti-paperclip"
+              count={visibleAttachments().length > 0 ? visibleAttachments().length : undefined}
+              collapsible
+              defaultOpen
+              summary={visibleAttachments()
+                .map((attachment) => attachment.filename)
+                .join(", ")}
+            >
               <Show
                 when={!attachmentMetadata.error()}
                 fallback={
@@ -983,21 +1197,68 @@ export default function NotebookDetailPanel(props: Props) {
             </DetailPanel.Section>
           </Show>
 
-          <NoteCommentsSection
-            notebookId={props.notebookId}
-            noteId={noteId()}
-            currentUserId={props.currentUserId}
-            canWrite={props.canWrite}
-            initialCommentsPage={props.initialCommentsPage}
-            dateConfig={props.dateConfig}
-            offline={offline()}
-          />
+          <Show when={namedBlocks().length > 0}>
+            <DetailPanel.Section
+              title={t().references}
+              icon="ti ti-at"
+              count={namedBlocks().length}
+              collapsible
+              summary={namedBlocks()
+                .map((block) => `@${block.name}`)
+                .join(", ")}
+            >
+              <div class="notebook-panel-rows">
+                {/* Like the outline: the editor sends new summaries after each pause in typing. */}
+                <Index each={namedBlocks()}>
+                  {(block) => (
+                    <DetailPanel.Action
+                      type="button"
+                      onClick={() => scrollToNamedBlock(block())}
+                      leading={<i class={`ti ${REFERENCE_ICONS[block().type] ?? "ti-at"}`} aria-hidden="true" />}
+                      title={<code class="notebook-reference-name">@{block().name}</code>}
+                      trailing={t().referenceType({ type: block().type })}
+                    />
+                  )}
+                </Index>
+              </div>
+            </DetailPanel.Section>
+          </Show>
 
           {/* The log has no count: it is a stream, not a finite set. It loads after the first paint and is the last
               section, so nothing above it moves when it arrives. Closed, its one line names the newest entry; the
               version history stays in "More actions". */}
           <DetailPanel.Group title={t().moreAboutNote}>
-            <DetailPanel.Section title={t().activity} class="notebook-activity" collapsible summary={activitySummary()}>
+            {/* Read-only for everyone with access of their own; public-link readers never get the list. */}
+            <Show when={props.accessVisible}>
+              <DetailAccess
+                entries={accessEntries()}
+                state={access().state === "ready" ? "ready" : access().state === "error" ? "error" : "loading"}
+                onRetry={() => void loadAccess()}
+                note={t().accessWholeNotebook}
+                manage={
+                  props.canManageAccess
+                    ? {
+                        label: t().manageAccess,
+                        onClick: () =>
+                          window.dispatchEvent(
+                            new CustomEvent<OpenNotebookSettingsEventDetail>(OPEN_NOTEBOOK_SETTINGS_EVENT, { detail: { tab: "access" } }),
+                          ),
+                      }
+                    : undefined
+                }
+              />
+            </Show>
+            <DetailProperties
+              items={properties()}
+              summary={t().propertiesSummary({ words: t().words({ count: words() }), created: relative(createdAt()) })}
+            />
+            <DetailPanel.Section
+              title={t().activity}
+              icon="ti ti-activity"
+              class="notebook-activity"
+              collapsible
+              summary={activitySummary()}
+            >
               <div class="notebook-panel-rows" aria-busy={noteActivity.loading() ? "true" : undefined}>
                 <Show when={noteActivity.loading() && activityItems().length === 0 && !noteActivity.error()}>
                   <For each={[0, 1, 2, 3]}>
