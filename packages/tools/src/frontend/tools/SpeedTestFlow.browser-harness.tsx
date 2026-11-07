@@ -21,10 +21,13 @@ const fixtureFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
         clearTimeout(timer);
         reject(aborted());
       };
-      const timer = setTimeout(() => {
-        signal?.removeEventListener("abort", stop);
-        resolve();
-      }, 12);
+      const timer = setTimeout(
+        () => {
+          signal?.removeEventListener("abort", stop);
+          resolve();
+        },
+        scenario === "ping" ? 180 : 12,
+      );
       signal?.addEventListener("abort", stop, { once: true });
     });
     return new Response(null, { status: 204 });

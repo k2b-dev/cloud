@@ -83,8 +83,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
                 : running()
                   ? t().remaining({ seconds: remaining() })
                   : t().ready;
-  const reading = () =>
-    state() === "ping" ? (progress()?.ping_ms ?? null) : state() === "upload" || state() === "done" ? upload() : download();
+  const reading = () => (state() === "ping" ? (progress()?.ping_ms ?? null) : state() === "upload" ? upload() : download());
   const snippet = createMemo(() => speedtestSnippet(cliVariant(), server(), mode()));
   const finalJson = () => JSON.stringify(result() ?? null, null, 2);
   const terminal = createMemo(() => {
@@ -218,7 +217,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
               value={reading() ?? 0}
               max={Math.max(100, 10 ** Math.ceil(Math.log10(Math.max(1, reading() ?? 0))))}
               format={(value) => formatSpeedTestReading(reading() === null && value === 0 ? null : value, locale())}
-              label={`${labels()[state()]} · ${state() === "ping" ? "ms" : "Mbit/s"}`}
+              label={`${labels()[state()]}${state() === "done" ? " · Download" : ""} · ${state() === "ping" ? "ms" : "Mbit/s"}`}
             />
           </div>
           <ol class="tools-speedtest-phases" aria-label={t().progress}>

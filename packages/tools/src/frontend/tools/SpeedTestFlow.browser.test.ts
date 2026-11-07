@@ -63,6 +63,15 @@ test("real shared-engine run preserves slots, shows remaining time, copies JSON 
       expect(await page.locator('[role="status"]').textContent()).toMatch(/noch ca\. \d+ s/);
       expect(await page.locator(".tools-speedtest-terminal").textContent()).toMatch(/noch ca\. \d+ s/);
       expect(await geometry(page)).toEqual(initial);
+      // Ramp-up is excluded from the result and stays neutral, including the renderer's SVG root.
+      expect(
+        await page.locator(".tools-speedtest-chart svg").evaluate((element) => {
+          const style = getComputedStyle(element);
+          return ["--stdlib-chart-c3", "--stdlib-chart-c4"].every(
+            (name) => style.getPropertyValue(name).trim() === style.getPropertyValue("--k2b-text-muted").trim(),
+          );
+        }),
+      ).toBe(true);
       await page.clock.runFor(14_000);
       expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("done");
       expect(await geometry(page)).toEqual(initial);
