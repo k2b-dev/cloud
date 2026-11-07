@@ -35,6 +35,11 @@ export const chartMessages = i18n.define({
         const labels: Record<string, string> = {
           x: "X",
           y: "Y",
+          balance: "Balance",
+          inflow: "In",
+          outflow: "Out",
+          after: "Balance after",
+          change: "Change",
           value: "Value",
           percent: "Share",
           total: "Total",
@@ -106,6 +111,11 @@ export const chartMessages = i18n.define({
         const labels: Record<string, string> = {
           x: "X",
           y: "Y",
+          balance: "Stand",
+          inflow: "Rein",
+          outflow: "Raus",
+          after: "Stand danach",
+          change: "Änderung",
           value: "Wert",
           percent: "Anteil",
           total: "Gesamt",

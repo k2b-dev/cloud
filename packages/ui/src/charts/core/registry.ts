@@ -3,10 +3,12 @@ import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
 import { renderHeatmapSvg } from "./calendar";
 import { charts } from "./svg";
+import { renderWaterfallSvg } from "./waterfall";
 
 // Add one renderer here: its key defines the discriminator, ChartKind and the capitalized Chart namespace member.
 // Keep kind-specific adaptations in renderChartSvg and add a fixture to the namespace parity test.
 export const chartRenderers = {
+  waterfall: renderWaterfallSvg,
   area: renderAreaSvg,
   line: charts.line,
   bar: renderBarChartSvg,
