@@ -315,6 +315,14 @@ type TableRow = { key: string; cells: JsonObject };
 const typedColumnKeys = ["type", "format", "states", "max", "priority"] as const;
 const typedTables = () => typeof Reflect.get(ui, "filterRows") === "function";
 
+/** A cell as text: a number in the column's format, a status by its label, a missing value as a dash. */
+const cellText = (column: JsonObject, value: JsonValue | undefined): string => {
+  if (value === null || value === undefined) return "–";
+  if (typeof value === "number") return formatNumber(value, column.format);
+  const state = object(column.states) ? column.states[text(value)] : undefined;
+  return object(state) && typeof state.label === "string" ? state.label : text(value);
+};
+
 /** Table columns from a description: raw values for a typed table, formatted text for an older one. */
 const tableColumnsOf = (columns: JsonObject[], typed: boolean): DataTableColumn<TableRow>[] =>
   columns.map((column) => {
@@ -324,15 +332,15 @@ const tableColumnsOf = (columns: JsonObject[], typed: boolean): DataTableColumn<
       value: (row: TableRow) => {
         const value = row.cells[text(column.id)];
         if (typed) return value ?? null;
-        if (value === null || value === undefined) return "–";
-        return typeof value === "number" ? formatNumber(value, column.format) : text(value);
+        return cellText(column, value);
       },
       sortable: true,
       align: column.type === "number" || column.type === "amount" || column.type === "flow" ? "right" : "left",
     };
-    return typed
-      ? Object.assign(base, Object.fromEntries(typedColumnKeys.filter((key) => key in column).map((key) => [key, column[key]])))
-      : base;
+    if (!typed) return base;
+    const typedFields = Object.fromEntries(typedColumnKeys.filter((key) => key in column).map((key) => [key, column[key]]));
+    // Money with a direction is an amount to the table; the cell draws its direction with FlowAmount.
+    return Object.assign(base, typedFields, column.type === "flow" ? { type: "amount" } : {});
   });
 
 /**
@@ -347,12 +355,7 @@ function TableBlock(props: ShowcaseFrameProps & { spec: JsonObject }): JSX.Eleme
   const typed = typedTables();
   const columns = () => list(props.spec.columns).filter(object);
   const groups = () => (typed ? list(props.spec.groupBy).filter(object) : []);
-  const cell = (column: JsonObject, row: TableRow): string => {
-    const value = row.cells[text(column.id)];
-    if (value === null || value === undefined) return "–";
-    if (typeof value === "number") return formatNumber(value, column.format);
-    return text(value);
-  };
+  const cell = (column: JsonObject, row: TableRow): string => cellText(column, row.cells[text(column.id)]);
   const allRows = (): TableRow[] =>
     list(props.spec.rows)
       .filter(object)
@@ -467,6 +470,16 @@ function TableBlock(props: ShowcaseFrameProps & { spec: JsonObject }): JSX.Eleme
               sort={sort()}
               onSortChange={setSort}
               columns={tableColumns()}
+              renderCell={({ col, value, render }) => {
+                const column = columns().find((entry) => text(entry.id) === col.id);
+                const format = column && object(column.format) ? column.format : undefined;
+                const flow = column?.type === "flow" ? blockComponent("flow") : undefined;
+                return flow && typeof value === "number" && typeof format?.currency === "string" ? (
+                  <Dynamic component={flow} value={value} currency={format.currency} />
+                ) : (
+                  render(value)
+                );
+              }}
               {...grouping()}
             />
           </div>
