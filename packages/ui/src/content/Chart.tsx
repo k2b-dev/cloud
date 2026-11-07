@@ -15,11 +15,13 @@ import {
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
+import { calendarLayout } from "../charts/core/calendar";
 import { chartKinds } from "../charts/core/registry";
 import { type ChartDrawingOptions, chartRenderHeight, preservesAspectRatio, renderChartSvg } from "../charts/core/render";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { calendarInspectionNavigation, mountCalendarScroll } from "./chart-calendar";
 import type { ChartCursor } from "./chart-cursor";
 import { createChartInspection } from "./chart-inspection";
 import {
@@ -175,8 +177,10 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   let lineAnchorRef: HTMLSpanElement | undefined;
   // One deterministic coordinate space on the server and client. CSS fits the
   // SVG to its box; hydration must never replace it with measured geometry.
+  const calendar = () =>
+    props.kind === "heatmap" && props.layout === "calendar" ? calendarLayout({ ...props, locale: props.locale ?? locale() }) : undefined;
   const size = () => ({
-    width: 480,
+    width: calendar()?.width ?? 480,
     height: chartRenderHeight(props),
   });
   const topLegend = () =>
@@ -371,6 +375,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   };
 
   const stopDragging: JSX.EventHandlerUnion<HTMLDivElement, PointerEvent> = (event) => {
+    inspection.up();
     if (pendingPointer?.pointerId === event.pointerId) flushPointerMove();
     if (timelineDrag?.pointerId === event.pointerId) {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -457,12 +462,13 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     tooltip: () => chartTooltipRef,
     anchor: () => lineAnchorRef,
     kind: () => props.kind,
+    nav: () => (props.kind === "heatmap" && props.layout === "calendar" ? calendarInspectionNavigation : undefined),
     enabled: () => !isEmpty(props),
     select: (selection) => props.onSelect?.(selection),
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
       const fields =
-        props.kind === "bubble" || props.kind === "radar"
+        props.kind === "bubble" || props.kind === "radar" || (props.kind === "heatmap" && props.layout === "calendar")
           ? resolveChartMessages(props.locale ?? locale()).chartFields
           : chartMessages().chartFields;
       if (selection.kind === "area" && props.kind === "area") {
@@ -492,9 +498,11 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
                   ? (props.sizeLabel ?? fields({ key: "size" }))
                   : props.kind === "radar" && field.key.startsWith("series:")
                     ? (props.series[Number(field.key.slice(7))]?.label ?? fields({ key: "series" }))
-                    : selection.kind === "line" && field.key === "y"
-                      ? (selection.datum.label ?? labels().series ?? chartMessages().series)
-                      : fields({ key: field.key }),
+                    : props.kind === "heatmap" && props.layout === "calendar" && field.key === "value" && props.label
+                      ? props.label
+                      : selection.kind === "line" && field.key === "y"
+                        ? (selection.datum.label ?? labels().series ?? chartMessages().series)
+                        : fields({ key: field.key }),
           value:
             field.formatted ??
             (field.key === "upperInclusive"
@@ -511,7 +519,9 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
     renderChartSvg(
-      props.kind === "bubble" || props.kind === "radar" ? { ...props, locale: props.locale ?? locale() } : drawingProps,
+      props.kind === "bubble" || props.kind === "radar" || (props.kind === "heatmap" && props.layout === "calendar")
+        ? { ...props, locale: props.locale ?? locale() }
+        : drawingProps,
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,
@@ -536,11 +546,13 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
 
   onMount(() => {
     if (!containerRef) return;
+    if (props.kind === "heatmap" && props.layout === "calendar") onCleanup(mountCalendarScroll(containerRef));
     onCleanup(
       closeChartInspectionOnOutside({
         container: () => containerRef,
         tooltip: () => chartTooltipRef,
         close: closeChartTooltip,
+        keepScroll: () => props.kind === "heatmap" && props.layout === "calendar",
       }),
     );
   });
@@ -636,8 +648,9 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
         </Show>
         <div
           class="k2b-chart__svg"
-          data-stretch={!preservesAspectRatio(props.kind) ? "true" : undefined}
+          data-stretch={!calendar() && !preservesAspectRatio(props.kind) ? "true" : undefined}
           style={{
+            "min-width": calendar() ? `${calendar()!.minWidth}px` : undefined,
             "--k2b-chart-width": `${size().width}px`,
             "--k2b-chart-height": `${size().height}px`,
             "aspect-ratio": `${size().width} / ${size().height}`,
@@ -672,7 +685,8 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   );
 };
 
-export type ChartKindProps<K extends ChartKind> = Omit<Extract<ChartProps, { kind: K }>, "kind">;
+type KindProps<T> = T extends unknown ? Omit<T, "kind"> : never;
+export type ChartKindProps<K extends ChartKind> = KindProps<Extract<ChartProps, { kind: K }>>;
 
 type ChartComponents = {
   [Name in keyof typeof chartKinds]: (props: ChartKindProps<(typeof chartKinds)[Name]>) => JSX.Element;
@@ -688,5 +702,8 @@ const chartComponent =
 const components = Object.fromEntries(
   Object.entries(chartKinds).map(([name, kind]) => [name, chartComponent(kind)]),
 ) as unknown as ChartComponents;
-const Chart = Object.assign(ChartRoot, components);
+const Chart = Object.assign(ChartRoot, components, {
+  Calendar: (props: Omit<Extract<ChartProps, { kind: "heatmap"; layout: "calendar" }>, "kind" | "layout">) =>
+    ChartRoot(mergeProps(props, { kind: "heatmap" as const, layout: "calendar" as const })),
+});
 export default Chart;

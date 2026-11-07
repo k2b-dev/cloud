@@ -129,9 +129,11 @@ const flatChartSchema = () => {
     yLabel: ChartLabel.optional(),
     sizeLabel: ChartLabel.optional(),
     averages: z.boolean().optional(),
-    locale: chartLocaleSchema().optional(),
     xFormat: cloudAiNumberFormatSchema().optional(),
     yFormat: cloudAiNumberFormatSchema().optional(),
+    layout: z.enum(["stacked", "calendar"]).optional().describe("area: stacked; heatmap: calendar."),
+    scale: z.enum(["sequential", "diverging"]).optional().describe("Calendar heatmap color scale; domain includes all days."),
+    locale: chartLocaleSchema().optional(),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
     data: z
       .union([
@@ -152,10 +154,14 @@ const flatChartSchema = () => {
           .min(1)
           .max(CLOUD_AI_VIEW_MAX_MARKS),
         z.array(z.number()).min(1).max(CLOUD_AI_CHART_MAX_VALUES),
+        z
+          .array(z.array(z.union([z.string(), z.number(), z.null()])).length(2))
+          .min(1)
+          .max(CLOUD_AI_VIEW_MAX_MARKS),
       ])
       .optional()
       .describe(
-        "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value. histogram, sparkline: numbers.",
+        "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value, or calendar [YYYY-MM-DD,number] pairs. histogram, sparkline: numbers.",
       ),
     x: z
       .array(z.union([ChartLabel, z.number()]))
@@ -164,7 +170,6 @@ const flatChartSchema = () => {
       .optional()
       .describe("area: ordered categories or numeric X values."),
     normalize: z.boolean().optional().describe("area: show shares as 100 % while retaining original amounts."),
-    layout: z.literal("stacked").optional().describe("area: stacked layers."),
     series: z
       .array(
         z.union([
@@ -222,7 +227,10 @@ const chartInputSchema = () => {
         .optional()
         .describe(`Groups: 2..${CLOUD_AI_GROUP_MAX_CHARTS} related charts, each with a kind.`),
       linkX: z.boolean().optional().describe("Groups: share the x cursor between line charts with the same kind of x."),
-      layout: z.enum(["stack", "grid", "stacked"]).optional().describe("Groups: stack (default) or grid. Area: stacked."),
+      layout: z
+        .enum(["stack", "grid", "stacked", "calendar"])
+        .optional()
+        .describe("Groups: stack/grid. Area: stacked. heatmap: calendar uses ISO date/value pairs."),
     })
     .superRefine((value, context) => {
       if ((value.kind !== undefined) === (value.charts !== undefined)) {
@@ -231,11 +239,11 @@ const chartInputSchema = () => {
       }
       if (value.charts !== undefined) {
         value.charts.forEach((chart, index) => {
-          if (chart.locale !== undefined && !chartAcceptsLocale(chart))
+          if ((chart.layout === "calendar" && chart.kind !== "heatmap") || (chart.locale !== undefined && !chartAcceptsLocale(chart)))
             context.addIssue({
               code: "custom",
-              path: ["charts", index, "locale"],
-              message: "locale is not supported for this chart kind.",
+              message: "Unsupported calendar layout or locale.",
+              path: ["charts", index],
             });
         });
         const parsed = groupSchema.safeParse(value);
@@ -248,10 +256,12 @@ const chartInputSchema = () => {
           if (issue) context.addIssue({ code: "custom", message: issue, path: ["charts", index] });
         });
       } else {
-        if (value.linkX !== undefined || (value.layout !== undefined && value.kind !== "area"))
+        if (value.linkX !== undefined || (value.layout !== undefined && value.kind !== "area" && value.layout !== "calendar"))
           context.addIssue({ code: "custom", message: "linkX and layout belong to groups." });
         if (value.locale !== undefined && !chartAcceptsLocale(value))
-          context.addIssue({ code: "custom", path: ["locale"], message: "locale is not supported for this chart kind." });
+          context.addIssue({ code: "custom", message: "Unsupported chart locale." });
+        if (value.layout === "calendar" && value.kind !== "heatmap")
+          context.addIssue({ code: "custom", message: "calendar layout belongs to heatmaps." });
         const parsed = ChartSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });

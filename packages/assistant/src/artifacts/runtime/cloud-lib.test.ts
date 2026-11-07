@@ -738,3 +738,37 @@ test("named bubbles and radar keep titles, locale, complete axis tooltips and me
   expect(radar).toContain("1 / 5 points");
   expect(radar).not.toContain("data-stretch");
 });
+
+test("calendar app charts preserve headers, units, square geometry and Date pairs", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "heatmap",
+        layout: "calendar",
+        title: "Daily balance",
+        subtitle: "Fictional",
+        locale: "de-DE",
+        label: "EUR",
+        scale: "diverging",
+        data: [
+          [new Date("2026-11-02T00:00:00Z"), -1234.5],
+          ["2026-11-03", null],
+        ],
+      },
+      "en",
+      "UTC",
+    ),
+  );
+  expect(markup).toContain("Daily balance</text>");
+  expect(markup).toContain("Fictional</text>");
+  expect(markup).not.toContain("direction:rtl");
+  expect(markup).not.toContain("data-stretch");
+  const cell = markup.match(/<rect[^>]*width="(\d+)" height="(\d+)" rx="2"/);
+  expect(cell).not.toBeNull();
+  expect(cell![1]).toBe(cell![2]);
+  expect(Number(cell![1])).toBeGreaterThan(14);
+  expect(markup).not.toContain('preserveAspectRatio="none"');
+  expect(markup).not.toMatch(/<text[^>]*style="[^"]*"[^>]*style=/);
+  expect(markup).toContain("1.234,5 mehr raus");
+  expect(markup).toContain("EUR");
+});

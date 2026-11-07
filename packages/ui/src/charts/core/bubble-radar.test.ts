@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { resolveChartMessages } from "../../content/chart-message-catalog";
 import { type BubbleOptions, bubbleLayout, renderBubbleSvg } from "./bubble";
 import { type RadarOptions, radarLayout, renderRadarSvg } from "./radar";
 
@@ -106,4 +107,9 @@ test("radar bounds axes, series and all observations at the core boundary", () =
 test("phone radar leaves room for ordinary complete axis names", () => {
   const s = radarLayout({ ...radar, axes: ["Quality", "Speed", "Cost", "Access"], series: [{ label: "A", data: [1, 2, 3, 4] }] });
   expect(s.axes.map((a) => a.text)).toEqual(["Quality", "Speed", "Cost", "Access"]);
+});
+
+test("shared group tooltip text agrees with editor rows in both locales", () => {
+  expect(resolveChartMessages("de-DE").chartFields({ key: "group" })).toBe("Bereich");
+  expect(resolveChartMessages("en-US").chartFields({ key: "group" })).toBe("Group");
 });

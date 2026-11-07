@@ -1,3 +1,4 @@
+import { calendarLayout } from "./calendar";
 import { type ChartSelection, type ChartTooltip, type ChartTooltipFormatter, isChartDatum } from "./inspection";
 import { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./render";
 import { escapeXml } from "./svg";
@@ -10,6 +11,7 @@ export type ChartSnapshot = {
   width: number;
   height: number;
   stretch: boolean;
+  minWidth?: number;
   marks: readonly { key: string; rowKey: string; datum: ChartDatum; tooltip: ChartTooltip; reference?: boolean }[];
 };
 
@@ -33,7 +35,8 @@ export function prepareChartSnapshot(
     reference?: (selection: ChartSelection) => boolean;
   },
 ): ChartSnapshot {
-  const width = 480;
+  const calendar = options.kind === "heatmap" && options.layout === "calendar" ? calendarLayout(options) : undefined;
+  const width = calendar?.width ?? 480;
   const height = chartRenderHeight(options);
   const svg = renderChartSvg(options, width, height);
   const marks: ChartSnapshot["marks"][number][] = [];
@@ -78,7 +81,8 @@ export function prepareChartSnapshot(
     svg: formattedSvg,
     width,
     height,
-    stretch: !["map", "pie", "donut", "gauge", "radar"].includes(options.kind),
+    ...(calendar ? { minWidth: calendar.minWidth } : {}),
+    stretch: !calendar && !["map", "pie", "donut", "gauge", "radar"].includes(options.kind),
     marks,
   };
 }

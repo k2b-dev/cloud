@@ -2,6 +2,7 @@ import { renderBarChartSvg } from "../../content/chart-bar";
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
 import { renderBubbleSvg } from "./bubble";
+import { renderHeatmapSvg } from "./calendar";
 import { renderRadarSvg } from "./radar";
 import { charts } from "./svg";
 
@@ -20,7 +21,7 @@ export const chartRenderers = {
   gauge: charts.gauge,
   barGauge: charts.barGauge,
   stat: charts.stat,
-  heatmap: charts.heatmap,
+  heatmap: renderHeatmapSvg,
   map: charts.map,
   stateTimeline: renderStateTimelineSvg,
   bubble: renderBubbleSvg,

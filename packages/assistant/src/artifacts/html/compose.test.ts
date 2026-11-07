@@ -16,6 +16,7 @@ afterEach(() => {
 
 const options = {
   prelude: "/* prelude */",
+  chartModule: "/* chart module */",
   preludeHash: "'sha256-prelude'",
   baseCss: "@layer k2b-base{}",
   theme: "dark" as const,
