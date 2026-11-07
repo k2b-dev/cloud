@@ -109,9 +109,10 @@ preserves `{ items, pagination: { offset, limit, total } }`, including in
 IDs, subscription IDs, states, attempt counts, and `heldBy`. A non-null `heldBy`
 is the earlier unresolved delivery holding this subscription. Normal app
 subscriptions order by subject and retain failed predecessors. Resource-bound
-workloads order all subjects at their place; bounded delivery exhaustion leaves
-a visible failure and releases later messages. Retry or reconcile a pending
-predecessor first.
+workloads order all subjects at their place while delivery is pending or
+retrying. After bounded exhaustion, the visible failure still holds successors
+of the same subject; different subjects can proceed. Explicitly replay the
+failed predecessor successfully to release its subject successors.
 
 These commands call the matching administrative endpoints:
 
@@ -386,8 +387,10 @@ minute, above the planning rate of 72 new deliveries per minute.
 
 Mailbox Code uses the generic resource-event admission and ordinary Code run
 outbox. Mail’s old workflow emission remains independent. A single resource
-registration admits and runs messages in receipt order; exhausted failures
-remain visible without holding the mailbox indefinitely. Attempted event runs
+registration admits and runs messages in receipt order. Each message is its
+own subject, so an exhausted admission failure remains visible while different
+messages can proceed. The broker still holds successors of the failed subject
+until explicit replay succeeds. Attempted event runs
 can be rerun deliberately with their original envelope through the existing
 Code run service. Inspect effects first.
 

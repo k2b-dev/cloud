@@ -171,7 +171,10 @@ accounts and lost read access cannot admit a new run.
 (default 100). When full, admission retries through the platform's existing
 delivery queue and then becomes a visible failed delivery. Failed deliveries
 stay visible for deliberate replay. After bounded admission attempts, a failed
-resource delivery releases later events at that place.
+resource delivery allows different subjects at that place to proceed. Successors
+of its own subject stay held until explicit replay of the predecessor succeeds.
+Mail uses a separate subject for each message, so a failed message does not
+hold other messages indefinitely.
 The platform event retention and retry budgets also apply; there is no second
 broker or event archive.
 

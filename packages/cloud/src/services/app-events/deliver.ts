@@ -81,7 +81,7 @@ export function createEventDelivery(
               WHERE earlier.subscription_id = delivery.subscription_id
                 AND (subscription.resource_binding IS NOT NULL OR earlier.subject_key = delivery.subject_key)
                 AND earlier.seq < delivery.seq
-                AND (earlier.state IN ('pending', 'retrying') OR (subscription.resource_binding IS NULL AND earlier.state='failed'))
+                AND (earlier.state IN ('pending', 'retrying') OR (earlier.subject_key = delivery.subject_key AND earlier.state = 'failed'))
             )
           ORDER BY delivery.seq LIMIT ${CONCURRENCY} FOR UPDATE OF delivery SKIP LOCKED
         ) UPDATE events.app_deliveries delivery SET claimed_until = now() + interval '60 seconds',

@@ -51,7 +51,9 @@ for this mailbox’s registration, even if Code concurrency is raised. A retry
 keeps its position. Retries share the original deadline and call budgets and
 stop at the configured automatic-attempt limit. After an Action or an internet
 effect starts, failures require deliberate recovery. Exhausted delivery or run
-failures stay visible and release later messages.
+failures stay visible and release later messages. Each message is its own
+subject; the broker still holds later events for a failed subject until the
+predecessor is explicitly replayed successfully.
 
 Use **Retry delivery** for failed admission and **Run again** for an attempted,
 failed run. Run again preserves the original envelope, uses the currently
