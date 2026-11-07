@@ -122,6 +122,30 @@ test("a Code carries its automations, removed access and earliest next run", asy
   expect(automationStatus({ ...item!, state: "paused" }, item!.automations![1]!)).toEqual({ key: "paused", tone: "warning" });
 });
 
+test("one-time schedule metadata survives Core response parsing", async () => {
+  const timing = { at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" };
+  const core = fakeCore({
+    "code.list": () => ({ items: [code("c_once01")], nextCursor: null }),
+    "code.run.list": () => ({ items: [], nextCursor: null }),
+    "code.automation.list": () => ({
+      items: [
+        {
+          entrypoint: "reminder",
+          kind: "schedule",
+          cron: null,
+          ...timing,
+          nextRunAt: "2026-12-01T08:15:30.000Z",
+          lastRun: null,
+          missingTargets: [],
+        },
+      ],
+      removedTargets: [],
+    }),
+  });
+  const page = await loadCodeSummaries(core.invoke, { kind: "person", userId: "11111111-1111-4111-8111-111111111111" });
+  expect(page.items[0]?.automations?.[0]).toMatchObject(timing);
+});
+
 test("a transport that throws for the automations does not fail the list", async () => {
   const core = fakeCore({
     "code.list": () => ({ items: [code("c_info01")], nextCursor: null }),

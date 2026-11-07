@@ -74,12 +74,15 @@ from `@k2b/cloud/contracts` and re-exported by Core's `code/index.ts`. The host
 copies these fields unchanged from the checker's `checkCode` result:
 
 - `version: 1`;
-- `entrypoints`: `{ kind: "schedule" | "manual", entrypoint, title?, cron, file, line }`;
+- `entrypoints`: `{ kind: "schedule" | "manual", entrypoint, title?, cron, at?, timeZone?, file, line }`;
 - `permissions`: `{ operation, target, file, line }`, retaining separate source
   rows for literal targets and references. An app-wide operation has a null
   target; dynamic personal targets have a null `target.id`;
 - `ai`: whether detected calls use AI;
 - `hashes`: lowercase SHA-256 digests for `source`, `sdk` and `bundle`.
+
+For one-time schedules, `cron` is null and both `at` (an absolute date-time)
+and `timeZone` (an IANA zone) are present. Cron schedules omit both fields.
 
 The host adds `entry` from the original `CodeCheckRequest.entry` and
 unique `policyRows` from operation metadata, including every used classification

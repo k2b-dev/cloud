@@ -15,7 +15,7 @@ afterAll(() => {
   setSystemTime();
   rmSync(root, { recursive: true, force: true });
 });
-const [{ default: CodeView }, { default: CodeBlock }, { LocaleProvider }] = await Promise.all([
+const [{ default: CodeView, codeScheduleLine }, { default: CodeBlock }, { LocaleProvider }] = await Promise.all([
   import("./AssistantCodeView"),
   import("./AssistantCodeBlock"),
   import("@k2b/ui"),
@@ -63,3 +63,16 @@ for (const surface of ["apps", "panel"] as const)
     if (surface === "panel") expect(render(surface)).toContain("lieferungenEintragen");
     else expect(render(surface)).not.toContain("lieferungenEintragen");
   });
+
+test("the apps list names a one-time instant in its declared zone in German and English", () => {
+  const summary = code();
+  summary.automations = [{ ...automation(), kind: "schedule", at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" }];
+  for (const locale of ["de", "en"]) {
+    const line = codeScheduleLine(summary, locale, "America/New_York");
+    const expected = new Intl.DateTimeFormat(locale, { timeZone: "Europe/Berlin", dateStyle: "medium", timeStyle: "short" }).format(
+      new Date("2026-12-01T09:15:30+01:00"),
+    );
+    expect(line).toContain(`${expected} (Europe/Berlin)`);
+    expect(line).not.toMatch(/Handstart|Manual start/);
+  }
+});

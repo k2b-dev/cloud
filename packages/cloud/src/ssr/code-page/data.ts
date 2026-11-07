@@ -64,6 +64,8 @@ export const ManifestSchema = z.object({
       entrypoint: z.string(),
       title: z.string().optional(),
       cron: z.string().nullable(),
+      at: z.string().optional(),
+      timeZone: z.string().optional(),
     }),
   ),
   permissions: z.array(PermissionSchema),
@@ -239,6 +241,8 @@ export type CodePageAutomation = {
   kind: "schedule" | "manual" | "route";
   route?: { method: string; path: string; public: boolean };
   cron: string | null;
+  at?: string;
+  timeZone?: string;
   /** Only the waiting version has it. */
   isNew: boolean;
   lastRun: CodePageRun | null;

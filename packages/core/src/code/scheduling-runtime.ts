@@ -7,7 +7,14 @@ import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import type { Queue, Scheduler, Worker } from "@k2b/sync";
 import { claimCodeWork } from "./dispatch";
 import { reconcileCodeJobs } from "./runner-jobs";
-import { codeRunnerLease, processCurrentCodeScheduleTick, readCodeRunLimits, reconcileCodeRuns, recordCodeRunner } from "./scheduling";
+import {
+  codeRunnerLease,
+  codeScheduleRequestKey,
+  processCurrentCodeScheduleTick,
+  readCodeRunLimits,
+  reconcileCodeRuns,
+  recordCodeRunner,
+} from "./scheduling";
 import { CODE_SCHEDULE_TICK_RETENTION_MS } from "./scheduling-contracts";
 import { codeSettings } from "./settings";
 
@@ -125,6 +132,7 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
       const codes = await sql<{ id: string }[]>`SELECT id FROM code.codes WHERE id>${cursor} ORDER BY id LIMIT 50`;
       for (const code of codes) {
         try {
+          const due: Array<{ codeId: string; entrypoint: string; at: string; timeZone: string; slot: Date }> = [];
           await sql.begin(async (db) => {
             await db`SELECT id FROM code.codes WHERE id=${code.id} FOR UPDATE`;
             const [current] = await db<{ state: string; manifest: unknown }[]>`SELECT c.state,v.manifest FROM code.codes c
@@ -133,7 +141,17 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
             const desired = new Set<string>();
             if (current?.state === "active" && manifest.success)
               for (const entry of manifest.data.entrypoints) {
-                if (entry.kind !== "schedule" || !entry.cron) continue;
+                if (entry.kind !== "schedule") continue;
+                if (entry.at && entry.timeZone) {
+                  const slot = new Date(entry.at);
+                  const [ready] = await db<{ due: boolean }[]>`SELECT ${slot}<=clock_timestamp()
+                    AND ${slot}>clock_timestamp()-${CODE_SCHEDULE_TICK_RETENTION_MS}*interval '1 millisecond'
+                    AND NOT EXISTS(SELECT 1 FROM code.run_requests WHERE code_id=${code.id}
+                      AND request_key=${codeScheduleRequestKey(entry.entrypoint, slot)}) AS due`;
+                  if (ready?.due) due.push({ codeId: code.id, entrypoint: entry.entrypoint, at: entry.at, timeZone: entry.timeZone, slot });
+                  continue;
+                }
+                if (!entry.cron) continue;
                 const cron = entry.cron;
                 const id = codeScheduleId(code.id, entry.entrypoint);
                 desired.add(id);
@@ -158,6 +176,8 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
                 await scheduler.delete({ id: schedule.id });
             }
           });
+          // Admission reacquires the row and verifies the exact current timing after this snapshot's transaction.
+          for (const tick of due) await processCurrentCodeScheduleTick(tick);
         } catch (error) {
           logger("core:code-scheduling").error("code_schedule_sync_failed", {
             codeId: code.id,
