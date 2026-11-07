@@ -3,6 +3,13 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.68.1](https://github.com/k2b-dev/cloud/compare/cloud-v0.68.0...cloud-v0.68.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **ci:** reserve measured slowdown headroom in WebKit shards ([#2804](https://github.com/k2b-dev/cloud/issues/2804)) ([2ab3846](https://github.com/k2b-dev/cloud/commit/2ab3846a534ec7afddfa1501615a5efd4775c172)), closes [#1998](https://github.com/k2b-dev/cloud/issues/1998)
+
 ## [0.68.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.67.0...cloud-v0.68.0) (2026-11-07)
 
 
