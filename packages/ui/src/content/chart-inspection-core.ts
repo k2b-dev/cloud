@@ -1,11 +1,9 @@
-import { i18n } from "@k2b/stdlib";
 import { type ChartDatum, type ChartKind, chartDatumRoles } from "../charts/core";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartCursor, ChartCursorState } from "./chart-cursor";
+import { chartMessages } from "./chart-messages";
 
 export type { ChartKind } from "../charts/core";
-
-const areaMessages = i18n.define({ baseLocale: "en", messages: { en: { total: "Total" }, de: { total: "Gesamt" } } });
 
 export type ChartDatumRef = Pick<ChartDatum, "role" | "index" | "seriesIndex">;
 export const sameChartDatum = (a: ChartDatumRef, b: ChartDatumRef) =>
@@ -281,7 +279,7 @@ export function createChartInspector(options: {
           const swatch = document.createElement("i");
           swatch.setAttribute("aria-hidden", "true");
           const series = container.querySelector(
-            `.stdlib-chart-line.stdlib-chart-series-${(item.datum.seriesIndex ?? 0) % 8}, .k2b-area-layer.stdlib-chart-series-${(item.datum.seriesIndex ?? 0) % 8}`,
+            `.stdlib-chart-line.stdlib-chart-series-${(item.datum.seriesIndex ?? 0) % 8}, .k2b-area-edge-${(item.datum.seriesIndex ?? 0) % 8}`,
           );
           swatch.style.background = series
             ? getComputedStyle(series).stroke
@@ -302,7 +300,7 @@ export function createChartInspector(options: {
         const line = document.createElement("span");
         line.className = "k2b-chart__tooltip-row";
         const label = document.createElement("span");
-        label.textContent = `${areaMessages.resolve([options.locale?.() ?? "en"]).t.total}: `;
+        label.textContent = `${chartMessages.resolve([options.locale?.() ?? "en"]).t.chartFields({ key: "total" })}: `;
         const value = document.createElement("b");
         value.textContent = total.formatted ?? String(total.value);
         line.append(label, value);

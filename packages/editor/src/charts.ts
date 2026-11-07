@@ -51,6 +51,7 @@ const labels = /* @__PURE__ */ i18n.define({
       series: "Series",
       value: "Value",
       share: "Share",
+      position: "Position",
       from: "From",
       to: "To",
       count: "Count",
@@ -68,6 +69,7 @@ const labels = /* @__PURE__ */ i18n.define({
       series: "Datenreihe",
       value: "Wert",
       share: "Anteil",
+      position: "Position",
       from: "Von",
       to: "Bis",
       count: "Anzahl",
@@ -606,7 +608,11 @@ export function chartRows(
   const xFormat = options.formats?.x ?? format.x.value;
   const series = chartSeries(input);
   const countFormat = (input.kind === "histogram" ? options.formats?.y : undefined) ?? chartNumberFormatters(undefined, locale).value;
-  const percent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
+  const percent = new Intl.NumberFormat(locale, {
+    style: "percent",
+    minimumFractionDigits: input.kind === "area" ? 1 : 0,
+    maximumFractionDigits: 1,
+  });
   const unit = "unit" in input && input.unit ? ` ${input.unit}` : "";
   const columns = new Map<string, ChartColumn>();
   const rows: ChartRow[] = [];
@@ -636,7 +642,7 @@ export function chartRows(
     for (const field of datum.values) {
       const value = field.value;
       if (typeof value === "string" && input.kind === "area" && field.key === "x") {
-        cell("x", "X", value, value);
+        cell("x", t.position, value, field.formatted ?? value);
         continue;
       }
       if (typeof value === "string" && input.kind === "heatmap" && (field.key === "x" || field.key === "y")) {
@@ -645,12 +651,18 @@ export function chartRows(
       }
       if (typeof value !== "number" || field.key === "total") continue;
       if (field.key === "x") {
-        const header = (input.kind === "line" || input.kind === "scatter" ? input.xAxis?.label : undefined) ?? "X";
+        const header =
+          (input.kind === "line" || input.kind === "scatter" ? input.xAxis?.label : undefined) ??
+          (input.kind === "area" ? t.position : "X");
         cell(
           "x",
           input.kind === "sparkline" || input.kind === "stat" ? "#" : header,
           value,
-          input.kind === "sparkline" || input.kind === "stat" ? String(value + 1) : xFormat(value),
+          input.kind === "sparkline" || input.kind === "stat"
+            ? String(value + 1)
+            : input.kind === "area"
+              ? (field.formatted ?? String(value))
+              : xFormat(value),
         );
       } else if (field.key === "y") {
         const header =

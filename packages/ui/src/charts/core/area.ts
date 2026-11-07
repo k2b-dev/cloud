@@ -16,7 +16,7 @@ export type AreaOptions = {
 };
 export type AreaPoint = { index: number; amount: number; share: number; lower: number; upper: number };
 
-/** Missing observations interrupt the entire stack; zero-sum columns have no area or inspected values. */
+/** Missing observations interrupt the entire stack; zero-sum columns are gaps only in normalized mode. */
 export function areaLayout(spec: AreaOptions, size: { width: number; height: number }) {
   if (![size.width, size.height].every((v) => Number.isFinite(v) && v > 0)) throw new RangeError("Invalid area size");
   if (spec.x.some((x) => typeof x === "number" && !Number.isFinite(x))) throw new RangeError("Area X values must be finite");
@@ -35,7 +35,7 @@ export function areaLayout(spec: AreaOptions, size: { width: number; height: num
       total += value;
     }
     if (!Number.isFinite(total)) throw new RangeError("Area totals must be finite");
-    return missing || total === 0 ? null : total;
+    return missing || (spec.normalize && total === 0) ? null : total;
   });
   const layers: (AreaPoint | null)[][] = spec.series.map(() => []);
   totals.forEach((total, index) => {
@@ -46,7 +46,7 @@ export function areaLayout(spec: AreaOptions, size: { width: number; height: num
         layers[s]!.push(null);
         return;
       }
-      const share = amount / total;
+      const share = total === 0 ? 0 : amount / total;
       const upper = lower + (spec.normalize ? share : amount);
       layers[s]!.push({ index, amount, share, lower, upper });
       lower = upper;
@@ -59,18 +59,23 @@ export function areaLayout(spec: AreaOptions, size: { width: number; height: num
   if (!(step > 0) || !Number.isFinite(max)) throw new RangeError("Area values cannot form a finite axis; rescale them first");
   const ticks = Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step);
   const format = spec.format ?? new Intl.NumberFormat(spec.locale ?? "en", { maximumFractionDigits: 2 }).format;
-  const percent = new Intl.NumberFormat(spec.locale ?? "en", { style: "percent", maximumFractionDigits: 1 }).format;
-  const axisFormat = spec.normalize ? percent : format;
+  const percent = new Intl.NumberFormat(spec.locale ?? "en", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 })
+    .format;
+  const axisFormat = spec.normalize
+    ? new Intl.NumberFormat(spec.locale ?? "en", { style: "percent", maximumFractionDigits: 0 }).format
+    : format;
+  const numericX = new Intl.NumberFormat(spec.locale ?? "en", { useGrouping: "min2", maximumFractionDigits: 6 }).format;
+  const xFormat = (value: string | number) => (typeof value === "number" ? numericX(value) : value);
   const displayWidth = spec.displayWidth ?? 296;
   if (!Number.isFinite(displayWidth) || displayWidth <= 0) throw new RangeError("Invalid area display width");
   const ratio = size.width / displayWidth;
   const left = Math.min(size.width * 0.6, Math.max(44, ...ticks.map((v) => axisFormat(v).length * 7 + 12)) * ratio);
   const right = size.width - 12,
-    top = (spec.title || spec.subtitle ? 50 : 16) + (spec.legend === false ? 0 : 40);
+    top = (spec.title || spec.subtitle ? 50 : 16) + (spec.legend === false ? 0 : spec.series.length <= 2 ? 20 : 40);
   const bottom = Math.max(top + 1, size.height - 30);
   const projectX = (index: number) => (spec.x.length < 2 ? (left + right) / 2 : left + (index / (spec.x.length - 1)) * (right - left));
   const projectY = (value: number) => bottom - (value / max) * (bottom - top);
-  return { layers, totals, max, ticks, format, percent, axisFormat, ratio, left, right, top, bottom, projectX, projectY };
+  return { layers, totals, max, ticks, format, percent, axisFormat, xFormat, ratio, left, right, top, bottom, projectX, projectY };
 }
 const f = (value: number) => String(Math.round(value * 100) / 100);
 const text = (x: number, y: number, label: string, anchor = "middle", extra = "") =>
@@ -98,8 +103,9 @@ export function renderAreaSvg(spec: AreaOptions & { width: number; height: numbe
     const cell = spec.width / columns;
     entries.forEach((series, i) => {
       const x = (i % columns) * cell + 4,
-        y = g.top - 28 + Math.floor(i / columns) * 17;
-      const color = `var(--stdlib-chart-c${(i % 8) + 1}, ${palette[i % 8]})`;
+        y = g.top - (entries.length <= 2 ? 11 : 28) + Math.floor(i / columns) * 17;
+      const color =
+        i === 3 && spec.series.length > 4 ? "var(--k2b-text-muted, #8b8b93)" : `var(--stdlib-chart-c${(i % 8) + 1}, ${palette[i % 8]})`;
       const point = g.layers[i]?.at(-1);
       const value = point ? (spec.normalize ? g.percent(point.share) : g.format(point.amount)) : "—";
       const room = Math.floor((cell * (1 / g.ratio)) / 6) - 4;
@@ -130,12 +136,25 @@ export function renderAreaSvg(spec: AreaOptions & { width: number; height: numbe
     let run: AreaPoint[] = [];
     const flush = () => {
       if (!run.length) return;
-      const points = [
-        ...run.map((p) => `${f(g.projectX(p.index))},${f(g.projectY(p.upper))}`),
-        ...run.toReversed().map((p) => `${f(g.projectX(p.index))},${f(g.projectY(p.lower))}`),
-      ];
+      const halfSlot = Math.min(10 * g.ratio, (g.right - g.left) / Math.max(2, spec.x.length * 2));
+      const upper =
+        run.length === 1
+          ? [
+              [Math.max(g.left, g.projectX(run[0]!.index) - halfSlot), g.projectY(run[0]!.upper)],
+              [Math.min(g.right, g.projectX(run[0]!.index) + halfSlot), g.projectY(run[0]!.upper)],
+            ]
+          : run.map((p) => [g.projectX(p.index), g.projectY(p.upper)]);
+      const lower =
+        run.length === 1
+          ? [
+              [upper[1]![0]!, g.projectY(run[0]!.lower)],
+              [upper[0]![0]!, g.projectY(run[0]!.lower)],
+            ]
+          : run.toReversed().map((p) => [g.projectX(p.index), g.projectY(p.lower)]);
+      const points = [...upper, ...lower].map(([x, y]) => `${f(x!)},${f(y!)}`);
       parts.push(
-        `<polygon class="k2b-area-layer stdlib-chart-series-${s % 8}" points="${points.join(" ")}" fill="${color}" fill-opacity=".5" stroke="${color}" stroke-width="1"/>`,
+        `<polygon class="k2b-area-layer" points="${points.join(" ")}" fill="color-mix(in srgb, ${color} 55%, var(--k2b-surface, #ffffff))" stroke="none"/>`,
+        `<polyline class="k2b-area-edge k2b-area-edge-${s % 8}" points="${upper.map(([x, y]) => `${f(x!)},${f(y!)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="1.5"/>`,
       );
       run = [];
     };
@@ -159,7 +178,11 @@ export function renderAreaSvg(spec: AreaOptions & { width: number; height: numbe
             label: spec.series[s]!.label,
             anchor: [x, g.top],
             values: [
-              { key: "x", value: spec.x[point.index]! },
+              {
+                key: "x",
+                value: spec.x[point.index]!,
+                formatted: g.xFormat(spec.x[point.index]!),
+              },
               { key: "value", value: point.amount, formatted: g.format(point.amount) },
               { key: "total", value: g.totals[point.index]!, formatted: g.format(g.totals[point.index]!) },
               ...(spec.normalize ? [{ key: "percent", value: point.share * 100, formatted: g.percent(point.share) }] : []),
@@ -175,7 +198,7 @@ export function renderAreaSvg(spec: AreaOptions & { width: number; height: numbe
   const stride = Math.max(1, Math.ceil(labelWidth / Math.max(1, slot)));
   spec.x.forEach((value, i) => {
     if (i % stride !== 0) return;
-    const label = String(value);
+    const label = g.xFormat(value);
     parts.push(
       text(
         g.projectX(i),

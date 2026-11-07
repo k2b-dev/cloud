@@ -57,8 +57,8 @@ test("separated spans have distinct SVG paths and portable paint; shares use the
     locale: "de",
   });
   expect(svg.match(/<polygon/g)).toHaveLength(2);
-  expect(svg).toContain('fill="var(--stdlib-chart-c1,');
-  expect(svg).toContain("100 %");
+  expect(svg).toContain('fill="color-mix(in srgb, var(--stdlib-chart-c1,');
+  expect(svg).toContain("100,0 %");
 });
 
 test("pure-host legends carry final values and remain bounded for many series", () => {
@@ -79,4 +79,25 @@ test("measured wide hosts reserve tick space in CSS pixels", () => {
   const size = { width: 900, height: 280 };
   expect(areaLayout({ ...spec, displayWidth: 900 }, size).left).toBeLessThan(100);
   expect(areaLayout({ ...spec, displayWidth: 900 }, size).left).toBeLessThan(areaLayout(spec, size).left);
+});
+
+test("absolute zero columns stay inspectable while zero normalized columns are gaps", () => {
+  const absolute = areaLayout(spec, size);
+  expect(absolute.totals).toEqual([100, 40, null, 0]);
+  expect(absolute.layers[0]![3]).toEqual({ index: 3, amount: 0, share: 0, lower: 0, upper: 0 });
+  const zero = { layout: "stacked" as const, x: [2023], series: [{ label: "A", data: [0] }] };
+  expect(renderAreaSvg({ ...zero, ...size, inspect: true }).match(/data-chart-datum=/g)).toHaveLength(1);
+  expect(renderAreaSvg({ ...zero, normalize: true, ...size, inspect: true })).not.toContain("data-chart-datum=");
+});
+
+test("single and isolated observations have a visible band and a top edge", () => {
+  for (const data of [[3], [null, 3, null]]) {
+    const svg = renderAreaSvg({ layout: "stacked", x: data.map((_, i) => i), series: [{ label: "A", data }], ...size });
+    const polygon = /<polygon[^>]*points="([^"]+)"/.exec(svg)![1]!;
+    const xs = polygon.split(" ").map((p) => Number(p.split(",")[0]));
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(1);
+    expect(svg).toContain('stroke-width="1.5"');
+    expect(svg).toContain('stroke="none"');
+  }
+  expect(areaLayout({ layout: "stacked", x: [1], series: [{ label: "A", data: [1] }] }, size).top).toBe(36);
 });

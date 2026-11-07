@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "../intl/locale";
 
-const chartMessages = i18n.define({
+export const chartMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
@@ -95,7 +95,7 @@ const chartMessages = i18n.define({
           y: "Y",
           value: "Wert",
           percent: "Anteil",
-          total: "Gesamt",
+          total: "Zusammen",
           from: "Von",
           to: "Bis",
           upperInclusive: "Obergrenze enthalten",

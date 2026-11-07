@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { prepareChartSnapshot } from "@k2b/ui";
 import { chartKinds, chartMarks, chartRenderOptions, chartTable, chartTooltip } from "./charts";
-import { notebookChartHeight } from "./markdown/lib/chart-blocks";
+import { notebookChartHeight, renderNotebookChartFigure } from "./markdown/lib/chart-blocks";
 
 const spec = {
   kind: "area",
@@ -38,7 +38,7 @@ test("server snapshots retain the request locale for normalized shares", () => {
     key: ({ datum }) => `${datum.seriesIndex}:${datum.index}`,
     tooltip: () => ({ rows: [] }),
   });
-  expect(snapshot.marks[0]?.datum.values.find((field) => field.key === "percent")?.formatted).toBe("30 %");
+  expect(snapshot.marks[0]?.datum.values.find((field) => field.key === "percent")?.formatted).toBe("30,0 %");
 });
 
 test("area tooltip has the same category, share and amount in every host", () => {
@@ -46,6 +46,34 @@ test("area tooltip has the same category, share and amount in every host", () =>
     table = chartTable(input, "de");
   expect(chartTooltip(table.columns, table.rows[0]!, input.kind)).toEqual({
     title: "Jan",
-    rows: [{ label: "Recurring", value: "30 % · 30" }],
+    rows: [{ label: "Recurring", value: "30,0 % · 30" }],
   });
+});
+
+test("absolute zeros and numeric categories keep the same tooltip text as the renderer", () => {
+  const input = chartKinds().parse({ ...spec, normalize: false, x: [2023, 2024, 2025] });
+  const table = chartTable(input, "de");
+  expect(table.rows).toHaveLength(4);
+  expect(table.rows[0]!.cells.x).toBe("2023");
+  expect(chartTooltip(table.columns, table.rows[0]!, input.kind).title).toBe("2023");
+  expect(table.rows.filter((r) => r.values.x === 2024).map((r) => r.cells.value)).toEqual(["0", "0"]);
+});
+
+test("Notebook line legends keep their existing names without area cursor values", () => {
+  const line = chartKinds().parse({
+    kind: "line",
+    legend: true,
+    series: [
+      {
+        label: "Requests",
+        data: [
+          { x: 1, y: 2 },
+          { x: 2, y: 3 },
+        ],
+      },
+    ],
+  });
+  const html = renderNotebookChartFigure(line, "de");
+  expect(html).toContain("Requests");
+  expect(html).not.toContain("data-chart-legend-value");
 });

@@ -276,7 +276,9 @@ const isEmpty = (props: ChartProps): boolean => {
     return (
       !props.x.length ||
       !props.series.length ||
-      props.x.every((_, i) => props.series.some((s) => s.data[i] === null) || props.series.every((s) => s.data[i] === 0))
+      props.x.every(
+        (_, i) => props.series.some((s) => s.data[i] === null) || (props.normalize && props.series.every((s) => s.data[i] === 0)),
+      )
     );
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);
@@ -322,9 +324,9 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     const amount = props.series[index]?.data[last];
     const values = props.series.map((s) => s.data[last]);
     const total = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
-    if (amount == null || values.some((v) => v == null) || total === 0) return "—";
+    if (amount == null || values.some((v) => v == null) || (props.normalize && total === 0)) return "—";
     return props.normalize
-      ? new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 1 }).format(amount / total)
+      ? new Intl.NumberFormat(locale(), { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(amount / total)
       : (props.format?.(amount) ?? new Intl.NumberFormat(locale(), { maximumFractionDigits: 2 }).format(amount));
   };
   const dimensions = () => containerRef?.getBoundingClientRect() ?? size();
@@ -598,7 +600,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
         const amount = selection.datum.values.find((f) => f.key === "value")!;
         const share = selection.datum.values.find((f) => f.key === "percent");
         return {
-          title: String(selection.datum.values.find((f) => f.key === "x")?.value ?? ""),
+          title: selection.datum.values.find((f) => f.key === "x")?.formatted ?? "",
           rows: [
             { label: selection.datum.label ?? chartMessages().series, value: `${share ? `${share.formatted} · ` : ""}${amount.formatted}` },
           ],
@@ -607,14 +609,13 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
       const format = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 });
       return {
         title:
-          (selection.kind === "area" ? String(selection.datum.values.find((f) => f.key === "x")?.value ?? "") : undefined) ??
           selection.datum.label ??
           (selection.datum.seriesIndex !== undefined
             ? `${labels().series ?? chartMessages().series} ${selection.datum.seriesIndex + 1}`
             : undefined),
         rows: selection.datum.values.map((field) => ({
           label:
-            (selection.kind === "line" && field.key === "y") || (selection.kind === "area" && field.key === "value")
+            selection.kind === "line" && field.key === "y"
               ? (selection.datum.label ?? labels().series ?? chartMessages().series)
               : fields({ key: field.key }),
           value:
@@ -741,14 +742,16 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
                     />
                   </svg>
                   <span>{series.label && series.label.length > 0 ? series.label : `${chartMessages().series} ${index() + 1}`}</span>
-                  <b
-                    data-chart-legend-value
-                    data-series-index={index()}
-                    data-field={props.kind === "area" && props.normalize ? "percent" : "value"}
-                    data-default={legendValue(index())}
-                  >
-                    {legendValue(index())}
-                  </b>
+                  <Show when={props.kind === "area"}>
+                    <b
+                      data-chart-legend-value
+                      data-series-index={index()}
+                      data-field={props.kind === "area" && props.normalize ? "percent" : "value"}
+                      data-default={legendValue(index())}
+                    >
+                      {legendValue(index())}
+                    </b>
+                  </Show>
                 </span>
               )}
             </For>

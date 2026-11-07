@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
@@ -53,8 +53,10 @@ beforeAll(async () => {
       ),
     );
   browser = await launchBrowser();
-  pages.push(await open(1440, false, true));
 }, 30000);
+afterEach(async () => {
+  for (const page of pages.splice(0)) await page.close();
+});
 afterAll(async () => {
   for (const page of pages) await page.close();
   await browser?.close();
@@ -68,11 +70,17 @@ const open = async (width: number, dark = false, touch = false) => {
   await settled(page);
   return page;
 };
+const documentBox = (page: Page, selector: string) =>
+  page.locator(selector).evaluate((e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.x + scrollX, y: r.y + scrollY, width: r.width, height: r.height };
+  });
 const tooltip = (page: Page) => page.locator('[role="tooltip"]:popover-open');
 
 for (const width of [1440, 390])
   test(`area at ${width}: SSR drawing, grouped hover, keyboard and fixed states`, async () => {
-    const page = pages[0]!;
+    const page = await open(width, false, true);
+    pages.push(page);
     await page.setViewportSize({ width, height: 1100 });
     await settled(page);
     const chart = page.locator('.area-frame [data-chart-kind="area"]');
@@ -81,17 +89,24 @@ for (const width of [1440, 390])
       await chart.locator(".k2b-chart__svg > svg").evaluate((svg, expected) => {
         const host = document.createElement("div");
         host.innerHTML = expected;
-        return svg.outerHTML === host.querySelector("svg")?.outerHTML;
+        const actual = svg.outerHTML,
+          server = host.querySelector(".k2b-chart__svg > svg")?.outerHTML ?? "";
+        let i = 0;
+        while (i < actual.length && actual[i] === server[i]) i++;
+        return actual === server
+          ? ""
+          : `At ${i}: actual ${actual.slice(Math.max(0, i - 100), i + 300)}; server ${server.slice(Math.max(0, i - 100), i + 300)}`;
       }, expected),
-    ).toBe(true);
-    const before = await page.locator(".snapshot").boundingBox();
-    const viewportBefore = await page.locator(".snapshot .k2b-chart-explorer__viewport").boundingBox();
+    ).toBe("");
+    const before = await documentBox(page, ".snapshot");
+    const viewportBefore = await documentBox(page, ".snapshot .k2b-chart-explorer__viewport");
     const plot = await chart.locator(".k2b-chart__svg").boundingBox();
     await page.mouse.move(plot!.x + plot!.width * 0.55, plot!.y + plot!.height * 0.3);
     await page.waitForFunction(() => document.querySelector('[role="tooltip"]:popover-open')?.textContent?.includes("Subscriptions"));
     expect(await tooltip(page).textContent()).toContain("Projects");
     expect(await tooltip(page).textContent()).toContain("Training");
     expect(await tooltip(page).textContent()).toContain("%");
+    expect(await tooltip(page).textContent()).toContain("Zusammen");
     await chart.focus();
     await page.keyboard.press("Home");
     expect(await tooltip(page).textContent()).toContain("Jan");
@@ -108,12 +123,28 @@ for (const width of [1440, 390])
     await page.keyboard.press("Escape");
     expect(await tooltip(page).count()).toBe(0);
     for (const state of ["loading", "empty", "error", "stale", "data"]) {
-      await page.getByRole("button", { name: state, exact: true }).click();
+      await page.getByRole("button", { name: state, exact: true }).evaluate((button) => (button as HTMLButtonElement).click());
       await settled(page);
-      expect(await page.locator(".snapshot").boundingBox()).toEqual(before);
-      expect(await page.locator(".snapshot .k2b-chart-explorer__viewport").boundingBox()).toEqual(viewportBefore);
-      if (state === "error") await page.locator(".snapshot").getByRole("button", { name: "Erneut versuchen" }).click();
+      expect(await documentBox(page, ".snapshot")).toEqual(before);
+      expect(await documentBox(page, ".snapshot .k2b-chart-explorer__viewport")).toEqual(viewportBefore);
+      if (state === "error")
+        await page
+          .locator(".snapshot")
+          .getByRole("button", { name: "Erneut versuchen" })
+          .evaluate((button) => (button as HTMLButtonElement).click());
     }
+    expect(
+      await chart
+        .locator(".k2b-area-layer")
+        .first()
+        .evaluate((e) => getComputedStyle(e).stroke),
+    ).toBe("none");
+    expect(
+      await chart
+        .locator(".k2b-area-edge")
+        .first()
+        .evaluate((e) => getComputedStyle(e).strokeWidth),
+    ).toBe("1.5px");
     const swatches = await chart.locator(".k2b-chart__legend rect").evaluateAll((nodes) => nodes.map((e) => getComputedStyle(e).fill));
     expect(new Set(swatches).size).toBe(3);
     expect(swatches).not.toContain("rgb(0, 0, 0)");
@@ -121,6 +152,20 @@ for (const width of [1440, 390])
     await settled(page);
     expect(await legend.evaluate((e) => e.clientHeight)).toBeLessThanOrEqual(44);
     expect(await legend.locator(".k2b-chart__legend-item").count()).toBe(40);
+    const line = page.locator('.line-regression [data-chart-kind="line"]');
+    await line.scrollIntoViewIfNeeded();
+    const lineLegend = await line.locator(".k2b-chart__legend").textContent();
+    expect(await line.locator("[data-chart-legend-value]").count()).toBe(0);
+    const linePlot = await line.locator(".k2b-chart__svg").boundingBox();
+    await page.mouse.move(linePlot!.x + linePlot!.width * 0.6, linePlot!.y + linePlot!.height * 0.4);
+    expect(await line.locator(".k2b-chart__legend").textContent()).toBe(lineLegend);
+    await line.focus();
+    await page.keyboard.press("Home");
+    expect(await line.locator(".k2b-chart__legend").textContent()).toBe(lineLegend);
+    await page.keyboard.press("Escape");
+    const zero = page.locator('.absolute-zero [data-chart-kind="area"]');
+    expect(await zero.locator("[data-chart-datum]").count()).toBe(1);
+    expect(await zero.locator("[data-chart-legend-value]").first().textContent()).toBe("0");
     const snapshot = page.locator('.snapshot [data-chart-kind="area"]');
     await snapshot.focus();
     await page.keyboard.press("Home");
@@ -135,7 +180,8 @@ for (const width of [1440, 390])
     await page.keyboard.press("Escape");
   });
 test("area tap pins at a category; dark and unscoped paths remain painted", async () => {
-  const page = pages[0]!;
+  const page = await open(390, true, true);
+  pages.push(page);
   await page.setViewportSize({ width: 390, height: 1100 });
   await page.evaluate(() => document.documentElement.classList.add("dark"));
   await settled(page);
@@ -148,6 +194,18 @@ test("area tap pins at a category; dark and unscoped paths remain painted", asyn
   await chart.dispatchEvent("pointermove", { pointerType: "touch", clientX: plot!.x + 40, clientY: plot!.y + 70 });
   await chart.dispatchEvent("click", { pointerType: "touch", clientX: plot!.x + 40, clientY: plot!.y + 70 });
   expect(await tooltip(page).count()).toBe(0);
+  const darkPaint = await chart
+    .locator(".k2b-area-layer")
+    .first()
+    .evaluate((e) => ({ fill: getComputedStyle(e).fill, scheme: getComputedStyle(e).colorScheme }));
+  expect(darkPaint.scheme).toBe("dark");
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  const lightFill = await chart
+    .locator(".k2b-area-layer")
+    .first()
+    .evaluate((e) => getComputedStyle(e).fill);
+  expect(lightFill).not.toBe(darkPaint.fill);
+  await page.evaluate(() => document.documentElement.classList.add("dark"));
   await page.evaluate(() => document.body.classList.remove("k2b-ui"));
   await settled(page);
   const fills = await chart.locator(".k2b-area-layer").evaluateAll((nodes) => nodes.map((e) => getComputedStyle(e).fill));

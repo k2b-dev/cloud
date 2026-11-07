@@ -994,7 +994,7 @@ Pass ordered `x: (string | number)[]` and
 `series: { label: string, data: (number | null)[] }[]`.
 Every series must match the length of `x`; negative values and nonfinite
 sums are rejected. A missing observation interrupts the stack at that X
-position. A zero total is also a gap, so it never becomes an invented share.
+position. In normalized mode, a zero total is also a gap, so it never becomes an invented share. Absolute stacks keep a complete zero column as a real zero.
 
 Set `normalize` to show each complete stack as 100 %. The tooltip and typed
 data table retain the original amount and its percentage of the total.
@@ -1009,5 +1009,5 @@ Portable JSON accepts a named `format`; the component and pure renderer
 accept `format(value)`. The component inherits the UI locale, including the
 percentage axis and tooltips.
 The top legend starts with the final column's amount or share and follows the
-inspected column. A missing or zero-sum column has no inspected values; the
+inspected column. A missing column (or a zero-sum normalized column) has no inspected values; the
 legend uses a dash when its final column is a gap.

@@ -23,7 +23,7 @@ export const areaExamples = [
     a11y: [
       "Arrow keys, Home and End inspect every available X position.",
       "The tooltip names every series at the cursor. Enter pins it; Escape closes it.",
-      "Null observations and zero totals are gaps, never zero-valued shares.",
+      "Null observations interrupt the stack; complete zero totals remain real zeros.",
     ],
     options: [
       { name: "layout", type: '"stacked"', description: "Accumulate nonnegative source values at each X position." },

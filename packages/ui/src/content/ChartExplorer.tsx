@@ -317,7 +317,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                         aria-hidden="true"
                       />
                       {entry.label}
-                      <Show when={data().chart.kind === "line" || data().chart.kind === "area"}>
+                      <Show when={data().chart.kind === "area"}>
                         <b
                           data-chart-legend-value
                           data-series-index={index()}

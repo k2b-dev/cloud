@@ -40,22 +40,9 @@ render(
         </nav>
         <section class="area-panel">
           <h2>How the sales mix changes</h2>
-          <p class="meta">{state() === "stale" ? "Veraltet · Studio sales" : "Studio sales · January to June"}</p>
+          <p class="meta">Studio sales · January to June</p>
           <div class="area-frame">
-            {state() === "loading" ? (
-              <p role="status">Daten werden geladen.</p>
-            ) : state() === "empty" ? (
-              <p>Noch keine Umsätze.</p>
-            ) : state() === "error" ? (
-              <div role="alert">
-                Daten konnten nicht geladen werden.
-                <button type="button" onClick={() => setState("data")}>
-                  Erneut versuchen
-                </button>
-              </div>
-            ) : (
-              <Chart kind="area" {...areaFixture} style={{ height: "280px" }} />
-            )}
+            <Chart kind="area" {...areaFixture} style={{ height: "280px" }} />
           </div>
         </section>
         <section class="area-panel">
@@ -86,6 +73,26 @@ render(
             renderDetails={false}
             height="280px"
           />
+        </section>
+        <section class="line-regression">
+          <Chart
+            kind="line"
+            legend
+            legendPlacement="top-start"
+            style={{ height: "160px" }}
+            series={[
+              {
+                label: "Requests",
+                data: [
+                  { x: 1, y: 2 },
+                  { x: 2, y: 3 },
+                ],
+              },
+            ]}
+          />
+        </section>
+        <section class="absolute-zero">
+          <Chart kind="area" layout="stacked" x={[2023]} series={[{ label: "Zero", data: [0] }]} style={{ height: "160px" }} />
         </section>
         <section class="many">
           <Chart
