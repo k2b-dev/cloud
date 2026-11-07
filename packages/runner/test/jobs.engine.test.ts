@@ -2,9 +2,10 @@ import { test as bunTest, expect } from "bun:test";
 import { readFile, readlink, unlink, writeFile } from "node:fs/promises";
 import { CODE_CHECK_LIMITS, CodeCheckResultSchema, type CodeTestLimits } from "@k2b/cloud/code";
 import type { RunnerJobLease } from "@k2b/cloud/code/runner";
+import { WorkerdEngine } from "../src/engine";
 import { allocateRunnerIdentities } from "../src/identities";
 import { executeRunnerJob, probeJobIsolation } from "../src/jobs";
-import { config } from "./fixtures";
+import { config, lease as runLease } from "./fixtures";
 import { ACCEPTANCE_SOURCE, now, sdk, target } from "./test-kit.fixtures";
 
 const test = bunTest.skipIf(process.getuid?.() !== 0);
@@ -180,3 +181,62 @@ for (const termination of ["SIGTERM", "SIGKILL"] as const)
       reader.releaseLock();
     }
   }, 10000);
+
+// Checker and workerd run in the production image, including the response transport.
+test("checked TSX routes return pages through the real isolated request engine", async () => {
+  const input = JSON.stringify({
+    kind: "check",
+    request: {
+      files: {
+        "code.tsx": `import { app, jsx, Page, Text } from "@sdk";
+app.get("/hello/:name", c => c.page(<Page title="Hello"><Text>{c.req.param("name") + ":" + c.user?.id}</Text></Page>));`,
+      },
+      entry: "code.tsx",
+      sdk,
+      aiOperations: [],
+      limits: CODE_CHECK_LIMITS,
+    },
+  });
+  const checked = await executeRunnerJob(lease("check", input), input, config, AbortSignal.timeout(20000));
+  if (checked.kind !== "check") throw new Error("Missing checker result");
+  const result = CodeCheckResultSchema.parse(checked.result);
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  const run = runLease({
+    kind: "request",
+    entrypoint: "route:GET:/hello/:name",
+    bundleHash: result.manifest.hashes.bundle,
+    input: {
+      codeId: "c_page",
+      method: "GET",
+      path: "/hello/Valentin",
+      query: "",
+      params: { name: "Valentin" },
+      contentType: "text/plain",
+      body: "",
+      user: { id: "visitor", groups: [] },
+    },
+  });
+  const engine = new WorkerdEngine();
+  const signal = AbortSignal.timeout(10000);
+  try {
+    await engine.load(
+      run,
+      result.bundle,
+      config,
+      async () => {
+        throw new Error("Unexpected capability call");
+      },
+      signal,
+    );
+    expect(await engine.run(run, signal)).toEqual({
+      outcome: "succeeded",
+      response: {
+        kind: "page",
+        status: 200,
+        tree: { kind: "Page", version: 1, title: "Hello", children: [{ kind: "Text", text: "Valentin:visitor" }] },
+      },
+    });
+  } finally {
+    await engine.close();
+  }
+}, 35000);

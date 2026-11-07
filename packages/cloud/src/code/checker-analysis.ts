@@ -21,6 +21,8 @@ const root = "/code/";
 export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   const options: ts.CompilerOptions = {
     strict: true,
+    jsx: ts.JsxEmit.React,
+    jsxFactory: "jsx",
     target: ts.ScriptTarget.ESNext,
     module: ts.ModuleKind.Preserve,
     moduleResolution: ts.ModuleResolutionKind.Bundler,
@@ -226,7 +228,11 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       while (ts.isParenthesizedExpression(wrapped.parent)) wrapped = wrapped.parent;
       if (
         signatures.some((s) => s.declaration?.getSourceFile().fileName === root + "sdk.d.ts") &&
-        !(ts.isCallExpression(wrapped.parent) && wrapped.parent.expression === wrapped)
+        !(ts.isCallExpression(wrapped.parent) && wrapped.parent.expression === wrapped) &&
+        !(
+          (ts.isJsxOpeningElement(node.parent) || ts.isJsxSelfClosingElement(node.parent) || ts.isJsxClosingElement(node.parent)) &&
+          node.parent.tagName === node
+        )
       )
         report(node, "code_detached_sdk_method", "Rufe SDK-Methoden direkt am Objekt oder an app auf.");
     }
@@ -422,7 +428,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           !(
             declarationOwner &&
             ts.isTypeAliasDeclaration(declarationOwner) &&
-            ["CodeContext", "CodeRequest"].includes(declarationOwner.name.text)
+            ["CodeContext", "CodeRequest", "CodePageComponent"].includes(declarationOwner.name.text)
           )
         ) {
           // Recognized factory calls need no permission; detached methods lose their target and are rejected.

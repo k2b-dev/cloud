@@ -31,6 +31,18 @@ export {
 } from "./checker-contract";
 export { generateCodeSdk } from "./generator";
 export {
+  assertCodePageData,
+  CODE_PAGE_LIMITS,
+  type CodeChartDescription,
+  CodeChartDescriptionSchema,
+  type CodePageField,
+  type CodePageNode,
+  CodePageNodeSchema,
+  type CodePageTree,
+  CodePageTreeSchema,
+  validateCodePage,
+} from "./page-contract";
+export {
   CODE_REQUEST_LIMITS,
   type CodeRouteRequest,
   CodeRouteRequestSchema,

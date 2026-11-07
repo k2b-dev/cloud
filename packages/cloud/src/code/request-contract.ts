@@ -1,15 +1,8 @@
 import { z } from "zod";
 
-/** Interactive requests share runner slots and the Code's call budgets. Their deadline includes queueing.
- * Input stays inside the existing 32-KiB run envelope; output inside the 256-KiB run output envelope. */
-export const CODE_REQUEST_LIMITS = Object.freeze({
-  timeoutMs: 8_000,
-  bodyBytes: 8 * 1024,
-  publicBodyBytes: 4 * 1024,
-  responseBytes: 128 * 1024,
-  urlBytes: 2048,
-  publicPerMinute: 20,
-});
+import { CODE_REQUEST_LIMITS } from "./request-limits";
+
+export { CODE_REQUEST_LIMITS } from "./request-limits";
 export const CodeRouteRequestSchema = z
   .object({
     method: z.enum(["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]),
@@ -28,6 +21,7 @@ export const CodeRouteRequestSchema = z
 export type CodeRouteRequest = z.infer<typeof CodeRouteRequestSchema>;
 /** Headers are chosen by Core. Code can return data or an own-path redirect, never HTML, cookies or arbitrary headers. */
 export const CodeRouteResponseSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("page"), status: z.literal(200), tree: z.unknown() }).strict(),
   z.object({ kind: z.enum(["json", "text"]), status: z.number().int().min(200).max(599), body: z.string() }).strict(),
   z
     .object({

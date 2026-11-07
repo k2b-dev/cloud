@@ -12,11 +12,12 @@ import { type CodeContext, CodeDataError, codePerson } from "./access";
 import { activateCodeVersion } from "./activation";
 import { createCodeCheckRequest } from "./authoring-check";
 import {
-  CODE_INITIAL_SOURCE,
+  CODE_PROJECT_TSCONFIG,
   type CodeAuthoringCommand,
   type CodeAuthoringData,
   type CodeAuthoringInput,
   type CodeAuthoringPermission,
+  codeInitialFiles,
 } from "./authoring-contracts";
 import { type Code, codeQueryContracts } from "./contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./policy";
@@ -160,10 +161,11 @@ export const codeAuthoringServices = {
   async init(input: CodeAuthoringInput<"init">, context: CodeContext): Promise<CodeAuthoringData<"init">> {
     const user = codePerson(context, true);
     const code = await createCode({ title: input.title, owner: input.owner ?? { kind: "person", userId: user.id } }, context);
+    const { entry, files } = codeInitialFiles(code.owner);
     return {
       version: 1,
-      config: { version: 1, codeId: code.id, title: code.title, owner: code.owner, entry: "code.ts", baseVersionId: null },
-      files: { "code.ts": CODE_INITIAL_SOURCE },
+      config: { version: 1, codeId: code.id, title: code.title, owner: code.owner, entry, baseVersionId: null },
+      files,
     };
   },
   pull: (input: CodeAuthoringInput<"pull">, context: CodeContext) => pull(input.codeId, context),
@@ -250,23 +252,7 @@ export const codeAuthoringServices = {
         "sdk/sdk.d.ts": sdk.declarations,
         "sdk/sdk.js": sdk.runtime,
         "sdk/manifest.json": JSON.stringify(sdk.manifest, null, 2) + "\n",
-        "tsconfig.json":
-          JSON.stringify(
-            {
-              compilerOptions: {
-                target: "ESNext",
-                module: "ESNext",
-                moduleResolution: "Bundler",
-                strict: true,
-                noEmit: true,
-                paths: { "@sdk": ["./sdk/sdk.d.ts"] },
-              },
-              include: ["**/*.ts"],
-              exclude: ["sdk"],
-            },
-            null,
-            2,
-          ) + "\n",
+        "tsconfig.json": JSON.stringify(CODE_PROJECT_TSCONFIG, null, 2) + "\n",
       },
     };
   },

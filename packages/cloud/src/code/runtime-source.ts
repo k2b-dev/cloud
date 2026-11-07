@@ -141,6 +141,30 @@ const __codeSdk = Object.freeze({
           json: () => raw.json(), text: () => raw.text(), formData: () => raw.formData() },
         json: (value, code = 200) => output({ kind: "json", status: status(code), body: JSON.stringify(value) }),
         text: (value, code = 200) => output({ kind: "text", status: status(code), body: String(value) }),
+        page: tree => {
+          const ancestors = new Set(); let count = 0; let bytes = 0;
+          const visit = (value, depth) => {
+            if (++count > manifest.pageLimits.bytes || depth > manifest.pageLimits.depth * 3) throw new Error("code_page_limit");
+            if (typeof value === "string") { bytes += new TextEncoder().encode(value).byteLength; if (bytes > manifest.pageLimits.bytes) throw new Error("code_page_limit"); return; }
+            if (value === null || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) return;
+            if (typeof value !== "object" || ancestors.has(value)) throw new Error("code_page_data_only");
+            if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null && !Array.isArray(value)) throw new Error("code_page_data_only");
+            ancestors.add(value);
+            for (const key of Reflect.ownKeys(value)) {
+              if (Array.isArray(value) && key === "length") continue;
+              const descriptor = Object.getOwnPropertyDescriptor(value, key);
+              if (typeof key !== "string" || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw new Error("code_page_data_only");
+              bytes += new TextEncoder().encode(key).byteLength;
+              if (bytes > manifest.pageLimits.bytes) throw new Error("code_page_limit");
+              visit(descriptor.value, depth + 1);
+            }
+            ancestors.delete(value);
+          };
+          visit(tree, 0);
+          if (tree.kind !== "Page" || tree.version !== 1) throw new Error("code_page_root");
+          if (new TextEncoder().encode(JSON.stringify(tree)).byteLength > manifest.pageLimits.bytes) throw new Error("code_page_limit");
+          return output({ kind: "page", status: 200, tree });
+        },
         redirect: (location, code = 303) => output({ kind: "redirect", status: code, location }),
       };
       const response = await registered.handler(c);
