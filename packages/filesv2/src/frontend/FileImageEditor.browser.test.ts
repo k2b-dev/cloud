@@ -285,7 +285,9 @@ describe("Files photo editing", () => {
         await page.keyboard.press("Escape");
         await page.getByText("Discard unsaved changes?", { exact: true }).waitFor({ timeout: 5_000 });
         expect(await page.locator(".k2b-image-editor").count()).toBe(1);
-        const canvases = await page.evaluateHandle(() => Array.from(document.querySelectorAll(".k2b-image-editor canvas")));
+        const canvases = await page.evaluateHandle(() =>
+          Array.from(document.querySelectorAll<HTMLCanvasElement>(".k2b-image-editor canvas")),
+        );
         await page.getByRole("dialog").last().getByRole("button", { name: "Confirm", exact: true }).click();
         await page.waitForFunction(() => !document.querySelector("dialog[open]"));
         expect(
