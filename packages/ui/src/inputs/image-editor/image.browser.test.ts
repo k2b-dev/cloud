@@ -182,7 +182,7 @@ describe(`ImageEditor shared renderer and export (${browserName})`, () => {
     }
   });
 
-  test("internal preview is bounded while output size follows the original and caller MP limit", async () => {
+  test("multiple retained previews stay bounded while export follows the original and caller MP limit", async () => {
     const page = await open();
     try {
       const result = await run(page, async (api) => {
@@ -192,19 +192,22 @@ describe(`ImageEditor shared renderer and export (${browserName})`, () => {
         const blob = await new Promise<Blob>((resolve) => source.toBlob((value) => resolve(value!), "image/png"));
         source.width = source.height = 0;
         const props = { source: blob, features: {}, maxOutputMegapixels: 1 };
-        const preview = await api.loadImageEditorPreview(props, new AbortController().signal);
+        const previews = await Promise.all(
+          Array.from({ length: 3 }, () => api.loadImageEditorPreview(props, new AbortController().signal)),
+        );
         const output = await api.exportImageEditor(props, api.initialImageEditorState());
         const size = {
-          preview: [preview.width, preview.height],
+          previews: previews.map((preview) => [preview.image.width, preview.image.height]),
           original: [output.originalWidth, output.originalHeight],
           width: output.width,
           height: output.height,
           downscaled: output.downscaled,
         };
-        preview.dispose();
-        return size;
+        for (const preview of previews) preview.dispose();
+        return { ...size, released: previews.map((preview) => [preview.image.width, preview.image.height]) };
       });
-      expect(result.preview).toEqual([2048, 1024]);
+      expect(result.previews).toEqual(Array.from({ length: 3 }, () => [2048, 1024]));
+      expect(result.released).toEqual(Array.from({ length: 3 }, () => [0, 0]));
       expect(result.original).toEqual([3000, 1500]);
       expect(result.width * result.height).toBeLessThanOrEqual(1_000_000);
       expect(result.downscaled).toBe(true);
