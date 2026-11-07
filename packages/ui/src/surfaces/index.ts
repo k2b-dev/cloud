@@ -32,7 +32,7 @@ export { PERSON_COLORS, personColor } from "./person-color";
 export type { ResourceCardColor, ResourceCardProps, ResourceCardState } from "./ResourceCard";
 export { ResourceCard } from "./ResourceCard";
 export { Skeleton, type SkeletonProps } from "./Skeleton";
-export type { StatCellAccent, StatCellProps, StatCellTone } from "./StatCell";
+export type { StatCellAccent, StatCellCompare, StatCellDelta, StatCellProps, StatCellSize, StatCellTone } from "./StatCell";
 export { StatCell } from "./StatCell";
 export type {
   StatGridAction,

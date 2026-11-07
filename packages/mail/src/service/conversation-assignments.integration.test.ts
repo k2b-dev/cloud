@@ -6,6 +6,7 @@ import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import {
+  applyConversationCompletions,
   listAssignableUsers,
   loadConversationAssigneeIds,
   updateConversationCollaborationInTransaction,
@@ -363,6 +364,65 @@ suite("mail conversation assignment", () => {
     expect(await assignmentNotices(writer.id)).toHaveLength(writerBefore + 1);
     expect(await assignmentNotices(third.id)).toHaveLength(thirdBefore + 1);
     expect((await change([reader.id], "remove")).ok).toBeTrue();
+  });
+
+  test("unassigned-only claims are atomic and never overwrite a winner or stale revision", async () => {
+    const conversation = await createConversation(mailboxId, "Atomic unassigned claim");
+    const claim = (userId: string, expectedRevision: number) =>
+      assignConversation({
+        context: contextFor(owner),
+        mailboxId,
+        conversationId: conversation.shortId,
+        assigneeUserIds: [userId],
+        mode: "add",
+        locale: "en",
+        onlyIfUnassigned: true,
+        expectedRevision,
+      });
+    const outcomes = await Promise.all([claim(writer.id, 1), claim(owner.id, 1)]);
+    expect(outcomes.filter((result) => result.ok)).toHaveLength(1);
+    expect(outcomes.filter((result) => !result.ok && result.error.code === "CONFLICT")).toHaveLength(1);
+    const winner = await loadConversationAssigneeIds(sql, conversation.id);
+    expect(winner).toHaveLength(1);
+    const occupied = await claim(reader.id, 2);
+    expect(!occupied.ok && occupied.error.code).toBe("CONFLICT");
+    expect(await loadConversationAssigneeIds(sql, conversation.id)).toEqual(winner);
+    const stale = await claim(writer.id, 1);
+    expect(!stale.ok && stale.error.code).toBe("CONFLICT");
+  });
+
+  test("explicit status batches retain revision fences and roll back the whole conflicting request", async () => {
+    const first = await createConversation(mailboxId, "Status one");
+    const second = await createConversation(mailboxId, "Status two");
+    const ids = [first.shortId, second.shortId];
+    const conflict = await applyConversationCompletions({
+      context: contextFor(owner),
+      mailboxId,
+      conversationIds: ids,
+      completion: "waiting",
+      expectedRevisions: { [first.shortId]: 1, [second.shortId]: 2 },
+    });
+    expect(!conflict.ok && conflict.error.code).toBe("CONFLICT");
+    const unchanged = await sql<
+      { work_status: string; revision: number }[]
+    >`SELECT work_status, revision FROM mail.conversations WHERE id IN (${first.id}::uuid, ${second.id}::uuid)`;
+    expect(unchanged.every((row) => row.work_status === "needs_action" && Number(row.revision) === 1)).toBeTrue();
+    const waiting = await applyConversationCompletions({
+      context: contextFor(owner),
+      mailboxId,
+      conversationIds: ids,
+      completion: "waiting",
+      expectedRevisions: { [first.shortId]: 1, [second.shortId]: 1 },
+    });
+    expect(waiting.ok && waiting.data.results.every((row) => row.status === "ok" && row.workStatus === "waiting")).toBeTrue();
+    const active = await applyConversationCompletions({
+      context: contextFor(owner),
+      mailboxId,
+      conversationIds: ids,
+      completion: "needs_action",
+      expectedRevisions: { [first.shortId]: 2, [second.shortId]: 2 },
+    });
+    expect(active.ok && active.data.results.every((row) => row.status === "ok" && row.workStatus === "needs_action")).toBeTrue();
   });
 
   test("assigns one conversation through the capability modes without a revision and returns its final set", async () => {

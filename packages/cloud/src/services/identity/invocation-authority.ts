@@ -86,6 +86,7 @@ export const authorityFromParentInvocation = (parent: CloudInvocationClaims): In
         mandate_revision: parent.mandate_revision,
         workload_type: parent.workload_type,
         workload_id: parent.workload_id,
+        ...(parent.workload_event ? { workload_event: parent.workload_event } : {}),
       }
     : {}),
 });

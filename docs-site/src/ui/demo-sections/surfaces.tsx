@@ -878,6 +878,8 @@ const ChangeListDemo = () => (
   </DemoCard>
 );
 
+const subscribers = [38900, 39800, 40500, 41400, 42200, 42800, 43300, 43700, 44000, 44300, 44560, 48210];
+
 const StatsDemo = () => (
   <DemoCard
     id="stats"
@@ -885,8 +887,24 @@ const StatsDemo = () => (
       { kind: "component", name: "StatGrid", from: "@k2b/ui" },
       { kind: "component", name: "StatCell", from: "@k2b/ui" },
     ]}
-    description="This example pins three columns for its three cells; omitting columns uses the six-column responsive ladder. Cells can link, show contextual accents, and render compact trends."
+    description="Each key figure is a framed tile: icon and label, the figure with its change, and a support line with the comparison and the trend. Four tiles share a row, two at 600 px or less, where the badge moves under the figure. The second row shows loading, error, empty and stale in the same place."
     code={`import { StatCell, StatGrid } from "@k2b/ui";
+
+<StatGrid size="lg" columns={4}>
+  <StatCell label="Subscribers" icon="ti ti-users" tone="blue" value="48,210"
+    delta={{ value: 0.082, better: "up" }} compare={{ label: "Last month", value: 44560 }} trend={subscribers} />
+  <StatCell label="Open rate" icon="ti ti-mail-opened" tone="emerald" value="49.2 %"
+    delta={{ value: 0.031, unit: "points", better: "up" }} compare={{ label: "Last month", value: "46.1 %" }} />
+  <StatCell label="Click rate" icon="ti ti-click" tone="amber" value="19.8 %"
+    delta={{ value: -0.006, unit: "points", better: "up" }} compare={{ label: "Last month", value: "20.4 %" }} />
+  <StatCell label="Unsubscribes" icon="ti ti-user-minus" value={182}
+    delta={{ value: -0.125, better: "down" }} compare={{ label: "Last month", value: 208 }} />
+</StatGrid>
+
+<StatCell label="Subscribers" value={null} status="loading" />
+<StatCell label="Open rate" value={null} status="error" onRetry={reload} />
+<StatCell label="Bounces" value={null} sub="Nothing counted in this period" />
+<StatCell label="Unsubscribes" value={182} stale="As of 09:12 · not current" onRetry={reload} />
 
 <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
   <StatCell label="Requests" value="42k" sub="last hour" trend={[12, 18, 16, 24, 42]} />
@@ -894,11 +912,60 @@ const StatsDemo = () => (
   <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
 </StatGrid>`}
   >
-    <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
-      <StatCell label="Requests" value="42k" sub="last hour" trend={[12, 18, 16, 24, 42]} />
-      <StatCell label="Latency" value="83 ms" sub="p95" href="./observability" valueClass="ui-stat-attention" />
-      <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
-    </StatGrid>
+    <div style={{ display: "grid", gap: "1.5rem" }}>
+      <StatGrid size="lg" columns={4}>
+        <StatCell
+          label="Subscribers"
+          icon="ti ti-users"
+          tone="blue"
+          value="48,210"
+          delta={{ value: 0.082, better: "up" }}
+          compare={{ label: "Last month", value: 44560 }}
+          trend={subscribers}
+        />
+        <StatCell
+          label="Open rate"
+          icon="ti ti-mail-opened"
+          tone="emerald"
+          value="49.2 %"
+          delta={{ value: 0.031, unit: "points", better: "up" }}
+          compare={{ label: "Last month", value: "46.1 %" }}
+        />
+        <StatCell
+          label="Click rate"
+          icon="ti ti-click"
+          tone="amber"
+          value="19.8 %"
+          delta={{ value: -0.006, unit: "points", better: "up" }}
+          compare={{ label: "Last month", value: "20.4 %" }}
+        />
+        <StatCell
+          label="Unsubscribes"
+          icon="ti ti-user-minus"
+          value={182}
+          delta={{ value: -0.125, better: "down" }}
+          compare={{ label: "Last month", value: 208 }}
+        />
+      </StatGrid>
+      <StatGrid size="lg" columns={4}>
+        <StatCell label="Subscribers" icon="ti ti-users" tone="blue" value={null} status="loading" />
+        <StatCell label="Open rate" icon="ti ti-mail-opened" tone="emerald" value={null} status="error" onRetry={() => undefined} />
+        <StatCell label="Bounces" icon="ti ti-mail-off" tone="amber" value={null} sub="Nothing counted in this period" />
+        <StatCell
+          label="Unsubscribes"
+          icon="ti ti-user-minus"
+          value={182}
+          delta={{ value: -0.125, better: "down" }}
+          stale="As of 09:12 · not current"
+          onRetry={() => undefined}
+        />
+      </StatGrid>
+      <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
+        <StatCell label="Requests" value="42k" sub="last hour" trend={[12, 18, 16, 24, 42]} />
+        <StatCell label="Latency" value="83 ms" sub="p95" href="./observability" valueClass="ui-stat-attention" />
+        <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
+      </StatGrid>
+    </div>
   </DemoCard>
 );
 

@@ -17,8 +17,8 @@ export const dashboardStyles = `
 .pulse-dashboard__band[data-attention=true]>i{color:var(--k2b-warning-text)}
 .pulse-dashboard__band[data-critical=true]>i,.pulse-dashboard__band[data-error=true] strong{color:var(--k2b-danger-text)}
 .pulse-dashboard__stats .k2b-stat-cell{padding:0;background:transparent;border:0;min-width:0}
-.pulse-dashboard__stats .pulse-dashboard__feedback{min-height:106px;margin-top:0;padding-top:24px}
-.pulse-dashboard__number-placeholder-title{position:absolute;top:0;left:0;padding-right:32px;font-size:13px;font-weight:500;color:var(--k2b-text-muted)}
+.pulse-dashboard__stats .pulse-dashboard__feedback{min-height:76px;margin-top:0;padding-top:24px}
+.pulse-dashboard__number-placeholder-title{position:absolute;top:14px;left:16px;padding-right:32px;font-size:13px;font-weight:500;color:var(--k2b-text-muted)}
 .pulse-dashboard__stats .k2b-stat-cell{min-height:72px}
 .pulse-dashboard__number[data-tone=success] .k2b-stat-cell__sub{color:var(--k2b-success-text)}
 .pulse-dashboard__number[data-tone=warning] .k2b-stat-cell__sub{color:var(--k2b-warning-text)}
@@ -28,7 +28,7 @@ export const dashboardStyles = `
 .pulse-dashboard__stats [data-panel]:nth-child(3) .k2b-chart{color:var(--stdlib-chart-c3)}
 .pulse-dashboard__stats [data-panel]:nth-child(4) .k2b-chart{color:var(--stdlib-chart-c4)}
 .pulse-dashboard__stats .k2b-stat-cell__label{padding-right:32px}
-.pulse-dashboard__number-sql{position:absolute;top:0;right:0}
+.pulse-dashboard__number-sql{position:absolute;top:8px;right:8px}
 .pulse-dashboard__stats .k2b-stat-cell__value{font-size:28px;line-height:1.2;letter-spacing:-.02em}
 @container k2b-app-area (min-width:1024px){.pulse-dashboard__heading{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}
 @container k2b-app-area (max-width:767px){.pulse-dashboard__heading h1{font-size:30px;letter-spacing:-.025em}}
