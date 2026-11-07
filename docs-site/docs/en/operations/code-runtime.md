@@ -36,3 +36,11 @@ active version's manifest. Sign-in is required unless that exact matched route
 was reviewed as public. Public responses contain only the data that Code
 returns. Keep the shared runner, NATS, Postgres and Valkey healthy; request
 capacity competes with scheduled runs and authoring checks.
+
+Page responses use wire format version 1 and the same runner response budget.
+Core validates the whole tree at completion and again before rendering. Invalid
+page descriptions fail the run and return 503. The first renderer limits the
+tree to 64 KiB, 256 nodes and 12 levels, with 200 rows per table and 40 fields
+per form. Page inputs, trees and visitor identities are transient; the retained
+run records the outcome and timings. Rendering uses Core's assets and only the
+checked description reaches the browser; no Code source runs there.

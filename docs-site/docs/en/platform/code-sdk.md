@@ -3,7 +3,7 @@ title: Code SDK
 navTitle: Code SDK
 section: Platform services
 order: 680
-description: Generate a typed Code SDK from application capability contracts and call operations through resource handles.
+description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
 updated: 2026-11-06
 ---
@@ -20,8 +20,95 @@ The checker collects exact origins into `manifest.internet`; declare dynamic des
 and redirect origins with a literal `http.allow(["https://api.example.com"])` list.
 Read [Code secrets](/en/docs/platform/code-secrets) for approved destinations and result encoding.
 
-This is the Phase 1 SDK contract on the Code integration branch. The SDK
-registers schedules; Core owns scheduling, authorization and execution.
+The SDK registers routes and schedules. Core owns hosting, scheduling,
+authorization and execution.
+
+## Return a page
+
+Start with a TSX page:
+
+```sh
+cld code init --title 'Workshop' --owner-type work-shop.workshop --owner-id workshop-owner
+cld code sdk pull ./code/work-shop/workshop-owner
+cld code check ./code/work-shop/workshop-owner
+```
+ Resource- and app-owned projects start with
+`code.tsx`; personal projects start with a schedule because they cannot host routes.
+
+Use `c.page(tree)` for a Cloud-rendered document. In a `.tsx` entry file, import
+`jsx` and the description components from `@sdk`. The checker compiles TSX with
+this factory. The generated `tsconfig.json` includes `.ts` and `.tsx` files and
+sets `jsx: "react"` with `jsxFactory: "jsx"`. No React, Hono or Solid runtime is
+needed; the factory produces description objects.
+
+```tsx
+import { app, jsx, Page, Section, Text, Form, Chart } from "@sdk";
+
+app.get("/", c => c.page(
+  <Page title="Workshop">
+    <Section title="Today">
+      <Text>Scan an item to open its details.</Text>
+      <Chart.Bar title="Items" data={[{ label: "Ready", value: 12 }]} />
+      <Form title="Find an item" action="/find" submit="Find"
+        fields={[{ type: "scan", name: "barcode", label: "Barcode", required: true }]} />
+    </Section>
+  </Page>
+));
+app.post("/find", async c => {
+  const form = await c.req.formData();
+  return c.redirect(`/items/${encodeURIComponent(String(form.get("barcode") ?? ""))}`);
+});
+```
+
+Components build data only. The root is `{ version: 1, kind: "Page", title,
+children }`. Plain objects are an equal alternative, for example:
+
+```ts
+app.get("/", c => c.page({
+  version: 1, kind: "Page", title: "Workshop",
+  children: [{ kind: "Text", text: "Your Code page is ready." }],
+}));
+```
+
+TSX and objects produce the same tree and pass the same Core validation. Core checks
+every returned tree before rendering it. Text is escaped. Unknown kinds and
+properties, HTML/SVG, event handlers, functions, accessors and foreign links
+are rejected. `c.html()` is unavailable.
+
+The version 1 allow-list is:
+
+| Node | Description fields |
+| --- | --- |
+| `Page` | `title`, `children`; root only, `version: 1` |
+| `Section` | `title`, `children` |
+| `Text` | `text`; TSX also accepts a text child |
+| `Heading` | `text`, optional `level: 2 \| 3 \| 4` |
+| `Table` | `title`, `columns: [{ key, label }]`, `rows` of scalar values |
+| `Form` | `title`, `action`, `fields`, `submit`; always POST |
+| `Detail` | `title`, `items: [{ label, value }]` |
+| `Chart` | `description: { kind, … }`; portable chart data, no callbacks |
+| `Link` | `label`, `href` |
+| `Button`, `Action` | `label`, `action`, optional string `values`; always POST |
+| `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` |
+
+Fields have `name`, `label`, `type`, optional `value` and `required`. Types are
+`text`, `email`, `number`, `textarea`, `select`, `checkbox` and `scan`. Only
+`select` takes `options: [{ value, label }]`. Values match the field type.
+Field names are unique; `_csrf` is reserved. Cloud inserts the CSRF token into
+forms and actions and removes it before invoking the handler. Links and POST
+destinations resolve inside `/code/<id>/`; they cannot leave that Code.
+
+The first renderer presents chart descriptions as their data tables and scan
+fields as text inputs. Chart drawings, camera scanning and live subscriptions
+are separate renderer work. Supported chart descriptions are `bar`, `line`,
+`scatter`, `pie`, `donut`, `histogram`, `gauge`, `sparkline`, `boxplot`, `heatmap`,
+`barGauge` and `stat`, with matching `Chart.Bar`, `Chart.Line`, etc. builders.
+The portable chart data contract is exported by `@k2b/editor/chart-schema`.
+
+A tree is limited to 64 KiB, 256 nodes and 12 node levels. A table has at most
+200 rows and 20 columns; a form has at most 40 fields. Portable chart budgets
+are eight series, 200 values per series and 1,600 marks. Request and response
+limits still apply to the complete envelope.
 
 ## Call operations on a handle
 

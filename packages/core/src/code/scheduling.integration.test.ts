@@ -124,11 +124,17 @@ suiteFor(
     if (!value) throw new Error("Invalid fixture token");
     return value;
   }
-  async function fixture(userId = owner, resource = false, route = false, once?: { at: string; timeZone: string }) {
+  async function fixture(
+    userId = owner,
+    resource = false,
+    route = false,
+    reply: "json" | "page" | "invalid" = "json",
+    once?: { at: string; timeZone: string },
+  ) {
     const codeId = `c_c13${String(++ordinal).padStart(5, "0")}`;
     const files = { "code.ts": "fixture" },
       bundle = route
-        ? `async function page(input) { return {kind: "json", status: 200, body: JSON.stringify({visitor: input.user?.id ?? null})}; } export {page as "route:GET:/"};`
+        ? `async function page(input) { return ${reply === "json" ? '{kind: "json", status: 200, body: JSON.stringify({visitor: input.user?.id ?? null})}' : reply === "page" ? '{kind:"page",status:200,tree:{version:1,kind:"Page",title:"Fixture",children:[{kind:"Text",text:"Hello"}]}}' : '{kind:"page",status:200,tree:{version:1,kind:"Page",title:"Fixture",children:[{kind:"HTML",html:"<script>bad</script>"}]}}'}; } export {page as "route:GET:/"};`
         : "export async function weekly() {}";
     const manifest: CodeCheckedVersionManifest = {
       version: 1,
@@ -251,78 +257,97 @@ suiteFor(
     setSystemTime();
   });
 
-  test("HTTP request reaches the real runner loop and its bounded response returns through Core", async () => {
-    const code = await fixture(owner, true, true);
-    const registry = spyOn(cloud, "getApp").mockResolvedValue({
-      id: "example",
-      name: "Example",
-      icon: "ti ti-code",
-      description: "Fixture",
-      routes: ["/example"],
-      baseUrl: "http://example.test",
-      access: { kind: "grants" },
-    });
-    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockResolvedValue("Fixture");
-    const bridge: RunnerBridge = {
-      configure: async () => ({
-        slots: 1,
-        pollMs: 1000,
-        retryMs: 1,
-        transportMs: 1000,
-        bundleBytes: 1024 * 1024,
-        cacheBytes: 1024 * 1024,
-        bridgeBytes: 1024 * 1024,
-        bridgeConcurrency: 1,
-        processMemoryBytes: 128 * 1024 * 1024,
-      }),
-      fetch: (request, signal) => fetchCodeRuns(request, signal, { queue, sign }),
-      bundle: async (proof) => {
-        const token = (await verifyCodeRunToken(proof.token, { issuer, key, now: slot }))!;
-        const [row] = await sql<{ bundle: string }[]>`SELECT bundle FROM code.versions WHERE id=${token.versionId}::uuid`;
-        return row!.bundle;
-      },
-      heartbeat: async (proof) => heartbeatCodeRun((await verifyCodeRunToken(proof.token, { issuer, key, now: slot }))!),
-      complete: async (proof) =>
-        completeCodeRun((await verifyCodeRunToken(proof.token, { issuer, key, now: slot }))!, proof.outcome, proof.response),
-      call: async () => ({ ok: false, error: { code: "fixture_no_data_calls" } }),
-    };
-    const publisher = createCodeRunOutbox(() => queue);
-    const runner = new Runner(bridge, new FixtureEngine(async () => {}));
-    publisher.start();
-    const running = runner.start();
-    try {
-      const response = await requestCodeRoute({
-        ...code,
-        signal: AbortSignal.timeout(10_000),
-        request: {
-          codeId: code.codeId,
-          method: "GET",
-          path: "/",
-          query: "",
-          contentType: "text/plain",
-          body: "",
-          params: {},
-          user: { id: other, groups: [] },
-        },
+  for (const reply of ["json", "page", "invalid"] as const)
+    test(`HTTP ${reply} response reaches the runner and Core validates it before returning`, async () => {
+      const code = await fixture(owner, true, true, reply);
+      const registry = spyOn(cloud, "getApp").mockResolvedValue({
+        id: "example",
+        name: "Example",
+        icon: "ti ti-code",
+        description: "Fixture",
+        routes: ["/example"],
+        baseUrl: "http://example.test",
+        access: { kind: "grants" },
       });
-      expect(response).toEqual({ kind: "json", status: 200, body: JSON.stringify({ visitor: other }) });
-      const [run] = await sql<
-        { trigger: string; state: string; input: unknown; output: unknown; generation: number }[]
-      >`SELECT * FROM code.runs WHERE code_id=${code.codeId}`;
-      expect(run).toMatchObject({ trigger: "path", state: "succeeded", input: null, output: null, generation: 1 });
-      const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${owner}::uuid,'write') RETURNING id`;
-      await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${code.codeId},${grant!.id}::uuid)`;
-      await expect(
-        startCodeRun({ codeId: code.codeId, entrypoint: code.entrypoint, idempotencyKey: "not-a-manual-start" }, context()),
-      ).rejects.toThrow("Unknown Code entrypoint");
-    } finally {
-      runner.stop();
-      await running;
-      await publisher.stop();
-      registry.mockRestore();
-      title.mockRestore();
-    }
-  }, 15_000);
+      const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockResolvedValue("Fixture");
+      const bridge: RunnerBridge = {
+        configure: async () => ({
+          slots: 1,
+          pollMs: 1000,
+          retryMs: 1,
+          transportMs: 1000,
+          bundleBytes: 1024 * 1024,
+          cacheBytes: 1024 * 1024,
+          bridgeBytes: 1024 * 1024,
+          bridgeConcurrency: 1,
+          processMemoryBytes: 128 * 1024 * 1024,
+        }),
+        fetch: (request, signal) => fetchCodeRuns(request, signal, { queue, sign }),
+        bundle: async (proof) => {
+          const token = (await verifyCodeRunToken(proof.token, { issuer, key, now: slot }))!;
+          const [row] = await sql<{ bundle: string }[]>`SELECT bundle FROM code.versions WHERE id=${token.versionId}::uuid`;
+          return row!.bundle;
+        },
+        heartbeat: async (proof) => heartbeatCodeRun((await verifyCodeRunToken(proof.token, { issuer, key, now: slot }))!),
+        complete: async (proof) =>
+          completeCodeRun((await verifyCodeRunToken(proof.token, { issuer, key, now: slot }))!, proof.outcome, proof.response),
+        call: async () => ({ ok: false, error: { code: "fixture_no_data_calls" } }),
+      };
+      const publisher = createCodeRunOutbox(() => queue);
+      const runner = new Runner(bridge, new FixtureEngine(async () => {}));
+      publisher.start();
+      const running = runner.start();
+      try {
+        const response = requestCodeRoute({
+          ...code,
+          signal: AbortSignal.timeout(10_000),
+          request: {
+            codeId: code.codeId,
+            method: "GET",
+            path: "/",
+            query: "",
+            contentType: "text/plain",
+            body: "",
+            params: {},
+            user: { id: other, groups: [] },
+          },
+        });
+        if (reply === "invalid") await expect(response).rejects.toMatchObject({ code: "code_request_failed" });
+        else
+          expect(await response).toEqual(
+            reply === "json"
+              ? { kind: "json", status: 200, body: JSON.stringify({ visitor: other }) }
+              : {
+                  kind: "page",
+                  status: 200,
+                  tree: { version: 1, kind: "Page", title: "Fixture", children: [{ kind: "Text", text: "Hello" }] },
+                },
+          );
+        const [run] = await sql<
+          { trigger: string; state: string; input: unknown; output: unknown; generation: number }[]
+        >`SELECT * FROM code.runs WHERE code_id=${code.codeId}`;
+        expect(run).toMatchObject({
+          trigger: "path",
+          state: reply === "invalid" ? "failed" : "succeeded",
+          input: null,
+          output: null,
+          generation: 1,
+        });
+        const [grant] = await sql<
+          { id: string }[]
+        >`INSERT INTO auth.access(user_id,permission) VALUES(${owner}::uuid,'write') RETURNING id`;
+        await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${code.codeId},${grant!.id}::uuid)`;
+        await expect(
+          startCodeRun({ codeId: code.codeId, entrypoint: code.entrypoint, idempotencyKey: "not-a-manual-start" }, context()),
+        ).rejects.toThrow("Unknown Code entrypoint");
+      } finally {
+        runner.stop();
+        await running;
+        await publisher.stop();
+        registry.mockRestore();
+        title.mockRestore();
+      }
+    }, 15_000);
   test("HTTP failure never requeues even before the first effect", async () => {
     const code = await fixture(owner, true, true);
     const registry = spyOn(cloud, "getApp").mockResolvedValue({
@@ -1265,7 +1290,7 @@ suiteFor(
   });
   test("one-time reconciliation admits one run across replicas and keeps the consumed next run empty", async () => {
     const timing = { at: slot.toISOString(), timeZone: "Europe/Berlin" };
-    const code = await fixture(owner, false, false, timing);
+    const code = await fixture(owner, false, false, "json", timing);
     const sync = createSync({ connection, namespace: testSyncNamespace("c13-once"), application: "core", defaults: { replicas: 1 } });
     syncs.push(sync);
     const scheduler = sync.scheduler({ id: "code" });
@@ -1293,7 +1318,7 @@ suiteFor(
   });
   test("a due one-time occurrence waits for a manual predecessor without consuming its date", async () => {
     const timing = { at: slot.toISOString(), timeZone: "UTC" };
-    const code = await fixture(owner, false, false, timing);
+    const code = await fixture(owner, false, false, "json", timing);
     const manual = await startCodeRun({ codeId: code.codeId, entrypoint: code.entrypoint, idempotencyKey: "manual-once" }, context());
     const tick = { ...code, ...timing, slot };
     expect(await processCurrentCodeScheduleTick(tick)).toBeNull();
@@ -1310,13 +1335,13 @@ suiteFor(
   test("one-time admission rejects future, expired and stale definitions without consuming a receipt", async () => {
     const future = new Date(slot.getTime() + 86_400_000);
     const timing = { at: future.toISOString(), timeZone: "UTC" };
-    const code = await fixture(owner, false, false, timing);
+    const code = await fixture(owner, false, false, "json", timing);
     expect(await processCodeScheduleTick({ ...code, slot: future })).toBeNull();
     const listing = await listCodeAutomations({ codeId: code.codeId }, context());
     expect(listing.items[0]?.nextRunAt).toBe(future.toISOString());
     expect(await processCurrentCodeScheduleTick({ ...code, at: slot.toISOString(), timeZone: "UTC", slot })).toBeNull();
     const old = new Date(slot.getTime() - 8 * 86_400_000);
-    const expired = await fixture(owner, false, false, { at: old.toISOString(), timeZone: "UTC" });
+    const expired = await fixture(owner, false, false, "json", { at: old.toISOString(), timeZone: "UTC" });
     expect(await processCurrentCodeScheduleTick({ ...expired, at: old.toISOString(), timeZone: "UTC", slot: old })).toBeNull();
     const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.run_requests`;
     expect(count?.count).toBe(0);

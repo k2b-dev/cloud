@@ -5,7 +5,7 @@ section: Platform services
 order: 969
 description: Pull, check, test and submit Code from local ID-based project folders.
 tags: [code, cli, sdk, versions]
-updated: 2026-11-01
+updated: 2026-11-06
 ---
 
 # Develop Code with cld
@@ -18,13 +18,17 @@ runner pool. User source never runs in the CLI or Core process.
 ## Create and inspect a local project
 
 ```sh
-cld code init --title 'Weekly report' --out ./code
 cld code init --title 'Invoices' --owner-type example.box --owner-id box_1234 --out ./code
 cld code sdk pull ./code/example/box_1234
 cld code check ./code/example/box_1234
 ```
 
-The default owner is the current person. `--owner-type` and `--owner-id`
+Resource- and app-owned Code starts with a `code.tsx` page built from SDK
+components. The generated TypeScript configuration uses the SDK’s `jsx` factory;
+see [Return a page](/en/docs/platform/code-sdk#return-a-page).
+
+The default owner is the current person. Personal Code starts with a schedule
+in `code.ts` and cannot host routes. `--owner-type` and `--owner-id`
 select a resource; `--app` selects an application owner. Creating resource or
 application Code requires administration of that owner. Editing and checking
 requires Code editor access and a write credential. Pull and diff require read
@@ -35,7 +39,7 @@ Project folders use resource IDs. Titles and owners belong in `code.json`:
 ```text
 code/
   me/c_1234/                  code.json  code.ts  test/
-  example/box_1234/           code.json  code.ts  test/
+  example/box_1234/           code.json  code.tsx test/
                              sdk/       tsconfig.json
 ```
 
@@ -61,8 +65,8 @@ It reads no target manager list. Dynamic handles are allowed; the list grants
 no access and does not bind runtime calls. The target checks the subject’s
 current rights per call.
 
-Phase 1 supports named schedules and hand starts; future page, webhook and
-database syntax fails checking.
+Routes, TSX pages, named schedules and hand starts are supported. Webhook and
+database registrations remain unavailable.
 
 Human check and run output uses each automation's reviewed title followed by
 its identifier in parentheses. Without a title, it shows the identifier. JSON

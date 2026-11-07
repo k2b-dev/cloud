@@ -256,6 +256,9 @@ of the full extension set.
 including `evaluateFormula`, `evaluateTableCell`, and their context and result
 types. It reads the table's header and cell strings; the caller owns presentation.
 
+`@k2b/editor/chart-schema` exports the same portable chart schemas and types
+without loading renderers. Use it for server validation and generated contracts.
+
 `@k2b/editor/charts` exports portable chart types, `chartSchema`, and rendering
 helpers such as `chartRenderOptions`, `chartRows`, and `chartTable`. Install the
 `zod` peer dependency alongside the package. The schema

@@ -12,6 +12,7 @@ export * from "./capability-compatibility";
 export * from "./code-call";
 export * from "./code-internet";
 export * from "./code-owner";
+export { type CodeRoute, CodeRouteSchema, codeOwnPath, matchCodeRoute } from "./code-routes";
 export * from "./code-secrets";
 export * from "./code-version";
 export * from "./commands";

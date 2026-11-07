@@ -38,6 +38,7 @@ if (Bun.argv.includes("--help")) {
     const build = await Bun.build({
       entrypoints: ["code:host"],
       target: "browser",
+      jsx: { runtime: "classic", factory: "jsx" },
       format: "esm",
       splitting: false,
       plugins: [

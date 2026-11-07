@@ -1,11 +1,18 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type CodeCheckedVersionManifest, UserSchema } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as server from "@k2b/cloud/server";
+import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
-import { createCodeHostingRoutes, readCodeRequestBody } from "./hosting";
 import type { requestCodeRoute } from "./requests";
 import { checkCodeCsrf, codeCsrf } from "./route-security";
+
+const root = mkdtempSync(join(tmpdir(), "core-code-hosting-"));
+Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+const { createCodeHostingRoutes, readCodeRequestBody } = await import("./hosting");
 
 const codeId = "c_routehost";
 const id = "11111111-1111-4111-8111-111111111111";

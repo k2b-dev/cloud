@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { CODE_REQUEST_LIMITS, type CodeRouteResponse, CodeRouteResponseSchema } from "@k2b/cloud/code";
+import { CODE_REQUEST_LIMITS, type CodeRouteResponse, CodeRouteResponseSchema, validateCodePage } from "@k2b/cloud/code";
 import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-token";
 import type { RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
@@ -368,6 +368,13 @@ export async function completeCodeRun(claims: CodeRunTokenClaims, outcome: Runne
         (!parsed.success || Buffer.byteLength(JSON.stringify(parsed.data)) > CODE_REQUEST_LIMITS.responseBytes)
       )
         outcome = "failed";
+      if (outcome === "succeeded" && parsed.success && parsed.data.kind === "page") {
+        try {
+          validateCodePage(parsed.data.tree, claims.codeId);
+        } catch {
+          outcome = "failed";
+        }
+      }
       if (outcome === "succeeded" && parsed.success)
         await db`UPDATE code.runs SET output=${JSON.stringify(parsed.data)}::text::json WHERE id=${claims.runId}::uuid`;
     }
