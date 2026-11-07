@@ -52,3 +52,13 @@ export const DiscussionMessageDataSchema = DiscussionMessageSchema.extend({
   refs: z.array(CloudResourceRefSchema).max(10),
   attachments: z.array(AttachmentViewSchema).max(10),
 });
+
+/** Ordinary Chat messages share the complete content projection, with their conversation as location. */
+export const ChatMessageDataSchema = DiscussionMessageDataSchema.omit({ item: true }).extend({
+  conversation: z.strictObject({ type: z.literal("chat.conversation"), id: z.string().length(6) }),
+  thread: z.string().length(6).nullable(),
+});
+export const MessageReadDataSchema = z.union([DiscussionMessageDataSchema, ChatMessageDataSchema]);
+export const ConversationReadDataSchema = z.strictObject({
+  view: z.strictObject({ title: z.string(), permission: z.enum(["read", "write", "admin"]) }),
+});
