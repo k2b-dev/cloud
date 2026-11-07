@@ -115,6 +115,8 @@ test("offline, disabled, network retry and 429 keep feedback visible and control
       if (["offline", "disabled", "429"].includes(scenario)) expect(await button.isDisabled()).toBe(true);
       else expect(await button.isEnabled()).toBe(true);
       if (scenario === "429") {
+        expect(await page.locator(".tools-speedtest-eta").textContent()).toContain("Testlimit erreicht");
+        expect(await page.locator('[role="status"]').getAttribute("class")).not.toContain("speedtest-danger");
         expect(await page.locator(".tools-speedtest-chart .k2b-chart__empty").count()).toBe(1);
         expect(await page.locator(".k2b-stat-cell__value").first().textContent()).toBe("—");
         await page.clock.runFor(3_000);
@@ -140,9 +142,33 @@ test("delayed browser callbacks keep every plotted sample inside the fixed time 
   page.on("pageerror", (error) => errors.push(error.message));
   try {
     await page.clock.runFor(15_000);
-    expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("done");
+    expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("error");
+    expect(await page.getByRole("button", { name: "Ergebnis kopieren", exact: true }).isDisabled()).toBe(true);
     expect(errors).toEqual([]);
     expect(await page.locator(".tools-speedtest-chart svg").count()).toBe(1);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("verification keeps the countdown and slots while the public terminal starts with Node", async () => {
+  const publicPage = await open("public");
+  try {
+    expect(await publicPage.locator(".tools-speedtest-terminal").textContent()).toContain("node speedtest.mjs");
+  } finally {
+    await publicPage.close();
+  }
+  const page = await open("verify");
+  try {
+    const initial = await geometry(page);
+    await page.clock.runFor(7_750);
+    expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("verify");
+    expect(await page.locator(".tools-speedtest-eta").textContent()).toContain("Ergebnis wird geprüft");
+    expect(await page.locator('[role="status"]').textContent()).toMatch(/noch ca\. [1-9]\d* s/);
+    expect(await geometry(page)).toEqual(initial);
+    await page.clock.runFor(2_000);
+    expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("done");
+    expect(await page.getByRole("button", { name: "Ergebnis kopieren", exact: true }).isEnabled()).toBe(true);
   } finally {
     await page.close();
   }

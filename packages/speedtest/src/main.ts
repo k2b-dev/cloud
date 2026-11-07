@@ -8,7 +8,7 @@ import { createUdpHandler } from "./udp";
 
 if (Bun.argv.includes("--help")) {
   console.log(
-    "Standalone speedtest server\nEnvironment: SPEEDTEST_HOST, SPEEDTEST_PORT (8080), SPEEDTEST_PUBLIC_URL (https://speedtest.k2b.dev), SPEEDTEST_UDP_PORT (disabled), SPEEDTEST_CAPACITY_MBPS (1000), SPEEDTEST_TEST_MBPS (1000), SPEEDTEST_MAX_ACTIVE (128), SPEEDTEST_MAX_PEERS (4096), SPEEDTEST_UDP_PACKETS_PER_SECOND (4096), SPEEDTEST_TRUSTED_PROXIES (exact IP list).\nGET /de, GET /en, POST /session, GET /session, POST /session/end, GET /ping, GET /download, POST /upload, GET /cli, GET /health. No Cloud dependency.",
+    "Standalone speedtest server\nEnvironment: SPEEDTEST_HOST, SPEEDTEST_PORT (8080), SPEEDTEST_PUBLIC_URL (required), SPEEDTEST_UDP_PORT (disabled), SPEEDTEST_CAPACITY_MBPS (1000), SPEEDTEST_TEST_MBPS (1000), SPEEDTEST_MAX_ACTIVE (128), SPEEDTEST_MAX_PEERS (4096), SPEEDTEST_UDP_PACKETS_PER_SECOND (4096), SPEEDTEST_TRUSTED_PROXIES (exact IP list).\nGET /de, GET /en, POST /session, GET /session, POST /session/end, GET /ping, GET /download, POST /upload, GET /cli, GET /health. No Cloud dependency.",
   );
 } else {
   const options = readServerEnv();
@@ -38,7 +38,12 @@ if (Bun.argv.includes("--help")) {
           if (!/^[a-zA-Z0-9._-]+$/.test(filename)) return new Response("Not found", { status: 404 });
           const file = Bun.file(`${dirname(Bun.main)}/assets/${filename}`);
           if (!(await file.exists())) return new Response("Not found", { status: 404 });
-          return new Response(file, { headers: { "Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff" } });
+          return new Response(file, {
+            headers: {
+              "Cache-Control": filename === stylesheet ? "public, max-age=31536000, immutable" : "public, max-age=3600",
+              "X-Content-Type-Options": "nosniff",
+            },
+          });
         },
       },
     },

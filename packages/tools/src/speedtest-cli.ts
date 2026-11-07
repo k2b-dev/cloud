@@ -40,9 +40,10 @@ export async function runCloudSpeedtest(ctx: CloudCliContext) {
   const onProgress = (event: Progress) => {
     if (!event.phase_complete && performance.now() - lastUpdate < 125) return;
     lastUpdate = performance.now();
-    const phase = { ping: t.phasePing, download: t.phaseDownload, upload: t.phaseUpload }[event.phase];
-    const reading = event.phase === "ping" ? `${event.ping_ms ?? "—"} ms` : `${event.mbps.toPrecision(3)} Mbit/s`;
-    const line = `${phase}: ${reading} · ${t.remaining({ seconds: Math.ceil(event.remaining_ms / 1_000) })}`;
+    const phase = { ping: t.phasePing, download: t.phaseDownload, upload: t.phaseUpload, verify: t.phaseVerify }[event.phase];
+    const reading =
+      event.phase === "verify" ? "" : event.phase === "ping" ? `${event.ping_ms ?? "—"} ms` : `${event.mbps.toPrecision(3)} Mbit/s`;
+    const line = `${phase}${reading ? `: ${reading}` : ""} · ${t.remaining({ seconds: Math.ceil(event.remaining_ms / 1_000) })}`;
     if (tty) {
       process.stderr.write(`\r\x1b[2K${line}`);
       lineOpen = true;

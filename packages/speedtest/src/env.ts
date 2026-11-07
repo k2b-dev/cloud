@@ -1,5 +1,5 @@
 import { isIP } from "node:net";
-import { DEFAULT_SERVER, normalizeServer } from "./engine";
+import { normalizeServer } from "./engine";
 
 const integer = (name: string, fallback: number, max: number) => {
   const raw = process.env[name];
@@ -14,7 +14,9 @@ export function readServerEnv() {
     .map((value) => value.trim())
     .filter(Boolean);
   if (trustedProxies.some((value) => !isIP(value))) throw new Error("SPEEDTEST_TRUSTED_PROXIES accepts exact IP addresses only");
-  const publicUrl = normalizeServer(process.env.SPEEDTEST_PUBLIC_URL ?? DEFAULT_SERVER);
+  const configuredUrl = process.env.SPEEDTEST_PUBLIC_URL?.trim();
+  if (!configuredUrl) throw new Error("SPEEDTEST_PUBLIC_URL is required");
+  const publicUrl = normalizeServer(configuredUrl);
   if (new URL(publicUrl).pathname !== "/") throw new Error("SPEEDTEST_PUBLIC_URL must be an origin without a path");
   return {
     publicUrl,

@@ -65,6 +65,8 @@ test("standalone production page serves localized SSR and local assets without c
       expect(html).toContain(`<h1>${title}</h1>`);
       expect(html).toContain(action!);
       expect(html).toContain("tools-speedtest-terminal");
+      expect(html).toContain("node speedtest.mjs");
+      expect(html).not.toContain("cld tools speedtest --server");
       expect(html).toContain(`rel="canonical" href="${origin}/${locale}"`);
       expect(html).toContain(origin);
       const stylesheet = html.match(/href="(\/assets\/site-[a-z0-9]+\.css)"/)?.[1];
@@ -72,6 +74,7 @@ test("standalone production page serves localized SSR and local assets without c
       const css = await local(stylesheet!);
       expect(css.status).toBe(200);
       expect(css.headers.get("content-type")).toContain("text/css");
+      expect(css.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
       expect(await css.text()).toContain("tools-speedtest-controls");
       const prefix = html.match(/data-ssr-assets="([^"<>]+)"/)?.[1];
       expect(prefix).toMatch(/^\/_ssr\/[a-z0-9]+$/);

@@ -21,7 +21,10 @@ const fixtureFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     if (scenario === "429") return new Response(null, { status: 429, headers: { "Retry-After": "2" } });
     return Response.json({ token: "00000000-0000-4000-8000-000000000001" }, { status: 201 });
   }
-  if (url.pathname === "/session" && init?.method !== "POST") return Response.json({ limited: false });
+  if (url.pathname === "/session" && init?.method !== "POST") {
+    if (scenario === "verify") await new Promise((resolve) => setTimeout(resolve, 1_500));
+    return Response.json({ limited: false });
+  }
   if (url.pathname === "/session/end") return new Response(null, { status: 204 });
   if (url.pathname.endsWith("/ping")) {
     attempts++;
@@ -104,13 +107,17 @@ render(
         <header class="tools-tool-header">
           <h1 class="text-xl font-semibold">{lang === "de" ? "Internet-Speedtest" : "Internet Speed Test"}</h1>
         </header>
-        <SpeedTest server="https://speedtest.k2b.dev" enabled={scenario !== "disabled"} />
+        <SpeedTest
+          server="https://speedtest.k2b.dev"
+          enabled={scenario !== "disabled"}
+          initialCliVariant={scenario === "public" ? "node" : undefined}
+        />
       </main>
     </LocaleProvider>
   ),
   document.getElementById("root")!,
 );
-if (!["idle", "offline", "disabled"].includes(scenario))
+if (!["idle", "offline", "disabled", "public"].includes(scenario))
   requestAnimationFrame(() => {
     document.querySelector<HTMLButtonElement>(".tools-speedtest-start")?.click();
     if (scenario === "cancel") setTimeout(() => document.querySelector<HTMLButtonElement>(".tools-speedtest-start")?.click(), 500);

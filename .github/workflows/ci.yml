@@ -742,7 +742,7 @@ jobs:
       - name: Boot standalone speedtest without Cloud infrastructure
         run: |
           set -euo pipefail
-          docker run --detach --name speedtest --publish 127.0.0.1:18080:8080 cloud-speedtest:ci
+          docker run --detach --name speedtest --publish 127.0.0.1:18080:8080 --env SPEEDTEST_PUBLIC_URL=http://127.0.0.1:18080 cloud-speedtest:ci
           trap 'docker logs speedtest; docker rm -f speedtest' EXIT
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:18080/health; then break; fi

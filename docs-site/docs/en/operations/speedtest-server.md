@@ -93,7 +93,7 @@ aggregate IP budget at ingress. No durable user data is stored.
 | --- | --- | --- |
 | `SPEEDTEST_HOST` | `0.0.0.0` | Listen address |
 | `SPEEDTEST_PORT` | `8080` | HTTP port |
-| `SPEEDTEST_PUBLIC_URL` | `https://speedtest.k2b.dev` | Public origin for page measurements and SEO links |
+| `SPEEDTEST_PUBLIC_URL` | required | This server's public origin for page measurements and SEO links |
 | `SPEEDTEST_UDP_PORT` | unset | UDP stays disabled until explicitly configured |
 | `SPEEDTEST_CAPACITY_MBPS` | `1000` | Sustainable aggregate measurement budget, combined download and upload |
 | `SPEEDTEST_TEST_MBPS` | `1000` | Capacity reserved per admitted test |

@@ -18,7 +18,7 @@ import { speedTestMessages } from "./messages";
 
 export { speedTestMessages } from "./messages";
 
-type State = "idle" | "ping" | "download" | "upload" | "done" | "cancelled" | "error";
+type State = "idle" | "ping" | "download" | "upload" | "verify" | "done" | "cancelled" | "error";
 type Sample = { x: number; y: number };
 type CliVariant = "cloud" | "bun" | "node";
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
@@ -27,7 +27,7 @@ export function speedtestSnippet(variant: CliVariant, server: string, mode: Mode
   return `curl -fsS ${shellQuote(`${server}/cli`)} -o speedtest.mjs\n${variant === "bun" ? "bun" : "node"} speedtest.mjs --server ${shellQuote(server)} --mode ${mode}`;
 }
 
-export default function SpeedTest(props: { server?: string; enabled?: boolean }) {
+export default function SpeedTest(props: { server?: string; enabled?: boolean; initialCliVariant?: CliVariant }) {
   const locale = useLocale();
   const t = () => speedTestMessages.resolve([locale()]).t;
   const server = () => props.server ?? DEFAULT_SERVER;
@@ -47,13 +47,17 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
   const [error, setError] = createSignal<unknown>();
   const [retryAt, setRetryAt] = createSignal(0);
   const [now, setNow] = createSignal(0);
-  const [cliVariant, setCliVariant] = createSignal<CliVariant>("cloud");
+  const [cliVariant, setCliVariant] = createSignal<CliVariant>(props.initialCliVariant ?? "cloud");
   const [json, setJson] = createSignal(false);
   const [copyFailed, setCopyFailed] = createSignal(false);
   let controller: AbortController | undefined;
   let phaseStart = 0;
   let previousPhase = "";
-  const running = () => ["ping", "download", "upload"].includes(state());
+  const running = () => ["ping", "download", "upload", "verify"].includes(state());
+  const limited = () => {
+    const value = error();
+    return state() === "error" && value instanceof SpeedtestError && value.status === 429;
+  };
   const disabled = () => props.enabled === false;
   const waiting = () => Math.max(0, Math.ceil((retryAt() - now()) / 1_000));
   const totalCap = () => PLANS[mode()].ping + PLANS[mode()].download + PLANS[mode()].upload;
@@ -63,11 +67,13 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
     ping: t().phasePing,
     download: t().phaseDownload,
     upload: t().phaseUpload,
+    verify: t().phaseVerify,
     done: t().phaseDone,
     cancelled: t().phaseCancelled,
     error: t().phaseError,
   });
-  const phaseLabel = () => (disabled() ? t().phaseDisabled : !online() ? t().phaseOffline : labels()[state()]);
+  const phaseLabel = () =>
+    disabled() ? t().phaseDisabled : !online() ? t().phaseOffline : limited() ? t().phaseWaiting : labels()[state()];
   const errorMessage = () => {
     const value = error();
     if (value instanceof SpeedtestError) {
@@ -97,7 +103,8 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
                 : running()
                   ? t().remaining({ seconds: remaining() })
                   : t().ready;
-  const reading = () => (state() === "ping" ? (progress()?.ping_ms ?? null) : state() === "upload" ? upload() : download());
+  const reading = () =>
+    state() === "ping" ? (progress()?.ping_ms ?? null) : ["upload", "verify"].includes(state()) ? upload() : download();
   const snippet = createMemo(() => speedtestSnippet(cliVariant(), server(), mode()));
   const finalJson = () => JSON.stringify(result() ?? null, null, 2);
   const terminal = createMemo(() => {
@@ -147,7 +154,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
         const magnitude = 10 ** Math.floor(Math.log10(value));
         setGaugeMax([1, 2.5, 5, 10].map((step) => magnitude * step).find((limit) => limit >= value) ?? magnitude * 10);
       }
-      if (event.phase === "ping" || event.bytes === 0) return;
+      if (event.phase === "ping" || event.phase === "verify" || event.bytes === 0) return;
       (event.phase === "download" ? setDownload : setUpload)(event.mbps);
       // A delayed browser callback may arrive just beyond the deadline. Keep samples inside the fixed time axis.
       const sample = { x: Math.min(event.elapsed_ms, totalCap()) / 1_000, y: event.mbps };
@@ -295,9 +302,9 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
           </ol>
           <div class="tools-speedtest-eta">
             <ProgressBar
-              value={(progress()?.progress ?? 0) * 100}
+              value={state() === "done" ? 100 : (progress()?.progress ?? 0) * 100}
               label={t().progress}
-              valueText={t().remaining({ seconds: remaining() })}
+              valueText={state() === "done" ? t().phaseDone : t().remaining({ seconds: remaining() })}
             />
             <div class="flex justify-between text-xs speedtest-muted tabular-nums">
               <span>{phaseLabel()}</span>
@@ -308,7 +315,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
             class="tools-speedtest-status text-sm"
             role="status"
             aria-live="polite"
-            classList={{ "speedtest-danger": state() === "error", "speedtest-muted": state() !== "error" }}
+            classList={{ "speedtest-danger": state() === "error" && !limited(), "speedtest-muted": state() !== "error" || limited() }}
           >
             {status()}
           </div>
