@@ -162,7 +162,7 @@ export const chartKinds = (limits?: ChartLimits) => {
         ...ChartKindCommon,
         start: z.object({ label: ChartLabel, value: z.number() }),
         steps: list(z.object({ label: ChartLabel, value: z.number() }), 0, limits?.maxValues),
-        end: z.object({ label: ChartLabel }),
+        end: z.strictObject({ label: ChartLabel }),
         format: numberFormat.optional(),
       })
       .superRefine((spec, ctx) => {

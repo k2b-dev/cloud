@@ -36,6 +36,15 @@ within the retained window, then inspect backlog and failures. If status reports
 events that have expired. Rolling back code does not remove homes already
 created or reverse completed handler effects.
 
+Core also migrates `events.app_subscriptions.resource_binding` for
+mandate-bound workload subscriptions. Roll out Core before enabling such
+workloads. They use the existing delivery queue and retention budget. Ordinary
+app subscriptions to resource events remain blocked. A resource delivery
+cancelled with `resource_access_revoked` means its mandate or current read
+access no longer permits delivery; redelivery never bypasses those checks.
+Workload pause or revision replacement cancels pending deliveries with
+`workload_changed`. Resuming starts a fresh subscription cutoff.
+
 ## Inspect readiness and failures
 
 Open **Administration → Apps** (`/admin/apps`), select an app and open **Events**
@@ -261,7 +270,10 @@ a shorter outage target. A missed or expired event requires domain reconciliatio
 Core retains unresolved deliveries for **30 days** from creation or the latest
 administrator redelivery, then marks them
 `cancelled` with `retention_expired`. That cancellation remains visible for
-**7 days**. Completed and cancelled deliveries are retained for **7 days**;
+**7 days** for service deliveries, or **30 days** for resource workloads.
+Completed and cancelled service deliveries are retained for **7 days**;
+resource workload deliveries remain for **30 days** to support explicit recovery
+across workload revisions within the event's 30-day recovery window;
 failures are not silently discarded. Events are retained for at least
 **30 days**, and longer while deliveries still reference them. After cleanup
 removes the retained records, `redeliver` cannot recover them.

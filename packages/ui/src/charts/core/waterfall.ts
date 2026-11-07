@@ -10,6 +10,8 @@ export type WaterfallOptions = {
   /** Formats balances and absolute changes. */
   format?: (value: number) => string;
   locale?: string;
+  /** Narrowest displayed width in CSS pixels; measured hosts pass their actual width. */
+  displayWidth?: number;
 };
 
 export type WaterfallBar = { label: string; value: number; from: number; to: number; total: boolean };
@@ -46,16 +48,19 @@ export function waterfallLayout(spec: WaterfallOptions, size: { width: number; h
     ticks: Array.from({ length: Math.round((upper - lower) / step) + 1 }, (_, i) => lower + i * step),
   };
   const format = spec.format ?? new Intl.NumberFormat(spec.locale ?? "en", { maximumFractionDigits: 2 }).format;
+  const displayWidth = spec.displayWidth ?? 296;
+  if (!Number.isFinite(displayWidth) || displayWidth <= 0) throw new RangeError("Invalid waterfall display width");
+  const ratio = size.width / displayWidth;
   const left = Math.min(
     size.width * 0.6,
-    Math.max(48, ...scale.ticks.map((v) => format(v).length * 7 + 12)) * Math.max(1, size.width / 296),
+    Math.max(48, ...scale.ticks.map((v) => format(v).length * 7 + 12)) * ratio,
   );
   const top = spec.title || spec.subtitle ? 58 : 24;
   const bottom = Math.max(top + 1, size.height - 30);
   const right = size.width - 10;
   const slot = (right - left) / bars.length;
   const project = (value: number) => bottom - ((value - scale.domain[0]) / (scale.domain[1] - scale.domain[0])) * (bottom - top);
-  return { bars, balance, scale, left, right, top, bottom, slot, project, format };
+  return { bars, balance, scale, left, right, top, bottom, slot, ratio, project, format };
 }
 
 const f = (value: number) => String(Math.round(value * 100) / 100);
@@ -79,28 +84,27 @@ export function renderWaterfallSvg(spec: WaterfallOptions & { width: number; hei
     );
     parts.push(text(g.left - 8, y + 4, g.format(tick), "end", 'class="stdlib-chart-tick-label"'));
   }
-  // Plan labels for the narrowest supported host, so SSR and hydration never measure or redraw.
-  const phoneSlot = g.slot * Math.min(1, 296 / spec.width);
-  const longest = Math.max(1, ...g.bars.map((b) => Math.min(24, b.label.length))) * 6;
-  const stride = Math.max(1, Math.ceil(longest / Math.max(1, phoneSlot)));
+  const cssSlot = g.slot / g.ratio;
+  const longest = Math.max(1, ...g.bars.map((b) => Math.min(18, b.label.length))) * 6;
+  const stride = Math.max(1, Math.ceil((longest + 8) / Math.max(1, cssSlot)));
   g.bars.forEach((bar, index) => {
     const center = g.left + (index + 0.5) * g.slot;
     const width = Math.min(56, g.slot * 0.62);
     const top = Math.min(g.project(bar.from), g.project(bar.to));
     const height = Math.abs(g.project(bar.from) - g.project(bar.to));
     const color = bar.total
-      ? "var(--k2b-text-muted, #8b8b93)"
+      ? "color-mix(in srgb, var(--k2b-text-muted, #8b8b93) 55%, transparent)"
       : bar.value > 0
-        ? "var(--k2b-flow-in-mark, var(--k2b-text-muted, #8b8b93))"
+        ? "var(--k2b-flow-in-mark, #0891b2)"
         : bar.value < 0
-          ? "var(--k2b-flow-out-mark, var(--k2b-text-muted, #8b8b93))"
-          : "var(--k2b-text-muted, #8b8b93)";
+          ? "var(--k2b-flow-out-mark, #8b5cf6)"
+          : "color-mix(in srgb, var(--k2b-text-muted, #8b8b93) 55%, transparent)";
     const amount = `${bar.total ? "" : bar.value > 0 ? "↙ " : bar.value < 0 ? "↗ " : "= "}${g.format(bar.total ? bar.value : Math.abs(bar.value))}`;
     const band = `<rect class="k2b-chart-category-band" x="${f(center - g.slot / 2)}" y="${f(g.top)}" width="${f(g.slot)}" height="${f(g.bottom - g.top)}" fill="currentColor" fill-opacity="0" stroke="none"/>`;
     const mark = `<rect class="k2b-waterfall-bar" x="${f(center - width / 2)}" y="${f(top)}" width="${f(width)}" height="${f(Math.max(height, 1))}" rx="3" fill="${color}" stroke="none"/>`;
     const value =
-      amount.length * 6 + 8 < g.slot * 1.9
-        ? text(center, Math.max(g.top - 8, top - 6), amount, "middle", 'class="k2b-waterfall-value"')
+      width / g.ratio >= 46 && amount.length * 6 + 8 <= cssSlot
+        ? text(center, Math.max(g.top - 8, top - 6), amount, "middle", 'class="k2b-waterfall-value" font-weight="600" style="fill:var(--k2b-text-secondary, #52525b)"')
         : "";
     parts.push(
       chartDatumSvg(
@@ -110,11 +114,12 @@ export function renderWaterfallSvg(spec: WaterfallOptions & { width: number; hei
           index,
           label: bar.label,
           anchor: [center, g.top],
-          values: [
-            { key: "value", value: bar.value, formatted: amount },
-            { key: "from", value: bar.from, formatted: g.format(bar.from) },
-            { key: "to", value: bar.to, formatted: g.format(bar.to) },
-          ],
+          values: bar.total
+            ? [{ key: "balance", value: bar.to, formatted: g.format(bar.to) }]
+            : [
+                { key: bar.value > 0 ? "inflow" : bar.value < 0 ? "outflow" : "change", value: bar.value, formatted: amount },
+                { key: "after", value: bar.to, formatted: g.format(bar.to) },
+              ],
         },
         spec.inspect ?? false,
       ),
@@ -123,8 +128,8 @@ export function renderWaterfallSvg(spec: WaterfallOptions & { width: number; hei
       parts.push(
         `<line class="k2b-waterfall-connector" x1="${f(center + width / 2)}" x2="${f(center + g.slot - width / 2)}" y1="${f(g.project(bar.to))}" y2="${f(g.project(bar.to))}" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="3 3"/>`,
       );
-    if (g.bars.length <= 10 || index % stride === 0 || index === g.bars.length - 1) {
-      const limit = Math.max(1, Math.floor((phoneSlot * stride) / 6) - 1);
+    if (index % stride === 0) {
+      const limit = Math.max(1, Math.floor((cssSlot * stride) / 6) - 1);
       const label = bar.label.length > limit ? `${bar.label.slice(0, Math.max(0, limit - 1))}…` : bar.label;
       parts.push(
         text(
@@ -132,7 +137,7 @@ export function renderWaterfallSvg(spec: WaterfallOptions & { width: number; hei
           g.bottom + 20,
           label,
           "middle",
-          `class="stdlib-chart-tick-label stdlib-chart-category-label ${index % stride === 0 || index === g.bars.length - 1 ? "" : "k2b-waterfall-label-extra"}"`,
+          `class="stdlib-chart-tick-label stdlib-chart-category-label "`,
         ),
       );
     }

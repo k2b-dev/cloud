@@ -4,9 +4,10 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../test/browser";
 import { waterfallFixture } from "../../test/waterfall-fixture";
 import { renderWaterfallSvg } from "../charts/core/waterfall";
-import { responsiveChartSvg } from "./chart-svg";
+import { createComponent } from "solid-js";
+import { renderToString } from "solid-js/web";
 
-let browser: Browser, bundle: string, css: string;
+let browser: Browser, bundle: string, css: string, ssr: string;
 const pages: Page[] = [];
 beforeAll(async () => {
   const { transformAsync } = await import("@babel/core");
@@ -38,6 +39,8 @@ beforeAll(async () => {
   if (!build.success) throw new AggregateError(build.logs, "Waterfall harness failed");
   bundle = await build.outputs[0]!.text();
   css = await Bun.file(resolve(import.meta.dir, "../../dist/styles.css")).text();
+  const {default: ServerChart} = await import(resolve(import.meta.dir, "../../dist/ssr/content/Chart.js"));
+  ssr = renderToString(() => createComponent(ServerChart, {kind:"waterfall", ...waterfallFixture}));
   browser = await launchBrowser();
   pages.push(await open(1440, false, true));
 }, 30000);
@@ -60,26 +63,29 @@ for (const width of [1440, 390])
     const page = pages[0]!;
     await page.setViewportSize({ width, height: 900 });
     await settled(page);
-    try {
       const chart = page.locator('[data-chart-kind="waterfall"]');
-      const expected = responsiveChartSvg(
-        renderWaterfallSvg({ ...waterfallFixture, width: 480, height: 280, inspect: true, locale: "de" }),
-      );
+      const expected = ssr;
       expect(
         await chart.locator("svg").evaluate((svg, expected) => {
           const host = document.createElement("div");
           host.innerHTML = expected;
-          return svg.outerHTML === host.firstElementChild?.outerHTML;
+          return svg.outerHTML === host.querySelector("svg")?.outerHTML;
         }, expected),
       ).toBe(true);
       const box = await page.locator(".waterfall-panel").boundingBox();
       await chart.locator(".k2b-waterfall-bar").nth(2).hover();
       await page.waitForFunction(() => document.querySelector('[role="tooltip"]:popover-open')?.textContent?.includes("Wareneinkauf"));
-      expect(await tooltip(page).textContent()).toContain("48.060");
+      expect(await tooltip(page).textContent()).toContain("Raus");
+      expect(await tooltip(page).textContent()).toContain("↗ 14.800");
+      expect(await tooltip(page).textContent()).toContain("Stand danach");
       expect(await tooltip(page).textContent()).toContain("33.260");
       expect(await chart.locator("[data-inspected] .k2b-chart-category-band").evaluate((e) => getComputedStyle(e).fillOpacity)).toBe(
         "0.05",
       );
+      await page.getByRole("button", {name:"Select outflow",exact:true}).click();
+      expect(await chart.locator("[data-selected] .k2b-chart-category-band").evaluate(e=>getComputedStyle(e).stroke)).toBe("none");
+      expect(await chart.locator("[data-selected] .k2b-waterfall-bar").evaluate(e=>getComputedStyle(e).stroke)).not.toBe("none");
+      await page.getByRole("button", {name:"Select outflow",exact:true}).click();
       await chart.focus();
       await page.keyboard.press("End");
       expect(await tooltip(page).textContent()).toContain("31. Okt.");
@@ -99,16 +105,12 @@ for (const width of [1440, 390])
           expect(await chart.count()).toBe(1);
         }
       }
-    } finally {
-      /* Shared fixture closes in afterAll. */
-    }
   });
 test("phone tap pins, swipe leaves no selection, dark and unscoped SVG retain their paint", async () => {
   const page = pages[0]!;
   await page.setViewportSize({ width: 390, height: 900 });
   await page.evaluate(() => document.documentElement.classList.add("dark"));
   await settled(page);
-  try {
     const mark = page.locator(".k2b-waterfall-bar").nth(1);
     await mark.tap();
     expect(await tooltip(page).count()).toBe(1);
@@ -120,11 +122,11 @@ test("phone tap pins, swipe leaves no selection, dark and unscoped SVG retain th
     await chart.dispatchEvent("pointermove", { pointerType: "touch", clientX: bounds.x, clientY: bounds.y + 30 });
     await chart.dispatchEvent("click", { pointerType: "touch", clientX: bounds.x, clientY: bounds.y + 30 });
     expect(await tooltip(page).count()).toBe(0);
+    const scoped = await page.locator(".k2b-waterfall-bar").evaluateAll(nodes=>nodes.slice(0,3).map(e=>getComputedStyle(e).fill));
+    expect(new Set(scoped).size).toBe(3);
     await page.evaluate(() => document.body.classList.remove("k2b-ui"));
     await settled(page);
     const fills = await page.locator(".k2b-waterfall-bar").evaluateAll((nodes) => nodes.map((e) => getComputedStyle(e).fill));
+    expect(new Set(fills.slice(0,3)).size).toBe(3);
     expect(fills.every((c) => c !== "rgb(0, 0, 0)" && c !== "none")).toBe(true);
-  } finally {
-    /* Shared fixture closes in afterAll. */
-  }
 });

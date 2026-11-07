@@ -1278,8 +1278,8 @@
   }
 }
 
-/* Floating changes inspect a whole category without dimming other bars. */
-.k2b-chart[data-chart-kind="waterfall"] [data-inspected] > .k2b-chart-category-band { fill-opacity: .05; stroke: none !important; }
-.k2b-chart[data-chart-kind="waterfall"] [data-inspected] > .k2b-waterfall-bar { stroke: none !important; }
-
-@container (max-width: 600px) { .k2b-chart[data-chart-kind="waterfall"] .k2b-waterfall-value, .k2b-chart[data-chart-kind="waterfall"] .k2b-waterfall-label-extra { display: none; } }
+/* Category hover paints only the band; keyboard and selection outline marks. */
+@layer k2b-base {
+.k2b-chart[data-chart-kind="waterfall"] :is([data-inspected], [data-selected]) > .k2b-chart-category-band { fill-opacity: .05; stroke: none !important; }
+.k2b-chart[data-chart-kind="waterfall"] [data-inspected="hover"]:not([data-selected]) > .k2b-waterfall-bar { stroke: none !important; }
+}

@@ -49,6 +49,7 @@ const labels = /* @__PURE__ */ i18n.define({
     en: {
       category: "Category",
       series: "Series",
+      balance: "Balance", inflow: "In", outflow: "Out", after: "Balance after",
       value: "Value",
       share: "Share",
       from: "From",
@@ -66,6 +67,7 @@ const labels = /* @__PURE__ */ i18n.define({
     de: {
       category: "Kategorie",
       series: "Datenreihe",
+      balance: "Stand", inflow: "Rein", outflow: "Raus", after: "Stand danach",
       value: "Wert",
       share: "Anteil",
       from: "Von",
@@ -353,7 +355,7 @@ export function chartRenderOptions(
   const references = renderReferences(input);
   switch (input.kind) {
     case "waterfall":
-      return { kind: "waterfall", start: input.start, steps: input.steps, end: input.end, locale, format: format.value };
+      return { kind: "waterfall", start: input.start, steps: input.steps, end: input.end, displayWidth: options.width, locale, format: format.value };
     case "bar":
     case "boxplot": {
       const yAxis = referencedAxis(input, "y");
@@ -623,7 +625,11 @@ export function chartRows(
         continue;
       }
       if (typeof value !== "number" || field.key === "total") continue;
-      if (field.key === "x") {
+      if (input.kind === "waterfall" && ["balance", "inflow", "outflow", "change", "after"].includes(field.key)) {
+        const label = field.key === "balance" ? t.balance : field.key === "inflow" ? t.inflow : field.key === "outflow" ? t.outflow : field.key === "after" ? t.after : t.delta;
+        const arrow = field.key === "inflow" ? "↙ " : field.key === "outflow" ? "↗ " : "";
+        cell(field.key, label, value, `${arrow}${valueFormat(field.key === "inflow" || field.key === "outflow" ? Math.abs(value) : value)}`);
+      } else if (field.key === "x") {
         const header = (input.kind === "line" || input.kind === "scatter" ? input.xAxis?.label : undefined) ?? "X";
         cell(
           "x",

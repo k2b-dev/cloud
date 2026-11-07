@@ -45,6 +45,36 @@ import {
 
 TypeScript narrows the remaining properties from `kind`. `width` and `height` are removed from the accepted chart options: CSS fits the server-rendered SVG to the component’s box.
 
+## Typed components and portable core
+
+Import `Chart` from `@k2b/ui`. The drawing-only `@k2b/ui/charts` entry also works without a DOM. `Chart.Line`, `Chart.Bar`,
+`Chart.Pie`, `Chart.Donut`, `Chart.Scatter`, `Chart.Sparkline`, `Chart.Histogram`,
+`Chart.Boxplot`, `Chart.Gauge`, `Chart.BarGauge`, `Chart.Stat`, `Chart.Heatmap`,
+`Chart.Map`, and `Chart.StateTimeline` accept only their kind's options.
+They render exactly the same markup as `<Chart kind="…" … />`.
+Keep the discriminator form for saved JSON and dynamic chart selection.
+
+```tsx
+import { Chart } from "@k2b/ui";
+
+<Chart.Pie data={[{ label: "Imports", value: 42 }, { label: "Exports", value: 28 }]} />
+<Chart kind="pie" data={[{ label: "Imports", value: 42 }, { label: "Exports", value: 28 }]} />
+```
+
+`@k2b/ui/charts/core` exposes the UI-owned `ChartKind`, `ChartDatum`,
+`ChartDatumRole`, `ChartNumberFormat`, `ChartDateFormat`, and `ChartFormat`
+contracts without Solid or DOM dependencies. Its only runtime export is
+`chartDatumRoles`; the renderer registry and namespace map stay internal during
+the renderer port. Number formats are serializable:
+`style` is `number`, `percent`, or `currency`, with optional `currency`, `unit`,
+`decimals`, and `compact`. Date formats use `{ date: "day" | "minute" | "second" }`.
+The editor validates these descriptions before turning them into formatters.
+
+To add a chart kind, register its pure renderer in `charts/core/registry.ts`. Its key defines the
+discriminator and capitalized namespace member, including the narrowed props.
+Keep any kind-specific presentation adaptation in `renderChartSvg`. Add a
+fixture to `packages/ui/test/charts/fixtures.ts`; the namespace render test checks both forms.
+
 ## A legend above a line chart
 
 For `kind="line"`, combine `legend` with `legendPlacement="top-start"`

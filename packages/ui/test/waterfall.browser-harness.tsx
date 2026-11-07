@@ -4,12 +4,13 @@ import Chart from "../src/content/Chart";
 import { LocaleProvider } from "../src/intl/locale";
 import { waterfallFixture } from "./waterfall-fixture";
 
+const [selected, setSelected] = createSignal(false);
 const [state, setState] = createSignal("data");
 render(
   () => (
     <LocaleProvider locale="de">
       <main>
-        <nav>
+        <nav><button type="button" onClick={() => setSelected(!selected())}>Select outflow</button>
           {["data", "loading", "empty", "error", "stale"].map((s) => (
             <button type="button" onClick={() => setState(s)}>
               {s}
@@ -32,7 +33,7 @@ render(
                 </button>
               </div>
             ) : (
-              <Chart kind="waterfall" {...waterfallFixture} style={{ height: "280px" }} />
+              <Chart selected={selected() ? {role:"item",index:2} : null} kind="waterfall" {...waterfallFixture} style={{ height: "280px" }} />
             )}
           </div>
         </section>

@@ -1,8 +1,8 @@
-import type { ChartDatum, charts } from "@k2b/stdlib";
+import { type ChartDatum, type ChartKind, chartDatumRoles } from "../charts/core";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartCursor, ChartCursorState } from "./chart-cursor";
 
-export type ChartKind = keyof typeof charts | "waterfall";
+export type { ChartKind } from "../charts/core";
 
 export type ChartDatumRef = Pick<ChartDatum, "role" | "index" | "seriesIndex">;
 export const sameChartDatum = (a: ChartDatumRef, b: ChartDatumRef) =>
@@ -16,7 +16,7 @@ type Entry = { element: SVGGraphicsElement; datum: ChartDatum };
 const object = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const pair = (value: unknown): value is [number, number] =>
   Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === "number" && Number.isFinite(n));
-const roles = new Set(["point", "item", "bin", "box", "outlier", "value", "cell", "interval"]);
+const roles: ReadonlySet<string> = new Set(chartDatumRoles);
 export function isChartDatum(value: unknown): value is ChartDatum {
   return (
     object(value) &&
@@ -109,7 +109,7 @@ export function createChartInspector(options: {
               : ".stdlib-chart-sparkline, .stdlib-chart-stat-sparkline",
           )
       : (item.element.querySelector(".stdlib-chart-bar-gauge-fill, .stdlib-chart-gauge-fill, .stdlib-chart-stat-value") ??
-        item.element.querySelector("rect, path, circle"));
+        item.element.querySelector(":is(rect, path, circle):not(.k2b-chart-category-band)"));
     const paint = source ? source.ownerDocument.defaultView?.getComputedStyle(source) : undefined;
     const color =
       (point || item.element.hasAttribute("data-chart-reference") ? paint?.stroke : paint?.fill) ||
@@ -193,20 +193,23 @@ export function createChartInspector(options: {
     byElement.clear();
     receive(options.cursor?.()?.read() ?? null);
   };
-  const show = (entry: Entry, broadcast = true) => {
+  const show = (entry: Entry, broadcast = true, hover = false) => {
     const x = rawX(entry);
     if (broadcast && options.kind() === "line" && typeof x === "number") options.cursor?.()?.move(source, x);
     const tooltip = options.tooltip(),
       anchor = options.anchor(),
       container = options.container();
     if (!tooltip || !anchor || !container || !options.enabled()) return;
-    if (active === entry && tooltip.matches(":popover-open")) return;
+    if (active === entry && tooltip.matches(":popover-open")) {
+      entry.element.setAttribute("data-inspected", hover ? "hover" : "true");
+      return;
+    }
     clearHighlight();
     active = entry;
     highlighted = options.kind() === "line" ? records().filter((candidate) => rawX(candidate) === rawX(entry)) : [entry];
     for (const item of highlighted) {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
-      item.element.setAttribute("data-inspected", "true");
+      item.element.setAttribute("data-inspected", hover ? "hover" : "true");
     }
     const document = tooltip.ownerDocument;
     const contents = highlighted.map((item) => ({
@@ -387,7 +390,7 @@ export function createChartInspector(options: {
       if (!sample) return;
       const entry = nearest(sample.x, sample.y, sample.target);
       if (entry) {
-        show(entry);
+        show(entry, true, true);
         if (seriesChart()) {
           const container = options.container();
           container?.setAttribute("data-cursor-source", "true");

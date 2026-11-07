@@ -43,5 +43,22 @@ test("every mark includes portable paint, escaped names, raw before and after ba
   expect(svg).toContain('fill="var(--k2b-flow-out-mark');
   expect(svg.match(/k2b-waterfall-connector/g)).toHaveLength(4);
   expect(svg).toContain("&lt;script&gt;");
-  expect(svg).toContain("&quot;key&quot;:&quot;to&quot;,&quot;value&quot;:-40");
+  expect(svg).toContain("&quot;key&quot;:&quot;after&quot;,&quot;value&quot;:-40");
+});
+
+test("all-negative balances, many categories and measured widths remain finite and bounded", () => {
+  const many = { start: {label:"Opening balance",value:-100}, steps: Array.from({length:10},(_,i)=>({label:`Cat${i}`,value:-10})), end:{label:"Closing balance"} };
+  const phone = waterfallLayout(many, {width:900,height:280});
+  const wide = waterfallLayout({...many,displayWidth:900}, {width:900,height:280});
+  expect(wide.left).toBeLessThan(phone.left);
+  expect(wide.left).toBeLessThan(100);
+  expect(wide.balance).toBe(-200);
+  expect(wide.scale.domain[1]).toBe(0);
+  for (const width of [296,600,650,900]) {
+    const svg=renderWaterfallSvg({...many,width,height:280,displayWidth:width});
+    expect(svg).not.toMatch(/NaN|Infinity/);
+    const labels=[...svg.matchAll(/class="stdlib-chart-tick-label stdlib-chart-category-label[^"]*"/g)];
+    expect(labels.length).toBeLessThanOrEqual(12);
+    if (width <=650) expect(svg).not.toContain('class="k2b-waterfall-value"');
+  }
 });
