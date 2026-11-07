@@ -1078,8 +1078,9 @@
     vector-effect: non-scaling-stroke;
   }
 
-  .k2b-chart:is([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) > .k2b-chart__svg {
-    position: relative;
+  /* The band sits behind the marks without positioning the drawing, which would change what lies on top. */
+  .k2b-chart[data-inspecting="category"] {
+    isolation: isolate;
   }
 
   .k2b-chart[data-inspecting="category"]::before {
@@ -1089,6 +1090,7 @@
     top: var(--k2b-chart-band-top);
     width: var(--k2b-chart-band-width);
     height: var(--k2b-chart-band-height);
+    z-index: -1;
     border-radius: 3px;
     background: color-mix(in srgb, currentColor 7%, transparent);
     pointer-events: none;
