@@ -45,6 +45,21 @@ job is a visible failure; do not claim the source passed.
 Studio HTML apps retain `code_create` and the existing `code_read/write/check`
 inputs with `id`, revision and screenshots. Load `assistant-code-mode` for them.
 
+## Rebuild an open-ended routine
+
+For work that needs Gustav to choose and use tools, create personal Code and
+call `core.ai.chat.run` from `app.schedule`; discover the owner's destination
+chat and the generated handle with `code_sdk`. Keep the exported prompt, timing
+and explicit `timeZone` (one-time `{ at, timeZone }`, recurring `{ cron,
+timeZone }` when the installed SDK supports it). Use a stable idempotency key.
+The Action returns a turn ID and its current state promptly. Use
+`core.ai.chat.run.read` for a later snapshot; if it says `waiting_for_approval`,
+tell the owner to decide in that chat and finish the Code run. Never poll until
+approval. The turn uses the owner's current tools, normal approval rules and
+interactive AI allowance by actual usage, plus the existing daily Code USD
+limits. It never spends a full attempt allowance just to start a turn. It keeps its Code
+origin in chat history. For a bounded summary, prefer `core.ai.generate` and
+result delivery. Do not recreate routines or activate Code from the chat.
 
 ## Mail triage: category first
 

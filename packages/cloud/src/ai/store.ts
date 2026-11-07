@@ -723,20 +723,24 @@ const rowToMessage = (row: MessageRow): AiStoredMessage => {
   };
 };
 
-const rowToTurn = (row: TurnRow): AiTurn => ({
-  deadline: row.deadline ? iso(row.deadline) : null,
-  runBudgetMs: row.run_budget_ms ?? null,
-  cancelRequestedAt: row.cancel_requested_at ? iso(row.cancel_requested_at) : null,
-  id: row.id,
-  shortId: row.short_id,
-  conversationId: row.conversation_id,
-  status: row.status,
-  attempt: Number(row.attempt ?? 0),
-  modelId: row.model_profile_id,
-  createdAt: iso(row.created_at),
-  completedAt: row.completed_at ? iso(row.completed_at) : null,
-  error: row.error,
-});
+const rowToTurn = (row: TurnRow): AiTurn => {
+  const config = row.run_config ? parseJsonValue<AiTurnRunConfig>(row.run_config) : null;
+  return {
+    ...(config && config.kind !== "compact" && config.codeOrigin ? { codeOrigin: config.codeOrigin } : {}),
+    deadline: row.deadline ? iso(row.deadline) : null,
+    runBudgetMs: row.run_budget_ms ?? null,
+    cancelRequestedAt: row.cancel_requested_at ? iso(row.cancel_requested_at) : null,
+    id: row.id,
+    shortId: row.short_id,
+    conversationId: row.conversation_id,
+    status: row.status,
+    attempt: Number(row.attempt ?? 0),
+    modelId: row.model_profile_id,
+    createdAt: iso(row.created_at),
+    completedAt: row.completed_at ? iso(row.completed_at) : null,
+    error: row.error,
+  };
+};
 
 const rowToLiveBlocks = (row: TurnRow): AiTurnBlock[] => {
   if (!row.live_blocks) return [];
@@ -2997,8 +3001,8 @@ export const aiConversations: AiConversationService = {
       return rowToTurn(rows[0]!);
     }),
 
-  submitChatTurn: async (input) => {
-    return await sql.begin(async (tx) => {
+  submitChatTurn: async (input, db) => {
+    const submit = async (tx: SQL) => {
       const [conversation] = await tx<{ draft_revision: number | string; project_id: string | null }[]>`
         SELECT draft_revision, project_id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
       `;
@@ -3096,6 +3100,7 @@ export const aiConversations: AiConversationService = {
           loopId: turn.id,
           meta: {
             ...(input.expectedDraftRevision === undefined ? {} : { submittedDraftRevision: input.expectedDraftRevision }),
+            ...(input.runConfig.codeOrigin ? { codeOrigin: input.runConfig.codeOrigin } : {}),
             modelRequest: input.runConfig.model,
             modelResolved: input.runConfig.modelResolved,
             ...(input.runConfig.modelReplacement ? { modelReplacement: input.runConfig.modelReplacement } : {}),
@@ -3140,7 +3145,9 @@ export const aiConversations: AiConversationService = {
         await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${input.queuedMessageId}::uuid`;
       }
       return { turn, message: rowToMessage(messageRow) };
-    });
+    };
+    // Trusted hosts may atomically pair admission with a durable effect receipt.
+    return db ? submit(db) : sql.begin(submit);
   },
 
   getTurnRunConfig: async (input) => {
