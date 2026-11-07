@@ -17,7 +17,6 @@ import { fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono, type Next } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { HTTPException } from "hono/http-exception";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import {
@@ -219,6 +218,7 @@ import {
   internalDraftSeedInput,
   internalInput,
   internalMailboxId,
+  internalMailboxResourceId,
   internalParams,
   type MailApiContext,
   mailboxParamSchema,
@@ -640,8 +640,7 @@ const internalCommandInput = async (c: Context<MailApiContext>, input: MailComma
     case "move":
     case "copy":
     case "delete": {
-      const messageId = await publicResources.resolveMailboxPublicId("messages", internalMailboxId(c), resolved.messageId);
-      if (!messageId) throw new HTTPException(404, { message: localizeMailError(err.notFound("Mail resource"), getLocale(c)).message });
+      const messageId = await internalMailboxResourceId(c, "messages", resolved.messageId);
       return { ...resolved, messageId };
     }
     default:
@@ -1891,7 +1890,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
       context: requestContext(c),
       ...internalParams(c, c.req.valid("param")),
     });
-    return resolved.ok ? c.redirect(resolved.data.href, 302) : respondPublic(c, resolved);
+    if (resolved.ok) return c.redirect(resolved.data.href, 302);
+    return respondPublic(c, resolved.error.code === "NOT_FOUND" ? fail(err.notFound("Reminder")) : resolved);
   })
   .get("/mailboxes/:mailboxId/assignable-users", v("param", mailboxParamSchema), v("query", collaboratorQuerySchema), async (c) =>
     respondPublic(

@@ -2,19 +2,23 @@ import { defineCapabilities } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { z } from "zod";
+import { chatEvents } from "./app-events";
 import {
+  ConversationReadDataSchema,
   DiscussionListDataSchema,
   DiscussionListInputSchema,
   DiscussionMessageDataSchema,
   DiscussionPostInputSchema,
   MessageDeleteInputSchema,
   MessageEditInputSchema,
+  MessageReadDataSchema,
   MessageReadInputSchema,
 } from "./capability-contracts";
 import { discussionApprovalScope, discussionReview } from "./capability-reviews";
 import { ChatComposeInputSchema } from "./commands";
 import { threadHref } from "./frontend/threads";
 import { type ChatContext, messages as catalog, requireConversation, subjectPrincipal } from "./service/access";
+import { readConversation, readMessage } from "./service/capability-reads";
 import {
   ConversationParamSchema,
   FollowingSchema,
@@ -25,13 +29,7 @@ import {
   withinMessageMutationWindow,
 } from "./service/contracts";
 import { authorizeDiscussion, checkDiscussionCredentialScope } from "./service/discussion-access";
-import {
-  changeDiscussionMessage,
-  listDiscussion,
-  postDiscussion,
-  readDiscussionMessage,
-  resolveDiscussionMessage,
-} from "./service/discussions";
+import { changeDiscussionMessage, listDiscussion, postDiscussion, resolveDiscussionMessage } from "./service/discussions";
 import { messages } from "./service/messages";
 import { notificationPreferences } from "./service/notification-preferences";
 import { threadFollows } from "./service/thread-follows";
@@ -98,14 +96,31 @@ const MessagePostData = z.strictObject({
 export const chatCapabilities = defineCapabilities({
   protocolVersion: 2,
   types: {
+    conversation: {
+      title: "Chat conversation",
+      description: "An ordinary Chat conversation or channel.",
+      icon: "ti ti-messages",
+      reader: "conversation.read",
+    },
     message: {
-      title: "Discussion message",
-      description: "A message in one accessible item discussion.",
+      title: "Chat message",
+      description: "A message in an accessible Chat conversation or item discussion.",
       icon: "ti ti-message",
       reader: "message.read",
     },
   },
+  events: chatEvents,
   queries: {
+    "conversation.read": {
+      title: "Read Chat conversation",
+      description: "Read the title and current permission of an ordinary Chat conversation or channel. Excludes system conversations.",
+      input: z.strictObject({
+        id: ConversationParamSchema.shape.conversation.describe("Six-character ID from a chat.conversation reference."),
+      }),
+      data: ConversationReadDataSchema,
+      openWorld: false,
+      run: readConversation,
+    },
     "discussion.list": {
       title: "List item discussion",
       description:
@@ -116,13 +131,12 @@ export const chatCapabilities = defineCapabilities({
       run: listDiscussion,
     },
     "message.read": {
-      title: "Read discussion message",
-      description:
-        "Read one complete chat.message from an item discussion, with a link to open it. General chats are outside this capability.",
+      title: "Read Chat message",
+      description: "Read one complete chat.message from an accessible conversation or item discussion, with a link to open it.",
       input: MessageReadInputSchema,
-      data: DiscussionMessageDataSchema,
+      data: MessageReadDataSchema,
       openWorld: false,
-      run: readDiscussionMessage,
+      run: readMessage,
     },
 
     "notifications.read": {
@@ -299,16 +313,30 @@ export const chatCapabilities = defineCapabilities({
     baseLocale: "en",
     translations: {
       de: {
-        types: { message: { title: "Diskussionsnachricht", description: "Eine Nachricht in einer zugänglichen Element-Diskussion." } },
+        types: {
+          conversation: { title: "Chat-Unterhaltung", description: "Eine gewöhnliche Chat-Unterhaltung oder ein Kanal." },
+          message: { title: "Chatnachricht", description: "Eine Nachricht in einem zugänglichen Chat oder einer Element-Diskussion." },
+        },
+        events: {
+          "message.posted": {
+            title: "Nachricht geschrieben",
+            description: "Eine neue Textnachricht oder Antwort wurde in einem Chat gespeichert.",
+          },
+        },
         queries: {
+          "conversation.read": {
+            title: "Chat-Unterhaltung lesen",
+            description:
+              "Titel und aktuelles Recht einer gewöhnlichen Chat-Unterhaltung oder eines Kanals lesen. System-Chats sind ausgeschlossen.",
+          },
           "discussion.list": {
             title: "Element-Diskussion lesen",
             description:
               "Neueste Nachrichtenvorschauen eines Elements lesen. Erstellt keinen Thread; message.read liefert die vollständige Nachricht.",
           },
           "message.read": {
-            title: "Diskussionsnachricht lesen",
-            description: "Eine vollständige chat.message einer Element-Diskussion mit Link öffnen. Allgemeine Chats sind ausgeschlossen.",
+            title: "Chatnachricht lesen",
+            description: "Eine vollständige chat.message eines zugänglichen Chats oder einer Element-Diskussion mit Link öffnen.",
           },
 
           "notifications.read": {
