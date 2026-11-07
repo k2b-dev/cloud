@@ -11,6 +11,7 @@ export const CODE_PAGE_LIMITS = Object.freeze({
   rows: 200,
   columns: 20,
   fields: 40,
+  follow: 8,
 });
 const text = z.string().max(CODE_PAGE_LIMITS.bytes);
 const label = z.string().min(1).max(200);
@@ -27,6 +28,8 @@ export const CodePageFieldSchema = z
     type: z.enum(["text", "email", "number", "textarea", "select", "checkbox", "scan"]),
     value: z.union([text, z.number().finite(), z.boolean()]).optional(),
     required: z.boolean().optional(),
+    /** The Code's validation message after a submit, shown at the field. */
+    error: z.string().min(1).max(500).optional(),
     options: z
       .array(z.strictObject({ value: text, label }))
       .max(CODE_PAGE_LIMITS.rows)
@@ -63,6 +66,8 @@ const leaf = z.discriminatedUnion("kind", [
       .min(1)
       .max(CODE_PAGE_LIMITS.columns),
     rows: z.array(z.record(z.string(), scalar)).max(CODE_PAGE_LIMITS.rows),
+    /** Shown instead of rows when there are none. */
+    empty: label.optional(),
   }),
   z.strictObject({
     kind: z.literal("Form"),
@@ -93,10 +98,21 @@ export const CodePageNodeSchema: z.ZodType<CodePageNode> = z.lazy(() =>
     z.strictObject({ kind: z.literal("Section"), title: label, children: z.array(CodePageNodeSchema).max(CODE_PAGE_LIMITS.nodes) }),
   ]),
 );
+/** An application event type, `<app>.<event>`, as the event catalog names it. */
+const eventType = z
+  .string()
+  .max(200)
+  .regex(/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9_-]*)+$/);
 export const CodePageTreeSchema = z.strictObject({
   version: z.literal(1),
   kind: z.literal("Page"),
   title: label,
+  /** Event types after which Cloud loads this page again for its viewer. */
+  follow: z
+    .array(eventType)
+    .max(CODE_PAGE_LIMITS.follow)
+    .refine((types) => new Set(types).size === types.length, "Event types are unique")
+    .optional(),
   children: z.array(CodePageNodeSchema).max(CODE_PAGE_LIMITS.nodes),
 });
 export type CodePageTree = z.infer<typeof CodePageTreeSchema>;

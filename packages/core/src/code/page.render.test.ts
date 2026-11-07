@@ -82,7 +82,7 @@ test("Core hosts a complete page document and rejects invalid trees before rende
   const router = new Hono().route(
     "/",
     createCodeHostingRoutes({
-      version: async () => ({ versionId: "version", manifest }),
+      version: async () => ({ versionId: "version", manifest, personalOwner: null }),
       request: async () => ({ kind: "page", status: 200, tree: returned }),
     }),
   );

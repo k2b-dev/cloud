@@ -4,7 +4,7 @@ export type CodePageNode = CodePageTree["children"][number];
 export type CodePageChild = CodePageNode | CodePageTree | readonly CodePageChild[] | false | null | undefined;
 export type CodePageComponent<P> = (props: P) => CodePageNode | CodePageTree;
 type CodeNodeProps<K extends CodePageNode["kind"]> = Omit<Extract<CodePageNode, { kind: K }>, "kind">;
-export declare const Page: CodePageComponent<{ title: string; children?: CodePageChild }>;
+export declare const Page: CodePageComponent<{ title: string; follow?: CodePageTree["follow"]; children?: CodePageChild }>;
 export declare const Section: CodePageComponent<{ title: string; children?: CodePageChild }>;
 export declare const Text: CodePageComponent<{ text?: string; children?: string | number | readonly (string | number)[] }>;
 export declare const Heading: CodePageComponent<{

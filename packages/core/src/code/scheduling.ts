@@ -257,7 +257,7 @@ export async function codeRunnerLease(
   const code = await findCode(run.code_id);
   const budget = AbortSignal.timeout(CODE_RUN_HEARTBEAT_MS);
   const signal = options.signal ? AbortSignal.any([options.signal, budget]) : budget;
-  if (run.trigger === "path" && (!code?.serviceAccountId || code.owner.kind === "person")) {
+  if (run.trigger === "path" && code && code.owner.kind !== "person" && !code.serviceAccountId) {
     await sql`UPDATE code.runs SET state='failed',outcome='code_route_account_required',ended_at=clock_timestamp(),lease_expires_at=NULL
       WHERE id=${run.id}::uuid AND generation=${run.generation} AND state='running'`;
     return null;
