@@ -74,18 +74,23 @@ or less (one at 280 px or less). Tiles in a row share one height. Tiles keep
 | `onRetry` | `() => void` | Offers "Try again" after an error and "Reload" beside `stale`. |
 | `stale` | `string` | Replaces the support line with a warning such as "As of 09:12 · not current". |
 
-`size="lg"` is the dashboard tile: a 28 px figure in a tile of at least 136 px.
-When the grid is 600 px wide or less, the change badge moves under the figure
-in every size, and the `lg` tile grows to at least 164 px.
+`size="lg"` is the dashboard tile: a 28 px figure in a tile of 136 px. When
+the grid is 600 px wide or less, the change badge moves under the figure in
+every size, and the support line gives the comparison its own line with the
+trend below it; the `lg` tile is then 172 px.
 
-The figure is never cut off. In a grid it shrinks with its tile's width within
-fixed bounds (`lg` 18–28 px, `md` 16–20 px, `sm` 14–16 px); a text value that
-still does not fit wraps at its spaces and the tile grows, instead of ending in
-an ellipsis. Where the badge moves under the figure, every size reserves the
-room of both in every state, so loading, error and data keep one height; only a
-text value long enough to wrap makes its tile taller. Below 200 px of tile width an `lg` tile drops its trend. These
-adjustments follow the grid; a `StatCell` on its own keeps its sizes and wraps.
-`md` and `sm` tiles take the height of their content.
+Tiles in one row share three rows (head, figure, support line), so their
+figures sit on one line whether or not a tile has a change badge, an icon, a
+wrapped label or a longer support line. Every state keeps the same rows, so
+loading, error and data have one height.
+
+The figure and the comparison are never cut off. In a grid the figure shrinks
+with its tile's width within fixed bounds (`lg` 18–28 px, `md` 16–20 px, `sm`
+14–16 px), and support texts wrap instead of ending in an ellipsis; only a text
+long enough to wrap makes its row taller. Below 200 px of tile width an `lg`
+tile drops its trend. These adjustments follow the grid; a `StatCell` on its
+own keeps its sizes and wraps. `md` and `sm` tiles take the height of their
+content.
 
 ### Change and comparison
 

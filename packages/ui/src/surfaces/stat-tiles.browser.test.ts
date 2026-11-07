@@ -80,8 +80,9 @@ const measure = () =>
 describe("@k2b/ui key figure tiles", () => {
   for (const [name, width, columns, height, valueSize] of [
     ["desktop", 1440, 4, 136, 28],
-    ["600 px grid", 620, 2, 164, 28],
-    ["phone", 390, 2, 164, 23.04],
+    // Narrow tiles give the comparison its own line (showcase review 07.11.), so the dashboard tile is 172 px there.
+    ["600 px grid", 620, 2, 172, 28],
+    ["phone", 390, 2, 172, 23.04],
   ] as const) {
     test(`on a ${name} every state keeps the tile's size and rows (${columns} columns, ${height}px)`, async () => {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
@@ -242,6 +243,104 @@ describe("@k2b/ui key figure tiles", () => {
           }),
         );
         expect({ width, frame, cut }).toEqual({ width, frame, cut: [] });
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  // Regression (showcase review 07.11.): a tile without a change badge set its figure lower than its neighbours, and a
+  // compare line beside a sparkline ended in "Last month …" at 390 px.
+  test("figures in a row share one line and the comparison is never cut, with or without badge and trend", async () => {
+    const trend = [38900, 40500, 42200, 43300, 44000, 44560, 48210];
+    const row = (size: "lg" | "md" | "sm") =>
+      createComponent(StatGrid, {
+        size,
+        columns: 4,
+        class: `align-${size}`,
+        get children() {
+          return [
+            createComponent(StatCell, {
+              label: "Balance today",
+              icon: "ti ti-building-bank",
+              value: "€21,140",
+              delta: { value: -0.047, better: "up" },
+              compare: { label: "30 days ago", value: "€22,180" },
+            }),
+            createComponent(StatCell, {
+              label: "Lowest in 60 days",
+              icon: "ti ti-alert-triangle",
+              value: "€6,650",
+              sub: "Expected on 1 Dec · threshold €10,000",
+            }),
+            createComponent(StatCell, {
+              label: "Subscribers",
+              icon: "ti ti-users",
+              value: "48,210",
+              delta: { value: 0.082, better: "up" },
+              compare: { label: "Last month", value: 44560 },
+              trend,
+            }),
+            createComponent(StatCell, {
+              label: "Unsubscribes",
+              icon: "ti ti-user-minus",
+              value: "182",
+              compare: { label: "Last month", value: 208 },
+            }),
+          ];
+        },
+      });
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "en",
+        get children() {
+          return (["lg", "md", "sm"] as const).map(row);
+        },
+      }),
+    );
+    for (const [width, frame] of [
+      [390, 366],
+      [1440, 1384],
+    ] as const) {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      try {
+        await page.setContent(
+          `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+            `<body class="k2b-ui" style="margin:0;padding:12px"><div style="width:${frame}px;display:grid;gap:16px">${html}</div></body></html>`,
+        );
+        await settled(page);
+        const result = await page.evaluate(() =>
+          ["lg", "md", "sm"].map((size) => {
+            const tiles = Array.from(document.querySelectorAll<HTMLElement>(`.align-${size} .k2b-stat-cell`));
+            // Tiles on the same grid row (same top) must put their figures on the same line.
+            const rows = new Map<number, number[]>();
+            for (const tile of tiles) {
+              const top = Math.round(tile.getBoundingClientRect().top);
+              const value = tile.querySelector(".k2b-stat-cell__value")!.getBoundingClientRect().top;
+              rows.set(top, [...(rows.get(top) ?? []), value]);
+            }
+            const spread = Math.max(...[...rows.values()].map((tops) => Math.max(...tops) - Math.min(...tops)));
+            const cut = Array.from(document.querySelectorAll<HTMLElement>(`.align-${size} .k2b-stat-cell__sub`)).flatMap((sub) => {
+              const tile = sub.closest(".k2b-stat-cell")!.getBoundingClientRect();
+              const box = sub.getBoundingClientRect();
+              const whole =
+                sub.scrollWidth <= sub.clientWidth + 1 &&
+                box.left >= tile.left &&
+                box.right <= tile.right + 0.5 &&
+                box.bottom <= tile.bottom + 0.5;
+              return whole && getComputedStyle(sub).textOverflow !== "ellipsis" ? [] : [sub.textContent];
+            });
+            return { size, spread: Math.round(spread * 10) / 10, cut };
+          }),
+        );
+        expect({ width, result }).toEqual({
+          width,
+          result: [
+            { size: "lg", spread: 0, cut: [] },
+            { size: "md", spread: 0, cut: [] },
+            { size: "sm", spread: 0, cut: [] },
+          ],
+        });
       } finally {
         await page.close();
       }
