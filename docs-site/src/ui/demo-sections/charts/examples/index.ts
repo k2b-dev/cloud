@@ -1,40 +1,24 @@
-import bar from "./bar";
-import barGauge from "./barGauge";
-import boxplot from "./boxplot";
-import donut from "./donut";
-import gauge from "./gauge";
-import heatmap from "./heatmap";
-import histogram from "./histogram";
-import line from "./line";
-import map from "./map";
-import pie from "./pie";
-import scatter from "./scatter";
-import sparkline from "./sparkline";
-import stat from "./stat";
-import stateTimeline from "./stateTimeline";
+import { isExampleList } from "./files";
+import { exampleModules } from "./registry.generated";
 import { type ChartShowcaseExample, type ChartShowcaseQuestion, chartShowcaseQuestions, plannedChartKinds } from "./types";
 
 /**
- * Every example of the chart showcase, one file per kind. Add a kind by adding its file and one line here; the
- * registry test fails for a file that is not listed. The overview, the kind pages, the dashboards and the browser
- * test all read this list.
+ * Every example of the chart showcase: one file per kind in this folder (registry.generated.ts lists them; every Fibel
+ * start and build regenerates it). A file may export its list as default or by any name. The overview, the kind
+ * pages, the dashboards and the browser test all read this list, ordered by question.
  */
 export const chartShowcaseExamples: readonly ChartShowcaseExample[] = [
-  ...line,
-  ...sparkline,
-  ...bar,
-  ...barGauge,
-  ...pie,
-  ...donut,
-  ...stateTimeline,
-  ...scatter,
-  ...histogram,
-  ...boxplot,
-  ...heatmap,
-  ...map,
-  ...stat,
-  ...gauge,
-];
+  ...new Map(
+    exampleModules
+      .flatMap((module) => [...new Set(Object.values(module))].filter(isExampleList))
+      .flat()
+      .map((example) => [example.id, example] as const),
+  ).values(),
+].sort(
+  (a, b) =>
+    chartShowcaseQuestions.findIndex((question) => question.id === a.question) -
+    chartShowcaseQuestions.findIndex((question) => question.id === b.question),
+);
 
 export type ChartShowcaseKind = {
   kind: string;

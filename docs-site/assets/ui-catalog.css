@@ -2140,6 +2140,52 @@
   white-space: nowrap;
 }
 
+.ui-charts-frame__block {
+  min-width: 0;
+  overflow: auto;
+}
+
+.ui-charts-frame__flows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  align-items: center;
+}
+
+.ui-charts-frame__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ui-charts-frame__skeleton > span {
+  height: 0.9rem;
+  border-radius: 0.3rem;
+  background: var(--k2b-surface-muted);
+}
+
+.ui-charts-frame__skeleton > span:last-child {
+  width: 60%;
+}
+
+.ui-charts-frame__inline-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+}
+
+.ui-charts-frame__inline-state > i {
+  color: var(--k2b-text-muted);
+}
+
+.ui-charts-frame__inline-state[role="alert"] > i {
+  color: var(--k2b-danger-text);
+}
+
 .ui-charts-frame__table {
   margin: 0 -1rem -1rem;
   overflow: auto;
@@ -2180,72 +2226,6 @@
   background: var(--k2b-surface-muted);
   font-family: var(--c-mono);
   font-size: 0.72rem;
-}
-
-/* Key figure tiles: four in a row, two on a phone. */
-.ui-charts-tiles {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-/* Every state of a tile has the height of a tile with a trend line, so nothing moves while figures load. */
-.ui-charts-tile {
-  box-sizing: border-box;
-  min-width: 0;
-  height: 8.5rem;
-}
-
-.ui-charts-tile__state {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  align-items: flex-start;
-  padding: 1rem;
-}
-
-.ui-charts-tile__label {
-  color: var(--k2b-text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 500;
-}
-
-.ui-charts-tile__skeleton {
-  width: 60%;
-  height: 1.6rem;
-  border-radius: 0.4rem;
-  background: var(--k2b-surface-muted);
-}
-
-.ui-charts-tile__skeleton[data-size="sm"] {
-  width: 75%;
-  height: 0.6rem;
-}
-
-.ui-charts-tile__error {
-  display: inline-flex;
-  gap: 0.35rem;
-  align-items: center;
-  color: var(--k2b-text-secondary);
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.ui-charts-tile__error i {
-  color: var(--k2b-danger-text);
-}
-
-.ui-charts-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--k2b-link-accent);
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
 }
 
 /* Dashboards: six columns; third is 2, half 3, two thirds 4, full 6. */
@@ -2360,20 +2340,12 @@
     grid-column: span 6;
   }
 
-  .ui-charts-dashboard .ui-charts-tiles {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-  }
 }
 
 @media (max-width: 760px) {
   .ui-charts-hero,
   .ui-charts-guidance {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .ui-charts-tiles {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .ui-charts-stage[data-width="phone"] > .ui-charts-frame,

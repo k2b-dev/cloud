@@ -183,7 +183,7 @@ test("both dashboards keep every panel in place in every state", async () => {
     for (const width of [1280, 390]) {
       const { page, errors } = await open(`/en/ui/charts/dashboards/${dashboard.slug}`, width);
       try {
-        const before = await frames(page, ".ui-charts-grid__cell > *, .ui-charts-tile");
+        const before = await frames(page, ".ui-charts-grid__cell > *, .k2b-stat-cell");
         expect(before.length, dashboard.slug).toBeGreaterThan(4);
         for (const state of states) {
           await pick(page, "Preview state", state);
@@ -191,7 +191,7 @@ test("both dashboards keep every panel in place in every state", async () => {
             dashboard: dashboard.slug,
             width,
             state,
-            frames: await frames(page, ".ui-charts-grid__cell > *, .ui-charts-tile"),
+            frames: await frames(page, ".ui-charts-grid__cell > *, .k2b-stat-cell"),
           }).toEqual({
             dashboard: dashboard.slug,
             width,

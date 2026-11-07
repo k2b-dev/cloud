@@ -9,7 +9,9 @@ import {
   chartTooltip,
 } from "@k2b/editor/charts";
 import type { ChartExplorerColumn, ChartLegendEntry, ChartProps, ChartSnapshot } from "@k2b/ui";
+import * as ui from "@k2b/ui";
 import { prepareChartSnapshot } from "@k2b/ui";
+import type { JSX } from "solid-js";
 import type { JsonValue } from "./examples/types";
 
 export type ShowcaseRow = { key: string; cells: Record<string, string>; values: Record<string, string | number> };
@@ -36,8 +38,19 @@ const object = (value: JsonValue | undefined): value is JsonObject => typeof val
 
 /** Kinds that the Solid `Chart` draws but the portable description does not list yet. */
 const liveKinds = new Set(["map", "stateTimeline"]);
+/**
+ * The @k2b/ui component that draws each Cloud block from the same props as its description. A block whose component
+ * this build does not export shows its slot, and appears by itself once the component lands.
+ */
+export const blockComponents: Record<string, string> = { budget: "BudgetList", balance: "BalanceSummary", flow: "FlowAmount" };
+const isComponent = (value: unknown): value is (props: Record<string, unknown>) => JSX.Element => typeof value === "function";
+export const blockComponent = (block: string) => {
+  const name = blockComponents[block];
+  const component = name ? Reflect.get(ui, name) : undefined;
+  return isComponent(component) ? component : undefined;
+};
 /** Blocks this site can draw; the other blocks show their slot. */
-export const drawableBlocks = new Set(["stats", "table"]);
+const drawableBlock = (block: string) => block === "stats" || block === "table" || blockComponent(block) !== undefined;
 
 /** Names of options the schema dropped: a description it does not fully know must not draw as a smaller chart. */
 const lostKeys = (source: JsonValue, parsed: unknown, path = ""): string[] => {
@@ -134,9 +147,14 @@ const liveRows = (spec: JsonObject): { columns: ChartExplorerColumn<ShowcaseRow>
 
 /** Draws a portable description the way Chat and Notebooks draw it: one parse, one renderer, one table. */
 export function resolveDrawing(spec: JsonValue, locale = "en"): ShowcaseDrawing {
+  // A list of amounts with a direction, `[{ type: "flow", value, currency }]`, is the flow block.
+  if (Array.isArray(spec) && spec.length && spec.every((entry) => object(entry) && entry.type === "flow"))
+    return blockComponent("flow")
+      ? { mode: "block", block: "flow", spec: { block: "flow", items: spec } }
+      : { mode: "slot", kind: "flow", reason: "This block arrives with its catalog step." };
   if (!object(spec)) return { mode: "slot", kind: "unknown", reason: "The description is not an object." };
   if (typeof spec.block === "string")
-    return drawableBlocks.has(spec.block)
+    return drawableBlock(spec.block)
       ? { mode: "block", block: spec.block, spec }
       : { mode: "slot", kind: spec.block, reason: "This block arrives with its catalog step." };
   const kind = typeof spec.kind === "string" ? spec.kind : "unknown";

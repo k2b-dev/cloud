@@ -15,7 +15,7 @@ import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from "so
 import { Dynamic } from "solid-js/web";
 import type { JsonValue } from "./examples/types";
 import { formatNumber } from "./format";
-import { resolveDrawing, type ShowcaseRow, specSubtitle, specTitle } from "./resolve";
+import { blockComponent, resolveDrawing, type ShowcaseRow, specSubtitle, specTitle } from "./resolve";
 
 export type ShowcaseState = "data" | "loading" | "empty" | "error" | "stale";
 export const showcaseStates: readonly { value: ShowcaseState; label: string }[] = [
@@ -121,12 +121,14 @@ export function ShowcaseFrame(props: ShowcaseFrameProps): JSX.Element {
       </Match>
       <Match when={drawing().mode === "block" && (drawing() as Extract<ReturnType<typeof resolveDrawing>, { mode: "block" }>)}>
         {(block) => (
-          <Show
-            when={block().block === "stats"}
-            fallback={<TableBlock {...props} spec={block().spec} title={title()} subtitle={subtitle()} />}
-          >
-            <StatsBlock spec={block().spec} state={props.state} onRetry={props.onRetry} />
-          </Show>
+          <Switch fallback={<ComponentBlock {...props} block={block().block} spec={block().spec} title={title()} subtitle={subtitle()} />}>
+            <Match when={block().block === "stats"}>
+              <StatsBlock spec={block().spec} state={props.state} onRetry={props.onRetry} />
+            </Match>
+            <Match when={block().block === "table"}>
+              <TableBlock {...props} spec={block().spec} title={title()} subtitle={subtitle()} />
+            </Match>
+          </Switch>
         )}
       </Match>
       <Match when={drawing().mode === "slot" && (drawing() as Extract<ReturnType<typeof resolveDrawing>, { mode: "slot" }>)}>
@@ -152,78 +154,116 @@ export function ShowcaseFrame(props: ShowcaseFrameProps): JSX.Element {
   );
 }
 
-/** `{ block: "stats", items: [...] }`: one framed tile per key figure (F2), with the frame states in each tile. */
+/**
+ * `{ block: "stats", items: [...] }`: the key figure tiles of @k2b/ui (F2). Every tile has the frame states in its own
+ * place: loading placeholders, "Not loaded" with Try again, the empty dash, and a stale note under the figure.
+ */
 function StatsBlock(props: { spec: JsonObject; state: ShowcaseState; onRetry?: () => void }): JSX.Element {
   const items = () => list(props.spec.items).filter(object);
+  const tones = new Set(["blue", "emerald", "amber", "red", "zinc"]);
   return (
-    <div class="ui-charts-tiles" data-count={items().length}>
+    <StatGrid columns={Math.min(6, Math.max(1, items().length)) as 1 | 2 | 3 | 4 | 5 | 6} class="ui-charts-tiles">
       <For each={items()}>
         {(item) => {
-          const delta = () => (object(item.delta) ? item.delta : undefined);
-          const deltaText = () => {
-            const change = delta();
+          const delta = () => {
+            const change = object(item.delta) ? item.delta : undefined;
             if (!change || typeof change.value !== "number") return undefined;
-            const points = change.unit === "points";
-            const sign = change.value > 0 ? "+" : change.value < 0 ? "−" : "±";
-            const magnitude = Math.abs(change.value) * 100;
-            return `${sign}${new Intl.NumberFormat("en", { maximumFractionDigits: 1 }).format(magnitude)}${points ? " pts" : " %"}`;
-          };
-          const tone = () => {
-            const change = delta();
-            if (!change || typeof change.value !== "number" || !change.better || change.value === 0) return "zinc" as const;
-            return change.value > 0 === (change.better === "up") ? ("emerald" as const) : ("red" as const);
+            return {
+              value: change.value,
+              ...(change.unit === "points" ? { unit: "points" as const } : {}),
+              ...(change.better === "up" ? { better: "up" as const } : change.better === "down" ? { better: "down" as const } : {}),
+            };
           };
           const compare = () =>
             object(item.compare) && typeof item.compare.value === "number"
-              ? `${text(item.compare.label)} ${formatNumber(item.compare.value, item.format)}`
-              : text(item.note) || undefined;
+              ? { label: text(item.compare.label), value: formatNumber(item.compare.value, item.format) }
+              : undefined;
           return (
-            <StatGrid columns={1} class="ui-charts-tile">
-              <Switch>
-                <Match when={props.state === "loading"}>
-                  <div class="ui-charts-tile__state" role="status" aria-label={`${text(item.label)}: loading`}>
-                    <span class="ui-charts-tile__label">{text(item.label)}</span>
-                    <span class="ui-charts-tile__skeleton" />
-                    <span class="ui-charts-tile__skeleton" data-size="sm" />
-                  </div>
-                </Match>
-                <Match when={props.state === "error"}>
-                  <div class="ui-charts-tile__state" role="alert">
-                    <span class="ui-charts-tile__label">{text(item.label)}</span>
-                    <span class="ui-charts-tile__error">
-                      <i class="ti ti-alert-circle" aria-hidden="true" /> Not loaded
-                    </span>
-                    <button type="button" class="ui-charts-link" onClick={() => props.onRetry?.()}>
-                      Try again
-                    </button>
-                  </div>
-                </Match>
-                <Match when={props.state === "empty"}>
-                  <StatCell label={text(item.label)} value="–" sub="Nothing counted in this period" />
-                </Match>
-                <Match when={true}>
-                  <StatCell
-                    label={text(item.label)}
-                    value={typeof item.value === "number" ? formatNumber(item.value, item.format) : text(item.value)}
-                    sub={props.state === "stale" ? "As of 09:12 · not current" : compare()}
-                    trend={list(item.trend).filter((value): value is number => typeof value === "number")}
-                    accent={
-                      deltaText()
-                        ? {
-                            tone: tone(),
-                            icon: (delta()?.value as number) >= 0 ? "ti ti-trending-up" : "ti ti-trending-down",
-                            text: deltaText(),
-                          }
-                        : undefined
-                    }
-                  />
-                </Match>
-              </Switch>
-            </StatGrid>
+            <StatCell
+              label={text(item.label)}
+              icon={typeof item.icon === "string" ? item.icon : undefined}
+              tone={typeof item.tone === "string" && tones.has(item.tone) ? (item.tone as "blue") : undefined}
+              value={
+                props.state === "empty" ? null : typeof item.value === "number" ? formatNumber(item.value, item.format) : text(item.value)
+              }
+              sub={props.state === "empty" ? "Nothing counted in this period" : compare() ? undefined : text(item.note) || undefined}
+              delta={props.state === "empty" ? undefined : delta()}
+              compare={props.state === "empty" ? undefined : compare()}
+              trend={list(item.trend).filter((value): value is number => typeof value === "number")}
+              status={props.state === "loading" ? "loading" : props.state === "error" ? "error" : undefined}
+              stale={props.state === "stale" ? "As of 09:12 · not current" : undefined}
+              onRetry={props.onRetry}
+            />
           );
         }}
       </For>
-    </div>
+    </StatGrid>
+  );
+}
+
+/** Content heights of the component blocks when the description names none. */
+const blockHeights: Record<string, number> = { balance: 56, flow: 72, budget: 240 };
+
+/**
+ * A Cloud block drawn by its own @k2b/ui component (budget, balance, flow) inside the same frame and states as a
+ * chart: title and subtitle at once, a fixed content height, loading, empty and failure in place, stale in the
+ * subtitle line.
+ */
+function ComponentBlock(props: Omit<ShowcaseFrameProps, "spec"> & { block: string; spec: JsonObject }): JSX.Element {
+  const height = () => (props.block === "budget" && props.height > 0 ? props.height : (blockHeights[props.block] ?? props.height));
+  const values = () => Object.fromEntries(Object.entries(props.spec).filter(([key]) => !["block", "title", "subtitle"].includes(key)));
+  const failed = () => props.state === "error";
+  return (
+    <Paper class="ui-charts-frame" data-block={props.block}>
+      <header class="ui-charts-frame__header">
+        <div>
+          <Dynamic component={`h${props.headingLevel ?? 3}`}>{props.title}</Dynamic>
+          <p role="status" class={props.state === "stale" ? "ui-charts-frame__stale" : undefined}>
+            {props.state === "loading" ? "Loading …" : props.state === "stale" ? "As of 09:12 · Refresh failed" : props.subtitle}
+            <Show when={props.state === "stale" && props.onRetry}>
+              {" · "}
+              <button type="button" class="ui-charts-link" onClick={() => props.onRetry?.()}>
+                Try again
+              </button>
+            </Show>
+          </p>
+        </div>
+      </header>
+      <div class="ui-charts-frame__block" style={{ height: `${height()}px` }} aria-busy={props.state === "loading" ? "true" : undefined}>
+        <Switch>
+          <Match when={props.state === "loading"}>
+            <div class="ui-charts-frame__skeleton" aria-hidden="true">
+              <span />
+              <span />
+            </div>
+          </Match>
+          <Match when={failed() || props.state === "empty"}>
+            <p class="ui-charts-frame__inline-state" role={failed() ? "alert" : undefined}>
+              <i class={failed() ? "ti ti-alert-circle" : "ti ti-chart-bar-off"} aria-hidden="true" />
+              {failed() ? "The data could not be loaded." : props.empty}
+              <Show when={failed() && props.onRetry}>
+                <button type="button" class="ui-charts-link" onClick={() => props.onRetry?.()}>
+                  Try again
+                </button>
+              </Show>
+            </p>
+          </Match>
+          <Match when={blockComponent(props.block)}>
+            {(draw) => (
+              <Show when={props.block === "flow"} fallback={<Dynamic component={draw()} {...values()} />}>
+                <div class="ui-charts-frame__flows">
+                  <For each={list(props.spec.items).filter(object)}>
+                    {(item) => (
+                      <Dynamic component={draw()} {...Object.fromEntries(Object.entries(item).filter(([key]) => key !== "type"))} />
+                    )}
+                  </For>
+                </div>
+              </Show>
+            )}
+          </Match>
+        </Switch>
+      </div>
+    </Paper>
   );
 }
 

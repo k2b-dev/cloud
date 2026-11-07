@@ -96,7 +96,9 @@ export const newsletterDashboard: ShowcaseDashboard = {
             x: months,
             layout: "nested",
             marks: "dots",
-            dots: { step: 0.05 },
+            // Shares of all recipients: 20 dots per month, one dot is 5 %.
+            total: 1,
+            dots: 20,
             series: [
               { label: "Opened", data: opened },
               { label: "Clicked", data: clicked },

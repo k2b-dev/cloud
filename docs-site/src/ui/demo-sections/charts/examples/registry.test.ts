@@ -1,18 +1,29 @@
 import { expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { showcaseDashboards } from "../dashboards";
 import { resolveDrawing } from "../resolve";
 import { specToTsx } from "../tsx";
 import { chartShowcaseExamples, chartShowcaseKinds, chartShowcaseQuestions } from ".";
+import { exampleFiles, isExampleList } from "./files";
+import { exampleRegistrySource } from "./generate";
 
-const support = new Set(["index.ts", "types.ts", "common.ts"]);
-
-test("every example file is listed in the registry", () => {
-  const index = readFileSync(resolve(import.meta.dir, "index.ts"), "utf8");
-  const files = readdirSync(import.meta.dir).filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts") && !support.has(file));
-  expect(files.length).toBeGreaterThanOrEqual(14);
-  for (const file of files) expect(index, `${file} is missing in examples/index.ts`).toContain(`from "./${file.replace(/\.ts$/, "")}"`);
+test("every example file in the folder is in the generated registry", () => {
+  expect(exampleFiles().length).toBeGreaterThanOrEqual(14);
+  expect(
+    readFileSync(resolve(import.meta.dir, "registry.generated.ts"), "utf8"),
+    "run: bun docs-site/src/ui/demo-sections/charts/examples/generate.ts",
+  ).toBe(exampleRegistrySource());
+  for (const file of exampleFiles()) {
+    const module = require(resolve(import.meta.dir, file)) as Record<string, unknown>;
+    const examples = Object.values(module).filter(isExampleList).flat();
+    expect(examples.length, file).toBeGreaterThan(0);
+    for (const example of examples)
+      expect(
+        chartShowcaseExamples.some((entry) => entry.id === example.id),
+        `${file}: ${example.id}`,
+      ).toBe(true);
+  }
 });
 
 test("examples have unique URL-safe ids, a known question and complete guidance", () => {
@@ -78,10 +89,19 @@ test("TSX is generated from the same description as the JSON", () => {
   for (const example of chartShowcaseExamples) {
     const tsx = specToTsx(example.spec);
     const spec = example.spec as Record<string, unknown>;
-    expect(tsx).toContain(`kind=${JSON.stringify(spec.kind)}`);
+    if (spec.block === "stats") {
+      expect(tsx, example.id).toContain("<StatGrid");
+      expect(tsx.match(/<StatCell/g)?.length, example.id).toBe((spec.items as unknown[]).length);
+      continue;
+    }
+    // A kind with a typed component reads as Chart.Kind (F7); otherwise as the dispatcher with kind.
+    expect(tsx).toMatch(
+      new RegExp(`<Chart\\.${String(spec.kind)[0]!.toUpperCase()}${String(spec.kind).slice(1)}\\n|kind=${JSON.stringify(spec.kind)}`),
+    );
     for (const key of Object.keys(spec).filter((key) => key !== "kind"))
       expect(tsx, `${example.id}.${key}`).toMatch(new RegExp(`\\n  ${key}(=|\\n)`));
   }
+  expect(specToTsx({ kind: "line", title: "A", series: [] })).toContain("<Chart.Line");
 });
 
 test("dashboard panels have unique ids and say what each slot stands for", () => {
