@@ -165,7 +165,8 @@ function Body(props: StatCellProps): JSX.Element {
                       </Show>
                     )}
                   </Show>
-                  <Show when={props.trend && props.trend.length > 1}>
+                  {/* No figure, no trend: an empty tile says why in `sub` and keeps the size of its other states. */}
+                  <Show when={!empty() && props.trend && props.trend.length > 1}>
                     <Chart
                       kind="sparkline"
                       labels={{ interactiveChart: props.label }}
