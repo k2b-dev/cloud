@@ -90,7 +90,29 @@ describe("Tools public photo editor adoption", () => {
       await page.close();
     }
   });
-  test("multiple mounted editors retain bounded canvases and release them on unmount", async () => {
+  test("an unvisited photo load failure ends ZIP visibly and preserves earlier captured edits", async () => {
+    const { page, errors } = await open("brokenSecond=1");
+    try {
+      await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      expect(await page.locator(".k2b-image-editor").count()).toBe(1);
+      await page.getByRole("button", { name: "Download all as ZIP", exact: true }).click();
+      await page.getByText("This image could not be opened.", { exact: true }).waitFor();
+      await page.getByText("The archive could not be created.", { exact: false }).last().waitFor();
+      expect(await page.getByRole("button", { name: "Download all as ZIP", exact: true }).isEnabled()).toBe(true);
+      expect(await dirty(page)).toBe(1);
+      expect(await page.evaluate<number>("window.photoFixture.downloads.length")).toBe(0);
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      expect(await page.locator(".k2b-image-editor").count()).toBe(1);
+      expect(await dirty(page)).toBe(1);
+      await page.getByRole("button", { name: "Download", exact: true }).click();
+      await page.waitForFunction("window.photoFixture.downloads.length === 1");
+      await page.waitForFunction(() => !document.querySelector(".k2b-image-editor[data-dirty=true]"));
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+  test("multiple mounted editors retain bounded canvases and release them on removal and unmount", async () => {
     const page = await browser.newPage();
     const errors = pageErrors(page);
     try {
@@ -117,6 +139,9 @@ describe("Tools public photo editor adoption", () => {
       );
       expect(sizes.filter((c) => c.width === 2048 && c.height === 1024)).toHaveLength(2);
       expect(sizes.every((c) => Math.max(c.width, c.height) <= 2048)).toBe(true);
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      expect(await page.locator(".k2b-image-editor").count()).toBe(1);
+      expect(await page.evaluate<number>("window.retainedCanvases.filter(c=>c.width===2048&&c.height===1024).length")).toBe(1);
       await page.evaluate("window.photoFixture.dispose()");
       expect(await page.evaluate<boolean>("window.retainedCanvases.every(c=>c.width===0&&c.height===0)")).toBe(true);
       expect(errors).toEqual([]);

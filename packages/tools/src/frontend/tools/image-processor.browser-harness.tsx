@@ -26,7 +26,9 @@ async function mount() {
     canvas.width = canvas.height = 0;
   }
   const file = new File([source], "photo.jpg", { type: "image/jpeg" });
-  const second = new File([file], "photo.jpg", { type: "image/jpeg" });
+  const second = new File([new URLSearchParams(location.search).has("brokenSecond") ? "invalid image" : file], "photo.jpg", {
+    type: "image/jpeg",
+  });
   fixture.dispose = render(
     () => (
       <ImageProcessorView
