@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import { getK2bPortalRoot } from "../internal/portal";
 import { suppressTextSelection } from "../internal/text-selection";
 import type { DragAndDropMessages } from "./drag-and-drop-messages";
 
@@ -474,7 +475,7 @@ export const bindDragSource = (
       }
       // In the top layer the preview is placed against the viewport, also inside a transformed dialog, and stays above it.
       preview.setAttribute("popover", "manual");
-      (scope ?? doc.body).append(preview);
+      getK2bPortalRoot(undefined, source).append(preview);
       preview.showPopover?.();
       preview.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;
       for (const target of engine.targets) mark(target, payload);

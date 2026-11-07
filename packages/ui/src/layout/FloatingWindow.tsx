@@ -2,6 +2,7 @@ import { createSignal, createUniqueId, type JSX, onCleanup, onMount, Show } from
 import { Portal, render } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
+import { inheritUiScope } from "../internal/portal-scope";
 import { RenderErrorBoundary } from "../internal/render-error";
 import { suppressTextSelection } from "../internal/text-selection";
 import { FLOATING_WINDOW_VIEWPORT_GAP, type FloatingWindowRect, fitFloatingWindowRect } from "./floating-window-geometry";
@@ -281,6 +282,7 @@ export const openFloatingWindow = (
   const previousRing = ringOnReturn(previousFocus);
   const owner = document.createElement("div");
   owner.className = "k2b-ui";
+  inheritUiScope(owner);
   document.body.appendChild(owner);
   let dispose: (() => void) | undefined;
   let closed = false;
