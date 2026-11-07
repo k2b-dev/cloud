@@ -1,7 +1,8 @@
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import { MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS, mailWorkflowTemplateOutput } from "../workflows/template-validation";
-import { mailWorkflowTemplateData, renderMailLiquidTemplate } from "./template-rendering";
+import { renderMailLiquidTemplate } from "./template-rendering";
 import { withMailWorkflowBodyGuard } from "./workflow-body-fields";
+import { mailWorkflowTemplateData } from "./workflow-template-rendering";
 
 export const resolveMailWorkflowTemplateBodies = async (ctx: WorkflowExecuteActionContext, step: WorkflowActionStep): Promise<void> => {
   for (const templateField of MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS[step.action] ?? []) {
