@@ -109,6 +109,7 @@ test("search narrows the rows, an empty result says so at a fixed height, and Cl
     await search.fill("zebra");
     const empty = page.locator("td.k2b-data-table__no-match");
     expect(await empty.textContent()).toContain("No row matches “zebra”.");
+    await settled(page);
     expect(await empty.evaluate((cell) => cell.getBoundingClientRect().height)).toBe(64);
     // The head and the table's top stay where they were.
     expect(await page.locator("table").evaluate((table) => table.getBoundingClientRect().top)).toBe(tableTop);
@@ -169,12 +170,14 @@ test("narrow tables drop priority 3 below 560 px and 2 below 420 px; row details
     // Tab reaches the first row's details button; Enter opens exactly the hidden values.
     const toggle = page.getByRole("button", { name: "Show the row's hidden values" }).first();
     await toggle.focus();
+    await settled(page);
     const next = page.locator("tbody tr.k2b-data-table__row").nth(1);
     const before = await next.evaluate((row) => row.getBoundingClientRect().top);
     await page.keyboard.press("Enter");
     expect(await toggle.getAttribute("aria-expanded")).toBe("true");
     const details = page.locator(`#${await toggle.getAttribute("aria-controls")}`);
     expect(await details.isVisible()).toBe(true);
+    await settled(page);
     expect(
       await details
         .locator("dt")
@@ -184,12 +187,14 @@ test("narrow tables drop priority 3 below 560 px and 2 below 420 px; row details
     // Closing restores the next rows exactly.
     await page.keyboard.press("Enter");
     expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+    await settled(page);
     expect(await next.evaluate((row) => row.getBoundingClientRect().top)).toBe(before);
     // Wide again with a row still open: no toggle, no details line, nothing hidden, and the row keeps its line.
     await page.keyboard.press("Enter");
     await page.locator("#host").evaluate((host) => {
       host.style.width = "900px";
     });
+    await settled(page);
     expect(
       await page
         .locator("tbody tr.k2b-data-table__row")

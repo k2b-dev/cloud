@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { z } from "zod";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { cloudAiNumberFormatters } from "../chart-block";
 import type { AiTurnBlock } from "../protocol";
@@ -661,9 +661,11 @@ for (const view of [
       // The tools wait, disabled, in the place they keep once the rows arrive.
       const search = page.getByRole("searchbox", { name: "Search Campaigns" });
       expect(await search.isDisabled()).toBe(true);
+      await settled(page);
       const loading = await boxes(page);
       loaded();
       await page.waitForSelector("[data-view-path] table");
+      await settled(page);
       expect(await boxes(page)).toEqual(loading);
       await search.fill("deliv");
       expect(await page.locator("[data-view-path] tbody tr.k2b-data-table__row").count()).toBe(2);

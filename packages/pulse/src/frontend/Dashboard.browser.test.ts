@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import type { Dashboard } from "../dashboard-contracts";
 import {
   baseOverviewFixture,
@@ -337,6 +337,7 @@ test("a table panel searches and sorts its rows in the head, and an empty search
     const cpu = panel.getByRole("button", { name: "CPU", exact: true });
     await cpu.click();
     expect(await cpu.locator("xpath=ancestor::th").getAttribute("aria-sort")).toBe("descending");
+    await settled(tab);
     expect(
       await panel
         .locator("tbody tr.k2b-data-table__row td:nth-child(2)")
