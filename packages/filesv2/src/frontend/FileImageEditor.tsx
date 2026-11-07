@@ -1,5 +1,6 @@
 import { onBeforeLeave } from "@k2b/ssr/nav";
-import { Button, Dropdown, ImageEditor, type ImageEditorSaveActions, Placeholder, prompts, toast } from "@k2b/ui";
+import { files } from "@k2b/stdlib/browser";
+import { Button, ImageEditor, type ImageEditorItem, type ImageEditorSaveActions, Placeholder, SplitButton, toast } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { EntryResult } from "../contracts";
 import { markdownRevision } from "../document-assets";
@@ -13,9 +14,15 @@ export default function FileImageEditor(props: {
   baseId: string;
   path: string;
   canCreate: boolean;
+  /** Without write access the person may still edit and download; saving a version is locked with its reason. */
+  canWrite: boolean;
+  /** The other images of the folder, shown in the editor's strip. */
+  items?: readonly ImageEditorItem[];
+  onSelectItem?: (path: string) => void;
   onSaved: (result: EntryResult) => void;
   onBack: () => void;
-  setGuard: (guard: (() => Promise<boolean>) | null) => void;
+  /** The dialog guards closing across every open image with this. */
+  onStatus: (status: { dirty: boolean; busy: boolean }) => void;
 }) {
   const t = useImageMessages();
   const [loaded, setLoaded] = createSignal<Awaited<ReturnType<typeof loadImageForEditing>>>();
@@ -49,18 +56,7 @@ export default function FileImageEditor(props: {
       if (!lifetime.signal.aborted) setLoading(false);
     }
   };
-  let confirmation: Promise<boolean> | undefined;
-  props.setGuard(async () => {
-    if (busy()) return false;
-    if (!dirty()) return true;
-    confirmation ??= prompts
-      .confirm(t().discard, { variant: "danger" })
-      .then(Boolean)
-      .finally(() => {
-        confirmation = undefined;
-      });
-    return confirmation;
-  });
+  createEffect(() => props.onStatus({ dirty: dirty(), busy: busy() }));
   onBeforeLeave((event) => {
     if (busy()) event.preventDefault();
   });
@@ -80,7 +76,7 @@ export default function FileImageEditor(props: {
     loadRequest?.abort();
     rejectPending?.(new DOMException("Editor closed", "AbortError"));
     window.removeEventListener("beforeunload", beforeUnload);
-    props.setGuard(null);
+    props.onStatus({ dirty: false, busy: false });
   });
   const saveActions = (actions: ImageEditorSaveActions) => {
     createEffect(() => setBusy(actions.busy));
@@ -165,21 +161,54 @@ export default function FileImageEditor(props: {
         },
         copy ? undefined : { format: versionFormat() },
       );
+    const download = () =>
+      void actions.save(async (result) => {
+        const name = props.path.split("/").at(-1) ?? "image";
+        const extension = result.type === "image/png" ? "png" : result.type === "image/webp" ? "webp" : "jpg";
+        files.downloadFileFromContent(result.blob, `${name.replace(/\.[^.]+$/u, "")}.${extension}`, result.type);
+      });
+    // A new version is the main action where it is possible; a copy, then a download, otherwise.
+    const primary = () =>
+      props.canWrite && versionFormat()
+        ? { label: t().save, run: () => void save(false) }
+        : props.canCreate
+          ? { label: t().copy, run: () => void save(true) }
+          : { label: t().download, run: download, icon: "ti ti-download" };
+    const menu = () => [
+      ...(!props.canWrite ? [{ label: t().version, description: t().noWrite, disabled: true, action: () => {} }] : []),
+      ...(props.canWrite && versionFormat() && props.canCreate
+        ? [{ label: t().copy, description: t().copyDescription, icon: "ti ti-copy", action: () => void save(true) }]
+        : []),
+      ...(primary().label !== t().download
+        ? [{ label: t().download, description: t().downloadDescription, icon: "ti ti-download", action: download }]
+        : []),
+    ];
     return (
       <div class="filesv2-image-save-actions">
         <Show
           when={retryUpload()}
           fallback={
-            <Dropdown.Root
-              items={[
-                ...(versionFormat() ? [{ label: t().version, action: () => void save(false) }] : []),
-                ...(props.canCreate ? [{ label: t().copy, action: () => void save(true) }] : []),
-              ]}
+            <Show
+              when={menu().length}
+              fallback={
+                <Button disabled={actions.busy} loading={actions.busy} onClick={primary().run}>
+                  <Show when={primary().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                  {primary().label}
+                </Button>
+              }
             >
-              <Dropdown.Trigger size="sm" variant="primary" disabled={actions.busy || (!versionFormat() && !props.canCreate)}>
-                {t().save}
-              </Dropdown.Trigger>
-            </Dropdown.Root>
+              <SplitButton
+                disabled={actions.busy}
+                loading={actions.busy}
+                menuLabel={t().moreSaving}
+                menuPosition="top-right"
+                items={menu()}
+                onClick={primary().run}
+              >
+                <Show when={primary().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                {primary().label}
+              </SplitButton>
+            </Show>
           }
         >
           <span class="k2b-sr-only" role="status">
@@ -214,6 +243,13 @@ export default function FileImageEditor(props: {
         {(image) => (
           <ImageEditor
             source={image().source}
+            title={props.path.split("/").at(-1)}
+            facts={props.canWrite ? undefined : [{ label: t().readOnly, icon: "ti ti-lock", tooltip: t().noWrite }]}
+            notice={props.canWrite ? undefined : t().readOnlyNotice}
+            redactionNotice={image().base.managed && image().base.versioningEnabled ? t().redactionVersions : undefined}
+            items={props.items}
+            currentItem={props.path}
+            onSelectItem={props.onSelectItem}
             maxOutputMegapixels="device"
             features={filesImageFeatures}
             saveActions={saveActions}

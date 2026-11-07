@@ -1787,7 +1787,11 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                     if (item.id !== props.currentItem) props.onSelectItem?.(item.id);
                   }}
                 >
-                  <Show when={item.thumbnail}>{(src) => <img src={src()} alt="" loading="lazy" decoding="async" />}</Show>
+                  {(() => {
+                    const thumbnail = item.thumbnail;
+                    if (typeof thumbnail === "function") return thumbnail();
+                    return thumbnail ? <img src={thumbnail} alt="" loading="lazy" decoding="async" /> : null;
+                  })()}
                   <Show when={item.dirty}>
                     <span class="k2b-image-editor__thumb-dirty" aria-hidden="true" />
                   </Show>

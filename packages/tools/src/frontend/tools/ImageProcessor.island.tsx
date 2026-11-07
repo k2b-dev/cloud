@@ -3,13 +3,13 @@ import { files } from "@k2b/stdlib/browser";
 import {
   Button,
   FileDropTarget,
-  FileDropzone,
   ImageEditor,
   type ImageEditorFeatures,
   type ImageEditorResult,
   type ImageEditorSaveActions,
   NoticeCard,
-  Select,
+  Placeholder,
+  SplitButton,
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
@@ -58,6 +58,25 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   const [failures, setFailures] = createSignal<LoadFailure[]>([...(props.initialLoadFailures ?? [])]);
   const [error, setError] = createSignal("");
   const [archiving, setArchiving] = createSignal(false);
+  const [dirtyIds, setDirtyIds] = createSignal(new Set<number>());
+  const [thumbnails, setThumbnails] = createSignal(new Map<number, string>());
+  // Small strip thumbnails, so 36 px tiles never decode whole photos; released with their photo.
+  createEffect(() => {
+    for (const photo of photos()) {
+      if (thumbnails().has(photo.id)) continue;
+      setThumbnails((all) => new Map(all).set(photo.id, ""));
+      void createImageBitmap(photo.source, { resizeWidth: 96, resizeQuality: "medium" })
+        .then(async (bitmap) => {
+          const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+          canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
+          bitmap.close();
+          const url = URL.createObjectURL(await canvas.convertToBlob({ type: "image/jpeg", quality: 0.8 }));
+          if (!alive || !photos().some((item) => item.id === photo.id)) return URL.revokeObjectURL(url);
+          setThumbnails((all) => new Map(all).set(photo.id, url));
+        })
+        .catch(() => {});
+    }
+  });
   const controls = new Map<number, ImageEditorSaveActions>();
   const ready = new Map<number, (actions: ImageEditorSaveActions | undefined) => void>();
   const controllers = new Set<AbortController>();
@@ -128,6 +147,14 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   };
   const remove = (photo: Photo) => {
     controls.delete(photo.id);
+    const thumbnail = thumbnails().get(photo.id);
+    if (thumbnail) URL.revokeObjectURL(thumbnail);
+    setThumbnails((all) => {
+      const next = new Map(all);
+      next.delete(photo.id);
+      return next;
+    });
+    setDirtyIds((ids) => new Set([...ids].filter((id) => id !== photo.id)));
     const next = photos().filter((item) => item !== photo);
     setPhotos(next);
     setActive(next[0]?.id);
@@ -204,8 +231,20 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     controls.clear();
     for (const resolve of ready.values()) resolve(undefined);
     ready.clear();
+    for (const url of thumbnails().values()) if (url) URL.revokeObjectURL(url);
     disposeHeifDecoder();
   });
+
+  const pick = () => {
+    void choose()
+      .then((selected) => addFiles([...selected]))
+      .catch(() => setError(t().pickerFailed));
+  };
+  const show = (id: number) => {
+    setVisited((ids) => new Set([...ids, id]));
+    setActive(id);
+  };
+  const items = () => photos().map((photo) => ({ id: String(photo.id), name: photo.file.name, thumbnail: thumbnails().get(photo.id), dirty: dirtyIds().has(photo.id) }));
 
   return (
     <>
@@ -214,62 +253,30 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
         <Show
           when={photos().length}
           fallback={
-            <div class="flex min-h-80 flex-1 items-center justify-center p-[var(--ui-space-shell)]">
-              <FileDropzone
-                class="w-full max-w-xl"
-                accept={IMAGE_ACCEPT}
-                multiple
-                busy={loading()}
-                choose={choose}
-                onDrop={addFiles}
-                title={t().open}
-                subtitle={t().intakeHint}
-                hint={t().local}
+            // The same calm canvas the editor uses, so choosing a photo does not change the surface.
+            <div class="flex min-h-[34rem] flex-1 items-center justify-center bg-[#e6e6e9] p-[var(--ui-space-shell)] dark:bg-[#15191f]">
+              <Placeholder
+                state={loading() ? "loading" : "empty"}
+                variant="panel"
                 icon="ti ti-photo-plus"
+                title={t().open}
+                description={t().intakeHint}
+                action={
+                  <div class="grid justify-items-center gap-2">
+                    <Button disabled={loading()} onClick={pick}>
+                      <i class="ti ti-photo-plus" aria-hidden="true" />
+                      {t().add}
+                    </Button>
+                    <span class="inline-flex items-center gap-1.5 text-[0.78125rem] text-[var(--k2b-text-muted)]">
+                      <i class="ti ti-device-laptop" aria-hidden="true" />
+                      {t().local}
+                    </span>
+                  </div>
+                }
               />
             </div>
           }
         >
-          <div class="flex flex-wrap items-end gap-3 px-[var(--ui-space-shell)] py-2">
-            <div class="min-w-0 flex-1">
-              <Select
-                label={t().photo}
-                value={String(active())}
-                options={photos().map((photo) => ({ id: String(photo.id), label: photo.file.name }))}
-                disabled={archiving()}
-                onValueChange={(value) => {
-                  const photo = photos().find((item) => String(item.id) === value);
-                  if (photo) {
-                    setVisited((ids) => new Set([...ids, photo.id]));
-                    setActive(photo.id);
-                  }
-                }}
-              />
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={loading() || archiving()}
-              onClick={() => {
-                void choose()
-                  .then((selected) => addFiles([...selected]))
-                  .catch(() => setError(t().pickerFailed));
-              }}
-            >
-              {t().add}
-            </Button>
-            <Show when={photos().length > 1}>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={loading() || archiving()}
-                loading={archiving()}
-                onClick={() => void downloadAll()}
-              >
-                {t().downloadAll}
-              </Button>
-            </Show>
-          </div>
           <For each={photos()}>
             {(photo) => (
               <div hidden={active() !== photo.id} class="min-h-0 flex-1">
@@ -277,7 +284,21 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                   <ImageEditor
                     source={photo.source}
                     sourceSize={photo.sourceSize}
+                    title={photo.file.name}
                     features={TOOLS_IMAGE_EDITOR_FEATURES}
+                    items={items()}
+                    currentItem={String(photo.id)}
+                    onSelectItem={(id) => show(Number(id))}
+                    onAddItems={loading() || archiving() ? undefined : pick}
+                    onDirtyChange={(dirty) =>
+                      setDirtyIds((ids) => {
+                        if (ids.has(photo.id) === dirty) return ids;
+                        const next = new Set(ids);
+                        if (dirty) next.add(photo.id);
+                        else next.delete(photo.id);
+                        return next;
+                      })
+                    }
                     onCancel={() => remove(photo)}
                     saveActions={(actions) => {
                       controls.set(photo.id, actions);
@@ -292,20 +313,32 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                         ready.get(photo.id)?.(undefined);
                         ready.delete(photo.id);
                       });
+                      const download = () =>
+                        void actions.save(async (result) => {
+                          files.downloadFileFromContent(result.blob, imageEditorOutputName(photo.file.name, result), result.type);
+                        });
                       return (
-                        <Button
-                          size="sm"
-                          disabled={actions.busy || loading() || archiving()}
-                          loading={actions.busy}
-                          onClick={() =>
-                            void actions.save(async (result) => {
-                              files.downloadFileFromContent(result.blob, imageEditorOutputName(photo.file.name, result), result.type);
-                            })
+                        <Show
+                          when={photos().length > 1}
+                          fallback={
+                            <Button disabled={actions.busy || loading() || archiving()} loading={actions.busy} onClick={download}>
+                              <i class="ti ti-download" aria-hidden="true" />
+                              {t().download}
+                            </Button>
                           }
                         >
-                          <i class="ti ti-download" aria-hidden="true" />
-                          {t().download}
-                        </Button>
+                          <SplitButton
+                            disabled={actions.busy || loading() || archiving()}
+                            loading={actions.busy || archiving()}
+                            menuLabel={t().moreSaving}
+                            menuPosition="top-right"
+                            items={[{ label: t().downloadAll, icon: "ti ti-file-zip", action: () => void downloadAll() }]}
+                            onClick={download}
+                          >
+                            <i class="ti ti-download" aria-hidden="true" />
+                            {t().download}
+                          </SplitButton>
+                        </Show>
                       );
                     }}
                   />

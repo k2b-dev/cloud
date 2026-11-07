@@ -395,7 +395,8 @@
   background: var(--k2b-image-editor-placeholder);
   cursor: pointer;
 }
-.k2b-ui .k2b-image-editor__thumb img { width: 100%; height: 100%; object-fit: cover; }
+.k2b-ui .k2b-image-editor__thumb img,
+.k2b-ui .k2b-image-editor__thumb > :only-child { width: 100%; height: 100%; object-fit: cover; }
 .k2b-ui .k2b-image-editor__thumb::after {
   content: "";
   position: absolute;

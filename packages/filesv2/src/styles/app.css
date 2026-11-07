@@ -1203,8 +1203,29 @@ dialog[open]:has(.filesv2-export-dialog) {
   border-radius: 0;
 }
 
-/* Photo editing shares the preview frame; all controls and surfaces belong to @k2b/ui. */
+/* Photo editing turns the preview into a near-full-screen canvas; the editor's chips replace the header, which stays
+   in the DOM only to name the dialog. All controls and surfaces belong to @k2b/ui. */
+.k2b-ui .k2b-dialog.filesv2-preview-dialog[data-editing] {
+  --filesv2-preview-top: max(1rem, env(safe-area-inset-top, 0px));
+  --filesv2-preview-height: calc(100dvh - 2rem);
+  width: calc(100vw - 2rem);
+  height: var(--filesv2-preview-height);
+}
+.k2b-ui .filesv2-preview-dialog[data-editing] .k2b-panel-dialog__header { display: none; }
+.k2b-ui .filesv2-preview-dialog[data-editing] .k2b-panel-dialog__body { padding: 0; }
+@media (max-width: 40rem) {
+  .k2b-ui .k2b-dialog.filesv2-preview-dialog[data-editing] {
+    --filesv2-preview-top: 0px;
+    --filesv2-preview-height: 100dvh;
+    width: 100vw;
+    border-radius: 0;
+  }
+}
+.filesv2-image-session { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
+.filesv2-image-session[hidden] { display: none; }
 .filesv2-image-editing { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
 .filesv2-image-editing > .k2b-image-editor { flex: 1 1 auto; }
+.k2b-image-editor__thumb .filesv2-thumbnail { width: 100%; height: 100%; border-radius: 0; }
 
-.filesv2-image-save-actions { display: flex; justify-content: flex-end; min-width: 7.5rem; }
+.filesv2-image-save-actions { display: flex; min-width: 7.5rem; }
+.filesv2-image-save-actions > * { flex: 1; }

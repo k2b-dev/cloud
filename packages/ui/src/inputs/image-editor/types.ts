@@ -46,8 +46,8 @@ export type ImageEditorSaveActions = {
 export type ImageEditorItem = {
   id: string;
   name: string;
-  /** Small image URL; the strip shows a neutral tile until it loads. */
-  thumbnail?: string;
+  /** Small image URL, or a component that renders the caller's own thumbnail; a neutral tile shows until it loads. */
+  thumbnail?: string | (() => JSX.Element);
   /** Marks an image with unsaved edits. */
   dirty?: boolean;
 };

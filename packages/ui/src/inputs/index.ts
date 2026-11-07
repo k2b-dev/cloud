@@ -95,8 +95,10 @@ export {
 export type {
   ImageEditorAnnotationTool,
   ImageEditorAspect,
+  ImageEditorFact,
   ImageEditorFeatures,
   ImageEditorFormat,
+  ImageEditorItem,
   ImageEditorLook,
   ImageEditorOutput,
   ImageEditorPreview,
