@@ -107,7 +107,7 @@ jobs:
             echo "grids=$(match '^packages/grids/')"
             echo "ui=$(match '^(packages/ui/|packages/ssr/|fixtures/ui-ssr/)')"
             echo "docs=$(match '^(docs-site/|skills/)')"
-            echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|pwas/|compose[^/]*\.yml)')"
+            echo "images=$(match '^(packages/speedtest/|Dockerfile|\.dockerignore|docs-site/Dockerfile|pwas/|compose[^/]*\.yml)')"
             echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/ssr/|packages/editor/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
             echo "releasebody=$(match '^(scripts/(check-)?release-pr-body(\.test)?\.ts|scripts/fixtures/release-pr-body/[^/]+|\.github/workflows/main\.yml)$')"
             echo "release=$(match '^\.release-please-manifest\.json$')"
@@ -181,7 +181,8 @@ jobs:
       fail-fast: false
       # All three modes balance measured suite times from scripts/test-weights.json:
       # longest first; unknown suites use the median. Choose the smallest count
-      # with a predicted slowest shard <= 15 min (half the 30-minute job limit).
+      # with a predicted slowest shard <= 15 min for unit/integration;
+      # WebKit reserves more headroom as described below.
       # Measured maxima from runs 41328825206, 41330725890, 41328826138 and
       # 41324844306 predict 13.8 min for the slowest of 9 unit shards (8 need 15.3 min).
       # --max-minutes 20 fails above 2/3 of the job limit. The last third covers
@@ -227,10 +228,14 @@ jobs:
   # The browser tests again in WebKit, the engine of Safari and of every
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
-  # locally. Measured maxima include failed run 40533200164, the Mail shell
-  # split (40561248493), kept-mail admin (40550225615), and the Pulse dashboards
-  # (41332025047). Eleven shards need 14.0 min; ten need 15.4 min.
-  # The runner tests enforce the 15-minute prediction for every heavy matrix.
+  # locally. Refreshed from runs 42377096341, 42386499318, 42399321076 and
+  # 42399831722, including completed suites from failed and budget-aborted jobs.
+  # The table covers all 382 files. Seventeen shards need 621.5 s (10.36 min),
+  # leaving 38.5 s below the 11-min target; sixteen need 660.4 s and fail it.
+  # Ten extra unmeasured files (median 12.6 s) still fit at 628.9 s.
+  # The 11-min target reserves the full 2-min warm-up plus the measured p95
+  # 1.61x slowdown:
+  # 11 * 1.61 + 2 < 20. The runner tests enforce this 55%-of-budget guard.
   # The 20-min guard reserves the last third for setup and finalization;
   # strategy.job-total is the divisor.
   webkit:
@@ -241,7 +246,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
     env:
       TEST_BROWSER: webkit
       TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/
@@ -729,6 +734,28 @@ jobs:
           tags: cloud-notes:ci
           cache-from: type=gha,scope=ci-notes
           cache-to: type=gha,mode=max,scope=ci-notes
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: packages/speedtest/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: cloud-speedtest:ci
+          cache-from: type=gha,scope=ci-speedtest
+          cache-to: type=gha,mode=max,scope=ci-speedtest
+      - name: Boot standalone speedtest without Cloud infrastructure
+        run: |
+          set -euo pipefail
+          docker run --detach --name speedtest --publish 127.0.0.1:18080:8080 cloud-speedtest:ci
+          trap 'docker logs speedtest; docker rm -f speedtest' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/health; then break; fi
+            sleep 1
+          done
+          test "$(curl -fsS http://127.0.0.1:18080/health)" = ok
+          curl -fsS -D /tmp/speedtest-headers http://127.0.0.1:18080/cli -o /tmp/speedtest.mjs
+          grep -qi 'content-type: text/javascript' /tmp/speedtest-headers
+          node /tmp/speedtest.mjs --help
       - name: Boot core and gateway against fresh infrastructure
         env:
           # Match the release/nightly smoke: both containers recognize the loopback Host immediately.

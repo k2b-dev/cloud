@@ -39,6 +39,7 @@ const setup = () => {
     userId: user.id,
     memoryEnabled: true,
     memoryLearningEnabled: true,
+    suggestNextMessage: true,
     selection: { class: "thorough" },
     updatedAt: at,
   });
@@ -110,6 +111,7 @@ test.each([
       userId: user.id,
       memoryEnabled: true,
       memoryLearningEnabled: true,
+      suggestNextMessage: true,
       selection: personal,
       updatedAt: at,
     });

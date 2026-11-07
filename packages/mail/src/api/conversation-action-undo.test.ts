@@ -7,7 +7,7 @@ import { hc } from "hono/client";
 import { generateSpecs } from "hono-openapi";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { MAX_CONVERSATION_ACTION_MESSAGES } from "../contracts";
-import { publicResources, triage } from "../service";
+import { mailboxAccess, publicResources, triage } from "../service";
 import app, { type ApiType } from ".";
 
 useUnitClients();
@@ -37,6 +37,8 @@ afterEach(() => mock.restore());
 
 describe("Mail conversation action undo route", () => {
   beforeEach(() => {
+    // The caller can read the mailbox; these routes test their own contract.
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "read" } });
     spyOn(platformServices, "get").mockResolvedValue(100);
     spyOn(redis, "send").mockImplementation(async (command) => {
       if (command !== "EVAL") throw new Error(`Unexpected Redis command: ${command}`);

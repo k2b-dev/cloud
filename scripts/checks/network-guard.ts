@@ -84,7 +84,8 @@ export const rule: Rule = {
     const roots = packageIds(workspaceRoot).map((id) => join(workspaceRoot, "packages", id));
     for (const file of roots.flatMap((root) => listFiles(root, sourceFilePattern)).sort()) {
       const path = relative(workspaceRoot, file);
-      if (path === owner || isTestFile(path)) continue;
+      // Standalone, explicit CLI diagnostics run on the caller's machine, without Cloud credentials.
+      if (path === owner || path === "packages/speedtest/src/udp-client.ts" || isTestFile(path)) continue;
       const source = readFileSync(file, "utf8");
       for (const match of source.matchAll(dnsAccess)) {
         if (allowedDnsImport(match[1])) continue;

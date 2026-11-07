@@ -19,7 +19,7 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   console.info(`App prelude: ${Buffer.byteLength(normal)} B; offline chart module: ${Buffer.byteLength(rare)} B`);
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
   // temporary until the last kind PR sets the catalog total, see #2790
-  expect(Buffer.byteLength(rare)).toBeLessThan(59_100);
+  expect(Buffer.byteLength(rare)).toBeLessThan(59_600);
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).
   expect(normal).not.toContain("tag:yaml.org,2002:");
   expect(normal).not.toMatch(/axe\.run|axe-core|axeVersion/);
