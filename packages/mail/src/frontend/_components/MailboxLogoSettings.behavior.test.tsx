@@ -291,6 +291,9 @@ describe("Mailbox logo settings", () => {
     await waitFor(() => text().includes("Load current logo"));
     expect(widthInput().value).toBe("300");
     expect(altInput().value).toBe("My pending text");
+    // The conflict shows once, as the notice with its action, not again as an alt text error.
+    expect(group().querySelectorAll(".k2b-inline-guidance[role='alert']").length).toBe(1);
+    expect(altInput().getAttribute("aria-invalid")).not.toBe("true");
     expect(writes()[0]?.body).toMatchObject({ expectedVersionId: storedLogo.versionId });
     getResponse = () => Response.json({ message: "Temporarily unavailable" }, { status: 503 });
     button("Load current logo").click();

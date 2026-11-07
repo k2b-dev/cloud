@@ -108,7 +108,8 @@ export default function MailboxLogoSettings(props: {
       focusControl(dropzoneId);
     },
     onError: (error) => {
-      setUploadError(error.message);
+      // A conflict shows once, in the notice above the logo.
+      if (!conflict()) setUploadError(error.message);
       focusControl(dropzoneId);
     },
   });
@@ -120,7 +121,7 @@ export default function MailboxLogoSettings(props: {
       focusControl(altTextId);
     },
     onError: (error) => {
-      setDetailsError(error.message);
+      if (!conflict()) setDetailsError(error.message);
       focusControl(altTextId);
     },
   });
@@ -143,7 +144,9 @@ export default function MailboxLogoSettings(props: {
       toast.success(messages().logoRemoved);
       focusControl(dropzoneId);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => {
+      if (!conflict()) void prompts.error(error.message);
+    },
   });
   // A file read that finishes after the settings closed must not start an upload.
   let disposed = false;
@@ -230,13 +233,14 @@ export default function MailboxLogoSettings(props: {
     <SettingsGroup title={messages().logo} description={messages().logoDescription}>
       <div class="flex flex-col gap-3">
         <Show when={conflict()}>
-          <InlineGuidance>
-            {messages().logoChanged}
-            <Button variant="secondary" size="sm" type="button" disabled={logoQuery.loading()} onClick={() => void logoQuery.refresh()}>
+          <InlineGuidance tone="warning" icon="ti ti-alert-triangle" role="alert">
+            {messages().logoChanged}{" "}
+            <Button variant="text" size="xs" type="button" disabled={logoQuery.loading()} onClick={() => void logoQuery.refresh()}>
               {messages().loadCurrentLogo}
             </Button>
             <Show when={logoQuery.error() && !logoQuery.loading()}>
-              <span role="alert">{messages().failedLoadLogo}</span>
+              {" "}
+              {messages().failedLoadLogo}
             </Show>
           </InlineGuidance>
         </Show>
