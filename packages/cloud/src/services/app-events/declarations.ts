@@ -112,7 +112,7 @@ export function createDeclarationSync(db: () => SQL, registry: () => Promise<Cap
         const removed = await tx<Transition[]>`
           WITH previous AS MATERIALIZED (
             SELECT id, state AS previous_state FROM events.app_subscriptions
-            WHERE app_id = ${entry.appId} AND NOT(id = ANY(${toPgTextArray(ids)}::text[])) AND state <> 'cancelled'
+            WHERE resource_binding IS NULL AND app_id = ${entry.appId} AND NOT(id = ANY(${toPgTextArray(ids)}::text[])) AND state <> 'cancelled'
             ORDER BY id FOR UPDATE
           ) UPDATE events.app_subscriptions subscription SET
             state = 'cancelled', reason = 'subscription_removed', updated_at = now()
@@ -146,7 +146,7 @@ export function createDeclarationSync(db: () => SQL, registry: () => Promise<Cap
           LEFT JOIN events.app_declarations declaration ON declaration.type = subscription.event_type
             AND declaration.version = subscription.version
             AND declaration.app_id = split_part(subscription.event_type, '.', 1) AND declaration.retired_at IS NULL
-          WHERE subscription.state <> 'cancelled'
+          WHERE subscription.resource_binding IS NULL AND subscription.state <> 'cancelled'
             AND (subscription.state, subscription.reason) IS DISTINCT FROM (
               CASE WHEN declaration.type IS NULL OR declaration.place IS NOT NULL THEN 'blocked' ELSE 'active' END,
               CASE WHEN declaration.type IS NULL THEN 'event_not_declared'

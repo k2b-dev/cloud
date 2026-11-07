@@ -1,16 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
-import type { ChartRenderOptions } from "./Chart";
-
-const root = mkdtempSync(resolve(tmpdir(), "cloud-chart-snapshot-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
-process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { prepareChartSnapshot } = await import("./chart-snapshot");
+import type { ChartRenderOptions } from "../charts/core";
+import { prepareChartSnapshot } from "./chart-snapshot";
 
 const series = [
   {

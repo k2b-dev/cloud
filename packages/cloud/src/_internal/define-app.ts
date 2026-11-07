@@ -8,6 +8,7 @@ import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-ac
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
 import { startLiveOutbox } from "../events/live";
+import { appCatalogExists, usesLegacyCatalogRenewal } from "../services/app-catalog-store";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
 import { registerPageSwap } from "../ssr/page-swap";
@@ -19,6 +20,7 @@ import { createAppQueryRoutes } from "./app-queries";
 import { registerApplicationPackage, resolveApplicationPackage } from "./application-package";
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
+import { createCatalogPublication } from "./catalog-publication";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
 /**
  * defineApp() — The single entry point for every cloud app.
@@ -121,7 +123,7 @@ import { createPageResponses } from "./page-responses";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { readPwaStaticAssets } from "./pwa-assets";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
-import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
+import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry, getApp } from "./registry";
 import { canonicalRoute, isOwnAppPath, validateAppRegistryEntry } from "./registry-validation";
 import { ensureRuntimeWatcher, getCurrentRuntime, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
 import { runSetupExclusively } from "./setup-lock";
@@ -864,13 +866,32 @@ export const defineApp = <
         startedAt: entry.startedAt,
         bootstrap: connections().bootstrap,
       });
+      const publishHelp = createCatalogPublication();
+      const publishSkills = createCatalogPublication();
       // Heartbeat
       const heartbeat = createHeartbeat(meta.id, entry, {
         registry: appRegistry(),
         membership,
-        beforeWrite: async () => {
-          if (compiledHelp) await registerHelp(compiledHelp.corpus);
-          if (appSkills && skillsManifestHash) await registerAppSkills(meta.id, appSkills, skillsManifestHash);
+        beforeWrite: async (force = false) => {
+          const current = force ? null : await getApp(meta.id);
+          if (compiledHelp)
+            await publishHelp(compiledHelp.corpus.manifestHash, () => registerHelp(compiledHelp.corpus), {
+              force: force || usesLegacyCatalogRenewal("help.corpora"),
+              verify:
+                current?.help?.manifestHash === compiledHelp.corpus.manifestHash
+                  ? () => appCatalogExists("help.corpora", meta.id, compiledHelp.corpus.manifestHash)
+                  : undefined,
+              onMissing: () => log.warn("Published Help catalog is missing; republishing", { appId: meta.id }),
+            });
+          if (appSkills && skillsManifestHash)
+            await publishSkills(skillsManifestHash, () => registerAppSkills(meta.id, appSkills, skillsManifestHash), {
+              force: force || usesLegacyCatalogRenewal("ai.app_skill_catalogs"),
+              verify:
+                current?.skills?.manifestHash === skillsManifestHash
+                  ? () => appCatalogExists("ai.app_skill_catalogs", meta.id, skillsManifestHash)
+                  : undefined,
+              onMissing: () => log.warn("Published Skill catalog is missing; republishing", { appId: meta.id }),
+            });
         },
         onError: (error) =>
           log.error("Registry heartbeat failed", {

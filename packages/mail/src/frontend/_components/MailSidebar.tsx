@@ -2,17 +2,16 @@ import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { type LinkNavigateEvent, navigateTo } from "@k2b/ssr/nav";
-import { mutation as mutations, query as queries } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, createNavigation, IconButton, type NavigationItem, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
+import { mutation as mutations } from "@k2b/stdlib/solid";
+import { AppWorkspace, createNavigation, Dropdown, IconButton, type NavigationItem, prompts, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, getOwner, on, onCleanup, runWithOwner, Show, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
-import type { ConversationView, DeletedMailbox, DeletedMailboxPage, Mailbox } from "../../contracts";
+import type { ConversationView, Mailbox } from "../../contracts";
 import { mailFolderNames } from "../../folder-names";
 import type { MailFolderTreeNode } from "../../folder-tree";
 import type { ConversationViewCounts, MailFolderView } from "../../service/messages";
 import { mailOverviewMessages } from "../mail-overview-messages";
-import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";
 import type { MailboxCreationContext } from "./create-mailbox-dialog";
 import { type MailboxMenu, MailboxMenuButton, type MailboxMenuSection } from "./MailboxMenu";
@@ -222,7 +221,7 @@ export default function MailSidebar(
     );
   };
 
-  // New and recently deleted mailboxes ----------------------------------------------------------------------------------
+  // New and deleted mailboxes -----------------------------------------------------------------------------------------
   const owner = getOwner();
   const [creating, setCreating] = createSignal(false);
   let creation: ReturnType<typeof import("./create-mailbox-dialog").createMailboxCreation> | undefined;
@@ -239,24 +238,28 @@ export default function MailSidebar(
       setCreating(false);
     }
   };
-  const [deletedOpen, setDeletedOpen] = createSignal(false);
-  const deletedResults = queries.createInfinite<string, DeletedMailboxPage, string>({
-    source: () => "deleted-mailboxes",
-    enabled: deletedOpen,
-    loadPage: async (_source, { cursor, abortSignal }) => {
-      const response = await apiClient.mailboxes.deleted.$get({ query: { limit: "100", cursor } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readApiError(response, overviewText().failedLoadDeletedMailboxes));
-      const page = await response.json();
-      assertCursorProgress(cursor, page.nextCursor, "deleted-mailbox");
-      return page;
+  // The deleted mailboxes wait behind the Mailboxes menu; the dialog loads with the action that opens it.
+  // One restore at a time: a second one would drop the first one's result.
+  const openDeletedMailboxes = async () => {
+    if (restoreMailbox.loading()) return;
+    const dialog = await importOnDemand(() => import("./DeletedMailboxesDialog"));
+    const mailboxId = await dialog?.openDeletedMailboxesDialog();
+    if (!mailboxId) return;
+    // The closed list returns focus on the next frame; the confirmation opens after it, so Cancel returns focus there.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    restoreMailbox.mutate(mailboxId);
+  };
+  const mailboxActions = () => [
+    ...(props.canCreate
+      ? [{ label: messages().newMailbox, icon: "ti ti-mail-plus", disabled: creating(), action: () => void createMailbox() }]
+      : []),
+    {
+      label: overviewText().deletedMailboxes,
+      icon: "ti ti-trash",
+      disabled: restoreMailbox.loading(),
+      action: () => void openDeletedMailboxes(),
     },
-    getNextCursor: (page) => page.nextCursor,
-  });
-  const deletedMailboxes = createMemo(() => {
-    const merged = new Map<string, DeletedMailbox>();
-    for (const page of deletedResults.pages()) for (const mailbox of page.items) merged.set(mailbox.id, mailbox);
-    return [...merged.values()];
-  });
+  ];
   type HealthDialog = typeof import("./MailboxHealthDialog");
   const restoreMailbox = mutations.create<{ mailbox: Mailbox; health?: HealthDialog } | null, string>({
     mutation: async (mailboxId, { abortSignal }) => {
@@ -274,7 +277,6 @@ export default function MailSidebar(
     onSuccess: (restored) => {
       if (!restored) return;
       const { mailbox, health } = restored;
-      void deletedResults.refresh();
       toast.success(overviewText().mailboxRestored);
       if (!health) return navigateTo(`/app/mail/${mailbox.id}`);
       void health.openMailboxHealthDialog({ mailboxId: mailbox.id }).then(() => navigateTo(`/app/mail/${mailbox.id}`));
@@ -464,7 +466,7 @@ export default function MailSidebar(
         <AppWorkspace.SidebarItem
           icon={`ti ${moreOpen() ? "ti-chevron-down" : "ti-chevron-right"}`}
           onClick={() => setMoreExpanded((current) => !current)}
-          data={{ expanded: moreOpen() }}
+          expanded={moreOpen()}
         >
           {messages().more}
         </AppWorkspace.SidebarItem>
@@ -708,12 +710,17 @@ export default function MailSidebar(
   const navigation = createNavigation({
     items: () => [
       { id: "mailboxes", label: overviewText().mailboxes, section: true, children: visibleMailboxes().map(mailboxEntry) },
-      ...(hiddenMailboxes().length > 0
-        ? [{ id: "hidden", label: messages().hiddenMailboxes, children: hiddenMailboxes().map(mailboxEntry) }]
-        : []),
+      ...(hiddenMailboxes().length > 0 ? [{ id: "hidden", label: messages().hidden, children: hiddenMailboxes().map(mailboxEntry) }] : []),
       ...(props.canCreate
         ? [{ id: "new-mailbox", label: messages().newMailbox, icon: "ti ti-mail-plus", action: "new-mailbox", disabled: creating() }]
         : []),
+      {
+        id: "deleted-mailboxes",
+        label: overviewText().deletedMailboxes,
+        icon: "ti ti-trash",
+        action: "deleted-mailboxes",
+        disabled: restoreMailbox.loading(),
+      },
     ],
     onNavigate: (event) => {
       const url = new URL(event.href, window.location.origin);
@@ -724,6 +731,7 @@ export default function MailSidebar(
     },
     onAction: (action) => {
       if (action === "new-mailbox") void createMailbox();
+      if (action === "deleted-mailboxes") void openDeletedMailboxes();
     },
   });
 
@@ -734,93 +742,41 @@ export default function MailSidebar(
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey={openMailboxId() ? `mail-sidebar-${openMailboxId()}` : false}>
             <MailFocusNotice open={props.focusNoticeOpen ?? false} />
-            <AppWorkspace.SidebarSection title={overviewText().mailboxes}>
+            <AppWorkspace.SidebarSection
+              title={overviewText().mailboxes}
+              actions={
+                <Dropdown.Root position="bottom-right" items={mailboxActions()}>
+                  <Dropdown.Trigger iconOnly label={overviewText().mailboxActions} tooltip={overviewText().mailboxActions} size="xs">
+                    <i class={creating() ? "ti ti-loader-2 animate-spin text-xs" : "ti ti-dots text-xs"} aria-hidden="true" />
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
+              }
+            >
               <For each={visibleMailboxes()}>{mailboxRow}</For>
             </AppWorkspace.SidebarSection>
+            {/* Hidden mailboxes fold into one quiet row after the list, like the open mailbox's "More". A plain section
+                keeps the row and its mailboxes in a phone's chip strip too. */}
             <Show when={hiddenMailboxes().length > 0}>
-              <AppWorkspace.SidebarSection
-                class="mail-sidebar-hidden-mailboxes"
-                title={messages().hiddenMailboxes}
-                count={hiddenMailboxes().length}
-                collapsible
-                open={hiddenOpen()}
-                onOpenChange={setHiddenOpen}
-              >
-                <For each={hiddenMailboxes()}>{mailboxRow}</For>
+              <AppWorkspace.SidebarSection class="mail-sidebar-hidden-mailboxes">
+                <AppWorkspace.SidebarItem
+                  icon={`ti ${hiddenOpen() ? "ti-chevron-down" : "ti-chevron-right"}`}
+                  title={`${messages().hiddenMailboxes} (${formatCount(hiddenMailboxes().length)})`}
+                  class="mail-sidebar-hidden-toggle"
+                  expanded={hiddenOpen()}
+                  onClick={() => setHiddenOpen((open) => !open)}
+                >
+                  <AppWorkspace.SidebarItemLabel>{messages().hidden}</AppWorkspace.SidebarItemLabel>
+                  <AppWorkspace.SidebarItemMeta>{formatCount(hiddenMailboxes().length)}</AppWorkspace.SidebarItemMeta>
+                </AppWorkspace.SidebarItem>
+                <Show when={hiddenOpen()}>
+                  <For each={hiddenMailboxes()}>{mailboxRow}</For>
+                </Show>
               </AppWorkspace.SidebarSection>
             </Show>
             <span class="sr-only" aria-live="polite">
               {announcement()}
             </span>
           </AppWorkspace.SidebarBody>
-          <AppWorkspace.SidebarFooter>
-            <Show when={props.canCreate}>
-              <AppWorkspace.SidebarItem
-                icon={creating() ? "ti ti-loader-2 animate-spin" : "ti ti-mail-plus"}
-                title={messages().newMailbox}
-                onClick={() => void createMailbox()}
-              >
-                {creating() ? overviewText().creatingMailbox : messages().newMailbox}
-              </AppWorkspace.SidebarItem>
-            </Show>
-            <AppWorkspace.SidebarItem
-              icon="ti ti-trash"
-              title={overviewText().recentlyDeletedMailboxes}
-              onClick={() => setDeletedOpen((open) => !open)}
-            >
-              <AppWorkspace.SidebarItemLabel>{overviewText().recentlyDeletedMailboxes}</AppWorkspace.SidebarItemLabel>
-              <AppWorkspace.SidebarItemMeta>
-                <i class={deletedOpen() ? "ti ti-chevron-up" : "ti ti-chevron-down"} aria-hidden="true" />
-              </AppWorkspace.SidebarItemMeta>
-            </AppWorkspace.SidebarItem>
-            <Show when={deletedOpen()}>
-              <div class="mail-sidebar-deleted" role="group" aria-label={overviewText().recentlyDeletedMailboxes}>
-                <Show when={deletedResults.error()}>
-                  {(error) => (
-                    <Placeholder
-                      state="error"
-                      title={overviewText().failedLoadDeletedMailboxes}
-                      description={error().message}
-                      action={
-                        <Button variant="secondary" size="sm" onClick={() => void deletedResults.refresh()}>
-                          {overviewText().retry}
-                        </Button>
-                      }
-                    />
-                  )}
-                </Show>
-                <Show when={!deletedResults.error() && deletedMailboxes().length === 0}>
-                  <Placeholder
-                    state={deletedResults.loading() ? "loading" : "empty"}
-                    title={deletedResults.loading() ? overviewText().loadingDeletedMailboxes : overviewText().noDeletedMailboxes}
-                  />
-                </Show>
-                <For each={deletedMailboxes()}>
-                  {(mailbox) => (
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      loading={restoreMailbox.loading()}
-                      loadingLabel={overviewText().restoringMailbox({ name: mailbox.name })}
-                      onClick={() => restoreMailbox.mutate(mailbox.id)}
-                    >
-                      <i class="ti ti-restore" aria-hidden="true" /> {overviewText().restoreNamedMailbox({ name: mailbox.name })}
-                    </Button>
-                  )}
-                </For>
-                <Show when={deletedResults.hasMore()}>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    loading={deletedResults.loadingMore()}
-                    onClick={() => void deletedResults.loadMore()}
-                  >
-                    {overviewText().loadMore}
-                  </Button>
-                </Show>
-              </div>
-            </Show>
-          </AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
     </>

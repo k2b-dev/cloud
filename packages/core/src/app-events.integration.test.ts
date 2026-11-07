@@ -3,7 +3,12 @@ import { sql } from "@k2b/cloud";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { AppEventEnvelope } from "@k2b/cloud/contracts/app-events";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
-import { createAppEventBroker } from "@k2b/cloud/services/app-events";
+import {
+  cancelResourceEventSubscriptions,
+  createAppEventBroker,
+  replayResourceEventDelivery,
+  subscribeResourceEvent,
+} from "@k2b/cloud/services/app-events";
 import { createSync, type TopicDeadLetter } from "@k2b/sync";
 import { z } from "zod";
 import { connectTestNats, suiteFor, testFor, testInfra, testSyncNamespace, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
@@ -64,6 +69,9 @@ suiteFor("database")("Core app event broker", () => {
   let firstSequence: number;
   let fetchError: Error | undefined;
   let registryUnavailable: boolean;
+  let readable = true;
+  let resourceFails = false;
+  const received: string[] = [];
   let streamReads: number;
   let deadLetters: TopicDeadLetter<AppEventEnvelope>[];
   const makeBroker = () =>
@@ -79,6 +87,11 @@ suiteFor("database")("Core app event broker", () => {
       },
       getApp: async (appId) => entries.find((entry) => entry.appId === appId) ?? null,
       sign: async () => "fixture",
+      authorizeResource: async () => readable,
+      resourceConsumer: () => async (_binding, envelope) => {
+        received.push(envelope.id);
+        if (resourceFails) throw new Error("Fixture failure");
+      },
       fetch: Object.assign(
         async (input: RequestInfo | URL) => {
           const host = new URL(String(input)).hostname;
@@ -93,6 +106,9 @@ suiteFor("database")("Core app event broker", () => {
     await sql`TRUNCATE events.app_deliveries,events.app_subscriptions,events.app_events,events.app_declarations,events.app_manifests RESTART IDENTITY CASCADE`.simple();
     await sql`UPDATE events.app_broker_status SET last_sequence=0,state='ready',gap_from=NULL,gap_to=NULL,unseen_sequences='{}'::int8multirange`;
     await sql`DELETE FROM audit.events WHERE action LIKE 'app_events.%'`;
+    readable = true;
+    resourceFails = false;
+    received.length = 0;
     entries = [entry("eventsource"), entry("receivera", true), entry("receiverb", true)];
     statuses = new Map();
     firstSequence = 1;
@@ -138,6 +154,92 @@ suiteFor("database")("Core app event broker", () => {
     ).toBe(true);
     expect((await broker.deliveries()).items).toHaveLength(0);
     expect(await broker.work()).toBe(0);
+  });
+  test("resource deliveries filter exact places and activation cutoff, dedupe and hold failed subject predecessors", async () => {
+    entries[0]!.manifest.events![0]!.place = "item";
+    const place = { type: "eventsource.item", id: id(100) };
+    await broker.reconcileSubscriptions();
+    const binding = {
+      consumer: "fixture",
+      key: "workload",
+      revision: "version-1",
+      mandateId: id(200),
+      mandateRevision: 1,
+      mandateOwnerAppId: "receivera",
+      place,
+    };
+    const subscription = await subscribeResourceEvent(sql, { appId: "receivera", type: "eventsource.changed", version: 1, binding });
+    await sql`UPDATE events.app_subscriptions SET first_seen_at='1999-01-01T00:00:00Z' WHERE id=${subscription}`;
+    await broker.accept({ ...event(60), place }, 1);
+    await broker.accept({ ...event(60), place }, 1);
+    await broker.accept({ ...event(61), place: { ...place, id: id(101) } }, 2);
+    await broker.accept({ ...event(62), time: "1998-01-01T00:00:00Z", place }, 3);
+    await broker.accept({ ...event(63), place }, 4);
+    expect((await broker.deliveries()).items).toHaveLength(2);
+    expect((await broker.catalog()).events[0]?.subscribers).toHaveLength(2);
+    // Declaration reconciliation must never cancel a workload subscription absent from the app manifest.
+    await makeBroker().reconcileSubscriptions();
+    resourceFails = true;
+    for (let i = 0; i < 8; i++) {
+      await sql`UPDATE events.app_deliveries SET next_attempt_at='2000-01-01T00:00:00Z'`;
+      await broker.work();
+    }
+    expect(received).toEqual(Array(8).fill(id(60)));
+    expect((await broker.deliveries()).items.find((row: Record<string, unknown>) => row.eventId === id(63))).toMatchObject({
+      state: "pending",
+      attempts: 0,
+    });
+    const failed = (await broker.deliveries()).items.find((row: Record<string, unknown>) => row.eventId === id(60))!;
+    expect(failed.state).toBe("failed");
+    resourceFails = false;
+    await broker.redeliver(String(failed.id), { uid: "operator" });
+    await broker.work();
+    expect(received.slice(-2)).toEqual([id(60), id(63)]);
+    expect((await broker.deliveries()).items.every((row: Record<string, unknown>) => row.state === "done")).toBe(true);
+  });
+  test("revoked access and cancelled workloads never reach resource handlers", async () => {
+    entries[0]!.manifest.events![0]!.place = "item";
+    const place = { type: "eventsource.item", id: id(100) };
+    const binding = {
+      consumer: "fixture",
+      key: "workload",
+      revision: "version-1",
+      mandateId: id(200),
+      mandateRevision: 1,
+      mandateOwnerAppId: "receivera",
+      place,
+    };
+    const subscription = await subscribeResourceEvent(sql, { appId: "receivera", type: "eventsource.changed", version: 1, binding });
+    await sql`UPDATE events.app_subscriptions SET first_seen_at='1999-01-01T00:00:00Z' WHERE id=${subscription}`;
+    await broker.accept({ ...event(64), place }, 1);
+    readable = false;
+    await broker.work();
+    expect(received).toEqual([]);
+    expect((await broker.deliveries()).items[0]).toMatchObject({ state: "cancelled", code: "resource_access_revoked" });
+    readable = true;
+    await broker.accept({ ...event(65), place }, 2);
+    const claimed = await broker.claim();
+    await cancelResourceEventSubscriptions(sql, "fixture", "workload");
+    await expect(subscribeResourceEvent(sql, { appId: "receivera", type: "eventsource.changed", version: 1, binding })).rejects.toThrow(
+      "fresh revision",
+    );
+    for (const row of claimed) await broker.deliver(row);
+    expect(received).toEqual([]);
+    expect((await broker.deliveries()).items.every((row: Record<string, unknown>) => row.state === "cancelled")).toBe(true);
+    await subscribeResourceEvent(sql, {
+      appId: "receivera",
+      type: "eventsource.changed",
+      version: 1,
+      binding: { ...binding, revision: "version-2" },
+    });
+    const cancelled = (await broker.deliveries()).items.find((row: Record<string, unknown>) => row.eventId === id(64))!;
+    expect(await sql.begin((db) => replayResourceEventDelivery(db, String(cancelled.id), "fixture", "foreign"))).toBeNull();
+    expect(await sql.begin((db) => replayResourceEventDelivery(db, String(cancelled.id), "fixture", "workload"))).toBeTruthy();
+    await broker.work();
+    expect(received).toEqual([id(64)]);
+    await sql`UPDATE events.app_events SET received_at=now()-interval '31 days' WHERE id=${id(65)}::uuid`;
+    const expired = (await broker.deliveries()).items.find((row: Record<string, unknown>) => row.eventId === id(65))!;
+    expect(await sql.begin((db) => replayResourceEventDelivery(db, String(expired.id), "fixture", "workload"))).toBeNull();
   });
   test("bounded retry ends failed, audits it, redelivers the same ID and preserves subject order", async () => {
     entries = entries.filter((entry) => entry.appId !== "receiverb");

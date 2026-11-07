@@ -303,7 +303,7 @@ const metricCatalog: CollectorDefinition[] = [
       return [
         {
           name: "cloud_logs_entries_total",
-          help: "Total retained log entries.",
+          help: "Estimated retained log entries.",
           type: "gauge",
           value: summary.total,
         },
@@ -327,7 +327,7 @@ const metricCatalog: CollectorDefinition[] = [
         },
         {
           name: "cloud_logs_sources_total",
-          help: "Distinct log sources with retained entries.",
+          help: "Distinct log sources with entries in the last 24 hours.",
           type: "gauge",
           value: summary.sources,
         },
