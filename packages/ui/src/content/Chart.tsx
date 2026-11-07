@@ -639,6 +639,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
           data-stretch={!calendar() && !preservesAspectRatio(props.kind) ? "true" : undefined}
           style={{
             "min-width": calendar() ? `${calendar()!.minWidth}px` : undefined,
+            "max-width": calendar() ? `${calendar()!.maxWidth}px` : undefined,
             "--k2b-chart-width": `${size().width}px`,
             "--k2b-chart-height": `${size().height}px`,
             "aspect-ratio": `${size().width} / ${size().height}`,

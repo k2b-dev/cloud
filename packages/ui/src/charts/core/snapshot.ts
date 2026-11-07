@@ -12,6 +12,8 @@ export type ChartSnapshot = {
   height: number;
   stretch: boolean;
   minWidth?: number;
+  /** Uniform calendar growth stops at 32px cells. */
+  maxWidth?: number;
   marks: readonly { key: string; rowKey: string; datum: ChartDatum; tooltip: ChartTooltip; reference?: boolean }[];
 };
 
@@ -81,7 +83,7 @@ export function prepareChartSnapshot(
     svg: formattedSvg,
     width,
     height,
-    ...(calendar ? { minWidth: calendar.minWidth } : {}),
+    ...(calendar ? { minWidth: calendar.minWidth, maxWidth: calendar.maxWidth } : {}),
     stretch: !calendar && !["map", "pie", "donut", "gauge"].includes(options.kind),
     marks,
   };

@@ -231,3 +231,71 @@ test("both dashboards keep every panel in place in every state", async () => {
     }
   }
 }, 600_000);
+
+for (const width of [390, 800, 1440, 1920]) {
+  for (const path of ["/en/ui/charts/calendar", "/en/ui/charts/dashboards/newsletter", "/en/ui/charts"]) {
+    test(`calendar starts flush with newest weeks in ${path} at ${width}px`, async () => {
+      const page = await browser!.newPage({ viewport: { width, height: 1000 }, reducedMotion: "reduce" });
+      const errors = pageErrors(page);
+      try {
+        const response = await page.goto(`${origin}${path}`, { waitUntil: "networkidle" });
+        await settled(page);
+        const selector = ".k2b-chart__svg > svg[data-calendar]";
+        const serverSvg = await page.evaluate(
+          (html) => new DOMParser().parseFromString(html, "text/html").querySelector(".k2b-chart__svg > svg[data-calendar]")!.outerHTML,
+          await response!.text(),
+        );
+        expect(
+          await page
+            .locator(selector)
+            .first()
+            .evaluate((e) => e.outerHTML),
+        ).toBe(serverSvg);
+        const calendar = page
+          .locator(".k2b-chart")
+          .filter({ has: page.locator("svg[data-calendar]") })
+          .first();
+        expect(await calendar.count(), path).toBe(1);
+        const geometry = await calendar.evaluate((element) => {
+          const viewport = element.getBoundingClientRect();
+          const drawing = element.querySelector(".k2b-chart__svg")!.getBoundingClientRect();
+          const newest = element.querySelectorAll("[data-chart-datum] rect");
+          const last = newest[newest.length - 1]!.getBoundingClientRect();
+          const label = element.querySelector("[data-calendar-weekdays] text")!.getBoundingClientRect();
+          const firstVisible = [...newest]
+            .map((e) => e.getBoundingClientRect())
+            .filter((b) => b.left >= label.right - 0.1)
+            .sort((a, b) => a.left - b.left)[0]!;
+          return {
+            left: element.scrollLeft,
+            gap: drawing.width > viewport.width ? drawing.right - viewport.right : drawing.left - viewport.left,
+            lastRight: last.right - viewport.right,
+            lastLeft: last.left - viewport.left,
+            cell: last.width,
+            square: Math.abs(last.width - last.height),
+            labelGap: firstVisible.left - label.right,
+            labelLeft: label.left - viewport.left,
+            railLeft: element.querySelector("[data-calendar-weekdays] > rect")!.getBoundingClientRect().left - viewport.left,
+            height: drawing.height,
+            viewportHeight: viewport.height,
+          };
+        });
+        expect(Math.abs(geometry.gap), path).toBeLessThan(1);
+        expect(geometry.labelGap, path).toBeGreaterThanOrEqual(0);
+        expect(geometry.labelGap, path).toBeLessThanOrEqual(8);
+        expect(geometry.labelLeft, path).toBeGreaterThanOrEqual(0);
+        expect(geometry.railLeft, path).toBeLessThanOrEqual(0);
+        expect(geometry.left, path).toBe(0);
+        expect(geometry.lastRight, path).toBeLessThanOrEqual(1);
+        expect(geometry.lastLeft, path).toBeGreaterThanOrEqual(0);
+        expect(geometry.cell, path).toBeLessThanOrEqual(32.1);
+        expect(geometry.square, path).toBeLessThan(0.2);
+        expect(geometry.viewportHeight - geometry.height, path).toBeGreaterThanOrEqual(-1);
+        expect(geometry.viewportHeight - geometry.height, path).toBeLessThanOrEqual(17);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+}

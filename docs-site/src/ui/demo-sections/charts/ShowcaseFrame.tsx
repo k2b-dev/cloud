@@ -68,6 +68,10 @@ export function ShowcaseFrame(props: ShowcaseFrameProps): JSX.Element {
   const title = () => specTitle(props.spec, props.title);
   const subtitle = () => specSubtitle(props.spec, props.subtitle);
   const height = () => cssLength(props.height);
+  const calendar = () => {
+    const current = drawing();
+    return current.mode === "snapshot" && current.snapshot.maxWidth ? current.snapshot : undefined;
+  };
   const columns = () => {
     const current = drawing();
     return current.mode === "snapshot" || current.mode === "live" ? current.columns : [];
@@ -83,7 +87,7 @@ export function ShowcaseFrame(props: ShowcaseFrameProps): JSX.Element {
         title={title()}
         headingLevel={props.headingLevel ?? 3}
         description={subtitle()}
-        height={height()}
+        height={calendar() ? undefined : height()}
         inset="1rem"
         renderDetails={false}
         view={props.view}
@@ -116,6 +120,14 @@ export function ShowcaseFrame(props: ShowcaseFrameProps): JSX.Element {
             ),
             {
               legend: snapshot().legend,
+              ...(calendar()
+                ? {
+                    data: {
+                      chart: withRows(props.state) ? snapshot().snapshot : { ...snapshot().snapshot, marks: [] },
+                      rows: withRows(props.state) ? snapshot().rows : [],
+                    },
+                  }
+                : {}),
             },
           )
         }

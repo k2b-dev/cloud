@@ -93,12 +93,17 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         expect(last!.x + last!.width).toBeLessThanOrEqual(visible!.x + visible!.width + 1);
         const weekdayBox = await chart.locator("[data-calendar-weekdays] text").first().boundingBox();
         expect(weekdayBox!.x).toBeGreaterThanOrEqual(visible!.x);
-        expect(weekdayBox!.x + weekdayBox!.width).toBeLessThanOrEqual(visible!.x + 32);
+        expect(weekdayBox!.x + weekdayBox!.width).toBeLessThanOrEqual(visible!.x + visible!.width);
+        const firstVisible = await chart
+          .locator("[data-chart-datum] rect")
+          .evaluateAll(
+            (nodes, right) => Math.min(...nodes.map((e) => e.getBoundingClientRect().left).filter((x) => x >= right)),
+            weekdayBox!.x + weekdayBox!.width,
+          );
+        expect(firstVisible - weekdayBox!.x - weekdayBox!.width).toBeLessThanOrEqual(8);
         const monthBoxes = await chart
           .locator("[data-calendar-month]")
-          .evaluateAll((elements) =>
-            elements.map((e) => (e as SVGGraphicsElement).getBBox()).map((b) => ({ left: b.x, right: b.x + b.width })),
-          );
+          .evaluateAll((elements) => elements.map((e) => e.getBoundingClientRect()).map((b) => ({ left: b.x, right: b.x + b.width })));
         for (let i = 1; i < monthBoxes.length; i++) expect(monthBoxes[i]!.left).toBeGreaterThan(monthBoxes[i - 1]!.right);
         const cellBox = await chart.locator("[data-chart-datum] rect").last().boundingBox();
         const legendBox = await chart.locator("[data-calendar-legend]").boundingBox();
@@ -133,7 +138,7 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         expect(await chart.locator("[data-selected]").count()).toBe(1);
         expect(await chart.locator("[data-selected] rect").evaluate((e) => getComputedStyle(e).strokeWidth)).toBe("2.5px");
         await page.keyboard.press("Escape");
-        await chart.evaluate((e) => (e.scrollLeft = 0));
+        await chart.evaluate((e) => (e.scrollLeft = -e.scrollWidth));
         await settled(page);
         await chart.evaluate((e) => e.blur());
         const mark = chart.locator("[data-chart-datum]").first().locator("rect");
