@@ -172,6 +172,8 @@
   --k2b-radius-control: 0.5rem;
   /* One reading column for long text beside wide space: conversation history and its composer, the mail reader. */
   --k2b-reading-column: 47.5rem;
+  /* One measure for label–value rows (budgets, sums): the value stays within reach of its label on a wide screen. */
+  --k2b-row-measure: 40rem;
   --k2b-radius-surface: 0.75rem;
   --k2b-radius-dialog: 0.875rem;
   /* One motion vocabulary: every time and curve comes from these tokens. */
@@ -16590,6 +16592,31 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: 400;
   line-height: 1.25rem;
   letter-spacing: 0;
+}
+/* Opt-in fallback for a list that must span a very wide container: a dotted leader joins each term to its value,
+   which aligns right in tabular figures. Never the default; first keep rows within the row measure. */
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) {
+  grid-template-columns: fit-content(40%) minmax(1.5rem, 1fr) auto auto;
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item {
+  grid-template-areas: "term leader description action";
+}
+/* Term and leader sit on the value's first line, so a wrapped value keeps its term beside where it starts. */
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item::before {
+  content: "";
+  grid-area: leader;
+  align-self: start;
+  height: 0;
+  margin-block-start: 1.375rem;
+  border-bottom: 1px dotted var(--k2b-border-strong);
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item :is(dt, dd) {
+  align-self: start;
+  padding-block-start: 0.5rem;
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
 }
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-select-chip {
   max-width: 100%;
