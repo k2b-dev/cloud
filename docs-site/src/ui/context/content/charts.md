@@ -5,6 +5,8 @@
 ## Use Chart
 
 Use it to show a trend, distribution, comparison, geographic series, or state history.
+To pick a kind by what you want to show, start in the [chart showcase](/en/ui/charts): every kind has a live
+example with its states, its description as TSX and JSON, and its options.
 
 Every non-empty chart has tooltips, keyboard inspection, and tap by default; see [How to customize](#how-to-customize).
 
@@ -305,7 +307,7 @@ Set the chart height explicitly with `style={{ height: "14rem" }}` or an applica
 Bar-gauge geometry grows to fit all rows in both direct charts and prepared
 snapshots. Choose a matching CSS height when showing larger rankings.
 
-Empty series render a visible **No data** state. Keep loading and query errors outside the component so they are not confused with an empty result.
+Empty series render a visible **No data** state. Keep loading and query errors outside the component so they are not confused with an empty result: a chart inside a frame gets them from [`ChartExplorer` frame states](#frame-states).
 
 `labels` localizes package-owned text such as the empty state, series fallback,
 interactive region names, zoom controls, and reset controls. Pass labels from
@@ -313,6 +315,11 @@ the host when the application is localized; the component never reads the
 browser locale during SSR.
 
 Every non-empty chart supports inspection across all 14 kinds, without a prop.
+Hover stays calm: no other mark dims. Bar, histogram and box-plot charts lay a
+light band behind the whole column (or row) of the inspected category, and the
+pointer anywhere in that column keeps it, so moving within one column changes
+nothing. A column's tooltip waits at the top of the plot. Single marks such as
+pie slices and heatmap cells get a 1.5 px outline; points keep their 2 px ring.
 Hover or tap a datum to show its values; click or tap pins the tooltip and calls the optional
 `onSelect` callback. Hover and focus never emit selection events. Escape,
 focus leaving the chart, an outside tap, scrolling, resizing, and a data update
@@ -797,7 +804,9 @@ throw. Disposal aborts work; refresh after disposal does not load.
 
 | `ChartExplorerProps<T>` | Contract |
 | --- | --- |
-| `title`, `data`, `columns` | Required heading, `ChartExplorerData<T>`, and nonempty columns with unique nonempty IDs. |
+| `title`, `data`, `columns` | Required heading, `ChartExplorerData<T>` or `{ rows }`, and nonempty columns with unique nonempty IDs. Without a prepared `chart`, `children` draws the chart view, such as a live `<Chart>`; the table and Copy data still come from the typed rows. |
+| `request`, `asOf`, `range`, `onRetry` | Optional [frame states](#frame-states): the latest read, kept apart from the rows on screen. |
+| `inset` | Optional padding of the frame around the explorer, such as `"1rem"`, or block and inline as in CSS `padding`, such as `"14px 16px"` for a dashboard panel. The table view then reaches the frame's left, right and bottom edges without its own border, and the frame keeps its height. Pair it with `renderDetails={false}`. |
 | `selectedKey`, `onSelectedKeyChange` | Optional controlled row selection. Omit key for local selection. A missing local row never clears a sibling's controlled selection. |
 | `view`, `onViewChange` | Optional controlled `"chart" \| "table"`. Otherwise, `defaultView` initializes local view; default `"chart"`. |
 | `charts`, `chart`, `onChartChange` | Optional `{ id, label }[]` for several charts of the same rows. The switcher then lists each chart and the table instead of Diagram and Table. `chart` names the chart that `data` holds; a pick calls `onChartChange(id)` and switches `view` to `"chart"`, and the owner passes that chart's data. Keep `data.rows` the same rows for every chart so selection, sorting and Copy data stay put while switching. |
@@ -811,7 +820,47 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | `cursor` | Optional shared `ChartCursor` for a line snapshot. Same matching and lifecycle as `Chart.cursor`; table mode does not participate. |
 | `height` | CSS viewport height; default `"18rem"`, shared by chart and scrollable table. |
 | `legend` | Optional `ChartLegendEntry[]` (`{ label, color, style?, reference? }`, `color` is the palette index 0–7). Shows the series names as a wrapping list below the chart, inside the same viewport height, and only in chart view. The chart keeps at least 60% of the height; a longer legend scrolls in the rest. Prepare the snapshot with `legend: false` and pass the names here: the renderer's legend is one SVG row and runs out of a stretched phone-width chart. `style` `"dashed"` or `"dotted"` shows a line swatch; `reference` shows a hollow swatch like the comparison marks. |
-| `empty` | Optional JSX shown in the viewport without rows, such as loading or unavailable text; default **No data**. The header and height stay in place. |
+| `empty` | Optional JSX shown in the viewport without rows; default **No data**. With `request`, write one sentence that says why, such as "No newsletter was sent in this period." The header and height stay in place. |
+
+### Frame states
+
+A dashboard panel shows its title at once and keeps one fixed place while its
+data loads, is empty, fails or goes stale. Pass the host's latest read as
+`request` and keep it apart from the rows on screen:
+
+| What the host has | What the explorer shows |
+| --- | --- |
+| `request.status: "loading"`, no rows | Subtitle **Loading …**, bars of a skeleton in the viewport. |
+| `request.status: "idle"`, no rows | The `empty` sentence with a quiet icon, without a box. |
+| `request.status: "error"`, no rows | **The data could not be loaded.** with `request.reason` or **Range and view stay as they are.**, and **Try again** when `onRetry` is set. No box. |
+| `request.status: "error"`, rows | The rows stay. Only the subtitle line turns into **As of {asOf} · Refresh failed · Try again**. |
+| `request.status: "loading"`, rows | The rows stay; while `request.requestedRange` differs from `range` the subtitle says **Loading {requestedRange} …**. |
+
+With `request` the subtitle (`description`) is one reserved line that never
+wraps, the view controls keep their place while there is nothing to view, and
+the viewport keeps `height` in every state, so nothing moves on desktop or
+phone. `asOf` is text the host formats in its own time zone, such as
+`"09:12"`, so the server and the first browser render agree. Without
+`request` nothing changes.
+
+```tsx
+<Paper class="p-4">
+  <ChartExplorer
+    title="Opens and clicks per month"
+    description="Share of recipients"
+    inset="1rem"
+    renderDetails={false}
+    request={{ status: query.loading ? "loading" : query.error ? "error" : "idle" }}
+    asOf={query.readAt}
+    onRetry={query.refetch}
+    empty="No newsletter was sent in this period."
+    data={{ rows: rows() }}
+    columns={columns}
+  >
+    <Chart kind="bar" style={{ height: "100%" }} data={bars()} />
+  </ChartExplorer>
+</Paper>
+```
 
 ```ts
 type ChartExplorerColumn<T> = {
@@ -1032,3 +1081,28 @@ every number readable without a pointer. Countries too small for a shape appear
 as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
+
+## Stacked and 100 % area charts
+
+Use `kind="area" layout="stacked"` for nonnegative parts of a changing total.
+Pass ordered `x: (string | number)[]` and
+`series: { label: string, data: (number | null)[] }[]`.
+Every series must match the length of `x`; negative values and nonfinite
+sums are rejected. A missing observation interrupts the stack at that X
+position. In normalized mode, a zero total is also a gap, so it never becomes an invented share. Absolute stacks keep a complete zero column as a real zero.
+
+Set `normalize` to show each complete stack as 100 %. The tooltip and typed
+data table retain the original amount and its percentage of the total.
+The wrapper places complete series names in a bounded, scrollable top legend;
+`legend={false}` hides it. Hover, tap and keyboard inspection group the actual
+series values at one X position. They do not dim other areas.
+
+`areaLayout(spec, { width, height })` and
+`renderAreaSvg({ ...spec, width, height, inspect: true })` from `@k2b/ui/charts`
+provide the same calculation and SVG without Solid or a browser.
+Portable JSON accepts a named `format`; the component and pure renderer
+accept `format(value)`. The component inherits the UI locale, including the
+percentage axis and tooltips.
+The top legend starts with the final column's amount or share and follows the
+inspected column. A missing column (or a zero-sum normalized column) has no inspected values; the
+legend uses a dash when its final column is a gap.

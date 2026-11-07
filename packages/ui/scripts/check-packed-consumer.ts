@@ -193,9 +193,9 @@ try {
   if (inspectionOutput.includes("solid-js")) {
     throw new Error("packed chart inspection build requires Solid");
   }
-  // The minified framework-free inspector measured 13,513 bytes. Leave a few
-  // percent for small changes while catching accidental framework dependencies.
-  if (inspectionBytes > 14_000) {
+  // The single-export inspector measures 16,612 bytes after combining calm category
+  // bands with area totals. Keep ~2% headroom; catalogues/frameworks stay outside.
+  if (inspectionBytes > 17_000) {
     throw new Error(`packed chart inspection browser build is too large: ${inspectionBytes} bytes`);
   }
 

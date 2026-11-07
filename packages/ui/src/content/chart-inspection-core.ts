@@ -1,8 +1,6 @@
-import type { ChartDatum, ChartKind } from "../charts/core";
+import type { ChartDatum, ChartKind } from "../charts/core/types";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartCursor, ChartCursorState } from "./chart-cursor";
-
-export type { ChartKind } from "../charts/core";
 
 export {
   type ChartDatumRef,
@@ -12,6 +10,7 @@ export {
   isChartDatum,
   sameChartDatum,
 } from "../charts/core/inspection";
+export type { ChartKind } from "../charts/core/types";
 
 import {
   type ChartDatumRef,
@@ -31,6 +30,11 @@ const describe = (container: HTMLElement, id: string, on: boolean) => {
   else container.removeAttribute("aria-describedby");
 };
 
+/** Mark roles that stand for a whole category: hovering anywhere in its column (or row) inspects it. */
+const rowLayout = (container: HTMLElement | undefined) => Boolean(container?.querySelector('svg[data-bar-layout="rows"]'));
+const categoryRoles: Partial<Record<ChartKind, string>> = { bar: "item", histogram: "bin", boxplot: "box" };
+type CategoryBand = { entry: Entry; left: number; right: number; top: number; bottom: number };
+
 /** Enhances existing SVG nodes. Pointer/focus changes never rebuild the chart. */
 export function createChartInspector(options: {
   container: () => HTMLElement | undefined;
@@ -39,6 +43,10 @@ export function createChartInspector(options: {
   anchor: () => HTMLSpanElement | undefined;
   kind: () => ChartKind;
   enabled: () => boolean;
+  /** Locale for unformatted values in an attached series legend. */
+  locale?: () => string;
+  /** Legend host when it is outside the inspected SVG container. */
+  legend?: () => ParentNode | undefined;
   format: ChartTooltipFormatter;
   select: (selection: ChartSelection) => void;
 }) {
@@ -91,7 +99,7 @@ export function createChartInspector(options: {
               : ".stdlib-chart-sparkline, .stdlib-chart-stat-sparkline",
           )
       : (item.element.querySelector(".stdlib-chart-bar-gauge-fill, .stdlib-chart-gauge-fill, .stdlib-chart-stat-value") ??
-        item.element.querySelector("rect, path, circle"));
+        item.element.querySelector(":is(rect, path, circle):not(.k2b-chart-category-band)"));
     const paint = source ? source.ownerDocument.defaultView?.getComputedStyle(source) : undefined;
     const color =
       (point || item.element.hasAttribute("data-chart-reference") ? paint?.stroke : paint?.fill) ||
@@ -132,7 +140,27 @@ export function createChartInspector(options: {
     });
   };
   const rawX = (entry: Entry) => entry.datum.values.find((field) => field.key === "x")?.value;
-  const seriesChart = () => options.kind() === "line" || options.kind() === "sparkline";
+  const category = (entry: Entry) => (options.kind() === "area" ? entry.datum.index : rawX(entry));
+  const seriesChart = () => options.kind() === "line" || options.kind() === "area" || options.kind() === "sparkline";
+  const updateLegend = (items: Entry[] | undefined) => {
+    const root = options.legend?.() ?? options.container();
+    for (const node of root?.querySelectorAll<HTMLElement | SVGElement>("[data-chart-legend-value]") ?? []) {
+      if (!items) {
+        node.textContent = node.getAttribute("data-default") ?? "";
+        continue;
+      }
+      const series = Number(node.getAttribute("data-series-index"));
+      const field = items
+        .find((item) => item.datum.seriesIndex === series)
+        ?.datum.values.find((field) => field.key === node.getAttribute("data-field"));
+      node.textContent = field
+        ? (field.formatted ??
+          (typeof field.value === "number"
+            ? new Intl.NumberFormat(options.locale?.() ?? "en", { maximumFractionDigits: 6 }).format(field.value)
+            : field.value))
+        : "—";
+    }
+  };
   const clearHighlight = () => {
     for (const entry of highlighted) {
       entry.element.removeAttribute("data-inspected");
@@ -148,11 +176,17 @@ export function createChartInspector(options: {
     options.container()?.removeAttribute("data-cursor-source");
     pinned = false;
     active = undefined;
+    updateLegend(undefined);
     clearHighlight();
     const container = options.container(),
       id = options.tooltip()?.id;
     if (container && id) describe(container, id, false);
     options.container()?.removeAttribute("data-inspecting");
+    const inspected = options.container();
+    if (inspected) {
+      for (const name of ["left", "top", "width", "height"]) inspected.style.removeProperty(`--k2b-chart-band-${name}`);
+      if (!inspected.getAttribute("style")) inspected.removeAttribute("style");
+    }
     const tooltip = options.tooltip();
     if (tooltip) {
       try {
@@ -182,14 +216,18 @@ export function createChartInspector(options: {
       anchor = options.anchor(),
       container = options.container();
     if (!tooltip || !anchor || !container || !options.enabled()) return;
-    if (active === entry && tooltip.matches(":popover-open")) return;
+    if ((active === entry || (seriesChart() && active && category(active) === category(entry))) && tooltip.matches(":popover-open")) return;
     clearHighlight();
     active = entry;
-    highlighted = options.kind() === "line" ? records().filter((candidate) => rawX(candidate) === rawX(entry)) : [entry];
+    highlighted =
+      options.kind() === "line" || options.kind() === "area"
+        ? records().filter((candidate) => category(candidate) === category(entry))
+        : [entry];
     for (const item of highlighted) {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
       item.element.setAttribute("data-inspected", "true");
     }
+    updateLegend(highlighted);
     const document = tooltip.ownerDocument;
     const contents = highlighted.map((item) => ({
       item,
@@ -205,6 +243,7 @@ export function createChartInspector(options: {
       }
       contents.sort((a, b) => (a.item.datum.seriesIndex ?? 0) - (b.item.datum.seriesIndex ?? 0));
     }
+    if (options.kind() === "area") contents.reverse();
     tooltip.replaceChildren();
     const sharedTitle = typeof x === "number" ? options.cursor?.()?.formatX?.(x) : undefined;
     const commonTitle =
@@ -226,10 +265,12 @@ export function createChartInspector(options: {
       for (const row of content.rows) {
         const line = document.createElement("span");
         line.className = "k2b-chart__tooltip-row";
-        if (options.kind() === "line") {
+        if (options.kind() === "line" || options.kind() === "area") {
           const swatch = document.createElement("i");
           swatch.setAttribute("aria-hidden", "true");
-          const series = container.querySelector(`.stdlib-chart-line.stdlib-chart-series-${(item.datum.seriesIndex ?? 0) % 8}`);
+          const series = container.querySelector(
+            `.stdlib-chart-line.stdlib-chart-series-${(item.datum.seriesIndex ?? 0) % 8}, .k2b-area-edge-${(item.datum.seriesIndex ?? 0) % 8}`,
+          );
           swatch.style.background = series
             ? getComputedStyle(series).stroke
             : `var(--stdlib-chart-c${((item.datum.seriesIndex ?? 0) % 8) + 1})`;
@@ -243,13 +284,38 @@ export function createChartInspector(options: {
         tooltip.append(line);
       }
     }
+    if (options.kind() === "area") {
+      const total = entry.datum.values.find((field) => field.key === "total");
+      const totalLabel = container.querySelector("svg[data-chart-total-label]")?.getAttribute("data-chart-total-label");
+      if (total && totalLabel) {
+        const line = document.createElement("span");
+        line.className = "k2b-chart__tooltip-row";
+        const label = document.createElement("span");
+        label.textContent = `${totalLabel}: `;
+        const value = document.createElement("b");
+        value.textContent = total.formatted ?? String(total.value);
+        line.append(label, value);
+        tooltip.append(line);
+      }
+    }
     const rect = container.getBoundingClientRect(),
       point = screenPoint(entry);
-    anchor.style.left = `${point.x - rect.left}px`;
-    anchor.style.top = `${point.y - rect.top}px`;
+    const slot = categoryBands().find((candidate) => candidate.entry === entry);
+    // A renderer that draws its own band inside the category's mark keeps it; the overlay only fills the others.
+    const band = slot && !entry.element.querySelector(".k2b-chart-category-band") ? slot : undefined;
+    const rows = rowLayout(container);
+    // A column's tooltip waits at the top of the plot, so it stays put while the pointer moves within the column.
+    anchor.style.left = `${(slot && !rows ? (slot.left + slot.right) / 2 : point.x) - rect.left}px`;
+    anchor.style.top = `${(slot && !rows ? slot.top : point.y) - rect.top}px`;
     updatePlotBounds();
     container.style.setProperty("--k2b-chart-inspection-x", `${point.x - rect.left}px`);
-    container.setAttribute("data-inspecting", seriesChart() ? "series" : "datum");
+    if (band) {
+      container.style.setProperty("--k2b-chart-band-left", `${band.left - rect.left}px`);
+      container.style.setProperty("--k2b-chart-band-top", `${band.top - rect.top}px`);
+      container.style.setProperty("--k2b-chart-band-width", `${band.right - band.left}px`);
+      container.style.setProperty("--k2b-chart-band-height", `${band.bottom - band.top}px`);
+    }
+    container.setAttribute("data-inspecting", seriesChart() ? "series" : band ? "category" : "datum");
     describe(container, tooltip.id, true);
     try {
       if (!tooltip.matches(":popover-open")) tooltip.showPopover();
@@ -257,6 +323,42 @@ export function createChartInspector(options: {
     } catch {
       /* SVG titles remain available without the Popover API. */
     }
+  };
+  /**
+   * The screen slot of every category, halfway to its neighbours. A light band fills the inspected slot instead of
+   * dimming other marks or outlining a bar, and the pointer anywhere in a slot keeps the same category.
+   */
+  const categoryBands = (): CategoryBand[] => {
+    const role = categoryRoles[options.kind()];
+    const container = options.container();
+    if (!role || !container) return [];
+    const rows = rowLayout(container);
+    const slots = records()
+      .filter((entry) => entry.datum.role === role)
+      .map((entry) => ({ entry, rect: entry.element.getBoundingClientRect() }));
+    if (!slots.length) return [];
+    const guides = Array.from(container.querySelectorAll(".stdlib-chart-grid, .stdlib-chart-axis")).map((node) =>
+      node.getBoundingClientRect(),
+    );
+    // The band spans the plot across the categories: grid lines and every mark, so rows without value ticks, whose
+    // only guide is one vertical baseline, still get a band from the baseline to the longest bar.
+    const spans = [...guides, ...slots.map((slot) => slot.rect)];
+    const start = Math.min(...spans.map((rect) => (rows ? rect.left : rect.top)));
+    const end = Math.max(...spans.map((rect) => (rows ? rect.right : rect.bottom)));
+    const center = (rect: DOMRect) => (rows ? rect.top + rect.height / 2 : rect.left + rect.width / 2);
+    slots.sort((a, b) => center(a.rect) - center(b.rect));
+    return slots.map((slot, index) => {
+      const middle = center(slot.rect);
+      const previous = slots[index - 1],
+        next = slots[index + 1];
+      const half =
+        previous || next ? Math.abs(center((next ?? previous)!.rect) - middle) / 2 : (rows ? slot.rect.height : slot.rect.width) * 0.75;
+      const low = previous ? (center(previous.rect) + middle) / 2 : middle - half;
+      const high = next ? (center(next.rect) + middle) / 2 : middle + half;
+      return rows
+        ? { entry: slot.entry, left: start, right: end, top: low, bottom: high }
+        : { entry: slot.entry, left: low, right: high, top: start, bottom: end };
+    });
   };
   const updatePlotBounds = () => {
     const container = options.container();
@@ -302,6 +404,29 @@ export function createChartInspector(options: {
     const direct = target?.closest("[data-chart-datum]");
     const hit = direct ? byElement.get(direct) : undefined;
     if (hit && nodes.includes(hit)) return hit;
+    const bands = categoryBands();
+    if (bands.length) {
+      // Marks of their own inside a category, such as box-plot outliers, keep their forgiving hit radius.
+      const role = categoryRoles[options.kind()];
+      let loose: Entry | undefined,
+        gap = 24;
+      for (const entry of nodes) {
+        if (entry.datum.role === role) continue;
+        const point = screenPoint(entry);
+        const distance = Math.hypot(point.x - x, point.y - y);
+        if (distance <= gap) {
+          gap = distance;
+          loose = entry;
+        }
+      }
+      if (loose) return loose;
+      const rows = rowLayout(options.container());
+      const frame = options.container()?.getBoundingClientRect();
+      const inside = frame && x >= frame.left && x <= frame.right && y >= frame.top && y <= frame.bottom;
+      return inside
+        ? bands.find((band) => (rows ? y >= band.top && y <= band.bottom : x >= band.left && x <= band.right))?.entry
+        : undefined;
+    }
     if (seriesChart()) {
       const plot = updatePlotBounds();
       // SVG transforms and DOM rectangles can round the same painted edge
@@ -422,10 +547,10 @@ export function createChartInspector(options: {
     if (!["Home", "End", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return false;
     let nodes = visibleRecords();
     if (seriesChart()) nodes = [...nodes].sort((a, b) => a.datum.anchor[0] - b.datum.anchor[0]);
-    if (options.kind() === "line") {
+    if (options.kind() === "line" || options.kind() === "area") {
       const seen = new Set<string | number | undefined>();
       nodes = nodes.filter((entry) => {
-        const x = rawX(entry);
+        const x = category(entry);
         if (seen.has(x)) return false;
         seen.add(x);
         return true;
@@ -435,8 +560,8 @@ export function createChartInspector(options: {
     event.preventDefault();
     pinned = false;
     let index = active
-      ? options.kind() === "line"
-        ? nodes.findIndex((entry) => rawX(entry) === rawX(active!))
+      ? options.kind() === "line" || options.kind() === "area"
+        ? nodes.findIndex((entry) => category(entry) === category(active!))
         : nodes.indexOf(active)
       : -1;
     if (event.key === "Home") index = 0;
@@ -511,6 +636,9 @@ export type InspectChartOptions = {
   format: ChartTooltipFormatter;
   select?: (selection: ChartSelection) => void;
   cursor?: ChartCursor;
+  locale?: string;
+  /** Host for a separately rendered series legend. Defaults to the chart container. */
+  legend?: ParentNode;
 };
 export type ChartInspection = { invalidate(): void; close(): void; destroy(): void };
 
@@ -536,6 +664,8 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
 
   const inspector = createChartInspector({
     container: () => container,
+    locale: () => options.locale ?? "en",
+    legend: () => options.legend,
     cursor: () => options.cursor,
     tooltip: () => tooltip,
     anchor: () => anchor,

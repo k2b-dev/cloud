@@ -1,7 +1,7 @@
 /* Cloud-faithful surface and widget contracts — the single owner of every
  * `.k2b-avatar`, `.k2b-link-card`, `.k2b-not-found`, `.k2b-notice-*`,
  * `.k2b-paper`, `.k2b-placeholder`, `.k2b-progress*`, `.k2b-resource-card*`, `.k2b-stat*`, `.k2b-status-badge*` and
- * `.k2b-widget*` rule in this package. index.css must not redeclare them: two
+ * `.k2b-widget*` and `.k2b-dashboard*` rule in this package. index.css must not redeclare them: two
  * partial rulesets at equal specificity merge into a third geometry that
  * matches neither Cloud nor either file.
  *
@@ -558,6 +558,58 @@
 .k2b-ui .k2b-progress[data-tone="warning"] .k2b-progress__value { background: var(--k2b-warning-500); }
 .k2b-ui .k2b-progress[data-tone="danger"] .k2b-progress__value { background: var(--k2b-danger-500); }
 .k2b-ui .k2b-progress__percent { flex: 0 0 auto; color: var(--k2b-text-muted); font-size: 0.6875rem; font-variant-numeric: tabular-nums; }
+/* A segmented bar (budget): booked solid, expected hatched, over the budget red, and a mark at the limit that reaches
+   a little above and below the track. The track keeps the muted surface so the parts read against it. */
+.k2b-ui .k2b-progress[data-segmented] .k2b-progress__track { position: relative; display: flex; overflow: visible; background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-progress__segment { height: 100%; flex: none; background: var(--k2b-action-solid); }
+.k2b-ui .k2b-progress__segment:first-child { border-radius: 999px 0 0 999px; }
+.k2b-ui .k2b-progress__segment:only-of-type { border-radius: 999px; }
+.k2b-ui .k2b-progress__segment[data-pattern="hatched"] {
+  background: repeating-linear-gradient(135deg, var(--k2b-action-solid) 0 2px, color-mix(in srgb, var(--k2b-action-solid) 22%, var(--k2b-surface)) 2px 4.5px);
+}
+.k2b-ui .k2b-progress__segment[data-pattern="over"] { border-radius: 0 999px 999px 0; background: var(--k2b-danger-500); }
+.k2b-ui .k2b-progress__limit { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--k2b-text); }
+/* Forced colours drop gradients: booked stays filled, expected becomes an outline, over the budget takes Mark. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-progress[data-segmented] .k2b-progress__track { box-shadow: inset 0 0 0 1px CanvasText; }
+  .k2b-ui .k2b-progress__segment[data-pattern="solid"],
+  .k2b-ui .k2b-budget__swatch[data-pattern="solid"] { background: CanvasText; }
+  .k2b-ui .k2b-progress__segment[data-pattern="hatched"],
+  .k2b-ui .k2b-budget__swatch[data-pattern="hatched"] { background: Canvas; box-shadow: inset 0 0 0 2px CanvasText; }
+  .k2b-ui .k2b-progress__segment[data-pattern="over"],
+  .k2b-ui .k2b-budget__swatch[data-pattern="over"] { background: Mark; }
+  .k2b-ui .k2b-progress__limit { background: CanvasText; }
+}
+
+/* ---------------------------------------------------------------- Budget -- */
+.k2b-ui .k2b-budget { min-width: 0; }
+.k2b-ui .k2b-budget__list { display: flex; flex-direction: column; gap: 0.875rem; margin: 0; padding: 0; list-style: none; }
+.k2b-ui .k2b-budget__anchor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem 0.75rem;
+  margin: -0.25rem -0.375rem;
+  padding: 0.25rem 0.375rem;
+  border-radius: var(--k2b-radius-control);
+  font-size: 0.8125rem;
+}
+.k2b-ui .k2b-budget__label { min-width: 0; overflow: hidden; color: var(--k2b-text-secondary); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-budget__amount { color: var(--k2b-text); font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; }
+.k2b-ui .k2b-budget__amount span { color: var(--k2b-text-muted); font-weight: 500; }
+.k2b-ui .k2b-budget__bar { grid-column: 1 / -1; }
+.k2b-ui .k2b-budget__hint { grid-column: 1 / -1; display: flex; height: 1.125rem; align-items: center; gap: 0.1875rem; overflow: hidden; color: var(--k2b-text-muted); font-size: 0.78125rem; white-space: nowrap; }
+.k2b-ui .k2b-budget__row[data-level="near"] .k2b-budget__hint { color: var(--k2b-warning-text); font-weight: 500; }
+.k2b-ui .k2b-budget__row[data-level="over"] .k2b-budget__hint { color: var(--k2b-danger-text); font-weight: 500; }
+.k2b-ui .k2b-budget__tip { display: grid; gap: 0.125rem; font-variant-numeric: tabular-nums; }
+.k2b-ui .k2b-budget__legend { display: flex; flex-wrap: wrap; gap: 0.25rem 1.125rem; margin: 0.75rem 0 0; padding: 0; color: var(--k2b-text-muted); font-size: 0.78125rem; list-style: none; }
+.k2b-ui .k2b-budget__legend li { display: inline-flex; align-items: center; gap: 0.375rem; white-space: nowrap; }
+.k2b-ui .k2b-budget__swatch { width: 0.625rem; height: 0.625rem; flex: none; border-radius: 3px; background: var(--k2b-action-solid); }
+.k2b-ui .k2b-budget__swatch[data-pattern="hatched"] {
+  background: repeating-linear-gradient(135deg, var(--k2b-action-solid) 0 2px, color-mix(in srgb, var(--k2b-action-solid) 16%, transparent) 2px 4.5px);
+  box-shadow: inset 0 0 0 1px var(--k2b-action-solid);
+}
+.k2b-ui .k2b-budget__swatch[data-pattern="over"] { background: var(--k2b-danger-500); }
+.k2b-ui .k2b-budget__empty { margin: 0; color: var(--k2b-text-secondary); font-size: 0.8125rem; }
 /* -------------------------------------------------------------- DotStrip -- */
 /* Fixed slots: a growing strip fills empty rings from the left and never changes its size. */
 .k2b-ui .k2b-change-list { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
@@ -786,6 +838,9 @@
 .k2b-ui .k2b-stat-cell__icon[data-tone="emerald"] { color: var(--k2b-tint-emerald); }
 .k2b-ui .k2b-stat-cell__icon[data-tone="amber"] { color: var(--k2b-tint-amber); }
 .k2b-ui .k2b-stat-cell__icon[data-tone="red"] { color: var(--k2b-tint-red); }
+/* Money tiles: the chip takes the flow surface, as a FlowAmount's arrow does. */
+.k2b-ui .k2b-stat-cell__icon[data-tone="in"] { color: var(--k2b-flow-in-text); background: var(--k2b-flow-in-surface); }
+.k2b-ui .k2b-stat-cell__icon[data-tone="out"] { color: var(--k2b-flow-out-text); background: var(--k2b-flow-out-surface); }
 /* Micro labels stay in sentence case: capitals with tracking read as an admin
    template and truncate long German compounds early. The value is the anchor. */
 .k2b-ui .k2b-stat-cell__label {
@@ -1624,4 +1679,97 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .k2b-skeleton { animation: none; }
+}
+
+/* ------------------------------------------------------------ Dashboard -- */
+/* Six columns measured on the dashboard itself, so a dashboard inside a side
+   panel or an app area folds the same way as one in a full window. */
+.k2b-ui .k2b-dashboard-grid {
+  container: k2b-dashboard / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-dashboard-section { min-width: 0; }
+
+.k2b-ui .k2b-dashboard-section__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.125rem 0.625rem;
+  min-width: 0;
+  margin: 0 0 0.75rem;
+}
+
+.k2b-ui .k2b-dashboard-section__icon {
+  flex: none;
+  color: var(--k2b-text-secondary);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-dashboard-section__title {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--k2b-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  letter-spacing: -0.01em;
+}
+
+.k2b-ui .k2b-dashboard-section__description {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+.k2b-ui .k2b-dashboard-section__grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1rem;
+  min-width: 0;
+}
+
+/* The key-figure row is one block of the grid; its tiles keep their own four
+   (two on a phone) columns. */
+.k2b-ui .k2b-dashboard-section__grid > .k2b-stat-grid { grid-column: 1 / -1; min-width: 0; }
+
+/* Every panel is one light frame; content inside never adds a second. */
+.k2b-ui .k2b-dashboard-panel {
+  container: k2b-dashboard-panel / inline-size;
+  position: relative;
+  min-width: 0;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
+  color: var(--k2b-text);
+}
+
+.k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel { grid-column: span 2; }
+.k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel[data-width="half"] { grid-column: span 3; }
+.k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel[data-width="twoThirds"] { grid-column: span 4; }
+.k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel[data-width="full"] { grid-column: span 6; }
+
+@container k2b-dashboard (max-width: 1000px) {
+  .k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel[data-width="third"] { grid-column: span 3; }
+  .k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel[data-width="twoThirds"] { grid-column: span 6; }
+}
+
+@container k2b-dashboard (max-width: 600px) {
+  .k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-panel:is([data-width="third"], [data-width="half"], [data-width="twoThirds"]) {
+    grid-column: span 6;
+  }
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-dashboard-panel { border-color: CanvasText; }
 }
