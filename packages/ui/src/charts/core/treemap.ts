@@ -106,8 +106,8 @@ export function renderTreemapSvg(spec: TreemapOptions): string {
         const color = `var(--stdlib-chart-c${group},${["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316"][group - 1]})`;
         const text =
           (c.width * (spec.displayWidth ?? 296)) / scene.width >
-            Math.max(56, Math.max(c.label.length * 12, number(c.value).length * 11) + 16) && c.height > 38
-            ? `<text x="${c.x + 8}" y="${c.y + 18}" font-size="12" font-weight="600" fill="var(--k2b-text,#27272a)">${escapeXml(c.label)}</text><text x="${c.x + 8}" y="${c.y + 33}" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(number(c.value))}</text>`
+            Math.max(56, Math.max(c.label.length * 12, number(c.value).length * 11) + 16) && c.height * Math.min(1, 180 / scene.height) > 42
+            ? `<text x="${c.x + 8}" y="${c.y + 18}" font-size="12" font-weight="600" fill="var(--k2b-text,#27272a)">${escapeXml(c.label)}<tspan x="${c.x + 8}" dy="15" font-size="11" font-weight="400" fill="var(--k2b-text-muted,#45454e)">${escapeXml(number(c.value))}</tspan></text>`
             : "";
         return chartDatumSvg(
           `<rect class="k2b-chart-treemap-cell" x="${c.x + 1}" y="${c.y + 1}" width="${Math.max(0, c.width - 2)}" height="${Math.max(0, c.height - 2)}" rx="4" fill="color-mix(in srgb,${color} 55%,var(--k2b-surface,#fff))" stroke="none"/>${text}`,

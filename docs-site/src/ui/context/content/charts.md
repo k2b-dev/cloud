@@ -1145,3 +1145,5 @@ percentage axis and tooltips.
 The top legend starts with the final column's amount or share and follows the
 inspected column. A missing column (or a zero-sum normalized column) has no inspected values; the
 legend uses a dash when its final column is a gap.
+
+Pareto axis endpoints align inward so full formatted values remain visible in small cards. Treemap text uses one name/value block with fixed line spacing; cells without room for both lines leave the text to inspection.

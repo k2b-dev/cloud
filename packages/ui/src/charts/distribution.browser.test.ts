@@ -197,3 +197,64 @@ for (const spec of cases)
       await browser.close();
     }
   }, 30000);
+
+test("small-card Pareto axes stay inside and treemap name/value lines never overlap", async () => {
+  const { prepareChartSnapshot } = await import("./core/snapshot");
+  const ServerSnapshot = (await import(resolve(root, "dist/ssr/content/ChartSnapshotView.js"))).ChartSnapshotView;
+  const specs = [
+    cases[0]!,
+    { ...cases[1]!, format: (v: number) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2 }).format(v * 100) },
+  ];
+  const cards = specs.map((spec) => prepareChartSnapshot(spec, { key: (s) => String(s.datum.index), tooltip: () => ({ rows: [] }) }));
+  const html = cards
+    .map((snapshot) => renderToString(() => createComponent(ServerSnapshot, { snapshot, selectedKey: null, onSelect: () => {} })))
+    .join("");
+  const browser = await launchBrowser();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 900 } });
+    try {
+      const errors = pageErrors(page);
+      await page.setContent(
+        `<style>${await Bun.file(resolve(root, "dist/styles.css")).text()} body{font-family:Arial}.cards{width:296px}.k2b-chart{height:180px;margin-bottom:20px}</style><div class="k2b-ui cards">${html}</div>`,
+      );
+      await settled(page);
+      const pareto = page.locator('[data-chart-kind="pareto"]');
+      expect(
+        await pareto.locator("text").evaluateAll((nodes) => nodes.filter((e) => e.textContent?.includes("150.000,00")).length),
+      ).toBeGreaterThan(0);
+      const axisBounds = await pareto.evaluate((e) => {
+        const b = e.getBoundingClientRect();
+        return Array.from(e.querySelectorAll("svg > text")).every((t) => {
+          const r = t.getBoundingClientRect();
+          return r.left >= b.left - 1 && r.right <= b.right + 1;
+        });
+      });
+      expect(axisBounds).toBe(true);
+      expect(await page.locator('[data-chart-kind="treemap"] tspan').count()).toBeGreaterThan(0);
+      const fit = await page.locator('[data-chart-kind="treemap"] [data-chart-datum]').evaluateAll((groups) =>
+        groups.every((g) => {
+          const cell = g.querySelector("rect")!.getBoundingClientRect();
+          // The text element encloses its tspan; measure the name as its first text node.
+          const text = g.querySelector("text");
+          if (!text) return true;
+          const range = document.createRange();
+          range.selectNodeContents(text.firstChild!);
+          const name = range.getBoundingClientRect(),
+            value = g.querySelector("tspan")?.getBoundingClientRect();
+          return (
+            name.left >= cell.left - 1 &&
+            name.right <= cell.right + 1 &&
+            name.bottom <= cell.bottom + 1 &&
+            (!value || (name.bottom <= value.top && value.right <= cell.right + 1 && value.bottom <= cell.bottom + 1))
+          );
+        }),
+      );
+      expect(fit).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});
