@@ -1,4 +1,4 @@
-import { DocCode, SegmentedControl } from "@k2b/ui";
+import { DocCode, SegmentedControl, SelectChip } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { chartShowcaseKind } from "./demo-sections/charts/examples";
 import { ShowcaseFrame, type ShowcaseState, showcaseStates } from "./demo-sections/charts/ShowcaseFrame";
@@ -19,13 +19,27 @@ export default function ChartKindPlayground(props: { kind: string }) {
         <Show when={kind.examples.length > 1}>
           <div class="ui-charts-control">
             <span>Example</span>
-            <SegmentedControl
-              ariaLabel="Example"
-              size="sm"
-              value={exampleId()}
-              onValueChange={setExampleId}
-              options={kind.examples.map((entry) => ({ value: entry.id, label: entry.title }))}
-            />
+            {/* A few examples read as segments; more of them as one menu, which never crowds a phone. */}
+            <Show
+              when={kind.examples.length <= 3}
+              fallback={
+                <SelectChip<string>
+                  stableWidth
+                  aria-label="Example"
+                  value={exampleId()}
+                  onValueChange={setExampleId}
+                  options={kind.examples.map((entry) => ({ value: entry.id, label: entry.title }))}
+                />
+              }
+            >
+              <SegmentedControl
+                ariaLabel="Example"
+                size="sm"
+                value={exampleId()}
+                onValueChange={setExampleId}
+                options={kind.examples.map((entry) => ({ value: entry.id, label: entry.title }))}
+              />
+            </Show>
           </div>
         </Show>
         <div class="ui-charts-control">

@@ -101,6 +101,19 @@ const frames = (page: Page, scope: string) =>
   );
 /** Clicks a segment of the named switch until the hydrated island has taken it. */
 const pick = async (page: Page, group: string, label: string) => {
+  // More than three examples read as one menu instead of segments.
+  if (!(await page.getByRole("radiogroup", { name: group }).count())) {
+    const trigger = page.getByRole("button", { name: group, exact: true });
+    for (let attempt = 0; attempt < 40 && !(await trigger.textContent())?.includes(label); attempt++) {
+      await trigger.click();
+      const option = page.locator('[role="menuitemradio"], [role="option"]').filter({ hasText: label }).first();
+      if (await option.isVisible()) await option.click();
+      else await page.waitForTimeout(100);
+    }
+    expect(await trigger.textContent(), `${group}: ${label}`).toContain(label);
+    await settled(page);
+    return;
+  }
   const option = page.getByRole("radiogroup", { name: group }).getByRole("radio", { name: label, exact: true });
   // A click before the island has mounted lands on server markup; try again until the island takes it.
   for (let attempt = 0; attempt < 40 && (await option.getAttribute("aria-checked")) !== "true"; attempt++) {

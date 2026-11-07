@@ -51,7 +51,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
         icon: "ti ti-users",
         value: 48210,
         delta: { value: 0.082, better: "up" },
-        compare: { label: "Previous month", value: 44560 },
+        compare: { label: "Last month", value: 44560 },
         trend: [41200, 41900, 42400, 42100, 42900, 43600, 43300, 44100, 44560, 45900, 47100, 48210],
       },
       {
@@ -60,7 +60,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
         value: 0.492,
         format: { style: "percent", decimals: 1 },
         delta: { value: 0.031, unit: "points", better: "up" },
-        compare: { label: "Previous month", value: 0.461 },
+        compare: { label: "Last month", value: 0.461 },
       },
       {
         label: "Click rate",
@@ -68,14 +68,14 @@ export const newsletterDashboard: ShowcaseDashboard = {
         value: 0.198,
         format: { style: "percent", decimals: 1 },
         delta: { value: -0.006, unit: "points", better: "up" },
-        compare: { label: "Previous month", value: 0.204 },
+        compare: { label: "Last month", value: 0.204 },
       },
       {
         label: "Unsubscribes",
         icon: "ti ti-user-minus",
         value: 182,
         delta: { value: -0.125, better: "down" },
-        compare: { label: "Previous month", value: 208 },
+        compare: { label: "Last month", value: 208 },
       },
     ],
   },
@@ -208,7 +208,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
           spec: {
             block: "table",
             title: "Campaigns",
-            subtitle: "38 in this period · sortable",
+            subtitle: "Latest 6 of 38 · sortable",
             columns: [
               { id: "name", label: "Campaign", type: "text" },
               { id: "status", label: "Status", type: "status" },
@@ -288,7 +288,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
           id: "opens-per-day",
           intended: "Calendar heatmap",
           width: "twoThirds",
-          height: 220,
+          height: 200,
           empty: "No opens in this period.",
           spec: {
             kind: "heatmap",
@@ -307,7 +307,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
           id: "countries",
           intended: "Bar list with shares",
           width: "third",
-          height: 220,
+          height: 200,
           compactHeight: 200,
           empty: "No opens in this period.",
           spec: {

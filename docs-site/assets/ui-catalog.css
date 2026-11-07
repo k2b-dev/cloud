@@ -1735,10 +1735,29 @@
   margin-top: auto;
 }
 
-/* A block in a card: its content clipped to the card's chart height, read from the top. */
+/* A block in a card: its own height, read from the top. */
 .ui-charts-card__block {
-  height: 100%;
   overflow: hidden;
+}
+
+.ui-charts-card__drawing {
+  height: 100%;
+}
+
+/* A drawing wider than the card scrolls sideways instead of shrinking. */
+.ui-charts-card__chart[data-fit="wide"] {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* Pie, donut and gauge scale as a whole with the card, so their labels would shrink to a few pixels; the card sets them
+   back to a readable size (about 11 px on screen for cards 300 to 480 px wide). */
+.ui-charts-card__chart[data-fit="whole"] {
+  container-type: inline-size;
+}
+
+.ui-charts-card__chart[data-fit="whole"] svg text:not(.stdlib-chart-gauge-value, .stdlib-chart-stat-value) {
+  font-size: max(11px, calc(32px - 5cqw));
 }
 
 .ui-charts-card__open {
@@ -2129,7 +2148,7 @@
 
 .ui-charts-frame__search {
   flex: 0 1 14rem;
-  min-width: 8rem;
+  min-width: 7rem;
 }
 
 .ui-charts-frame__header .ui-charts-frame__stale {
@@ -2193,8 +2212,31 @@
 }
 
 .ui-charts-frame__table {
+  display: grid;
   margin: 0 -1rem -1rem;
-  overflow: auto;
+  overflow-x: auto;
+}
+
+/* The hidden full table, the visible rows and a state share one grid cell: the cell is as high as every row. */
+.ui-charts-frame__table > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+.ui-charts-frame__sizer {
+  visibility: hidden;
+}
+
+.ui-charts-frame__rows {
+  align-self: start;
+}
+
+.ui-charts-frame__tools {
+  display: flex;
+  flex: 0 1 auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 0;
 }
 
 /* A slot keeps the frame and its height for a kind this build cannot draw yet; it never shows another chart. */

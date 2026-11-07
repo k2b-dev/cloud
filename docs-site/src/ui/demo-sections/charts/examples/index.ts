@@ -32,14 +32,23 @@ export type ChartShowcaseKind = {
 
 const slug = (kind: string) => kind.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 
-/** One page per kind, in registry order; the first example names and describes the kind. */
-export const chartShowcaseKinds: readonly ChartShowcaseKind[] = [...new Set(chartShowcaseExamples.map((example) => example.kind))].map(
-  (kind) => {
-    const examples = chartShowcaseExamples.filter((example) => example.kind === kind);
-    const first = examples[0]!;
-    return { kind, slug: slug(kind), title: first.title, summary: first.summary, question: first.question, examples };
-  },
-);
+/**
+ * The page an example belongs to: its kind, or a layout that reads as a kind of its own, such as the calendar layout
+ * of a heatmap. A later `Chart.Calendar` (kind "calendar") lands on the same page.
+ */
+export const pageKind = (example: ChartShowcaseExample): string => {
+  const spec = example.spec;
+  const layout = spec !== null && typeof spec === "object" && !Array.isArray(spec) ? spec.layout : undefined;
+  return example.kind === "heatmap" && layout === "calendar" ? "calendar" : example.kind;
+};
+
+/** One page per kind, in registry order; a known catalog name titles it, the first example describes it. */
+export const chartShowcaseKinds: readonly ChartShowcaseKind[] = [...new Set(chartShowcaseExamples.map(pageKind))].map((kind) => {
+  const examples = chartShowcaseExamples.filter((example) => pageKind(example) === kind);
+  const first = examples[0]!;
+  const title = plannedChartKinds.find((planned) => planned.kind === kind)?.title ?? first.title;
+  return { kind, slug: slug(kind), title, summary: first.summary, question: first.question, examples };
+});
 
 export const chartShowcaseKind = (slugOrKind: string) =>
   chartShowcaseKinds.find((entry) => entry.slug === slugOrKind || entry.kind === slugOrKind);

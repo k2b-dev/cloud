@@ -14,10 +14,10 @@ const examples: ChartShowcaseExample[] = [
       subtitle: "October · invented data",
       data: [
         { label: "Search", value: 1840 },
-        { label: "Newsletter", value: 1260 },
+        { label: "Mail", value: 1260 },
         { label: "Social", value: 920 },
-        { label: "Partners", value: 610 },
-        { label: "Events", value: 340 },
+        { label: "Ads", value: 610 },
+        { label: "Fairs", value: 340 },
       ],
       yAxis: { label: "Signups" },
       showValues: true,

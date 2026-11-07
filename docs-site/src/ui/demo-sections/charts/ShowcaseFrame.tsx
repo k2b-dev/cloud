@@ -1,3 +1,4 @@
+import * as ui from "@k2b/ui";
 import {
   Button,
   Chart,
@@ -5,8 +6,10 @@ import {
   type ChartFrameRequest,
   ChartSnapshotView,
   DataTable,
+  type DataTableColumn,
   type DataTableSort,
   Paper,
+  SelectChip,
   StatCell,
   StatGrid,
   TextInput,
@@ -320,28 +323,37 @@ function ComponentBlock(props: Omit<ShowcaseFrameProps, "spec"> & { block: strin
 
 type TableRow = { key: string; cells: JsonObject };
 
+/** Column fields a typed table (@k2b/ui with `filterRows`) reads; older builds ignore them and get formatted text. */
+const typedColumnKeys = ["type", "format", "states", "max", "priority"] as const;
+const typedTables = () => typeof Reflect.get(ui, "filterRows") === "function";
+
 /**
- * `{ block: "table", columns, rows, search? }`: search sits in the frame's head, headers sort, and the table reaches
- * the frame's edges below. Loading, empty, failure and stale use the explorer's words and places.
+ * `{ block: "table", columns, rows, search?, groupBy? }`: search and grouping sit in the frame's head, headers sort,
+ * and the table reaches the frame's edges below. The frame always holds every row whole: a hidden copy of the full
+ * table keeps its height, so loading, empty, failure and a narrowing search never move anything and never cut a row.
  */
 function TableBlock(props: ShowcaseFrameProps & { spec: JsonObject }): JSX.Element {
   const [query, setQuery] = createSignal("");
   const [sort, setSort] = createSignal<DataTableSort | null>(null);
+  const [group, setGroup] = createSignal("");
+  const typed = typedTables();
   const columns = () => list(props.spec.columns).filter(object);
+  const groups = () => (typed ? list(props.spec.groupBy).filter(object) : []);
   const cell = (column: JsonObject, row: TableRow): string => {
     const value = row.cells[text(column.id)];
     if (value === null || value === undefined) return "–";
     if (typeof value === "number") return formatNumber(value, column.format);
     return text(value);
   };
-  const rows = createMemo((): TableRow[] => {
-    const all = list(props.spec.rows)
+  const allRows = (): TableRow[] =>
+    list(props.spec.rows)
       .filter(object)
       .map((cells, index) => ({ key: String(index), cells }));
+  const rows = createMemo((): TableRow[] => {
     const needle = query().trim().toLocaleLowerCase("en");
     const found = needle
-      ? all.filter((row) => columns().some((column) => cell(column, row).toLocaleLowerCase("en").includes(needle)))
-      : all;
+      ? allRows().filter((row) => columns().some((column) => cell(column, row).toLocaleLowerCase("en").includes(needle)))
+      : allRows();
     const order = sort();
     if (!order) return found;
     const collator = new Intl.Collator("en", { numeric: true });
@@ -354,7 +366,23 @@ function TableBlock(props: ShowcaseFrameProps & { spec: JsonObject }): JSX.Eleme
       return order.direction === "asc" ? comparison : -comparison;
     });
   });
+  const tableColumns = () =>
+    columns().map((column) => {
+      const base: DataTableColumn<TableRow> = {
+        id: text(column.id),
+        header: text(column.label),
+        // A typed table formats raw values itself; an older one gets the formatted text.
+        value: (row: TableRow) => (typed ? (row.cells[text(column.id)] ?? null) : cell(column, row)),
+        sortable: true,
+        align: column.type === "number" || column.type === "amount" || column.type === "flow" ? "right" : "left",
+      };
+      return typed
+        ? Object.assign(base, Object.fromEntries(typedColumnKeys.filter((key) => key in column).map((key) => [key, column[key]])))
+        : base;
+    });
+  const grouping = (): Record<string, unknown> => (typed && group() ? { groupBy: group() } : {});
   const failed = () => props.state === "error";
+  const showing = () => withRows(props.state) && rows().length > 0;
   return (
     <Paper class="ui-charts-frame" data-block="table">
       <header class="ui-charts-frame__header" data-search={props.spec.search === true ? "true" : undefined}>
@@ -370,26 +398,41 @@ function TableBlock(props: ShowcaseFrameProps & { spec: JsonObject }): JSX.Eleme
             </Show>
           </p>
         </div>
-        <Show when={props.spec.search === true}>
-          <TextInput
-            class="ui-charts-frame__search"
-            type="search"
-            icon="ti ti-search"
-            aria-label={`Search ${props.title}`}
-            placeholder="Search"
-            value={query()}
-            onValueChange={setQuery}
-            disabled={!withRows(props.state)}
-          />
-        </Show>
+        <div class="ui-charts-frame__tools">
+          <Show when={props.spec.search === true}>
+            <TextInput
+              class="ui-charts-frame__search"
+              type="search"
+              icon="ti ti-search"
+              aria-label={`Search ${props.title}`}
+              placeholder="Search"
+              value={query()}
+              onValueChange={setQuery}
+              disabled={!withRows(props.state)}
+            />
+          </Show>
+          <Show when={groups().length}>
+            <SelectChip<string>
+              stableWidth
+              aria-label={`Group ${props.title}`}
+              value={group()}
+              onValueChange={setGroup}
+              disabled={!withRows(props.state)}
+              options={[
+                { value: "", label: "Not grouped" },
+                ...groups().map((entry) => ({ value: text(entry.id), label: `By ${text(entry.label).toLocaleLowerCase("en")}` })),
+              ]}
+            />
+          </Show>
+        </div>
       </header>
-      <div
-        class="ui-charts-frame__table"
-        style={{ height: cssLength(props.height) }}
-        aria-busy={props.state === "loading" ? "true" : undefined}
-      >
+      <div class="ui-charts-frame__table" aria-busy={props.state === "loading" ? "true" : undefined}>
+        {/* Every row, hidden: the frame's height in every state and for every search. */}
+        <div class="ui-charts-frame__sizer" aria-hidden="true" inert>
+          <DataTable<TableRow> ariaLabel={props.title} surface="plain" rows={allRows()} columns={tableColumns()} {...grouping()} />
+        </div>
         <Show
-          when={withRows(props.state) && rows().length}
+          when={showing()}
           fallback={
             <div class="k2b-chart-explorer__state" data-state={props.state} role={failed() ? "alert" : undefined}>
               <Show when={props.state !== "loading"}>
@@ -420,22 +463,18 @@ function TableBlock(props: ShowcaseFrameProps & { spec: JsonObject }): JSX.Eleme
             </div>
           }
         >
-          <DataTable<TableRow>
-            ariaLabel={props.title}
-            surface="plain"
-            fillHeight
-            rows={rows()}
-            getRowId={(row) => row.key}
-            sort={sort()}
-            onSortChange={setSort}
-            columns={columns().map((column) => ({
-              id: text(column.id),
-              header: text(column.label),
-              value: (row: TableRow) => cell(column, row),
-              sortable: true,
-              align: column.type === "number" || column.type === "amount" || column.type === "flow" ? "right" : "left",
-            }))}
-          />
+          <div class="ui-charts-frame__rows">
+            <DataTable<TableRow>
+              ariaLabel={props.title}
+              surface="plain"
+              rows={rows()}
+              getRowId={(row) => row.key}
+              sort={sort()}
+              onSortChange={setSort}
+              columns={tableColumns()}
+              {...grouping()}
+            />
+          </div>
         </Show>
       </div>
     </Paper>
