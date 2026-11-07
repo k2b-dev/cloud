@@ -17,7 +17,8 @@ import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
 import { calendarLayout } from "../charts/core/calendar";
 import { chartKinds } from "../charts/core/registry";
-import { type ChartDrawingOptions, chartRenderHeight, preservesAspectRatio, renderChartSvg } from "../charts/core/render";
+import { type ChartDrawingOptions, renderChartSvg } from "../charts/core/render";
+import { chartRenderHeight, preservesAspectRatio } from "../charts/core/render-size";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -131,7 +132,6 @@ export type ChartProps = {
     cursor?: ChartCursor;
   };
 }[ChartKind];
-export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../charts/core/render";
 
 /** Empty-data short-circuit. Kept per-kind because each renderer's payload
  *  key differs (series vs data vs groups). We're conservative: only
@@ -164,7 +164,7 @@ const isEmpty = (props: ChartProps): boolean => {
   return false;
 };
 
-const ChartRoot = (props: ChartProps): JSX.Element => {
+export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import("../charts/core/render").renderChartSvg): JSX.Element => {
   const [, drawingProps] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
@@ -673,6 +673,10 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   );
 };
 
+export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../charts/core/render";
+
+const ChartRoot = (props: ChartProps) => renderChartRoot(props, renderChartSvg);
+
 type KindProps<T> = T extends unknown ? Omit<T, "kind"> : never;
 export type ChartKindProps<K extends ChartKind> = KindProps<Extract<ChartProps, { kind: K }>>;
 
@@ -687,11 +691,14 @@ const chartComponent =
   (props: Omit<ChartProps, "kind">): JSX.Element =>
     // Public namespace types correlate each discriminator with its options.
     ChartRoot(mergeProps(props, { kind }) as ChartProps);
-const components = Object.fromEntries(
-  Object.entries(chartKinds).map(([name, kind]) => [name, chartComponent(kind)]),
-) as unknown as ChartComponents;
-const Chart = Object.assign(ChartRoot, components, {
-  Calendar: (props: Omit<Extract<ChartProps, { kind: "heatmap"; layout: "calendar" }>, "kind" | "layout">) =>
-    ChartRoot(mergeProps(props, { kind: "heatmap" as const, layout: "calendar" as const })),
-});
+const createChart = () => {
+  const components = Object.fromEntries(
+    Object.entries(chartKinds).map(([name, kind]) => [name, chartComponent(kind)]),
+  ) as unknown as ChartComponents;
+  return Object.assign(ChartRoot, components, {
+    Calendar: (props: Omit<Extract<ChartProps, { kind: "heatmap"; layout: "calendar" }>, "kind" | "layout">) =>
+      ChartRoot(mergeProps(props, { kind: "heatmap" as const, layout: "calendar" as const })),
+  });
+};
+const Chart = /* @__PURE__ */ createChart();
 export default Chart;

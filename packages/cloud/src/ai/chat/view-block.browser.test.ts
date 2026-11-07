@@ -13,7 +13,7 @@ import { cloudAiViewSummary, parseCloudAiView } from "../view-block";
 // measures the blocks in a browser.
 const ui = resolve(import.meta.dir, "../../../../ui");
 
-const buildHarness = async (): Promise<Map<string, string>> => {
+const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry: string }> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
@@ -23,6 +23,7 @@ const buildHarness = async (): Promise<Map<string, string>> => {
     // MapView's lazy worker uses import.meta; keep the shared chat harness a module.
     format: "esm",
     splitting: true,
+    metafile: true,
     naming: { entry: "harness.js", chunk: "chunk-[hash].js" },
     conditions: ["browser"],
     plugins: [
@@ -43,7 +44,24 @@ const buildHarness = async (): Promise<Map<string, string>> => {
     ],
   });
   if (!build.success) throw new AggregateError(build.logs, "View block harness build failed");
-  return new Map(await Promise.all(build.outputs.map(async (output) => [basename(output.path), await output.text()] as const)));
+  const outputs = new Map(Object.entries(build.metafile?.outputs ?? {}).map(([path, output]) => [basename(path), output]));
+  const chartEntry = [...outputs].find(([, output]) => output.entryPoint?.endsWith("/ai/chat/chart-eager.tsx"))?.[0];
+  if (!chartEntry) throw new Error("Chart drawing must have its own lazy browser entry");
+  const initial = new Set(["harness.js"]);
+  for (const name of initial) {
+    const output = outputs.get(name);
+    if (!output) throw new Error(`Missing harness output: ${name}`);
+    for (const [path, input] of Object.entries(output.inputs))
+      if (path.endsWith("/charts/core/registry.js") && input.bytesInOutput > 0)
+        throw new Error("The initial Chat module must not contain the chart renderer registry");
+    for (const dependency of output.imports)
+      if (dependency.kind !== "dynamic-import" && outputs.has(basename(dependency.path))) initial.add(basename(dependency.path));
+  }
+
+  return {
+    assets: new Map(await Promise.all(build.outputs.map(async (output) => [basename(output.path), await output.text()] as const))),
+    chartEntry: basename(chartEntry),
+  };
 };
 
 const chart = {
@@ -389,6 +407,9 @@ const files: Record<string, unknown> = {
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 let tableModulePath: string;
+let chartModulePath: string;
+let serverChartHtml: string;
+let historyProps: string;
 /** Files a test holds back until it releases them, so it can measure the loading frame without racing the file. */
 const held = new Map<string, PromiseWithResolvers<void>>();
 const release = (path: string) => {
@@ -404,12 +425,30 @@ afterEach(() => {
   for (const path of [...held.keys()]) release(path);
 });
 beforeAll(async () => {
-  const [harness, styles] = await Promise.all([
+  const [built, styles] = await Promise.all([
     buildHarness(),
     Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../../styles.css")], plugins: [tailwind] }),
   ]);
   if (!styles.success) throw new AggregateError(styles.logs, "Could not compile the global stylesheet.");
   const css = await styles.outputs[0]!.text();
+  const harness = built.assets;
+  chartModulePath = `/${built.chartEntry}`;
+  const { createConfig } = await import("@k2b/ssr");
+  Bun.plugin(createConfig({ dev: true, rootDir: resolve(import.meta.dir, "../../../..") }).plugin());
+  const { CloudChartBlock } = await import("./chart-eager");
+  const { createComponent } = await import("solid-js");
+  const { renderToString } = await import("solid-js/web");
+  const { toJSON } = await import("seroval");
+  const args = {
+    kind: "bar",
+    title: "Server history",
+    data: [
+      { label: "North", value: 12 },
+      { label: "South", value: 18 },
+    ],
+  };
+  serverChartHtml = renderToString(() => createComponent(CloudChartBlock, { args, completed: true }));
+  historyProps = Bun.escapeHTML(JSON.stringify(toJSON({ args, completed: true })));
   const tableModule = [...harness].find(([name, source]) => name !== "harness.js" && source.includes("/ai/chat/table-block.tsx"));
   if (!tableModule) throw new Error("Table controls must have their own lazy browser module");
   tableModulePath = `/${tableModule[0]}`;
@@ -436,7 +475,11 @@ beforeAll(async () => {
       const theme = url.searchParams.get("theme") ?? "light";
       return new Response(
         `<!doctype html><html lang="${lang}" class="${theme}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
-          `<style>${css}</style></head><body class="k2b-ui" style="margin: 0"><script type="module" src="/harness.js"></script></body></html>`,
+          `<style>${css}</style></head><body class="k2b-ui" style="margin: 0">` +
+          (url.searchParams.has("history")
+            ? `<solid-island data-id="chart-history" data-props="${historyProps}" style="display:block;margin:1rem">${serverChartHtml}</solid-island>`
+            : "") +
+          `<script type="module" src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
@@ -453,6 +496,9 @@ declare global {
   interface Window {
     show: (blocks: ToolBlock[]) => void;
     opened: { title: string; ref: CloudResourceRef }[];
+    showCharts: (charts: unknown[]) => void;
+    chartHistoryPending: () => boolean;
+    disposeChartHistory: () => void;
   }
 }
 const present = (path: string, view: unknown): ToolBlock => ({
@@ -1382,3 +1428,195 @@ test("a failed table module keeps its frame and offers a reload", async () => {
     await context.close();
   }
 });
+
+const drawingBlocks = () => [
+  present("/views/offers-by-status-1a2b3c4d.view.json", { view: "chart", kind: "bar", title: chart.title, subtitle: chart.subtitle }),
+  present("/views/offers-and-acceptance-7a8b9c0d.view.json", groupSummary(linked)),
+  present("/views/offers-by-month-and-region-0a1b2c3d.view.json", explorerSummary),
+];
+for (const width of [1280, 390]) {
+  for (const order of ["code", "data"] as const)
+    test(`first-use chart, group and explorer keep exact frames with ${order} first (${width})`, async () => {
+      const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+      const code = hold(chartModulePath);
+      const values = drawingBlocks();
+      const filesReady = values.map((block) => hold(block.id));
+      try {
+        const page = await context.newPage();
+        const requested: string[] = [];
+        page.on("request", (request) => requested.push(new URL(request.url()).pathname));
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+        expect(requested).not.toContain(chartModulePath);
+        await page.evaluate((blocks) => window.show(blocks), values);
+        await page.waitForFunction(() => document.querySelectorAll("[data-view-path] .k2b-chart-explorer__viewport").length === 4);
+        await settled(page);
+        const first = await boxes(page);
+        if (process.env.VIEW_SHOTS && order === "data")
+          await page.screenshot({ path: `${process.env.VIEW_SHOTS}/chart-loading-light-${width}.png`, fullPage: true });
+        if (order === "code") {
+          const arrival = page.waitForResponse((response) => new URL(response.url()).pathname === chartModulePath);
+          code();
+          await arrival;
+        } else {
+          const arrivals = values.map((block) =>
+            page.waitForResponse((response) => new URL(response.url()).searchParams.get("path") === block.id),
+          );
+          filesReady.forEach((ready) => ready());
+          await Promise.all(arrivals);
+        }
+        await settled(page);
+        expect(await boxes(page)).toEqual(first);
+        expect(await page.locator("[data-view-path] svg").count()).toBe(0);
+        code();
+        filesReady.forEach((ready) => ready());
+        await page.waitForFunction(() => document.querySelectorAll("[data-view-path] .k2b-chart[data-chart-kind]").length === 4);
+        await settled(page);
+        expect(await boxes(page)).toEqual(first);
+        expect(requested).toContain(chartModulePath);
+        if (process.env.VIEW_SHOTS && order === "data")
+          await page.screenshot({ path: `${process.env.VIEW_SHOTS}/chart-ready-light-${width}.png`, fullPage: true });
+      } finally {
+        code();
+        filesReady.forEach((ready) => ready());
+        await context.close();
+      }
+    });
+
+  test(`a failed drawing import preserves the frames and offers Reload (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    const code = hold(chartModulePath);
+    try {
+      const page = await context.newPage();
+      await page.route(`**${chartModulePath}`, async (route) => {
+        await held.get(chartModulePath)?.promise;
+        await route.abort();
+      });
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+      await page.evaluate((blocks) => window.show(blocks), drawingBlocks());
+      await page.waitForFunction(() => document.querySelectorAll("[data-view-path] .k2b-chart-explorer__viewport").length === 4);
+      await settled(page);
+      const first = await boxes(page);
+      code();
+      await page.getByText("Part of this page could not load. Reload the page and try again.").waitFor();
+      expect(await page.getByRole("button", { name: "Reload", exact: true }).count()).toBe(1);
+      await settled(page);
+      expect(await boxes(page)).toEqual(first);
+      expect(await page.locator("[data-view-path] [role=status]").allTextContents()).toEqual(
+        Array(4).fill("This view is no longer available. Its file was changed or deleted."),
+      );
+    } finally {
+      code();
+      await context.close();
+    }
+  });
+
+  test(`server history retains its exact SVG and frame until drawing code is ready (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    const code = hold(chartModulePath);
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => window.chartHistoryPending?.());
+      const history = page.locator('solid-island[data-id="chart-history"]');
+      expect(await history.locator("svg").count()).toBe(1);
+      const svg = await history.locator("svg").evaluate((node) => node.outerHTML);
+      const frame = await history.locator(".k2b-chart-explorer").boundingBox();
+      expect(svg).toContain("data-chart-datum");
+      code();
+      await page.waitForFunction(() => !window.chartHistoryPending());
+      expect(await history.locator("svg").evaluate((node) => node.outerHTML)).toBe(svg);
+      expect(await history.locator(".k2b-chart-explorer").boundingBox()).toEqual(frame);
+      await history.locator(".k2b-chart").focus();
+      await page.keyboard.press("ArrowRight");
+      await page.waitForSelector(".k2b-chart__tooltip:popover-open");
+    } finally {
+      code();
+      await context.close();
+    }
+  });
+}
+
+test("failed history code keeps server SVG visible and offers Reload", async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
+  const code = hold(chartModulePath);
+  try {
+    const page = await context.newPage();
+    await page.route(`**${chartModulePath}`, async (route) => {
+      await held.get(chartModulePath)?.promise;
+      await route.abort();
+    });
+    await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => window.chartHistoryPending?.());
+    const svg = await page.locator("solid-island svg").evaluate((node) => node.outerHTML);
+    code();
+    await page.getByRole("button", { name: "Reload", exact: true }).waitFor();
+    expect(await page.locator("solid-island svg").evaluate((node) => node.outerHTML)).toBe(svg);
+    expect(await page.evaluate(() => window.chartHistoryPending())).toBe(true);
+  } finally {
+    code();
+    await context.close();
+  }
+});
+
+test("disposing history cancels a late drawing-code resume", async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
+  const code = hold(chartModulePath);
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => window.chartHistoryPending?.());
+    await page.evaluate(() => {
+      window.disposeChartHistory();
+      document.querySelector("solid-island")?.remove();
+    });
+    const arrival = page.waitForResponse((response) => new URL(response.url()).pathname === chartModulePath);
+    code();
+    await arrival;
+    await settled(page);
+    expect(await page.locator("solid-island").count()).toBe(0);
+    expect(await page.evaluate(() => window.chartHistoryPending())).toBe(false);
+  } finally {
+    code();
+    await context.close();
+  }
+});
+
+for (const width of [1280, 390])
+  test(`a first-use chart tool reserves tall, compact and grouped drawings (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    const code = hold(chartModulePath);
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+      const tall = {
+        kind: "bar",
+        title: "Visits per site",
+        data: Array.from({ length: 40 }, (_, i) => ({ label: `Site ${i + 1}`, value: (i + 1) * 10 })),
+      };
+      await page.evaluate(
+        (charts) => window.showCharts(charts),
+        [
+          tall,
+          { kind: "sparkline", title: "Trend", data: [1, 3, 2] },
+          { title: "Grouped visits", charts: [tall, { ...tall, title: "Recent visits", data: tall.data.slice(0, 3) }] },
+        ],
+      );
+      await page.waitForFunction(() => document.querySelectorAll("[data-tool-chart] .k2b-chart-explorer__viewport").length === 4);
+      await settled(page);
+      const frames = () =>
+        page.locator("[data-tool-chart] .k2b-chart-explorer").evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const { x, y, width, height } = node.getBoundingClientRect();
+            return { x, y, width, height };
+          }),
+        );
+      const first = await frames();
+      code();
+      await page.waitForFunction(() => document.querySelectorAll("[data-tool-chart] .k2b-chart[data-chart-kind]").length === 4);
+      await settled(page);
+      expect(await frames()).toEqual(first);
+    } finally {
+      code();
+      await context.close();
+    }
+  });

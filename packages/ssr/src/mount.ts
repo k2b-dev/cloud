@@ -2,6 +2,12 @@ import { fromJSON } from "seroval";
 import { type Component, getOwner, type Owner } from "solid-js";
 import { createComponent, ErrorBoundary, render } from "solid-js/web";
 
+declare global {
+  interface WindowEventMap {
+    "ssr:before-island-mount": CustomEvent<{ resume: () => void }>;
+  }
+}
+
 /** Props received by a configured island error fallback component. */
 export type IslandErrorProps = {
   error: unknown;
@@ -36,6 +42,7 @@ type IslandRegistry = {
   /** The dispose function of each mounted wrapper. */
   mounted: WeakMap<HTMLElement, () => void>;
   roots?: WeakMap<Owner, HTMLElement>;
+  preparing?: WeakSet<HTMLElement>;
   /** Internal navigation listeners called after each wrapper mounted, also when it renders nothing. */
   listeners?: Set<() => void>;
 };
@@ -63,6 +70,7 @@ const mountElement = <Props extends object>(
   const { mounted } = registry();
   if (mounted.has(element)) return;
   const start = (): void => {
+    registry().preparing?.delete(element);
     try {
       element.innerHTML = "";
       const dispose = render(() => {
@@ -100,7 +108,28 @@ const mountElement = <Props extends object>(
     }
     for (const listener of [...(registry().listeners ?? [])]) listener();
   };
-  start();
+  // A presentation module can keep server HTML visible while its first-use code loads.
+  // Disposal cancels a late resume, including a page replaced by progressive navigation.
+  let active = true;
+  const shared = registry();
+  shared.preparing ??= new WeakSet();
+  shared.preparing.add(element);
+  mounted.set(element, () => {
+    active = false;
+    shared.preparing?.delete(element);
+  });
+  let resumed = false;
+  const resume = () => {
+    if (!active || resumed) return;
+    resumed = true;
+    start();
+  };
+  const event = new CustomEvent("ssr:before-island-mount", {
+    bubbles: true,
+    cancelable: true,
+    detail: { resume },
+  });
+  if (element.dispatchEvent(event)) resume();
 };
 
 const wrappers = (root: ParentNode): HTMLElement[] => {
@@ -139,8 +168,8 @@ export const onIslandMount = (listener: () => void): (() => void) => {
 
 /** Initial scroll restoration must wait for regions that only exist after mounting. */
 export const islandsPending = (root: ParentNode): boolean => {
-  const { mounted } = registry();
-  return wrappers(root).some((element) => !mounted.has(element));
+  const { mounted, preparing } = registry();
+  return wrappers(root).some((element) => !mounted.has(element) || preparing?.has(element));
 };
 
 /**

@@ -26,6 +26,6 @@ export const chartRenderers = {
 type Kind = keyof typeof chartRenderers;
 type ChartKinds = { [K in Kind as Capitalize<K>]: K };
 // Object.entries loses literal keys; names are constructed from those same keys here.
-export const chartKinds = Object.fromEntries(
-  Object.keys(chartRenderers).map((kind) => [kind[0]!.toUpperCase() + kind.slice(1), kind]),
-) as ChartKinds;
+const kinds = () =>
+  Object.fromEntries(Object.keys(chartRenderers).map((kind) => [kind[0]!.toUpperCase() + kind.slice(1), kind])) as ChartKinds;
+export const chartKinds = /* @__PURE__ */ kinds();
