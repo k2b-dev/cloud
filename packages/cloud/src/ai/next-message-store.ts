@@ -14,7 +14,7 @@ export const migrateAiNextMessages = async () => {
 
 export const saveAiNextMessage = async (input: { conversationId: string; turnId: string; userId: string; text: string }) => {
   await sql`
-    UPDATE ai.messages SET suggested_next_message = ${JSON.stringify({ text: input.text, dismissedAt: null })}::jsonb
+    UPDATE ai.messages SET suggested_next_message = ${JSON.stringify({ text: input.text, dismissedAt: null })}::text::jsonb
     WHERE id = (
       SELECT m.id FROM ai.messages m JOIN ai.turns t ON t.id::text = m.loop_id
       WHERE m.conversation_id = ${input.conversationId}::uuid AND m.loop_id = ${input.turnId}

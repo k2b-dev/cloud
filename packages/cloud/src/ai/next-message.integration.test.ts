@@ -46,10 +46,10 @@ databaseSuite()("next message storage and projections", () => {
     const messageId = createAiShortId();
     const runConfig = { kind: "chat", signedInSession: true, actor: userResourceContext({ type: "user", userId }).actor };
     await sql`INSERT INTO ai.turns (id, short_id, conversation_id, status, run_config, created_at)
-      VALUES (${turnId}::uuid, ${createAiShortId()}, ${conversation.id}::uuid, 'running', ${JSON.stringify(runConfig)}::jsonb, ${frozen}::timestamptz)`;
+      VALUES (${turnId}::uuid, ${createAiShortId()}, ${conversation.id}::uuid, 'running', ${JSON.stringify(runConfig)}::text::jsonb, ${frozen}::timestamptz)`;
     await sql`INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, search_text, loop_id, created_at)
       VALUES (${messageId}, ${conversation.id}::uuid, 1, 'message', 'assistant',
-      ${JSON.stringify({ role: "assistant", content: [{ type: "text", text: "Soll ich Jana antworten?" }], stopReason: "stop" })}::jsonb,
+      ${JSON.stringify({ role: "assistant", content: [{ type: "text", text: "Soll ich Jana antworten?" }], stopReason: "stop" })}::text::jsonb,
       'Soll ich Jana antworten?', ${turnId}, ${frozen}::timestamptz)`;
     const input = { conversationId: conversation.id, turnId, userId, text: suggestion };
     const complete = () => sql`UPDATE ai.turns SET status = 'completed', completed_at = ${frozen}::timestamptz WHERE id = ${turnId}::uuid`;
@@ -69,7 +69,7 @@ databaseSuite()("next message storage and projections", () => {
     ]);
   });
 
-  test("a suggestion storage error still lets the executor complete the turn", async () => {
+  test.each([false, true])("the executor completes and retains only saved suggestions (storage failure: %j)", async (saveFails) => {
     const userId = await person();
     await aiUserPrefs.update(userId, { memoryEnabled: false, memoryLearningEnabled: false });
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
@@ -112,7 +112,8 @@ databaseSuite()("next message storage and projections", () => {
         yield { type: "usage", usage: { input: 10, output: 10, total: 20 }, finishReason: "tool_use" };
       },
     };
-    const save = spyOn(nextMessageStore, "saveAiNextMessage").mockRejectedValue(new Error("Frozen storage failure"));
+    const save = spyOn(nextMessageStore, "saveAiNextMessage");
+    if (saveFails) save.mockRejectedValue(new Error("Frozen storage failure"));
     const events: AiWireEvent[] = [];
     const publish = spyOn(stream, "publishAiWireEvent").mockImplementation(async (event) => {
       events.push(event);
@@ -128,6 +129,17 @@ databaseSuite()("next message storage and projections", () => {
         }),
       }).run({ conversationId: conversation.id, turnId: turn.id, claim: claim!, signal: new AbortController().signal });
       expect(save).toHaveBeenCalledTimes(1);
+      const [stored] = await sql<{ actor_kind: string; actor_id: string; config_type: string }[]>`
+        SELECT run_config->'actor'->>'kind' AS actor_kind, run_config->'actor'->'user'->>'id' AS actor_id,
+          jsonb_typeof(run_config) AS config_type FROM ai.turns WHERE id = ${turn.id}::uuid`;
+      expect(stored).toEqual({ actor_kind: "user", actor_id: userId, config_type: "object" });
+      const messages = await publicAiStoredMessages(
+        await aiConversations.listMessages({ conversationId: conversation.id }),
+        conversation,
+        userId,
+      );
+      const answer = messages.find((message) => message.message.role === "assistant");
+      expect(answer?.suggestedNextMessage).toEqual(saveFails ? undefined : { text: suggestion, dismissedAt: null });
       expect(events).toContainEqual(expect.objectContaining({ type: "turn_finished", status: "completed" }));
       expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
     } finally {
@@ -138,7 +150,15 @@ databaseSuite()("next message storage and projections", () => {
 
   test("stores only the first suggestion and projects it to its trigger person on reload", async () => {
     const f = await fixture();
+    const [turn] = await sql<{ actor_kind: string; actor_id: string; config_type: string }[]>`
+      SELECT run_config->'actor'->>'kind' AS actor_kind, run_config->'actor'->'user'->>'id' AS actor_id,
+        jsonb_typeof(run_config) AS config_type FROM ai.turns WHERE id = ${f.turnId}::uuid`;
+    expect(turn).toEqual({ actor_kind: "user", actor_id: f.userId, config_type: "object" });
     await saveAiNextMessage(f.input);
+    const [stored] = await sql<{ metadata_type: string; text: string }[]>`
+      SELECT jsonb_typeof(suggested_next_message) AS metadata_type, suggested_next_message->>'text' AS text
+      FROM ai.messages WHERE short_id = ${f.messageId}`;
+    expect(stored).toEqual({ metadata_type: "object", text: suggestion });
     expect((await f.read())[0]?.suggestedNextMessage).toBeUndefined();
     await saveAiNextMessage({ ...f.input, text: "Second suggestion must not replace the first" });
     await f.complete();

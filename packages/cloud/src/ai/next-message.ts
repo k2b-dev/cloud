@@ -39,7 +39,7 @@ export const aiNextMessageEnabled = (config: AiChatTurnRunConfig, prefs: AiUserP
 
 export const createAiNextMessageTool = () =>
   defineAiTool({
-    name: AI_NEXT_MESSAGE_TOOL,
+    name: "suggest_next_message",
     description: AI_NEXT_MESSAGE_DESCRIPTION,
     inputSchema: z.object({ text: z.string().nullable() }),
     outputSchema: z.string(),
