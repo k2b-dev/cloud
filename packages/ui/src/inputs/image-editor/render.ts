@@ -25,6 +25,17 @@ const noiseTile = () => {
     pixels.data[i + 3] = 255;
   }
   ctx.putImageData(pixels, 0, 0);
+  // Prefilter the reusable texture once. Raw one-pixel noise aliases differently in a small preview and a
+  // downsampled export. A shared low-frequency tile keeps grain stable at both sizes without per-photo loops.
+  const reduced = document.createElement("canvas");
+  reduced.width = reduced.height = 64;
+  const downsample = context(reduced);
+  downsample.imageSmoothingQuality = "high";
+  downsample.drawImage(canvas, 0, 0, 64, 64);
+  ctx.imageSmoothingQuality = "high";
+  ctx.clearRect(0, 0, 256, 256);
+  ctx.drawImage(reduced, 0, 0, 256, 256);
+  reduced.width = reduced.height = 0;
   grainTile = canvas;
   return canvas;
 };
