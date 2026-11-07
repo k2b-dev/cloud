@@ -143,12 +143,16 @@ for (const width of [1280, 390]) {
     for (const kind of chartShowcaseKinds) {
       const { page, errors } = await open(`/en/ui/charts/${kind.slug}`, width);
       try {
+        // Every kind that has a page today draws; slots belong only to dashboards waiting for other lanes.
         expect(await page.locator(".ui-charts-slot").count(), kind.kind).toBe(0);
         for (const example of kind.examples) {
           if (kind.examples.length > 1) await pick(page, "Example", example.title);
-          const before = await frames(page, ".ui-charts-stage .ui-charts-frame");
+          const before = await frames(page, ".ui-charts-stage > :first-child");
           expect(before.length, example.id).toBe(1);
-          if (width === 1280) {
+          // Charts inspect and turn into tables; blocks such as key figures draw with their own components.
+          const block =
+            typeof example.spec === "object" && example.spec !== null && !Array.isArray(example.spec) && "block" in example.spec;
+          if (width === 1280 && !block) {
             // Focus inspects the first value: its tooltip names it, also for the first mark of the chart.
             await page.locator(".ui-charts-stage .k2b-chart[tabindex]").first().focus();
             const tooltip = page.locator('.ui-charts-stage [role="tooltip"]:popover-open');
@@ -158,12 +162,12 @@ for (const width of [1280, 390]) {
             // The table view lists the typed rows inside the same frame.
             await pick(page, "View", "Table");
             expect(await page.locator(".ui-charts-stage tbody tr").count(), example.id).toBeGreaterThan(0);
-            expect(await frames(page, ".ui-charts-stage .ui-charts-frame").then((boxes) => boxes[0]![0])).toEqual(before[0]![0]);
+            expect(await frames(page, ".ui-charts-stage > :first-child").then((boxes) => boxes[0]![0])).toEqual(before[0]![0]);
             await pick(page, "View", "Chart");
           }
           for (const state of states) {
             await pick(page, "State", state);
-            expect({ example: example.id, state, frames: await frames(page, ".ui-charts-stage .ui-charts-frame") }).toEqual({
+            expect({ example: example.id, state, frames: await frames(page, ".ui-charts-stage > :first-child") }).toEqual({
               example: example.id,
               state,
               frames: before,
