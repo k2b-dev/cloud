@@ -5,6 +5,8 @@
 ## Use Chart
 
 Use it to show a trend, distribution, comparison, geographic series, or state history.
+To pick a kind by what you want to show, start in the [chart showcase](/en/ui/charts): every kind has a live
+example with its states, its description as TSX and JSON, and its options.
 
 Every non-empty chart has tooltips, keyboard inspection, and tap by default; see [How to customize](#how-to-customize).
 
