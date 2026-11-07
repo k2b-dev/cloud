@@ -117,7 +117,7 @@ To use a newer version, make a new selection. **Next batch** continues the
 selection cursor with its original cutoff; changing filters starts a new
 selection. Changes to current placements can change later selection pages.
 
-Versions that use AI are refused for catch-up, matching today’s Mail rules.
+Versions that use AI are refused for catch-up, matching the bounded historical Mail rule behavior.
 Live AI handlers retain Code’s per-attempt and daily AI budgets. No historical
 AI request or budget override is hidden in catch-up.
 

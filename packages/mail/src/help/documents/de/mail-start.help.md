@@ -44,12 +44,6 @@ Nach der Einrichtung findet Mail die Ordner des Anbieters und startet die Synchr
 
 Öffne **… → Einstellungen → Konten und Identitäten → Absenderidentitäten**. Eine Absenderidentität fasst alles zusammen, was Mail für einen Versandkontext nutzt:
 
-- Die **Bezeichnung der Absenderidentität** ist nur im Postfach sichtbar. Sie hilft dem Team, den richtigen Kontext zu wählen, etwa „Universität“ oder „Privat“.
-- Empfänger sehen den **Anzeigename** und die **Absenderadresse**.
-- Eine normale Verbindung erstellt eine Standard-Absenderidentität für die Adresse des Kontos.
-- Mail sendet mit einer Absenderidentität erst, wenn sie bestätigt ist. Zwei Absenderidentitäten können dieselbe Absenderadresse mit unterschiedlichen Standardwerten nutzen.
-- **Automatische Antworten** ist eine eigene Einstellung jeder Absenderidentität. Sie ist bei neuen Absenderidentitäten eingeschaltet. Mail sendet automatische E-Mails erst, wenn jemand mit Zugriff **Verwalten** eine automatische Antwort oder einen Workflow erstellt und einschaltet.
-
 ## Dich im Postfach zurechtfinden {icon="layout-grid"}
 
 Die Seitenleiste enthält deine Postfächer, angeheftete zuerst. Das geöffnete Postfach zeigt darunter seine Ziele:
@@ -66,7 +60,7 @@ Im Kopfbereich findest du:
 - Ansichten als Tabs: **Alle**, **Handlungsbedarf**, **Mir zugewiesen**, **Wartet auf Antwort**, **Nicht zugewiesen**, **Später**, **Erledigt**, **Letzte Aktivität**, **Aufbewahrt** und gespeicherte Ansichten. Der Kopf zeigt so viele davon, wie in seine Breite passen, die übrigen stehen unter **Mehr**. Die geöffnete Ansicht bleibt immer sichtbar. Ordner, Geplant und Versandprobleme haben keine Ansichts-Tabs.
 - Das **Tag**-Symbol neben **Suchen**, wenn Tags existieren, den Chip **Suche** für eine aktive strukturierte Suche und **Zurücksetzen** zum Entfernen der Filter. Entferne den Suche-Chip, um die Suche zu beenden. Die Lupe oder `/` öffnet die Suche im Kopf; **Weitere Filter** öffnet dort den Filterdialog.
 - **Unterhaltungen auswählen** ersetzt die Ansichten durch die Anzahl und Aktionen der Auswahl. **Auswahl beenden** bringt die Ansichten zurück.
-- **… → Listenansicht auswählen** wechselt zwischen Unterhaltungen und einzelnen Nachrichten. Das Menü enthält außerdem Postfachdetails, Synchronisierung, Status, Automatisierungen, Mailinglisten, externe Bilder, Freigabelinks, E-Mail-Links und **Einstellungen**. Dein Zugriff bestimmt die Einträge. Mit Zugriff Ansehen heißt der Detail-Eintrag **Über dieses Postfach**. Wer nur zugewiesene Unterhaltungen sieht, kann hier die Listenansicht wählen; das **…** des geöffneten Postfachs in der Seitenleiste bietet dann nur Anheften und Ausblenden.
+- **… → Listenansicht auswählen** wechselt zwischen Unterhaltungen und einzelnen Nachrichten. Das Menü enthält außerdem Postfachdetails, Synchronisierung, Status, frühere Mail-Regeln, Mailinglisten, externe Bilder, Freigabelinks, E-Mail-Links und **Einstellungen**. Dein Zugriff bestimmt die Einträge. Mit Zugriff Ansehen heißt der Detail-Eintrag **Über dieses Postfach**. Wer nur zugewiesene Unterhaltungen sieht, kann hier die Listenansicht wählen; das **…** des geöffneten Postfachs in der Seitenleiste bietet dann nur Anheften und Ausblenden.
 - **Verfassen** als Hauptaktion, wenn du senden kannst.
 
 Auf dem Smartphone öffnest du über den Postfachtitel andere Postfächer und die Ordner des geöffneten Postfachs. Ansichten, Filter, Verfassen und **…** findest du im Kopfbereich.
@@ -119,6 +113,9 @@ Schlägt der Entwurf fehl, nachdem Mail den Termin gespeichert hat, meldet Mail 
 - [E-Mails verfassen und senden](/app/mail/help/mail-compose)
 - [Gemeinsam in einem Postfach arbeiten](/app/mail/help/mail-collaboration)
 - [Ein Postfach einrichten und verwalten](/app/mail/help/mail-admin)
-- [Antworten und Postfacharbeit automatisieren](/app/mail/help/mail-automation)
-- [Mail-Workflow-YAML-Referenz](/app/mail/help/mail-workflows)
 - [Mail-Probleme beheben](/app/mail/help/mail-troubleshooting)
+
+
+## Mit Code automatisieren
+
+Öffne die **Code**-Seite des Postfachs, um eine Automatisierung zu erstellen. Gustav kann exportierte Regeln als Code neu aufbauen. Prüfe Zugriffe und Änderungen und aktiviere den Code ausdrücklich. Frühere Regelprotokolle bleiben nur lesbar. Abwesenheitsantworten, Bürozeitenantworten und Eingangsbestätigungen mit Referenznummer sind ohne Ersatz entfernt.

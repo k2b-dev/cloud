@@ -318,7 +318,6 @@ test("mailbox scope uses the public ID and Mail's page without a mailbox has no 
     detailMessages: [],
     conversationSummary: null,
     conversationDrafts: [],
-    automationTrace: [],
     detailError: null,
     collaborationState: null,
     localTags: [],

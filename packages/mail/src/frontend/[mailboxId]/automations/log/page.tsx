@@ -1,67 +1,68 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { Button, Format, TextInput } from "@k2b/ui";
+import { For, Show } from "solid-js";
 import { z } from "zod";
 import { ssr } from "../../../../config";
-import type { MailRequestContext } from "../../../../service";
-import { getAutomationLogItem } from "../../../../service/automation-log";
-import { loadMailAutomationLog } from "../../../../service/automation-workspace";
-import { requestContactDirectory } from "../../../../service/contact-directory";
-import MailAutomationLogPage from "../../../MailAutomationLogPage.island";
-import { mailPageMessages } from "../../../pages-messages";
-import { pageReadStatus, projectAutomationWorkspace, resolveSsrMailboxId } from "../../../ssr-public-boundary";
-
-const FILTERS = ["all", "assignments", "uncertain", "skipped", "manual"] as const;
-const readFilter = (value: string | undefined) => FILTERS.find((filter) => filter === value) ?? "all";
+import { getAutomationLogItem, listAutomationLog } from "../../../../service/automation-log";
+import { getMailbox } from "../../../../service/mailboxes";
+import { resolveSsrMailboxId } from "../../../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
-  const locale = getLocale(c);
-  const { t } = mailPageMessages.resolve([locale]);
+  const de = getLocale(c).startsWith("de");
   const mailboxShortId = c.req.param("mailboxId") ?? "";
-  const actor = c.get("actor");
-  const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
-  if (!user) return ssr.error(c, 403);
-  if (!mailboxShortId) return ssr.error(c, 404);
   const mailboxId = await resolveSsrMailboxId(mailboxShortId);
   if (!mailboxId) return ssr.error(c, 404);
-  const context: MailRequestContext = {
-    actor,
-    accessSubject: c.get("accessSubject"),
-    requestId: c.req.header("x-request-id") ?? null,
-  };
-  // The URL holds the filter and search, so reload and back show the same view the server rendered.
-  const filter = readFilter(c.req.query("filter"));
-  const q = c.req.query("q")?.trim().slice(0, 200) || undefined;
-  // Only a well-formed entry ID reaches the service; anything else opens the log without a detail.
-  const entry = z.string().uuid().safeParse(c.req.query("entry")).data;
-  const [result, detail] = await Promise.all([
-    loadMailAutomationLog(context, mailboxId, { filter, q }),
-    entry ? getAutomationLogItem(context, mailboxId, entry) : null,
-  ]);
-  if (!result.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, result.error.status));
-  const data = await projectAutomationWorkspace(result.data);
-  const directory = await requestContactDirectory(c);
+  const context = { actor: c.get("actor"), accessSubject: c.get("accessSubject") };
+  const mailbox = await getMailbox(context, mailboxId);
+  if (!mailbox.ok) return ssr.error(c, mailbox.error.status);
+  const day = c.req.query("day");
+  const before = c.req.query("before");
+  const result = await listAutomationLog(context, mailboxId, { ...(day ? { day } : {}), ...(before ? { before } : {}) });
+  if (!result.ok) return ssr.error(c, result.error.status);
+  const entry = z.uuid().safeParse(c.req.query("entry")).data;
+  const detail = entry ? await getAutomationLogItem(context, mailboxId, entry) : null;
+  if (detail && !detail.ok) return ssr.error(c, detail.error.status);
+  const title = de ? "Frühere Mail-Regeln" : "Retired Mail rules";
+  const base = `/app/mail/${mailboxShortId}/automations/log`;
   return () => (
     <Layout
       c={c}
-      printHint={t.printHint}
-      fullPage
-      workspaceSidebarCollapsible={false}
-      title={[
-        { title: t.breadcrumbStart, href: "/" },
-        { title: t.breadcrumbMail, href: "/app/mail" },
-        { title: data.mailbox.name, href: `/app/mail/${mailboxShortId}` },
-        { title: t.breadcrumbAutomations, href: `/app/mail/${mailboxShortId}/automations` },
-        { title: t.breadcrumbLog },
-      ]}
+      title={[{ title: "Mail", href: "/app/mail" }, { title: mailbox.data.name, href: `/app/mail/${mailboxShortId}` }, { title }]}
     >
-      <MailAutomationLogPage
-        data={data}
-        detail={detail?.ok ? detail.data : null}
-        filter={filter}
-        q={q ?? null}
-        currentUserEmail={user.mail}
-        contactDirectory={directory}
-      />
+      <main class="mx-auto max-w-4xl space-y-4 p-4" data-print-region>
+        <h1 class="text-xl font-semibold">{title}</h1>
+        <p class="text-secondary">
+          {de
+            ? "Dieses Protokoll ist nur lesbar. Automatisierungen werden mit Code erstellt. Automatische Antworten gibt es nicht mehr."
+            : "This history is read-only. Create automations with Code. Automatic replies have been removed."}
+        </p>
+        <form method="get" class="flex gap-2">
+          <label for="mail-rule-history-day">
+            {de ? "Tag (UTC)" : "Day (UTC)"}{" "}
+            <TextInput id="mail-rule-history-day" type="text" placeholder="YYYY-MM-DD" name="day" value={result.data.day} />
+          </label>
+          <Button type="submit">{de ? "Anzeigen" : "Show"}</Button>
+        </form>
+        <For each={result.data.items}>
+          {(item) => (
+            <article class="rounded border border-default p-3">
+              <a href={`${base}?day=${result.data.day}&entry=${item.id}`}>
+                <Format.Date value={item.at} /> · {item.conversation.subject}
+              </a>
+              <pre class="overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(item, null, 2)}</pre>
+            </article>
+          )}
+        </For>
+        <Show when={detail?.ok && detail.data}>
+          {(item) => <pre class="overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(item(), null, 2)}</pre>}
+        </Show>
+        <Show when={result.data.nextCursor}>
+          {(cursor) => (
+            <a href={`${base}?day=${result.data.day}&before=${encodeURIComponent(cursor())}`}>{de ? "Ältere Einträge" : "Older entries"}</a>
+          )}
+        </Show>
+      </main>
     </Layout>
   );
 });

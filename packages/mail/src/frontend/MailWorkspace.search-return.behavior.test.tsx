@@ -94,7 +94,6 @@ const data: MailboxPageData = {
   detailMessages: [],
   conversationSummary: null,
   conversationDrafts: [],
-  automationTrace: [],
   detailError: null,
   collaborationState: null,
   localTags: [],

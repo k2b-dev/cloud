@@ -7,7 +7,6 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { AutomationLogItem } from "../contracts";
 import { messageForwardTextOf } from "../forward-text";
-import { projectMailConversationDetail } from "../frontend/ssr-public-boundary";
 import { newShortId } from "../lib/short-id";
 import * as access from "../service/access";
 import type { MailRequestContext } from "../service/auth";
@@ -40,7 +39,6 @@ const selectionPart = (page: MailboxPageData): MailConversationDetailData => {
     conversationRowState: page.conversationRowState,
     conversationSummary: page.conversationSummary,
     conversationDrafts: page.conversationDrafts,
-    automationTrace: page.automationTrace,
     detailError: page.detailError,
     collaborationState: page.collaborationState,
     conversationLocalTags: page.conversationLocalTags,
@@ -267,8 +265,7 @@ suite("Mail workspace conversation detail", () => {
       reasons: [],
       undo: { state: "none", reason: null, by: null, at: null },
     };
-    const projectedItem: AutomationLogItem = { ...item, undo: { ...item.undo, kept: [], reverted: [] } };
-    expect(await (await detailRequest()).json()).toMatchObject({ automationTrace: [] });
+    const _projectedItem: AutomationLogItem = { ...item, undo: { ...item.undo, kept: [], reverted: [] } };
     try {
       await sql`INSERT INTO mail.automation_log (id, mailbox_id, conversation_id, item, created_at)
         VALUES (${item.id}::uuid, ${mailboxId}::uuid, ${visible.id}::uuid, ${item}, ${anchor})`;
@@ -277,13 +274,8 @@ suite("Mail workspace conversation detail", () => {
         const snapshotResponse = await routeRequest(folderA, token);
         expect(detailResponse.status).toBe(200);
         expect(snapshotResponse.status).toBe(200);
-        const detail: MailConversationDetailData = await detailResponse.json();
-        const snapshot: MailboxPageData = await snapshotResponse.json();
-        expect(detail.automationTrace).toEqual([projectedItem]);
-        expect(snapshot.automationTrace).toEqual(detail.automationTrace);
-        expect(detail.automationTrace[0]?.conversation.id).toBe(visible.shortId);
-        expect(detail.automationTrace[0]?.conversation.href).toBe(`/app/mail/${mailboxShortId}?conversation=${visible.shortId}`);
-        expect((await projectMailConversationDetail(detail)).automationTrace).toEqual([projectedItem]);
+        const _detail: MailConversationDetailData = await detailResponse.json();
+        const _snapshot: MailboxPageData = await snapshotResponse.json();
       }
       const hiddenResponse = await detailRequest(hidden, folderA, "reader");
       expect(hiddenResponse.status).toBe(404);

@@ -45,12 +45,6 @@ After setup, Mail finds the provider's folders and starts synchronization. Older
 
 Open **… → Settings → Accounts & identities → Sending identities**. An identity groups everything that Mail uses for one sending context:
 
-- **Identity label** is visible only in the mailbox. It helps collaborators choose the right context, such as “University” or “Private”.
-- Recipients see the **Display name** and the **From address**.
-- A normal connection creates a default identity for the account address.
-- Mail can send with an identity only after it is verified. Two identities can use the same From address and keep different defaults.
-- **Automatic replies** is a separate setting of each identity. It is on by default for new identities. Mail sends automatic mail only after someone with **Manage** access creates and turns on an automatic reply or a workflow.
-
 ## Find your way in the mailbox {icon="layout-grid"}
 
 The sidebar contains your mailboxes, with pinned mailboxes first. The open mailbox expands to its places:
@@ -120,6 +114,9 @@ If the draft fails after Mail saved the event, Mail reports this partial result.
 - [Write and send messages](/app/mail/help/mail-compose)
 - [Work together in a mailbox](/app/mail/help/mail-collaboration)
 - [Set up and manage a mailbox](/app/mail/help/mail-admin)
-- [Automate responses and mailbox work](/app/mail/help/mail-automation)
-- [Mail workflow YAML reference](/app/mail/help/mail-workflows)
 - [Troubleshoot Mail](/app/mail/help/mail-troubleshooting)
+
+
+## Automate with Code
+
+Open the mailbox’s **Code** page to create an automation. Ask Gustav to rebuild an exported rule, review its access and effects, then activate it deliberately. Previous rule history remains read-only. Out-of-office replies, office-hours replies, and reference acknowledgements have been removed without replacement.

@@ -1,4 +1,6 @@
-import type { AutomationLogDetail, AutomationLogItem, AutomationLogPage, AutomationLogTarget } from "./mail-automation-log-model";
+import type { AutomationLogDetail, AutomationLogItem, AutomationLogPage } from "../../contracts";
+
+type AutomationLogTarget = Extract<AutomationLogItem["effects"][number], { kind: "assign" }>["target"];
 
 /** Fictional Protokoll of the mailbox "Vertrieb" as the approved mockup shows it (26.10.). */
 const day = "2026-10-26";

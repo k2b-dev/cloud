@@ -1,22 +1,15 @@
-import { jsonResponse, requiresAuth, v } from "@k2b/cloud/server";
+import { v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
-import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import {
   automationLogDetailSchema,
   automationLogItemSchema,
   automationLogPageSchema,
   automationLogQuerySchema,
-  automationLogUndoConflictSchema,
   ResourceShortIdSchema,
 } from "../contracts";
 import type { MailRequestContext } from "../service/auth";
-import {
-  changeAutomationLogEffects,
-  getAutomationLogItem,
-  getConversationAutomationTrace,
-  listAutomationLog,
-} from "../service/automation-log";
+import { getAutomationLogItem, getConversationAutomationTrace, listAutomationLog } from "../service/automation-log";
 import {
   internalMailboxId,
   internalParams,
@@ -35,17 +28,6 @@ const context = (c: Context<MailApiContext>): MailRequestContext => ({
   accessSubject: c.get("accessSubject"),
   requestId: c.req.header("x-request-id") ?? null,
 });
-const mutationOperation = (operation: string) =>
-  describeRoute({
-    tags: ["Mail:Workflows"],
-    summary: `${operation} the current reversible effects of a rule entry`,
-    ...requiresAuth,
-    responses: {
-      200: jsonResponse(z.object({ item: automationLogItemSchema }), "Updated rule effects, with reverted and kept effects"),
-      409: jsonResponse(automationLogUndoConflictSchema, "No effects can safely be changed; includes the refreshed entry"),
-    },
-  });
-
 const automationLogRoutes = new Hono<MailApiContext>()
   .use("/mailboxes/:mailboxId/*", resolveMailboxParam)
   .get(
@@ -61,18 +43,6 @@ const automationLogRoutes = new Hono<MailApiContext>()
     v("param", itemParams),
     (c) => respondPublic(c, getAutomationLogItem(context(c), internalMailboxId(c), c.req.valid("param").itemId)),
   )
-  .post("/mailboxes/:mailboxId/automation-log/:itemId/undo", mutationOperation("Undo"), v("param", itemParams), async (c) => {
-    const result = await changeAutomationLogEffects(context(c), internalMailboxId(c), c.req.valid("param").itemId, "undo");
-    if (!result.ok && result.error.code === "mail.automation.undo_not_possible")
-      return c.json(automationLogUndoConflictSchema.parse(result.error), 409);
-    return respondPublic(c, Promise.resolve(result));
-  })
-  .post("/mailboxes/:mailboxId/automation-log/:itemId/redo", mutationOperation("Redo"), v("param", itemParams), async (c) => {
-    const result = await changeAutomationLogEffects(context(c), internalMailboxId(c), c.req.valid("param").itemId, "redo");
-    if (!result.ok && result.error.code === "mail.automation.undo_not_possible")
-      return c.json(automationLogUndoConflictSchema.parse(result.error), 409);
-    return respondPublic(c, Promise.resolve(result));
-  })
   .get(
     "/mailboxes/:mailboxId/conversations/:conversationId/automation-trace",
     resolveMailboxResourceParam("conversations", "conversationId", "Conversation"),

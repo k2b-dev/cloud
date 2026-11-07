@@ -38,7 +38,7 @@ Domain rules include subdomains. Trust rules support sender addresses and sender
 Start here for everyday mail, mailbox setup, search, and collaboration. Continue with:
 
 - [Mail compose and drafts](compose.md) for templates, signatures, shared drafts, attachments, immediate or scheduled delivery, and durable send commands.
-- [Mail automation](automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, the automation log and rule-effect undo, and central run operations.
+- Mail automations are managed on the mailbox **Code** page. Ask Gustav to rebuild exported rules as reviewed Code. Automatic replies have been removed.
 - [Mail operations](operations.md) for provider credential lifecycle, folder discovery, repairs, operator actions, storage observability, the contact directory, and provider-backed message changes.
 
 ## Safety
@@ -188,47 +188,7 @@ steps:
     action: { kind: move_to_folder, folderId: Newsletters }
 ```
 
-Run `cld --json mail automation create --definition-file newsletter.yaml`. This creates the automation enabled. See [Mail automation](automation.md#manage-incoming-automations) for the definition contract and defaults.
-For important mail, add no status step: incoming mail already sets **Needs action**.
-
-In the guided editor, **AI classify** starts with **Important**, **Routine**, and an If branch: **Set status → Needs action** for **Important**, **Set status → Done** otherwise. Add **Move to folder** to the **Routine** branch to file it too.
-An automation's **Done** or **Waiting for reply** covers only its triggering message, even if Mail loads it later or gives up loading it. Other incoming mail sets **Needs action** again. A person's Done or **Show later** also covers messages Mail still loads.
-When several automations match, the oldest decides the folder. Another skips its read step if the message has left its folder or is being moved. Keep read and move in one automation, with read first; the local status step can share that path.
-For existing messages, use an enabled automation without AI steps; see [Mail automation](automation.md#manage-incoming-automations) for backfill commands and details, or `cld mail sender move` for moving only.
-
-### Assign people and accounts
-
-Conversation assignees include active agents and standalone service accounts with mailbox write access or assigned-only read/write access. `cld mail assign --to` resolves exact account names and user names; use a UUID when names are ambiguous. Account results carry `displayName`, `type: service_account`, and `serviceAccountKind`. Assignment input `assigneeUserIds`, assignee search `userId`, and automation action `assign_user.userId` retain their existing names and accept either principal's UUID. **Assigned to me** follows the current principal; a personal API key follows its person. Assignment notifications go only to people.
-
-### Choose the right follow-up and mailbox pattern
-
-- **Show later** (`cld mail conversation update <id> --revision <r> --snooze-until <ISO>`) hides a conversation in **Later** until that time, then returns it with the same status; new incoming mail ends it earlier, and Done cannot be snoozed.
-- A personal reminder (`cld mail reminder set <id> --due <ISO>`) is private, sends you a Cloud notification when due, and changes no status.
-- A saved view (`cld mail saved-view create`, **Settings → Organization**) filters folder, assignee, next step, local tag, and Later, for example “Needs action + tag Priority”; it filters the same status, without creating a separate queue.
-
-For a personal mailbox, work from **Needs action**. Automations mark noise Done and file it. Mark Done when finished; also archive if you want another mail client's Inbox clean. **Waiting for reply** follows automatically; use **Show later** for date-dependent work.
-
-For a shared mailbox, use **Unassigned** with **Needs action** as team intake. Assign an owner with **Assign**, `cld mail assign <id> --to <user>`, or automation `assign_user`. Each person works from **Assigned to me**; the owner's confirmed reply sets **Waiting for reply**, and the owner marks **Done**. For team folders outside shared lists, use [**Only in the folder**](/en/apps/mail#choose-where-a-folders-mail-appears).
-
-### Make a clean start with old conversations
-
-For thousands of old Needs action conversations, choose a mailbox or folder and a cutoff. This Bash loop needs `jq` and keeps newer mail in Needs action:
-
-```bash
-mailbox=Personal            # or a folder: "Personal:Newsletters"
-before=2026-09-01           # keep newer conversations in Needs action
-cursor=
-while :; do
-  page=$(cld --json mail ls "$mailbox" --view needs_action --limit 100 ${cursor:+--cursor "$cursor"}) || break
-  jq -r --arg before "$before" '.items[] | select(.latestMessageAt < $before) | .id' <<<"$page" \
-    | xargs -r -n 50 cld mail done --mailbox "${mailbox%%:*}"
-  cursor=$(jq -r '.nextCursor // empty' <<<"$page")
-  [ -n "$cursor" ] || break
-done
-```
-
-Lists are newest first by `latestMessageAt` and page by position, so marking a page Done does not shift the next page; pass the same scope and view with `--cursor`. To finish every conversation in the view, drop the `select(...)` filter. Each `done` call takes up to 50 IDs, covers messages Mail still loads, and exits 1 when an ID reports `not_found`.
-Done changes nothing at the provider. To also empty the provider Inbox, run `cld mail archive` with the same IDs; an ID without Inbox messages reports an error and the command exits 1.
+Use the mailbox **Code** page for recurring actions. Preview and catch-up are available there. For a one-off move, use `cld mail sender move`.
 
 ## Keep conversations that must not be deleted
 
@@ -673,7 +633,7 @@ cld --json mail subscription dispose news.example.org \
   --yes
 ```
 
-It selects copies like `sender move` (see the automation reference): it skips the destination, Sent, Drafts, Trash, and Junk, does not move kept conversations to Trash, and moves each Gmail message once.
+It selects copies like `sender move`: it skips the destination, Sent, Drafts, Trash, and Junk, does not move kept conversations to Trash, and moves each Gmail message once.
 
 If `truncated` is true, wait for the queued commands to finish and repeat the command. Unsubscribing does not delete existing mail, and moving existing messages does not unsubscribe.
 
@@ -694,7 +654,7 @@ cld --json mail conversation activity <conversation-id>
 
 `conversation users` lists active people, standalone accounts, and agents with mailbox-wide write/admin access or assigned-only read/write access, including nested local group grants. Each account has `scope: "mailbox" | "assigned"`; platform administrator status alone does not make a user eligible. Changing assignees requires mailbox-wide write/admin access, even for removing yourself.
 
-`conversation update --assignee` replaces the whole set. Repeat the flag or separate usernames, IDs, or `me` with commas; `--unassign` clears the set. Collaboration returns `assignees` in assignment-time order, with user ID breaking ties. Lists, search, focus, and workflow conversation data return `assigneeUserIds` arrays. “Mine” means the current user is in that set.
+`conversation update --assignee` replaces the whole set. Repeat the flag or separate usernames, IDs, or `me` with commas; `--unassign` clears the set. Collaboration returns `assignees` in assignment-time order, with user ID breaking ties. Lists and search return `assigneeUserIds` arrays. “Mine” means the current user is in that set.
 
 Assign many conversations at once with [`assign`](#triage-conversations). It exits with status 1 when any conversation was not found in the mailbox.
 
@@ -837,3 +797,29 @@ It does not generate text. Both revisions must match; reread after a conflict.
 `assign --only-if-unassigned` requires one conversation, a nonempty `--to`, and
 `--revision`. Mail checks the revision and complete assignee set atomically;
 existing assignments and stale revisions return a conflict without changes.
+
+
+## Configure conversation references
+
+A mailbox has one optional reference-number configuration. Set its permanent format before allocating references:
+
+```bash
+cld --json mail reference-number config set \
+  --pattern 'SUP-{{ year }}-{{ sequence | pad_start: 6 }}' \
+  --enable \
+  --include-in-reply-subjects
+
+cld --json mail reference-number config show
+```
+
+The pattern uses Liquid and must output exactly one identity value: `short_id`, `uuid`, `uuid_v7`, `ulid`, or `sequence`. Date values `year`, `month`, `month_name`, and `day` may appear alongside it. Use `{{ sequence | pad_start: 6 }}` to pad a sequence. The default is `REF-{{ short_id }}`. Changing the pattern affects only future allocations; existing references remain immutable and searchable.
+
+Allocation is idempotent for each conversation:
+
+```bash
+cld --json mail reference-number ensure <conversation-id> --idempotency-key support-import-42
+cld --json mail reference-number list <conversation-id>
+cld --json mail reference-number find SUP-2026-000042
+```
+
+Use `--disable` to stop new allocations without removing existing values. Use `--exclude-from-reply-subjects` when new replies should keep their original subject. The caller controls when allocation happens; the mailbox configuration controls only the sequence and reply-subject behavior.

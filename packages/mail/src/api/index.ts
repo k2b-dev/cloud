@@ -37,7 +37,6 @@ import {
   type AttachmentLinkPage,
   acquiredDraftLeaseSchema,
   archiveComposeTemplateInputSchema,
-  automaticReplyManagementPermissionSchema,
   cancelConversationReminderSchema,
   cancelScheduledSendInputSchema,
   commandStateSchema,
@@ -233,7 +232,6 @@ import {
 } from "./public-resource-boundary";
 import resourceRoutes from "./resources";
 import workflowAiSettingsRoutes from "./workflow-ai-settings";
-import workflowRoutes from "./workflows";
 
 const mailboxAndIdParamSchema = (name: string, idSchema: z.ZodType = ResourceShortIdSchema) =>
   z.object({ mailboxId: ResourceShortIdSchema, [name]: idSchema });
@@ -366,7 +364,6 @@ const updateMailboxSchema = z
     description: z.string().trim().max(2_000).nullable().optional(),
     syncEnabled: z.boolean().optional(),
     searchBackend: searchBackendSchema.optional(),
-    automaticReplyManagementPermission: automaticReplyManagementPermissionSchema.optional(),
     composeSafety: composeSafetyConfigSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
@@ -3775,7 +3772,6 @@ const mailOperationsApi = new Hono<MailApiContext>()
         }),
       ),
   )
-  .route("/", workflowRoutes)
   .route("/", automationLogRoutes);
 
 const adminApi = new Hono<MailApiContext>()
