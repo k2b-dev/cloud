@@ -346,7 +346,9 @@ order:
    line names the step and the place stays empty. Table header labels stay on one line and the table
    scrolls sideways, so up to eight rows fit the reserved height on a phone.
    A table with `search` or `groupBy` shows a search field or a group choice
-   beside its title; the summary reserves them, disabled, while the file loads.
+   beside its title. The summary reserves their space while the controls load,
+   then shows them disabled until the file arrives. If the controls cannot load,
+   a notice offers to reload the page.
    Search matches the shown cells and never leaves the browser; Copy data keeps
    every row. A column's `priority` hides it on a narrow table, and each row's
    details button shows the hidden values.
