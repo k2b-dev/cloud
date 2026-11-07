@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import type { CodeCheckedVersionManifest } from "@k2b/cloud/contracts";
+import { CloudResourceRefSchema, type CodeCheckedVersionManifest } from "@k2b/cloud/contracts";
 import type { AppEventEnvelope } from "@k2b/cloud/contracts/app-events";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
 import { accounts } from "@k2b/cloud/services";
@@ -44,7 +44,17 @@ const declaration: CapabilityRegistryEntry = {
     protocolVersion: 2,
     types: {
       item: { title: "Item", description: "Fixture item." },
-      collection: { title: "Collection", description: "Fixture collection." },
+      collection: { title: "Collection", description: "Fixture collection.", reader: "collection.read" },
+    },
+    queries: {
+      "collection.read": {
+        title: "Read collection",
+        description: "Read fixture collection.",
+        openWorld: false,
+        input: z.strictObject({ id: CloudResourceRefSchema.shape.id.describe("Collection ID.") }),
+        data: z.object({}),
+        run: async () => ({ ok: true, data: { data: {} } }),
+      },
     },
     events: {
       changed: {
@@ -53,7 +63,7 @@ const declaration: CapabilityRegistryEntry = {
         description: "An item changed.",
         subject: "item",
         place: "collection",
-        schema: z.strictObject({ id: z.string() }),
+        schema: z.strictObject({ id: CloudResourceRefSchema.shape.id }),
       },
     },
   }),
