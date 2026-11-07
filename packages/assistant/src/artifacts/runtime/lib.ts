@@ -224,7 +224,7 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
   // Only sizing stays eager; the calendar renderer itself belongs to the offline module.
   let calendarWidth = calendar ? Number(/data-chart-min-width="([\d.]+)"/.exec(svg ?? "")?.[1]) || width : width;
   if (calendar && svg === undefined) {
-    const mapped = cloudAiChartRenderOptions(input, locale);
+    const mapped = cloudAiChartRenderOptions(input, locale, { width });
     if (mapped.kind === "heatmap" && mapped.layout === "calendar")
       calendarWidth = calendarLayout({ ...mapped, width, height, title: prepared.title, subtitle: input.subtitle }).width;
   }
