@@ -4030,7 +4030,7 @@ const actionDefinitions = {
       if (!access.ok) return access;
       const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds, {
         scope: "mailbox",
-        permission: access.data,
+        permission: "write",
       });
       if (!members.ok) return members;
       const assignees =
@@ -4080,7 +4080,7 @@ const actionDefinitions = {
       if (!access.ok) return access;
       const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds, {
         scope: "mailbox",
-        permission: access.data,
+        permission: "write",
       });
       if (!members.ok) return members;
       return mapResult(
