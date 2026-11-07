@@ -67,3 +67,66 @@ test("tables of charts only the Solid component draws follow the requested local
   expect(map.rows[0]!.cells.latitude).toBe("52,52°");
   expect(map.rows[0]!.cells.size).toBe("1.200,5");
 });
+
+const details = {
+  block: "details",
+  title: "Invoice 2026-118",
+  subtitle: "Customer payment",
+  items: [
+    { label: "Amount", type: "number", value: 2380, format: { style: "currency", currency: "EUR" } },
+    { label: "Due", type: "date", value: "2026-11-09" },
+    { label: "Note", type: "text", value: null },
+  ],
+};
+
+test("a details block draws the record's fields in the dashboard frame, formatted like Chat's details view", () => {
+  const html = panel({ spec: details, title: "Details", height: 160, width: "third" });
+  expect(html).toContain("k2b-dashboard-frame");
+  expect(html).toContain("Invoice 2026-118");
+  expect(html).toContain("€2,380.00");
+  expect(html).toContain("Amount");
+  // A missing value is a dash, never an empty row.
+  expect(html).toContain("—");
+  expect(html).not.toContain("This view cannot be shown here.");
+  expect(resolveDescription(details).mode).toBe("block");
+});
+
+test("details keep their frame and height in every state and name a stale read's time", () => {
+  for (const state of ["loading", "empty", "error", "stale"] as const) {
+    const html = panel({ spec: details, title: "Details", height: 160, state, asOf: "09:12", onRetry: () => {}, empty: "No record." });
+    expect(html, state).toContain('style="height:160px"');
+    if (state === "empty") expect(html).toContain("No record.");
+    if (state === "error") expect(html).toContain("The data could not be loaded.");
+    if (state === "stale") expect(html).toContain("As of 09:12");
+  }
+});
+
+test("details that break Chat's strict form show the slot, never a guess", () => {
+  expect(resolveDescription({ ...details, items: [{ label: "Amount", type: "number", value: "a lot" }] })).toMatchObject({
+    mode: "slot",
+    kind: "details",
+  });
+  expect(resolveDescription({ ...details, extra: true }).mode).toBe("slot");
+});
+
+test("a chart with only its kind, title and empty sentence draws the chart frame's empty state", () => {
+  const spec = { kind: "line", title: "Revenue", subtitle: "October", empty: "No revenue yet." };
+  expect(resolveDescription(spec)).toEqual({ mode: "empty", kind: "line", empty: "No revenue yet." });
+  const html = panel({ spec, title: "Revenue", height: 240 });
+  expect(html).toContain("k2b-chart-explorer");
+  expect(html).toContain('data-state="empty"');
+  expect(html).toContain("No revenue yet.");
+  // The host's sentence wins; a failed read stays a failure.
+  expect(panel({ spec, title: "Revenue", height: 240, state: "empty", empty: "Nothing sent." })).toContain("Nothing sent.");
+  expect(panel({ spec, title: "Revenue", height: 240, state: "error", onRetry: () => {} })).toContain('data-state="error"');
+});
+
+test("the empty form is explicit and strict: any other field, an unknown kind or a missing title keeps the old answer", () => {
+  // Any field beyond kind, title, subtitle and empty sends the description through the strict schema as before.
+  expect(resolveDescription({ kind: "line", title: "Revenue", series: [], empty: "No revenue yet." }).mode).not.toBe("empty");
+  expect(resolveDescription({ kind: "stat", title: "Revenue", empty: "None", value: "x" }).mode).toBe("slot");
+  expect(resolveDescription({ kind: "line", title: "Revenue", empty: 3 }).mode).toBe("slot");
+  expect(resolveDescription({ kind: "notAKind", title: "Revenue" }).mode).toBe("slot");
+  expect(resolveDescription({ kind: "line", title: " " }).mode).toBe("slot");
+  expect(resolveDescription({ kind: "map", title: "Shops", empty: "No shop yet." }).mode).toBe("empty");
+});

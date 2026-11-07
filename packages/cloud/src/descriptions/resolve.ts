@@ -19,6 +19,7 @@ import {
   prepareChartSnapshot,
 } from "@k2b/ui";
 import type { JSX } from "solid-js";
+import { parseCloudAiView } from "../ai/view-block";
 import type { DescriptionJson as JsonValue } from "./json";
 import { descriptionMessages } from "./messages";
 
@@ -39,6 +40,8 @@ export type DescriptionDrawing =
   | { mode: "live"; props: ChartProps; rows: DescriptionRow[]; columns: ChartExplorerColumn<DescriptionRow>[] }
   /** A Cloud block: `{ block: … }`. */
   | { mode: "block"; block: string; spec: { [key: string]: JsonValue } }
+  /** The explicit empty form of a chart, `{ kind, title, subtitle?, empty? }`: a read without values to draw. */
+  | { mode: "empty"; kind: string; empty?: string }
   /** Not drawable in this build: the kind or one of its options is still missing. */
   | { mode: "slot"; kind: string; reason: string };
 
@@ -55,7 +58,20 @@ const components = { budget: BudgetList, balance: BalanceSummary, flow: FlowAmou
 export const descriptionBlockComponents: Record<string, string> = { budget: "BudgetList", balance: "BalanceSummary", flow: "FlowAmount" };
 export const descriptionBlockComponent = (block: string): BlockComponent | undefined => components[block];
 /** Blocks a description panel draws; the others show the host's slot. */
-const drawableBlock = (block: string) => block === "stats" || block === "table" || block in components;
+const drawableBlock = (block: string) => block === "stats" || block === "table" || block === "details" || block in components;
+
+/**
+ * A chart description that names only its kind, title, subtitle and empty sentence. A read without values cannot send a
+ * valid description (every kind needs at least one value), so this separate form says "nothing to draw" explicitly;
+ * the chart schema itself stays as strict as before.
+ */
+const emptyKeys = new Set(["kind", "title", "subtitle", "empty"]);
+const emptyChart = (spec: JsonObject) =>
+  Object.keys(spec).every((key) => emptyKeys.has(key)) &&
+  typeof spec.title === "string" &&
+  spec.title.trim() !== "" &&
+  (spec.subtitle === undefined || typeof spec.subtitle === "string") &&
+  (spec.empty === undefined || typeof spec.empty === "string");
 
 /** Names of options the schema dropped: a description it does not fully know must not draw as a smaller chart. */
 const lostKeys = (source: JsonValue, parsed: unknown, path = ""): string[] => {
@@ -158,11 +174,20 @@ export function resolveDescription(spec: JsonValue, locale = "en"): DescriptionD
       ? { mode: "block", block: "flow", spec: { block: "flow", items: spec } }
       : { mode: "slot", kind: "flow", reason: "This build does not draw this block yet." };
   if (!object(spec)) return { mode: "slot", kind: "unknown", reason: "The description is not an object." };
+  if (spec.block === "details") {
+    // The details of one record, in the same strict form Chat's details view validates.
+    const { block: _block, ...view } = spec;
+    return parseCloudAiView({ ...view, view: "details" })
+      ? { mode: "block", block: "details", spec }
+      : { mode: "slot", kind: "details", reason: "The details do not match their description." };
+  }
   if (typeof spec.block === "string")
     return drawableBlock(spec.block)
       ? { mode: "block", block: spec.block, spec }
       : { mode: "slot", kind: spec.block, reason: "This build does not draw this block yet." };
   const kind = typeof spec.kind === "string" ? spec.kind : "unknown";
+  const empty = typeof spec.empty === "string" ? spec.empty : undefined;
+  if (liveKinds.has(kind) && emptyChart(spec)) return { mode: "empty", kind, empty };
   if (liveKinds.has(kind)) {
     const { title: _title, subtitle: _subtitle, ...props } = spec;
     return { mode: "live", props: props as unknown as ChartProps, ...liveRows(spec, locale) };
@@ -171,6 +196,7 @@ export function resolveDescription(spec: JsonValue, locale = "en"): DescriptionD
   if (!parsed.success) {
     // The kind exists when the schema complains about fields rather than about the kind itself.
     const known = !parsed.error.issues.some((issue) => issue.path.length === 0 || issue.path[0] === "kind");
+    if (known && emptyChart(spec)) return { mode: "empty", kind, empty };
     // Name the exact paths: a value this build rejects is either a later option or a mistake in the description.
     const paths = [...new Set(parsed.error.issues.map((issue) => issue.path.join(".")).filter(Boolean))];
     return {

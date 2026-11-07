@@ -10,6 +10,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTableSort,
+  DescriptionList,
   SelectChip,
   StatCell,
   StatGrid,
@@ -18,6 +19,7 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { cloudAiDetailsRows, parseCloudAiView } from "../ai/view-block";
 import { formatDescriptionNumber } from "./format";
 import type { DescriptionJson as JsonValue } from "./json";
 import { descriptionMessages } from "./messages";
@@ -139,6 +141,28 @@ export function DescriptionPanel(props: DescriptionPanelProps): JSX.Element {
           )
         }
       </Match>
+      <Match when={drawing().mode === "empty" && (drawing() as Extract<ReturnType<typeof resolveDescription>, { mode: "empty" }>)}>
+        {(nothing) => (
+          // A chart without values: the same explorer frame, head and height as the drawn chart, with its empty sentence.
+          <DashboardFrame width={props.width}>
+            <ChartExplorer<DescriptionRow>
+              title={title()}
+              headingLevel={props.headingLevel ?? 3}
+              description={subtitle()}
+              height={height()}
+              inset="1rem"
+              renderDetails={false}
+              request={requests[state()]}
+              asOf={props.asOf}
+              onRetry={props.onRetry}
+              empty={props.empty ?? nothing().empty ?? t().nothingToShow}
+              data={{ rows: [] }}
+              // The explorer needs one column; without rows Copy data and the table stay unavailable.
+              columns={[{ id: "value", label: title(), value: () => "" }]}
+            />
+          </DashboardFrame>
+        )}
+      </Match>
       <Match when={drawing().mode === "block" && (drawing() as Extract<ReturnType<typeof resolveDescription>, { mode: "block" }>)}>
         {(block) => (
           <Switch
@@ -148,6 +172,9 @@ export function DescriptionPanel(props: DescriptionPanelProps): JSX.Element {
           >
             <Match when={block().block === "stats"}>
               <StatsBlock spec={block().spec} state={state()} asOf={props.asOf} onRetry={props.onRetry} />
+            </Match>
+            <Match when={block().block === "details"}>
+              <DetailsBlock {...props} state={state()} spec={block().spec} title={title()} subtitle={subtitle()} />
             </Match>
             <Match when={block().block === "table"}>
               <TableBlock {...props} state={state()} spec={block().spec} title={title()} subtitle={subtitle()} />
@@ -218,6 +245,43 @@ function StatsBlock(props: { spec: JsonObject; state: DashboardFrameState; asOf?
         }}
       </For>
     </StatGrid>
+  );
+}
+
+/**
+ * `{ block: "details", items: [{ label, type, value, format? }] }`: the fields of one record, in the form and with the
+ * formatting of Chat's details view. The body keeps the panel's height in every state; more fields scroll inside it.
+ * A reference shows its title; opening it is the host's.
+ */
+function DetailsBlock(
+  props: Omit<DescriptionPanelProps, "spec" | "state"> & { state: DashboardFrameState; spec: JsonObject },
+): JSX.Element {
+  const locale = useLocale();
+  const t = useMessages();
+  const view = () => {
+    const { block: _block, ...rest } = props.spec;
+    const parsed = parseCloudAiView({ ...rest, view: "details" });
+    return parsed?.view === "details" ? parsed : undefined;
+  };
+  const rows = () => {
+    const current = view();
+    return current ? cloudAiDetailsRows(current, locale()) : [];
+  };
+  return (
+    <DashboardFrame
+      title={props.title}
+      subtitle={props.subtitle}
+      headingLevel={props.headingLevel}
+      width={props.width}
+      state={props.state}
+      asOf={props.asOf}
+      onRetry={props.onRetry}
+      empty={props.empty ?? t().nothingToShow}
+      emptyIcon="ti ti-list-details"
+      height={cssLength(props.height)}
+    >
+      <DescriptionList layout="rows" items={rows().map((row) => ({ term: row.label, description: row.text || "—" }))} />
+    </DashboardFrame>
   );
 }
 
