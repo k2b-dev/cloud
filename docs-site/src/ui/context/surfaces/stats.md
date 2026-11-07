@@ -120,7 +120,7 @@ arrives or fails:
   support line; the tile is `aria-busy` and not a link.
 - **Error** (`status="error"`): "Not loaded" in place of the figure, and
   "Try again" when `onRetry` is set.
-- **Empty** (`value={null}`): a dash and the reason in `sub`.
+- **Empty** (`value={null}`): a dash and the reason in `sub`; the trend is not drawn.
 - **Stale** (`stale`): the figure stays; the support line shows the warning
   and "Reload" when `onRetry` is set.
 
