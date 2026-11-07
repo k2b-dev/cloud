@@ -11,6 +11,7 @@ import {
   chartTable,
   chartTooltip,
   checkChartLabels,
+  drawChart,
 } from "./charts";
 
 // Preserve the renderer fixtures' bounded data shape; AI policy assertions remain in Cloud.
@@ -115,8 +116,7 @@ describe("chart table", () => {
       ],
     });
     const rows = chartRows(input, "de");
-    const { kind, ...options } = chartRenderOptions(input, "de");
-    const svg = (charts[kind] as (value: object) => string)({ ...options, width: 480, height: 280, inspect: true });
+    const svg = drawChart(chartRenderOptions(input, "de"));
     for (const match of svg.matchAll(/data-chart-datum="([^"]*)"/g)) rows.add(JSON.parse(match[1]!.replaceAll("&quot;", '"')));
     expect(rows.table()).toEqual(chartTable(input, "de"));
     expect(rows.table().rows.map((row) => row.key)).toEqual([chartMarkKey({ index: 0 }), chartMarkKey({ index: 1 })]);
@@ -250,8 +250,7 @@ test("saved references preserve their individual style and tone through schema a
 
 describe("chart axes", () => {
   const ticks = (input: unknown, anchor: "end" | "middle") => {
-    const { kind, ...options } = chartRenderOptions(parse(input), "en");
-    const svg = (charts[kind] as (value: object) => string)({ ...options, width: 480, height: 280 });
+    const svg = drawChart(chartRenderOptions(parse(input), "en"));
     return [...svg.matchAll(new RegExp(`stdlib-chart-tick-label"[^>]*text-anchor="${anchor}">([^<]*)<`, "g"))].map((match) => match[1]);
   };
 
