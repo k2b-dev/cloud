@@ -688,3 +688,12 @@ marked as uncertain; no category or generated result is predicted.
 `match` means an action or AI step would run. `skipped` means an explicit
 exclusion matched. `none` means the conditions did not match. Target problems
 are shown per item; the preflight also checks static targets in other branches.
+
+## Export definitions before an upgrade
+
+`cld mail automation export --mailbox Support --json` exports every saved rule
+version, guided definitions, exact YAML, ordering, budgets, references and
+automatic replies. Mailbox administration is required. Cloud administrators
+use `--all` instead of `--mailbox` for an installation export. JSON and text
+output are a complete JSON document; JSONL is one API page per line. Exports
+grant nothing and never activate a replacement.

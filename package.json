@@ -35,6 +35,7 @@
       "packages/quotes",
       "packages/runner",
       "packages/spaces",
+      "packages/speedtest",
       "packages/ssr",
       "packages/tools",
       "packages/ui",

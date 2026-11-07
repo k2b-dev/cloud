@@ -8,6 +8,7 @@ import { MailCodeSelectionInputSchema } from "../mail-code-contracts";
 import { requireMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { resolveMailboxPublicId, resolvePublicId } from "./public-resources";
+import { message as messageMailbox } from "./resource-parents";
 
 type Row = {
   id: string;
@@ -45,7 +46,7 @@ export async function selectMailCodeMessages(
   const mailbox = await resolvePublicId("mailboxes", mailboxShortId);
   if (!mailbox) return fail(err.notFound("Mailbox"));
   const allowed = await requireMailboxAccess(requestContext(context), mailbox, "read");
-  if (!allowed.ok) return allowed;
+  if (!allowed.ok) return fail(err.notFound("Mailbox"));
   // Code editors may have a share without mailbox administration. Selection still requires whole-mailbox read access.
   if (allowed.data.scope !== "mailbox") return fail(err.forbidden("Whole-mailbox read access required"));
   const folder = input.folderId ? await resolveMailboxPublicId("folders", mailbox, input.folderId) : null;
@@ -89,6 +90,10 @@ export async function selectMailCodeMessages(
 export async function resolveMailCodeEvent(messageId: string, context: CapabilityExecutionContext) {
   const message = await resolvePublicId("messages", messageId);
   if (!message) return fail(err.notFound("Message"));
+  const mailbox = await messageMailbox(message);
+  if (!mailbox) return fail(err.notFound("Message"));
+  const allowed = await requireMailboxAccess(requestContext(context), mailbox, "read");
+  if (!allowed.ok || allowed.data.scope !== "mailbox") return fail(err.notFound("Message"));
   const [row] = await sql<Row[]>`SELECT message.id,message.short_id,message.mailbox_id,box.short_id AS mailbox,
     message.subject,message.internal_date,receipt.id AS receipt_id,receipt.first_seen_at
     FROM mail.message_contents message JOIN mail.mailboxes box ON box.id=message.mailbox_id
@@ -104,9 +109,6 @@ export async function resolveMailCodeEvent(messageId: string, context: Capabilit
         ON identity.mailbox_id=message.mailbox_id AND lower(identity.from_address)=sender.normalized_email
         WHERE sender.message_id=message.id AND sender.role='from')`;
   if (!row) return fail(err.notFound("Incoming message"));
-  const allowed = await requireMailboxAccess(requestContext(context), row.mailbox_id, "read");
-  if (!allowed.ok) return allowed;
-  if (allowed.data.scope !== "mailbox") return fail(err.forbidden("Whole-mailbox read access required"));
   return ok({ data: mailCodeEvent(row) });
 }
 
@@ -119,6 +121,8 @@ export async function previewMailCodeMessage(
 ): Promise<Result<{ data: { event: ReturnType<typeof mailCodeEvent>; mock: CodeTestMock } }>> {
   const mailbox = await resolvePublicId("mailboxes", mailboxShortId);
   if (!mailbox) return fail(err.notFound("Mailbox"));
+  const allowed = await requireMailboxAccess(requestContext(context), mailbox, "read");
+  if (!allowed.ok) return fail(err.notFound("Mailbox"));
   const message = await resolveMailboxPublicId("messages", mailbox, messageId);
   if (!message) return fail(err.notFound("Message"));
   const read = await readMessage();

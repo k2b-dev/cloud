@@ -68,6 +68,7 @@ import {
   triage,
 } from "./service";
 import * as reviewReaders from "./service/capability-review-readers";
+import { previewMailCodeMessage, resolveMailCodeEvent, selectMailCodeMessages } from "./service/code-messages";
 
 const mailboxId = "MbA123";
 const conversationId = "CvB234";
@@ -464,6 +465,7 @@ describe("mail capabilities", () => {
     "%s checks current access before resolving members",
     async (id) => {
       const denied = fail(err.forbidden("Access denied"));
+      const missing = fail(err.notFound("Mailbox"));
       spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(denied);
       spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
       const members = spyOn(publicResources, "resolveMailboxPublicIds");
@@ -473,13 +475,13 @@ describe("mail capabilities", () => {
         if (id === "conversation.assign.batch") {
           const action = mailCapabilities.actions[id];
           const input = action.input.parse({ conversationIds, mode: "replace", assigneeUserIds: [] });
-          expect(await action.review(input, context)).toEqual(denied);
-          expect(await action.run(input, context)).toEqual(denied);
+          expect(await action.review(input, context)).toEqual(missing);
+          expect(await action.run(input, context)).toEqual(missing);
         } else {
           const action = mailCapabilities.actions[id];
           const input = action.input.parse({ conversationIds, status: "done" });
-          expect(await action.review(input, context)).toEqual(denied);
-          expect(await action.run(input, context)).toEqual(denied);
+          expect(await action.review(input, context)).toEqual(missing);
+          expect(await action.run(input, context)).toEqual(missing);
         }
       }
       expect(members).not.toHaveBeenCalled();
@@ -490,18 +492,20 @@ describe("mail capabilities", () => {
 
   test("conversation.tag.update checks current access before resolving contained resources", async () => {
     const denied = fail(err.forbidden("Access denied"));
+    const missing = fail(err.notFound("Mailbox"));
     spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
     const resource = spyOn(publicResources, "resolveMailboxPublicId");
     const tags = spyOn(publicResources, "resolveMailboxPublicIds");
     const action = mailCapabilities.actions["conversation.tag.update"];
     const input = action.input.parse({ conversationId, expectedRevision: 2, addTagIds: ["Other1"] });
-    for (const call of [action.review, action.run]) expect(await call(input, context)).toEqual(denied);
+    for (const call of [action.review, action.run]) expect(await call(input, context)).toEqual(missing);
     expect(resource).not.toHaveBeenCalled();
     expect(tags).not.toHaveBeenCalled();
   });
 
   test("conversation and comment Actions return the same denial for existing and missing resources", async () => {
     const denied = fail(err.forbidden("Access denied"));
+    const missing = fail(err.notFound("Mailbox"));
     spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
     const resource = spyOn(publicResources, "resolveMailboxPublicId");
     const content = spyOn(messages, "listConversationMessages");
@@ -517,8 +521,8 @@ describe("mail capabilities", () => {
           ...fields,
           ...(nestedTarget ? { target: { conversationId: id, sourceFolderId: folderId } } : { conversationId: id }),
         });
-        expect(await action.review?.(input, deniedContext), `${action.title} review for ${id}`).toEqual(denied);
-        expect(await action.run(input, deniedContext), `${action.title} execution for ${id}`).toEqual(denied);
+        expect(await action.review?.(input, deniedContext), `${action.title} review for ${id}`).toEqual(missing);
+        expect(await action.run(input, deniedContext), `${action.title} execution for ${id}`).toEqual(missing);
       }
     };
     await check(mailCapabilities.actions["conversation.mark"], { read: true }, true);
@@ -542,15 +546,13 @@ describe("mail capabilities", () => {
 
   test("conversation.related checks current access before resolving its conversation", async () => {
     const denied = fail(err.forbidden("Access denied"));
+    const missing = fail(err.notFound("Mailbox"));
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(denied);
-    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({
-      ok: true,
-      data: { scope: "assigned", permission: "read", userId },
-    });
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
     const resource = spyOn(publicResources, "resolveMailboxPublicId");
     const related = spyOn(conversationContext, "listRelatedConversations");
     const query = mailCapabilities.queries["conversation.related"];
-    expect(await query.run(query.input.parse({ conversationId }), context)).toEqual(denied);
+    expect(await query.run(query.input.parse({ conversationId }), context)).toEqual(missing);
     expect(resource).not.toHaveBeenCalled();
     expect(related).not.toHaveBeenCalled();
   });
@@ -817,7 +819,7 @@ describe("mail capabilities", () => {
         await release.run({ conversationId: id, reason: "  Policy reviewed  " }, { ...context, idempotencyKey: "denied-keep-release" }),
       ).toEqual(denied);
     }
-    expect(order).toEqual(["access", "access", "resolve", "access", "access", "resolve"]);
+    expect(order).toEqual(["access", "access", "resolve", "access", "access", "resolve", "access"]);
     expect(audit).toHaveBeenCalledTimes(1);
     expect(audit).toHaveBeenCalledWith(
       {
@@ -1106,10 +1108,37 @@ describe("mail capabilities", () => {
   test("aligns action reviews with their run permissions", async () => {
     const denied = { ok: false as const, error: { code: "FORBIDDEN", message: "Denied", status: 403 as const } };
     const requirePermission = spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(denied);
-    const requireAccess = spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+    // A reader without write: every review resolves the readable mailbox first, then asks for its own permission.
+    const requireAccess = spyOn(mailboxAccess, "requireMailboxAccess").mockImplementation(async (_context, _mailboxId, required) =>
+      required === "read" ? { ok: true, data: { scope: "mailbox", permission: "read" } } : denied,
+    );
+    spyOn(messages, "listConversationMessages").mockResolvedValue({ ok: true, data: { items: [], nextCursor: null } });
+    spyOn(scheduledSends, "getScheduledSend").mockResolvedValue({
+      ok: true,
+      data: {
+        id: internalConversationId,
+        commandId: technicalTargetId,
+        draftId: internalDraftId,
+        conversationId: internalConversationId,
+        intent: "new",
+        to: [],
+        cc: [],
+        bcc: [],
+        subject: "Visible delivery",
+        bodyPreview: "Body",
+        scheduledAt: timestamp,
+        nextAttemptAt: null,
+        state: "scheduled",
+        attempt: 0,
+        lastErrorCode: null,
+        lastError: null,
+        scheduledBy: { kind: "user", displayName: "Test user" },
+        createdAt: timestamp,
+      },
+    });
 
     await mailCapabilities.actions["draft.create"].review(DraftCreateInputSchema.parse({ senderIdentityId }), context);
-    await mailCapabilities.actions["delivery.cancel"].review({ deliveryId, disposition: "draft" }, context);
+    expect(await mailCapabilities.actions["delivery.cancel"].review({ deliveryId, disposition: "draft" }, context)).toEqual(denied);
     await mailCapabilities.actions["mailbox.tag.update"].review({ tagId, expectedRevision: 1, name: "Updated" }, context);
     await mailCapabilities.actions["mailbox.tag.delete"].review({ tagId, expectedRevision: 1 }, context);
     await mailCapabilities.actions["mailing-list.unsubscribe"].review(
@@ -1122,7 +1151,8 @@ describe("mail capabilities", () => {
     );
 
     expect(requirePermission.mock.calls.map((call) => call[2])).toEqual(["write", "write", "write", "write"]);
-    expect(requireAccess.mock.calls.map((call) => call[2])).toEqual(["write", "read"]);
+    // The mailbox read precedes each review's own permission: delivery.cancel asks for write, the reminder for read.
+    expect(requireAccess.mock.calls.map((call) => call[2])).toEqual(["read", "read", "write", "read", "read", "read", "read", "read"]);
   });
 
   test("reviews a new draft with its user-visible envelope", async () => {
@@ -3636,7 +3666,8 @@ test("a draft reader without write access opens the read view", async () => {
   );
   const result = await mailCapabilities.queries["draft.read"].run({ id: draftId }, context);
   if (!result.ok) throw new Error(result.error.message);
-  expect(access.mock.calls[0]?.[2]).toBe("write");
+  // The mailbox read comes first; the write check only decides whether the edit link is offered.
+  expect(access.mock.calls.map((call) => call[2])).toEqual(["read", "write"]);
   expect(assertResourceOpenLink(result.data).href).toBe(`/app/mail/${mailboxId}/drafts/${draftId}`);
   expect(result.data.links).toHaveLength(1);
   expect(result.data.links.filter((link) => link.rel === "edit")).toEqual([]);
@@ -3659,6 +3690,7 @@ test("batch status reviews allow assigned writers, bound subjects and run with i
     ok: true,
     data: { scope: "assigned", permission: "write", userId },
   });
+  const visible = spyOn(mailboxAccess, "requireVisibleConversation").mockResolvedValue({ ok: true, data: undefined });
   const wide = spyOn(mailboxAccess, "requireMailboxPermission");
   const subjects = spyOn(messages, "listConversationMessages").mockResolvedValue({
     ok: true,
@@ -3678,6 +3710,7 @@ test("batch status reviews allow assigned writers, bound subjects and run with i
     expect(subjects.mock.calls.length).toBeLessThanOrEqual(3);
     expect(access).toHaveBeenCalledWith(expect.anything(), internalMailboxId, "write");
     expect(wide).not.toHaveBeenCalled();
+    expect(visible).toHaveBeenCalledWith(expect.objectContaining({ scope: "assigned" }), ids[0]);
     const data = {
       completion: status,
       results: [
@@ -3908,4 +3941,46 @@ describe("Mail safe unattended actions", () => {
     );
     expect(batch).toHaveBeenCalledWith(expect.objectContaining({ completion: "needs_action", expectedRevisions: { [conversationId]: 4 } }));
   });
+});
+
+test.each(["conversation.status.update.batch", "conversation.status.set.batch"] as const)(
+  "%s rejects an invisible member before review or mutation",
+  async (id) => {
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({
+      ok: true,
+      data: { scope: "assigned", permission: "write", userId },
+    });
+    spyOn(mailboxAccess, "requireVisibleConversation").mockResolvedValue(fail(err.notFound("Conversation")));
+    const assign = spyOn(conversationAssignments, "assignConversations");
+    const complete = spyOn(collaboration, "applyConversationCompletions");
+
+    const action = mailCapabilities.actions[id];
+    const input = action.input.parse({ conversationIds: [conversationId], status: "done" });
+    expect(await action.review(input, context)).toEqual(fail(err.notFound("Conversation")));
+    expect(await action.run(input, context)).toEqual(fail(err.notFound("Conversation")));
+
+    expect(assign).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+  },
+);
+
+test("Code message selection and preview answer unreadable mailboxes like unknown ones", async () => {
+  spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied")));
+  const members = spyOn(publicResources, "resolveMailboxPublicId");
+  const read = mock(async () => fail(err.notFound("Message")));
+  expect(await selectMailCodeMessages(mailboxId, {}, context)).toEqual(await selectMailCodeMessages("Unknow", {}, context));
+  expect(await previewMailCodeMessage(mailboxId, messageId, context, read)).toEqual(
+    await previewMailCodeMessage("Unknow", messageId, context, read),
+  );
+  expect(members).not.toHaveBeenCalled();
+  expect(read).not.toHaveBeenCalled();
+});
+
+test("Code event lookup authorizes before classifying the message", async () => {
+  spyOn(resourceParents, "message").mockResolvedValue(internalMailboxId);
+  const access = spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied")));
+  const unknown = await resolveMailCodeEvent("Unknow", context);
+  expect(await resolveMailCodeEvent(messageId, context)).toEqual(unknown);
+  access.mockResolvedValue({ ok: true, data: { scope: "assigned", permission: "read", userId } });
+  expect(await resolveMailCodeEvent(messageId, context)).toEqual(unknown);
 });
