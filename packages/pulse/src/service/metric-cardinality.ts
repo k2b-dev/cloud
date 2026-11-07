@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 export const PULSE_METRIC_SERIES_LIMIT = 10_000;
 

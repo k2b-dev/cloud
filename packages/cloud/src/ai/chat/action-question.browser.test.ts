@@ -34,7 +34,8 @@ const buildHarness = async (): Promise<string> => {
   const build = await Bun.build({
     entrypoints: [resolve(import.meta.dir, "action-question.browser-harness.tsx")],
     target: "browser",
-    format: "iife",
+    // MapView's lazy worker uses import.meta; keep the shared chat harness a module.
+    format: "esm",
     conditions: ["browser"],
     plugins: [
       {
@@ -85,7 +86,7 @@ beforeAll(async () => {
       return new Response(
         `<!doctype html><html lang="de" class="${theme}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
           `<link rel="stylesheet" href="/tabler.css"><style>${css}</style></head>` +
-          `<body class="k2b-ui${theme === "dark" ? " k2b-dark" : ""}" style="margin: 0"><script src="/harness.js"></script></body></html>`,
+          `<body class="k2b-ui${theme === "dark" ? " k2b-dark" : ""}" style="margin: 0"><script type="module" src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
@@ -307,7 +308,7 @@ describe("answering", () => {
       await page.keyboard.press("Enter");
       await page.locator(".k2b-chat-outcome[data-tone='warning']").waitFor();
       expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(true);
-      expect(await page.locator(".k2b-chat-outcome__text[data-current='true']").textContent()).toContain("kam nicht an");
+      expect(await page.locator(".k2b-chat-outcome__text[data-current='true']").textContent()).toContain("ist nicht bestätigt");
       // The thing's chip in the line is a link; the line's own link follows it.
       for (let index = 0; index < 4; index += 1) {
         await page.keyboard.press("Tab");

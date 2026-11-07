@@ -1,6 +1,6 @@
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { GeoProvenance } from "../../contracts/geo";
+import { sql } from "../../runtime/clients";
 import { logger } from "../logging";
 import { withWeatherLocationShortId } from "./short-id";
 

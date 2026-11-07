@@ -20,8 +20,8 @@ export const resolveMailWorkflowTemplateBodies = async (ctx: WorkflowExecuteActi
       variableSnapshot: () => ctx.variables.snapshot?.() ?? {},
     });
     // Load the first unloaded body the render reads, then render again: earlier bodies can change branches.
-    // Each pass loads one more field, so the passes are bounded by the body fields of the inputs.
-    const maxPasses = Object.keys(ctx.invocation.inputs).length * 3 + 1;
+    // Each pass loads one more field, so the passes are bounded by the body fields and attachment metadata of the inputs.
+    const maxPasses = Object.keys(ctx.invocation.inputs).length * 4 + 1;
     for (let pass = 0; pass < maxPasses; pass++) {
       // Other render errors end probing and are reported by the real renderer.
       const probe = withMailWorkflowBodyGuard(ctx.invocation.inputs, () => renderMailLiquidTemplate(source, data, output));

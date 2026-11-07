@@ -45,9 +45,13 @@ const paginated = (items: EntityListItem[]): Paginated<EntityListItem> => ({
 const deps = (visible: EntityListItem[]): PrincipalValueValidationDeps => ({
   getUser: mock(async () => actor) as PrincipalValueValidationDeps["getUser"],
   listEntities: mock(async (config) => {
-    const ids = new Set(config.kinds?.includes("user") ? config.userIds : config.groupIds);
+    const ids = new Set(
+      config.kinds?.includes("user") ? config.userIds : config.kinds?.includes("group") ? config.groupIds : config.serviceAccountIds,
+    );
     return paginated(
-      visible.filter((item) => (item.kind === "user" ? ids.has(item.user.id) : item.kind === "group" ? ids.has(item.group.id) : false)),
+      visible.filter((item) =>
+        item.kind === "user" ? ids.has(item.user.id) : item.kind === "group" ? ids.has(item.group.id) : ids.has(item.serviceAccount.id),
+      ),
     );
   }) as PrincipalValueValidationDeps["listEntities"],
 });
@@ -98,9 +102,41 @@ describe("principal values", () => {
     expect(hidden.ok).toBe(false);
     if (!hidden.ok) {
       expect(hidden.error.code).toBe("BAD_INPUT");
-      expect(hidden.error.message).toContain("selected user or group is unavailable");
+      expect(hidden.error.message).toContain("selected identity is unavailable");
     }
   });
+
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`${kind}: resolves exact visible account IDs and keeps hidden labels private`, async () => {
+      const id = uuid(6);
+      const reference = { type: "service_account" as const, id };
+      const account: EntityListItem = {
+        kind: "service_account",
+        serviceAccount: {
+          id,
+          name: "Catalog assistant",
+          kind,
+          status: "active",
+          delegatedUserId: null,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
+          createdBy: actor.id,
+          createdAt: "2026-08-12T00:00:00.000Z",
+        },
+      };
+      const visible = deps([account]);
+      expect((await validatePrincipalValuesForActor({ [field.id]: [reference] }, [field], actor.id, undefined, visible)).ok).toBe(true);
+      expect(visible.listEntities).toHaveBeenCalledWith(expect.objectContaining({ kinds: ["service_account"], serviceAccountIds: [id] }));
+      expect(await buildPrincipalLabelCache([reference], actor.id, visible)).toEqual({ [id]: "Catalog assistant" });
+      expect((await validatePrincipalValuesForActor({ [field.id]: [reference] }, [field], actor.id, undefined, deps([]))).ok).toBe(false);
+      expect(await buildPrincipalLabelCache([reference], actor.id, deps([]))).toEqual({});
+      const userless = deps([account]);
+      expect((await validatePrincipalValuesForActor({ [field.id]: [reference] }, [field], null, undefined, userless)).ok).toBe(false);
+      expect(await buildPrincipalLabelCache([reference], null, userless)).toEqual({});
+      expect(userless.listEntities).not.toHaveBeenCalled();
+    });
+  }
 
   test("requires a current user for non-empty principal values", async () => {
     const result = await validatePrincipalValuesForActor(
@@ -118,6 +154,6 @@ describe("principal values", () => {
     const result = await validatePrincipalValuesForActor({ [field.id]: [{ type: "user", id: uuid(4) }] }, [field], null, "de-CH", deps([]));
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.message).toBe("Melde dich an, um Benutzer oder Gruppen auszuwählen.");
+    if (!result.ok) expect(result.error.message).toBe("Die Auswahl von Identitäten benötigt ein benutzergebundenes Kontoverzeichnis.");
   });
 });

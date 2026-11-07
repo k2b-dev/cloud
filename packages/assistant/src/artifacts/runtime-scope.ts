@@ -14,7 +14,7 @@ export async function authorizeRuntimeScope(input: unknown, identity: ArtifactId
       !chat ||
       chat.archivedAt ||
       (chat.allowedTools !== null && chat.allowedTools !== undefined) ||
-      (chat.projectId && !(await aiProjects.get(chat.projectId, identity.accessSubject, "read")))
+      (chat.projectId && !(await aiProjects.get(chat.projectId, identity, "read")))
     )
       throw new ArtifactError("ACCESS_DENIED");
     scope.conversationId = chat.id;

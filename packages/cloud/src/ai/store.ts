@@ -1,18 +1,21 @@
 import type { DoneReason, InboundEvent, LoopAggregate, Message, SessionStore, StoreEntry } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { capabilityRequestHash } from "../capabilities/claims";
 import { restoreReviewSnapshot, serializeReviewSnapshot } from "../capabilities/review-storage";
 import { type CapabilityActionReviewPresentation, CapabilityActionReviewPresentationSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";
+import { AiMapSchema } from "./map-contracts";
 
 export { AI_TOOL_CHECK_STALE_MS };
 
 import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
 import { projectSettledAiToolChecks } from "./capability-result";
 import { aiTurnErrorText } from "./chat/turn-error";
+import { projectAiMaps } from "./map-store";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
 import { collectRecentSentResourceRefs, RECENT_SENT_CONVERSATION_SCAN_LIMIT, RECENT_SENT_MESSAGE_SCAN_LIMIT } from "./recent-sent-refs";
@@ -279,6 +282,8 @@ type TurnSteerRow = {
 };
 
 type ConversationResourceRefRow = {
+  context: string | null;
+  status: string | null;
   resource_type: string;
   resource_id: string;
   title: string | null;
@@ -298,6 +303,8 @@ type ConversationResourceOccurrenceRow = ConversationResourceRefRow & {
 };
 
 type ConversationSourceRow = {
+  context: string | null;
+  status: string | null;
   source_kind: AiConversationSource["kind"];
   source_key: string;
   title: string;
@@ -340,6 +347,7 @@ type InterChatMessageRow = {
 };
 
 type TimelineRow = {
+  model_replacement: { kind: "model_replaced"; previousLabel: string; nextLabel: string } | null;
   id: string;
   seq: number;
   loop_id: string | null;
@@ -356,6 +364,8 @@ const iso = (value: Date | string): string => (value instanceof Date ? value.toI
 
 const rowToConversationResourceRef = (row: ConversationResourceRefRow): AiConversationResourceRef => ({
   ref: { type: row.resource_type, id: row.resource_id },
+  context: row.context,
+  status: row.status,
   title: row.title,
   preview: row.preview,
   icon: row.icon,
@@ -397,6 +407,8 @@ const rowToConversationResourceOccurrence = (row: ConversationResourceOccurrence
 
 const rowToConversationSource = (row: ConversationSourceRow): AiConversationSource => ({
   kind: row.source_kind,
+  context: row.context,
+  status: row.status,
   key: row.source_key,
   title: row.title,
   preview: row.preview,
@@ -649,7 +661,7 @@ const rowToEnrichmentRun = (row: EnrichmentRunRow): AiEnrichmentRun => ({
   conversationId: row.conversation_id,
   status: row.status,
   trigger: row.trigger,
-  modelProfileId: row.model_profile_id,
+  modelId: row.model_profile_id,
   mode: row.mode,
   durationMs: row.duration_ms === null ? null : Number(row.duration_ms),
   titleUpdated: row.title_updated,
@@ -689,7 +701,7 @@ const rowToMessage = (row: MessageRow): AiStoredMessage => {
     kind: row.kind,
     message,
     loopId: row.loop_id,
-    modelProfileId: row.model_profile_id,
+    modelId: row.model_profile_id,
     providerModel: row.provider_model,
     usage: row.usage ? parseJsonValue<Usage>(row.usage) : null,
     stopReason: row.stop_reason,
@@ -719,7 +731,7 @@ const rowToTurn = (row: TurnRow): AiTurn => ({
   conversationId: row.conversation_id,
   status: row.status,
   attempt: Number(row.attempt ?? 0),
-  modelProfileId: row.model_profile_id,
+  modelId: row.model_profile_id,
   createdAt: iso(row.created_at),
   completedAt: row.completed_at ? iso(row.completed_at) : null,
   error: row.error,
@@ -1140,7 +1152,7 @@ const insertMessageLocked = async (
     kind?: "message" | "summary";
     seq?: number;
     loopId?: string | null;
-    modelProfileId?: string | null;
+    modelId?: string | null;
     meta?: AiStoredMessage["meta"];
   },
   db: typeof sql = sql,
@@ -1181,7 +1193,7 @@ const insertMessageLocked = async (
       ${JSON.stringify(input.message)}::text::jsonb,
       ${messageSearchText(input.message)},
       ${input.loopId ?? null},
-      ${input.modelProfileId ?? null},
+      ${input.modelId ?? null},
       ${providerModel},
       ${usage ? JSON.stringify(usage) : null}::text::jsonb,
       ${stopReason},
@@ -1217,7 +1229,7 @@ const appendTurnOwnedMessage = async (input: {
   kind?: "message" | "summary";
   seq?: number;
   loopId: string | null;
-  modelProfileId?: string | null;
+  modelId?: string | null;
   meta?: AiStoredMessage["meta"];
 }): Promise<AiStoredMessage | null> => {
   return sql.begin(async (tx) => {
@@ -1252,7 +1264,7 @@ const appendTurnOwnedMessage = async (input: {
       ${input.message.role},
       ${JSON.stringify(input.message)}::text::jsonb,
       ${input.loopId},
-      ${input.modelProfileId ?? null},
+      ${input.modelId ?? null},
       ${providerModel},
       ${usage ? JSON.stringify(usage) : null}::text::jsonb,
       ${stopReason},
@@ -1506,6 +1518,17 @@ export const aiConversations: AiConversationService = {
         SELECT ${target.id}::uuid, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version
         FROM ai.files WHERE conversation_id = ${input.sourceConversationId}::uuid
       `;
+      // A fork owns independent snapshots. Rewrite only copied map references, never the source conversation.
+      const mapRows = await tx<
+        { id: string; snapshot: unknown; retry: unknown }[]
+      >`SELECT id,snapshot,retry FROM ai.maps WHERE conversation_id=${input.sourceConversationId}::uuid AND (id IN (SELECT (message->'result'->'map'->>'id')::uuid FROM ai.messages WHERE conversation_id=${target.id}::uuid AND role='tool_result' AND message->>'name'='map') OR snapshot->>'originCallId' IN (SELECT block->>'id' FROM ai.messages CROSS JOIN LATERAL jsonb_array_elements(message->'content') block WHERE conversation_id=${target.id}::uuid AND role='assistant' AND block->>'type'='tool_call' AND block->>'name'='map'))`;
+      for (const saved of mapRows) {
+        const id = crypto.randomUUID();
+        const snapshot = AiMapSchema.parse(typeof saved.snapshot === "string" ? JSON.parse(saved.snapshot) : saved.snapshot);
+        const next = { ...snapshot, id, conversationId: target.short_id };
+        await tx`INSERT INTO ai.maps(id,conversation_id,revision,snapshot,retry) VALUES(${id}::uuid,${target.id}::uuid,${snapshot.revision},${JSON.stringify(next)}::text::jsonb,${saved.retry ? JSON.stringify(saved.retry) : null}::text::jsonb)`;
+        await tx`UPDATE ai.messages SET message=jsonb_set(message,'{result,map}',${JSON.stringify({ ...next })}::text::jsonb) WHERE conversation_id=${target.id}::uuid AND role='tool_result' AND message->>'name'='map' AND message->'result'->'map'->>'id'=${saved.id}`;
+      }
       return rowToConversation(target);
     });
   },
@@ -1777,15 +1800,17 @@ export const aiConversations: AiConversationService = {
       for (const resource of resources) {
         await tx`
           INSERT INTO ai.conversation_resource_refs (
-            conversation_id, resource_type, resource_id, title, preview, icon, href, source_turn_id, source_call_id
+            conversation_id, resource_type, resource_id, title, preview, icon, href, context, status, source_turn_id, source_call_id
           ) VALUES (
             ${input.conversationId}, ${resource.ref.type}, ${resource.ref.id}, ${resource.title ?? null}, ${resource.preview ?? null},
-            ${resource.icon ?? null}, ${resource.href ?? null}, ${input.turnId ?? null}, ${input.callId ?? null}
+            ${resource.icon ?? null}, ${resource.href ?? null}, ${resource.context ?? null}, ${resource.status ?? null}, ${input.turnId ?? null}, ${input.callId ?? null}
           )
           ON CONFLICT (conversation_id, resource_type, resource_id)
           DO UPDATE SET
             title = COALESCE(EXCLUDED.title, ai.conversation_resource_refs.title),
             preview = COALESCE(EXCLUDED.preview, ai.conversation_resource_refs.preview),
+            context = COALESCE(EXCLUDED.context, ai.conversation_resource_refs.context),
+            status = COALESCE(EXCLUDED.status, ai.conversation_resource_refs.status),
             icon = COALESCE(EXCLUDED.icon, ai.conversation_resource_refs.icon),
             href = COALESCE(EXCLUDED.href, ai.conversation_resource_refs.href),
             -- Project context is indexed on every turn without a call. It must not move a resource a tool call
@@ -1811,7 +1836,7 @@ export const aiConversations: AiConversationService = {
     const pattern = searchPattern(input.search);
     const cursor = decodeResourceCursor(input.before);
     const rows = await sql<(ConversationResourceRefRow & { cursor_at: string })[]>`
-      SELECT indexed.resource_type, indexed.resource_id, indexed.title, indexed.preview, indexed.icon, indexed.href,
+      SELECT indexed.resource_type, indexed.resource_id, indexed.title, indexed.preview, indexed.icon, indexed.href, indexed.context, indexed.status,
              source_turn.short_id AS source_turn_id, indexed.source_call_id, indexed.first_seen_at, indexed.last_seen_at,
              to_char(indexed.last_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
       FROM ai.conversation_resource_refs indexed
@@ -1847,7 +1872,7 @@ export const aiConversations: AiConversationService = {
     const pattern = searchPattern(input.search);
     const cursor = decodeResourceOccurrenceCursor(input.before);
     const rows = await sql<(ConversationResourceOccurrenceRow & { cursor_at: string })[]>`
-      SELECT indexed.resource_type, indexed.resource_id, indexed.title, indexed.preview, indexed.icon, indexed.href,
+      SELECT indexed.resource_type, indexed.resource_id, indexed.title, indexed.preview, indexed.icon, indexed.href, indexed.context, indexed.status,
              source_turn.short_id AS source_turn_id, indexed.source_call_id, indexed.first_seen_at, indexed.last_seen_at,
              conversation.short_id AS conversation_short_id, conversation.title AS conversation_title,
              conversation.updated_at AS conversation_updated_at,
@@ -1908,6 +1933,7 @@ export const aiConversations: AiConversationService = {
         SELECT *
         FROM (
           SELECT source.kind AS source_kind, source.source_key, source.title, source.preview,
+                 NULL::text AS context, NULL::text AS status,
                  source.icon, source.href, file.path, file.media_type, file.size,
                  source.resource_type, source.resource_id, source.occurrences,
                  turn.short_id AS source_turn_id, source.source_turn_id AS turn_uuid, source.source_call_id,
@@ -1922,6 +1948,7 @@ export const aiConversations: AiConversationService = {
 
           SELECT 'file' AS source_kind, file.path AS source_key,
                  regexp_replace(file.path, '^.*/', '') AS title, 'Attached to the conversation' AS preview,
+                 NULL::text AS context, NULL::text AS status,
                  CASE WHEN file.media_type LIKE 'image/%' THEN 'ti ti-photo' ELSE 'ti ti-file' END AS icon,
                  NULL::text AS href, file.path, file.media_type, file.size,
                  NULL::text AS resource_type, NULL::text AS resource_id, 1 AS occurrences,
@@ -1934,7 +1961,7 @@ export const aiConversations: AiConversationService = {
 
           SELECT 'resource' AS source_kind, indexed.resource_type || ':' || indexed.resource_id AS source_key,
                  COALESCE(indexed.title, indexed.resource_type || ' ' || indexed.resource_id) AS title,
-                 indexed.preview, indexed.icon, indexed.href, NULL::text AS path, NULL::text AS media_type, NULL::bigint AS size,
+                 indexed.preview, indexed.context, indexed.status, indexed.icon, indexed.href, NULL::text AS path, NULL::text AS media_type, NULL::bigint AS size,
                  indexed.resource_type, indexed.resource_id, 1 AS occurrences,
                  turn.short_id AS source_turn_id, indexed.source_turn_id AS turn_uuid, indexed.source_call_id,
                  indexed.first_seen_at, indexed.last_seen_at
@@ -2135,7 +2162,7 @@ export const aiConversations: AiConversationService = {
         "idx_ai_turns_conversation_short_id",
         (attempt, shortId) => attempt<TurnRow[]>`
           INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
-          VALUES (${shortId}, ${message.target_conversation_id}, ${input.modelProfileId}, 'queued', (${JSON.stringify(input.runConfig)}::text)::jsonb)
+          VALUES (${shortId}, ${message.target_conversation_id}, ${input.modelId}, 'queued', (${JSON.stringify(input.runConfig)}::text)::jsonb)
           RETURNING *
         `,
       );
@@ -2434,7 +2461,7 @@ export const aiConversations: AiConversationService = {
         ${input.conversationId},
         ${input.status},
         ${input.trigger},
-        ${input.modelProfileId ?? null},
+        ${input.modelId ?? null},
         ${input.mode ?? null},
         ${input.durationMs ?? null},
         ${input.titleUpdated ?? false},
@@ -2556,7 +2583,7 @@ export const aiConversations: AiConversationService = {
         AND NOT (kind = 'summary' AND compacted_at IS NOT NULL)
       ORDER BY seq ASC, (kind = 'summary')::int ASC
     `;
-    return rows.map(rowToMessage);
+    return projectAiMaps(rows.map(rowToMessage));
   },
 
   listMessagesPage: async (input) => {
@@ -2585,7 +2612,7 @@ export const aiConversations: AiConversationService = {
         AND NOT (kind = 'summary' AND compacted_at IS NOT NULL)
       ORDER BY seq ASC, (kind = 'summary')::int ASC
     `;
-    const messages = rows.map(rowToMessage);
+    const messages = await projectAiMaps(rows.map(rowToMessage));
     const oldestSeq = messages[0]?.seq;
     if (oldestSeq === undefined) return { messages, hasMore: false };
     const older = await sql<{ exists: boolean }[]>`
@@ -2626,7 +2653,7 @@ export const aiConversations: AiConversationService = {
     `;
     const page = rows.filter((row) => Number(row.page_rank) <= limit);
     return {
-      messages: page.map(rowToMessage),
+      messages: await projectAiMaps(page.map(rowToMessage)),
       ...(rows.some((row) => Number(row.page_rank) > limit) && page.at(-1) ? { nextCursor: String(page.at(-1)!.seq) } : {}),
     };
   },
@@ -2691,6 +2718,7 @@ export const aiConversations: AiConversationService = {
       SELECT
         users.short_id AS id,
         users.seq,
+        users.meta_payload->'modelReplacement' AS model_replacement,
         COALESCE(timeline_turn.short_id, users.loop_id) AS loop_id,
         left(
           regexp_replace(
@@ -2722,6 +2750,7 @@ export const aiConversations: AiConversationService = {
       id: row.id,
       seq: Number(row.seq),
       loopId: row.loop_id,
+      ...(row.model_replacement ? { modelReplacement: row.model_replacement } : {}),
       userPreview: row.user_preview?.trim() || "Message",
       assistantPreview: row.assistant_preview?.trim() || "",
       isSteer: Boolean(row.is_steer),
@@ -2743,7 +2772,7 @@ export const aiConversations: AiConversationService = {
         AND compacted_at IS NULL
       ORDER BY seq ASC
     `;
-    return rows.map(rowToMessage);
+    return projectAiMaps(rows.map(rowToMessage));
   },
 
   listTurnMessages: async (input) => {
@@ -2758,7 +2787,7 @@ export const aiConversations: AiConversationService = {
         AND (${input.includeCompacted ?? false} OR compacted_at IS NULL)
       ORDER BY seq ASC
     `;
-    return rows.map(rowToMessage);
+    return projectAiMaps(rows.map(rowToMessage));
   },
 
   setMessageFeedback: async (input) => {
@@ -2939,7 +2968,7 @@ export const aiConversations: AiConversationService = {
           kind: "summary",
           seq: checkpointSeq,
           loopId: null,
-          modelProfileId: input.modelProfileId ?? null,
+          modelId: input.modelId ?? null,
           meta: { compactedCount: archived[0]?.count ?? 0, ...(todoPlan ? { todoPlan } : {}) },
         },
         tx,
@@ -2958,7 +2987,7 @@ export const aiConversations: AiConversationService = {
         "idx_ai_turns_conversation_short_id",
         (attempt, shortId) => attempt<TurnRow[]>`
       INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
-      VALUES (${shortId}, ${input.conversationId}, ${input.modelProfileId}, 'queued',
+      VALUES (${shortId}, ${input.conversationId}, ${input.modelId}, 'queued',
         (${input.runConfig ? JSON.stringify(input.runConfig) : null}::text)::jsonb)
       RETURNING *
     `,
@@ -3015,7 +3044,7 @@ export const aiConversations: AiConversationService = {
         VALUES (
           ${shortId},
           ${input.conversationId},
-          ${input.modelProfileId},
+          ${input.modelId},
           'queued',
           (${JSON.stringify(input.runConfig)}::text)::jsonb
         )
@@ -3064,7 +3093,12 @@ export const aiConversations: AiConversationService = {
           conversationId: input.conversationId,
           message: input.userMessage,
           loopId: turn.id,
-          meta: input.expectedDraftRevision === undefined ? undefined : { submittedDraftRevision: input.expectedDraftRevision },
+          meta: {
+            ...(input.expectedDraftRevision === undefined ? {} : { submittedDraftRevision: input.expectedDraftRevision }),
+            modelRequest: input.runConfig.model,
+            modelResolved: input.runConfig.modelResolved,
+            ...(input.runConfig.modelReplacement ? { modelReplacement: input.runConfig.modelReplacement } : {}),
+          },
         },
         tx,
       );
@@ -3074,15 +3108,17 @@ export const aiConversations: AiConversationService = {
       for (const resource of resources) {
         await tx`
           INSERT INTO ai.conversation_resource_refs (
-            conversation_id, resource_type, resource_id, title, preview, icon, href, source_turn_id
+            conversation_id, resource_type, resource_id, title, preview, icon, href, context, status, source_turn_id
           ) VALUES (
             ${input.conversationId}, ${resource.ref.type}, ${resource.ref.id}, ${resource.title ?? null},
-            ${resource.preview ?? null}, ${resource.icon ?? null}, ${resource.href ?? null}, ${turn.id}
+            ${resource.preview ?? null}, ${resource.icon ?? null}, ${resource.href ?? null}, ${resource.context ?? null}, ${resource.status ?? null}, ${turn.id}
           )
           ON CONFLICT (conversation_id, resource_type, resource_id)
           DO UPDATE SET
             title = COALESCE(EXCLUDED.title, ai.conversation_resource_refs.title),
             preview = COALESCE(EXCLUDED.preview, ai.conversation_resource_refs.preview),
+            context = COALESCE(EXCLUDED.context, ai.conversation_resource_refs.context),
+            status = COALESCE(EXCLUDED.status, ai.conversation_resource_refs.status),
             icon = COALESCE(EXCLUDED.icon, ai.conversation_resource_refs.icon),
             href = COALESCE(EXCLUDED.href, ai.conversation_resource_refs.href),
             source_turn_id = EXCLUDED.source_turn_id,
@@ -3120,7 +3156,7 @@ export const aiConversations: AiConversationService = {
   getLatestTurn: async (input) => {
     const [row] = await sql<
       TurnRow[]
-    >`SELECT * FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false)
+    >`SELECT * FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false) AND (${input.kind ?? null}::text IS NULL OR run_config->>'kind'=${input.kind ?? null})
       ORDER BY created_at DESC, id DESC LIMIT 1`;
     return row ? rowToTurn(row) : null;
   },
@@ -3946,7 +3982,7 @@ export const aiConversations: AiConversationService = {
           ).map(rowToMessage)
         : await aiConversations.listContextMessages({ conversationId: input.conversationId });
       return projectSettledAiToolChecks(
-        rows.map((row) => ({
+        (await projectAiMaps(rows, true)).map((row) => ({
           seq: row.seq,
           kind: row.kind,
           meta: row.meta,
@@ -3978,7 +4014,7 @@ export const aiConversations: AiConversationService = {
           kind: opts?.kind,
           seq: opts?.seq,
           loopId: opts?.kind === "summary" && !input.background ? null : input.turnId,
-          modelProfileId: input.modelProfileId,
+          modelId: input.modelId,
           meta,
         });
         if (!appended) {
@@ -3997,7 +4033,7 @@ export const aiConversations: AiConversationService = {
             kind: opts?.kind,
             seq: opts?.seq,
             loopId: input.turnId && opts?.kind !== "summary" ? input.turnId : null,
-            modelProfileId: input.modelProfileId,
+            modelId: input.modelId,
             meta,
           },
           tx,

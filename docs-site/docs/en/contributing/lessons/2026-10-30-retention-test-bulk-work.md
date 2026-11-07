@@ -1,0 +1,6 @@
+### A retention test checked its bound with 10,005 rows inside a 5 s budget
+
+- **What happened:** `retention deletes at most 10000 rows per call` in `packages/filesv2/test/activity.integration.test.ts` timed out in CI `integration (2)` on #2151 (#2153), and earlier under load (#1797). The watchdog from #2130 cancelled the retention `DELETE` after 4745 ms, blocked by nothing. The tests just before it took about 35 ms each, so the database itself was not slow.
+- **Root cause:** Not confirmed. In PostgreSQL 17 locally, the same `DELETE` on 10,005 fresh rows took 33 ms with a hash join, also with stale or reset statistics. Forced JIT added at most 0.4 s, and the plan's cost stays far below `jit_above_cost`. The table has no triggers or foreign keys pointing to it. What the statement waited on in CI is unknown: the report did not say.
+- **Error class:** A test proves a bound with bulk data, so unexplained slowness in the bulk work fails a test about the bound.
+- **Guard:** `purgeActivity` takes its batch size (default `ACTIVITY_PURGE_BATCH`, 10,000), and the test checks the bound with 105 rows and a batch of 100. The watchdog report now names the wait event of the work it ends (`waiting on IO:DataFileRead`, `Lock:transactionid`, or `running`), so the next slow statement says whether it waited or worked.

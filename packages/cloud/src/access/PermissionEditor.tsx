@@ -1,9 +1,9 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { announce, Button, IconButton, Placeholder, prompts, Select, SelectChip, Tooltip, useLocale } from "@k2b/ui";
+import { Avatar, announce, Button, IconButton, Placeholder, prompts, Select, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
-import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind } from "../contracts/shared";
+import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import { createGroupCoverage, type GroupCoverage, GroupCoveragePanel, GroupCoverageToggle } from "./GroupCoverage";
 import { isManagerEntry } from "./managers";
 import { accessMessages } from "./messages";
@@ -63,7 +63,7 @@ type PermissionEditorProps = {
 
   /** Revoke an existing entry. Any entry can be revoked except the last
    *  manager: once exactly one entry manages the resource (`admin` for a
-   *  person, group, all signed-in users, or a standalone or agent service
+   *  person, group, all signed-in people, or a standalone or agent service
    *  account), its row can neither be lowered nor removed. */
   revokeAccess: (accessId: string) => Promise<void>;
 
@@ -77,13 +77,17 @@ type PermissionEditorProps = {
   /** Allow granting `public` access from this editor. */
   allowPublic?: boolean;
 
-  /** Allow granting access to every authenticated user. Defaults to
+  /** Allow granting access to every signed-in person, including guests. Defaults to
    *  true; resources with an explicit principal allowlist can disable it. */
   allowAuthenticated?: boolean;
 
-  /** Allow granting service accounts. Off by default so ordinary
-   *  permission pickers stay user/group focused. */
+  /** Allow granting service accounts. Defaults to true, including agents.
+   *  Disable only when the resource documents a user-backed identity requirement. */
   allowServiceAccounts?: boolean;
+  /** Optional directory filters for the resource's accepted credential kinds. */
+  serviceAccountKinds?: ServiceAccountKind[];
+  /** Grant selection defaults to active accounts; existing entries are unaffected. */
+  serviceAccountStatus?: ServiceAccountStatus;
 
   /** The principal search's placeholder, in the consumer's terms. Defaults to the principal kinds it offers. */
   placeholder?: string;
@@ -117,7 +121,7 @@ const defaultLabels = (t: ReturnType<typeof accessMessages.resolve>["t"]): Recor
   none: { label: t.noAccess, icon: "ti-ban" },
 });
 
-type ResolvedLevel = {
+export type ResolvedLevel = {
   level: GrantableLevel;
   scope: string | undefined;
   /** Unique per option: the level, prefixed by its scope. */
@@ -127,12 +131,15 @@ type ResolvedLevel = {
   description: string | undefined;
 };
 
-const levelKey = (level: PermissionLevel, scope: string | undefined): string => (scope ? `${scope}:${level}` : level);
+export const levelKey = (level: PermissionLevel, scope: string | undefined): string => (scope ? `${scope}:${level}` : level);
 
 /** Resolve the AllowedLevel union into a flat shape the renderer can
  *  loop over. Falls back to the default View / Edit / Manage list when
  *  no override is given. */
-const resolveAllowedLevels = (allowed: AllowedLevel[] | undefined, t: ReturnType<typeof accessMessages.resolve>["t"]): ResolvedLevel[] => {
+export const resolveAllowedLevels = (
+  allowed: AllowedLevel[] | undefined,
+  t: ReturnType<typeof accessMessages.resolve>["t"],
+): ResolvedLevel[] => {
   const defaults = defaultLabels(t);
   const list = allowed && allowed.length > 0 ? allowed : (["read", "write", "admin"] as GrantableLevel[]);
   return list.map((entry) => {
@@ -445,6 +452,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                   allowPublic={allowPublic()}
                   allowAuthenticated={allowAuthenticated()}
                   allowServiceAccounts={props.allowServiceAccounts}
+                  serviceAccountKinds={props.serviceAccountKinds}
+                  serviceAccountStatus={props.serviceAccountStatus ?? "active"}
                   placeholder={props.placeholder}
                   signedIn={props.signedIn}
                   disabled={saving()}
@@ -563,6 +572,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           allowPublic={allowPublic()}
           allowAuthenticated={allowAuthenticated()}
           allowServiceAccounts={props.allowServiceAccounts}
+          serviceAccountKinds={props.serviceAccountKinds}
+          serviceAccountStatus={props.serviceAccountStatus ?? "active"}
           placeholder={props.placeholder}
           signedIn={props.signedIn}
           readOnly={grantPending()}
@@ -638,27 +649,40 @@ function AccessEntryRow(props: {
       <div
         class={
           props.expanded
-            ? "group/access-row grid min-h-[52px] grid-cols-[32px_minmax(0,1fr)_36px] items-center gap-x-3 gap-y-1.5 rounded-[var(--ui-radius-control)] py-2 sm:flex sm:px-2 sm:py-1.5 sm:hover:bg-[var(--ui-surface-subtle)]"
+            ? "group/access-row min-h-[52px] grid-cols-[32px_minmax(0,1fr)_36px] items-center gap-x-3 gap-y-1.5 rounded-[var(--ui-radius-control)] py-2 max-sm:grid sm:flex sm:px-2 sm:py-1.5 sm:hover:bg-[var(--ui-surface-subtle)]"
             : "group/access-row flex items-center gap-2 py-1.5"
         }
         aria-busy={saving() ? "true" : undefined}
       >
         <Show when={!props.expanded} fallback={<PrincipalAvatar entry={props.entry} label={displayName()} />}>
           <Show
-            when={props.entry.principal.type === "user"}
+            when={props.entry.principal.type === "user" || props.entry.principal.type === "service_account"}
             fallback={
               <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-secondary dark:bg-zinc-700">
                 <i class={`ti ${getPrincipalIcon(props.entry, t())} text-sm`} />
               </div>
             }
           >
-            <CloudAvatar
-              username={displayName()}
-              userId={props.entry.principal.type === "user" ? props.entry.principal.userId : undefined}
-              avatarHash={props.entry.avatarHash}
-              size="xs"
-              class="h-7 w-7"
-            />
+            {/* The account behind an object's API keys shows the key, as in the expanded rows. */}
+            <Show
+              when={!(props.entry.serviceAccountKind === "resource_bound" && !props.entry.avatarHash)}
+              fallback={<Avatar name={displayName()} icon="ti ti-key" shape="square" size="xs" class="h-7 w-7" />}
+            >
+              <CloudAvatar
+                username={displayName()}
+                userId={
+                  props.entry.principal.type === "user"
+                    ? props.entry.principal.userId
+                    : props.entry.principal.type === "service_account"
+                      ? props.entry.principal.serviceAccountId
+                      : undefined
+                }
+                avatarHash={props.entry.avatarHash}
+                kind={props.entry.principal.type === "service_account" ? "service_account" : "user"}
+                size="xs"
+                class="h-7 w-7"
+              />
+            </Show>
           </Show>
         </Show>
 
@@ -680,7 +704,7 @@ function AccessEntryRow(props: {
                   : props.entry.principal.type === "group"
                     ? t().group
                     : props.entry.principal.type === "authenticated"
-                      ? (props.signedInDescription ?? t().signedInDescription)
+                      ? (props.signedInDescription ?? t().signedInPermission({ level: display().label.toLocaleLowerCase(locale()) }))
                       : props.entry.principal.type === "service_account"
                         ? (props.entry.serviceAccountKind && serviceAccountKindDisplay(props.entry.serviceAccountKind, t()).label) ||
                           t().standaloneServiceAccount

@@ -72,6 +72,15 @@ const portableSections = [
         "Dropdown picker whose rows explain each choice, with an optional preview of the consequences.",
       ),
       page("choice-chips", "ChoiceChips", "ti ti-circle-dot", "A labeled row of quick single choices that scrolls instead of wrapping."),
+      page("choice-list", "ChoiceList", "ti ti-list", "A labeled single choice of a few rows that each explain their consequence."),
+      page(
+        "choice-tiles",
+        "ChoiceTiles",
+        "ti ti-layout-grid",
+        "A labeled single choice of tiles with a preview, for picking how something looks.",
+      ),
+      page("color-choices", "ColorChoices", "ti ti-palette", "A labeled single choice from a fixed palette of named colour swatches."),
+      page("icon-choices", "IconChoices", "ti ti-icons", "A labeled single choice from a few named icons."),
       page(
         "autocomplete-select",
         "AutocompleteSelect",
@@ -85,6 +94,12 @@ const portableSections = [
       page("color", "ColorInput", "ti ti-palette", "Native color selection with controlled value and optional transparency."),
       page("pin", "PinInput", "ti ti-password", "Grouped one-time-code entry with paste and arrow-key navigation."),
       page("slider", "Slider", "ti ti-adjustments-horizontal", "Range input with value labels and optional centered scale."),
+      page(
+        "choice-slider",
+        "ChoiceSlider",
+        "ti ti-adjustments-alt",
+        "A slider over a few named stops with a fixed description line and unavailable stops.",
+      ),
       page("icon", "IconInput", "ti ti-icons", "Searchable controlled icon selection."),
       page("image", "ImageInput", "ti ti-photo", "Controlled image selection, preview, transform, and removal."),
       page(
@@ -95,6 +110,12 @@ const portableSections = [
       ),
       page("emoji-picker", "EmojiPicker", "ti ti-mood-smile", "Emoji search in English and German, recently used emoji, and skin tones."),
       page("signature", "SignatureInput", "ti ti-signature", "Draw with finger, pen, or mouse, or type the name, as an SVG value."),
+      page(
+        "dictation",
+        "Dictation",
+        "ti ti-microphone",
+        "Live dictation with a bar in place of the controls, its notices, and a source contract.",
+      ),
       page("qr-scanner", "QrScanner", "ti ti-qrcode", "Camera QR scanning with host validation and explicit camera errors."),
       page("file-dropzone", "FileDropzone", "ti ti-cloud-upload", "Accessible click and drag file selection with validation state."),
       page(
@@ -102,6 +123,12 @@ const portableSections = [
         "FileDropTarget",
         "ti ti-drag-drop",
         "Whole-area file drops with a calm overlay, nested targets, and dialog precedence.",
+      ),
+      page(
+        "text-editor",
+        "TextEditor",
+        "ti ti-table",
+        "Markdown editing with directly editable tables and application-supplied collaboration.",
       ),
       page("markdown-editor", "MarkdownEditor", "ti ti-markdown", "Standalone controlled Markdown editing with native textarea behavior."),
       page(
@@ -155,7 +182,7 @@ const portableSections = [
       page(
         "detail-panel",
         "DetailPanel",
-        "ti ti-layout-sidebar-right",
+        "ti ti-info-circle",
         "Quiet contextual inspectors with compact identity, flat sections, and one scroll owner.",
       ),
       page(
@@ -203,6 +230,12 @@ const portableSections = [
       page("tab-bar", "TabBar", "ti ti-layout-navbar", "Bottom navigation between a phone app's top-level pages."),
       page("panel-dialog", "PanelDialog", "ti ti-app-window", "Contained or floating composition for complex editors."),
       page("floating-window", "FloatingWindow", "ti ti-window", "Movable and resizable utility content with mobile fallback."),
+      page(
+        "anchored-popover",
+        "AnchoredPopover",
+        "ti ti-message-2",
+        "A card anchored to a control that keeps its side while open and is a bottom sheet on a phone.",
+      ),
     ],
   },
   {
@@ -234,6 +267,7 @@ const portableSections = [
       page("avatar-stack", "AvatarStack", "ti ti-users", "Overlapping faces that open the full list of people."),
       page("details", "Description list", "ti ti-list-details", "Semantic responsive key-value details with optional actions."),
       page("progress", "Progress", "ti ti-progress", "Determinate progress in compact sizes and semantic tones."),
+      page("change-list", "ChangeList", "ti ti-list-check", "Pending changes before saving, one line each, with tone icons."),
       page("stats", "Statistics", "ti ti-chart-bar", "Labeled values, context, accents, trends, and grids."),
       page(
         "observability",
@@ -276,6 +310,7 @@ const portableSections = [
       page("map-view", "MapView", "ti ti-map", "Server-rendered places and routes with a progressively loaded map image."),
       page("kbd", "Kbd", "ti ti-keyboard", "Accessible platform and locale aware shortcut caps."),
       page("label-chip", "LabelChip", "ti ti-tag", "Control names inside running text."),
+      page("match-text", "MatchText", "ti ti-highlight", "Search matches marked in a result's name or path."),
       page("steps", "Steps", "ti ti-list-numbers", "Ordered instructions with accent numbers."),
       page("charts", "Charts", "ti ti-chart-line", "Typed responsive charts and interactive state timelines."),
       page("tables", "DataTable", "ti ti-table", "Basic records and professional panels with search, filters, actions, and pagination."),
@@ -403,7 +438,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 155;
+export const portableUiComponentCount = 180;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -443,14 +478,22 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  DETAILS_ICON: "The one Details icon class that DetailsToggle and AppWorkspace.Detail show; documented on the AppWorkspace page.",
+  personColor: "Documented person color for avatars, cursors and comments in Colors and selection (/en/ui/surfaces/color).",
+  PERSON_COLORS: "Documented person color palette in Colors and selection (/en/ui/surfaces/color).",
   MapAttribution: "Linked credits for OpenMapTiles maps; documented with the host tile and glyph setup on the MapView page.",
   mapAttribution: "Plain attribution data for custom map credits; documented on the MapView page.",
   mapStyle: "OpenMapTiles style builder requiring host tile and glyph templates; documented on the MapView page.",
-  MapViewFrame: "Server-only and PDF rendering uses the shared MapView geometry; documented on the MapView page.",
+  MapViewFrame: "Server-only geometry fallback; documented on the MapView page.",
+  MapSnapshotError: "Typed browser capture failures; documented with MapView.snapshot on the MapView page.",
+  MAP_SNAPSHOT_MAX_PIXELS: "Decoded pixel budget for browser map capture; documented on the MapView page.",
   truncateMiddle: "Documented ReferenceChip helper for shortening titles by whole graphemes.",
   REFERENCE_CHIP_MAX_CHARACTERS: "Documented ReferenceChip maximum visible title length.",
   prefersReducedMotion: "Documented OS and host preference helper in the Motion guide (/en/ui/motion).",
+  attachSheetHandle: "Draggable, keyboard-operable handle for sheets with more than one height; documented on the BottomSheet page.",
+  measureScrollFade: "Documented ScrollArea helper that measures a scrollport's fades at once for a reader in the same frame.",
   formatShortcut: "Documented Kbd formatter for plain text labels and spoken names.",
+  matchParts: "Documented MatchText helper for hosts that render search matches in their own markup.",
   keyboardPlatform: "Documented Kbd platform detection for browser and server hosts.",
   reconcileChatMentions: "Documented Chat composer helper for preserving reference ranges during external text edits.",
   matchesChatCommand: "Documented Chat composer helper that filters application-owned slash rows with the composer's own matching.",

@@ -1,8 +1,11 @@
 import { APP_REGISTRY_TTL_MS, listApps, watchAppRegistry } from "@k2b/cloud";
 import { getGeoIp } from "@k2b/cloud/server/request-context";
 import { deviceOffersApproval, logger, superviseRuntimeTask } from "@k2b/cloud/services";
+import { refreshBuiltAvatarHashes } from "@k2b/cloud/services/accounts/avatar";
+import { startAppEventBroker } from "@k2b/cloud/services/app-events";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
+import { migrate as migrateAppEvents } from "./migrate/core/app-events";
 /**
  * Core-specific lifecycle helpers.
  * Migrations, background jobs — nothing generic here.
@@ -22,25 +25,29 @@ import {
 } from "@k2b/cloud/services";
 import { appApproval } from "@k2b/cloud/services/app-approval";
 import { drain as drainDeferredAuthRequests } from "@k2b/cloud/services/auth-flows/deferred";
-import { initializeIdentityAuthority, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
+import { initializeIdentityAuthority, startAppWorkloadBroker, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
 import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "@k2b/cloud/services/outgoing-mail/runtime";
 import { startWorkflowEventRetention } from "@k2b/cloud/workflows/store";
 import { aiChatTaskRuntime } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import type { createAiNotificationService } from "./ai-notifications";
 import { appApprovalRuntime } from "./app-approval-runtime";
+import { rememberApps } from "./known-apps";
 import { migrate as migrateAnnouncements } from "./migrate/core/announcements";
 import { migrate as migrateAppApproval } from "./migrate/core/app-approval";
+import { migrate as migrateAppDomains } from "./migrate/core/app-domains";
 import { migrate as migrateAudit } from "./migrate/core/audit";
 import { migrate as migrateAuth } from "./migrate/core/auth";
 import { migrate as migrateDeviceTrust } from "./migrate/core/device-trust";
 import { migrate as migrateEvents } from "./migrate/core/events";
 import { migrate as migrateExtensions } from "./migrate/core/extensions";
 import { migrate as migrateGeoIp } from "./migrate/core/geoip";
+import { migrateKnownApps } from "./migrate/core/known-apps";
 import { migrate as migrateLogging } from "./migrate/core/logging";
 import { migrate as migrateNotifications } from "./migrate/core/notifications";
 import { migrate as migrateOutgoingMail } from "./migrate/core/outgoing-mail";
 import { migrate as migratePanelContextConsent } from "./migrate/core/panel-context-consent";
+import { migratePersonalGroupHistory, startPersonalGroupHistory } from "./migrate/core/personal-group-history";
 import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
@@ -49,6 +56,9 @@ import { migrate as migrateWorkflows } from "./migrate/core/workflows";
 import type { CoreNotificationSender } from "./notifications";
 import { outgoingMailBounceRuntime } from "./outgoing-mail-bounces/runtime";
 
+let stopAppWorkloadBroker: (() => Promise<void>) | undefined;
+let stopAppEventBroker: (() => Promise<void>) | undefined;
+let stopPersonalGroupHistory: (() => Promise<void>) | undefined;
 let stopCloudAiRuntime: (() => void) | null = null;
 let stopHelpMaintenance: (() => Promise<void>) | undefined;
 
@@ -68,6 +78,7 @@ let appliedAppSkillsAt = 0;
 const refreshAppSkills = async (): Promise<void> => {
   try {
     const apps = await listApps();
+    await rememberApps(apps);
     const state = appSkillsRegistryState(apps);
     if (state === appliedAppSkillsState && Date.now() - appliedAppSkillsAt < APP_REGISTRY_TTL_MS) return;
     const startedAt = Date.now();
@@ -107,6 +118,8 @@ export const runCoreSetup = async (): Promise<void> => {
   const steps = [
     { name: "extensions", run: migrateExtensions },
     { name: "auth", run: migrateAuth },
+    { name: "known-apps", run: migrateKnownApps },
+    { name: "avatar-hashes", run: () => refreshBuiltAvatarHashes() },
     { name: "help", run: migrateHelp },
     { name: "rail-preferences", run: migrateRailPreferences },
     { name: "panel-context-consent", run: migratePanelContextConsent },
@@ -115,14 +128,17 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "pwa", run: migratePwa },
     { name: "device-trust", run: migrateDeviceTrust },
     { name: "audit", run: migrateAudit },
+    { name: "personal-group-history", run: migratePersonalGroupHistory },
     { name: "geoip", run: migrateGeoIp },
     { name: "announcements", run: migrateAnnouncements },
     { name: "notifications", run: migrateNotifications },
     { name: "settings", run: migrateSettings },
+    { name: "app-domains", run: migrateAppDomains },
     { name: "outgoing-mail", run: migrateOutgoingMail },
     { name: "logging", run: migrateLogging },
     { name: "workflows", run: migrateWorkflows },
     { name: "events", run: migrateEvents },
+    { name: "app-events", run: migrateAppEvents },
     { name: "weather", run: migrateWeather },
     { name: "geo", run: migrateGeo },
     { name: "capabilities", run: migrateCloudCapabilities },
@@ -140,9 +156,11 @@ export const startCoreServices = async (
   aiNotifications: ReturnType<typeof createAiNotificationService>,
 ): Promise<void> => {
   void getGeoIp().refresh();
-  outgoingMailAllowlist();
+  await outgoingMailAllowlist();
   try {
     await initializeIdentityAuthority();
+    stopAppWorkloadBroker = await startAppWorkloadBroker();
+    stopAppEventBroker = await startAppEventBroker();
     stopHelpMaintenance = startHelpMaintenance();
     await startAppSkillsWatcher();
     stopIdentityMaintenance = startIdentityKeyMaintenance();
@@ -183,7 +201,14 @@ export const startCoreServices = async (
     await startNotificationRuntime();
     await appApprovalRuntime.start(notificationSender);
     await lifecycleJobs.start({ notificationSender });
+    stopPersonalGroupHistory = startPersonalGroupHistory();
   } catch (error) {
+    await stopAppWorkloadBroker?.();
+    stopAppWorkloadBroker = undefined;
+    await stopAppEventBroker?.();
+    stopAppEventBroker = undefined;
+    await stopPersonalGroupHistory?.();
+    stopPersonalGroupHistory = undefined;
     await stopAppSkillsWatcher();
     await stopHelpMaintenance?.();
     stopHelpMaintenance = undefined;
@@ -217,6 +242,12 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
   try {
     // Sign-in and reset requests already answered must reach the notification store before it stops.
     await drainDeferredAuthRequests();
+    await stopAppWorkloadBroker?.();
+    stopAppWorkloadBroker = undefined;
+    await stopAppEventBroker?.();
+    stopAppEventBroker = undefined;
+    await stopPersonalGroupHistory?.();
+    stopPersonalGroupHistory = undefined;
     await stopAppSkillsWatcher();
     await stopHelpMaintenance?.();
     stopHelpMaintenance = undefined;

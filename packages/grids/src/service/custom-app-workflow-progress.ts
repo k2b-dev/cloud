@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** Caller must authorize the run first. Return no step names, payloads or record IDs. */
 export const workflowCommittedChanges = async (runId: string): Promise<number> => {

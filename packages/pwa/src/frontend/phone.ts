@@ -1,4 +1,6 @@
-import { PWA_AUTH_PATH, PWA_SCOPE, type PwaPlatform } from "@k2b/cloud/contracts";
+import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
+import type { PwaPlatform } from "@k2b/cloud/contracts/pwa";
+import { PWA_AUTH_PATH, PWA_SCOPE } from "@k2b/cloud/contracts/pwa-paths";
 
 /** An answer of Core's phone endpoints; `status` 0 means the request did not reach Cloud. */
 export type PhoneAnswer = { status: number; code?: string; body: unknown };
@@ -17,6 +19,13 @@ const request = async (method: "POST" | "PATCH" | "DELETE", path: string, body?:
   }
   const json: unknown = response.status === 204 ? null : await response.json().catch(() => null);
   const code = typeof json === "object" && json !== null && "code" in json && typeof json.code === "string" ? json.code : undefined;
+  if (
+    response.status === 401 ||
+    (response.ok &&
+      ((path === "/pairings/complete" && typeof json === "object" && json !== null && "state" in json && json.state === "paired") ||
+        (method === "DELETE" && path === "/session")))
+  )
+    pwaDrafts.clearAll();
   return { status: response.status, code, body: json };
 };
 
@@ -24,6 +33,8 @@ const request = async (method: "POST" | "PATCH" | "DELETE", path: string, body?:
 export const phoneAuth = {
   claim: (secret: string, platform: PwaPlatform) => request("POST", "/pairings/claim", { secret, platform }),
   complete: () => request("POST", "/pairings/complete"),
+  decide: (confirmationToken: string, decision: "confirm" | "reject") =>
+    request("POST", "/pairings/decision", { confirmationToken, decision }),
   renew: () => request("POST", "/session/renew"),
   rename: (name: string) => request("PATCH", "/session", { name }),
   signOut: () => request("DELETE", "/session"),

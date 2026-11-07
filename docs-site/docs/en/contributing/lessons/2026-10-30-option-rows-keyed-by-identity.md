@@ -1,0 +1,6 @@
+### RichSelect, Combobox and Cloud search replaced their options when the data was rebuilt
+
+- **What happened:** After #2154, an audit of option lists for the same class as #2140 found three more. `RichSelect` built new row objects whenever its items changed. `Combobox` took new option objects from every answer. Cloud's resource search built new command rows whenever streamed results arrived. In each case `<For>` replaced the option elements, so a click that was in progress when a host rebuilt equal data ran nothing.
+- **Root cause:** These lists rendered their rows with `<For>` over objects, and their hosts or loaders create new objects for the same entries.
+- **Error class:** A list keyed by object identity replaces interactive elements when the host rebuilds equal data.
+- **Guard:** Rows are keyed by their stable identity (item value, option value, result reference) and read their current object. The tests rebuild the data between `mouse.down()` and `mouse.up()` (RichSelect, Combobox) or check that the option element survives a rebuild (Cloud search). Each failed before the fix. Not affected: the editor's slash menu (CodeMirror takes the choice on `mousedown`) and its bubble menu and toolbar (the hosts pass the same action objects).

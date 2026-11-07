@@ -1,10 +1,15 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import type { OutboundEvent, ProviderEvent } from "@k2b/nessi";
 import { __aiExecutorTest } from "./executor";
 import type { AiCallDetails, AiCallStatus } from "./inference-calls";
 import { createAiProvider } from "./provider";
+import * as connections from "./provider-connections";
 import { inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
+
+// Adapter unit tests own HTTP fakes; provider status persistence belongs to its integration seam.
+beforeEach(() => spyOn(connections, "recordAiProviderStatus").mockResolvedValue(undefined));
+afterEach(() => mock.restore());
 
 /**
  * Synthetic replay of a hosted OpenAI-compatible stream that carries reasoning
@@ -56,12 +61,18 @@ afterAll(() => {
 });
 
 const profile: AiModelProfile = {
+  modelId: "hosted-glm",
+  providerId: "hosted-glm",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "hosted-glm",
   label: "Hosted GLM",
   provider: "openai-compatible",
   model: "glm-5-flash",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "hosted",
   baseURL: `http://localhost:${0}/v1`,
 };
@@ -72,7 +83,6 @@ test("reasoning_content frames reach the Assistant stream as thinking blocks wit
     createAiProvider({ ...profile, baseURL: `http://localhost:${server.port}/v1` }, "secret-key"),
     profile,
     { kind: "chat", task: "chat" },
-    undefined,
     {
       begin: async () => ({ id: crypto.randomUUID(), maxOutputTokens: undefined }),
       finish: async (_id, _usage, status, details) => {

@@ -34,7 +34,7 @@ const project = {
   description: "",
   icon: "ti ti-folders",
   instructions: "",
-  defaultModelProfileId: null,
+  defaultModel: null,
   permission: "admin",
   revision: 1,
   createdAt: "2026-08-12T08:00:00.000Z",

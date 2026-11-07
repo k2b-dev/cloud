@@ -1,7 +1,7 @@
 import { mermaidConfig } from "@k2b/cloud/browser/mermaid";
+import { renderMermaid } from "@k2b/editor/markdown/mermaid-render";
 import { useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
-import { renderMermaid } from "../../../lib/mermaid-render";
 import { enhanceBookMermaid } from "./book-mermaid";
 import { BOOK_CONTENT_EVENT } from "./book-state";
 import { bookMessages } from "./messages";

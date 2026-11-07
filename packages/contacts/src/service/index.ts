@@ -9,7 +9,16 @@ import {
   userFromActor,
 } from "@k2b/cloud/server";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
-import { capByCredential, credentialPermission, getActorBookPermission, isContactsAdministrator, readableBookScope } from "./access";
+import {
+  capByCredential,
+  credentialPermission,
+  getActorBookMemberPermission,
+  getActorBookPermission,
+  isContactsAdministrator,
+  listBookAccessMembers,
+  readableBookScope,
+} from "./access";
+import * as addressLocation from "./address-location";
 import * as apiKeys from "./api-keys";
 import * as books from "./books";
 import * as contactLookup from "./contact-lookup";
@@ -18,6 +27,7 @@ import * as favorites from "./favorites";
 import * as imports from "./imports";
 import { contactsLive } from "./live";
 import * as notes from "./notes";
+import { isUuid } from "./shared";
 import * as tags from "./tags";
 import type {
   ContactBook,
@@ -208,6 +218,9 @@ export const contactsService = {
     permission: {
       forActor: (config: { bookId: string; actor: RequestActor; accessSubject: AccessSubject }): Promise<PermissionLevel> =>
         getActorBookPermission(config),
+      /** Access of one's own, without public access; it decides who may read who has access. */
+      memberForActor: (config: { bookId: string; actor: RequestActor; accessSubject: AccessSubject }): Promise<PermissionLevel> =>
+        getActorBookMemberPermission(config),
     },
     access: {
       list: async (
@@ -223,6 +236,18 @@ export const contactsService = {
         const access = await authorizeBook(config.bookId, config, "admin");
         if (!access.ok) return access;
         return ok(await books.access.list(config));
+      },
+      /** Who has access, read-only, for everyone with access of their own; public access alone is refused. */
+      members: async (config: BookCaller & { bookId: string }) => {
+        const access = await authorizeBook(config.bookId, config, "read");
+        if (!access.ok) return access;
+        const member = await getActorBookMemberPermission({
+          bookId: config.bookId,
+          actor: config.actor,
+          accessSubject: config.accessSubject,
+        });
+        if (!hasPermission(member, "read")) return fail(err.forbidden("Access denied"));
+        return ok(await listBookAccessMembers(config.bookId));
       },
       grant: async (config: BookCaller & { bookId: string; principal: AccessEntry["principal"]; permission: PermissionLevel }) => {
         const access = await authorizeBook(config.bookId, config, "admin");
@@ -321,6 +346,28 @@ export const contactsService = {
       const access = await authorizeBook(config.bookId, config, config.level ?? "read");
       if (!access.ok) return access;
       return ok(await contacts.get({ bookId: config.bookId, id: config.id }));
+    },
+    /**
+     * Resolves a pending address location once, for anyone who may read the contact. The geocoder runs as
+     * the requesting person through Core, so it spends that person's budget; it never runs without a caller.
+     */
+    locateAddress: async (
+      config: BookCaller & { bookId: string; contactId: string; addressId: string } & Pick<
+          Parameters<typeof addressLocation.locateAddress>[0],
+          "geocode" | "signal"
+        >,
+    ) => {
+      const access = await authorizeBook(config.bookId, config, "read");
+      if (!access.ok) return access;
+      if (!isUuid(config.addressId)) return fail(err.notFound("Address"));
+      const contact = await contacts.get({ bookId: config.bookId, id: config.contactId });
+      if (!contact) return fail(err.notFound("Contact"));
+      return addressLocation.locateAddress({
+        contactId: contact.id,
+        addressId: config.addressId,
+        geocode: config.geocode,
+        signal: config.signal,
+      });
     },
     getMany: async (config: BookCaller & Parameters<typeof contacts.getMany>[0]) => {
       const access = await authorizeBook(config.bookId, config, "read");
@@ -470,8 +517,11 @@ export const contactsService = {
   },
 };
 
+export type { ContactAddressLocateResult } from "./address-location";
 export type {
   Contact,
+  ContactAddress,
+  ContactAddressLocation,
   ContactBankAccount,
   ContactBankAccountInput,
   ContactBook,

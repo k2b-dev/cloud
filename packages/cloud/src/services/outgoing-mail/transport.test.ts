@@ -185,13 +185,13 @@ test("test send maps a blocked target to smtp_failed 502", async () => {
   const record = spyOn(audit, "record").mockResolvedValue();
   const failed = spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async (value) => value.result);
   target.mockRejectedValue(
-    new Error("Outgoing mail target is on an internal network. An operator can allow it with OUTGOING_MAIL_ALLOWED_TARGETS."),
+    new Error("Outgoing mail target is on an internal network. An operator can allow it with outgoing_mail.allowed_targets."),
   );
   try {
     await expect(outgoingMailTest.send("alerts", "recipient@example.org", { actor: { uid: "admin" } })).rejects.toMatchObject({
       code: "smtp_failed",
       status: 502,
-      message: expect.stringContaining("OUTGOING_MAIL_ALLOWED_TARGETS"),
+      message: expect.stringContaining("outgoing_mail.allowed_targets"),
     });
     expect(failed).toHaveBeenCalledTimes(1);
   } finally {

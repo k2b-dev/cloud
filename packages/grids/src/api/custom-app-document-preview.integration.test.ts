@@ -1,5 +1,5 @@
 import { beforeAll, expect, spyOn } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";

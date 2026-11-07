@@ -12,6 +12,17 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 const { default: AppWorkspace, appWorkspaceDetailElementId } = await import("./AppWorkspace");
 const { LocaleProvider } = await import("../intl/locale");
+const { DetailsToggle } = await import("./DetailsToggle");
+
+test("an app's own Details button uses the same info circle and selected style", () => {
+  const html = renderToString(() =>
+    createComponent(DetailsToggle, { label: "Details", "aria-controls": "panel", "aria-expanded": true, iconClass: "text-sm" }),
+  );
+  expect(html).toMatch(/<button[^>]*class="[^"]*k2b-icon-button[^"]*k2b-details-toggle/);
+  expect(html).toContain('aria-expanded="true"');
+  expect(html).toContain('aria-label="Details"');
+  expect(html).toContain('class="ti ti-info-circle text-sm"');
+});
 
 test("application controls share the Detail's server-rendered DOM id", () => {
   const id = appWorkspaceDetailElementId("reader");
@@ -39,6 +50,9 @@ for (const locale of ["en", "de"] as const) {
     expect(button).toContain('aria-expanded="false"');
     expect(button).toContain('aria-hidden="true"');
     expect(button).toContain("Details");
+    // Details reads the same in every app: the info circle, and the shared selected style.
+    expect(button).toContain('class="ti ti-info-circle"');
+    expect(button).toContain("k2b-details-toggle");
     expect(html.indexOf(button!)).toBeLessThan(html.indexOf('data-app-workspace-resize="detail"'));
     expect(html.indexOf('data-app-workspace-resize="detail"')).toBeLessThan(html.indexOf("<aside"));
   });

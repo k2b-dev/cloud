@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { defaultRailPreferences, isRailShortcutHref, RailPreferencesSchema } from "../contracts/rail-preferences";
-import { phoneBarItems, phoneBarLinks, projectRailNavigation, type RailApp, railLinkActive, sortRailApps } from "./rail-navigation";
+import { projectRailNavigation, type RailApp, railLinkActive, sortRailApps } from "./rail-navigation";
 
 const app = (id: string, label: string, defaultVisible = true): RailApp => ({
   id,
@@ -17,6 +17,20 @@ describe("personal app rail", () => {
     expect(projectRailNavigation(apps, defaultRailPreferences(), "de").apps.map((x) => x.id)).toEqual(["a", "z"]);
     expect(sortRailApps([app("z", "Same"), app("a", "Same")], "en").map((x) => x.id)).toEqual(["a", "z"]);
     expect(sortRailApps(apps, "sv").map((x) => x.id)).toEqual(["b", "z", "a"]);
+  });
+  test("moving an app out of the default rail preserves explicit visibility and pins", () => {
+    const catalog = [app("telemetry", "Telemetry", false)];
+    const defaults = defaultRailPreferences();
+    expect(projectRailNavigation(catalog, defaults, "en").apps).toEqual([]);
+    expect(projectRailNavigation(catalog, { ...defaults, visibility: { telemetry: true } }, "en").apps.map((item) => item.id)).toEqual([
+      "telemetry",
+    ]);
+    expect(projectRailNavigation(catalog, { ...defaults, visibility: { telemetry: false } }, "en").apps).toEqual([]);
+    const pinned = { ...defaults, shortcuts: [{ id: "pin", kind: "app" as const, appId: "telemetry" }] };
+    const navigation = projectRailNavigation(catalog, pinned, "en");
+    expect(navigation.shortcuts.map((item) => item.appId)).toEqual(["telemetry"]);
+    expect(navigation.apps).toEqual([]);
+    expect(pinned.shortcuts).toEqual([{ id: "pin", kind: "app", appId: "telemetry" }]);
   });
   test("visibility overrides neither restore unavailable apps nor change the catalog", () => {
     const settings = { ...defaultRailPreferences(), visibility: { a: false, b: true, forbidden: true } };
@@ -134,41 +148,4 @@ test("Core Help marks only its owning app, including third-party apps", () => {
   const spaces = { ...app("spaces", "Spaces"), appId: "spaces" };
   for (const path of ["/help", "/help/apps", "/help/apps/spaces/a/b", "/helpx/apps/spaces", "/app/timetrack"])
     expect(railLinkActive(spaces, path)).toBe(false);
-});
-
-describe("phone bar links", () => {
-  const apps = ["a", "b", "c", "d", "e", "f"].map((id) => app(id, id));
-  const navigation = { shortcuts: [app("pinned", "Pinned")], apps };
-  test("keeps shortcuts first, preserves rail order and applies the limit", () => {
-    expect(phoneBarLinks(navigation, "/", 4)).toEqual([navigation.shortcuts[0]!, ...apps.slice(0, 3)]);
-    expect(phoneBarLinks(navigation, "/", 2)).toEqual([navigation.shortcuts[0]!, apps[0]!]);
-    expect(phoneBarLinks({ shortcuts: [], apps: apps.slice(0, 2) }, "/", 4)).toEqual(apps.slice(0, 2));
-  });
-  test("a current app after the limit replaces the last place without reordering the others", () => {
-    expect(phoneBarLinks(navigation, "/app/f/inbox", 4)).toEqual([navigation.shortcuts[0]!, ...apps.slice(0, 2), apps[5]!]);
-  });
-  test("a current app inside the limit leaves the selection unchanged", () => {
-    expect(phoneBarLinks(navigation, "/app/b", 4)).toEqual(phoneBarLinks(navigation, "/", 4));
-    expect(phoneBarLinks(navigation, "/app/pinned", 4)).toEqual(phoneBarLinks(navigation, "/", 4));
-  });
-  test("Home leads to / and is the open item there and on the start page that / opens", () => {
-    const home = { label: "Home", path: "/app/dashboard?view=today" };
-    const current = (path: string) =>
-      phoneBarItems(navigation, path, home)
-        .filter((item) => item.current)
-        .map((item) => item.id);
-    expect(phoneBarItems(navigation, "/", home)[0]).toMatchObject({ id: "home", href: "/", label: "Home", icon: "ti ti-home" });
-    expect(phoneBarItems(navigation, "/", home)).toHaveLength(5);
-    expect(current("/")).toEqual(["home"]);
-    expect(current("/app/dashboard")).toEqual(["home"]);
-    expect(current("/app/dashboard/widgets")).toEqual(["home"]);
-    expect(current("/app/dashboards")).toEqual([]);
-    expect(current("/app/b/inbox")).toEqual(["b"]);
-    // A start page that is an app in the bar marks the app, not Home.
-    expect(
-      phoneBarItems(navigation, "/app/b", { label: "Home", path: "/app/b" })
-        .filter((item) => item.current)
-        .map((item) => item.id),
-    ).toEqual(["b"]);
-  });
 });

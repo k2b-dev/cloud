@@ -113,9 +113,9 @@ const open = async (width: number, dark: boolean, locale: string, status: GeoIpA
 };
 
 describe("sign-in locations block in a browser", () => {
-  test("rows, actions and the status line keep their boxes in every state at 1440, 1194 and 390", async () => {
-    for (const width of [1440, 1194, 390])
-      for (const locale of ["en", "de"]) {
+  for (const width of [1440, 1194, 390])
+    for (const locale of ["en", "de"])
+      test(`${width}px, ${locale}: rows, actions and the status line keep their boxes in every state`, async () => {
         const layouts = [];
         for (const [status, phase] of phases) {
           const tab = await open(width, false, locale, status, phase);
@@ -177,6 +177,5 @@ describe("sign-in locations block in a browser", () => {
             line: start.line,
             upload: start.upload,
           });
-      }
-  }, 120_000);
+      }, 120_000);
 });

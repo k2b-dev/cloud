@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, onTestFinished, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
-import { getProcessSync, lazySync } from "@k2b/cloud";
+import { connections, createSql, getProcessSync, lazySync, redis, sql } from "@k2b/cloud";
 import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
 import {
   claimWorkflowRun,
@@ -13,11 +13,10 @@ import {
   wakeExpiredWorkflowRuns,
   workflowEffectKey,
 } from "@k2b/cloud/workflows/store";
-import { redis, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess, revokeMailboxAccess, updateMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { attachProviderBinding, rediscoverProviderBinding } from "./bindings";
@@ -58,7 +57,14 @@ import {
   loadSenderIdentityTransportRuntime,
   upsertSenderIdentityTransport,
 } from "./sender-identity-transports";
-import { claimFence, commitSyncBatch, executeBindingRediscovery, fetchReconcileStep, hydrateMessageBatch } from "./sync-runtime";
+import {
+  claimFence,
+  commitSyncBatch,
+  executeBindingRediscovery,
+  fetchReconcileStep,
+  hydrateMessageBatch,
+  ingestEnvelope,
+} from "./sync-runtime";
 import { createConversationTriageCommands } from "./triage";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -149,7 +155,6 @@ suite("mail lifecycle control plane", () => {
   let collaboratorContext: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const [admin] = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-lifecycle-admin-${suffix}`}, 'local', 'user', 'Mail Lifecycle Admin', true)
@@ -1692,6 +1697,62 @@ suite("mail lifecycle control plane", () => {
     mimeStructure: {},
   });
 
+  test("a 200-envelope first import avoids redundant database round trips", async () => {
+    const fixture = await reconcileFixture({ key: "batch-round-trips", uidValidity: "81", localUids: [] });
+    const counter = await countPostgresRoundTrips(connections().database.url);
+    const measured = createSql({ url: counter.url, max: 1, tls: false });
+    const messages = Array.from({ length: 200 }, (_, index) => ({
+      ...reconcileEnvelope(index + 1, "81", fixture.folderId, "round-trips"),
+      subject: `Independent message ${index + 1}`,
+      sentAt: new Date("2026-01-02T03:04:05.000Z"),
+      internalDate: new Date("2026-01-02T03:04:05.000Z"),
+    }));
+    try {
+      await measured`SELECT 1`;
+      const before = counter.count();
+      const started = performance.now();
+      const ids = await measured.begin(async (db) => {
+        const ids: string[] = [];
+        for (const message of messages)
+          ids.push(await ingestEnvelope({ db, mailboxId, remoteResourceId: fixture.resourceId, folderId: fixture.folderId, message }));
+        return ids;
+      });
+      const milliseconds = performance.now() - started;
+      const roundTrips = counter.count() - before;
+      console.log(
+        JSON.stringify({
+          benchmark: "mail-first-sync-200",
+          messages: ids.length,
+          roundTrips,
+          milliseconds: Math.round(milliseconds),
+          messagesPerSecond: Math.round(200_000 / milliseconds),
+        }),
+      );
+      expect(new Set(ids).size).toBe(200);
+      expect(roundTrips).toBeLessThanOrEqual(200 * 18 + 2);
+      // Replaying the batch must retain the same canonical contents and flags.
+      const replay = await measured.begin(async (db) => {
+        const ids: string[] = [];
+        for (const message of messages)
+          ids.push(await ingestEnvelope({ db, mailboxId, remoteResourceId: fixture.resourceId, folderId: fixture.folderId, message }));
+        return ids;
+      });
+      expect(replay).toEqual(ids);
+      const [state] = await sql<{ messages: number; unread: number; conversations: number }[]>`
+        SELECT count(DISTINCT p.message_id)::int AS messages,
+          count(*) FILTER (WHERE NOT ('\\Seen' = ANY(p.flags)))::int AS unread,
+          count(DISTINCT cm.conversation_id)::int AS conversations
+        FROM mail.message_placements p JOIN mail.conversation_messages cm ON cm.message_id = p.message_id
+        WHERE p.folder_id = ${fixture.folderId}::uuid AND p.deleted_at IS NULL
+      `;
+      expect(state).toEqual({ messages: 200, unread: 0, conversations: 200 });
+    } finally {
+      await measured.close();
+      await counter.close();
+      await dropReconcileFolders();
+    }
+  });
+
   test("a reconcile window re-imports remote UIDs that are missing locally and applies their flags", async () => {
     const fixture = await reconcileFixture({ key: "reconcile-commit", uidValidity: "61", localUids: [1, 3] });
     const fence = await claimFence(fixture.resourceId, bindingId, "incremental");
@@ -1864,6 +1925,8 @@ suite("mail lifecycle control plane", () => {
     role: string;
     messages: ConnectorEnvelope[];
   }) => {
+    // The commit reads the folder's Drafts role with the locked folder row.
+    await sql`UPDATE mail.folders SET role = ${params.role} WHERE id = ${params.fixture.folderId}::uuid`;
     const fence = await claimFence(params.fixture.resourceId, bindingId, "backfill");
     const beforeCursor = reconcileCursor(params.uidValidity);
     const highestUid = Math.max(...params.messages.map((message) => Number(message.remoteRef.uid)));
@@ -2652,10 +2715,44 @@ suite("mail lifecycle control plane", () => {
     `;
     if (!message) throw new Error("Operator projection fixture was not created");
 
+    const [hydrationWork] = await sql<{ job_id: string | null; delivery_id: string | null }[]>`
+      INSERT INTO mail.hydration_work (mailbox_id, queue_wait_ms, lease_wait_ms, batch_ms, batch_finished_at)
+      VALUES (${mailboxId}::uuid, 1234, 567, 321, '2026-01-01T00:00:00Z'::timestamptz)
+      ON CONFLICT (mailbox_id) DO UPDATE SET
+        queue_wait_ms = EXCLUDED.queue_wait_ms, lease_wait_ms = EXCLUDED.lease_wait_ms,
+        batch_ms = EXCLUDED.batch_ms, batch_finished_at = EXCLUDED.batch_finished_at
+      RETURNING job_id, delivery_id
+    `;
     const before = await getMailboxOperations(adminContext, mailboxId);
     expect(before.ok).toBe(true);
     if (!before.ok) return;
     expect(before.data.mailboxId).toBe(mailboxShortId);
+    expect(before.data.coverage.hydration.timing).toEqual({
+      queueWaitMs: 1234,
+      leaseWaitMs: 567,
+      batchMs: 321,
+      batchFinishedAt: "2026-01-01T00:00:00.000Z",
+    });
+    // The operator projection exposes measurements, never durable job/delivery state.
+    const serialized = JSON.stringify(before.data);
+    for (const field of [
+      "job_id",
+      "jobId",
+      "delivery_id",
+      "deliveryId",
+      "queued_at",
+      "queuedAt",
+      "foreground_requested",
+      "foregroundRequested",
+      "retry_bodies",
+      "retryBodies",
+      "published_at",
+      "publishedAt",
+    ]) {
+      expect(serialized).not.toContain(`"${field}"`);
+    }
+    if (hydrationWork?.job_id) expect(serialized).not.toContain(hydrationWork.job_id);
+    if (hydrationWork?.delivery_id) expect(serialized).not.toContain(hydrationWork.delivery_id);
     expect(before.data.folders.every((folder) => /^[0-9A-Za-z]{6}$/.test(folder.id))).toBe(true);
     expect(before.data.coverage.search.covered).toBeLessThan(before.data.coverage.search.total);
     expect(before.data.coverage.threads.covered).toBeLessThan(before.data.coverage.threads.total);
@@ -2672,7 +2769,12 @@ suite("mail lifecycle control plane", () => {
     expect(platform.data.mailboxes[0]).toMatchObject({
       mailboxId: mailboxShortId,
       mailboxName: `Lifecycle ${suffix}`,
-      coverage: before.data.coverage,
+      // Platform summaries retain counts; per-mailbox timings belong to the detail read.
+      coverage: {
+        hydration: { total: before.data.coverage.hydration.total, covered: before.data.coverage.hydration.covered },
+        search: before.data.coverage.search,
+        threads: before.data.coverage.threads,
+      },
     });
     expect(JSON.stringify(platform.data)).not.toContain("Operator projection fixture");
 

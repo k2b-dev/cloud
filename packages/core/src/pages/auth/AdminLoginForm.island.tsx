@@ -2,7 +2,7 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, Checkbox, NoticeCard, TextInput, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
-import { afterSignInHref } from "./login-redirect";
+import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { authMessages } from "./messages";
 
 export default function AdminLoginForm(props: { redirectTo?: string; requiresRecovery?: boolean }) {
@@ -14,9 +14,12 @@ export default function AdminLoginForm(props: { redirectTo?: string; requiresRec
 
   const mutation = mutations.create({
     mutation: async () => {
-      const res = await apiClient.auth["admin-login"].$post({
-        json: { token: token(), restoreLocalLogin: restoreLocalLogin() },
-      });
+      const res = await apiClient.auth["admin-login"].$post(
+        {
+          json: { token: token(), restoreLocalLogin: restoreLocalLogin() },
+        },
+        confirmationRequestOptions(props.redirectTo),
+      );
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { message?: string; code?: string } | null;
         if (data?.code === "CATEGORY_RECOVERY_REQUIRED") setRequiresRecovery(true);

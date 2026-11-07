@@ -1,7 +1,7 @@
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, RemoveButton } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { showAccountActionNotice } from "../../action-notice";
 import { useAccountsMessages } from "../../messages";
 
@@ -11,7 +11,7 @@ type RemoveMemberProps = {
   /** "members" or "managers" */
   membershipRole: "members" | "managers";
   /** Type of entity to remove */
-  type: "user" | "group";
+  type: "user" | "group" | "service_account";
   /** UID or CN of the entity */
   id: string;
   /** Display label for the confirmation */
@@ -19,15 +19,14 @@ type RemoveMemberProps = {
 };
 
 export default function RemoveMember(props: RemoveMemberProps) {
+  const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const mutation = mutations.create<void, void>({
     mutation: async () => {
-      const endpoint =
-        props.membershipRole === "members" ? apiClient.groups[":id"].members.$delete : apiClient.groups[":id"].managers.$delete;
-      const res = await endpoint({
-        param: { id: props.groupId },
-        json: { type: props.type, id: props.id },
-      });
+      const res =
+        props.membershipRole === "members"
+          ? await apiClient.groups[":id"].members.$delete({ param: { id: props.groupId }, json: { type: props.type, id: props.id } })
+          : await apiClient.groups[":id"].managers.$delete({ param: { id: props.groupId }, json: { type: props.type, id: props.id } });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.message ?? messages().removeFailed);
@@ -42,7 +41,7 @@ export default function RemoveMember(props: RemoveMemberProps) {
       );
     },
     onSuccess: () => {
-      refreshCurrentPath();
+      showChanges();
     },
     onError: (err) => {
       prompts.error(err.message);

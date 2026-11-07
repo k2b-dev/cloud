@@ -1,10 +1,10 @@
-import { sql } from "bun";
 import { type AiStoredActionReview, storedActionReview } from "../../ai/action-review";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals } from "../../ai/approvals";
 import type { AiTurnRunConfig } from "../../ai/types";
 import type { RuntimeAppMeta } from "../../contracts/app";
 import { APPROVALS_PAGE_SIZE, type ApprovalCounts, type PendingApproval } from "../../contracts/approvals";
 import { type CapabilityActionPolicy, CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
+import { sql } from "../../runtime/clients";
 import type { ApprovalAssurance } from ".";
 import { compactApprovalDetailsSql, openRequests } from "./content";
 import { decodeApprovalCursor, encodeApprovalCursor } from "./cursor";

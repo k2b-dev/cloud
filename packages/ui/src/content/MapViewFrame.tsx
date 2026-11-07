@@ -231,7 +231,7 @@ export function MapFootRow(props: { scale?: MapScale; children?: JSX.Element }):
     </div>
   );
 }
-/** Geometry without a browser, a canvas, or a network dependency; suitable for server rendering and PDF output. */
+/** Geometry fallback without a browser, canvas, or network. Does not contain a geographic basemap image. */
 export function MapViewFrame(props: MapViewFrameProps): JSX.Element {
   const messages = useMapViewMessages();
   const frame = createMemo(() => mapFrame(props, props.height, props.padding ?? DEFAULT_PADDING));

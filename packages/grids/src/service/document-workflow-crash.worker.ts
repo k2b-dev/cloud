@@ -1,11 +1,9 @@
 /** Disposable child of the crash acceptance test; never an application worker entry point. */
 import { spyOn } from "bun:test";
-import { readFileSync } from "node:fs";
 import { request } from "node:http";
-import { bindProcessSync } from "@k2b/cloud";
+import { bindProcessSync, connections, sql } from "@k2b/cloud";
 import { createSync } from "@k2b/sync";
-import { connect, credsAuthenticator } from "@nats-io/transport-node";
-import { sql } from "bun";
+import { connectNats, initializeTestPlatform } from "../../../../scripts/fixtures/platform";
 import { localVerificationUrl } from "../../scripts/verification";
 import { DocumentTemplateRendererSchema } from "../contracts";
 import { gridsWorkflows } from "../workflows/module";
@@ -14,7 +12,9 @@ import * as http from "./workflow-http-client";
 import { runGridsWorkflowRun } from "./workflow-runtime";
 
 const [runId, checkpoint, namespace, receiverPort] = process.argv.slice(2);
-const database = localVerificationUrl("PostgreSQL", process.env.DATABASE_URL);
+process.env.SYNC_NAMESPACE = namespace;
+await initializeTestPlatform("grids");
+const database = localVerificationUrl("PostgreSQL", connections().database.url);
 if (
   !/^\/grids_verify_[a-f0-9]{16}_test$/.test(database.pathname) ||
   !runId ||
@@ -23,11 +23,8 @@ if (
 ) {
   throw new Error("Crash worker requires an isolated verification database and namespace");
 }
-const connection = await connect({
-  servers: localVerificationUrl("NATS", process.env.NATS_SERVERS).toString(),
-  ignoreClusterUpdates: true,
-  ...(process.env.NATS_CREDS_FILE ? { authenticator: credsAuthenticator(readFileSync(process.env.NATS_CREDS_FILE)) } : {}),
-});
+localVerificationUrl("NATS", connections().nats.servers[0]);
+const connection = await connectNats({ name: "grids-crash-worker" });
 const sync = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
 bindProcessSync(sync);
 

@@ -2,13 +2,13 @@ import { listApps } from "@k2b/cloud";
 import { createPagination, hasRole, type NotificationDeliveryStatus } from "@k2b/cloud/contracts";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
 import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { ssr } from "../../config";
 import OperationalCharts from "../../frontend/OperationalCharts.island";
 import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import { type GatewayOpsMessages, gatewayOpsMessages } from "../../messages";
+import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
 import DeliveryFilterBar from "./_components/DeliveryFilterBar.island";
 import {
   buildDeliveryNotificationsUrl,
@@ -115,19 +115,16 @@ export default ssr<AuthContext>(async (c) => {
   const perPage = 100;
   const search = (c.req.query("search") ?? "").trim();
 
+  const attention = await readAttention();
   const renderPage = (description: string, content: () => JSX.Element) => () => (
-    <AdminLayout c={c} title={t.notifications}>
-      <div class="app-rows">
-        <div class="min-w-0" style="view-transition-name: admin-notifications-title">
-          <h1 class="text-base font-semibold text-primary">{t.notifications}</h1>
-          <p class="mt-1 text-xs text-dimmed">{description}</p>
-        </div>
+    <ObservabilityArea c={c} locale={locale} section="deliveries" attention={attention}>
+      <ObservabilityPane label={areaText(locale).deliveries} description={description}>
         <div class="self-start">
           <NotificationViewSwitch view={view} />
         </div>
         {content()}
-      </div>
-    </AdminLayout>
+      </ObservabilityPane>
+    </ObservabilityArea>
   );
 
   if (view === "deliveries") {

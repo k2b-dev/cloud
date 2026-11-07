@@ -11,9 +11,9 @@ Cloud administrators are not automatic Grids superusers. They can configure Grid
 
 ## Give access to a base {icon="database"}
 
-Access to a base applies to every table, field, record, view, form, document template, and workflow in that base.
+Access to a base applies to every table, field, record, view, form, document template, and workflow in that base. To change it, open **Base settings → Access** and choose **Edit access**. Your changes apply when you choose **Save**.
 
-You can give access to users, groups, service accounts, and all signed-in accounts. You cannot give public access to a base.
+You can give access to users, groups, agents, service accounts, and all signed-in people. Agents and service accounts need their own access. You cannot give public access to a base.
 
 | Level | CLI value | What it allows |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ You can give access to users, groups, service accounts, and all signed-in accoun
 
 ### Keep a manager on the base
 
-A base always keeps at least one manager. A manager is a **Manage** entry for a person, a group, all signed-in accounts, or a standalone or agent service account. API keys bound to the base do not count.
+A base always keeps at least one manager. A manager is a **Manage** entry for a person, a group, all signed-in people, or an agent. API keys bound to the base do not count.
 
 - Grids refuses to lower or remove the last manager.
 - Grids refuses **No access** for the same person, group, or account as that manager.
@@ -43,7 +43,7 @@ The creator of a record stays available as normal data. For example, GQL in a Gr
 
 ## Share a Grids App {icon="app-window"}
 
-A Grids App has its own access. Its only level is **Open** (`read`), and `none` denies access. You can give access to a user, a group, all signed-in accounts, or the public. Public access includes anonymous visitors. You cannot give a service account direct access to a Grids App. Delegated credentials use their user identity.
+A Grids App has its own access. Its only level is **Open** (`read`), and `none` denies access. You can give access to a user, a group, an agent account, all signed-in people, or the public. Public access includes anonymous visitors. Credential scopes cap account access. Resource-bound credentials cannot open Grids Apps. Delegated credentials use their user identity.
 
 People who use the app do not need access to the base. They receive only the data, forms, fields, documents, and actions that are compiled into the immutable published snapshot. Access to an app never gives the raw Grids workspace, direct table or record APIs, arbitrary GQL, or an editable source view.
 

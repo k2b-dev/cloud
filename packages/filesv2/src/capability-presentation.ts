@@ -35,6 +35,25 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
         entry: { title: "Datei oder Ordner", description: "Eine Datei oder ein Ordner in einer zugänglichen Cloud- oder FreeIPA-Ablage." },
       },
       queries: {
+        "activity.get": {
+          title: "Verlaufseintrag lesen",
+          description: "Einen Eintrag mit denselben aktuellen Sichtrechten wie die Verlaufsliste lesen.",
+        },
+        "activity.list": {
+          title: "Dateiverlauf lesen",
+          description:
+            "Eine berechtigte Verlaufsseite lesen oder Namen und alte Pfade suchen. Filter beim Blättern beibehalten; Momentaufnahmen gewähren keinen aktuellen Zugriff.",
+        },
+        "activity.chain": {
+          title: "Dateiumzug verfolgen",
+          description:
+            "Bis zu 20 sichtbare Umzugsschritte verfolgen. Das aktuelle Ziel wird nur nach erneuter Rechteprüfung angezeigt; ohne feste Identität bleibt es eine Vermutung.",
+        },
+        "share.access": {
+          title: "Linkzugriffe lesen",
+          description:
+            "Als Ersteller oder Administrator Aufruf-, Download- und Passwortfehlerzahlen eines öffentlichen Links im UTC-Datumsbereich lesen.",
+        },
         "bases.list": {
           title: "Ablagen auflisten",
           description: "Zugängliche persönliche Ablagen und Gruppenablagen auflisten. Nicht verfügbare Ablagen zeigen ihren Zustand.",

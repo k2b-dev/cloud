@@ -36,7 +36,7 @@ const turn: AiTurn = {
   conversationId: conversation.id,
   status: "running",
   attempt: 1,
-  modelProfileId: null,
+  modelId: null,
   createdAt: "",
   completedAt: null,
   error: null,
@@ -83,7 +83,11 @@ test("view route rejects missing, archived, restricted and unreadable Project ch
       expect((await request()).status).toBe(403);
     }
     expect(save).not.toHaveBeenCalled();
-    expect(project).toHaveBeenCalledWith("project", identity.accessSubject, "read");
+    expect(project).toHaveBeenCalledWith(
+      "project",
+      expect.objectContaining({ actor: identity.actor, accessSubject: identity.accessSubject }),
+      "read",
+    );
   } finally {
     chat.mockRestore();
     project.mockRestore();
@@ -132,7 +136,13 @@ test("managed Chromium host reaches the view route as the user's actor", async (
     capabilityTransport: async () => {
       throw new Error("Unexpected capability");
     },
-    host: Promise.resolve({ health: async () => {}, execute: async () => null, call: async () => null, close: async () => {} }),
+    host: Promise.resolve({
+      machine: async () => null,
+      health: async () => {},
+      execute: async () => null,
+      call: async () => null,
+      close: async () => {},
+    }),
   };
   const authorization = spyOn(ai, "authorizeCodeExecution").mockResolvedValue({
     conversation,

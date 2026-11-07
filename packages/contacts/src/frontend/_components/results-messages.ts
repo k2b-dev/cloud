@@ -31,6 +31,9 @@ export const resultsMessages = i18n.define({
       tagInBookTitle: ({ tagName, bookName }: { tagName: string; bookName: string }) => `${tagName} · ${bookName}`,
       duplicates: "Duplicates",
       select: "Select",
+      contactsViews: "Contact views",
+      allContactsView: "All",
+      favoritesView: "Favorites",
       // Result state
       loadingContacts: "Loading contacts…",
       resultCount: ({ total, search }: { total: number; search: string }) => `${total} result${total === 1 ? "" : "s"} for “${search}”`,
@@ -117,6 +120,9 @@ export const resultsMessages = i18n.define({
       tagInBookTitle: ({ tagName, bookName }) => `${tagName} · ${bookName}`,
       duplicates: "Duplikate",
       select: "Auswählen",
+      contactsViews: "Kontaktansichten",
+      allContactsView: "Alle",
+      favoritesView: "Favoriten",
       // Ergebniszustand
       loadingContacts: "Kontakte werden geladen…",
       resultCount: ({ total, search }) => `${total} Ergebnis${total === 1 ? "" : "se"} für „${search}“`,

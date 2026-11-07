@@ -1,0 +1,6 @@
+### Pulse dashboards showed icon tiles with uneven insets and a table without its frame
+
+- **What happened:** In Pulse, the selected dashboard in the sidebar and every section heading showed the icon on its own tinted tile, and the sidebar tile had more space before it than above and below it. Table panels had head and row lines but no outer frame, so the column lines ended in the open below the last row.
+- **Root cause:** The sidebar used `SidebarItem variant="object"`, which is meant for resources an overview opens, and that variant set a 9 px leading inset beside a 6 px block inset. The section heading drew an `Avatar` tile of its own. The table panel passed `surface="plain"` although no surrounding section drew a border, and the last row leaves its edge to the frame.
+- **Error class:** An app chooses a shared variant or surface by look instead of by its contract, so the variant's padding bug and the missing frame show up only in that app.
+- **Guard:** `sidebar-item-status.browser.test.ts` requires an object row's chip to sit as far from the row's start as from its top and bottom. `Dashboard.browser.test.ts` requires Pulse dashboard entries and section icons without a tile and with even insets, and a table panel in a framed paper whose last row ends on the frame. The workspace UI context now says that entries inside one resource use default rows.

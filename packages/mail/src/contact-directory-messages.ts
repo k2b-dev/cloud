@@ -21,7 +21,7 @@ export const contactDirectoryMessages = i18n.define({
       app: "App",
       appDescription: "Only apps that publish capabilities are listed.",
       chooseApp: "Choose an app",
-      appUnavailable: ({ appId }: { appId: string }) => `${appId} (not installed)`,
+      appUnavailable: ({ appId }: { appId: string }) => `${appId} (unavailable)`,
       chooseCapability: "Choose a capability",
       noCompatibleCapability: "No compatible capability",
       notUsed: "Not used",
@@ -40,11 +40,12 @@ export const contactDirectoryMessages = i18n.define({
       saved: "Contact directory saved.",
       saveFailed: "Could not save the contact directory.",
       fixBeforeSaving: "Mail cannot use this mapping yet.",
+      singleSettingInvalid:
+        "Mail cannot use the resulting mapping. Change related fields together with cld mail admin contact-directory set.",
       currentMappingProblem: "The saved mapping no longer matches the contact-directory contract. Affected features are unavailable.",
       catalogUnavailable: "The capability catalog is unavailable, so apps cannot be checked right now. Try again later.",
       currentValue: "Current setting",
-      appMissing: ({ appId }: { appId: string }) =>
-        `${appId} is not installed or publishes no capabilities. Choose another app or start it first.`,
+      appMissing: ({ appId }: { appId: string }) => `${appId} is unavailable in your capability catalog. Choose an available app.`,
       required: ({ name }: { name: string }) => `Choose a capability for “${name}”. Mail needs it.`,
       capabilityMissing: ({ name, id }: { name: string; id: string }) => `“${name}”: ${id} does not exist in this app.`,
       wrongKind: ({ name, id, kind }: { name: string; id: string; kind: "query" | "action" }) =>
@@ -76,7 +77,7 @@ export const contactDirectoryMessages = i18n.define({
       app: "App",
       appDescription: "Nur Apps, die Capabilities veröffentlichen, werden angezeigt.",
       chooseApp: "App auswählen",
-      appUnavailable: ({ appId }: { appId: string }) => `${appId} (nicht installiert)`,
+      appUnavailable: ({ appId }: { appId: string }) => `${appId} (nicht verfügbar)`,
       chooseCapability: "Capability auswählen",
       noCompatibleCapability: "Keine passende Capability",
       notUsed: "Nicht verwendet",
@@ -95,13 +96,14 @@ export const contactDirectoryMessages = i18n.define({
       saved: "Kontaktverzeichnis gespeichert.",
       saveFailed: "Das Kontaktverzeichnis konnte nicht gespeichert werden.",
       fixBeforeSaving: "Mail kann diese Zuordnung noch nicht verwenden.",
+      singleSettingInvalid:
+        "Mail kann die resultierende Zuordnung nicht verwenden. Ändere zusammengehörige Felder gemeinsam mit cld mail admin contact-directory set.",
       currentMappingProblem:
         "Die gespeicherte Zuordnung passt nicht mehr zum Kontaktverzeichnis-Vertrag. Betroffene Funktionen sind nicht verfügbar.",
       catalogUnavailable:
         "Der Capability-Katalog ist nicht erreichbar, daher können Apps gerade nicht geprüft werden. Versuche es später erneut.",
       currentValue: "Aktuelle Einstellung",
-      appMissing: ({ appId }: { appId: string }) =>
-        `${appId} ist nicht installiert oder veröffentlicht keine Capabilities. Wähle eine andere App oder starte sie zuerst.`,
+      appMissing: ({ appId }: { appId: string }) => `${appId} ist in deinem Capability-Katalog nicht verfügbar. Wähle eine verfügbare App.`,
       required: ({ name }: { name: string }) => `Wähle eine Capability für „${name}“. Mail benötigt sie.`,
       capabilityMissing: ({ name, id }: { name: string; id: string }) => `„${name}“: ${id} gibt es in dieser App nicht.`,
       wrongKind: ({ name, id, kind }: { name: string; id: string; kind: "query" | "action" }) =>

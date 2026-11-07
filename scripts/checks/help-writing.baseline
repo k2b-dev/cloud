@@ -74,9 +74,7 @@ packages/contacts/src/help/documents/en/contacts-books-sharing.help.md | frontma
 packages/contacts/src/help/documents/en/contacts-hierarchy.help.md | frontmatter | kind
 packages/contacts/src/help/documents/en/contacts-start.help.md | frontmatter | kind
 packages/contacts/src/help/documents/en/contacts-work.help.md | frontmatter | kind
-packages/core/src/help/documents/de/core-admin.help.md | steps | Wähle unter App-Zugänge die Option Zugang erstellen.
 packages/core/src/help/documents/en/core-admin.help.md | frontmatter | kind
-packages/core/src/help/documents/en/core-admin.help.md | steps | In App credentials, choose Create credential.
 packages/core/src/help/documents/en/core-notifications.help.md | frontmatter | kind
 packages/core/src/help/documents/en/core-profile.help.md | frontmatter | kind
 packages/core/src/help/documents/en/core-security.help.md | frontmatter | kind
@@ -100,7 +98,6 @@ packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Berechtigu
 packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Rechte
 packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Schreibrecht*
 packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Servicekonto*
-packages/filesv2/src/help/documents/de/filesv2-start.help.md | term | Rechte
 packages/filesv2/src/help/documents/de/filesv2-start.help.md | term | Schreibzugriff
 packages/filesv2/src/help/documents/de/filesv2-start.help.md | term | Zugriffsrecht*
 packages/filesv2/src/help/documents/de/filesv2-start.help.md | term | Zugriffsrecht*
@@ -116,7 +113,6 @@ packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | applicatio
 packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | application
 packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | application
 packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | application
-packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | grant
 packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | grant
 packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | grant
 packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | grant

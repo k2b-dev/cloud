@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { SearchItem, SearchStreamLine } from "../api/search/schemas";
@@ -681,6 +681,32 @@ if (!isServer)
     }
   });
 
+if (!isServer)
+  test("a host that rebuilds equal commands keeps their option elements, so a press in progress still clicks", async () => {
+    const dom = createDomTestHarness();
+    const { createSignal } = await import("solid-js");
+    const { default: CloudResourceSearch } = await import("./CloudResourceSearch");
+    const command = { id: "first", title: "First", description: "Current", context: true, action: () => {} };
+    const [commands, setCommands] = createSignal([command]);
+    const dispose = render(
+      () => (
+        <CloudResourceSearch searchResources={false} commands={commands()} onCommand={() => {}} onSelect={() => {}} onClose={() => {}} />
+      ),
+      dom.root,
+    );
+    try {
+      await waitFor(() => dom.root.querySelectorAll('[role="option"]').length === 1, "context command");
+      const row = dom.root.querySelector('[role="option"]');
+      // New objects with the same identity, as a host builds them on every change of its inputs (#2140).
+      setCommands([{ ...command }]);
+      expect(dom.root.querySelector('[role="option"]')).toBe(row);
+      expect(row?.isConnected).toBe(true);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
 test("provider contexts use one chip, replace in place, and clear their hidden filter with the chip", async () => {
   if (isServer) return;
   const dom = createDomTestHarness();
@@ -760,7 +786,11 @@ const found = (appId: string, title: string): SearchItem => ({
   ref: { type: `${appId}.item`, id: title },
   href: `/app/${appId}/${title}`,
 });
-const providerLine = (provider: string, results: SearchItem[], status = results.length ? "ok" : "empty"): SearchStreamLine => ({
+const providerLine = (
+  provider: string,
+  results: SearchItem[],
+  status = results.length ? "ok" : "empty",
+): Extract<SearchStreamLine, { type: "provider" }> => ({
   type: "provider",
   provider,
   status: status as "ok",
@@ -1069,6 +1099,174 @@ describe("streamed search results", () => {
 
       await view.type("plans");
       await waitFor(() => view.rows()[0]?.textContent?.includes("Plans board") ?? false, "the action with the next keystroke");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("says when an app has more, lists its next rows below the shown ones and keeps the selection", async () => {
+    const view = await setup({ initialAppId: "mail" });
+    const more = () => view.dom.root.querySelector(".cloud-resource-search__more")?.textContent ?? "";
+    try {
+      const stream = await view.type("changes");
+      stream.write({ type: "start", query: "changes", apps: streamApps, providers: ["mail"] });
+      stream.write({ ...providerLine("mail", [found("mail", "Changes 1"), found("mail", "Changes 2")]), more: true });
+      stream.write({ type: "done", status: "complete", count: 2 });
+      stream.close();
+      await waitFor(() => more() === "Show more from Mail", "the load more button");
+      const [first, second] = view.rows();
+      view.input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      expect(second!.getAttribute("aria-selected")).toBe("true");
+
+      const searches = view.requests.length;
+      view.dom.root.querySelector<HTMLButtonElement>(".cloud-resource-search__more button")!.click();
+      await waitFor(() => view.requests.length === searches + 1, "the next page");
+      const next = view.requests.at(-1)!;
+      expect(next.url.searchParams.get("app")).toBe("mail");
+      expect(next.url.searchParams.get("q")).toBe("changes");
+      expect(next.url.searchParams.get("limit")).toBe("32");
+      await waitFor(() => view.status().includes("Mail is still searching…"), "the loading state");
+      expect(more()).toBe("");
+
+      next.stream.write({ type: "start", query: "changes", apps: streamApps, providers: ["mail"] });
+      next.stream.write(
+        providerLine(
+          "mail",
+          ["Changes 1", "Changes 2", "Changes 3"].map((title) => found("mail", title)),
+        ),
+      );
+      next.stream.write({ type: "done", status: "complete", count: 3 });
+      next.stream.close();
+      await waitFor(() => view.rows().length === 3, "the appended row");
+      expect(view.rows().slice(0, 2)).toEqual([first!, second!]);
+      expect(view.rows()[2]!.textContent).toContain("Changes 3");
+      expect(second!.getAttribute("aria-selected")).toBe("true");
+      expect(more()).toBe("");
+      expect(view.status()).toBe("");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("an earlier page that ends late never fails the next one", async () => {
+    const view = await setup({ initialAppId: "mail" });
+    const button = () => view.dom.root.querySelector<HTMLButtonElement>(".cloud-resource-search__more button");
+    const titles = (count: number) => Array.from({ length: count }, (_, index) => found("mail", `Changes ${index}`));
+    try {
+      const stream = await view.type("changes");
+      stream.write({ type: "start", query: "changes", apps: streamApps, providers: ["mail"] });
+      stream.write({ ...providerLine("mail", titles(1)), more: true });
+      stream.write({ type: "done", status: "complete", count: 1 });
+      stream.close();
+      await waitFor(() => button() !== null, "the first load more button");
+      const searches = view.requests.length;
+      button()!.click();
+      await waitFor(() => view.requests.length === searches + 1, "the second page");
+      const second = view.requests.at(-1)!;
+      second.stream.write({ type: "start", query: "changes", apps: streamApps, providers: ["mail"] });
+      second.stream.write({ ...providerLine("mail", titles(2)), more: true });
+      await waitFor(() => view.rows().length === 2 && button() !== null, "the second page's rows");
+
+      // The second page's stream is still open when the person asks for the third.
+      button()!.click();
+      await waitFor(() => view.requests.length === searches + 2, "the third page");
+      second.stream.write({ type: "done", status: "complete", count: 2 });
+      second.stream.close();
+      await Bun.sleep(20);
+      expect(view.status()).toContain("Mail is still searching…");
+      const third = view.requests.at(-1)!;
+      third.stream.write({ type: "start", query: "changes", apps: streamApps, providers: ["mail"] });
+      third.stream.write(providerLine("mail", titles(3)));
+      third.stream.write({ type: "done", status: "complete", count: 3 });
+      third.stream.close();
+      await waitFor(() => view.rows().length === 3, "the third page's rows");
+      expect(view.status()).toBe("");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("asks for a narrower search once an app lists the most rows a search shows", async () => {
+    const view = await setup({ initialAppId: "mail" });
+    try {
+      const stream = await view.type("changes");
+      stream.write({ type: "start", query: "changes", apps: streamApps, providers: ["mail"] });
+      stream.write({
+        ...providerLine(
+          "mail",
+          Array.from({ length: 90 }, (_, index) => found("mail", `Changes ${index}`)),
+        ),
+        more: true,
+      });
+      stream.write({ type: "done", status: "complete", count: 90 });
+      stream.close();
+      await waitFor(
+        () =>
+          view.dom.root.querySelector(".cloud-resource-search__more")?.textContent ===
+          "Mail found more than 90 results. Add a word to narrow the search.",
+        "the hint",
+      );
+      expect(view.dom.root.querySelector(".cloud-resource-search__more button")).toBeNull();
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("shows dated facts in the reader's time zone, short on the row and full in the details", async () => {
+    const zone = process.env.TZ;
+    process.env.TZ = "Europe/Berlin";
+    setSystemTime(new Date("2026-11-04T15:00:00.000Z"));
+    const view = await setup({ initialAppId: "mail" });
+    const mail = (title: string, date: string, context?: string): SearchItem => ({
+      ...found("mail", title),
+      ...(context ? { context } : {}),
+      metadata: [
+        { label: "From", value: "Ada" },
+        { label: "Date", value: date, format: "date-time" },
+        { label: "Due", value: "2026-11-30", format: "date" },
+      ],
+    });
+    try {
+      const stream = await view.type("changes");
+      stream.write({ type: "start", query: "changes", apps: streamApps, providers: ["mail"] });
+      stream.write(
+        providerLine("mail", [
+          mail("Changes from 1 November", "2026-11-04T13:31:20.000Z", "Ada"),
+          mail("Changes from 1 November ", "2026-10-20T08:05:00.000Z"),
+        ]),
+      );
+      await waitFor(() => view.rows().length === 2, "the rows");
+      const [today, older] = view.rows();
+      expect(today!.querySelector("small")?.textContent).toBe("Ada");
+      expect(today!.querySelector("time")?.textContent).toBe("14:31");
+      expect(today!.querySelector("time")?.getAttribute("datetime")).toBe("2026-11-04T13:31:20.000Z");
+      expect(older!.querySelector("small")?.textContent).toBe("Changes from 1 November  preview");
+      expect(older!.querySelector("time")?.textContent).toBe("Oct 20, 2026");
+
+      const details = () =>
+        Array.from(view.dom.root.querySelectorAll(".cloud-resource-search__preview dd")).map((entry) => entry.textContent);
+      await waitFor(() => details().length === 3, "the details");
+      expect(details()).toEqual(["Ada", "Nov 4, 2026, 14:31", "Nov 30, 2026"]);
+      expect(view.dom.root.textContent).not.toContain("2026-11-04T13:31:20.000Z");
+    } finally {
+      view.cleanup();
+      setSystemTime();
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    }
+  });
+
+  test("keeps the details pane in place with a hint while no result is chosen", async () => {
+    const view = await setup({ initialAppId: "mail" });
+    try {
+      const stream = await view.type("changes");
+      const pane = () => view.dom.root.querySelector(".cloud-resource-search__preview");
+      // From the first keystroke, before any app answered.
+      expect(pane()?.classList.contains("is-empty")).toBeTrue();
+      expect(pane()?.textContent).toBe("");
+      stream.write({ type: "start", query: "changes", apps: streamApps, providers: ["mail"] });
+      stream.write(providerLine("mail", [found("mail", "Changes 1")]));
+      await waitFor(() => pane()?.querySelector("h2")?.textContent === "Changes 1", "the first result's details");
     } finally {
       view.cleanup();
     }

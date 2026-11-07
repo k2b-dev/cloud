@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
@@ -9,6 +8,7 @@ import { compileCapabilities } from "../_internal/capabilities";
 import { dispatchCapability } from "../api/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { serviceAccountCredentials } from "../services/service-account-credentials";

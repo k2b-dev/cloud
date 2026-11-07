@@ -19,6 +19,7 @@
 import { lazySync } from "@k2b/cloud";
 import { logger, get as settingsGet } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
+import { sweepNoteUpdates } from "../app-events";
 import { reindexAll } from "./note-refs";
 import { migrateLegacyYjsTopics } from "./yjs-legacy-migration";
 import { yjsSnapshotWorker } from "./yjs-snapshot-worker";
@@ -169,6 +170,17 @@ const createLegacyMigrationSchedule = async (tz: string): Promise<void> => {
 
 const registerSchedule = async (cron?: string): Promise<void> => {
   const [tz, resolvedCron] = await Promise.all([getTimezone(), cron ? Promise.resolve(cron) : getCron()]);
+  await reindexScheduler().create({
+    id: "notebooks:note-updates",
+    cron: "* * * * *",
+    timezone: tz,
+    misfire: "latest",
+    meta: { appId: "notebooks", family: "notebooks:maintenance", label: "Pending note events", source: "notebooks:note-updates" },
+    process: async (ctx) => {
+      ctx.signal.throwIfAborted();
+      await sweepNoteUpdates();
+    },
+  });
   await createSnapshotReconcileSchedule(tz);
   await createLegacyMigrationSchedule(tz);
   try {

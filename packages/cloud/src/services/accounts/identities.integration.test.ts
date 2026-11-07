@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { SQL } from "bun";
 import { createDisposableDatabase, databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { migratePosix } from "../../../../core/src/migrate/core/posix";
 import type { RequestActor, UserProvider } from "../../contracts/shared";
 import { buildProjectedUser } from "../session/user";
 import { encryptValue } from "../settings/crypto";
@@ -34,8 +35,8 @@ suite("public account identity reads against isolated Postgres", () => {
     await db`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await db`CREATE SCHEMA IF NOT EXISTS settings`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), uid text UNIQUE NOT NULL, provider text NOT NULL, profile text NOT NULL, admin boolean NOT NULL DEFAULT false, account_expires timestamptz)`.simple();
-    await db`CREATE TABLE IF NOT EXISTS auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, managed_by text, uid_number integer, primary_gid_number integer, primary_group_id uuid)`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, provider text NOT NULL, gid_number integer)`.simple();
+    await migratePosix(db);
     await db`CREATE TABLE IF NOT EXISTS auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id),PRIMARY KEY(user_id,group_id))`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.group_groups_v2(parent_group_id uuid REFERENCES auth.groups(id),child_group_id uuid REFERENCES auth.groups(id),PRIMARY KEY(parent_group_id,child_group_id))`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.ipa_user_effective_groups(user_id uuid REFERENCES auth.users(id),group_name text)`.simple();
@@ -43,7 +44,7 @@ suite("public account identity reads against isolated Postgres", () => {
     service = createAccountIdentityService(db);
   });
   beforeEach(async () => {
-    await db`TRUNCATE auth.users,auth.groups,auth.user_posix,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
+    await db`TRUNCATE auth.personal_groups,auth.users,auth.groups,auth.user_posix,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
     await setting("linux.identity_config", JSON.stringify(config));
     await setting("freeipa.enable", true);
   });
@@ -66,7 +67,8 @@ suite("public account identity reads against isolated Postgres", () => {
       },
       availability: { localLinuxEnabled: true, freeipaEnabled: true },
     });
-    await db`UPDATE auth.user_posix SET managed_by='local'`;
+    const personal = await group("alice", "local", 10007);
+    await db`UPDATE auth.user_posix SET managed_by='local',primary_group_id=${personal}::uuid,home_directory='/home/alice',login_shell='/bin/bash'`;
     expect((await service.self(actor)).user.posix).toBeNull();
     await db`UPDATE auth.user_posix SET managed_by='ipa',primary_gid_number=NULL`;
     expect((await service.self(actor)).user.posix).toBeNull();
@@ -137,10 +139,30 @@ suite("public account identity reads against isolated Postgres", () => {
     const personal = await group("owner", "local", 200007);
     const team = await group("team", "local", 200008);
     await db`INSERT INTO auth.user_groups_v2 VALUES(${actor.user.id}::uuid,${personal}::uuid),(${actor.user.id}::uuid,${team}::uuid)`;
-    await db`INSERT INTO auth.user_posix(user_id,managed_by,uid_number,primary_gid_number,primary_group_id) VALUES(${actor.user.id}::uuid,'local',200007,200007,${personal}::uuid)`;
+    await db`INSERT INTO auth.user_posix(user_id,managed_by,uid_number,primary_gid_number,primary_group_id,home_directory,login_shell)
+      VALUES(${actor.user.id}::uuid,'local',200007,200007,${personal}::uuid,'/home/owner','/bin/bash')`;
     const items = (await service.groups(actor)).items;
     expect(items.find((item) => item.id === personal)).toMatchObject({ name: "owner", personal: true });
     expect(items.find((item) => item.id === team)).toMatchObject({ name: "team", personal: false });
+    await db`DELETE FROM auth.user_posix WHERE user_id=${actor.user.id}::uuid`;
+    expect((await service.groups(actor)).items.find((item) => item.id === personal)?.personal).toBe(true);
+  });
+  test("reconciliation retains personal directory evidence after the live group is removed", async () => {
+    const admin = await user("admin", "local", true);
+    const owner = await user("legacy-owner");
+    const personal = await group("legacy-owner", "local", 200007);
+    await db`INSERT INTO auth.personal_groups(group_id,owner_id,group_name,gid_number)
+      VALUES(${personal}::uuid,${owner.user.id}::uuid,'legacy-owner',200007)`;
+    const input = { kind: "groups" as const, identityId: personal, name: "legacy-owner" };
+    expect((await service.localLifecycle(input)).identity).toMatchObject({ state: "present", personal: true });
+    await db`DELETE FROM auth.groups WHERE id=${personal}::uuid`;
+    await db`UPDATE auth.personal_groups SET retired_at='2026-10-26T00:00:00Z' WHERE group_id=${personal}::uuid`;
+    expect((await service.localLifecycle(input)).identity).toEqual({ state: "absent", personal: true });
+    expect(await service.reconcile(admin, { kind: "groups", provider: "local", name: "legacy-owner" })).toEqual({
+      state: "absent",
+      personal: true,
+    });
+    expect(await service.reconcile(admin, { kind: "groups", provider: "local", name: "unrelated" })).toEqual({ state: "absent" });
   });
   test("groups and inventories paginate without omitting records beyond fifty", async () => {
     const actor = await user("admin", "local", true);

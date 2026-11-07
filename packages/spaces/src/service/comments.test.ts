@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { toPgTextArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";
@@ -36,7 +36,16 @@ suite("Spaces comment pagination", () => {
         VALUES (${newShortId()}, ${space!.id}::uuid, ${column!.id}::uuid, 'Review policy', 1024)
         RETURNING id
       `;
-      const created = await createComment({ itemId: item!.id, author: { kind: "user", id: user!.id }, content: "Initial context" });
+      const input = {
+        requestId: crypto.randomUUID(),
+        itemId: item!.id,
+        author: { kind: "user" as const, id: user!.id },
+        content: "Initial context",
+      };
+      const [created, retry] = await Promise.all([createComment(input), createComment(input)]);
+      expect(created.ok && retry.ok && created.data.id === retry.data.id).toBe(true);
+      expect(await createComment({ ...input, content: "Different request" })).toMatchObject({ ok: false, status: 409 });
+      expect(await createComment({ ...input, author: { kind: "user", id: otherUser!.id } })).toMatchObject({ ok: false, status: 409 });
       expect(created).toMatchObject({ ok: true, data: { canEdit: true, canDelete: true } });
       if (!created.ok) return;
       // Nothing publishes in this process, so the update waits in the outbox, written with the comment.

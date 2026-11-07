@@ -337,7 +337,11 @@ test("a caller deadline closes a slow response without resetting on body bytes",
     const timer = setInterval(() => res.write("x"), 5);
     res.once("close", () => clearInterval(timer));
   });
-  const response = await createAllowedNetworkFetch(allow("127.0.0.1"))(url, { signal: AbortSignal.timeout(80) });
+  const controller = new AbortController();
+  const response = await createAllowedNetworkFetch(allow("127.0.0.1"))(url, { signal: controller.signal });
+  // Exercise the streaming deadline after connection setup, even on a busy runner.
+  const deadline = AbortSignal.timeout(80);
+  deadline.addEventListener("abort", () => controller.abort(deadline.reason), { once: true });
   await expect(response.text()).rejects.toMatchObject({ name: "TimeoutError" });
 });
 

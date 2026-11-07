@@ -1,9 +1,13 @@
 import { LocaleProvider, MobileShell, TabBar, type TabBarItem } from "@k2b/ui";
 import type { JSX } from "solid-js";
-import { PWA_SCOPE } from "../contracts/pwa";
+import { buildMetadata } from "../_internal/build-metadata";
+import { registeredPwaBuilds } from "../_internal/runtime-watcher";
+import { PWA_COOKIES, PWA_LIMITS, PWA_SCOPE } from "../contracts/pwa";
+import { pwaBuild } from "../contracts/pwa-builds";
 import { getLocale } from "../server/locale";
 import { visiblePwaParts } from "./app-navigation";
 import type { LayoutContext } from "./layout-context";
+import PwaPartCount from "./PwaPartCount.island";
 import PwaRuntime from "./PwaRuntime.island";
 import { pwaMessages } from "./pwa-messages";
 import { getDisplayRuntimeContext } from "./runtime";
@@ -31,6 +35,11 @@ export type PwaLayoutProps = {
    * navigation. `title` still names the document.
    */
   bare?: boolean;
+  /**
+   * The page opens as a screen of its own below 48rem, such as one chat with its composer at the bottom edge: the tab
+   * bar steps aside. A part that changes this in place calls `MobileShell.setScreen` from `@k2b/ui`.
+   */
+  screen?: boolean;
   children: JSX.Element;
 };
 
@@ -55,16 +64,34 @@ export default function PwaLayout(props: PwaLayoutProps) {
 
   const parts = visiblePwaParts(getDisplayRuntimeContext(c).apps, user, locale);
   const path = new URL(c.req.raw.url).pathname;
+  const owner = page.pwaOwner;
+  const ownBuild = pwaBuild(buildMetadata);
+  const coreBuild = registeredPwaBuilds().core;
+  const builds = { ...(owner && ownBuild ? { [owner]: ownBuild } : {}), ...(coreBuild ? { core: coreBuild } : {}) };
+  // A part's badge calls for attention in the sidebar and on its tab; without one, its summary's count stays quiet in
+  // the sidebar. One watcher reads every route of the page.
+  const countRoutes = [...new Set(parts.flatMap((part) => [part.pwa.badge, part.pwa.summary].filter((path) => path !== undefined)))];
+  const badge = (part: (typeof parts)[number]) =>
+    part.pwa.badge ? <PwaPartCount endpoint={part.pwa.badge} endpoints={countRoutes} attention /> : undefined;
   const tabs = parts.slice(0, TAB_PARTS);
   const currentTab = tabs.find((part) => path === part.pwa.href || path.startsWith(`${part.pwa.href}/`));
   // Start is titled with the installation's name; a part's first page carries the part's name.
   const items: TabBarItem[] = [
     { id: "start", label: t.start, title: cloud, icon: "ti ti-home", href: PWA_SCOPE, current: !currentTab },
-    ...tabs.map((part) => ({ id: part.id, label: part.name, icon: part.icon, href: part.pwa.href, current: part === currentTab })),
+    ...tabs.map((part) => ({
+      id: part.id,
+      label: part.name,
+      icon: part.icon,
+      href: part.pwa.href,
+      current: part === currentTab,
+      badge: badge(part),
+    })),
   ];
   // The sidebar names the installation itself, so Start is titled Start there; Settings is a destination of its own.
   const settingsHref = `${PWA_SCOPE}settings`;
   const currentPart = parts.find((part) => path === part.pwa.href || path.startsWith(`${part.pwa.href}/`));
+  // A part takes its app colour for selection and accents, as an app does on the web; Start and Settings keep Cloud's.
+  page.appAccent = currentPart?.appearance?.accent;
   const sidebar = (
     <MobileShell.Sidebar
       label={t.tabs}
@@ -80,6 +107,8 @@ export default function PwaLayout(props: PwaLayoutProps) {
             icon: part.icon,
             href: part.pwa.href,
             current: part === currentPart,
+            badge: badge(part),
+            count: part.pwa.summary ? <PwaPartCount endpoint={part.pwa.summary} endpoints={countRoutes} /> : undefined,
           })),
         },
       ]}
@@ -94,12 +123,19 @@ export default function PwaLayout(props: PwaLayoutProps) {
       <MobileShell
         header={<MobileShell.Header title={props.title} sidebarTitle={props.sidebarTitle} back={props.back} actions={props.actions} />}
         scroll={!props.bare}
+        screen={props.screen}
         footer={user && parts.length > 0 ? <TabBar label={t.tabs} items={items} /> : undefined}
         sidebar={user ? sidebar : undefined}
       >
         {props.children}
       </MobileShell>
-      <PwaRuntime keepalive={!!user} cloud={cloud} />
+      <PwaRuntime
+        keepalive={!!user}
+        accountId={user?.id}
+        builds={builds}
+        cloud={cloud}
+        rememberAddress={page.pwaAddress ? { cookie: PWA_COOKIES.lastAddress, maxAge: PWA_LIMITS.idleDays * 86_400 } : undefined}
+      />
     </LocaleProvider>
   );
 }

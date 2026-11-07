@@ -63,6 +63,8 @@ import { Chat, type ChatTimelineItem } from "@k2b/ui";
 
 ## Controlled behavior
 
+The assistant prompt is one card around the field and its footer. It carries the shared 2 px field edge of every input, without a shadow: grey at rest, a slightly darker fill on hover, the blue edge of the same width while anything inside has focus, red with `error`, and a muted card without an edge when `disabled`. A state changes only the edge colour and the fill, never the card's size or the text position.
+
 `Chat.Composer` calls `onSubmit` with an `intent`, untrimmed text, generic attachments, and optional inline mentions. The intent is `send` while idle and `steer` while a response is running. Return `false` or throw to restore the consumed draft, attachments, and mentions; failures are passed to `onError`.
 
 Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu unless `addOpensCommands` opens the command list; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. On touch screens the footer keeps 0.625rem from the message field, so the touch areas of its compact controls never take taps from the field. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
@@ -77,7 +79,11 @@ Pasted files use the same `fileSelection.onSelect` callback as the file picker
 and drag-and-drop. Use the generic `onPaste` seam only for non-file content;
 call `preventDefault()` synchronously only when the application replaces the
 native paste. Attachments may expose one compact application-owned action such
-as moving a text attachment back into the message field. Composer attachments
+as moving a text attachment back into the message field. A `danger` action,
+such as retrying a failed upload, uses the danger colour; a disabled action
+reads as the attachment's state, such as waiting for the network, rather than
+as a dimmed button. While an attachment uploads, set `progress` in percent: the
+line shows a ring and the percentage instead of the action. Composer attachments
 stay on one horizontally scrollable row, and the controlled text field grows
 up to approximately fifteen visible lines. The conversation variant grows
 differently; see [Conversations between people](#conversations-between-people).
@@ -152,7 +158,10 @@ including detail, time, and action link text with spaces between them; buttons
 under the line are not announced.
 
 Use `unavailable` to disable confirm and remember while keeping decline enabled.
-Its reason replaces the original reason in the same described element. The
+Its reason replaces the original reason in the same described element. Use
+`waiting` when no answer can arrive right now, such as without a connection:
+it disables every answer, decline included, and its reason replaces both
+others in the same element until the host clears it. The
 optional quiet `remember` answer is host policy: the component neither stores
 consent nor widens permissions. On touch screens it is a full 44 px row, so a
 low tap on either answer never reaches it.
@@ -232,7 +241,7 @@ type ChatAction = ChatActionBase &
 
 type ChatAttachment = {
   id: string; name: string; size?: number; kind?: "file" | "image" | "resource"; icon?: string;
-  previewUrl?: string; alt?: string; href?: string; data?: unknown; action?: ChatAction;
+  previewUrl?: string; alt?: string; href?: string; data?: unknown; action?: ChatAction; progress?: number;
 };
 
 type ChatModelOption = {
@@ -271,7 +280,7 @@ type ChatDecisionProps = {
   preview?: JSX.Element;
   confirm: ChatDecisionAnswer & { variant?: "ai" | "primary" | "danger" };
   decline: ChatDecisionAnswer; remember?: ChatDecisionAnswer;
-  unavailable?: ChatDecisionReason; outcome?: JSX.Element;
+  unavailable?: ChatDecisionReason; waiting?: ChatDecisionReason; outcome?: JSX.Element;
   onAnswerError?: (error: unknown) => void; anchorId?: string | number; class?: string;
 };
 type ChatOutcomeTone = "running" | "done" | "off" | "waiting" | "warning" | "error";
@@ -580,6 +589,7 @@ type ChatComposerProps = {
   commandSections?: readonly ChatCommandSection[]; commandScopes?: readonly ChatCommandScope[];
   searchCommands?: (query: string, signal: AbortSignal, search: ChatCommandSearch) => Promise<readonly ChatCommand[]>;
   mentions?: readonly ChatMention[]; onMentionsChange?: (mentions: readonly ChatMention[]) => void;
+  people?: { search: (query: string, signal: AbortSignal) => Promise<readonly ChatPersonSuggestion[]> };
   accessory?: JSX.Element; draftKey?: unknown;
   contextActions?: readonly ChatAction[]; contextPopupAction?: ChatAction; footerTools?: JSX.Element; modelDetails?: JSX.Element;
   submitTools?: JSX.Element; footerContent?: JSX.Element; placeholder?: string; label?: string;
@@ -776,6 +786,15 @@ control its ranges with `mentions` and `onMentionsChange`. The submitted text is
 untrimmed so UTF-16 range offsets remain valid. A modified reference becomes
 plain text; undo/redo restores both text and reference identity.
 
+Pass `people` to suggest people after `@`. `people.search(query, signal)` returns
+`ChatPersonSuggestion`s (`id`, `name`, optional `agent`); the composer shows at most
+eight, picks with the arrow keys and Enter or Tab, and inserts "@Name" plus a space
+as a mention whose attachment `id` is the person's `id`. The query stops at a space,
+starts after the beginning of the text, a space or "(", and never inside code or an
+existing mention, so a mail address does not open the list. Each change of the query
+aborts the previous search; a failed search shows no list. `people` needs `mentions`
+and `onMentionsChange`, and the application validates mentions again on the server.
+
 Set `addOpensCommands` to let **+** open the same list as `/`, with a search
 field on top. This works in both composer variants when `commands` or
 `searchCommands` is provided. The search field takes focus and owns the
@@ -850,8 +869,10 @@ side, centered, so field and bubbles share their edges on a wide window. A
 narrower container gives it its whole width.
 
 The conversation composer is one row without a card: an attach button with a
-plain plus, a quiet pill-shaped field, and a round Send button. The field is muted at rest
-and shows the surface with a ring while it has focus; only its paint changes.
+plain plus, a quiet pill-shaped field, and a round Send button. The field has the
+shared 2 px field edge of every input: grey at rest, a slightly darker fill on
+hover, the blue edge of the same width on focus, red with `error`, and a muted
+well without an edge when `disabled`. It casts no shadow; only its paint changes.
 Formatting, emoji, and the microphone sit inside the field at its end. Send is
 dimmed until there is something to send. With `fileSelection` alone, the
 attach button opens the file choice directly; with `menuActions`, it opens the

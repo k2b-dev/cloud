@@ -117,33 +117,25 @@ const open = async (device: BrowserContextOptions, options: { keyboard?: boolean
   return page;
 };
 
-test("a hidden navigation can be recovered from the editor toolbar at 900 px", async () => {
-  const page = await open({ viewport: { width: 900, height: 900 } });
-  try {
-    const toggle = page.locator(".notebooks-editor-toolbar .notebooks-navigation-toggle");
-    expect(await toggle.isVisible()).toBe(false);
-    // Follow the same shared visibility event as the navigation command and graph toolbar.
-    await page.evaluate(() =>
-      window.dispatchEvent(new CustomEvent("notebooks.navigation.visibilityChanged", { detail: { hidden: true } })),
-    );
-    const show = toggle.getByRole("button", { name: "Show navigation", exact: true });
-    await show.waitFor();
-    expect(await toggle.getAttribute("data-navigation-hidden")).toBe("");
-    expect(await toggle.evaluate((element) => getComputedStyle(element).display)).toBe("flex");
-    expect(await show.isVisible()).toBe(true);
-    // A keyboard press moves focus; a pointer press keeps it in the note anyway.
-    await show.focus();
-    await page.keyboard.press("Enter");
-    expect(await toggle.getAttribute("data-navigation-hidden")).toBeNull();
-    // The toggle hides again below a 64 rem host, so read the hidden button by selector, not by role.
-    expect(await toggle.locator("button").getAttribute("aria-expanded")).toBe("true");
-    expect(await toggle.isVisible()).toBe(false);
-    // Without a navigation that can take focus here, it returns to the note, never to the page start.
-    await page.waitForFunction(() => document.activeElement?.closest(".cm-editor") !== null);
-  } finally {
-    await page.context().close();
-  }
-});
+// The note page draws no workspace head: the toolbar's navigation button is the workspace's sidebar button from a
+// 48 rem window, where it opens the overlay navigation, and phones keep the header's menu. The shared controller runs
+// it (packages/ui workspace-app-toggles.browser.test.ts).
+for (const [width, visible] of [
+  [900, true],
+  [390, false],
+] as const)
+  test(`the navigation button in the editor toolbar ${visible ? "shows" : "stays hidden"} at ${width} px`, async () => {
+    const page = await open({ viewport: { width, height: 900 } });
+    try {
+      const toggle = page.locator(".notebooks-editor-toolbar .notebooks-navigation-toggle button");
+      expect(await toggle.isVisible()).toBe(visible);
+      expect(await toggle.getAttribute("aria-label")).toBe("Navigation");
+      expect(await toggle.getAttribute("aria-controls")).toBe("notebook-navigation");
+      expect(await toggle.getAttribute("data-app-workspace-sidebar-toggle")).toBe("");
+    } finally {
+      await page.context().close();
+    }
+  });
 
 const load = (page: Page, doc: string) =>
   page.evaluate(async (doc) => {
@@ -819,16 +811,19 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
             const box = row.getBoundingClientRect();
             return {
               pageFits: document.documentElement.scrollWidth <= innerWidth,
-              controlsFit: Array.from(row.querySelectorAll("button")).every((button) => {
-                const control = button.getBoundingClientRect();
-                return (
-                  control.left >= box.left &&
-                  control.right <= box.right &&
-                  control.right <= innerWidth &&
-                  control.top >= box.top &&
-                  control.bottom <= box.bottom
-                );
-              }),
+              // Phones hide the navigation button (the header's menu takes its place); every shown control fits.
+              controlsFit: Array.from(row.querySelectorAll("button"))
+                .filter((button) => button.getClientRects().length > 0)
+                .every((button) => {
+                  const control = button.getBoundingClientRect();
+                  return (
+                    control.left >= box.left &&
+                    control.right <= box.right &&
+                    control.right <= innerWidth &&
+                    control.top >= box.top &&
+                    control.bottom <= box.bottom
+                  );
+                }),
             };
           });
           expect(fit).toEqual({ pageFits: true, controlsFit: true });
@@ -843,4 +838,20 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
       }
     }
   }, 30_000);
+});
+
+// Each icon a toolbar control shows has one size: the formatting tools and the host's end controls, Book and the detail
+// panel toggle among them (a book icon without its own size class once read smaller than its neighbours).
+test("every control icon in the editor toolbar has the same size", async () => {
+  const page = await open({ viewport: { width: 1280, height: 800 } });
+  try {
+    const sizes = await page.$$eval(".notebooks-editor-toolbar .k2b-button > .k2b-button__label > .ti:first-child", (icons) =>
+      icons.filter((icon) => icon.getClientRects().length > 0).map((icon) => `${icon.className}: ${getComputedStyle(icon).fontSize}`),
+    );
+    expect(sizes.length).toBeGreaterThan(10);
+    expect(sizes).toContain("ti ti-book: 14px");
+    expect(sizes.filter((size) => !size.endsWith(": 14px"))).toEqual([]);
+  } finally {
+    await page.context().close();
+  }
 });

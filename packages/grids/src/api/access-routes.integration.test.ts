@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { AuthContext } from "@k2b/cloud/server";
 import { err, fail, ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid as uuid } from "../integration-test-utils";
@@ -177,6 +177,34 @@ describe("access routes integration", () => {
 
       expect((await app.request(`/${uuid()}`, { method: "DELETE" })).status).toBe(404);
       expect((await app.request(`/${fixture.foreignAccessId}`, { method: "DELETE" })).status).toBe(403);
+    } finally {
+      await cleanup(fixture);
+    }
+  });
+
+  postgresTest("lists who has access to a base for its readers, without grant IDs, denials, or public rows", async () => {
+    const fixture = await insertFixture();
+    const app = appFor(fixture);
+    try {
+      const extra = await sql<{ id: string }[]>`
+        INSERT INTO auth.access (authenticated_only, permission)
+        VALUES (true, 'read'::auth.permission_level), (false, 'read'::auth.permission_level), (true, 'none'::auth.permission_level)
+        RETURNING id::text AS id
+      `;
+      fixture.accessIds.push(...extra.map((row) => row.id));
+      for (const row of extra)
+        await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${fixture.baseId}::uuid, ${row.id}::uuid)`;
+      // The "everyone signed in" deny shadows that tier's read grant; the public row grants nothing on a base.
+      const listed = await app.request(`/by-base/${fixture.baseShortId}/members`);
+      expect(listed.status).toBe(200);
+      const members = (await listed.json()) as Record<string, unknown>[];
+      expect(members).toEqual([expect.objectContaining({ principal: { type: "user", userId: fixture.userId }, permission: "admin" })]);
+      for (const member of members) {
+        expect(member).not.toHaveProperty("id");
+        expect(member).not.toHaveProperty("createdAt");
+      }
+      expect((await app.request(`/by-base/${fixture.foreignBaseShortId}/members`)).status).toBe(403);
+      expect((await app.request(`/by-base/${testShortId()}/members`)).status).toBe(404);
     } finally {
       await cleanup(fixture);
     }

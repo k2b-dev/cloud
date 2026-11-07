@@ -2,8 +2,19 @@ import { appAccess, defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "filesv2",
+  // These protocols validate their own credentials and never use Cloud session authority.
+  sessionlessRoutes: [
+    "/api/filesv2/wopi/files/:id",
+    "/api/filesv2/wopi/files/:id/contents",
+    "/share/filesv2/s/:token",
+    "/share/filesv2/s/:token/*",
+    "/share/filesv2/inbox/:token",
+    "/share/filesv2/inbox/:token/*",
+    "/share/filesv2/transfer/:ticket",
+  ],
   access: appAccess.signedIn({
     publicRoutes: [
+      "/share/filesv2/transfer/:ticket",
       "/share/filesv2/s/:token",
       "/share/filesv2/s/:token/*",
       "/share/filesv2/inbox/:token",
@@ -21,7 +32,7 @@ export const app = defineApp({
     baseLocale: "en",
     translations: { de: { name: "Dateien", description: "Cloud- und FreeIPA-Dateien mit direkten Downloads." } },
   },
-  appearance: { accent: "#1d4ed8", background: { from: "#2563eb", to: "#38bdf8", angle: 135 } },
+  appearance: { accent: "#1d4ed8", background: { from: "#2563eb", to: "#60a5fa", angle: 135 } },
   basePath: "/app/filesv2",
   baseUrl: "http://app-filesv2:3000",
   adminHref: "/admin/filesv2",
@@ -30,6 +41,7 @@ export const app = defineApp({
   routes: ["/api/filesv2", "/app/filesv2", "/admin/filesv2", "/public/filesv2", "/share/filesv2"],
   settings: {
     "filesv2.configuration": {
+      adminWrite: "application",
       kind: "secret",
       label: "Files configuration",
       default: "",

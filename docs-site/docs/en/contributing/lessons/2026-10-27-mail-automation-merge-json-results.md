@@ -1,0 +1,6 @@
+### Merging workflow result shapes broke JSON type inference
+
+- **What happened:** Mail failed its typecheck after grouped automation Undo merged with ordered-effect guards. The migration and workspace-detail tests also retained pre-Undo expectations.
+- **Root cause:** The provider action callback inferred a union of compact no-op outputs and Undo-suppression outputs. TypeScript added optional `undefined` properties to that union, which the workflow JSON contract rejects. Grouped Undo added two provenance-invalidation triggers without updating the schema assertion. Its log projection also supplies empty `kept` and `reverted` arrays for legacy items.
+- **Error class:** Inferred union normalization violates a JSON result boundary after a merge.
+- **Guard:** The provider action callback declares `Promise<ActionResult>`, so each return is checked against the workflow contract directly. Mail typecheck catches invalid outputs; the automation-log, workflow-effect-order, and workflow-placement-steps integration suites guard both merged behaviors. The migration test includes the Undo invalidation function and updated trigger count; the workspace-detail test expects the normalized Undo fields across API, refresh, and SSR projections.

@@ -1,12 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { lazySync } from "@k2b/cloud";
-import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, stopRuntimeResources } from "@k2b/cloud/services";
+import { lazySync, redis, sql } from "@k2b/cloud";
+import {
+  createRuntimeLifecycle,
+  createRuntimeTaskTracker,
+  logger,
+  stopRuntimeJobs,
+  stopRuntimeResources,
+  trace,
+} from "@k2b/cloud/services";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
 import { emitWorkflowEvent, notifyWorkflowWorker, WorkflowEventTooLargeError } from "@k2b/cloud/workflows/store";
 import type { JobContext, JobFailureDecision, Worker } from "@k2b/sync";
-import { redis, sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
 import { truncateUtf8 } from "../lib/utf8";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
@@ -17,9 +23,10 @@ import { sha256Json } from "./canonical";
 import { releaseDueSnoozes } from "./collaboration";
 import type { ConnectorEnvelope, FlagChange } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
+import { closeReusableImapSessions } from "./connectors/imap-smtp";
 import { keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
 import { isAutomaticSubmission } from "./conversation-work-state";
-import { databaseErrorCode, databaseErrorConstraint, isPermanentDataError } from "./database-errors";
+import { databaseErrorCode, databaseErrorConstraint, databaseErrorFacts, isPermanentDataError } from "./database-errors";
 import {
   enqueueDraftImports,
   enqueueDraftProjectionSnapshot,
@@ -31,6 +38,14 @@ import {
 import { deleteAbandonedDraftAttachmentUploads } from "./draft-uploads";
 import { resolveMailExecution } from "./execution";
 import { isAllMailFolder, isInboxFolder, isSentFolder, isTrashOrJunkFolder } from "./follow-up-scope";
+import {
+  beginMailboxHydration,
+  finishMailboxHydration,
+  publishPendingHydrationWork,
+  recordHydrationBatchTime,
+  recordHydrationLeaseWait,
+  requestMailboxHydration,
+} from "./hydration-work";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { enqueueMailInvalidation, mailLive } from "./live";
 import { mailScheduler } from "./mail-scheduler";
@@ -43,6 +58,7 @@ import { hasReplySubjectPrefix, normalizeMailSubject, REPLY_SUBJECT_PREFIX_PATTE
 import { reopenUnprovenSendWithSentCopy } from "./outbound-message-projection";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
+import { providerMessageLookupQuery } from "./provider-message-lookup";
 import {
   acquireProviderLease,
   MAIL_PROVIDER_JOB_CONCURRENCY,
@@ -50,6 +66,8 @@ import {
   type ProviderLeasePriority,
   providerBusyRetryAfterMs,
   providerLeaseWaitedFor,
+  providerLeaseWaitedForByOtherWork,
+  providerLeaseWaiterCount,
   recordProviderFailure,
   recordProviderReachable,
   releaseProviderLease,
@@ -57,7 +75,15 @@ import {
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
 import { reconcileMailStorageUsage } from "./storage-observability";
+import {
+  countFolderBatch,
+  countFolderSyncTrigger,
+  type FolderSyncTrigger,
+  startFolderSyncActivityReport,
+  stopFolderSyncActivityReport,
+} from "./sync-activity";
 import { getWorkflowSnapshot, mailWorkflowEventContext } from "./workflow-data";
+import { captureMailWorkflowEffectOrder } from "./workflow-effect-order";
 
 const log = logger("mail:sync");
 const ENVELOPE_BATCH_SIZE = 200;
@@ -105,6 +131,8 @@ type FolderSyncRow = {
   sync_generation: string | number;
   envelope_cursor: EnvelopeCursor | string;
   role: string;
+  /** The mailbox's Drafts folder: the one configured for drafts, else the provider's. */
+  is_drafts: boolean;
 };
 
 type FenceClaim = {
@@ -121,14 +149,30 @@ type SyncBatchResult = {
    */
   syncPending: boolean;
   imported: number;
+  uidValidityReset: boolean;
+  draftImportsQueued: number;
+  draftExportsQueued: number;
   flagsUpdated: number;
   removed: number;
+  /** The folder's STATUS showed nothing new, so the batch ended without a commit. */
+  unchanged?: boolean;
 };
+
+const emptyBatch = (): SyncBatchResult => ({
+  hasMore: false,
+  syncPending: false,
+  imported: 0,
+  uidValidityReset: false,
+  draftImportsQueued: 0,
+  draftExportsQueued: 0,
+  flagsUpdated: 0,
+  removed: 0,
+});
 
 type SyncLock = NonNullable<Awaited<ReturnType<ReturnType<typeof mailProviderOperationMutex>["acquire"]>>>;
 
 const hydrationJobKey = (input: HydrationInput): string =>
-  "mailboxId" in input ? `mailbox:${input.mailboxId}` : `message:${input.messageId}`;
+  "mailboxId" in input ? `mailbox:${input.mailboxId}${input.generation ? `:${input.generation}` : ""}` : `message:${input.messageId}`;
 
 const retryAfterMs = (error: unknown, fallback: number): number => {
   const value = Number((error as { retryAfterMs?: unknown } | null)?.retryAfterMs);
@@ -185,8 +229,14 @@ const initialCursor = (uidValidity: string, currentHighUid: number, highestModse
 // excluded, and the mailbox and binding checks still fence pause, credential
 // changes, and revocation.
 // `folderId` names the folder a sync run imports, so a requested sync can tell when it ran.
-export const claimFence = async (resourceId: string, bindingId: string, kind: string, folderId?: string): Promise<FenceClaim> =>
-  sql.begin(async (tx) => {
+export const claimFence = async (
+  resourceId: string,
+  bindingId: string,
+  kind: string,
+  folderId?: string,
+  db: typeof sql = sql,
+): Promise<FenceClaim> =>
+  db.begin(async (tx) => {
     const [resource] = await tx<{ token: string | number; generation: string | number }[]>`
       UPDATE mail.remote_resources resource
       SET current_fence_token = resource.current_fence_token + 1
@@ -265,8 +315,10 @@ const counterpartyLabels = (message: ConnectorEnvelope, outbound: boolean): stri
  * server, but several copies can share one stored message, and not every copy carries every
  * address: the copy in Sent keeps its Bcc recipients, the delivered copy does not.
  */
-const upsertAddresses = async (db: typeof sql, messageId: string, message: ConnectorEnvelope): Promise<void> => {
-  const existing = await db<{ role: string; position: number; normalized_email: string }[]>`
+const upsertAddresses = async (db: typeof sql, messageId: string, message: ConnectorEnvelope, newlyInserted = false): Promise<void> => {
+  const existing = newlyInserted
+    ? []
+    : await db<{ role: string; position: number; normalized_email: string }[]>`
     SELECT role, position, normalized_email FROM mail.message_addresses WHERE message_id = ${messageId}::uuid
   `;
   const stored = new Set(existing.map((row) => `${row.role} ${row.normalized_email}`));
@@ -578,15 +630,10 @@ const findCanonicalMessageContent = async (params: {
     if (outbound) return outbound.message_id;
   }
   if (params.message.providerMessageId) {
-    const candidates = await params.db<{ message_id: string }[]>`
-      SELECT DISTINCT remote_ref.message_id
-      FROM mail.remote_message_refs remote_ref
-      JOIN mail.folders folder ON folder.id = remote_ref.folder_id
-      WHERE folder.remote_resource_id = ${params.remoteResourceId}::uuid
-        AND remote_ref.connector_ref ->> 'providerMessageId' = ${params.message.providerMessageId}
-      ORDER BY remote_ref.message_id
-      LIMIT 2
-    `;
+    const candidates = await params.db.unsafe<{ message_id: string }[]>(providerMessageLookupQuery, [
+      params.remoteResourceId,
+      params.message.providerMessageId,
+    ]);
     if (candidates.length === 1) return candidates[0]!.message_id;
     if (candidates.length > 1) return null;
   }
@@ -776,11 +823,14 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
   if (messageContentId) {
     await reopenUnprovenSendWithSentCopy(params.db, { messageId: messageContentId, sentCopyFolderId: params.folderId });
   }
+  // Only an actual insert proves there are no addresses, conversation links, manual overrides
+  // or kept placements to read. A canonical copy, upsert conflict or ref race uses the full path.
+  let newlyInserted = false;
   if (!messageContentId) {
     const messageRows = await withShortIdDb(
       params.db,
       "message",
-      (db, shortId) => db<{ id: string }[]>`
+      (db, shortId) => db<{ id: string; inserted: boolean }[]>`
       INSERT INTO mail.message_contents (
         short_id,
         mailbox_id,
@@ -827,12 +877,13 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
         size_bytes = EXCLUDED.size_bytes,
         mime_structure = EXCLUDED.mime_structure,
         protocol_facts = EXCLUDED.protocol_facts
-      RETURNING id
+      RETURNING id, (xmax = 0) AS inserted
     `,
     );
     const [messageRow] = messageRows;
     if (!messageRow) throw new Error("Message envelope insert returned no row");
     messageContentId = messageRow.id;
+    newlyInserted = messageRow.inserted;
   }
 
   const [remoteRef] = await params.db<{ id: string; message_id: string }[]>`
@@ -858,6 +909,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
   `;
   if (!remoteRef) throw new Error("Remote message reference insert returned no row");
   if (remoteRef.message_id !== messageContentId) {
+    newlyInserted = false;
     await params.db`
       DELETE FROM mail.message_contents candidate
       WHERE candidate.id = ${messageContentId}::uuid
@@ -884,7 +936,8 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
   // in time. The MIME structure and protocol facts still follow the latest copy, as hydration
   // labels the parts of the source it loads with that structure, and only a delivered copy carries
   // list headers.
-  await params.db`
+  if (!newlyInserted)
+    await params.db`
     UPDATE mail.message_contents mc
     SET
       message_id = ${params.message.messageId},
@@ -907,7 +960,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     ) other_copy
     WHERE mc.id = ${messageContentId}::uuid
   `;
-  await upsertAddresses(params.db, messageContentId, params.message);
+  await upsertAddresses(params.db, messageContentId, params.message, newlyInserted);
   await params.db`
     INSERT INTO mail.message_placements (
       remote_message_ref_id, folder_id, message_id, flags, keywords, deleted_at
@@ -929,7 +982,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       updated_at = now()
   `;
 
-  await retireKeptCopyPlacements(params.db, [{ messageId: messageContentId, remoteRefId: remoteRef.id }]);
+  if (!newlyInserted) await retireKeptCopyPlacements(params.db, [{ messageId: messageContentId, remoteRefId: remoteRef.id }]);
 
   const emitMessageReceived = async (): Promise<void> => {
     const deliveryKey = `message:${remoteRef.id}`;
@@ -940,10 +993,11 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     });
     if (!snapshot) throw new Error("Received message workflow snapshot could not be loaded");
     const occurredAt = params.message.internalDate.toISOString();
-    const workflowIds = await params.db<{ workflow_id: string }[]>`
-      SELECT workflow.id::text AS workflow_id
+    const workflowIds = await params.db<{ workflow_id: string; name: string }[]>`
+      SELECT workflow.id::text AS workflow_id, COALESCE(automation.name, workflow.name) AS name
       FROM mail.workflow_profile profile
       JOIN workflows.workflow workflow ON workflow.id = profile.id
+      LEFT JOIN mail.incoming_automations automation ON automation.workflow_id = workflow.id
       WHERE profile.mailbox_id = ${params.mailboxId}::uuid
         AND profile.enabled
         AND workflow.active_version_id IS NOT NULL
@@ -971,7 +1025,12 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
         array_position(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[], activation.workflow_id),
         activation.id
     `;
+    const automationOrder = workflowIds
+      .filter((workflow) => activations.some((activation) => activation.workflow_id === workflow.workflow_id))
+      .map((workflow, position) => ({ workflowId: workflow.workflow_id, name: workflow.name, position }));
     for (const activation of activations) {
+      const ordering = automationOrder.find((entry) => entry.workflowId === activation.workflow_id);
+      if (!ordering) continue;
       const config = typeof activation.trigger_config === "string" ? JSON.parse(activation.trigger_config) : activation.trigger_config;
       const withValues =
         config.with !== null && typeof config.with === "object" && !Array.isArray(config.with)
@@ -979,19 +1038,30 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
           : {};
       const triggerValues = { message: snapshot.source.message, conversation: snapshot.source.conversation, occurredAt };
       try {
-        await emitWorkflowEvent(
+        const emission = await emitWorkflowEvent(
           {
             appId: MAIL_WORKFLOW_APP_ID,
             scopeId: params.mailboxId,
             type: MAIL_WORKFLOW_EVENT.messageReceived,
             targetWorkflowId: activation.workflow_id,
             data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
-            context: mailWorkflowEventContext(snapshot),
+            context: {
+              ...mailWorkflowEventContext(snapshot),
+              automationOrder: { workflowId: ordering.workflowId, name: ordering.name, position: ordering.position + 1 },
+            },
             dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
             occurredAt: new Date(occurredAt),
           },
           { db: params.db },
         );
+        await captureMailWorkflowEffectOrder(params.db, {
+          eventId: emission.eventId,
+          mailboxId: params.mailboxId,
+          remoteMessageRefId: remoteRef.id,
+          workflowId: ordering.workflowId,
+          position: ordering.position,
+          name: ordering.name,
+        });
       } catch (error) {
         if (!(error instanceof WorkflowEventTooLargeError)) throw error;
         // A pathological message must never stall mailbox sync.
@@ -1018,7 +1088,9 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       await emitMessageReceived();
   };
 
-  const [existingConversation] = await params.db<{ conversation_id: string }[]>`
+  const [existingConversation] = newlyInserted
+    ? []
+    : await params.db<{ conversation_id: string }[]>`
     SELECT conversation_id
     FROM mail.conversation_messages
     WHERE message_id = ${messageContentId}::uuid
@@ -1050,11 +1122,13 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       ),
     ),
   ].filter((address) => !mailboxAddresses.has(address));
-  const manualConversationId = await findManualConversationOverride({
-    db: params.db,
-    mailboxId: params.mailboxId,
-    messageId: messageContentId,
-  });
+  const manualConversationId = newlyInserted
+    ? null
+    : await findManualConversationOverride({
+        db: params.db,
+        mailboxId: params.mailboxId,
+        messageId: messageContentId,
+      });
   let conversationId =
     manualConversationId ??
     (await findConversation({
@@ -1322,15 +1396,23 @@ const recordSyncFailure = async (params: {
         last_error_message = ${message}
       WHERE id = ${folder.remote_resource_id}::uuid
     `;
-      // Pausing does not fence a running sync; a late failure must not hide the pause.
+      // Pausing does not fence a running sync; a late failure must not hide the pause. A refused
+      // login leaves no binding to sync with, so a sync that finds none keeps the login's reason:
+      // sends wait for a new login only while the mailbox says it needs one.
+      const keepsLoginRequest = !authFailure && code === "NO_SYNC_BINDING";
       await tx`
       UPDATE mail.mailboxes
       SET
         health = CASE
           WHEN sync_enabled = false THEN 'paused'
+          WHEN health = 'auth_required' AND ${keepsLoginRequest} THEN health
           ELSE ${authFailure ? "auth_required" : code === "NO_SYNC_BINDING" ? "connection_required" : "degraded"}
         END,
-        health_reason = CASE WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator' ELSE ${message} END
+        health_reason = CASE
+          WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator'
+          WHEN health = 'auth_required' AND ${keepsLoginRequest} THEN health_reason
+          ELSE ${message}
+        END
       WHERE id = ${folder.mailbox_id}::uuid
     `;
     })
@@ -1352,6 +1434,14 @@ type ReconcileWindow = {
   completesWalk?: boolean;
 };
 
+/** The remote mailbox a folder belongs to; a folder's never changes. */
+const loadFolderRemoteResource = async (folderId: string): Promise<string | null> => {
+  const [folder] = await sql<{ remote_resource_id: string }[]>`
+    SELECT remote_resource_id FROM mail.folders WHERE id = ${folderId}::uuid
+  `;
+  return folder?.remote_resource_id ?? null;
+};
+
 const loadSyncFolder = async (folderId: string): Promise<FolderSyncRow | null> => {
   const [folder] = await sql<FolderSyncRow[]>`
     SELECT
@@ -1360,7 +1450,20 @@ const loadSyncFolder = async (folderId: string): Promise<FolderSyncRow | null> =
       rr.id AS remote_resource_id,
       rr.sync_generation,
       f.envelope_cursor,
-      f.role
+      f.role,
+      (
+        EXISTS (
+          SELECT 1
+          FROM mail.folder_role_overrides override
+          WHERE override.mailbox_id = rr.mailbox_id AND override.role = 'drafts' AND override.folder_id = f.id
+        )
+        OR (
+          f.role = 'drafts'
+          AND NOT EXISTS (
+            SELECT 1 FROM mail.folder_role_overrides override WHERE override.mailbox_id = rr.mailbox_id AND override.role = 'drafts'
+          )
+        )
+      ) AS is_drafts
     FROM mail.folders f
     JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
     JOIN mail.mailboxes m ON m.id = rr.mailbox_id
@@ -1440,18 +1543,34 @@ const fetchFlagStep = async (params: {
   signal: AbortSignal;
 }): Promise<FlagChange[]> => {
   const { cursor } = params;
-  if (!params.highestModseq) return [];
+  // A walk with nothing left to read ends before anything else, also one an earlier version
+  // opened on an empty folder and never closed: it would otherwise ask for a batch forever.
+  if (cursor.flagNextLow != null && (cursor.flagMaxUid == null || cursor.flagNextLow > cursor.flagMaxUid)) endFlagWalk(cursor);
+  if (!params.highestModseq) {
+    // Without a modification sequence, reconcile windows carry the flags; an open walk stops.
+    if (cursor.flagNextLow != null) endFlagWalk(cursor, { reached: false });
+    return [];
+  }
   if (!cursor.highestModseq) {
     cursor.highestModseq = params.highestModseq;
     return [];
   }
   if (BigInt(params.highestModseq) <= BigInt(cursor.highestModseq)) return [];
   if (!cursor.flagTargetModseq) {
+    // An empty folder has no flags to walk: it takes the new modification sequence at once.
+    if (params.currentHighUid < 1) {
+      cursor.highestModseq = params.highestModseq;
+      return [];
+    }
     cursor.flagTargetModseq = params.highestModseq;
     cursor.flagNextLow = 1;
     cursor.flagMaxUid = params.currentHighUid;
   }
-  if (cursor.flagNextLow == null || cursor.flagMaxUid == null || cursor.flagNextLow > cursor.flagMaxUid) return [];
+  // A walk with nothing left to read never reaches the provider.
+  if (cursor.flagNextLow == null || cursor.flagMaxUid == null || cursor.flagNextLow > cursor.flagMaxUid) {
+    endFlagWalk(cursor);
+    return [];
+  }
 
   const highUid = Math.min(cursor.flagMaxUid, cursor.flagNextLow + FLAG_WINDOW_SIZE - 1);
   const changes = await imapSmtpConnector.fetchFlagChanges(
@@ -1464,13 +1583,19 @@ const fetchFlagStep = async (params: {
     params.signal,
   );
   cursor.flagNextLow = highUid + 1;
-  if (cursor.flagNextLow > cursor.flagMaxUid) {
-    cursor.highestModseq = cursor.flagTargetModseq;
-    cursor.flagTargetModseq = null;
-    cursor.flagNextLow = null;
-    cursor.flagMaxUid = null;
-  }
+  if (cursor.flagNextLow > cursor.flagMaxUid) endFlagWalk(cursor);
   return changes;
+};
+
+/**
+ * Clears the walk's fields. A walk that `reached` its end, the default, means Mail holds every flag
+ * change up to its target.
+ */
+const endFlagWalk = (cursor: EnvelopeCursor, options: { reached?: boolean } = {}): void => {
+  if (options.reached !== false && cursor.flagTargetModseq) cursor.highestModseq = cursor.flagTargetModseq;
+  cursor.flagTargetModseq = null;
+  cursor.flagNextLow = null;
+  cursor.flagMaxUid = null;
 };
 
 /**
@@ -1531,6 +1656,9 @@ const fetchReconcileWindow = async (params: {
   return { low, high, uids: covered.map((entry) => entry.uid), flags: covered, imports: imports.messages };
 };
 
+// A finished folder walks its whole UID range again this often; see fetchReconcileStep.
+const FULL_RECONCILE_INTERVAL_MS = 6 * 60 * 60_000;
+
 export const fetchReconcileStep = async (params: {
   cursor: EnvelopeCursor;
   currentHighUid: number;
@@ -1554,7 +1682,7 @@ export const fetchReconcileStep = async (params: {
   const { cursor } = params;
   const due =
     cursor.backfillComplete &&
-    (!cursor.lastFullReconcileAt || Date.now() - new Date(cursor.lastFullReconcileAt).getTime() >= 6 * 60 * 60_000);
+    (!cursor.lastFullReconcileAt || Date.now() - new Date(cursor.lastFullReconcileAt).getTime() >= FULL_RECONCILE_INTERVAL_MS);
   if (due || cursor.reconcileNextLow != null) {
     const low = cursor.reconcileNextLow ?? 1;
     if (low > params.currentHighUid) {
@@ -1836,6 +1964,114 @@ const checkVanishedMessages = async (params: {
   cursor.vanishedSearch = false;
 };
 
+/**
+ * A folder whose STATUS shows nothing Mail does not hold yet: no new UID, the same CONDSTORE
+ * modification sequence and message count, and no import, flag walk, reconciliation or search
+ * under way or due. A batch would only confirm what is stored, so the check claims no fence and
+ * commits nothing. A server without CONDSTORE reports flag changes only through reconciliation
+ * windows, and the Drafts folder records its projection on every batch, so neither ever counts
+ * as unchanged. The count comparison runs on a copy of the cursor, as the batch would.
+ */
+const mayBeUnchangedFolder = (cursor: EnvelopeCursor, draftsFolder: boolean): boolean =>
+  !draftsFolder &&
+  cursor.highestModseq != null &&
+  cursor.backfillComplete &&
+  cursor.incrementalNextHigh == null &&
+  cursor.flagNextLow == null &&
+  cursor.flagTargetModseq == null &&
+  cursor.reconcileNextLow == null &&
+  cursor.vanishedSearch !== true &&
+  cursor.sweepOlderDue !== true &&
+  cursor.lastFullReconcileAt != null &&
+  Date.now() - new Date(cursor.lastFullReconcileAt).getTime() < FULL_RECONCILE_INTERVAL_MS;
+
+/** STATUS of a folder `mayBeUnchangedFolder` admits matches its cursor; see there. */
+const isUnchangedFolder = async (params: {
+  cursor: EnvelopeCursor;
+  status: FolderStatus;
+  folderId: string;
+  countDrafts: (maxUid: number) => Promise<number>;
+}): Promise<boolean> => {
+  const { cursor, status } = params;
+  if (
+    status.highestModseq == null ||
+    cursor.highestModseq == null ||
+    BigInt(status.highestModseq) !== BigInt(cursor.highestModseq) ||
+    cursor.uidValidity !== status.uidValidity ||
+    cursor.highestSeenUid !== status.uidNext - 1 ||
+    cursor.countedMessages !== status.messages
+  ) {
+    return false;
+  }
+  const checked = structuredClone(cursor);
+  await checkVanishedMessages({
+    cursor: checked,
+    status,
+    folderId: params.folderId,
+    draftsFolder: false,
+    countDrafts: params.countDrafts,
+  });
+  return Bun.deepEquals(checked, cursor);
+};
+
+/**
+ * Confirms that an unchanged folder's stored state is what a commit would leave: the cursor the
+ * check started from, the provider UID state, an active binding and connection at the selected
+ * credential revision without errors, and settled resource and mailbox health. Anything else
+ * takes a full batch, which records it. The resource's sync time moves on at most once a minute.
+ */
+const confirmUnchangedFolder = async (params: {
+  folderId: string;
+  bindingId: string;
+  secretRevision: number;
+  cursor: EnvelopeCursor;
+  status: FolderStatus;
+}): Promise<boolean> => {
+  const [row] = await sql<{ settled: number }[]>`
+    WITH settled AS MATERIALIZED (
+      SELECT resource.id
+      FROM mail.folders folder
+      JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
+      JOIN mail.mailboxes mailbox ON mailbox.id = resource.mailbox_id
+      JOIN mail.binding_folder_refs ref ON ref.folder_id = folder.id AND ref.binding_id = ${params.bindingId}::uuid
+      JOIN mail.provider_bindings binding ON binding.id = ref.binding_id AND binding.remote_resource_id = resource.id
+      JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+      WHERE folder.id = ${params.folderId}::uuid
+        AND folder.envelope_cursor = ${params.cursor}::jsonb
+        AND folder.sync_status = 'current'
+        AND (ref.uid_validity, ref.uid_next, ref.highest_modseq) IS NOT DISTINCT FROM
+          (${params.status.uidValidity}::numeric, ${params.status.uidNext}::numeric, ${params.status.highestModseq}::numeric)
+        AND binding.state = 'active'
+        AND binding.verified_secret_revision = ${params.secretRevision}
+        AND binding.verified_scope_fingerprint = resource.scope_fingerprint
+        AND binding.last_error_code IS NULL
+        AND binding.last_error_message IS NULL
+        AND connection.status = 'active'
+        AND connection.secret_revision = ${params.secretRevision}
+        AND connection.last_error_code IS NULL
+        AND connection.last_error_message IS NULL
+        AND resource.status = 'active'
+        AND resource.last_error_code IS NULL
+        AND resource.last_error_message IS NULL
+        AND mailbox.sync_enabled = true
+        AND mailbox.deleted_at IS NULL
+        AND mailbox.health = 'active'
+        AND mailbox.health_reason IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM mail.provider_bindings other WHERE other.remote_resource_id = resource.id AND other.state = 'degraded'
+        )
+    ), refreshed AS (
+      UPDATE mail.remote_resources resource
+      SET last_sync_at = now()
+      FROM settled
+      WHERE resource.id = settled.id
+        AND (resource.last_sync_at IS NULL OR resource.last_sync_at < now() - interval '1 minute')
+    )
+    SELECT count(*)::int AS settled FROM settled
+  `;
+  return (row?.settled ?? 0) > 0;
+};
+
 const reconcileWindowStart = (uid: number): number => {
   const boundedUid = Math.max(1, Number.isSafeInteger(uid) ? uid : 1);
   return Math.floor((boundedUid - 1) / RECONCILE_WINDOW_SIZE) * RECONCILE_WINDOW_SIZE + 1;
@@ -1871,33 +2107,10 @@ const reconcileRevealedDrafts = async (params: {
   params.cursor.reconcileNextLow = Math.min(params.cursor.reconcileNextLow ?? start, start);
 };
 
-/** Whether the folder is the mailbox's Drafts folder: the one configured for drafts, else the provider's. */
-const isEffectiveDraftsFolder = async (db: typeof sql, folder: Pick<FolderSyncRow, "mailbox_id" | "role">, folderId: string) => {
-  const [effectiveRole] = await db<{ is_drafts: boolean }[]>`
-    SELECT (
-      EXISTS (
-        SELECT 1
-        FROM mail.folder_role_overrides override
-        WHERE override.mailbox_id = ${folder.mailbox_id}::uuid
-          AND override.role = 'drafts'
-          AND override.folder_id = ${folderId}::uuid
-      )
-      OR (
-        ${folder.role} = 'drafts'
-        AND NOT EXISTS (
-          SELECT 1
-          FROM mail.folder_role_overrides override
-          WHERE override.mailbox_id = ${folder.mailbox_id}::uuid
-            AND override.role = 'drafts'
-        )
-      )
-    ) AS is_drafts
-  `;
-  return effectiveRole?.is_drafts === true;
-};
-
 export const commitSyncBatch = async (params: {
-  folder: FolderSyncRow;
+  db?: typeof sql;
+  /** The commit reads the Drafts role itself, with the locked folder. */
+  folder: Omit<FolderSyncRow, "is_drafts">;
   folderId: string;
   bindingId: string;
   secretRevision: number;
@@ -1918,7 +2131,7 @@ export const commitSyncBatch = async (params: {
   removed: number;
   liveInvalidated: boolean;
 }> => {
-  const result = await sql.begin(async (tx) => {
+  const result = await (params.db ?? sql).begin(async (tx) => {
     const [resource] = await tx<{ id: string }[]>`
       SELECT id
       FROM mail.remote_resources
@@ -1935,10 +2148,29 @@ export const commitSyncBatch = async (params: {
       FOR UPDATE
     `;
     if (!resource) throw Object.assign(new Error("Stale mail sync fence"), { code: "STALE_SYNC_FENCE" });
-    const [lockedFolder] = await tx<{ id: string; reconcile_next_low: string | null }[]>`
-      SELECT id, envelope_cursor ->> 'reconcileNextLow' AS reconcile_next_low
-      FROM mail.folders
-      WHERE id = ${params.folderId}::uuid
+    // The Drafts role is read again with the locked folder: an administrator may have moved it
+    // while the batch read the provider.
+    const [lockedFolder] = await tx<{ id: string; reconcile_next_low: string | null; is_drafts: boolean }[]>`
+      SELECT
+        f.id,
+        f.envelope_cursor ->> 'reconcileNextLow' AS reconcile_next_low,
+        (
+          EXISTS (
+            SELECT 1
+            FROM mail.folder_role_overrides override
+            WHERE override.mailbox_id = ${params.folder.mailbox_id}::uuid AND override.role = 'drafts' AND override.folder_id = f.id
+          )
+          OR (
+            f.role = 'drafts'
+            AND NOT EXISTS (
+              SELECT 1
+              FROM mail.folder_role_overrides override
+              WHERE override.mailbox_id = ${params.folder.mailbox_id}::uuid AND override.role = 'drafts'
+            )
+          )
+        ) AS is_drafts
+      FROM mail.folders f
+      WHERE f.id = ${params.folderId}::uuid
       FOR UPDATE
     `;
     if (!lockedFolder) throw new Error("Folder disappeared during sync");
@@ -1948,7 +2180,7 @@ export const commitSyncBatch = async (params: {
     if (storedReconcileLow != null && storedReconcileLow !== (params.beforeCursor?.reconcileNextLow ?? null)) {
       params.cursor.reconcileNextLow = Math.min(storedReconcileLow, params.cursor.reconcileNextLow ?? storedReconcileLow);
     }
-    const isDraftFolder = await isEffectiveDraftsFolder(tx, params.folder, params.folderId);
+    const isDraftFolder = lockedFolder.is_drafts;
     if (params.uidValidityChanged && !isDraftFolder) {
       const hidden = await tx<{ remote_message_ref_id: string }[]>`
         WITH stale AS (
@@ -2070,6 +2302,9 @@ export const commitSyncBatch = async (params: {
         sync_status = ${params.cursor.backfillComplete ? "current" : "syncing"},
         last_reconciled_at = CASE WHEN ${params.reconcileWindow != null} THEN now() ELSE last_reconciled_at END
       WHERE id = ${params.folderId}::uuid
+        AND (envelope_cursor IS DISTINCT FROM ${params.cursor}::jsonb
+          OR sync_status IS DISTINCT FROM ${params.cursor.backfillComplete ? "current" : "syncing"}
+          OR ${params.reconcileWindow != null})
     `;
     await tx`
       UPDATE mail.binding_folder_refs
@@ -2079,6 +2314,8 @@ export const commitSyncBatch = async (params: {
         highest_modseq = ${params.status.highestModseq}::numeric,
         last_verified_at = now()
       WHERE binding_id = ${params.bindingId}::uuid AND folder_id = ${params.folderId}::uuid
+        AND (uid_validity, uid_next, highest_modseq) IS DISTINCT FROM
+          (${params.status.uidValidity}::numeric, ${params.status.uidNext}::numeric, ${params.status.highestModseq}::numeric)
     `;
     const [binding] = await tx<{ connection_id: string }[]>`
       UPDATE mail.provider_bindings
@@ -2093,12 +2330,19 @@ export const commitSyncBatch = async (params: {
     `;
     if (!binding) throw Object.assign(new Error("Sync binding changed before commit"), { code: "STALE_SYNC_BINDING" });
     const [connection] = await tx<{ id: string }[]>`
-      UPDATE mail.provider_connections
-      SET last_error_code = NULL, last_error_message = NULL
-      WHERE id = ${binding.connection_id}::uuid
-        AND status = 'active'
-        AND secret_revision = ${params.secretRevision}
-      RETURNING id
+      WITH eligible AS MATERIALIZED (
+        SELECT id FROM mail.provider_connections
+        WHERE id = ${binding.connection_id}::uuid
+          AND status = 'active' AND secret_revision = ${params.secretRevision}
+        FOR NO KEY UPDATE
+      ), cleared AS (
+        UPDATE mail.provider_connections connection
+        SET last_error_code = NULL, last_error_message = NULL
+        FROM eligible
+        WHERE connection.id = eligible.id
+          AND (connection.last_error_code IS NOT NULL OR connection.last_error_message IS NOT NULL)
+      )
+      SELECT id FROM eligible
     `;
     if (!connection) throw Object.assign(new Error("Sync credentials changed before commit"), { code: "STALE_SYNC_BINDING" });
     await tx`
@@ -2107,9 +2351,9 @@ export const commitSyncBatch = async (params: {
       WHERE id = ${params.folder.remote_resource_id}::uuid
     `;
     await tx`
-      UPDATE mail.mailboxes
-      SET
-        health = CASE
+      WITH desired AS MATERIALIZED (
+        SELECT id,
+        CASE
           WHEN sync_enabled = false THEN 'paused'
           WHEN EXISTS (
             SELECT 1
@@ -2118,8 +2362,8 @@ export const commitSyncBatch = async (params: {
             WHERE resource.mailbox_id = ${params.folder.mailbox_id}::uuid AND binding.state = 'degraded'
           ) THEN 'degraded'
           ELSE ${params.cursor.backfillComplete ? "active" : "bootstrapping"}
-        END,
-        health_reason = CASE
+        END AS health,
+        CASE
           WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator'
           WHEN EXISTS (
             SELECT 1
@@ -2128,8 +2372,15 @@ export const commitSyncBatch = async (params: {
             WHERE resource.mailbox_id = ${params.folder.mailbox_id}::uuid AND binding.state = 'degraded'
           ) THEN 'One or more provider bindings require attention'
           ELSE ${params.cursor.backfillComplete ? null : "Historical synchronization in progress"}
-        END
-      WHERE id = ${params.folder.mailbox_id}::uuid
+        END AS health_reason
+        FROM mail.mailboxes WHERE id = ${params.folder.mailbox_id}::uuid
+        FOR NO KEY UPDATE
+      )
+      UPDATE mail.mailboxes mailbox
+      SET health = desired.health, health_reason = desired.health_reason
+      FROM desired
+      WHERE mailbox.id = desired.id
+        AND (mailbox.health, mailbox.health_reason) IS DISTINCT FROM (desired.health, desired.health_reason)
     `;
     await tx`
       UPDATE mail.sync_runs
@@ -2150,6 +2401,15 @@ export const commitSyncBatch = async (params: {
         finished_at = now()
       WHERE id = ${params.fence.runId}::uuid
     `;
+    // Persist the wake with the envelopes. A crash after commit cannot leave new mail waiting
+    // for the minute scheduler; the hydration publisher reconciles outstanding generations.
+    if (hydratedIds.length > 0) {
+      await requestMailboxHydration(tx, params.folder.mailbox_id, {
+        // Finish the envelope/flag continuation before promoting its bodies. Historical
+        // imports and later body batches must not acquire an arrival sync's priority.
+        foreground: params.envelopeKind === "incremental" && params.cursor.incrementalNextHigh == null && params.cursor.flagNextLow == null,
+      });
+    }
     const liveInvalidated = hydratedIds.length > 0 || flagsUpdated > 0 || removed > 0;
     if (liveInvalidated) {
       await enqueueMailInvalidation(tx, { mailboxId: params.folder.mailbox_id });
@@ -2170,21 +2430,31 @@ export const syncFolderBatch = async (
   folderId: string,
   jobHeartbeat: () => Promise<void>,
   priority: Extract<ProviderLeasePriority, "sync" | "background"> = "sync",
+  options: { remoteResourceId?: string } = {},
 ): Promise<SyncBatchResult> => {
-  const folder = await loadSyncFolder(folderId);
-  if (!folder) return { hasMore: false, syncPending: false, imported: 0, flagsUpdated: 0, removed: 0 };
+  // A job that knows its folder's remote mailbox asks for the lease before it reads the folder,
+  // so a turn that finds the lease busy costs no database statement. The batch reads the folder
+  // under the lease either way.
+  const preloaded = options.remoteResourceId ? null : await loadSyncFolder(folderId);
+  const resource = preloaded ? preloaded.remote_resource_id : options.remoteResourceId;
+  if (!resource) return emptyBatch();
+  let mailboxId: string | null = null;
 
   const { lock, retryAfterMs: busyRetryAfterMs } = await acquireProviderLease({
-    resource: folder.remote_resource_id,
+    resource,
     waiter: `sync-folder:${folderId}`,
     priority,
     ttlMs: SYNC_LEASE_MS,
   });
   if (!lock) throw Object.assign(new Error("Mail sync resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
+  await countServedFolderTurn(resource);
   let runId: string | null = null;
   let selectedBindingId: string | null = null;
   let selectedSecretRevision: number | null = null;
   let activeFence: FenceClaim | null = null;
+  // An unchanged folder claims no fence. Until the batch claims one, a failure claims it to
+  // record the failed run, as a batch that claimed it before reading the provider does.
+  const failedRun: { claimFence: (() => Promise<FenceClaim>) | null } = { claimFence: null };
   let batch: SyncBatchResult;
   let next: { waiter: string; priority: ProviderLeasePriority } | undefined;
   try {
@@ -2202,9 +2472,9 @@ export const syncFolderBatch = async (
         }
       },
       work: async (_assertLeaseActive, signal) => {
-        const refreshedFolder = await loadSyncFolder(folderId);
-        if (!refreshedFolder) return { hasMore: false, syncPending: false, imported: 0, flagsUpdated: 0, removed: 0 };
-        Object.assign(folder, refreshedFolder);
+        const folder = await loadSyncFolder(folderId);
+        if (!folder || folder.remote_resource_id !== resource) return emptyBatch();
+        mailboxId = folder.mailbox_id;
         await waitForMailProviderSlot(folder.remote_resource_id, signal);
         const execution = await resolveMailExecution({
           mailboxId: folder.mailbox_id,
@@ -2222,110 +2492,149 @@ export const syncFolderBatch = async (
         selectedSecretRevision = secretRevision;
         const folderExecution = execution.data.folders[folderId];
         if (!folderExecution) throw Object.assign(new Error("Selected sync binding has no folder locator"), { code: "NO_FOLDER_LOCATOR" });
-        const fence = await claimFence(folder.remote_resource_id, execution.data.bindingId, "incremental", folderId);
-        activeFence = fence;
-        runId = fence.runId;
+        const bindingId = execution.data.bindingId;
         const runtimeSnapshot = await loadResolvedRuntimeSnapshot(execution.data.connectionId, secretRevision);
-        const runtime = runtimeSnapshot.runtime;
-        const status = await imapSmtpConnector.getFolderStatus(runtime, folderExecution.path, signal);
-        await extendSyncLease(lock, "after status refresh");
-        const currentHighUid = Math.max(0, status.uidNext - 1);
-        const beforeCursor = parseCursor(folder.envelope_cursor);
-        const uidValidityChanged = Boolean(beforeCursor && beforeCursor.uidValidity !== status.uidValidity);
-        const cursor =
-          !beforeCursor || uidValidityChanged
-            ? initialCursor(status.uidValidity, currentHighUid, status.highestModseq)
-            : structuredClone(beforeCursor);
-        const draftsFolder = await isEffectiveDraftsFolder(sql, folder, folderId);
+        // The batch's provider reads share one IMAP connection, and the next batch of this account in
+        // this process, such as the next folder of the same minute, may take it over.
+        const reuseKey = `${execution.data.connectionId}:${secretRevision}`;
+        return imapSmtpConnector.withSession(
+          runtimeSnapshot.runtime,
+          async (runtime) => {
+            const beforeCursor = parseCursor(folder.envelope_cursor);
+            const draftsFolder = folder.is_drafts;
+            const readStatus = async (): Promise<FolderStatus> => {
+              const status = await imapSmtpConnector.getFolderStatus(runtime, folderExecution.path, signal);
+              await extendSyncLease(lock, "after status refresh");
+              return status;
+            };
+            const draftCounter = (uidValidity: string) => (maxUid: number) =>
+              imapSmtpConnector.countDraftMessages(runtime, folderExecution.path, uidValidity, maxUid, signal);
+            // Most checks of a quiet folder find nothing new. Such a check reads STATUS first and ends
+            // before it claims a fence or records a run. A sync command waiting for the folder needs
+            // a recorded run, so its folder claims the fence first.
+            if (beforeCursor && mayBeUnchangedFolder(beforeCursor, draftsFolder) && !(await folderSyncAwaited(folderId))) {
+              failedRun.claimFence = () => claimFence(folder.remote_resource_id, bindingId, "incremental", folderId);
+              const status = await readStatus();
+              if (
+                (await isUnchangedFolder({ cursor: beforeCursor, status, folderId, countDrafts: draftCounter(status.uidValidity) })) &&
+                (await confirmUnchangedFolder({ folderId, bindingId, secretRevision, cursor: beforeCursor, status }))
+              ) {
+                return { ...emptyBatch(), unchanged: true };
+              }
+              failedRun.claimFence = null;
+            }
+            const fence = await claimFence(folder.remote_resource_id, bindingId, "incremental", folderId);
+            activeFence = fence;
+            runId = fence.runId;
+            // A rebuild or transport change reset the folder after the batch read it; the next batch
+            // starts from the reset cursor.
+            if (fence.generation !== Number(folder.sync_generation)) {
+              throw Object.assign(new Error("Mail folder was reset during sync"), { code: "STALE_SYNC_FENCE" });
+            }
+            // Read after the claim: a completed run covers what the provider held when it started.
+            const status = await readStatus();
+            const currentHighUid = Math.max(0, status.uidNext - 1);
+            const uidValidityChanged = Boolean(beforeCursor && beforeCursor.uidValidity !== status.uidValidity);
+            const countDrafts = draftCounter(status.uidValidity);
+            const cursor =
+              !beforeCursor || uidValidityChanged
+                ? initialCursor(status.uidValidity, currentHighUid, status.highestModseq)
+                : structuredClone(beforeCursor);
 
-        await checkVanishedMessages({
-          cursor,
-          status,
-          folderId,
-          draftsFolder,
-          countDrafts: (maxUid) => imapSmtpConnector.countDraftMessages(runtime, folderExecution.path, status.uidValidity, maxUid, signal),
-        });
+            await checkVanishedMessages({ cursor, status, folderId, draftsFolder, countDrafts });
 
-        const envelope = await fetchEnvelopeStep({
-          cursor,
-          currentHighUid,
-          runtime,
-          folderPath: folderExecution.path,
-          folderId,
-          uidValidity: status.uidValidity,
-          signal,
-        });
-        const envelopeBatch = envelope.batch;
-        if (envelopeBatch) await extendSyncLease(lock, "after envelope fetch");
-        // Once this batch commits, Mail holds every UID this count covers; see checkVanishedMessages.
-        cursor.countedMessages = cursor.backfillComplete && cursor.highestSeenUid === currentHighUid ? status.messages : null;
+            const envelope = await fetchEnvelopeStep({
+              cursor,
+              currentHighUid,
+              runtime,
+              folderPath: folderExecution.path,
+              folderId,
+              uidValidity: status.uidValidity,
+              signal,
+            });
+            const envelopeBatch = envelope.batch;
+            if (envelopeBatch) await extendSyncLease(lock, "after envelope fetch");
+            // Once this batch commits, Mail holds every UID this count covers; see checkVanishedMessages.
+            cursor.countedMessages = cursor.backfillComplete && cursor.highestSeenUid === currentHighUid ? status.messages : null;
 
-        const flagChanges = await fetchFlagStep({
-          cursor,
-          currentHighUid,
-          runtime,
-          folderPath: folderExecution.path,
-          uidValidity: status.uidValidity,
-          highestModseq: status.highestModseq,
-          signal,
-        });
-        if (flagChanges.length > 0) await extendSyncLease(lock, "after flag fetch");
+            const flagChanges = await fetchFlagStep({
+              cursor,
+              currentHighUid,
+              runtime,
+              folderPath: folderExecution.path,
+              uidValidity: status.uidValidity,
+              highestModseq: status.highestModseq,
+              signal,
+            });
+            if (flagChanges.length > 0) await extendSyncLease(lock, "after flag fetch");
 
-        const reconcileWindow = await fetchReconcileStep({
-          cursor,
-          currentHighUid,
-          remoteMessages: status.messages,
-          highestModseq: status.highestModseq,
-          runtime,
-          folderPath: folderExecution.path,
-          folderId,
-          uidValidity: status.uidValidity,
-          draftsFolder,
-          fetchedUids: new Set(
-            (envelopeBatch?.messages ?? [])
-              .filter((message) => draftsFolder || !isProviderDraft(message))
-              .map((message) => Number(message.remoteRef.uid)),
-          ),
-          signal,
-        });
-        if (reconcileWindow) await extendSyncLease(lock, "after UID reconciliation");
+            const reconcileWindow = await fetchReconcileStep({
+              cursor,
+              currentHighUid,
+              remoteMessages: status.messages,
+              highestModseq: status.highestModseq,
+              runtime,
+              folderPath: folderExecution.path,
+              folderId,
+              uidValidity: status.uidValidity,
+              draftsFolder,
+              fetchedUids: new Set(
+                (envelopeBatch?.messages ?? [])
+                  .filter((message) => draftsFolder || !isProviderDraft(message))
+                  .map((message) => Number(message.remoteRef.uid)),
+              ),
+              signal,
+            });
+            if (reconcileWindow) await extendSyncLease(lock, "after UID reconciliation");
 
-        await extendSyncLease(lock, "before commit");
-        const result = await commitSyncBatch({
-          folder,
-          folderId,
-          bindingId: execution.data.bindingId,
-          secretRevision,
-          fence,
-          status,
-          beforeCursor,
-          cursor,
-          uidValidityChanged,
-          envelopeBatch,
-          envelopeKind: envelope.kind,
-          flagChanges,
-          reconcileWindow,
-        });
+            await extendSyncLease(lock, "before commit");
+            const result = await commitSyncBatch({
+              folder,
+              folderId,
+              bindingId,
+              secretRevision,
+              fence,
+              status,
+              beforeCursor,
+              cursor,
+              uidValidityChanged,
+              envelopeBatch,
+              envelopeKind: envelope.kind,
+              flagChanges,
+              reconcileWindow,
+            });
 
-        await enqueueDraftImports(result.draftImportSnapshotIds);
-        await Promise.all(result.draftExportSnapshotIds.map((snapshotId) => enqueueDraftProjectionSnapshot(snapshotId)));
-        // A sweep that started before this batch ends at its own target; mail that arrived after
-        // it is next, without waiting for the next scheduled sync.
-        const newMailPending = cursor.incrementalNextHigh != null || cursor.highestSeenUid < currentHighUid;
-        const hasMore =
-          newMailPending ||
-          !cursor.backfillComplete ||
-          cursor.flagNextLow != null ||
-          cursor.reconcileNextLow != null ||
-          (cursor.vanishedSearch === true && cursor.sweepNextHigh != null) ||
-          cursor.sweepOlderDue === true;
-        return {
-          hasMore,
-          syncPending: newMailPending || cursor.flagNextLow != null,
-          imported: result.hydratedIds.length,
-          flagsUpdated: result.flagsUpdated,
-          removed: result.removed,
-        };
+            await enqueueDraftImports(result.draftImportSnapshotIds);
+            await Promise.all(result.draftExportSnapshotIds.map((snapshotId) => enqueueDraftProjectionSnapshot(snapshotId)));
+            // A sweep that started before this batch ends at its own target; mail that arrived after
+            // it is next, without waiting for the next scheduled sync.
+            const newMailPending = cursor.incrementalNextHigh != null || cursor.highestSeenUid < currentHighUid;
+            const hasMore =
+              newMailPending ||
+              !cursor.backfillComplete ||
+              cursor.flagNextLow != null ||
+              cursor.reconcileNextLow != null ||
+              (cursor.vanishedSearch === true && cursor.sweepNextHigh != null) ||
+              cursor.sweepOlderDue === true;
+            return {
+              hasMore,
+              syncPending: newMailPending || cursor.flagNextLow != null,
+              imported: result.hydratedIds.length,
+              uidValidityReset: uidValidityChanged,
+              draftImportsQueued: result.draftImportSnapshotIds.length,
+              draftExportsQueued: result.draftExportSnapshotIds.length,
+              flagsUpdated: result.flagsUpdated,
+              removed: result.removed,
+            };
+          },
+          {
+            reuseKey,
+            // Only the next folder check of this account takes a kept connection over. While a send,
+            // a command or other work already waits for the account, the check keeps none, so it adds
+            // no idle connection at the provider next to that work.
+            keep: async () => !(await providerLeaseWaitedForByOtherWork(folder.remote_resource_id)),
+          },
+        );
       },
     });
     // Reserve the turn for the continuation runSyncFolderJob resubmits for a request made while
@@ -2335,10 +2644,29 @@ export const syncFolderBatch = async (
     if (batch.hasMore || requested)
       next = { waiter: `sync-folder:${folderId}`, priority: batch.syncPending || requested ? "sync" : "background" };
   } catch (error) {
-    await recordProviderFailure(folder.remote_resource_id, error);
+    await recordProviderFailure(resource, error);
     const code = normalizeSyncErrorCode(error);
+    // A failure while the quiet check reads STATUS records state only under the fence it claims
+    // now; without one, another batch may own the folder.
+    let fenced = failedRun.claimFence === null;
+    if (
+      failedRun.claimFence &&
+      code !== "SYNC_LEASE_LOST" &&
+      code !== "SYNC_JOB_LEASE_LOST" &&
+      (await mailProviderOperationMutex()
+        .extend(lock, { ttlMs: SYNC_LEASE_MS })
+        .catch(() => false))
+    ) {
+      const fence = await failedRun.claimFence().catch(() => null);
+      if (fence) {
+        activeFence = fence;
+        runId = fence.runId;
+        fenced = true;
+      }
+    }
     if (runId) await finishFailedRun(runId, code);
     if (
+      fenced &&
       code !== "MAIL_RATE_LIMITED" &&
       code !== "SYNC_LEASE_LOST" &&
       code !== "SYNC_JOB_LEASE_LOST" &&
@@ -2358,10 +2686,14 @@ export const syncFolderBatch = async (
   } finally {
     await releaseProviderLease(lock, next);
   }
-  await recordProviderReachable(folder.remote_resource_id);
-  // Queued only after the provider lease is released: a hydration job that starts while this
-  // sync still holds it finds the resource busy and has to try again.
-  if (batch.imported > 0) await submitHydrationJob({ mailboxId: folder.mailbox_id });
+  // Only a batch that worked on its folder reached the provider; one whose folder was gone did not.
+  if (mailboxId) await recordProviderReachable(resource);
+  // The immediate wake follows lease release; the recovery publisher can race this release,
+  // in which case the hydration job resubmits through normal provider contention.
+  if (batch.imported > 0) {
+    const hydrated = mailboxId;
+    if (hydrated) await (syncTasks.run(() => publishMailboxHydration(hydrated)) ?? Promise.resolve());
+  }
   return batch;
 };
 
@@ -2379,6 +2711,11 @@ const SYNC_FOLDER_DATA_ERROR_RECHECK_MS = 15 * 60_000;
 // when the job would end. A request counts this long: it outlasts a long batch and a few retries.
 export const FOLDER_SYNC_REQUEST_MS = 10 * 60_000;
 const syncRequestKey = (folderId: string): string => `mail:sync-requested:${folderId}`;
+// A sync command waiting for the folder settles on a completed run after it (requestedSyncProgress),
+// so while the request counts, the folder's batches never end as unchanged without a run.
+const awaitedSyncKey = (folderId: string): string => `mail:sync-awaited:${folderId}`;
+const folderSyncAwaited = async (folderId: string): Promise<boolean> =>
+  Number(await redis.send("EXISTS", [awaitedSyncKey(folderId)]).catch(() => 1)) > 0;
 // When the folder's job last gave up, as long as a request counts. A job can give up before it
 // records a run, for example when no binding may read the folder, so its runs cannot say so.
 const syncGaveUpKey = (folderId: string): string => `mail:sync-gave-up:${folderId}`;
@@ -2397,8 +2734,12 @@ const markFolderDegraded = async (folderId: string): Promise<void> => {
   }
 };
 
-/** `backfill` marks a continuation that only imports older mail or reconciliation windows. */
-type SyncFolderJobInput = { folderId: string; backfill?: boolean };
+/**
+ * `backfill` marks a continuation that only imports older mail or reconciliation windows.
+ * `remoteResourceId` is the folder's remote mailbox: a job learns it in its first turn and carries it,
+ * so its later turns ask for the lease without a database statement.
+ */
+type SyncFolderJobInput = { folderId: string; backfill?: boolean; remoteResourceId?: string };
 
 const syncFolderJob = lazySync((sync) =>
   sync.job<SyncFolderJobInput>({
@@ -2407,30 +2748,53 @@ const syncFolderJob = lazySync((sync) =>
   }),
 );
 
-/** Runs one `mail:sync-folder` attempt; exported so tests can drive the job's failure handling. */
-export const runSyncFolderJob = async (ctx: Pick<JobContext<SyncFolderJobInput>, "input" | "heartbeat" | "resubmit">): Promise<void> => {
+/** Runs one `mail:sync-folder` attempt and returns its counted outcome. */
+const runSyncFolderJobOutcome = async (
+  ctx: Pick<JobContext<SyncFolderJobInput>, "input" | "heartbeat" | "resubmit">,
+): Promise<SyncBatchResult | { deferred: string }> => {
   const { folderId } = ctx.input;
   let backfill = ctx.input.backfill === true;
+  let carried: { remoteResourceId?: string } = ctx.input.remoteResourceId ? { remoteResourceId: ctx.input.remoteResourceId } : {};
   try {
+    // The first turn reads which remote mailbox the folder belongs to, as each turn did before;
+    // every later turn carries it.
+    if (!carried.remoteResourceId) {
+      const remoteResourceId = await loadFolderRemoteResource(folderId);
+      if (remoteResourceId) carried = { remoteResourceId };
+    }
     // A sync requested meanwhile joined this job. Its next batch checks for new mail before it
     // continues with older mail, so it ranks as a folder sync.
     if ((await redis.send("GETDEL", [syncRequestKey(folderId)])) != null) backfill = false;
-    const data = await syncFolderBatch(folderId, () => ctx.heartbeat(), backfill ? "background" : "sync");
-    if (data.hasMore) ctx.resubmit({ delayMs: 0, input: { folderId, backfill: !data.syncPending } });
+    const data = await syncFolderBatch(folderId, () => ctx.heartbeat(), backfill ? "background" : "sync", carried);
+    countFolderBatch(data.unchanged ? "unchanged" : "committed");
+    if (data.hasMore) {
+      countFolderSyncTrigger("continuation");
+      ctx.resubmit({ delayMs: 0, input: { folderId, backfill: !data.syncPending, ...carried } });
+    }
     // A sync requested while this batch ran may have come after the batch checked for new mail.
-    else if (Number(await redis.send("EXISTS", [syncRequestKey(folderId)])) > 0) ctx.resubmit({ delayMs: 0, input: { folderId } });
+    else if (Number(await redis.send("EXISTS", [syncRequestKey(folderId)])) > 0)
+      ctx.resubmit({ delayMs: 0, input: { folderId, ...carried } });
+    return data;
   } catch (error) {
     const code = normalizeSyncErrorCode(error);
-    if (code === "MAILBOX_TRANSPORT_CHANGED") return;
+    if (code === "MAILBOX_TRANSPORT_CHANGED") {
+      countFolderBatch("deferred");
+      return { deferred: code };
+    }
     if (code === "MAIL_RATE_LIMITED") {
-      ctx.resubmit({ delayMs: retryAfterMs(error, 5_000), input: { folderId, backfill } });
-      return;
+      countFolderBatch("deferred");
+      countFolderSyncTrigger("rate_limited");
+      ctx.resubmit({ delayMs: retryAfterMs(error, 5_000), input: { folderId, backfill, ...carried } });
+      return { deferred: code };
     }
     // A sibling job holds the remote resource: routine contention, not a failed attempt.
     if (code === "SYNC_BUSY") {
-      ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input: { folderId, backfill } });
-      return;
+      countFolderBatch("deferred");
+      countFolderSyncTrigger("busy");
+      ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input: { folderId, backfill, ...carried } });
+      return { deferred: code };
     }
+    countFolderBatch("failed");
     // The failed run and the resource error are already recorded; retries and dead letters
     // would only repeat them, because the scheduler queues a degraded folder again.
     if (isPermanentDataError(error)) {
@@ -2442,11 +2806,34 @@ export const runSyncFolderJob = async (ctx: Pick<JobContext<SyncFolderJobInput>,
         recheckInMs: SYNC_FOLDER_DATA_ERROR_RECHECK_MS,
       });
       ctx.resubmit({ delayMs: SYNC_FOLDER_DATA_ERROR_RECHECK_MS });
-      return;
+      return { deferred: code };
     }
     throw error;
   }
 };
+
+/** Allows tests to drive the job's failure handling without its tracing wrapper. */
+export const runSyncFolderJob = async (ctx: Pick<JobContext<SyncFolderJobInput>, "input" | "heartbeat" | "resubmit">): Promise<void> => {
+  await runSyncFolderJobOutcome(ctx);
+};
+/** Classify every counted effect, including draft projections, before suppressing a run span. */
+export const summarizeSyncFolderOutcome = (result: SyncBatchResult | { deferred: string }) => {
+  if ("deferred" in result) {
+    return result.deferred === "SYNC_BUSY" || result.deferred === "MAIL_RATE_LIMITED" || result.deferred === "MAILBOX_TRANSPORT_CHANGED"
+      ? null
+      : result;
+  }
+  return result.imported > 0 ||
+    result.uidValidityReset ||
+    result.draftImportsQueued > 0 ||
+    result.draftExportsQueued > 0 ||
+    result.flagsUpdated > 0 ||
+    result.removed > 0 ||
+    result.hasMore
+    ? result
+    : null;
+};
+const tracedSyncFolderJob = trace.backgroundJob("mail:sync-folder", runSyncFolderJobOutcome, summarizeSyncFolderOutcome);
 
 /** Retries a failed `mail:sync-folder` attempt or gives up after the last one; exported for tests. */
 export const onSyncFolderJobError = async ({
@@ -2457,12 +2844,16 @@ export const onSyncFolderJobError = async ({
   error: Error;
 }): Promise<JobFailureDecision> => {
   if (context.attempt < SYNC_FOLDER_MAX_ATTEMPTS) return { action: "retry" };
-  await markFolderDegraded(context.input.folderId);
+  // The log must not depend on the database: in an outage, which is when folder syncs exhaust their
+  // retries, the degraded mark fails or waits for a connection. A hook that throws, or waits past
+  // the delivery's ack wait, lets the job dead-letter as "max attempts exhausted" without its
+  // decision, so the mark must not throw either.
   log.error("Mail folder sync exhausted retries", {
     folderId: context.input.folderId,
     attempt: context.attempt,
     code: normalizeSyncErrorCode(error),
   });
+  await markFolderDegraded(context.input.folderId).catch(() => undefined);
   return { action: "dead_letter", reason: error.message };
 };
 
@@ -2470,7 +2861,7 @@ let syncFolderJobWorker: Worker | undefined;
 const startSyncFolderJob = async (): Promise<void> => {
   syncFolderJobWorker = await syncFolderJob().process(
     { concurrency: MAIL_PROVIDER_JOB_CONCURRENCY, onError: onSyncFolderJobError },
-    runSyncFolderJob,
+    tracedSyncFolderJob,
   );
 };
 
@@ -2506,7 +2897,7 @@ const invalidateSettledConversations = async (mailboxId: string, messageIds: Rea
  * behind every other mailbox's job, so the worker's places take turns between mailboxes
  * instead of draining one mailbox's backlog first.
  */
-type HydrationInput = { mailboxId: string } | { messageId: string };
+type HydrationInput = { mailboxId: string; generation?: string; retryBodies?: boolean; foregroundBodies?: boolean } | { messageId: string };
 
 type HydrationTarget = {
   id: string;
@@ -2591,8 +2982,8 @@ const newestPendingBody = async (mailboxId: string, retry: boolean): Promise<Hyd
 
 // Fresh bodies first, newest first. A body that was already tried comes only after every fresh
 // one, so a failing or vanished message cannot take the mailbox's turn again and again.
-const nextMailboxHydrationTarget = async (mailboxId: string): Promise<HydrationTarget | null> =>
-  (await newestPendingBody(mailboxId, false)) ?? (await newestPendingBody(mailboxId, true));
+const nextMailboxHydrationTarget = async (mailboxId: string, retry = true): Promise<HydrationTarget | null> =>
+  (await newestPendingBody(mailboxId, false)) ?? (retry ? await newestPendingBody(mailboxId, true) : null);
 
 export const hydrateMessageBatch = async (
   ctx: Pick<JobContext<HydrationInput>, "input" | "heartbeat" | "resubmit">,
@@ -2601,7 +2992,11 @@ export const hydrateMessageBatch = async (
   return withLeaseHeartbeat({
     intervalMs: 60_000,
     heartbeat: async () => {
-      await ctx.heartbeat();
+      try {
+        await ctx.heartbeat();
+      } catch (cause) {
+        throw Object.assign(new Error("Mail hydration job lease was lost"), { code: "SYNC_JOB_LEASE_LOST", cause });
+      }
       if (!activeClaim) return;
       await sql`
         UPDATE mail.message_contents
@@ -2611,29 +3006,42 @@ export const hydrateMessageBatch = async (
           AND hydration_claim_id = ${activeClaim.claimId}::uuid
       `;
     },
-    work: async () => {
+    work: async (assertJobLeaseActive, jobSignal) => {
       const message =
         "mailboxId" in ctx.input
-          ? await nextMailboxHydrationTarget(ctx.input.mailboxId)
+          ? await nextMailboxHydrationTarget(ctx.input.mailboxId, ctx.input.retryBodies !== false)
           : await requestedHydrationTarget(ctx.input.messageId);
       if (!message) return { hydrated: false };
-      // A mailbox's pending bodies wait for its folder syncs and commands. A body someone waits
-      // for, such as one a workflow step needs, ranks with commands.
+      // Only the first batch of a completed incremental arrival shares sync priority.
+      // Backfill, later body batches and retries retain background rank, so importing old
+      // mail cannot repeatedly displace envelope continuations and commands.
+      // An explicitly requested body (for example by a workflow) ranks with commands.
+      // A mailbox's bodies age: on an account with hundreds of folders the line of folder syncs is
+      // longer than their head start, so without aging a body waits about a full round of them.
       const turn = await acquireProviderLease({
         resource: message.remote_resource_id,
         waiter: `hydrate:${hydrationJobKey(ctx.input)}`,
-        priority: "messageId" in ctx.input ? "command" : "background",
+        priority:
+          "messageId" in ctx.input ? "command" : ctx.input.foregroundBodies && message.hydration_attempt === 0 ? "sync" : "background",
         ttlMs: SYNC_LEASE_MS,
+        ages: "mailboxId" in ctx.input,
       });
       if (!turn.lock)
         throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY", retryAfterMs: turn.retryAfterMs });
       const { lock } = turn;
       let batch: HydrationBatch;
+      const batchStarted = performance.now();
       try {
+        if ("mailboxId" in ctx.input && ctx.input.generation) {
+          await recordHydrationLeaseWait({ mailbox_id: ctx.input.mailboxId, job_id: ctx.input.generation }).catch(() => {
+            log.warn("Mail hydration lease timing could not be recorded", { mailboxId: message.mailbox_id });
+          });
+        }
         batch = await withLeaseHeartbeat<HydrationBatch>({
           intervalMs: 30_000,
           heartbeat: () => extendSyncLease(lock, "during message hydration"),
-          work: async (assertProviderLeaseActive, signal) => {
+          work: async (assertProviderLeaseActive, providerSignal) => {
+            const signal = AbortSignal.any([jobSignal, providerSignal]);
             const execution = await resolveMailExecution({
               mailboxId: message.mailbox_id,
               operation: "backgroundSync",
@@ -2698,6 +3106,7 @@ export const hydrateMessageBatch = async (
                 })),
                 async (source) => {
                   delivered.add(source.key);
+                  await assertJobLeaseActive();
                   await assertProviderLeaseActive();
                   await assertMailboxTransportFence(transportFence);
                   const claimId = randomUUID();
@@ -2719,10 +3128,14 @@ export const hydrateMessageBatch = async (
                     await assertMailboxTransportFence(transportFence);
                   } catch (error) {
                     const code = normalizeSyncErrorCode(error);
-                    if (code === "SYNC_LEASE_LOST" || code === "MAILBOX_TRANSPORT_CHANGED") throw error;
+                    if (code === "SYNC_LEASE_LOST" || code === "SYNC_JOB_LEASE_LOST" || code === "MAILBOX_TRANSPORT_CHANGED") throw error;
                     if (code !== "HYDRATION_NOT_CLAIMED") {
                       settled.add(source.key);
-                      log.warn("Mail message hydration failed within a source batch", { messageId: source.key, code });
+                      log.warn("Mail message hydration failed within a source batch", {
+                        messageId: source.key,
+                        code,
+                        ...databaseErrorFacts(error),
+                      });
                       if (source.key === message.id && "messageId" in ctx.input) targetError = error;
                     }
                   } finally {
@@ -2730,7 +3143,7 @@ export const hydrateMessageBatch = async (
                   }
                   // A folder sync or command ahead of this batch's place waits for this body,
                   // instead of waiting for the rest of the batch.
-                  if (await providerLeaseWaitedFor(turn)) {
+                  if (await providerLeaseWaitedFor(turn, { yieldToForeground: true })) {
                     stoppedAfter = source.key;
                     return "stop";
                   }
@@ -2774,7 +3187,13 @@ export const hydrateMessageBatch = async (
         await recordProviderFailure(message.remote_resource_id, error);
         throw error;
       } finally {
+        const batchMs = performance.now() - batchStarted;
         await releaseProviderLease(lock);
+        if ("mailboxId" in ctx.input && ctx.input.generation) {
+          await recordHydrationBatchTime(message.mailbox_id, batchMs).catch(() => {
+            log.warn("Mail hydration batch timing could not be recorded", { mailboxId: message.mailbox_id });
+          });
+        }
       }
       // Folder reconciliation retires the references of messages the provider deleted.
       if (batch.missingFromUid !== null) await enqueueFolderReconciliation(message.folder_id, batch.missingFromUid);
@@ -2800,38 +3219,107 @@ const hydrationJob = lazySync((sync) =>
 let hydrationJobWorker: Worker | undefined;
 const startHydrationJob = async (): Promise<void> => {
   hydrationJobWorker = await hydrationJob().process({ concurrency: MAIL_PROVIDER_JOB_CONCURRENCY }, async (ctx) => {
+    const work =
+      "mailboxId" in ctx.input && ctx.input.generation ? { mailbox_id: ctx.input.mailboxId, job_id: ctx.input.generation } : null;
+    const deliveryId = `${ctx.jobId}:${ctx.attempt}`;
+    const begun = work ? await beginMailboxHydration(work, deliveryId) : null;
+    if (work && !begun) return; // Retired generation redelivered after a crash.
+    let more = false;
+    let retrying = false;
     try {
-      await hydrateMessageBatch(ctx);
+      await hydrateMessageBatch({
+        ...ctx,
+        input: "mailboxId" in ctx.input && begun ? { ...ctx.input, ...begun } : ctx.input,
+        resubmit: (options) => {
+          if (work) more = true;
+          else ctx.resubmit(options);
+        },
+      });
     } catch (error) {
       const code = normalizeSyncErrorCode(error);
+      if (code === "SYNC_JOB_LEASE_LOST") {
+        // Leave the durable generation for its redelivery, rather than retiring another
+        // worker's job after this delivery lost its lease.
+        retrying = true;
+        throw error;
+      }
       if (code === "MAILBOX_TRANSPORT_CHANGED") return;
-      if (code === "MAIL_RATE_LIMITED") {
-        ctx.resubmit({ delayMs: retryAfterMs(error, 10_000) });
+      if (code === "MAIL_RATE_LIMITED" || code === "SYNC_BUSY") {
+        retrying = true;
+        ctx.resubmit({ delayMs: code === "MAIL_RATE_LIMITED" ? retryAfterMs(error, 10_000) : providerBusyRetryAfterMs(error) });
         return;
       }
-      if (code === "SYNC_BUSY") {
-        ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error) });
-        return;
-      }
-      // A mailbox job does not wait out a retry backoff: its coalesced key would absorb the job
-      // that the next sync queues for new mail. That sync or the `mail:sync-due` tick queues the
-      // mailbox again.
+      // Message failures are durable and bounded by their five hydration attempts. The next
+      // scheduled pass retries them; a request made during this failed batch still gets a turn.
       if ("mailboxId" in ctx.input) {
-        log.warn("Mail mailbox hydration failed", { mailboxId: ctx.input.mailboxId, code });
+        log.warn("Mail mailbox hydration failed", { mailboxId: ctx.input.mailboxId, code, ...databaseErrorFacts(error) });
         return;
       }
       if (ctx.attempt >= HYDRATION_MAX_ATTEMPTS) {
-        log.error("Mail message hydration exhausted retries", { messageId: ctx.input.messageId, failureCount: ctx.failureCount, code });
+        log.error("Mail message hydration exhausted retries", {
+          messageId: ctx.input.messageId,
+          failureCount: ctx.failureCount,
+          code,
+          ...databaseErrorFacts(error),
+        });
       }
       throw error;
+    } finally {
+      if (work && !retrying) {
+        await finishMailboxHydration(work, more, deliveryId);
+        await publishMailboxHydration(work.mailbox_id);
+      }
     }
   });
+};
+
+// Publication only: the durable request was already committed by the domain writer. Repeated
+// passes use the same generation key, so broker retries cannot grow the queue per mailbox.
+const publishMailboxHydration = async (mailboxId?: string): Promise<void> => {
+  await publishPendingHydrationWork(
+    (work) => {
+      const input = { mailboxId: work.mailbox_id, generation: work.job_id };
+      return hydrationJob().submit({ coalesce: true, key: hydrationJobKey(input), input });
+    },
+    mailboxId,
+    () => hydrationPublicationStopped,
+  );
+};
+let hydrationPublicationStopped = false;
+let hydrationPublisherTimer: ReturnType<typeof setInterval> | undefined;
+const startHydrationPublisher = (): void => {
+  if (hydrationPublisherTimer) return;
+  hydrationPublicationStopped = false;
+  let publishing = false;
+  const publish = (): void => {
+    if (publishing) return;
+    publishing = true;
+    const task = syncTasks.run(() => publishMailboxHydration());
+    void (task ?? Promise.resolve())
+      .catch((error) => {
+        log.warn("Mail hydration publication failed", { code: normalizeSyncErrorCode(error) });
+      })
+      .finally(() => {
+        publishing = false;
+      });
+  };
+  hydrationPublisherTimer = setInterval(publish, 1_000);
+  hydrationPublisherTimer.unref();
+  publish();
+};
+const stopHydrationPublisher = (): void => {
+  hydrationPublicationStopped = true;
+  clearInterval(hydrationPublisherTimer);
+  hydrationPublisherTimer = undefined;
 };
 
 /** Queues one message's body on its own, for a caller that waits for exactly that message. */
 export const enqueueMessageHydration = async (messageId: string): Promise<void> => {
   await submitHydrationJob({ messageId });
 };
+
+/** Whether a job queued for this message's body can fetch it: a live copy in a synced folder of a synced mailbox. */
+export const canHydrateMessage = async (messageId: string): Promise<boolean> => (await requestedHydrationTarget(messageId)) !== null;
 
 /** Hydrates every pending body of the mailbox, one batch per turn of the shared worker. */
 export const enqueueMailboxHydration = async (mailboxId: string): Promise<void> => {
@@ -2842,9 +3330,11 @@ export const enqueueMailboxHydration = async (mailboxId: string): Promise<void> 
 export const startHydrationRuntime = async (): Promise<void> => {
   syncTasks.open();
   await startHydrationJob();
+  startHydrationPublisher();
 };
 
 export const stopHydrationRuntime = async (): Promise<void> => {
+  stopHydrationPublisher();
   await stopRuntimeJobs(syncTasks, hydrationJobWorker ? [hydrationJobWorker] : []);
   hydrationJobWorker = undefined;
 };
@@ -2942,15 +3432,31 @@ const startRediscoveryJob = async (): Promise<void> => {
   });
 };
 
-const submitSyncFolderJob = async (folderId: string): Promise<void> => {
+// Slightly longer than a minute, so a listener's minute check and the scheduler's tick do not
+// both run when their timers drift apart.
+const RECENT_REQUEST_MS = 75_000;
+const recentRequestKey = (folderId: string): string => `mail:sync-recent:${folderId}`;
+
+const submitSyncFolderJob = async (folderId: string, trigger: FolderSyncTrigger, awaited = false): Promise<void> => {
+  countFolderSyncTrigger(trigger);
+  // Recorded even while this process stops and queues nothing: another one's scheduled sync of the
+  // folder then records the run the command waits for.
+  if (awaited) await redis.send("SET", [awaitedSyncKey(folderId), "1", "PX", String(FOLDER_SYNC_REQUEST_MS)]);
   await (syncTasks.run(async () => {
     await redis.send("SET", [syncRequestKey(folderId), "1", "PX", String(FOLDER_SYNC_REQUEST_MS)]);
     await syncFolderJob().submit({ coalesce: true, key: `folder:${folderId}`, input: { folderId } });
+    // Only a submitted request stands in for the scheduled sync.
+    if (trigger !== "scheduled") await redis.send("SET", [recentRequestKey(folderId), "1", "PX", String(RECENT_REQUEST_MS)]);
   }) ?? Promise.resolve());
 };
 
 const submitHydrationJob = async (input: HydrationInput): Promise<void> => {
-  await (syncTasks.run(() => hydrationJob().submit({ coalesce: true, key: hydrationJobKey(input), input })) ?? Promise.resolve());
+  await (syncTasks.run(async () => {
+    if ("mailboxId" in input) {
+      await requestMailboxHydration(sql, input.mailboxId, { retry: true });
+      await publishMailboxHydration(input.mailboxId);
+    } else await hydrationJob().submit({ coalesce: true, key: hydrationJobKey(input), input });
+  }) ?? Promise.resolve());
 };
 
 const submitRediscoveryJob = async (bindingId: string, allowCredentialRevision: boolean): Promise<void> => {
@@ -3014,9 +3520,65 @@ export const recoverInterruptedHydrations = async (): Promise<number> => {
 
 // Each minute queues at most this many folder syncs. Every Inbox goes first; the other folders
 // take the remaining places in turn by folder id, so with more eligible folders every folder
-// still gets a sync every few minutes.
+// still gets a sync every few minutes. While every eligible folder fits in one run, a folder whose
+// sync was requested otherwise within RECENT_REQUEST_MS needs none: that request runs the same
+// coalesced job. An IMAP push listener requests its folder every minute, so the folder is its
+// listener's while the listener works.
 const DUE_FOLDER_SYNCS_PER_RUN = 500;
 const DUE_FOLDER_CURSOR_KEY = "mail:sync-due:folder-cursor";
+
+// The folder batches that took a mailbox's lease in a minute: what its lease serves. While folder
+// jobs of the mailbox still wait, a scheduler run adds no more than the last minute served
+// beyond them, so a mailbox with more folders than its lease serves in a minute checks its other
+// folders in turn instead of keeping them all waiting and asking for the lease.
+const servedTurnsKey = (resource: string, minute: number): string => `mail:sync-served:{${resource}}:${minute}`;
+const SERVED_TURNS_TTL_MS = 3 * 60_000;
+const dueFolderCursorKey = (resource: string): string => `${DUE_FOLDER_CURSOR_KEY}:{${resource}}`;
+
+const countServedFolderTurn = async (resource: string): Promise<void> => {
+  const key = servedTurnsKey(resource, Math.floor(Date.now() / 60_000));
+  await redis
+    .send("INCR", [key])
+    .then(() => redis.send("PEXPIRE", [key, String(SERVED_TURNS_TTL_MS)]))
+    .catch(() => undefined);
+};
+
+/**
+ * The other folders of each mailbox this run may add, taken in turn by folder id after the ones
+ * the last run took. While folder jobs of the mailbox wait, as many as its lease served in the last
+ * full minute beyond those that wait. While none waits, twice what it served, so a mailbox finds
+ * out what its lease can serve without asking all its folders at once. At least one per run, so
+ * each folder gets its turn even under a lasting backlog. Without a measured minute, for example
+ * after a restart, every folder.
+ */
+const boundDueFolders = async <F extends { id: string; remote_resource_id: string; inbox: boolean }>(folders: F[]): Promise<F[]> => {
+  const byResource = new Map<string, F[]>();
+  for (const folder of folders) {
+    if (folder.inbox) continue;
+    const group = byResource.get(folder.remote_resource_id) ?? [];
+    group.push(folder);
+    byResource.set(folder.remote_resource_id, group);
+  }
+  const lastMinute = Math.floor(Date.now() / 60_000) - 1;
+  const left = new Set<string>();
+  for (const [resource, group] of byResource) {
+    const served = Number(await redis.get(servedTurnsKey(resource, lastMinute)).catch(() => null)) || 0;
+    const waiting = await providerLeaseWaiterCount(resource, "sync-folder:");
+    if (served === 0 && waiting === 0) continue;
+    // At least one: under a lasting backlog each folder still gets its turn within as many runs.
+    const room = Math.max(1, waiting > 0 ? served - waiting : 2 * served);
+    if (room >= group.length) continue;
+    const after = (await redis.get(dueFolderCursorKey(resource)).catch(() => null)) ?? "";
+    const ordered = group.toSorted((a, b) => a.id.localeCompare(b.id));
+    const start = ordered.findIndex((folder) => folder.id > after);
+    const turn = start < 0 ? ordered : [...ordered.slice(start), ...ordered.slice(0, start)];
+    const taken = turn.slice(0, room);
+    for (const folder of turn.slice(room)) left.add(folder.id);
+    const last = taken.at(-1);
+    if (last) await redis.set(dueFolderCursorKey(resource), last.id).catch(() => undefined);
+  }
+  return folders.filter((folder) => !left.has(folder.id));
+};
 
 /**
  * Queues every eligible Inbox, then the next eligible folders after the one the previous run
@@ -3024,8 +3586,8 @@ const DUE_FOLDER_CURSOR_KEY = "mail:sync-due:folder-cursor";
  */
 export const submitDueFolderSyncs = async (limit = DUE_FOLDER_SYNCS_PER_RUN): Promise<string[]> => {
   const after = (await redis.get(DUE_FOLDER_CURSOR_KEY)) ?? "00000000-0000-0000-0000-000000000000";
-  const folders = await sql<{ id: string }[]>`
-    SELECT f.id
+  const folders = await sql<{ id: string; remote_resource_id: string; inbox: boolean }[]>`
+    SELECT f.id, f.remote_resource_id, f.role = 'inbox' AS inbox
     FROM mail.folders f
     JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
     JOIN mail.mailboxes m ON m.id = rr.mailbox_id
@@ -3050,8 +3612,18 @@ export const submitDueFolderSyncs = async (limit = DUE_FOLDER_SYNCS_PER_RUN): Pr
   `;
   const last = folders.at(-1);
   if (last) await redis.set(DUE_FOLDER_CURSOR_KEY, last.id);
-  for (const folder of folders) await submitSyncFolderJob(folder.id);
-  return folders.map((folder) => folder.id);
+  // Only a run that reaches every eligible folder skips one: the next run reaches it again. A
+  // run at the limit takes folders in turn, and a skipped turn would wait for the next round.
+  const recent =
+    folders.length > 0 && folders.length < limit
+      ? await redis.mget(...folders.map((folder) => recentRequestKey(folder.id))).catch(() => [])
+      : [];
+  const unrequested = folders.filter((_folder, index) => recent[index] == null);
+  // Likewise only a run that reaches every eligible folder bounds a mailbox: within a page, its
+  // turn would keep landing on the same folders.
+  const due = folders.length < limit ? await boundDueFolders(unrequested) : unrequested;
+  for (const folder of due) await submitSyncFolderJob(folder.id, "scheduled");
+  return due.map((folder) => folder.id);
 };
 
 const submitDueWork = async (): Promise<{
@@ -3099,7 +3671,11 @@ const submitDueWork = async (): Promise<{
   };
 };
 
-export const enqueueMailboxSync = async (mailboxId: string): Promise<number> => {
+/** `awaited`: a sync command waits for the folders, so each records a completed run. */
+export const enqueueMailboxSync = async (
+  mailboxId: string,
+  options: { trigger?: FolderSyncTrigger; awaited?: boolean } = {},
+): Promise<number> => {
   const folders = await sql<{ id: string }[]>`
     SELECT f.id
     FROM mail.folders f
@@ -3114,13 +3690,17 @@ export const enqueueMailboxSync = async (mailboxId: string): Promise<number> => 
     ORDER BY CASE f.role WHEN 'inbox' THEN 0 ELSE 1 END, f.id
   `;
   for (const folder of folders) {
-    await submitSyncFolderJob(folder.id);
+    await submitSyncFolderJob(folder.id, options.trigger ?? "mailbox", options.awaited);
   }
   return folders.length;
 };
 
-export const enqueueFolderSync = async (folderId: string): Promise<void> => {
-  await submitSyncFolderJob(folderId);
+/** `awaited`: a sync command waits for the folder, so it records a completed run. */
+export const enqueueFolderSync = async (
+  folderId: string,
+  options: { trigger?: FolderSyncTrigger; awaited?: boolean } = {},
+): Promise<void> => {
+  await submitSyncFolderJob(folderId, options.trigger ?? "command", options.awaited);
 };
 
 /**
@@ -3228,7 +3808,7 @@ export const enqueueFolderReconciliation = async (folderId: string, fromUid: num
       AND sync_status <> 'excluded'
       AND envelope_cursor ->> 'version' = '1'
   `;
-  await submitSyncFolderJob(folderId);
+  await submitSyncFolderJob(folderId, "reconcile");
 };
 
 export const enqueueBindingRediscovery = async (bindingId: string, allowCredentialRevision = false): Promise<void> => {
@@ -3238,8 +3818,10 @@ export const enqueueBindingRediscovery = async (bindingId: string, allowCredenti
 const mailRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
     syncTasks.open();
+    startFolderSyncActivityReport();
     await startSyncFolderJob();
     await startHydrationJob();
+    startHydrationPublisher();
     await startRediscoveryJob();
     await startDraftProjectionRuntime();
 
@@ -3248,6 +3830,8 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
       cron: "* * * * *",
       misfire: "latest",
       meta: { appId: "mail", family: "mail:sync", label: "Mail synchronization" },
+      // Draft scheduling also retires MIME state and may queue effects outside the returned counts.
+      // Keep ordinary tracing until its result accounts for every effect.
       process: async () => {
         await submitDueWork();
       },
@@ -3258,9 +3842,9 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
       cron: "*/15 * * * *",
       misfire: "latest",
       meta: { appId: "mail", family: "mail:sync", label: "Mail interrupted body download recovery" },
-      process: async () => {
-        await recoverInterruptedHydrations();
-      },
+      process: trace.backgroundSchedule("mail", "mail:hydration-recovery", recoverInterruptedHydrations, (released) =>
+        released > 0 ? { released } : null,
+      ),
     });
     await mailScheduler().create({
       id: "mail:snooze-wake",
@@ -3310,20 +3894,27 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
     await submitDueWork();
   },
   stop: async () => {
+    stopHydrationPublisher();
+    stopFolderSyncActivityReport();
     for (const worker of [rediscoveryJobWorker, syncFolderJobWorker, hydrationJobWorker]) worker?.stop();
     syncTasks.close();
-    await stopRuntimeResources([
-      () =>
-        mailSchedulerWorker?.drain().then(() => {
-          mailSchedulerWorker = undefined;
-        }),
-      () => stopDraftProjectionRuntime(),
-      () =>
-        stopRuntimeJobs(
-          syncTasks,
-          [rediscoveryJobWorker, syncFolderJobWorker, hydrationJobWorker].filter((worker): worker is Worker => worker !== undefined),
-        ),
-    ]);
+    try {
+      await stopRuntimeResources([
+        () =>
+          mailSchedulerWorker?.drain().then(() => {
+            mailSchedulerWorker = undefined;
+          }),
+        () => stopDraftProjectionRuntime(),
+        () =>
+          stopRuntimeJobs(
+            syncTasks,
+            [rediscoveryJobWorker, syncFolderJobWorker, hydrationJobWorker].filter((worker): worker is Worker => worker !== undefined),
+          ),
+      ]);
+    } finally {
+      // A batch that finished while the workers drained may have kept its connection.
+      await closeReusableImapSessions();
+    }
   },
 });
 

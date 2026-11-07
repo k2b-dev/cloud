@@ -11,6 +11,8 @@ The [field configuration reference](/app/grids/help/grids-field-configuration) l
 
 In **base settings → Tables**, people with **Manage** access search by name or public ID. They compare the counts of fields, indexes, and unique fields, and the history, finalization, and write paths. Open a table for its records and settings. This overview does not count records.
 
+To change a field, people with **Manage** access to the table turn on edit mode and choose the field under **Fields** in the toolbar. This menu is in every view: table, cards, calendar, grouped tables, and saved views. In the table view, the settings button in each column header opens the same settings.
+
 ## Store entered values {icon="table"}
 
 | Field type | Use it for | Important behavior |

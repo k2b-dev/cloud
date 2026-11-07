@@ -15,9 +15,9 @@ type LayoutHeaderProps = {
  * Phones (below `md`) always get this header. From `md` it remains only on
  * anonymous pages; signed-in people reach Home, search, help, the app grid,
  * and their profile through the rail, so the app area starts at the top edge.
- * On a signed-in phone it is the title row on the app gradient: Home moves to
- * the bottom bar's Start, so the row holds the title, search, help, and the
- * app menu. Anonymous pages have no rail: up to `lg` their header keeps Home,
+ * On a signed-in phone it is the title row on the app gradient: it holds the
+ * title, search, help, and the app menu, which leads with Start; help also
+ * opens the panel there. Anonymous pages have no rail: up to `lg` their header keeps Home,
  * the app name, help, search, and the app grid, and from `lg` it shows the
  * breadcrumbs. Home and Sign in stay server markup, so focus on them survives
  * the shell's mount; the shell renders the title and the controls between them.

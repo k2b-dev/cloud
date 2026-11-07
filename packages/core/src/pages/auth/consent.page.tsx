@@ -28,7 +28,7 @@ export default ssr(async (c) => {
         >
           <h1 class="text-2xl font-semibold text-primary">{t.consentTitle}</h1>
           <p class="mt-2 text-sm text-dimmed">{t.consentDescription}</p>
-          <ConsentForm version={version} redirectTo={redirectTo} />
+          <ConsentForm userId={pending.user.id} version={version} redirectTo={redirectTo} />
         </section>
         <AuthFooter links={legalLinks} />
       </main>

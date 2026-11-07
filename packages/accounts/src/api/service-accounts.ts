@@ -120,6 +120,7 @@ const app = new Hono<AuthContext>()
   )
   .delete(
     "/credentials/:id",
+    auth.requireOAuthScope("write", "admin"),
     describeRoute({
       tags: ["Service Accounts"],
       summary: "Revoke a service account API key",

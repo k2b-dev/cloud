@@ -1,8 +1,8 @@
 import type { AppRegistryDetail } from "@k2b/cloud";
+import { sql } from "@k2b/cloud";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import { PlatformPermissionSchema } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
-import { sql } from "bun";
 
 type DbRegisteredAppRow = {
   id: string;
@@ -66,14 +66,52 @@ const mapRow = (row: DbRegisteredAppRow): PersistentRegisteredApp => ({
   widgets: jsonArray<NonNullable<AppRegistryEntry["widgets"]>[number]>(row.widgets),
   openapi: row.openapi ?? undefined,
   firstSeenAt: asMs(row.first_seen_at) ?? Date.now(),
-  lastSeenAt: asMs(row.last_seen_at) ?? Date.now(),
+  lastSeenAt: Math.max(asMs(row.last_seen_at) ?? 0, observed.get(row.id)?.lastSeenAt ?? 0),
   updatedAt: asMs(row.updated_at) ?? Date.now(),
   removedAt: asMs(row.removed_at),
   lastOfflineLoggedAt: asMs(row.last_offline_logged_at),
 });
 
-export const upsertRegisteredApps = async (apps: readonly AppRegistryEntry[]): Promise<void> => {
+// Bound restart-related offline timestamp error without persisting each registry heartbeat.
+const LAST_SEEN_CHECKPOINT_MS = 5 * 60 * 1000;
+const observed = new Map<string, { content: string; lastSeenAt: number; persistedAt: number }>();
+export const upsertRegisteredApps = async (
+  apps: readonly (AppRegistryEntry & Partial<Pick<AppRegistryDetail, "updatedAt">>)[],
+): Promise<void> => {
+  const now = Date.now();
+  const liveIds = new Set(apps.map((app) => app.id));
+  for (const [id, previous] of observed) {
+    if (liveIds.has(id)) continue;
+    await sql`UPDATE gateway.registered_apps SET last_seen_at = ${new Date(previous.lastSeenAt)} WHERE id = ${id}`;
+    observed.delete(id);
+  }
   for (const app of apps) {
+    // Only persisted fields: registry revisions, uptime and lease renewal are not content.
+    const content = JSON.stringify([
+      app.name,
+      app.icon,
+      app.description,
+      app.platformPermissions,
+      app.appearance,
+      app.runtime,
+      app.baseUrl,
+      app.routes,
+      app.nav,
+      app.capabilities,
+      app.legalLinks,
+      app.widgets,
+      app.openapi,
+    ]);
+    const previous = observed.get(app.id);
+    const lastSeenAt = Math.max(previous?.lastSeenAt ?? 0, app.updatedAt ?? Date.now());
+    if (previous?.content === content) {
+      previous.lastSeenAt = lastSeenAt;
+      if (now - previous.persistedAt >= LAST_SEEN_CHECKPOINT_MS) {
+        await sql`UPDATE gateway.registered_apps SET last_seen_at = ${new Date(lastSeenAt)} WHERE id = ${app.id}`;
+        previous.persistedAt = now;
+      }
+      continue;
+    }
     await sql`
       INSERT INTO gateway.registered_apps (
         id, name, icon, description, platform_permissions, appearance, runtime, base_url, routes, nav, capabilities, legal_links,
@@ -95,7 +133,7 @@ export const upsertRegisteredApps = async (apps: readonly AppRegistryEntry[]): P
         ${app.widgets ? JSON.stringify(app.widgets) : null}::text::jsonb,
         ${app.openapi ?? null},
         now(),
-        now(),
+        ${new Date(lastSeenAt)},
         now(),
         NULL
       )
@@ -113,11 +151,12 @@ export const upsertRegisteredApps = async (apps: readonly AppRegistryEntry[]): P
         legal_links = EXCLUDED.legal_links,
         widgets = EXCLUDED.widgets,
         openapi = EXCLUDED.openapi,
-        last_seen_at = now(),
+        last_seen_at = EXCLUDED.last_seen_at,
         updated_at = now(),
         removed_at = NULL,
         last_offline_logged_at = NULL
     `;
+    observed.set(app.id, { content, lastSeenAt, persistedAt: now });
   }
 };
 

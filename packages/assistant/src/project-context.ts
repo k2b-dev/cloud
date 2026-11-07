@@ -15,15 +15,14 @@ export const loadAssistantProjectContextSnapshot = async (
   identity: RequestAuthority,
   projectId: string,
 ): Promise<AssistantProjectContextSnapshot | null> => {
-  const subject = identity.accessSubject;
-  const project = await aiProjects.getByShortId(projectId, subject);
+  const project = await aiProjects.getByShortId(projectId, identity);
   if (!project) return null;
   const [knowledge, files, references, apps, skills] = await Promise.all([
-    aiProjects.listKnowledge(project.id, subject),
-    aiProjects.listFiles(project.id, subject),
-    aiProjects.listReferences(project.id, subject),
+    aiProjects.listKnowledge(project.id, identity),
+    aiProjects.listFiles(project.id, identity),
+    aiProjects.listReferences(project.id, identity),
     artifacts.projectApps(project.id, identity),
-    aiSkills.projectSkills(project.id, subject, { authority: identity }),
+    aiSkills.projectSkills(project.id, identity, { authority: identity }),
   ]);
   return {
     projectId,

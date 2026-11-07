@@ -74,7 +74,9 @@ export const futureLibrary = () => {
     ...current,
     // A file provider with a function this release does not know.
     fileProvider: { list: "book.search", read: "book.read", trash: "book.archive" },
-    events: [{ localId: "book.changed", title: "Book changed", dataSchema: { type: "object" } }],
+    // A calendar source with a future operation must drop as a whole.
+    calendarSource: { calendars: "book.search", events: "book.read", subscribe: "book.archive" },
+    futureSignals: [{ localId: "book.changed", title: "Book changed", dataSchema: { type: "object" } }],
     // A type with a field this release does not know; the Universal Search Query scoped to it depends on it.
     types: current.types.map((type) => (type.localId === "shelf" ? { ...type, nesting: "rooms" } : type)),
     // A Query with an unknown field. It is the reader of `author`.
@@ -92,7 +94,7 @@ export const futureLibrary = () => {
         actions: { "book.archive": { title: "Buch archivieren" } },
         // Search tags for a Command, which this release does not support.
         commands: { "book.open": { title: "Buch öffnen", searchTags: { book: { title: "Bücher" } } } },
-        events: { "book.changed": { title: "Buch geändert" } },
+        futureSignals: { "book.changed": { title: "Buch geändert" } },
       },
     },
   };

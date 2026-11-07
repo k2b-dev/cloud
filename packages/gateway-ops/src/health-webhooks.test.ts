@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { type HealthWebhookInput, HealthWebhookInputError, isHealthWebhookId, normalizeHealthWebhookInput } from "./health-webhooks";
 
 const input = (overrides: Partial<HealthWebhookInput> = {}): HealthWebhookInput => ({
@@ -54,20 +54,20 @@ describe("normalizeHealthWebhookInput", () => {
   });
 });
 
-test("webhook allowlist defaults to public only and rejects invalid startup entries", async () => {
+test("webhook allowlist reads settings for new deliveries and rejects invalid entries", async () => {
   const { webhookAllowlist } = await import("./health-webhooks");
-  const original = process.env.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS;
+  const { app } = await import("./config");
+  const get = spyOn(app.settings, "get");
   try {
-    delete process.env.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS;
-    expect(webhookAllowlist().hosts.size).toBe(0);
-    process.env.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS = "alerts.internal";
-    expect(webhookAllowlist().hosts.has("alerts.internal")).toBe(true);
+    get.mockResolvedValue([]);
+    expect((await webhookAllowlist()).hosts.size).toBe(0);
+    get.mockResolvedValue(["alerts.internal"]);
+    expect((await webhookAllowlist()).hosts.has("alerts.internal")).toBe(true);
     for (const entry of ["0.0.0.0/0", "::/0", "http://alerts.internal"]) {
-      process.env.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS = entry;
-      expect(webhookAllowlist).toThrow("GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS");
+      get.mockResolvedValue([entry]);
+      await expect(webhookAllowlist()).rejects.toThrow("gateway.webhook_allowed_targets");
     }
   } finally {
-    if (original === undefined) delete process.env.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS;
-    else process.env.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS = original;
+    get.mockRestore();
   }
 });

@@ -48,11 +48,8 @@ export default ssr<AuthContext>(async (c) => {
   const perPage = 100;
   const status = parseStatus(c.req.query("status"));
 
-  const [pendingPage, requestsPage] = await Promise.all([
-    accountsService.accountRequest.list({
-      access: { userId: user.id, isAdmin: true },
-      filter: { status: "pending" },
-    }),
+  const [pendingRequests, requestsPage] = await Promise.all([
+    accountsService.accountRequest.countPending(),
     accountsService.accountRequest.list({
       access: { userId: user.id, isAdmin: true },
       pagination: { page, perPage },
@@ -75,7 +72,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.requests }]}>
-      <AccountsWorkspace active="requests" isAdmin={true} pendingRequests={pendingPage.total} scrollPreserveKey="accounts-requests">
+      <AccountsWorkspace active="requests" isAdmin={true} pendingRequests={pendingRequests} scrollPreserveKey="accounts-requests">
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-requests-title">
             <h1 class="text-base font-semibold text-primary">{t.requests}</h1>

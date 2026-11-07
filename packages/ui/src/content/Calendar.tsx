@@ -14,6 +14,7 @@ import { CalendarDayView } from "./CalendarDayView";
 import { CalendarWeekView } from "./CalendarWeekView";
 import { addDayKeys } from "./calendar-days";
 import { openCalendarGoTo, openCalendarShortcuts } from "./calendar-dialogs";
+import { type CalendarDetailState, CalendarEventDetail } from "./calendar-event-detail";
 import { layoutCalendarIntervals } from "./calendar-event-layout";
 import { useCalendarMessages } from "./calendar-messages";
 import { fitMonthWeek, layoutMonthWeek, monthLaneCapacity } from "./calendar-month-layout";
@@ -58,12 +59,23 @@ export type CalendarEvent = {
   color?: CalendarEventColor;
   colorHex?: string;
   href?: string;
-  dataSpaceItemId?: string;
+  /**
+   * Host data for the entry's element: each key becomes a `data-*` attribute, `spaceItemId` as `data-space-item-id`.
+   * Keys must be camelCase letters and digits; keys that start with `calendar` belong to the calendar and are left out.
+   */
+  data?: Record<string, string>;
+  /** A Tabler icon class such as `"ti ti-truck"`, drawn before the title in the color of the entry's edge. */
+  icon?: string;
+  /**
+   * Links that belong to the entry, such as an order or a video room. They show in the entry's detail, and week, day,
+   * and the day list show how many there are; an entry never nests them, since it is a link or button itself.
+   */
+  links?: CalendarEventLink[];
   meta?: string;
   description?: string;
   /**
-   * `marker` draws a point in time, such as a deadline, as a colored marker
-   * beside its title instead of a filled band.
+   * `marker` draws a point in time, such as a deadline, with a dashed edge in
+   * its color instead of a filled band.
    */
   display?: "event" | "background" | "marker";
   /**
@@ -72,12 +84,17 @@ export type CalendarEvent = {
    */
   accessibleDetail?: string;
   /**
-   * Day and week views with `dayHours`: the state of the entry's checkbox, such as a to-do's. Leave it out for entries
-   * without one. With `onEventCheck` the reader can change it.
+   * The state of a to-do or deadline, such as a task's. Leave it out for entries without one. `true` strikes the title
+   * through in every view; `false` turns the entry red once it lies in the past. The day and week views with
+   * `dayHours` draw a checkbox, and with `onEventCheck` the reader can change it.
    */
   checked?: boolean;
   location?: string;
   calendarName?: string;
+  /**
+   * The people of the entry. Week and day show up to three faces and then "+n", the day list one, and the compact
+   * month none; the detail lists them all. Without `src` a face shows initials.
+   */
   attendees?: CalendarAttendee[];
   resources?: CalendarResource[];
   recurrence?: CalendarRecurrence;
@@ -85,7 +102,16 @@ export type CalendarEvent = {
 
 export type CalendarAttendee = {
   name: string;
+  /** A picture of the person; without it the face shows initials. */
+  src?: string;
   status?: "accepted" | "declined" | "tentative" | "needs-action";
+};
+
+export type CalendarEventLink = {
+  label: string;
+  href: string;
+  /** A Tabler icon class before the label; a link icon by default. */
+  icon?: string;
 };
 
 export type CalendarResource = {
@@ -181,6 +207,8 @@ export type CalendarController = {
 export type CalendarCustomView<V extends string = string> = {
   value: V;
   label: string;
+  /** Days the previous and next buttons and keys move, such as 14 for a two-week list. Defaults to one day. */
+  days?: number;
 };
 
 export type CalendarProps<V extends string = never> = {
@@ -188,6 +216,11 @@ export type CalendarProps<V extends string = never> = {
   events: CalendarEvent[];
   view?: CalendarView | V;
   views?: CalendarView[];
+  /**
+   * `false` leaves the view switcher out of the toolbar, for a host that shows the views elsewhere, such as tabs in
+   * its page head. The view commands stay.
+   */
+  viewSwitcher?: boolean;
   /** Views after the built-in ones. While one is active, `children` is the body and the header pages by day. */
   customViews?: CalendarCustomView<V>[];
   /** The body of the active custom view. */
@@ -667,10 +700,18 @@ const addMonthsClamped = (date: Date, months: number, dateConfig: DateContext): 
 };
 
 /** Custom views page by day, like the day view. */
-const adjacentCalendarDate = (date: Date, view: string, direction: -1 | 1, dateConfig: DateContext) => {
+const adjacentCalendarDate = (
+  date: Date,
+  view: string,
+  direction: -1 | 1,
+  dateConfig: DateContext,
+  customViews?: readonly CalendarCustomView[],
+) => {
   if (view === "year") return addMonthsClamped(date, direction * 12, dateConfig);
   if (view === "month" || view === "mobile-month") return addMonthsClamped(date, direction, dateConfig);
-  return calendar.addDays(date, direction * (view === "week" ? 7 : 1), dateConfig);
+  const custom = customViews?.find((option) => option.value === view)?.days;
+  const days = view === "week" ? 7 : custom && Number.isInteger(custom) && custom > 0 ? custom : 1;
+  return calendar.addDays(date, direction * days, dateConfig);
 };
 
 /** Opens a view at a day through the host's callbacks. Hosts may keep the view and the date apart, so both hear it. */
@@ -727,8 +768,8 @@ const CalendarHeader = <V extends string>(props: {
     const shown = timeView()?.visibleKeys().first;
     return shown ? parseKey(shown) : (monthView()?.stepFrom() ?? props.date);
   };
-  const previous = () => adjacentCalendarDate(base(), props.view, -1, dateConfig());
-  const next = () => adjacentCalendarDate(base(), props.view, 1, dateConfig());
+  const previous = () => adjacentCalendarDate(base(), props.view, -1, dateConfig(), props.owner.customViews);
+  const next = () => adjacentCalendarDate(base(), props.view, 1, dateConfig(), props.owner.customViews);
   /** The day view's title, such as "Fri, Oct 9, 2026" or "Fr, 9. Okt 2026". */
   const formatDayTitle = (date: Date) =>
     compactGermanDate(
@@ -954,7 +995,7 @@ const CalendarHeader = <V extends string>(props: {
   );
 
   return (
-    <header class="k2b-calendar-header">
+    <header class="k2b-calendar-header" data-view-switcher={props.owner.viewSwitcher === false ? "false" : undefined}>
       <div class="k2b-calendar-header__navigation">
         {navButton(previous, "ti-chevron-left", props.labels.previous, -1)}
         {navButton(next, "ti-chevron-right", props.labels.next, 1)}
@@ -975,19 +1016,21 @@ const CalendarHeader = <V extends string>(props: {
       </Show>
       <div class="k2b-calendar-header__actions">
         {todayButton()}
-        <Show
-          when={!props.owner.onViewChange && props.owner.getViewHref}
-          fallback={
-            <SegmentedControl
-              class="k2b-calendar-view-switcher"
-              value={() => (props.view === "mobile-month" ? "month" : props.view)}
-              onValueChange={goView}
-              ariaLabel={calendarMessages().calendarView}
-              options={viewOptions()}
-            />
-          }
-        >
-          <CalendarViewLinks owner={props.owner} view={props.view} options={viewOptions()} focusDay={props.focusDay} />
+        <Show when={props.owner.viewSwitcher !== false}>
+          <Show
+            when={!props.owner.onViewChange && props.owner.getViewHref}
+            fallback={
+              <SegmentedControl
+                class="k2b-calendar-view-switcher"
+                value={() => (props.view === "mobile-month" ? "month" : props.view)}
+                onValueChange={goView}
+                ariaLabel={calendarMessages().calendarView}
+                options={viewOptions()}
+              />
+            }
+          >
+            <CalendarViewLinks owner={props.owner} view={props.view} options={viewOptions()} focusDay={props.focusDay} />
+          </Show>
         </Show>
         {props.owner.toolbarActions}
         <Show when={props.nav.commands().length > 0}>
@@ -2765,6 +2808,8 @@ const MonthView = (props: {
                     compact
                     bar={item.bar}
                     leadingTime={leadingTime(item)}
+                    faces={1}
+                    linkCount
                   />
                 </li>
               )}
@@ -3319,6 +3364,8 @@ const TimeGridView = (props: {
                               owner={props.owner}
                               href={eventHref(props.owner, event)}
                               fill
+                              faces={3}
+                              linkCount
                               moving={movingEventId() === event.id}
                               onMovePointerDown={
                                 props.owner.onEventDrop
@@ -3498,7 +3545,7 @@ const MobileMonthView = (props: {
         <Show when={selectedEvents().length > 0} fallback={<div class="k2b-calendar-mobile-month__empty">{props.labels.noEvents}</div>}>
           <div class="k2b-calendar-mobile-month__events">
             <For each={selectedEvents()}>
-              {(event) => <EventChip event={event} owner={props.owner} href={eventHref(props.owner, event)} />}
+              {(event) => <EventChip event={event} owner={props.owner} href={eventHref(props.owner, event)} faces={1} linkCount />}
             </For>
           </div>
         </Show>
@@ -3515,9 +3562,19 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
   // Subviews derive their date config from the owner props, so the inherited
   // render locale is merged here once; an explicit dateConfig.locale wins.
   const localizedConfig = useDateConfigLocale(() => props.dateConfig);
+  const [now, setNow] = createSignal(new Date());
+  const [detail, setDetail] = createSignal<CalendarDetailState | null>(null);
   const owner = mergeProps(props, {
     get dateConfig(): DateContext {
       return localizedConfig();
+    },
+    calendarNow: now,
+    get selectedEventId(): string | undefined {
+      return props.selectedEventId ?? detail()?.event.id;
+    },
+    // The calendar's own detail stands in only for a host that opens nothing itself.
+    get openEventDetail(): CalendarOwner["openEventDetail"] {
+      return props.onEventActivate ? undefined : (event, anchor) => setDetail({ event, anchor });
     },
   });
   const view = () => props.view ?? "month";
@@ -3529,7 +3586,6 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
   };
   const date = createMemo(() => safeDate(props.date));
   const selectedDate = createMemo(() => safeDate(props.selectedDate ?? props.date));
-  const [now, setNow] = createSignal(new Date());
   /** The first day selected in the month view, so the view switcher opens the other views at it. */
   const [focusDay, setFocusDay] = createSignal<Date | null>(null);
   const normalizedEvents = createMemo(() => normalizeEvents(props.events, dateConfig()));
@@ -3579,7 +3635,7 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
   };
   const step = (direction: -1 | 1) => {
     if (scrollingView()?.step(direction)) return;
-    go(adjacentCalendarDate(monthView()?.stepFrom() ?? shownDay() ?? date(), view(), direction, dateConfig()), view());
+    go(adjacentCalendarDate(monthView()?.stepFrom() ?? shownDay() ?? date(), view(), direction, dateConfig(), props.customViews), view());
   };
   const goToday = () => {
     if (scrollingView()?.today()) return;
@@ -3803,6 +3859,9 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
             </Show>
           </Show>
         </Show>
+      </Show>
+      <Show when={!props.onEventActivate}>
+        <CalendarEventDetail owner={owner} state={detail()} onClose={() => setDetail(null)} />
       </Show>
     </section>
   );

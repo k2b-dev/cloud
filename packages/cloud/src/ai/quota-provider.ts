@@ -1,16 +1,22 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { estimateTokens, type Provider } from "@k2b/nessi";
-import { sql } from "bun";
+import type { GenerateRequest, TransportReport } from "@k2b/nessi/ai";
+import { sql } from "../runtime/clients";
+
 import type { AccessSubject } from "../server/services/access";
 import { logger } from "../services/logging";
+import type { AiResolvedModelRef } from "../shared/ai-models";
 import { isAssistantChatTurn } from "./assistant-models";
 import { AiBackgroundAdmissionError, type AiCallContext, type AiCallDetails, beginAiCall, finishAiCall } from "./inference-calls";
-import { type ProviderFetchMarks, runWithProviderFetchMarks } from "./provider-fetch";
+import { observeTransport, transportRefused } from "./provider-transport";
 import type { AiModelProfile } from "./types";
+
+/** A dispatch guard refused the call before any provider request could leave. */
+export class AiProviderAdmissionError extends Error {}
 
 const log = logger("ai:quotas");
 
-/** One wrapper owns call accounting. complete() can have a separate compaction purpose. */
+/** One wrapper owns call accounting. */
 const callLifecycle = {
   begin: beginAiCall,
   finish: finishAiCall,
@@ -22,10 +28,11 @@ export function inferenceProvider(
   provider: Provider,
   profile: AiModelProfile,
   context: AiCallContext,
-  completeContext = context,
   lifecycle = callLifecycle,
 ): Provider {
-  const begin = async (request: Parameters<Provider["complete"]>[0], ctx: AiCallContext) => {
+  // createAiProvider normalizes adapter diagnostics before trusted dispatch guards wrap it.
+  // Accounting must preserve those guards' error identity and zero-usage semantics.
+  const begin = async (request: GenerateRequest, ctx: AiCallContext) => {
     const messages = request.messages.map((message) =>
       message.role === "user"
         ? {
@@ -54,8 +61,7 @@ export function inferenceProvider(
             ctx,
             inputTokens,
             request.maxOutputTokens ?? profile.maxOutputTokens,
-            // Nessi's Anthropic adapter defaults to 8192; other adapters use the model default.
-            provider.family === "anthropic" ? 8192 : provider.contextWindow,
+            provider.contextWindow,
           );
         } catch (error) {
           if (!(error instanceof AiBackgroundAdmissionError) || !error.retryable || Date.now() >= deadline) throw error;
@@ -87,44 +93,6 @@ export function inferenceProvider(
     model: provider.model,
     contextWindow: provider.contextWindow,
     capabilities: provider.capabilities,
-    complete: async (request) => {
-      const call = await begin(request, completeContext);
-      let usage: Parameters<typeof finishAiCall>[1];
-      let status: "ok" | "failed" = "failed";
-      let error: string | undefined;
-      const requestStartedAt = Date.now();
-      const marks: ProviderFetchMarks = {};
-      try {
-        const result = await runWithProviderFetchMarks(marks, () =>
-          provider.complete({ ...request, maxOutputTokens: call.maxOutputTokens }),
-        );
-        if (
-          result.usage &&
-          [result.usage.input, result.usage.output].every((n) => Number.isSafeInteger(n) && n >= 0) &&
-          result.usage.input + result.usage.output > 0
-        )
-          usage = { input: result.usage.input, output: result.usage.output };
-        status = ["error", "aborted", "interrupted"].includes(result.finishReason) ? "failed" : "ok";
-        if (status === "failed") error = `The provider finished with ${result.finishReason}.`;
-        return result;
-      } catch (thrown) {
-        error = thrown instanceof Error ? thrown.message : String(thrown);
-        throw thrown;
-      } finally {
-        call.stop();
-        // A request the provider refused or never received cost nothing; any other failure may have been processed.
-        if (!usage && status === "failed")
-          usage = marks.refused ? { input: 0, output: 0 } : { input: call.inputTokens, output: 0, estimated: true };
-        const cancelled = request.signal?.aborted === true;
-        await finish(call.id, usage, cancelled && status === "failed" ? "aborted" : status, {
-          error: cancelled ? null : error,
-          cancelled,
-          requestStartedAt,
-          headersMs: marks.headersAt === undefined ? undefined : marks.headersAt - requestStartedAt,
-          firstByteMs: marks.firstByteAt === undefined ? undefined : marks.firstByteAt - requestStartedAt,
-        });
-      }
-    },
     stream: async function* (request) {
       const call = await begin(request, context);
       const id = call.id;
@@ -135,10 +103,12 @@ export function inferenceProvider(
       const outputBlocks = new Map<string, number>();
       let generated = false;
       const requestStartedAt = Date.now();
-      const marks: ProviderFetchMarks & { firstBlockAt?: number } = {};
-      // The wrapped adapter reads lazily, so the request only leaves once the first pull runs inside the marked scope.
-      const events = provider.stream({ ...request, maxOutputTokens: call.maxOutputTokens })[Symbol.asyncIterator]();
-      const next = () => runWithProviderFetchMarks(marks, () => events.next());
+      let transport: TransportReport | undefined;
+      let firstBlockAt: number | undefined;
+      const events = provider
+        .stream(observeTransport({ ...request, maxOutputTokens: call.maxOutputTokens }, (report) => (transport = report)))
+        [Symbol.asyncIterator]();
+      const next = () => events.next();
       try {
         for (let step = await next(); !step.done; step = await next()) {
           const event = step.value;
@@ -146,8 +116,7 @@ export function inferenceProvider(
             failed = true;
             error ??= event.issue.message;
           }
-          if ((event.type === "block_start" || event.type === "block_delta") && marks.firstBlockAt === undefined)
-            marks.firstBlockAt = Date.now();
+          if ((event.type === "block_start" || event.type === "block_delta") && firstBlockAt === undefined) firstBlockAt = Date.now();
           if (event.type === "block_delta") outputBlocks.set(event.blockId, (outputBlocks.get(event.blockId) ?? 0) + event.delta.length);
           if (event.type === "block_end") {
             const block = event.block;
@@ -164,7 +133,7 @@ export function inferenceProvider(
           if (
             event.type === "issue" &&
             event.issue.kind === "provider_error" &&
-            (event.issue.contextOverflow || marks.refused) &&
+            (event.issue.contextOverflow || event.issue.notSent || transportRefused(transport)) &&
             !generated &&
             !usage
           )
@@ -183,6 +152,7 @@ export function inferenceProvider(
         }
         completed = true;
       } catch (thrown) {
+        if (thrown instanceof AiProviderAdmissionError) usage = { input: 0, output: 0 };
         error ??= thrown instanceof Error ? thrown.message : String(thrown);
         throw thrown;
       } finally {
@@ -219,11 +189,11 @@ export function inferenceProvider(
               error: cancelled ? null : (error ?? (completed ? null : "The provider stream ended before completion.")),
               cancelled,
               requestStartedAt,
-              headersMs: marks.headersAt === undefined ? undefined : marks.headersAt - requestStartedAt,
-              firstByteMs: marks.firstByteAt === undefined ? undefined : marks.firstByteAt - requestStartedAt,
-              firstBlockMs: marks.firstBlockAt === undefined ? undefined : marks.firstBlockAt - requestStartedAt,
+              headersMs: transport?.headersAt === undefined ? undefined : transport.headersAt - requestStartedAt,
+              firstByteMs: transport?.firstByteAt === undefined ? undefined : transport.firstByteAt - requestStartedAt,
+              firstBlockMs: firstBlockAt === undefined ? undefined : firstBlockAt - requestStartedAt,
             });
-          } catch (error) {
+          } catch {
             log.warn("Chat usage booking failed", { code: "quota_booking_failed", turnId: context.turnId, callId: id });
           }
         }
@@ -239,12 +209,12 @@ export function assistantQuotaProvider(
   profile: AiModelProfile,
   turnId: string,
   conversationId: string,
+  modelRef: AiResolvedModelRef,
 ) {
-  const common = { subject, turnId, conversationId };
-  return inferenceProvider(
-    provider,
-    profile,
-    { ...common, kind: isAssistantChatTurn(config) ? "chat" : "background", task: isAssistantChatTurn(config) ? "chat" : "agent-turn" },
-    { ...common, kind: "background", task: "chat-compaction" },
-  );
+  const common = { subject, turnId, conversationId, modelRef };
+  return inferenceProvider(provider, profile, {
+    ...common,
+    kind: isAssistantChatTurn(config) ? "chat" : "background",
+    task: isAssistantChatTurn(config) ? "chat" : "agent-turn",
+  });
 }

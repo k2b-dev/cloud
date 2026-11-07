@@ -27,7 +27,7 @@ import { deleteKey, readKey, readKeyState, type StoredSettingState, writeKey } f
  */
 export interface SettingsAPI<F extends Record<string, unknown>> {
   get<K extends keyof F & string>(key: K): Promise<F[K]>;
-  read<K extends keyof F & string>(key: K): Promise<{ value: F[K]; stored: StoredSettingState }>;
+  read<K extends keyof F & string>(key: K): Promise<{ value: F[K]; stored: StoredSettingState; bindingMismatch?: true }>;
   set<K extends keyof F & string>(key: K, value: F[K], options?: { replaceUnreadable?: boolean }): Promise<void>;
   remove<K extends keyof F & string>(key: K): Promise<void>;
 }
@@ -59,8 +59,8 @@ export const createSettingsAPI = <S extends AppSettingsMap>(): SettingsAPI<{
  */
 export const coreSettings = {
   get: <T = unknown>(key: string): Promise<T> => readKey(key) as Promise<T>,
-  read: <T = unknown>(key: string): Promise<{ value: T; stored: StoredSettingState }> =>
-    readKeyState(key) as Promise<{ value: T; stored: StoredSettingState }>,
+  read: <T = unknown>(key: string): Promise<{ value: T; stored: StoredSettingState; bindingMismatch?: true }> =>
+    readKeyState(key) as Promise<{ value: T; stored: StoredSettingState; bindingMismatch?: true }>,
   set: (key: string, value: unknown, options?: { replaceUnreadable?: boolean }): Promise<void> => writeKey(key, value, undefined, options),
   remove: (key: string): Promise<void> => deleteKey(key),
 };

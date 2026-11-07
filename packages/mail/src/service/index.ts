@@ -31,11 +31,13 @@ import * as folders from "./folders";
 import * as health from "./health";
 import { imapPushRuntime } from "./imap-push-runtime";
 import * as incomingAutomations from "./incoming-automations";
+import * as keptConversations from "./kept-conversations";
 import * as listSubscriptions from "./list-subscriptions";
 import * as localTags from "./local-tags";
 import * as mailboxDetails from "./mailbox-details";
 import * as mailboxPreferences from "./mailbox-preferences";
 import * as mailboxes from "./mailboxes";
+import * as messageBodyRequests from "./message-body-request";
 import * as hydration from "./message-hydration";
 import * as messageInspector from "./message-inspector";
 import * as messages from "./messages";
@@ -117,12 +119,14 @@ export {
   folders,
   health,
   incomingAutomations,
+  keptConversations,
   listSubscriptions,
   localTags,
   mailboxAccess,
   mailboxDetails,
   mailboxes,
   mailboxPreferences,
+  messageBodyRequests,
   messageInspector,
   messages,
   notificationTargets,
@@ -161,6 +165,7 @@ export const mailService = {
   composeTemplates,
   conversations,
   conversationKeeps,
+  keptConversations,
   conversationReferences,
   conversationSummaries,
   draftLeases,
@@ -176,6 +181,7 @@ export const mailService = {
   folders,
   hydration,
   mailboxes,
+  messageBodyRequests,
   messageInspector,
   messages,
   notificationTargets,

@@ -6,7 +6,12 @@ export type NotificationChannelAvailability = {
   description?: string;
 };
 
-export const notificationChannelAvailability = (registered: boolean, locale?: string): NotificationChannelAvailability => {
+export const notificationChannelAvailability = (
+  registered: boolean,
+  locale?: string,
+  excludedReason?: string | null,
+): NotificationChannelAvailability => {
+  if (excludedReason) return { enabled: false, description: excludedReason };
   if (!registered) return { enabled: false, description: accountMessages.resolve([locale ?? "en"]).t.channelUnavailable };
   return { enabled: true };
 };

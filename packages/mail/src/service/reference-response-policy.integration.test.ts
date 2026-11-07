@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { deleteWorkflowScope } from "@k2b/cloud/workflows/store";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import {
@@ -121,7 +120,6 @@ suite("conversation references and automatic reply policies", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const users = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES
@@ -945,6 +943,13 @@ suite("conversation references and automatic reply policies", () => {
     expect(managedEdit.ok).toBe(false);
     if (!managedEdit.ok) expect(managedEdit.error.code).toBe("CONFLICT");
 
+    const unchangedReply = await updateAutomaticReplyConfiguration({
+      context: ownerContext,
+      mailboxId,
+      configurationId: created.data.id,
+      input: { expectedRevision: created.data.revision, ...input },
+    });
+    expect(unchangedReply.ok && unchangedReply.data.revision).toBe(created.data.revision);
     const updates = await Promise.all([
       updateAutomaticReplyConfiguration({
         context: ownerContext,
@@ -966,6 +971,13 @@ suite("conversation references and automatic reply policies", () => {
     let current = listed.data.find((configuration) => configuration.id === created.data.id);
     if (!current) throw new Error("Updated automatic reply could not be reloaded");
     expect(current.revision).toBe(2);
+    const replayedReply = await updateAutomaticReplyConfiguration({
+      context: ownerContext,
+      mailboxId,
+      configurationId: current.id,
+      input: { ...input, expectedRevision: 1, body: current.body, enabled: current.enabled },
+    });
+    expect(replayedReply.ok && replayedReply.data.revision).toBe(current.revision);
     if (current.enabled) {
       const disabledResult = await updateAutomaticReplyConfiguration({
         context: ownerContext,

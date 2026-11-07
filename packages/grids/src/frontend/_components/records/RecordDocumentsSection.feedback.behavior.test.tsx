@@ -53,7 +53,6 @@ describe("Record snapshot feedback", () => {
     const dispose = render(
       () =>
         createComponent(RecordDocumentsSection, {
-          cloudUrl: "http://localhost:3000",
           tableId: "Table1",
           tableName: "Invoices",
           recordId: "Rec001",

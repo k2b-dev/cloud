@@ -32,5 +32,5 @@ Dashboard ist deine persönliche Startseite und Übersicht über Cloud. Es zeigt
 :::
 
 :::info Geltungsbereich der Einstellungen
-Dashboard-Einstellungen erfordern die Sitzung einer Person, nicht die eines Dienstkontos. Sie werden mit deinem Konto gespeichert und gelten auf jedem Gerät, auf dem du dich anmeldest.
+Dashboard-Einstellungen erfordern die Sitzung einer Person, nicht die eines Agenten oder Dienstkontos. Sie werden mit deinem Konto gespeichert und gelten auf jedem Gerät, auf dem du dich anmeldest.
 :::

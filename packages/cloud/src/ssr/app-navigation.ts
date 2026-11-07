@@ -40,8 +40,9 @@ export const visibleNavigationApps = (apps: readonly RuntimeAppMeta[], user: Use
 export type VisiblePwaPart = RuntimeAppMeta & { pwa: NonNullable<RuntimeAppMeta["pwa"]> };
 
 /**
- * Parts of the mobile app the user may see, localized and sorted by name. Empty without a user. The roles are
- * coarse visibility like the navigation's; part routes and services still authorize.
+ * Parts of the mobile app the user may see, localized. Parts with `pwa.order` come first, ascending, the rest
+ * follow; equal positions sort by name. Empty without a user. The roles are coarse visibility like the navigation's;
+ * part routes and services still authorize.
  */
 export const visiblePwaParts = (apps: readonly RuntimeAppMeta[], user: User | undefined, locale: string): VisiblePwaPart[] => {
   if (!user) return [];
@@ -52,7 +53,12 @@ export const visiblePwaParts = (apps: readonly RuntimeAppMeta[], user: User | un
         !!app.pwa && isPwaPartId(app.id) && app.routes.includes(app.pwa.href) && hasAnyAppRole(user, app.pwa.requiresRoles),
     )
     .map((app) => resolveAppPresentation(app, locale))
-    .sort((a, b) => a.name.localeCompare(b.name, locale) || a.id.localeCompare(b.id));
+    .sort(
+      (a, b) =>
+        (a.pwa.order ?? Number.POSITIVE_INFINITY) - (b.pwa.order ?? Number.POSITIVE_INFINITY) ||
+        a.name.localeCompare(b.name, locale) ||
+        a.id.localeCompare(b.id),
+    );
 };
 
 export type PanelProvider = { id: string; label: string; icon: string; href: string; appName: string; consent: boolean };

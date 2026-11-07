@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { z } from "zod";
+import { sql } from "../../runtime/clients";
 import { decryptSecret } from "../secrets";
 import { getNotificationChannel } from "./channels";
 import { quietStateForEvent } from "./quiet";

@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../runtime/clients";
 import type { AccessSubject } from "../server/services/access";
 import { aiBudgetUnits, aiCostDecimal, aiCostUnits, aiDecimalUnits, hasBillableAiPricing } from "../shared/ai-costs";
 import { AiQuotaError, aiQuotas, quotaWindow } from "./quotas";
@@ -25,10 +26,12 @@ export class AiBackgroundAdmissionError extends Error {
 }
 
 export type AiCallContext = {
-  kind: "chat" | "background";
+  kind: "chat" | "background" | "live-transcription";
   task: string;
+  modelRef?: import("../shared/ai-models").AiResolvedModelRef;
   subject?: AccessSubject | null;
   userId?: string;
+  credentialId?: string;
   conversationId?: string;
   turnId?: string;
   workflowRunId?: string;
@@ -91,7 +94,7 @@ export async function beginAiCall(
     }
     if (hasBillableAiPricing(profile.pricing) && context.kind === "chat" && context.subject && config.enabled) {
       const now = new Date();
-      const snapshot = await aiQuotas.snapshot(context.subject, profile.id, now, db);
+      const snapshot = await aiQuotas.snapshot(context.subject, profile.modelId, now, db);
       for (const balance of snapshot.balances) {
         if (balance.bypassed || balance.limit === null) continue;
         if (balance.unknown)
@@ -109,7 +112,7 @@ export async function beginAiCall(
           SELECT (COALESCE(sum(cost),0)+COALESCE(sum(reserved) FILTER(WHERE finished_at IS NULL AND lease_expires_at>now()),0))::text AS committed FROM ai.inference_calls c
           WHERE kind='chat'
             AND user_id IS NOT DISTINCT FROM ${user}::uuid AND service_account_id IS NOT DISTINCT FROM ${service}::uuid
-            AND (${balance.scope}='*' OR model_profile_id=${balance.scope}) AND started_at>=${window.from} AND started_at<${window.until}
+            AND (${balance.scope}='*' OR model_id=${balance.scope}) AND started_at>=${window.from} AND started_at<${window.until}
             AND started_at>COALESCE((SELECT max(created_at) FROM ai.cost_resets r
               WHERE r.user_id IS NOT DISTINCT FROM ${user}::uuid AND r.service_account_id IS NOT DISTINCT FROM ${service}::uuid AND r.scope=${balance.scope}),'-infinity'::timestamptz)`;
         const available = aiBudgetUnits(balance.limit) - aiDecimalUnits(pending?.committed ?? "0");
@@ -145,13 +148,14 @@ export async function beginAiCall(
     const id = crypto.randomUUID();
     const userId = context.subject?.type === "user" ? context.subject.userId : context.userId;
     const serviceId = context.subject?.type === "service_account" ? context.subject.serviceAccountId : null;
-    await db`INSERT INTO ai.inference_calls(id,user_id,service_account_id,model_profile_id,provider_model,kind,task,
+    await db`INSERT INTO ai.inference_calls(id,user_id,service_account_id,credential_id,model_profile_id,model_id,requested_class,resolved_class,provider_model,kind,task,
       turn_id,turn_attempt,conversation_id,workflow_run_id,step_key,trace_id,app_id,workflow_id,workflow_name,workflow_version,pricing,reserved,lease_expires_at)
       VALUES(${id}::uuid,CASE WHEN ${serviceId}::uuid IS NULL THEN COALESCE(${userId ?? null}::uuid,(SELECT created_by_user_id FROM ai.conversations WHERE id=${context.conversationId ?? null}::uuid)) ELSE NULL END,
-        ${serviceId}::uuid,${profile.id},${profile.model},${context.kind},${context.task},${context.turnId ?? null}::uuid,
+        ${serviceId}::uuid,${context.credentialId ?? null}::uuid,${profile.id},${profile.modelId},${context.modelRef?.requestedClass ?? null},${context.modelRef?.class ?? null},${profile.model},${context.kind},${context.task},${context.turnId ?? null}::uuid,
         (SELECT attempt FROM ai.turns WHERE id=${context.turnId ?? null}::uuid),${context.conversationId ?? null}::uuid,
         ${context.workflowRunId ?? null}::uuid,${context.stepKey ?? null},${context.traceId ?? null},COALESCE(${workflow?.app ?? context.appId ?? null},(SELECT launched_by_app_id FROM ai.conversations WHERE id=${context.conversationId ?? null}::uuid),'core'),${workflow?.id ?? null}::uuid,${workflow?.name ?? null},${workflow?.revision ?? null},
-        (${profile.pricing ? JSON.stringify(profile.pricing) : null}::text)::jsonb,${reserved}::numeric,now()+interval '2 minutes')`;
+        (${profile.pricing ? JSON.stringify(profile.pricing) : null}::text)::jsonb,${reserved}::numeric,
+        now()+CASE WHEN ${context.kind}='live-transcription' THEN interval '10 minutes 10 seconds' ELSE interval '2 minutes' END)`;
     return { id, maxOutputTokens };
   });
   if (result.error) throw result.error;
@@ -162,6 +166,7 @@ export type AiCallStatus = "ok" | "failed" | "aborted";
 
 /** Bounded diagnostics per provider request: milestones relative to the request, never content or credentials. */
 export type AiCallDetails = {
+  audioMs?: number;
   /** Redacted provider or transport error; `aborted` calls keep no error. */
   error?: string | null;
   /** The caller's signal was aborted (user stop or run budget), so the provider was not at fault. */
@@ -196,7 +201,7 @@ export async function finishAiCall(
           ? aiCostDecimal(aiCostUnits(call.pricing, usage.input, usage.output))
           : null;
     await db`UPDATE ai.inference_calls SET input=${usage?.input ?? null},output=${usage?.output ?? null},estimated=${usage?.estimated ?? false},
-      cost=${cost}::numeric,reserved=0,finished_at=clock_timestamp(),status=${status},error_code=${status === "failed" ? "ai_provider_call_failed" : null},
+      audio_ms=${ms(details.audioMs)},cost=${cost}::numeric,reserved=0,finished_at=clock_timestamp(),status=${status},error_code=${status === "failed" ? "ai_provider_call_failed" : null},
       error=${status === "failed" && details.error ? redactAiCallError(details.error) : null},cancelled=${details.cancelled ?? false},
       request_started_at=${details.requestStartedAt === undefined ? null : new Date(details.requestStartedAt)},
       headers_ms=${ms(details.headersMs)},first_byte_ms=${ms(details.firstByteMs)},first_block_ms=${ms(details.firstBlockMs)} WHERE id=${id}::uuid`;

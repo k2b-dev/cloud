@@ -5,7 +5,7 @@ section: Build an app
 order: 140
 description: Publish route prefixes and make an application reachable through the gateway.
 tags: [applications, routing, gateway, registry]
-updated: 2026-10-09
+updated: 2026-10-31
 ---
 
 # Routes and service discovery
@@ -35,13 +35,32 @@ public paths declare those exact paths.
 See [Route conventions](/en/docs/reference/route-conventions) for the standard
 prefixes, reserved paths, and matching rules.
 
-Do not list `/pwa` paths. An application adds pages to the mobile app with
+Do not list `/pwa` paths. An application adds pages to the Cloud app with
 `defineApp({ pwa })`, which declares `/pwa/<id>` for it; see
-[Pages in the mobile app](/en/docs/frontend/mobile-app-pages) (preview).
+[Pages in the Cloud app](/en/docs/frontend/mobile-app-pages) (preview).
 
 > **Do not serve HTML below `/public`.** Cloud handles `/public/*` before the
 > application router and returns a terminal asset response. Use a separate
 > prefix such as `/share/<id>` for anonymous pages.
+
+The gateway reserves `/app/<id>` and all descendants for app `<id>`, including
+claims from older registry records. A root or ancestor route cannot answer for
+a missing or rejected owner. An independent [App-PWA](/en/docs/frontend/app-pwa)
+uses this namespace and requires an explicitly declared route covering its
+neutral start path.
+
+## Serve a site on its own domains
+
+`defineApp({ public: true })` adds a separate `app.public` Hono router for
+administrator-assigned domains. These hosts reach only that router, with the
+original path and public URL, including a client port. Their paths need no
+entry in `routes`. `/_cloud/public` and its descendants are reserved for
+platform dispatch; the gateway owns `/_cloud/domain-check/*` on app domains.
+Cloud-host path routing continues to use the declared prefixes above.
+
+See [Public site of an app](/en/docs/build/public-surface) for SSR, development
+hosts, visitor sessions, client IPs and rate limits, and
+[App domains](/en/docs/operations/app-domains) for ingress and protections.
 
 ## Mount the same paths in Hono
 
@@ -61,7 +80,7 @@ publish it to the gateway.
 
 ## Response compression
 
-The gateway forwards response bodies unchanged, with one exception: it
+On the Cloud host, the gateway forwards response bodies unchanged, with one exception: it
 compresses `text/html`, `application/json`, and `application/*+json`
 responses. It chooses Brotli or gzip from the request's `Accept-Encoding` and
 streams each upstream chunk as it arrives. Applications still receive the
@@ -92,6 +111,25 @@ Sec-Fetch-Dest`, also when it stays uncompressed. A compressed response loses
 `Content-Length` and `Accept-Ranges`, and a strong `ETag` becomes weak. Compare `If-None-Match`
 weakly: `W/"x"` matches `"x"`, a list matches when one tag matches, and `*`
 matches any current representation.
+
+On an [app domain](/en/docs/operations/app-domains), requests without Cookie
+or Authorization headers after Cloud credentials have been removed also compress `text/*`,
+JavaScript, JSON (`+json` included), XML (`+xml` included), and SVG. This
+includes cross-site landings, subresources, and crawlers without Fetch
+Metadata. Site cookies or `Authorization` retain the Cloud-host compression
+rules above. App responses also vary on `Cookie` and `Authorization` so shared
+caches distinguish these cases.
+Precompressed bodies, `no-transform`, size thresholds, HEAD, conditional
+requests, and streaming keep the same behavior. Status codes, redirect
+locations, app cache directives, and representation bytes after decompression
+pass through unchanged. A response that sets a cookie becomes
+`Cache-Control: private, no-store`.
+
+The cookie decision uses the forwarded request: Cloud credential cookies
+cannot authenticate a public-site visitor and have already been discarded.
+An application's own cookie keeps the conservative rule. An application that
+mixes private content or other secret credentials with attacker-controlled
+text must still opt out with `no-transform`.
 
 Compression can reveal private content through response length (BREACH). Opt
 out with `middleware.noTransform()` only when **both** conditions hold:
@@ -159,6 +197,14 @@ it. The gateway watches the registry and rebuilds its route table when entries
 change.
 
 No static gateway rule is required for each application.
+
+Registry readers ignore unknown `platformPermissions` IDs while keeping the
+application and its routes registered. An unknown permission grants nothing.
+Application declarations stay strict: `defineApp()` rejects permission IDs
+that its installed platform version does not support. Releases before app
+reader checks rejected the whole registry entry instead; follow the
+[upgrade order](/en/docs/operations/deployment-requirements#resource-reader-checks-and-discussions)
+before declaring `resources:readers`.
 
 ## Diagnose an unreachable route
 

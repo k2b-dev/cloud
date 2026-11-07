@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { type AccessSubject, buildAccessPrincipalCondition, type PermissionLevel } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { runBoundedQuery } from "./bounded-query";
 
 const LEVEL_RANK: Record<PermissionLevel, number> = {

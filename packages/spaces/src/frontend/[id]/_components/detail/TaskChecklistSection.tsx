@@ -95,7 +95,7 @@ export default function TaskChecklistSection(props: Props) {
         <ul class="flex flex-col gap-1">
           <For each={entries()}>
             {(entry) => (
-              <li class="group/checklist flex min-w-0 items-center gap-2 rounded-[var(--ui-radius-control)] px-1 py-0.5 hover:bg-[var(--ui-hover)]">
+              <li class="group/checklist -mx-1 flex min-w-0 items-center gap-2 rounded-[var(--ui-radius-control)] px-1 py-0.5 hover:bg-[var(--ui-hover)]">
                 <Checkbox
                   aria-label={
                     entry.completed ? t.markChecklistIncomplete({ label: entry.label }) : t.markChecklistComplete({ label: entry.label })
@@ -143,7 +143,7 @@ export default function TaskChecklistSection(props: Props) {
       </Show>
 
       <Show when={props.canWrite}>
-        <form class="flex items-center gap-2 px-1" onSubmit={submit}>
+        <form class="-mx-1 flex items-center gap-2 px-1" onSubmit={submit}>
           <span class="flex h-5 w-5 shrink-0 items-center justify-center text-dimmed" aria-hidden="true">
             <i class="ti ti-plus text-sm" />
           </span>

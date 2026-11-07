@@ -10,7 +10,7 @@
   "dependencies": {
     "@fontsource/ibm-plex-sans-condensed": "5.3.0",
     "@simplewebauthn/browser": "14.0.0",
-    "diff": "9.0.0",
+    "diff": "catalog:",
     "@k2b/cloud": "workspace:*",
     "@k2b/ssr": "workspace:*",
     "@k2b/stdlib": "catalog:",

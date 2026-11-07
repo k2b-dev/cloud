@@ -14,6 +14,7 @@ export const mailIntegrationCommand = async (): Promise<string[]> => {
     process.execPath,
     "--no-env-file",
     "test",
+    "--isolate",
     "--timeout",
     "30000",
     "--preload",
@@ -32,7 +33,7 @@ if (import.meta.main) {
     );
   } else {
     const command = await mailIntegrationCommand();
-    if (args.includes("--list")) console.log(command.slice(9).join("\n"));
+    if (args.includes("--list")) console.log(command.slice(10).join("\n"));
     else {
       const child = Bun.spawn([...command, ...args], { cwd: workspaceRoot, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
       process.on("SIGINT", () => child.kill("SIGINT"));

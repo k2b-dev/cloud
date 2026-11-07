@@ -1,9 +1,10 @@
 import { expect, setSystemTime, test } from "bun:test";
 import { evaluateFormula, markdown as sharedMarkdown } from "@k2b/cloud/shared";
+import { parseNotebookChartBlocks } from "@k2b/editor/markdown/lib/chart-blocks";
+import { extractNamedDataProperties } from "@k2b/editor/markdown/lib/named-blocks";
 import { renderSafeMarkdown } from "@k2b/ui";
 import { renderNotebookBook } from "./lib/book-renderer";
-import { parseNotebookChartBlocks } from "./lib/chart-blocks";
-import { extractNamedDataProperties } from "./lib/named-blocks";
+import { notebookChartOptions } from "./lib/chart-options";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "./lib/query-blocks";
 import { extractTags } from "./service/tags";
 
@@ -20,7 +21,7 @@ test("every Markdown example in the agent references renders as documented", asy
   expect(examples.length).toBeGreaterThan(10);
   for (const markdown of examples) {
     expect(parseNotebookQueryBlocks(markdown).diagnostics, markdown).toEqual([]);
-    expect(parseNotebookChartBlocks(markdown).diagnostics, markdown).toEqual([]);
+    expect(parseNotebookChartBlocks(markdown, notebookChartOptions).diagnostics, markdown).toEqual([]);
     expect(parseNotebookTocBlocks(markdown).diagnostics, markdown).toEqual([]);
     expect(extractNamedDataProperties(markdown).diagnostics, markdown).toEqual([]);
     const { html } = renderNotebookBook({ markdown, notebookId: "Ab12Cd", locale: "en" });

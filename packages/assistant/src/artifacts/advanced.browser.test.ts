@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chromium } from "playwright";
+import { launchBrowser } from "../../../ui/test/browser";
 import { appRuntimeRoute } from "./html/test-assets";
 import { renameSource } from "./rename-source";
 
@@ -19,12 +19,12 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
       if (path === "/ui.css") return new Response(Bun.file(new URL("../../../ui/dist/styles.css", import.meta.url)));
       if (path === "/app.css") return new Response(Bun.file(new URL("../styles/app.css", import.meta.url)));
       return new Response(
-        '<!doctype html><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="height:100vh"><div id="root" style="height:100%"></div><script src="/bundle.js"></script>',
+        '<!doctype html><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="height:100vh"><div id="root" style="height:100%"></div><script type="module" src="/bundle.js"></script>',
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
   });
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await launchBrowser({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
     page.setDefaultTimeout(6000);
@@ -137,6 +137,7 @@ document.querySelector("#ask").addEventListener("click", () => dialog.showModal(
 dialog.addEventListener("close", async () => { if (dialog.returnValue === "ok") await cloud.download("result.txt", "ok"); });
 </script>`,
     );
+    await page.getByText("Unsaved changes", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[aria-busy="true"]') !== null);
     await editor.fill("<main><p>Typed while saving</p></main>");

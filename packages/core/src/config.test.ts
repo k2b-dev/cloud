@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
+import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
 import { resolveAppPresentation } from "@k2b/cloud/shared";
 import { visiblePanelProviders } from "@k2b/cloud/ssr/app-navigation";
+import { Hono } from "hono";
 import { app } from "./config";
 
 /** Invented signed-in person. */
@@ -29,10 +31,22 @@ test("Core offers its Help as a panel inside its own routes to every signed-in r
   const meta = app.meta;
   expect(meta.panel).toEqual({ href: "/panel", label: "Help", icon: "ti ti-help-circle" });
   expect(meta.routes).toContain("/");
+  expect(meta.routes).toContain("/_cloud/app-access");
   expect(resolveAppPresentation(meta, "de").panel?.label).toBe("Hilfe");
   expect(visiblePanelProviders([meta], undefined, "en")).toEqual([]);
   expect(visiblePanelProviders([meta], person, "en").map((provider) => provider.label)).toEqual(["Help"]);
   expect(visiblePanelProviders([meta], { ...person, profile: "guest", roles: [] }, "de").map((provider) => provider.label)).toEqual([
     "Hilfe",
   ]);
+});
+
+test("country requests reach their own app-proof authentication without a Core browser session", async () => {
+  const path = "/api/_internal/ip-country";
+  expect(app.meta.routes).toContain(path);
+  const router = new Hono()
+    .use(requireAppAccess(app.meta, async (c) => c.text("Core access denied", 403)))
+    .post(path, (c) => c.text("route-owned authentication"));
+  const response = await router.request(path, { method: "POST", headers: { Authorization: "Bearer app.proof.signature" } });
+  expect(response.status).toBe(200);
+  expect(await response.text()).toBe("route-owned authentication");
 });

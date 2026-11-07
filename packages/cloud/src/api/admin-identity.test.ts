@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import type { MiddlewareHandler } from "hono";
+import { generateSpecs } from "hono-openapi";
 import type { AuthContext } from "../server";
 import { createAdminIdentityRoutes } from "./admin-identity";
 
@@ -37,6 +38,14 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
   rewrap: async () => 0,
   revoke: async () => false,
   serviceAccounts: {
+    getByResource: async ({ appId, resourceType, resourceId }) => ({
+      ...standaloneAccount(),
+      id: SERVICE_ACCOUNT_ID,
+      kind: "resource_bound",
+      appId,
+      resourceType,
+      resourceId,
+    }),
     getOrCreateResourceBound: async ({ name, appId, resourceType, resourceId, createdBy }) =>
       ok({
         id: SERVICE_ACCOUNT_ID,
@@ -56,7 +65,7 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
     setStatus: async () => ok(),
   },
   credentials: {
-    createStandaloneApiToken: async ({ serviceAccountId, name, scopes, expiresAt, actor }) =>
+    createStandaloneApiToken: async ({ serviceAccountId, name, scopes, expiresAt, actor, access }) =>
       ok({
         credential: {
           id: CREDENTIAL_ID,
@@ -65,7 +74,7 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
           kind: "api_token",
           status: "active",
           tokenPrefix: "cld_standalone_preview",
-          scopes: scopes ?? [],
+          scopes: access === "models" ? ["ai:inference"] : (scopes ?? []),
           expiresAt: expiresAt ?? null,
           lastUsedAt: null,
           createdBy: actor.id,
@@ -108,10 +117,48 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
     }),
   },
   audit: { record: async () => undefined },
+  avatars: {
+    state: async () => null,
+    update: async () => ({ ok: false, error: "not stubbed", status: 400 }),
+    clear: async () => ({ ok: false, error: "not stubbed", status: 404 }),
+  },
   ...overrides,
 });
 
 describe("identity key administration", () => {
+  test("administrative mutations retain OAuth write caps", async () => {
+    let effects = 0;
+    const mutationService = dependencies({
+      rewrap: async () => {
+        effects++;
+        return 0;
+      },
+    });
+    for (const scopes of [["read"], ["write"], ["admin"]]) {
+      const scopedAdmin: MiddlewareHandler<AuthContext> = async (c, next) => {
+        c.set("user", admin);
+        c.set("oauthScopes", scopes);
+        await next();
+      };
+      const routes = createAdminIdentityRoutes(scopedAdmin, mutationService);
+      expect((await routes.request("/keys")).status).toBe(200);
+      expect((await routes.request("/keys/rewrap", { method: "POST" })).status).toBe(scopes[0] === "read" ? 403 : 200);
+      if (scopes[0] === "read") {
+        for (const [method, path] of [
+          ["POST", "/service-accounts"],
+          ["PATCH", `/service-accounts/${STANDALONE_ID}`],
+          ["POST", `/service-accounts/${STANDALONE_ID}/api-keys`],
+          ["POST", "/workloads/grids/credentials"],
+          ["PATCH", "/workloads/grids"],
+          ["DELETE", `/workloads/grids/credentials/${CREDENTIAL_ID}`],
+          ["POST", `/keys/${CREDENTIAL_ID}/revoke`],
+        ])
+          expect((await routes.request(path!, { method })).status).toBe(403);
+      }
+    }
+    expect(effects).toBe(2);
+  });
+
   test("refuses the reserved inference scope on standalone API keys", async () => {
     const routes = createAdminIdentityRoutes(authenticateAdmin, dependencies());
     const response = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {
@@ -120,6 +167,115 @@ describe("identity key administration", () => {
       body: JSON.stringify({ name: "forbidden", scopes: ["ai:inference"] }),
     });
     expect(response.status).toBe(400);
+  });
+  test("P15: omitted scopes reach issuance; explicit scopes are preserved", async () => {
+    const base = dependencies();
+    const calls: Array<{ scopes?: string[]; access?: string }> = [];
+    const routes = createAdminIdentityRoutes(
+      authenticateAdmin,
+      dependencies({
+        credentials: {
+          ...base.credentials,
+          createStandaloneApiToken: async (input) => {
+            calls.push(input);
+            return base.credentials.createStandaloneApiToken(input);
+          },
+        },
+      }),
+    );
+    for (const body of [{ name: "ci" }, { name: "ci", access: "full" }, { name: "ci", access: "full", scopes: ["read"] }]) {
+      const response = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(201);
+      expect(calls.at(-1)?.scopes).toEqual(body.scopes);
+      expect(calls.at(-1)?.access).toBe("full");
+    }
+  });
+  test("an explicitly empty scope list is still refused; it could never enter an application", async () => {
+    const routes = createAdminIdentityRoutes(authenticateAdmin, dependencies());
+    for (const body of [
+      { name: "ci", scopes: [] },
+      { name: "ci", access: "full", scopes: [] },
+    ]) {
+      const response = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+    }
+  });
+  test("lists and revokes only the API keys of the named standalone account", async () => {
+    const base = dependencies();
+    const created = await base.credentials.createStandaloneApiToken({ serviceAccountId: STANDALONE_ID, actor: admin, name: "ci" });
+    if (!created.ok) throw new Error("Test credential setup failed");
+    const overview = {
+      ...created.data.credential,
+      serviceAccount: standaloneAccount(),
+      owner: { type: "standalone" as const, serviceAccountId: STANDALONE_ID, name: "Release robot", kind: "agent" as const },
+    };
+    const filters: unknown[] = [];
+    const revoked: string[] = [];
+    const routes = createAdminIdentityRoutes(
+      authenticateAdmin,
+      dependencies({
+        credentials: {
+          ...base.credentials,
+          listOverview: async (input) => {
+            filters.push(input?.filter);
+            return { items: [overview], page: 1, perPage: 100, total: 1, hasNext: false };
+          },
+          getOverview: async () => overview,
+          revoke: async ({ credentialId }) => {
+            revoked.push(credentialId);
+            return ok();
+          },
+        },
+      }),
+    );
+    const listed = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`);
+    expect(listed.status).toBe(200);
+    expect(JSON.stringify(await listed.json())).not.toContain("only-once-secret");
+    expect(filters).toEqual([{ serviceAccountId: STANDALONE_ID, serviceAccountKind: standaloneAccount().kind }]);
+    expect((await routes.request(`/service-accounts/${SERVICE_ACCOUNT_ID}/api-keys`)).status).toBe(404);
+    const other = await routes.request(`/service-accounts/${SERVICE_ACCOUNT_ID}/api-keys/${CREDENTIAL_ID}`, { method: "DELETE" });
+    expect(other.status).toBe(404);
+    expect(revoked).toEqual([]);
+    const own = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys/${CREDENTIAL_ID}`, { method: "DELETE" });
+    expect(own.status).toBe(200);
+    expect(revoked).toEqual([CREDENTIAL_ID]);
+  });
+  test("OpenAPI deprecates explicit standalone key scopes", async () => {
+    const spec = await generateSpecs(createAdminIdentityRoutes(authenticateAdmin, dependencies()));
+    expect(spec.paths?.["/service-accounts/{id}/api-keys"]?.post?.requestBody).toMatchObject({
+      content: {
+        "application/json": {
+          schema: {
+            properties: {
+              scopes: {
+                deprecated: true,
+                description: "New keys act as their account; omit scopes.",
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+  test("models purpose uses the administrator creation boundary and refuses mixed scopes", async () => {
+    const routes = createAdminIdentityRoutes(authenticateAdmin, dependencies());
+    for (const scopes of [[], ["files:read"]]) {
+      const response = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Model worker", access: "models", scopes }),
+      });
+      expect(response.status).toBe(scopes.length ? 400 : 201);
+      if (!scopes.length) expect(await response.json()).toMatchObject({ credential: { scopes: ["ai:inference"] } });
+    }
   });
   test("requires an administrator by default", async () => {
     expect((await createAdminIdentityRoutes().request("/keys")).status).toBe(401);
@@ -500,9 +656,42 @@ describe("standalone service accounts", () => {
     const key = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "ci" }),
+      body: JSON.stringify({ name: "ci", scopes: ["read"] }),
     });
     expect(key.status).toBe(201);
-    expect(await key.json()).toMatchObject({ credential: { serviceAccountId: STANDALONE_ID, scopes: [] }, token: expect.any(String) });
+    expect(await key.json()).toMatchObject({
+      credential: { serviceAccountId: STANDALONE_ID, scopes: ["read"] },
+      token: expect.any(String),
+    });
   });
+});
+
+test("admin can restore the exact app workload account without issuing a token", async () => {
+  const base = dependencies();
+  const writes: unknown[] = [];
+  const routes = createAdminIdentityRoutes(
+    authenticateAdmin,
+    dependencies({
+      serviceAccounts: {
+        ...base.serviceAccounts,
+        setStatus: async (input) => {
+          writes.push(input);
+          return ok();
+        },
+      },
+    }),
+  );
+  for (const status of ["disabled", "active"]) {
+    const response = await routes.request("/workloads/inventory", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ appId: "inventory", status });
+  }
+  expect(writes).toEqual([
+    { id: SERVICE_ACCOUNT_ID, status: "disabled" },
+    { id: SERVICE_ACCOUNT_ID, status: "active" },
+  ]);
 });

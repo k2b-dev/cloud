@@ -1,6 +1,7 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { MailStatus } from "../../contracts/outgoing-mail";
 import type { NotificationDeliveryStatus } from "../../contracts/user-notifications";
+import { sql } from "../../runtime/clients";
 import { escapeLikePattern, toPgTextArray } from "../postgres";
 
 const DELIVERY_STATUSES = new Set<NotificationDeliveryStatus>(["deferred", "pending", "sending", "delivered", "suppressed", "failed"]);

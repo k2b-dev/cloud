@@ -8,27 +8,32 @@ import {
   IconButton,
   NoticeCard,
   Placeholder,
+  ProgressRing,
   PullToRefresh,
   ScrollArea,
   Tooltip,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import type { Mailbox } from "../../contracts";
+import { mailFolderNames } from "../../folder-names";
 import type { ResolvedMailSearchRoute } from "../../search-url";
 import type { LocalTag } from "../../service/local-tags";
 import type { MailFolderView } from "../../service/messages";
 import type { SavedConversationView } from "../../service/saved-views";
-import type { MailListError, MailListMode } from "../../service/workspace";
+import type { MailAssignedGroups, MailListError, MailListMode } from "../../service/workspace";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationRow from "./MailConversationRow";
 import { type MailActionId, spamActionForConversation } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
+import type { MailRespondIntent } from "./mail-conversation-menu";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
 import { mailListRowKey } from "./mail-list-projection";
 import { buildMailListHref, buildMailSearchClearHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
 import { createMailQuickLookLoader, mailQuickLookKey } from "./mail-quick-look";
+import type { MailRowAssignee } from "./mail-row-assignees";
+import { type MailDayGroup, mailDayGroupStarts, mailTimeColumnSamples, mailTimeColumnSizer } from "./mail-view-mode";
 
 /** Width of the fixed quick look card, which opens 8px beside the list and keeps 8px to the frame edge. */
 const QUICK_LOOK_WIDTH_REM = 22;
@@ -83,15 +88,30 @@ export default function MailConversationList(props: {
   onItemAction: (item: MailListItem, actionId: MailActionId) => void | Promise<void>;
   onManageTags: (item: MailListItem) => void | Promise<void>;
   onMergeItem?: (item: MailListItem) => void | Promise<void>;
+  onRespondItem: (item: MailListItem, intent: MailRespondIntent, options: { window: boolean }) => void;
+  /** Absent where nobody can be assigned, as in a personal mailbox. */
+  onAssignItemToMe?: (item: MailListItem) => void;
+  onSetItemCompletion: (item: MailListItem, completion: "done" | "open") => void;
+  currentUserId: string | null;
+  assigneeNames: (userIds: readonly string[]) => string[];
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
   /** A new search intent can supersede a pending mailbox switch before its debounce fires. */
   onNavigationStart?: () => void;
   searchDiscoveryHint?: () => void;
   onLoadMore: (href: string) => boolean | Promise<boolean>;
   onRefresh: () => Promise<void>;
+  /** The columns view (F2): a header and one line per conversation. Absent for today's rows. */
+  columns?: { shared: boolean; assignees: (userIds: readonly string[]) => MailRowAssignee[] };
+  /** Conversations done today and how many still need action; drives the done line and "All done." */
+  doneToday?: { done: number; automated: number; open: number; logHref: string } | null;
+  /** The done conversations this work list leaves out, named at its end, and where "Show done" leads. */
+  hiddenDone?: { count: number | null; more: boolean; href: string } | null;
+  /** Assigned to me: "Your turn" above "Waiting for reply", each with its count for the whole view. */
+  assignedGroups?: MailAssignedGroups | null;
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
+  const folderName = createMemo(() => mailFolderNames(locale()));
   const rowMessages = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const spamAction = (item: MailListItem) =>
     spamActionForConversation({ viewFolderId: props.viewFolderId, activeFolderIds: item.activeFolderIds, folders: props.folders });
@@ -164,9 +184,79 @@ export default function MailConversationList(props: {
   const [failedLoadHref, setFailedLoadHref] = createSignal<string | null>(null);
   let listScrollElement: HTMLDivElement | undefined;
   let requestedLoadHref: string | null = null;
+  let mailboxGeneration = 0;
+  createEffect(
+    on(
+      () => props.mailboxId,
+      () => {
+        ++mailboxGeneration;
+        cancelPrefetch();
+        quickLook.close();
+        hoverAttempt = null;
+        activeAttempt = null;
+        requestedLoadHref = null;
+        setFailedLoadHref(null);
+      },
+      { defer: true },
+    ),
+  );
   const listHref = () => buildMailListHref(requestUrl());
   const searchActive = () => Boolean(props.query.trim() || requestUrl().searchParams.has("search") || props.activeSavedViewId);
+  // Day headings follow the person's calendar; a search may sort by relevance, so it shows none.
+  /** An empty list after a day with completed work: "All done." takes the placeholder's place. */
+  const allDone = () => props.items.length === 0 && !searchActive() && (props.doneToday?.done ?? 0) > 0;
+  /** Where each of Assigned to me's groups starts; the service lists every row that needs action first. */
+  const assignedStarts = createMemo(() => {
+    const starts = new Map<number, keyof MailAssignedGroups>();
+    if (!props.assignedGroups) return starts;
+    const seen = new Set<keyof MailAssignedGroups>();
+    props.items.forEach((item, index) => {
+      const group = item.workStatus === "waiting" ? "waiting" : "needsAction";
+      if (seen.has(group)) return;
+      seen.add(group);
+      starts.set(index, group);
+    });
+    return starts;
+  });
+  const assignedHeading = (group: keyof MailAssignedGroups) => {
+    const count = new Intl.NumberFormat(locale()).format(props.assignedGroups?.[group] ?? 0);
+    return group === "waiting" ? messages().groupWaiting({ count }) : messages().groupYourTurn({ count });
+  };
+  const dayStarts = createMemo(() =>
+    searchActive() || props.assignedGroups
+      ? new Map<number, MailDayGroup>()
+      : mailDayGroupStarts(
+          props.items,
+          new Date(),
+          props.dateConfig.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+          props.dateConfig.firstDayOfWeek ?? props.dateConfig.weekStartsOn ?? 1,
+        ),
+  );
+  const dayLabel = (group: MailDayGroup) =>
+    group === "today"
+      ? messages().dayToday
+      : group === "yesterday"
+        ? messages().dayYesterday
+        : group === "week"
+          ? messages().dayWeek
+          : messages().dayEarlier;
   const healthPresentation = createMemo(() => mailboxHealthPresentation(props.mailbox, locale()));
+  /** The footer names the done conversations once the list reached its end; an uncounted list still offers the link. */
+  const hiddenDone = () => {
+    const hidden = props.hiddenDone;
+    if (!hidden || props.error || props.nextCursor || hidden.count === 0) return null;
+    return hidden;
+  };
+  const hiddenDoneText = (hidden: { count: number | null; more: boolean }) => {
+    if (props.assignedGroups) return messages().assignedDone;
+    if (hidden.count === null) return null;
+    const formatted = new Intl.NumberFormat(locale()).format(hidden.count);
+    return hidden.more ? messages().hiddenDoneMore({ formatted }) : messages().hiddenDone({ count: hidden.count, formatted });
+  };
+  /** The columns view's time column fits the longest time the rows' date context shows; the server renders the same samples. */
+  const timeColumnSizer = createMemo(() =>
+    props.columns ? mailTimeColumnSizer(mailTimeColumnSamples(props.dateConfig, new Date())) : undefined,
+  );
 
   const nextHref = () => {
     if (!props.nextCursor) return null;
@@ -178,9 +268,11 @@ export default function MailConversationList(props: {
 
   const loadNextPage = async (href: string) => {
     if (props.loading || requestedLoadHref === href) return;
+    const generation = mailboxGeneration;
     requestedLoadHref = href;
     setFailedLoadHref(null);
     const loaded = await props.onLoadMore(href);
+    if (generation !== mailboxGeneration) return;
     if (!loaded && nextHref() === href) setFailedLoadHref(href);
     if (nextHref() !== href) requestedLoadHref = null;
   };
@@ -207,6 +299,7 @@ export default function MailConversationList(props: {
         element.addEventListener("scroll", cancelPrefetch, true);
       }}
       class="flex h-full min-h-0 flex-col bg-[var(--ui-surface)]"
+      style={{ "--mail-time-samples": timeColumnSizer() }}
       data-mail-conversation-list
     >
       <h1 data-mail-list-heading ref={listHeading} tabIndex={-1} class="sr-only">
@@ -268,7 +361,9 @@ export default function MailConversationList(props: {
                 <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
                   {/* 13rem keeps the semibold folder action beside the text in a desktop list column. */}
                   <p class="min-w-0 flex-[1_1_13rem]">
-                    <strong class="font-semibold text-primary">{messages().folderOnlyHintTitle({ name: hint().folder.name })}</strong>{" "}
+                    <strong class="font-semibold text-primary">
+                      {messages().folderOnlyHintTitle({ name: folderName()(hint().folder) })}
+                    </strong>{" "}
                     {messages().folderOnlyHintDetail}
                   </p>
                   <div class="flex shrink-0 items-center gap-1">
@@ -281,7 +376,7 @@ export default function MailConversationList(props: {
                         onNavigate={props.onNavigate}
                         scroll="preserve"
                       >
-                        {messages().openFolder({ name: hint().folder.name })}
+                        {messages().openFolder({ name: folderName()(hint().folder) })}
                       </ButtonLink>
                     </Show>
                     <Tooltip.Anchor content={messages().dismissHint}>
@@ -302,7 +397,9 @@ export default function MailConversationList(props: {
           ref={(element) => {
             listScrollElement = element;
           }}
-          class="flex-1 px-2 pb-2"
+          // The columns' heading and rows share this measured width (`mail-columns`).
+          class="mail-columns-area flex-1 pb-2"
+          inset
           scrollPreserveKey={`mail-list-${props.mailboxId}`}
         >
           {props.error ? (
@@ -330,23 +427,38 @@ export default function MailConversationList(props: {
                 </ButtonLink>
               }
             />
+          ) : allDone() && props.doneToday ? (
+            <div class="mail-all-done" data-mail-all-done>
+              <span class="mail-all-done-mark" aria-hidden="true">
+                <i class="ti ti-check" />
+              </span>
+              <h2>{messages().allDoneTitle}</h2>
+              <p>{messages().allDoneText({ done: props.doneToday.done, automated: props.doneToday.automated })}</p>
+              <ButtonLink href={props.doneToday.logHref} variant="secondary" size="sm">
+                <i class="ti ti-history" aria-hidden="true" /> {messages().allDoneLog}
+              </ButtonLink>
+            </div>
           ) : props.items.length === 0 ? (
             <Placeholder
-              icon={searchActive() ? "ti ti-search" : "ti ti-mail-off"}
+              icon={searchActive() ? "ti ti-search" : props.assignedGroups ? "ti ti-mood-smile" : "ti ti-mail-off"}
               variant="panel"
               title={
                 searchActive()
                   ? messages().noMatchingMessages
-                  : props.listMode === "conversations"
-                    ? messages().noConversations
-                    : messages().noMessages
+                  : props.assignedGroups
+                    ? messages().nothingAssigned
+                    : props.listMode === "conversations"
+                      ? messages().noConversations
+                      : messages().noMessages
               }
               description={
                 searchActive()
                   ? messages().changeFilters
-                  : props.mailbox.accessScope === "assigned"
-                    ? messages().appearsOnceAssigned
-                    : messages().newMailAppears
+                  : props.assignedGroups
+                    ? messages().nothingAssignedText
+                    : props.mailbox.accessScope === "assigned"
+                      ? messages().appearsOnceAssigned
+                      : messages().newMailAppears
               }
               action={
                 searchActive() ? (
@@ -364,77 +476,170 @@ export default function MailConversationList(props: {
               }
             />
           ) : (
-            <div
-              class="flex flex-col gap-0.5"
-              style={{ opacity: props.loading ? 0.5 : undefined }}
-              role="list"
-              aria-label={
-                props.listMode === "conversations"
-                  ? messages().conversationListLabel({ title: props.title })
-                  : messages().messageListLabel({ title: props.title })
-              }
-            >
-              <For each={props.items}>
-                {(item) => (
-                  <MailConversationRow
-                    item={item}
-                    leaving={props.leavingKeys?.has(mailListRowKey(item))}
-                    requestUrl={requestUrl()}
-                    state={{
-                      selectedConversationId: props.selectedConversationId,
-                      selectedMessageId: props.selectedMessageId,
-                      selectedConversationIds: props.selectedConversationIds,
-                      selectionMode: props.selectionMode,
-                      canWrite: props.canWrite,
-                      spamAction: spamAction(item),
-                      dateConfig: props.dateConfig,
-                    }}
-                    actions={{
-                      navigate: props.onNavigateItem,
-                      toggleSelection: props.onToggleSelection,
-                      itemAction: props.onItemAction,
-                      manageTags: props.onManageTags,
-                      merge: props.onMergeItem,
-                    }}
-                    quickLook={{
-                      id: quickLook.id,
-                      anchor: quickLook.anchor,
-                      active: quickLook.active,
-                      begin: () => {
-                        cancelPrefetch();
-                        hoverAttempt = null;
-                      },
-                      // Every mouse move restarts the rest, so the card usually opens with its data.
-                      prefetch: (item, row, pointer) => {
-                        cancelPrefetch();
-                        if (props.selectionMode || item.conversationId === props.selectedConversationId) return;
-                        prefetchTimer = setTimeout(() => {
-                          prefetchTimer = undefined;
-                          // The list may have moved another row under the still mouse before its scroll event.
-                          const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
-                          if (!hit || !row.contains(hit) || !roomForQuickLook()) return;
-                          const key = attemptKey(item);
-                          if (key === hoverAttempt) return;
-                          hoverAttempt = key;
-                          quickLookData.load(item);
-                        }, QUICK_LOOK_PREFETCH_DELAY);
-                      },
-                      release: (item) => {
-                        cancelPrefetch();
-                        if (quickLook.active() !== item.conversationId) {
-                          if (hoverAttempt === attemptKey(item)) hoverAttempt = null;
-                          quickLookData.cancel(item);
-                        }
-                      },
-                    }}
-                  />
+            <>
+              <Show when={!searchActive() && props.doneToday && props.doneToday.done > 0 ? props.doneToday : null}>
+                {(done) => (
+                  <p class="mail-done-line" data-mail-done-line>
+                    <ProgressRing
+                      value={(done().done / Math.max(1, done().done + done().open)) * 100}
+                      tone="accent"
+                      label={messages().doneRing({ done: done().done, total: done().done + done().open })}
+                    />
+                    <b>{messages().doneToday({ count: done().done })}</b>
+                    <Show when={done().automated > 0}>
+                      <span>· {messages().doneAutomated({ count: done().automated })}</span>
+                    </Show>
+                  </p>
                 )}
-              </For>
-            </div>
+              </Show>
+              <Show when={props.columns}>
+                {(columns) => (
+                  <div class="mail-columns-head" classList={{ "mail-columns-personal": !columns().shared }} aria-hidden="true">
+                    <span />
+                    <span class="mail-columns-head-cells">
+                      <span>{messages().columnFrom}</span>
+                      <span>{messages().columnSubject}</span>
+                      <span class="mail-columns-head-participants">{messages().columnParticipants}</span>
+                      <Show when={columns().shared}>
+                        <span>{messages().columnAssignees}</span>
+                        <span>{messages().columnStatus}</span>
+                      </Show>
+                      <span class="mail-columns-head-time">{messages().columnTime}</span>
+                    </span>
+                  </div>
+                )}
+              </Show>
+              <div
+                class="flex flex-col gap-0.5"
+                classList={{ "mail-columns": Boolean(props.columns), "mail-columns-personal": props.columns?.shared === false }}
+                style={{ opacity: props.loading ? 0.5 : undefined }}
+                role="list"
+                aria-label={
+                  props.listMode === "conversations"
+                    ? messages().conversationListLabel({ title: props.title })
+                    : messages().messageListLabel({ title: props.title })
+                }
+              >
+                <For each={props.items}>
+                  {(item, index) => (
+                    <>
+                      <Show when={dayStarts().get(index())}>
+                        {(group) => (
+                          <div role="listitem" class="mail-day-group" data-mail-day-group={group()}>
+                            <h3 class="k2b-list-group-heading">{dayLabel(group())}</h3>
+                          </div>
+                        )}
+                      </Show>
+                      <Show when={assignedStarts().get(index())}>
+                        {(group) => (
+                          <div role="listitem" class="mail-day-group" data-mail-assigned-group={group()}>
+                            <h3 class="k2b-list-group-heading mail-assigned-group">
+                              <Show when={group() === "waiting"} fallback={<span class="mail-row-status-dot" aria-hidden="true" />}>
+                                <i class="ti ti-hourglass" aria-hidden="true" />
+                              </Show>
+                              {assignedHeading(group())}
+                            </h3>
+                          </div>
+                        )}
+                      </Show>
+                      <MailConversationRow
+                        item={item}
+                        columns={
+                          props.columns
+                            ? { assignees: props.columns.shared ? props.columns.assignees(item.assigneeUserIds) : null }
+                            : undefined
+                        }
+                        leaving={props.leavingKeys?.has(mailListRowKey(item))}
+                        requestUrl={requestUrl()}
+                        state={{
+                          selectedConversationId: props.selectedConversationId,
+                          selectedMessageId: props.selectedMessageId,
+                          selectedConversationIds: props.selectedConversationIds,
+                          selectionMode: props.selectionMode,
+                          canWrite: props.canWrite,
+                          spamAction: spamAction(item),
+                          dateConfig: props.dateConfig,
+                          currentUserId: props.currentUserId,
+                        }}
+                        actions={{
+                          navigate: props.onNavigateItem,
+                          toggleSelection: props.onToggleSelection,
+                          itemAction: props.onItemAction,
+                          manageTags: props.onManageTags,
+                          merge: props.onMergeItem,
+                          respond: props.onRespondItem,
+                          assignToMe: props.onAssignItemToMe,
+                          assigneeNames: props.assigneeNames,
+                          setCompletion: props.onSetItemCompletion,
+                        }}
+                        quickLook={{
+                          id: quickLook.id,
+                          anchor: quickLook.anchor,
+                          active: quickLook.active,
+                          begin: () => {
+                            cancelPrefetch();
+                            hoverAttempt = null;
+                          },
+                          // Every mouse move restarts the rest, so the card usually opens with its data.
+                          prefetch: (item, row, pointer) => {
+                            cancelPrefetch();
+                            if (props.selectionMode || item.conversationId === props.selectedConversationId) return;
+                            prefetchTimer = setTimeout(() => {
+                              prefetchTimer = undefined;
+                              // The list may have moved another row under the still mouse before its scroll event.
+                              const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
+                              if (!hit || !row.contains(hit) || !roomForQuickLook()) return;
+                              const key = attemptKey(item);
+                              if (key === hoverAttempt) return;
+                              hoverAttempt = key;
+                              quickLookData.load(item);
+                            }, QUICK_LOOK_PREFETCH_DELAY);
+                          },
+                          release: (item) => {
+                            cancelPrefetch();
+                            if (quickLook.active() !== item.conversationId) {
+                              if (hoverAttempt === attemptKey(item)) hoverAttempt = null;
+                              quickLookData.cancel(item);
+                            }
+                          },
+                        }}
+                      />
+                    </>
+                  )}
+                </For>
+              </div>
+            </>
           )}
-          <p class="px-2 py-3 text-xs text-muted" data-mail-list-count>
-            {messages().shown({ count: props.items.length })}
-          </p>
+          <Show when={!allDone()}>
+            <p class="px-2 py-3 text-xs text-muted" data-mail-list-count>
+              {messages().shown({ count: props.items.length })}
+            </p>
+          </Show>
+          <Show when={hiddenDone()}>
+            {(hidden) => (
+              <p class="mail-hidden-done" data-mail-hidden-done>
+                <Show when={hiddenDoneText(hidden())}>
+                  {(text) => (
+                    <>
+                      <span>{text()}</span>
+                      <span aria-hidden="true">·</span>
+                    </>
+                  )}
+                </Show>
+                <ButtonLink
+                  href={hidden().href}
+                  variant="text"
+                  size="xs"
+                  navigation="enhanced"
+                  onNavigate={props.onNavigate}
+                  scroll="preserve"
+                  data-mail-show-done
+                >
+                  {messages().showDone}
+                </ButtonLink>
+              </p>
+            )}
+          </Show>
           <Show when={nextHref()}>
             {(href) => (
               <div ref={(element) => setLoadMoreElement(element)} class="flex min-h-14 items-center justify-center py-3">

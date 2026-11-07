@@ -1,9 +1,13 @@
 import { expect, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
 import { DEFAULT_LINUX_IDENTITY_CONFIGURATION } from "../../contracts/posix";
+import { sql } from "../../runtime/clients";
 import { audit } from "../audit";
 import * as settings from "../settings";
 import { createPosixService } from "./posix";
+
+useUnitClients();
 
 test("Linux identity configuration replaces the complete admin input in its audit transaction", async () => {
   const client = Object.assign(new SQL("postgres://localhost/unused_test"), {

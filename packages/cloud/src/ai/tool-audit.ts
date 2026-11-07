@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import type { ApprovalDecisionChannel } from "../services/approvals";
 
 /**

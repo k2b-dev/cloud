@@ -6,7 +6,9 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   translations: {
     de: {
+      events: { "user.created": { title: "Benutzer erstellt", description: "Eine Benutzeridentität wurde erstmals in Cloud angelegt." } },
       types: {
+        user: { title: "Benutzer", description: "Eine Benutzeridentität in Cloud." },
         "ai.chat": {
           title: "KI-Chat",
           description: "Ein privater KI-Chat, der dir gehört.",

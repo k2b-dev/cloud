@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { PWA_CANVAS_COLORS, PWA_SCOPE } from "@k2b/cloud/contracts";
+import { PWA_ASSET_CACHE_BYTES } from "@k2b/cloud/contracts/pwa-assets";
 import { coreSettings } from "@k2b/cloud/services";
 import { appIconVersion, readAppIconSource } from "@k2b/cloud/services/branding/app-icon-source";
+import { pwaStaticAssets } from "@k2b/cloud/services/pwa-assets";
 import { CLOUD_LOGO_SVG, LOCALE_COOKIE, themeBootstrapScript } from "@k2b/cloud/shared";
 import type { Context } from "hono";
 import { shellMessages } from "../messages";
@@ -45,7 +47,7 @@ export const manifestResponse = async (c: Context) => {
     id: PWA_SCOPE,
     name,
     short_name: name,
-    start_url: PWA_SCOPE,
+    start_url: `${PWA_SCOPE}?launch`,
     scope: PWA_SCOPE,
     display: "standalone",
     background_color: PWA_CANVAS_COLORS.light,
@@ -139,7 +141,8 @@ const offlineDocument = async (): Promise<string> => {
  * navigation in the app, so an unchanged worker answers `304`.
  */
 export const serviceWorkerResponse = async (c: Context) => {
-  const body = `const OFFLINE_HTML = ${JSON.stringify(await offlineDocument())};\n${workerSource}`;
+  const [html, assets] = await Promise.all([offlineDocument(), pwaStaticAssets()]);
+  const body = `const OFFLINE_HTML = ${JSON.stringify(html)};\nconst STATIC_ASSETS = ${JSON.stringify(assets)};\nconst CACHE_BYTES = ${PWA_ASSET_CACHE_BYTES};\n${workerSource}`;
   const etag = `"${hash(body).slice(0, 32)}"`;
   const headers = { "Cache-Control": "no-cache", ETag: etag };
   if (notModified(c, etag)) return c.body(null, 304, headers);

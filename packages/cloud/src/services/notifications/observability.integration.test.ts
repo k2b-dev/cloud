@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { notificationObservability } from "./observability";
 
 /** Reported as skipped rather than silently passing when the backing service is absent. */

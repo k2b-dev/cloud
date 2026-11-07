@@ -36,8 +36,14 @@ export const swapOvertakes = (): (() => boolean) => {
 };
 
 type ViewTransitionDocument = Document & {
-  startViewTransition?: (callback: () => void | Promise<void>) => unknown;
+  startViewTransition?: (callback: () => void | Promise<void>) => { ready?: Promise<unknown>; skipTransition?: () => void } | undefined;
 };
+
+/**
+ * Longest a transition may hold back its navigation's update, measured from the start. A browser that takes longer to
+ * capture the old state, as WebKit does on a busy device, skips the transition, and the update runs without it.
+ */
+export const VIEW_TRANSITION_UPDATE_BUDGET_MS = 200;
 
 /**
  * Returns the current URL path + query, without the hash.
@@ -65,11 +71,25 @@ export const navigateTo = (href: string): void => {
 
 export const startViewTransition = (callback: () => void | Promise<void>): void => {
   const doc = document as ViewTransitionDocument;
-  if (!doc.startViewTransition) {
+  // Reduced motion shows no transition, and capturing the old state for none would still delay the navigation.
+  if (!doc.startViewTransition || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
     void callback();
     return;
   }
-  doc.startViewTransition(callback);
+  let updated = false;
+  let budget: ReturnType<typeof setTimeout> | undefined;
+  // A newer navigation skips this transition, and `ready` then rejects with an AbortError nobody waits for. The
+  // navigation itself still runs; its own errors reject `updateCallbackDone`, which stays unobserved here.
+  const transition = doc.startViewTransition(() => {
+    updated = true;
+    clearTimeout(budget);
+    return callback();
+  });
+  void transition?.ready?.catch(() => {});
+  // An animation never delays its navigation noticeably: skipping still runs the update, only without the animation.
+  budget = setTimeout(() => {
+    if (!updated) transition?.skipTransition?.();
+  }, VIEW_TRANSITION_UPDATE_BUDGET_MS);
 };
 
 const restoreRegionScroll = (snapshot: ScrollSnapshot): void => {

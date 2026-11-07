@@ -1,10 +1,11 @@
+import type { EntityListItem, ServiceAccountKind } from "@k2b/cloud/contracts/shared";
 import { groupDisplayName } from "@k2b/cloud/shared";
 import { MultiSelectInput, Select, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
-import type { PrincipalReference } from "../../../field-types/principal";
+import { type PrincipalReference, PrincipalReferenceSchema } from "../../../field-types/principal";
 import { gridsFormMessages } from "./messages";
 
-type PrincipalOption = PrincipalReference & { label: string };
+type PrincipalOption = PrincipalReference & { label: string; accountKind?: ServiceAccountKind };
 type PrincipalChoice = { value: string; label: string; icon: string };
 
 const keyOf = (value: PrincipalReference) => `${value.type}:${value.id}`;
@@ -12,22 +13,19 @@ const keyOf = (value: PrincipalReference) => `${value.type}:${value.id}`;
 const referenceOf = (value: string): PrincipalReference | null => {
   if (value.startsWith("user:")) return { type: "user", id: value.slice("user:".length) };
   if (value.startsWith("group:")) return { type: "group", id: value.slice("group:".length) };
+  if (value.startsWith("service_account:")) return { type: "service_account", id: value.slice("service_account:".length) };
   return null;
 };
 
 const referenceArray = (value: unknown): PrincipalReference[] => {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
-    if (!item || typeof item !== "object") return [];
-    const type = (item as { type?: unknown }).type;
-    const id = (item as { id?: unknown }).id;
-    return (type === "user" || type === "group") && typeof id === "string" ? [{ type, id }] : [];
+    const parsed = PrincipalReferenceSchema.safeParse(item);
+    return parsed.success ? [parsed.data] : [];
   });
 };
 
-type EntityItem =
-  | { kind: "user"; user: { id: string; uid: string; displayName: string } }
-  | { kind: "group"; group: { id: string; name: string } };
+type EntityItem = EntityListItem;
 
 const optionOf = (item: EntityItem, locale: string): PrincipalOption =>
   item.kind === "user"
@@ -36,16 +34,25 @@ const optionOf = (item: EntityItem, locale: string): PrincipalOption =>
         id: item.user.id,
         label: item.user.displayName || item.user.uid,
       }
-    : {
-        type: "group",
-        id: item.group.id,
-        label: groupDisplayName(item.group.name, locale),
-      };
+    : item.kind === "service_account"
+      ? { type: "service_account", id: item.serviceAccount.id, label: item.serviceAccount.name, accountKind: item.serviceAccount.kind }
+      : {
+          type: "group",
+          id: item.group.id,
+          label: groupDisplayName(item.group.name, locale),
+        };
 
 const choiceOf = (option: PrincipalOption): PrincipalChoice => ({
   value: keyOf(option),
   label: option.label,
-  icon: option.type === "user" ? "ti ti-user" : "ti ti-users-group",
+  icon:
+    option.type === "user"
+      ? "ti ti-user"
+      : option.type === "group"
+        ? "ti ti-users-group"
+        : option.accountKind === "agent"
+          ? "ti ti-robot"
+          : "ti ti-key",
 });
 
 export default function PrincipalInput(props: {
@@ -57,7 +64,7 @@ export default function PrincipalInput(props: {
   value: unknown;
   multi: boolean;
   disabled?: boolean;
-  types?: Array<"user" | "group">;
+  types?: Array<PrincipalReference["type"]>;
   onChange: (value: PrincipalReference[] | null) => void;
 }) {
   const locale = useLocale();
@@ -65,12 +72,15 @@ export default function PrincipalInput(props: {
   const principalGroups = () => [
     { value: "user", label: t().users },
     { value: "group", label: t().groups },
+    { value: "service_account", label: t().serviceAccounts },
   ];
-  const allowedTypes = props.types ?? ["user", "group"];
+  const allowedTypes: PrincipalReference["type"][] = props.types ?? ["user", "group", "service_account"];
+  const fallbackLabel = (type: PrincipalReference["type"]) =>
+    type === "user" ? t().user : type === "group" ? t().group : t().serviceAccount;
   const accepts = (reference: PrincipalReference) => allowedTypes.includes(reference.type);
   const initial = referenceArray(props.value).filter(accepts);
   const [knownOptions, setKnownOptions] = createSignal<PrincipalOption[]>(
-    initial.map((value) => ({ ...value, label: value.type === "user" ? t().user : t().group })),
+    initial.map((value) => ({ ...value, label: fallbackLabel(value.type) })),
   );
 
   const mergeOptions = (options: PrincipalOption[]) => {
@@ -95,11 +105,13 @@ export default function PrincipalInput(props: {
     const controller = new AbortController();
     const users = initial.filter((value) => value.type === "user").map((value) => value.id);
     const groups = initial.filter((value) => value.type === "group").map((value) => value.id);
+    const accounts = initial.filter((value) => value.type === "service_account").map((value) => value.id);
     const url = new URL("/api/accounts/entities", window.location.origin);
-    url.searchParams.set("kinds", allowedTypes.join(","));
+    url.searchParams.set("kinds", [...new Set(initial.map((value) => value.type))].join(","));
     url.searchParams.set("per_page", String(initial.length));
     if (users.length) url.searchParams.set("user_ids", users.join(","));
     if (groups.length) url.searchParams.set("group_ids", groups.join(","));
+    if (accounts.length) url.searchParams.set("service_account_ids", accounts.join(","));
     void fetchEntities(url, controller.signal).catch(() => undefined);
     onCleanup(() => controller.abort());
   });
@@ -109,12 +121,13 @@ export default function PrincipalInput(props: {
   const selectedOptions = () => {
     const options = new Map(knownOptions().map((option) => [keyOf(option), option]));
     return references().map((reference) =>
-      choiceOf(options.get(keyOf(reference)) ?? { ...reference, label: reference.type === "user" ? t().user : t().group }),
+      choiceOf(options.get(keyOf(reference)) ?? { ...reference, label: fallbackLabel(reference.type) }),
     );
   };
   const loadOptions = async (query: string, signal: AbortSignal, group: string | null): Promise<PrincipalChoice[]> => {
     if (query.trim().length < 2) return [];
-    const requestedTypes = group === "user" || group === "group" ? allowedTypes.filter((type) => type === group) : allowedTypes;
+    const requestedTypes =
+      group === "user" || group === "group" || group === "service_account" ? allowedTypes.filter((type) => type === group) : allowedTypes;
     if (requestedTypes.length === 0) return [];
     const url = new URL("/api/accounts/entities", window.location.origin);
     url.searchParams.set("search", query.trim());

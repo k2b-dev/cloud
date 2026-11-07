@@ -8,6 +8,7 @@ import MailComposerPage from "./MailComposerPage";
 import { mailComposerMessages } from "./mail-composer-messages";
 import type { MailComposerSignatures } from "./mail-composer-signature";
 import { readMailDraftSeed } from "./mail-draft-seed-store";
+import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 export default function MailDraftSeedComposerPage(props: {
   mailboxId: string;
@@ -24,13 +25,25 @@ export default function MailDraftSeedComposerPage(props: {
   canManageMailbox: boolean;
   currentUserEmail: string | null;
   calendarIntegrationAvailable: boolean;
+  /** Live dictation is set up and allowed for this person. */
+  liveDictation?: boolean;
   contactDirectory: MailContactDirectory;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
   const [seed, setSeed] = createSignal<MailDraftSeed | null>();
 
-  onMount(() => setSeed(readMailDraftSeed(localStorage, props.mailboxId, props.seedId)));
+  onMount(() => {
+    try {
+      setSeed(
+        props.currentActor.kind === "user"
+          ? readMailDraftSeed(openMailUserDraftStorage(localStorage, props.currentActor.id), props.mailboxId, props.seedId)
+          : null,
+      );
+    } catch {
+      setSeed(null);
+    }
+  });
 
   return (
     <Show
@@ -71,6 +84,7 @@ export default function MailDraftSeedComposerPage(props: {
             currentUserEmail={props.currentUserEmail}
             contactDirectory={props.contactDirectory}
             calendarIntegrationAvailable={props.calendarIntegrationAvailable}
+            liveDictation={props.liveDictation}
           />
         )}
       </Show>

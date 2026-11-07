@@ -3,17 +3,18 @@ import { person } from "../_internal/define-app.test-fixture";
 import type { RequestAuthority } from "../server";
 import { AiCreateConversationInputSchema } from "./http";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
+import { userResourceContext } from "./projects.test-fixture";
 import { __aiRoutesTest } from "./routes";
 import { aiSkills } from "./skills";
 
 afterEach(() => mock.restore());
-const subject = { type: "user" as const, userId: person.id };
+const subject = userResourceContext({ type: "user", userId: person.id });
 
 for (const authority of [
   null,
   {
     actor: { kind: "user", user: person, sessionKind: "app" },
-    accessSubject: subject,
+    accessSubject: subject.accessSubject,
     credentialKind: "session",
     scopes: [],
   } satisfies RequestAuthority,

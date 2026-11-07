@@ -25,6 +25,7 @@ Use `prompts.form` for a small form. Use `prompts.dialog` for a simple picker. U
 import {
   Button,
   confirmDiscardIfDirty,
+  type DialogTone,
   dialogCore,
   PanelDialog,
   panelDialogFixedOptions,
@@ -67,9 +68,9 @@ floating placement.
 Fields inside the group (text, textarea, number, select, multi-select,
 combobox, date, tags, color, and input-style buttons and checkbox cards) turn
 to the base surface so they stand out from the tint, disabled ones included.
-The other muted fills do the same: subtle buttons, segmented control tracks,
-filter chips, and neutral status chips. A hovered field stays on the base
-surface and shows its border; focus, invalid, and autofill states stay as they
+Neutral status chips do the same. Subtle buttons and filter chips are white
+with their own edge anyway, and a segmented control keeps its grey track. A
+hovered field stays on the base surface and shows its border; focus, invalid, and autofill states stay as they
 are. Switches, checkboxes, dropzones, notices, and code keep their own look.
 About 24 px separates a section from its neighbours. A section placed first in
 a grid row keeps its top aligned with the next column.
@@ -79,16 +80,15 @@ must keep 4.5:1 against the tint; `--k2b-text-muted` and Cloud's `text-dimmed`
 do in both themes.
 
 Content in a group should not paint a white card of its own: the group already
-groups it, and a white card hides the white fields inside. Drop the fill, as
-for list rows, or give blocks that need an edge, such as a scrolling `pre`, the
-base surface. A surface that does paint its own background starts over, and
-its fields return to the muted well: detail panels, disclosures, choice, date,
-and dropdown popovers, and Cloud's `paper`. Set `--k2b-field-surface:
-initial` on any other such surface.
+groups it. Drop the fill, as for list rows, or give blocks that need an edge,
+such as a scrolling `pre`, the base surface. Fields are white with their own
+edge on every surface (see [Field edge](/en/ui/surfaces/color#field-edge)).
+Status chips in a group take the dialog surface through
+`--k2b-field-surface`; a surface that paints its own background starts over:
+detail panels, disclosures, choice, date, and dropdown popovers, and Cloud's
+`paper`. Set `--k2b-field-surface: initial` on any other such surface.
 
-Prefer sections for every field in a body that has groups. Loose fields keep
-the muted well on the dialog surface, so loose fields above a group show two
-well colours side by side.
+Prefer sections for every field in a body that has groups.
 
 A section that is alone in the body, directly or inside a form that is the
 body's only child, has nothing to be grouped against. It drops the tint and
@@ -136,6 +136,38 @@ be direct or an accessor; the application updates it through `onValueChange`.
 Between header and body the tabs share the dialog's horizontal inset; inside
 the body or a section they start at the content edge.
 
+## Tone
+
+Set `tone` to `success`, `warning`, or `danger` when the dialog reports an
+outcome or a risk and stays a normal dialog, for example an invoice that was
+created and can now be printed or sent. The dialog frame gets a 2 px edge in
+the tone's colour, drawn inside the frame: the frame keeps its size and
+nothing in it moves. The header shows the tone's icon (a check, a warning
+triangle, or a stop sign) in the tone's colour instead of its own `icon`, and
+screen readers hear the tone ("Success", "Warning", or "Caution" from the
+inherited locale) as the dialog's description. The heading keeps exactly its
+title, so its accessible name does not change. Each edge colour keeps 3:1 against the
+dialog surface in both themes.
+
+The tone belongs to the dialog's moment, not its content: use it for the
+result of an action or for a consequential decision, not to decorate an
+ordinary editor. Prompts carry the same tone through their `variant`; see
+[Prompts](/en/ui/feedback/prompts). A toned dialog with an untoned dialog
+stacked above it shows only the upper one's frame. A `floating` panel draws
+the edge on its own frame.
+
+```tsx
+<PanelDialog tone="success">
+  <PanelDialog.Header title="Invoice RE-2026-0142 created" subtitle="Mueller Antik GmbH" close={() => close()} />
+  <PanelDialog.Body>…</PanelDialog.Body>
+  <PanelDialog.Footer>
+    <Button variant="secondary" onClick={print}>Print</Button>
+    <Button variant="secondary" onClick={send}>Send by email</Button>
+    <Button onClick={() => close()}>Done</Button>
+  </PanelDialog.Footer>
+</PanelDialog>
+```
+
 ## Close ownership
 
 Header and footer sit flat on the dialog surface: no grey band and no divider
@@ -176,8 +208,10 @@ dismissal entirely.
 ```ts
 type PanelDialogSurface = "contained" | "floating";
 
+type DialogTone = "success" | "warning" | "danger";
+
 type PanelDialogProps = {
-  children: JSX.Element; surface?: PanelDialogSurface;
+  children: JSX.Element; surface?: PanelDialogSurface; tone?: DialogTone;
 };
 
 type PanelDialogHeaderProps = {

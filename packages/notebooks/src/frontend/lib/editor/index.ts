@@ -1,24 +1,30 @@
-import { initialMarkdownDecorationRefreshExtension, pointerSelectionMarkdownRefreshExtension } from "./_lib/cursor-zone-field";
-import { basicExtensions } from "./basic";
-import { codeFontExtension } from "./code-font";
-import { dataBlocksExtension } from "./data-blocks";
-import { imageExtension } from "./images";
-import { infoBlocksExtension } from "./info-blocks";
-import { katexExtension } from "./katex";
-import { ligaturesExtension } from "./ligatures";
-import { linksExtension } from "./links";
-import { listsExtension } from "./lists";
-import { markExtension } from "./mark";
-import { markdownExtension } from "./markdown";
-import { markupExtension } from "./markup";
-import { mermaidExtension } from "./mermaid";
-import { namedBlocksExtension } from "./named-blocks";
-import { noteScroller } from "./note-scroller";
-import { searchTheme } from "./search-theme";
-import { subSupExtension } from "./sub-sup";
-import { tablesExtension } from "./tables";
+import {
+  basicExtensions,
+  codeFontExtension,
+  customDarkInit,
+  customLightInit,
+  dataBlocksExtension,
+  imageExtension,
+  infoBlocksExtension,
+  initialMarkdownDecorationRefreshExtension,
+  katexExtension,
+  ligaturesExtension,
+  linksExtension,
+  listsExtension,
+  markdownExtension,
+  markExtension,
+  markupExtension,
+  mermaidExtension,
+  namedBlocksExtension,
+  noteScroller,
+  pointerSelectionMarkdownRefreshExtension,
+  rawDarkInit,
+  rawLightInit,
+  searchTheme,
+  subSupExtension,
+  tablesExtension,
+} from "@k2b/editor/markdown";
 import { tagPillExtension } from "./tag-pill";
-import { customDarkInit, customLightInit, rawDarkInit, rawLightInit } from "./theme";
 
 export {
   basicExtensions,

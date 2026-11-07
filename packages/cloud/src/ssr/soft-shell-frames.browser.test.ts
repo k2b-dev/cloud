@@ -38,8 +38,6 @@ const measure = () => {
     ".layout-shell-content",
     "main.layout-content-main",
     ".k2b-app-workspace",
-    ".cloud-tab-bar",
-    ".cloud-tab-bar a",
   ];
   return selectors.flatMap((selector) =>
     [...document.querySelectorAll(selector)].map((element, index) => {
@@ -124,7 +122,12 @@ requestAnimationFrame(() => { window.serverFrame = window.measureShell(); });
               return { server, mounted, settled: host.measureShell() };
             });
             expect(frames.server.some((rect) => rect.selector === ".layout-rail .rail-item")).toBe(true);
-            expect(frames.server.some((rect) => rect.selector === ".cloud-tab-bar a")).toBe(true);
+            // Phones have no bottom dock: the card takes its place in the server's first frame already.
+            expect(frames.server.some((rect) => rect.selector === ".layout-header button")).toBe(true);
+            if (device.width < 768) {
+              const main = frames.server.find((rect) => rect.selector === "main.layout-content-main");
+              expect(main?.bottom).toBe(device.height);
+            }
             for (const [stage, frame] of Object.entries({ mounted: frames.mounted, settled: frames.settled })) {
               expect(frame.length, `${reload} ${stage}: element count`).toBe(frames.server.length);
               for (const [index, rect] of frame.entries()) {
@@ -145,83 +148,20 @@ requestAnimationFrame(() => { window.serverFrame = window.measureShell(); });
   }
 });
 
-describe("the phone bar follows saved rail preferences", () => {
-  test("390×844: hiding an app in Customize app bar takes it out of the bar without a reload", async () => {
-    const { context, page } = await open(phone, "/app/mail/inbox?overview=1", { attached: false });
-    try {
-      // A real origin, so the mounted shell can read its cookies.
-      const markup = await html("/app/mail/inbox?overview=1");
-      await page.route("https://shell.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }));
-      await page.goto("https://shell.example.test/app/mail/inbox?overview=1");
-      // A person who reaches Home with the keyboard before the shell loads keeps their focus when it mounts.
-      await page.locator('.cloud-tab-bar a[href="/"]').focus();
-      await page.addScriptTag({ content: client });
-      await page.evaluate(() => (window as unknown as { mountShell: () => void }).mountShell());
-      expect(
-        await page.evaluate(() => document.activeElement?.closest(".cloud-tab-bar") && document.activeElement.getAttribute("href")),
-      ).toBe("/");
-      const hrefs = () =>
-        page
-          .locator(".cloud-tab-bar a")
-          .evaluateAll((links) => links.filter((link) => link.checkVisibility()).map((link) => link.getAttribute("href")));
-      expect(await hrefs()).toEqual(["/", "/app/mail"]);
-      // Mounting keeps the server's bar, so a link focused before the shell loaded keeps its focus.
-      expect(await page.locator(".cloud-tab-bar__live").count()).toBe(0);
-      // What RailEditor's publishRailPreferences does after saving: new shell data, then the event.
-      await page.evaluate(() => {
-        const element = document.getElementById("cloud-shell-data")!;
-        const data = JSON.parse(element.textContent!);
-        data.rail = { ...data.rail, visibility: { ...data.rail.visibility, mail: false } };
-        element.textContent = JSON.stringify(data);
-        window.dispatchEvent(new CustomEvent("cloud:rail-preferences"));
-      });
-      expect(await hrefs()).toEqual(["/"]);
-    } finally {
-      await context.close();
-    }
-  });
-});
-
-describe("the phone bar follows in-page navigation", () => {
-  test("390×844: a pushState navigation moves the open item where the browser reports it", async () => {
-    const { context, page } = await open(phone, "/app/mail/inbox?overview=1", { attached: false });
-    try {
-      const markup = await html("/app/mail/inbox?overview=1");
-      await page.route("https://shell.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }));
-      await page.goto("https://shell.example.test/app/mail/inbox?overview=1");
-      await page.addScriptTag({ content: client });
-      await page.evaluate(() => (window as unknown as { mountShell: () => void }).mountShell());
-      const current = () =>
-        page
-          .locator('.cloud-tab-bar a[aria-current="page"]')
-          .evaluateAll((links) => links.filter((link) => link.checkVisibility()).map((link) => link.getAttribute("href")));
-      expect(await current()).toEqual(["/app/mail"]);
-      // What `@k2b/ssr/nav` does for an enhanced link: a history entry without a document load.
-      const reported = await page.evaluate(async () => {
-        history.pushState(null, "", "/");
-        await new Promise<void>((settle) => requestAnimationFrame(() => requestAnimationFrame(() => settle())));
-        return "navigation" in window;
-      });
-      // Without the Navigation API the browser reports nothing, and the next page load brings the bar up to date.
-      expect(await current()).toEqual(reported ? ["/"] : ["/app/mail"]);
-    } finally {
-      await context.close();
-    }
-  });
-});
-
-test("390×844: the workspace primary sits beside the phone bar and both leave the last task reachable", async () => {
+test("390×844: without a dock the workspace primary is the round button in the head and the last task stays reachable", async () => {
   const { context, page } = await open(phone, "/app/mail/inbox?list=page&head=1");
   try {
+    expect(await page.locator(".cloud-tab-bar").count()).toBe(0);
     const primary = page.getByRole("link", { name: "New task", exact: true });
     const action = await primary.boundingBox();
-    const nav = await page.locator(".cloud-tab-bar nav").boundingBox();
+    const head = await page.locator(".k2b-app-workspace__head").first().boundingBox();
     expect(action).not.toBeNull();
-    expect(nav).not.toBeNull();
-    expect(Math.abs(action!.y + action!.height / 2 - nav!.y - nav!.height / 2)).toBeLessThanOrEqual(2);
-    expect(action!.x).toBeGreaterThanOrEqual(nav!.x + nav!.width);
+    // The round button stays in the head row, as on hosts without a bottom bar; nothing floats over the list.
+    expect(Math.round(action!.width)).toBe(Math.round(action!.height));
+    expect(action!.y).toBeGreaterThanOrEqual(head!.y);
+    expect(action!.y + action!.height).toBeLessThanOrEqual(head!.y + head!.height);
     expect(action!.x + action!.width).toBeLessThanOrEqual(phone.width);
-    expect(action!.y + action!.height).toBeLessThanOrEqual(phone.height);
+    expect(await primary.evaluate((element) => getComputedStyle(element).position)).not.toBe("fixed");
     const assertLastIsClear = async () => {
       const geometry = await page
         .locator(".list-row")
@@ -231,7 +171,7 @@ test("390×844: the workspace primary sits beside the phone bar and both leave t
           return {
             top: row.top,
             bottom: row.bottom,
-            covered: [...document.querySelectorAll(".cloud-tab-bar,[data-workspace-primary]")].some((overlay) => {
+            covered: [...document.querySelectorAll("[data-workspace-primary]")].some((overlay) => {
               const box = overlay.getBoundingClientRect();
               return row.left < box.right && row.right > box.left && row.top < box.bottom && row.bottom > box.top;
             }),

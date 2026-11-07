@@ -13,17 +13,37 @@ The conversation reader quietly places meaningful collaboration and workflow cha
 
 ## Use ownership and follow-up consistently {icon="route"}
 
-- **Assignees** shows the people who are responsible for the conversation. A conversation can have up to 20 assignees. Add or remove them in **Conversation details**. When someone else assigns a conversation to you, you get a Cloud notification that opens it.
-- To add one person to several conversations, select the conversations in the list and choose **Assign**. Then choose the person. The other assignees stay assigned. The person gets one notification for the whole selection.
+- **Assignees** shows the people or agents who are responsible for the conversation. A conversation can have up to 20 assignees. Add or remove them in **Conversation details**. When someone else assigns a conversation to you, you get a Cloud notification that opens it.
+- To add one person or account to several conversations, select the conversations in the list and choose **Assign**. Then choose the person or account. The other assignees stay assigned. People get one notification for the whole selection; agents and service accounts receive no user notification.
 - The same menu offers **Assign to me**, **Remove me**, and **Remove all assignees**. Assigning yourself or removing someone sends no notification.
-- **Assigned to me** lists every conversation that you are assigned to. **Unassigned** lists the conversations that have no assignee who can still work on them.
+- In a shared mailbox, a conversation's **…** menu and its right-click menu offer **Assign to me** right below the replies. It adds you; everyone who is already assigned stays assigned.
+- **Assigned to me** lists every open conversation that you are assigned to, in two groups. **Your turn** comes first: the conversations that need action. **Waiting for reply** follows. Each heading counts the whole group, and the order stays the same while more pages load. At the end, **Show done** opens the done conversations assigned to you. **Unassigned** lists the conversations that have no assignee who can still work on them.
 - Mail sets the next step. **Needs action** means that the team must review or act. **Waiting for reply** means that a confirmed human reply was sent and the next step belongs to someone else.
-- **Mark as done** is the only follow-up state that you set by hand. Choose it when no current action remains. Clear it to open the conversation again. Mail then takes the next step from the latest verified message.
+- **Mark as done** is the only follow-up state that you set by hand. Choose it when no current action remains: the check mark in the conversation's action bar, or the conversation's **…** menu. Choose **Reopen** to open the conversation again. Mail then takes the next step from the latest verified message.
 - **Show later** removes the conversation from active work for a time and keeps its next step. Use it when the next review depends on time, not on another person. The conversation stays under **Later** until the selected time. New incoming mail makes it appear immediately.
 
 New incoming mail changes any conversation to **Needs action**. When you mark a conversation **Done** or set a **Show later** time, this also covers the messages that Mail still loads. An automation that sets **Done** or **Waiting for reply** covers only the message that started it. Other incoming mail sets **Needs action** again. A confirmed human reply or reply-all changes it to **Waiting for reply**, and a new message that you write starts there. Automatic replies, forwards, retries, failed sends, and unclear delivery results do not set a new next step.
 
 Treat **Done** as a team state, not as an email archive action. Marking a conversation done or opening it again also removes it from **Later**.
+
+## See what happened in the mailbox {icon="history"}
+
+The **Events** tab in the mailbox head shows what the team and automations did across the whole mailbox. The newest events come first, grouped by day:
+
+- assignments and removed assignees,
+- sent replies and messages, also sends that failed, reached only some recipients, or have an unclear result,
+- drafts that someone started or discarded, without their content,
+- conversations marked done or opened again,
+- internal comments, without their text,
+- what automations did, such as adding tags.
+
+Reading, flagging, and moving do not show there.
+
+Select an event to open its conversation beside the list. **Kind**, **Person**, and **Concerns me** narrow the list. **Concerns me** shows your own events, assignments that add or remove you, and events in conversations assigned to you. The filter is part of the address, so a reload or a shared link shows the same events. **Load older events** loads the next 50.
+
+A failed send names its reason. The message in the conversation shows what you can do next.
+
+Everyone who can view the whole mailbox sees the tab. People with access to assigned conversations only do not see it; the **Conversation details** show them the activity of their conversations.
 
 ## Add internal comments {icon="point"}
 
@@ -33,7 +53,7 @@ You can edit or delete your own comments for 10 minutes after posting. Nobody ca
 
 ## Use personal reminders and presence {icon="route"}
 
-**Personal reminder** is private to you. When you clear or change it, the reminders of other collaborators stay as they are. When the reminder is due, Mail creates a Cloud notification, if you still have access to the mailbox.
+The **Reminder** in conversation details is private to you. When you clear or change it, the reminders of other collaborators stay as they are. When the reminder is due, Mail creates a Cloud notification, if you still have access to the mailbox.
 
 When live presence is available, **Active collaborators** shows the people who are viewing the conversation or writing in it now. Presence is only a hint. The shared draft lease decides who can edit a draft. While someone holds it, Mail rejects draft changes from everyone else until one of them takes over.
 
@@ -49,18 +69,20 @@ You give access to the mailbox in **… → Settings → Access**. Everyone who 
 | View assigned only | Everything from View, but only in the conversations assigned to the person |
 | Edit assigned only | Reply to and act on the conversations assigned to the person, within the limits in the next section |
 
-You give access with the standard Cloud access editor to the supported people, groups, or service accounts. When you remove access, the change applies to the whole mailbox, including open live views and future actions of agents or service accounts.
+You give access with the standard Cloud access editor to the supported people, groups, agents, or service accounts. When you remove access, the change applies to the whole mailbox, including open live views and future actions of agents or service accounts.
 
 ## Give access to assigned conversations only {icon="user-check"}
 
-Choose **View assigned only** or **Edit assigned only** for a person or group in **… → Settings → Access** when they must work on selected conversations without seeing the rest of the mailbox. Examples are a freelancer or another team. In a group, each member sees the conversations that are assigned to them.
+Choose **View assigned only** or **Edit assigned only** for a person, group, or agent in **… → Settings → Access** when they must work on selected conversations without seeing the rest of the mailbox. Examples are a freelancer or another team. In a group, each member sees the conversations that are assigned to them.
 
 - They see no mail until someone with **Edit** or **Manage** access assigns a conversation to them. Then they see that conversation with all its messages, including replies that arrive later. They also see its attachments, comments, and activity.
 - The folder list shows only the folders that contain one of their conversations. Every count includes only their conversations. Search, **Assigned to me**, the Mail overview, Cloud search, Assistant, and `cld` work the same way.
 - With **Edit assigned only**, they can reply, forward, mark as read or done, move, comment, and add existing tags in their conversations. They cannot write new messages, assign anyone, create tags or folders, merge or split conversations, or change mailbox settings.
 - When an assignment ends, the conversation disappears for them immediately: from lists, open views, search, downloads, and notifications. Mail no longer carries out the replies and actions that they queued for it, including scheduled sends.
 
-A person who also has **View**, **Edit**, or **Manage** access to the whole mailbox keeps it. The access to assigned conversations only then changes nothing for them.
+A person or account that also has **View**, **Edit**, or **Manage** access to the whole mailbox keeps it. The access to assigned conversations only then changes nothing for them.
+
+Only active accounts with a current eligible mailbox access appear as assignees. Removing that access or disabling the account ends its access even while the assignment stays recorded. Account credentials remain limited by their scopes. A personal API key continues to act as its person.
 
 ## Use Contacts context {icon="address-book"}
 

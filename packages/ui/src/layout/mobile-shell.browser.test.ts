@@ -71,7 +71,7 @@ const typeSamples = () => {
   );
   void dialogCore.open(() => createComponent(PanelDialog, { get children() { return createComponent(PanelDialog.Header, { title: "Scan code" }); } }));
 };
-window.ui = { toast, dialogCore, typeSamples };
+window.ui = { toast, dialogCore, typeSamples, setScreen: (screen) => MobileShell.setScreen(document.querySelector(".k2b-mobile-shell__body"), screen) };
 `;
 const build = await Bun.build({
   entrypoints: [entry],
@@ -104,6 +104,7 @@ type Ui = {
   kept?: ToastHandle;
   dialogCore: { open: (view: () => Node) => Promise<unknown>; close: () => void };
   typeSamples: () => void;
+  setScreen: (screen: boolean) => void;
 };
 declare const ui: Ui;
 
@@ -176,6 +177,28 @@ describe("MobileShell in a phone browser", () => {
         tabBarBottom: 844,
         topEdge: null,
       });
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("a screen of its own takes the footer's place up to the bottom edge, and gives it back", async () => {
+    const page = await open();
+    try {
+      const before = await geometry(page);
+      await page.evaluate(() => ui.setScreen(true));
+      await page.waitForFunction(() => getComputedStyle(document.body).getPropertyValue("--k2b-mobile-shell-footer-height") === "0px");
+      const screen = await page.evaluate(() => ({
+        tabBar: getComputedStyle(document.querySelector(".k2b-tab-bar")!).display,
+        mainBottom: document.querySelector(".k2b-mobile-shell__main")!.getBoundingClientRect().bottom,
+      }));
+      expect(screen).toEqual({ tabBar: "none", mainBottom: 844 });
+      await page.evaluate(() => ui.setScreen(false));
+      await page.waitForFunction(
+        (height) => getComputedStyle(document.body).getPropertyValue("--k2b-mobile-shell-footer-height") === height,
+        before.footerHeight,
+      );
+      expect((await geometry(page)).footerTop).toBe(before.footerTop);
     } finally {
       await page.context().close();
     }

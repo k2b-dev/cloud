@@ -61,10 +61,18 @@ describe("MailComposerEditor", () => {
     expect(html).not.toContain("Preview");
   });
 
-  test("keeps a standalone plain-text message as a single editor", () => {
-    const html = renderEditor("plain", panes("editor", "editor"));
+  test.each([
+    ["en", "Preparing draft..."],
+    ["de", "Entwurf wird vorbereitet…"],
+  ] as const)("reserves one standalone plain editor until its browser module loads (%s)", (locale, title) => {
+    const html = renderEditor("plain", panes("editor", "editor"), false, null, { locale });
 
-    expect(html).toContain('aria-label="Message body"');
+    expect(html.match(/class="k2b-placeholder /g)).toHaveLength(1);
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain(title);
+    expect(html).not.toContain('contenteditable="true"');
+    expect(html).not.toContain('role="tablist"');
     expect(html).not.toContain("History");
     expect(html).not.toContain("Preview");
   });

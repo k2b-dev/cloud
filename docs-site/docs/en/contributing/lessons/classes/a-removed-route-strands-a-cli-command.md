@@ -1,0 +1,1 @@
+| A removed route strands a CLI command | A route disappears while a CLI command still sends requests to it. | Tests: Pulse `cli.test.ts` matches the command's actual request against the API router; `api/source-ingest.test.ts` checks write access, public IDs, body bytes, idempotency and retry headers. |

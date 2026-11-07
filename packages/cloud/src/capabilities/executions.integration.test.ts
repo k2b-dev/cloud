@@ -1,6 +1,6 @@
-import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
-import { databaseSuite, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { databaseSuite, testInfra, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import {
   listCapabilityExecutions,
   migrateCloudCapabilities,
@@ -10,12 +10,15 @@ import {
 } from "./executions";
 
 const suite = databaseSuite();
+let database: Awaited<ReturnType<typeof useMigratedDatabase>> | undefined;
+afterAll(async () => {
+  await database?.drop();
+});
+
 // Summaries and pruning cover the whole execution table, so the file owns a private database.
 beforeAll(async () => {
   if (!testInfra.database) return;
-  await useFreshDatabase("capability_executions");
-  const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
-  await runCoreSetup();
+  database = await useMigratedDatabase("capability_executions");
   await migrateCloudCapabilities();
 });
 

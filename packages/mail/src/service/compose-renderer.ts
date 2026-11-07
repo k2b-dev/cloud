@@ -1,5 +1,6 @@
 import { EMAIL_HTML_ALLOWED_ATTRIBUTES, EMAIL_HTML_SANITIZE_OPTIONS, EMAIL_HTML_TAGS, markdown } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { inspectTableStructure } from "@k2b/ui/text-editor/model";
 import { convert } from "html-to-text";
 import juice from "juice";
 import { Tokenizer, TypeGuards } from "liquidjs";
@@ -9,6 +10,7 @@ import sanitizeHtml from "sanitize-html";
 import {
   type ComposeFormattingWarning,
   composeTemplateVariables,
+  draftEditableContentInputSchema,
   MAX_COMPOSE_FORMATTING_WARNINGS,
   mailboxLogoDisplayHeight,
 } from "../contracts";
@@ -126,7 +128,10 @@ h3 { font-size: 17px; line-height: 1.35; margin: 18px 0 8px; }
 a { color: #0f766e; text-decoration: underline; }
 ul, ol { margin: 0 0 12px; padding-left: 24px; }
 table { border-collapse: collapse; margin: 12px 0; width: 100%; }
-th, td { border: 1px solid #d4d4d8; overflow-wrap: break-word; padding: 6px 8px; text-align: left; word-break: normal; }
+th, td { border: 1px solid #d4d4d8; overflow-wrap: break-word; padding: 6px 8px; word-break: normal; }
+:where(th, td) { text-align: left; }
+:where(th[align="center"], td[align="center"]) { text-align: center; }
+:where(th[align="right"], td[align="right"]) { text-align: right; }
 th a, td a, th code, td code { overflow-wrap: anywhere; }
 code { background-color: #f4f4f5; border-radius: 3px; font-family: monospace; padding: 1px 3px; }
 blockquote { border-left: 3px solid #d4d4d8; color: #52525b; margin: 0 0 12px; padding-left: 12px; }
@@ -545,7 +550,7 @@ const withoutDashSetextHeadings = (source: string): string => {
 
 /** Mail's Markdown-to-email-HTML rule shared by sending, Preview and provider draft copies. */
 export const mailMarkdownHtml = (source: string): string =>
-  sanitizeHtml(markdown.renderSync(withoutDashSetextHeadings(source), { links: "plain" }), EMAIL_HTML_SANITIZE_OPTIONS);
+  sanitizeHtml(markdown.renderSync(withoutDashSetextHeadings(source), { links: "plain", output: "email" }), EMAIL_HTML_SANITIZE_OPTIONS);
 
 /** Rewrites only block separators and quotes; every other token keeps its raw source. Null means too many spacers. */
 const withBlankLinePlaceholders = (source: string, placeholder: string, quietBefore?: number): { source: string; count: number } | null => {
@@ -720,6 +725,8 @@ export const renderComposeContent = (params: {
   signature?: string | null;
   logo?: { src: string; altText: string; displayWidth: number; pixelWidth: number; pixelHeight: number; byteLength: number } | null;
 }): Result<RenderedComposeContent> => {
+  // Enforce the draft input budget before template parsing, Markdown or CSS work.
+  if (!draftEditableContentInputSchema.shape.body.safeParse(params.body).success) return fail(composeRenderFailure("tooLarge"));
   const logoRandomPart = crypto.randomUUID().replaceAll("-", "").toUpperCase();
   const token = `MAILLOGO${logoRandomPart}`;
   const context = params.context;
@@ -764,6 +771,14 @@ export const renderComposeContent = (params: {
   }
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
+  // The editor deliberately shows cells beyond the header width. GFM's email
+  // renderer drops them, even when they contain text. Refuse the same source
+  // at the common preview/send boundary, including expanded signatures.
+  const tableProblems = inspectTableStructure(source);
+  if (tableProblems.extraCells) {
+    return fail(composeRenderFailure("tableNeedsReview"));
+  }
+  if (tableProblems.missingSeparator) return fail(composeRenderFailure("tableSeparatorNeedsReview"));
 
   try {
     const blankLineToken = `MAILBLANKLINE${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;
@@ -913,7 +928,7 @@ const sanitizedElements = (elements: HtmlElement[]): HtmlElement[] | null => {
 /**
  * Reports what the email renderer removes from HTML written into a Markdown body or template: unsupported
  * elements, attributes such as `class` and `style`, and link addresses it does not allow. Markdown images
- * are reported like `<img>`; other Markdown formatting that email leaves out, such as strikethrough, is not.
+ * are reported like `<img>`; supported Markdown formatting needs no warning.
  * The body is analyzed as written, so a draft, its preview, and a template with the same source report the
  * same list.
  */

@@ -1,9 +1,38 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { link, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudCliContext } from "@k2b/cloud/cli";
+import { reviewLocalFile } from "./local-file";
 import { submitAssistantTurn, uploadAttachment, validateLocalAttachments } from "./turn";
+
+test("a terminal attachment sends only the file checked when it was attached", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "cld-upload-test-"));
+  const previous = process.env.CLD_CONFIG;
+  try {
+    const path = join(directory, "notes.txt");
+    const config = join(directory, "cld.json");
+    process.env.CLD_CONFIG = config;
+    await writeFile(path, "attached");
+    await writeFile(config, "FAKE-CLOUD-TOKEN");
+    const review = await reviewLocalFile(path);
+    await rm(path);
+    await link(config, path);
+    const { ctx } = setup();
+    let fetched = false;
+    ctx.fetch = async () => {
+      fetched = true;
+      return Response.json({});
+    };
+    await expect(uploadAttachment(ctx, "chat", path, undefined, undefined, review)).rejects.toThrow("changed after it was checked");
+    await expect(uploadAttachment(ctx, "chat", path)).rejects.toThrow("cld's configuration is never available");
+    expect(fetched).toBeFalse();
+  } finally {
+    if (previous === undefined) delete process.env.CLD_CONFIG;
+    else process.env.CLD_CONFIG = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("chat file uploads accept images larger than the turn attachment limit", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cld-upload-test-"));
@@ -56,7 +85,7 @@ const setup = () => {
           `data: ${JSON.stringify({ v: 1, type: "turn_finished", conversationId: "chat", turnId: "turn", attempt: 1, seq: 1, status: "completed", error: null, messages: [] })}\n\n`,
         );
       if (path.endsWith("/draft")) return Response.json({ revision: 1 });
-      if (path.endsWith("/turns")) return Response.json({ turn: { id: "turn", status: "queued", modelProfileId: null } });
+      if (path.endsWith("/turns")) return Response.json({ turn: { id: "turn", status: "queued", modelId: null } });
       return Response.json({ conversation: { draft: { content: [], revision: 0 } } });
     },
     readJson: (response) => response.json(),

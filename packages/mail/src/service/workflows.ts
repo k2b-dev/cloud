@@ -12,3 +12,4 @@ export {
   updateWorkflowMetadata,
   validateWorkflow,
 } from "./workflow-definition-service";
+export { tryWorkflow } from "./workflow-try";

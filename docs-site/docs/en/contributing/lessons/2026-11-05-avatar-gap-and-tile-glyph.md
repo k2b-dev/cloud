@@ -1,0 +1,6 @@
+### Cut overlapping faces apart instead of ringing them, and centre a glyph in its tile
+
+- **What happened:** On a hovered Mail row, overlapping avatars showed a white ring that the cell cut off into a square. In the Mail details panel, an attachment's file icon sat at the left edge of its square tile.
+- **Root cause:** The faces were separated by a 2 px `box-shadow` in a fixed surface colour, which matched only one row state and painted outside the face where a clipping cell cut it. A detail-panel rule that moves the file icon to the section's text edge also targeted the tile itself, so the glyph inside it moved left as well.
+- **Error class:** Decoration that copies the host's background goes stale when the background changes; alignment meant for a slot leaks into the item inside it.
+- **Guard:** `avatar-faces-cutout.browser.test.ts` checks in light and dark, in a clipping cell with a foreign background, that the gap between faces shows that background and that nothing paints outside a face, for `AvatarFaces`, the detail presence slot, and the chat preview. `file-list.browser.test.ts` checks that each file glyph's centre lies within 0.5 px of its tile's centre while the tile stays on the text edge.

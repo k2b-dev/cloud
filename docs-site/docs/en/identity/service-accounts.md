@@ -5,10 +5,12 @@ section: Identity and access
 order: 352
 description: Give an integration or a coding agent its own principal with an OAuth client or API keys, and grant it access like a user.
 tags: [identity, service-accounts, agents, oauth, client-credentials]
-updated: 2026-09-30
+updated: 2026-10-23
 ---
 
 # Standalone service accounts and agents
+
+See [Who may do what](/en/docs/identity/access-model) for the access model.
 
 A standalone service account is a principal of its own: it has a name, it is
 not delegated by a user, and it is not bound to one application resource. Grant
@@ -21,12 +23,15 @@ Every service account has one `kind`:
 | --- | --- | --- |
 | `user_delegated` | A credential acting for one user | The delegated user's live grants |
 | `resource_bound` | A machine identity bound to one app resource | Explicit grants, capped to that resource |
-| `standalone` | An integration with its own identity | Explicit grants on the account |
-| `agent` | A standalone account that surfaces as an agent | Explicit grants on the account |
+| `standalone` | An integration with its own identity | Direct and local group grants |
+| `agent` | A standalone account that surfaces as an agent | Direct and local group grants |
 
-`agent` changes presentation only: pickers, entity search, permission editor
-rows, and the Accounts app show a robot icon and the label "Agent" instead of a
-key. It carries no extra permission and no different token rules. Use it for
+`agent` changes presentation only: pickers and the Accounts app show the label
+"Agent" instead of a key. It carries no extra permission and no different token
+rules. Every service account shows a picture, never a bare icon: a robot drawn
+from its account ID, or a photo. Administrators change a standalone account's
+picture on its page under **Accounts → Agents** or with `cld admin agents
+avatar`; see [Profile pictures](/en/docs/identity/profile-pictures). Use it for
 coding agents and other automated workers that people should recognize in
 assignee lists, activity, and audit trails.
 
@@ -37,6 +42,9 @@ The request contract does not change. A standalone account authenticates as a
 `serviceAccount.kind === "resource_bound"` before reading `appId`,
 `resourceType`, or `resourceId`. See
 [Request identity](/en/docs/identity/authentication).
+
+For Studio execution and its separate effect rights, see
+[Run Studio apps with a machine identity](/en/docs/identity/studio-machine-execution).
 
 ## Create the account
 
@@ -58,8 +66,8 @@ user or application.
 
 ## Choose the credential
 
-A standalone account can hold both credential forms at once. Agents always use
-the OAuth client; integrations choose.
+A standalone account or agent can hold both credential forms at once. The
+agent CLI creates an OAuth client; administrators can also issue an API key.
 
 | Credential | Lifetime | Revocation | Create with |
 | --- | --- | --- | --- |
@@ -67,9 +75,10 @@ the OAuth client; integrations choose.
 | API key | Static bearer until revoked or expired | Revoke the key or disable the account | `POST /api/admin/identity/service-accounts/<id>/api-keys` |
 
 The OAuth client must be confidential (`isPublic: false`). Its allowed scopes
-cap every token; an agent client created by `cld admin agents create` receives
-the same scopes as a `cld login` device session:
-`openid profile email offline_access read write`. Because the client has no
+cap every token. New agent clients created by `cld admin agents create` receive
+`openid profile email offline_access read write admin`. The `admin` scope does
+not grant an administrator role; the account's grants still decide access.
+Existing clients keep their scopes. Because the client has no
 user, `allowedProfiles`, `accessMode`, and redirect URIs are irrelevant; leave
 them empty. `GET /api/oauth/admin/clients?serviceAccountId=<id>` finds the
 clients of one account.
@@ -81,7 +90,32 @@ The access token carries `principal_type: "service_account"`,
 
 API keys are minted once; the raw token appears only in the creation response.
 Their metadata is listed and revoked like every other service-account key in the
-Accounts app and through `cld accounts service-accounts`.
+Accounts app and through `cld accounts service-accounts`. For one account,
+`GET /api/admin/identity/service-accounts/<id>/api-keys` lists them and
+`DELETE /api/admin/identity/service-accounts/<id>/api-keys/<key-id>` revokes
+one; a key of another account answers `404`. Both routes require an
+administrator.
+The Accounts key list hides automatic app runtime keys by default; **Show**
+includes them, while CLI and administrator API lists always include them.
+
+New **Full access** keys act as their account. Send `access: "full"` and omit
+`scopes`; issuance stores `read`, `write`, and `admin`. The lower of the
+account's grant and the key's scope applies on each resource. A key can also
+enter applications open to every signed-in account and create resources where
+the account is eligible.
+
+The API still accepts explicit `scopes` and stores them unchanged; an empty
+list is refused with `400`. This input is deprecated for new keys: omit it. Issuing a key never
+changes an existing key. Older limited keys retain their limits; keys with no
+scopes still receive `app_access_denied`. Create a new key and revoke the old
+one when replacing it. In the Accounts key list, **Replace** on a key marked
+"Legacy, limited" creates a key that acts as the agent, shows it once, and
+revokes the old key only when you choose to; until then both keys work.
+
+For an external model client, choose **AI models only** when creating a key
+in **Accounts → API keys → Create API key**. Grant model access to the
+machine in AI settings. See the [OpenAI-compatible API](/en/docs/ai/openai-compatible-api#connect-a-machine-account)
+for purpose, model grants, usage limits, and revocation.
 
 ## Revoke centrally
 
@@ -123,14 +157,26 @@ editor shows next to the name, and `cld spaces access list "Roadmap"` shows its
 grant with type `agent` or `service account`; see
 [Application CLI modules](/en/docs/platform/cli-modules#add-access-commands).
 
+A human group manager or installation administrator can also add an active
+standalone or agent account to a local Cloud group through Accounts, its API,
+or `cld accounts groups members add <group> --service-account <id-or-name> --yes`.
+The account inherits resource grants through the group and its local ancestors;
+removing membership or disabling the account ends that inherited access.
+This creates no Unix or FreeIPA identity. IPA groups keep their directory
+policy, and machine membership does not grant directory visibility, group
+management authority, or an installation role. See
+[Local group recipients](/en/docs/identity/authorization#local-group-recipients).
+
 Two limits apply to every request, and the lower one wins:
 
 - the account's grant on the resource, resolved through the same shared
-  resolver as for a user (direct grant, authenticated, and public grants);
+  resolver as for a user (direct grant, local group grants, authenticated, and public grants);
 - the scopes of the credential it presents. A token with only `read` cannot
   write, even with a `write` grant; a token without `read` reaches nothing.
 
-Scopes never add access, and there is no resource binding to widen or narrow.
+Scopes never add access to an existing resource, and there is no resource
+binding to widen or narrow. [Choose the credential](#choose-the-credential) lists
+the actions that need no grant.
 In Spaces an agent lists the Spaces it was granted, reads and changes items,
 claims tasks, reports progress, and comments under its own name. In Notebooks
 it lists its notebooks, reads notes, and writes notes with a `write` grant. In
@@ -155,16 +201,17 @@ In Spaces, Notebooks, Contacts, Pulse, and Venue, actions that belong to a
 person stay user-only: creating a Space, Notebook, contact book, or venue, creating and revoking API keys, managing Pulse source tokens, personal
 views such as favorites and the Spaces work overview, editing or deleting
 comments (and, in Notebooks, writing comments), writing contact notes, and
-signing up for or cancelling Venue shifts. Managing access and listing API keys
-stay user-only in Spaces, Notebooks, and Contacts.
+signing up for or cancelling Venue shifts. Managing access in Spaces, Notebooks, and Contacts follows the admin grant
+and credential scope, including for agents and standalone accounts. Listing
+API keys stays user-only in those applications.
 Managing the resource itself follows the grant: deleting a Space, Notebook, or
 contact book, renaming, importing, or exporting a contact book, administering a
 mailbox (its settings, access, sender identities, automations, and restoring it
 after deletion), deleting or clearing a Pulse base, changing a venue's
 settings, hours, shift templates, and page sections, listing a venue's API
 keys, and managing access in Pulse and Venue need an `admin` grant and a token
-with the `admin` scope. The client from `cld admin agents create` has only
-`read` and `write`.
+with the `admin` scope. New clients from `cld admin agents create` include
+that scope; existing clients keep their previous limits.
 Resource-bound API keys keep their binding and behave as before.
 
 ## Use an agent from the CLI
@@ -175,6 +222,10 @@ Resource-bound API keys keep their binding and behave as before.
 cld admin agents create "Release agent" --profile release-agent --yes
 cld admin agents ls --json
 cld admin agents rotate-secret "Release agent" --profile release-agent --yes
+cld admin agents keys create "Release agent" --name automation
+cld admin agents keys create "Release agent" --name models --models --expires 2027-01-01T00:00:00Z
+cld admin agents keys list "Release agent"
+cld admin agents keys revoke "Release agent" <key-id> --yes
 cld admin agents revoke "Release agent" --yes
 ```
 
@@ -185,6 +236,14 @@ printed and never logged; it is stored like a refresh token, in the config file
 with owner-only permissions or, with `--fd0`, in fd0. Pass `--server` when the
 profile should point at another origin than the administrator's own profile.
 
+`keys create` prints the raw API key once; store stdout securely. Omit
+`--models` for a key that acts as the account. There are no scope flags.
+`keys list` shows metadata and access: `full`, `models`, or `legacy, limited`
+when the key does not cover all of `read`, `write`, and `admin`. Use `--page`
+and `--per-page` to page through keys. `keys revoke` revokes the key only when
+it belongs to the named agent. These commands accept an account ID or
+an exact name.
+
 A profile with client credentials obtains an access token through the
 client-credentials grant on first use, caches it in the profile until shortly
 before it expires, and obtains a new one after a `401`. Nothing else changes:
@@ -192,10 +251,25 @@ the agent runs the same `cld` commands as a person, under its own identity, and
 only sees what it was granted. Read the CLI's `cld admin reference` for the
 complete command list.
 
+## Automatic machine workflows
+
+Grids can run scheduled and record-event workflows under a named machine account
+with its own base grant and an exact-workflow, revocable mandate. See
+[Machine workflow mandates](./machine-workflow-mandates.md).
+
+For independently owned file storage and explicit path grants, see
+[Files machine storage](/en/docs/identity/files-machine-storage).
+
+## Local group management by machines
+
+Standalone and agent accounts can receive a direct, revocable local group
+management grant, separate from membership. A matching token scope is also
+required. See [Machine group management](./machine-group-management.md).
+
 ## Find names through a directory share
 
 An administrator can share exact people, groups, or accounts under **Accounts →
-Service accounts → Directory access**. A machine credential with `read` can
+API keys → Directory access**. A machine credential with `read` can
 then resolve those entries through `/api/accounts/entities`. Sharing a name
 does not grant resource access or disclose group relationships. See
 [Directory shares](/en/docs/identity/directory-shares).

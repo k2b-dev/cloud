@@ -1,10 +1,11 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { type ComponentProps, createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import type MailConversationReaderComponent from "./MailConversationReader";
+import { summaryState } from "./mail-summary-fixtures";
 
 // Load once outside any test, so the cold Solid transform of the reader's source graph does not count against the
 // 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
@@ -99,6 +100,7 @@ const waitFor = async (condition: () => boolean) => {
 };
 
 const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
+  currentUserId: "Usr001",
   mailboxId: "Box001",
   requestUrl: "/app/mail/Box001?conversation=Conv01",
   canWrite: true,
@@ -125,10 +127,9 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   readingFormat: "automatic",
   theme: "light",
   calendarIntegrationAvailable: false,
-  listCollapsed: false,
+  listAway: false,
   detailsOpen: false,
   toolbarActions: ["reply"],
-  onToggleList: () => undefined,
   onToggleDetails: () => undefined,
   onToolbarActionsChange: () => undefined,
   actionPending: false,
@@ -138,6 +139,16 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   onManageTags: () => undefined,
   onMergeConversation: () => undefined,
   onReassignMessage: () => undefined,
+  automationTrace: [],
+  onUndoAutomation: () => undefined,
+  onAssignConversation: () => undefined,
+  onAssignConversationToMe: () => undefined,
+  assignment: null,
+  workStatus: null,
+  completionPending: false,
+  onSetCompletion: () => undefined,
+  respondRequest: null,
+  onRespondRequestHandled: () => undefined,
   onSplitMessage: () => undefined,
   onKeep: () => undefined,
   onStopKeeping: () => undefined,
@@ -194,11 +205,35 @@ test.skipIf(isServer)("jumping to newest reads the person's motion choice at cli
   }
 });
 
+type BodyRequestAnswer = { state: "loaded" | "requested" | "limited" | "unavailable"; waitedMs: number };
+
+/** Answers the reader's body requests with `answer` and records each request's body. */
+const mockBodyRequests = (answer: () => BodyRequestAnswer) => {
+  const originalFetch = globalThis.fetch;
+  const requests: unknown[] = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (init?.method === "POST" && url.endsWith("/api/mail/mailboxes/Box001/messages/Msg001/body-request")) {
+        requests.push(JSON.parse(String(init.body)));
+        return Response.json(answer());
+      }
+      return Response.json({ items: [] });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const restore = () => {
+    globalThis.fetch = originalFetch;
+  };
+  return { requests, restore };
+};
+
 test.skipIf(isServer)(
-  "the open reader replaces the pending body once hydration completes and offers a local refresh meanwhile",
+  "the open reader asks once for the pending body, replaces it once hydration completes and offers a local refresh meanwhile",
   async () => {
     const dom = createDomTestHarness();
     const { MailConversationReader } = modules!;
+    const bodyRequests = mockBodyRequests(() => ({ state: "requested", waitedMs: 0 }));
     const [messages, setMessages] = createSignal<MessageDetail[]>([envelopeOnly]);
     let refreshes = 0;
     let finishRefresh!: () => void;
@@ -226,8 +261,16 @@ test.skipIf(isServer)(
 
       expect(pending()?.getAttribute("role")).toBe("status");
       expect(pending()?.textContent).toContain("Body is still synchronizing");
+      expect(pending()?.textContent).toContain("Mail loads it from the mailbox first.");
       expect(refreshButton()?.textContent).toBe("Refresh message");
       expect(refreshButton()?.type).toBe("button");
+      await waitFor(() => bodyRequests.requests.length === 1);
+      expect(bodyRequests.requests).toEqual([{}]);
+
+      // A live update of the still pending message is not a new open.
+      setMessages([{ ...envelopeOnly, flags: ["\\Seen"] }]);
+      await Bun.sleep(5);
+      expect(bodyRequests.requests).toEqual([{}]);
 
       refreshButton()!.click();
       expect(refreshes).toBe(1);
@@ -237,6 +280,7 @@ test.skipIf(isServer)(
       expect(refreshes).toBe(1);
       finishRefresh();
       await waitFor(() => refreshButton()?.disabled === false);
+      expect(bodyRequests.requests).toEqual([{}, { retry: true }]);
 
       setMessages([{ ...envelopeOnly, hydrationStatus: "complete", plainText: "The numbers are attached.", sourceAvailable: true }]);
       await waitFor(() => pending() === null);
@@ -245,12 +289,182 @@ test.skipIf(isServer)(
       expect(card().textContent).not.toContain("Refresh message");
       expect(dom.root.querySelector("[data-mail-print-root]")).toBe(reader);
       expect(card().querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe("true");
+      expect(bodyRequests.requests).toHaveLength(2);
     } finally {
       dispose();
+      bodyRequests.restore();
       dom.cleanup();
     }
   },
 );
+
+test.skipIf(isServer)("closing and opening a pending message again asks for its body again", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const bodyRequests = mockBodyRequests(() => ({ state: "requested", waitedMs: 0 }));
+  const dispose = render(() => createComponent(MailConversationReader, readerProps), dom.root);
+  try {
+    const header = () => dom.root.querySelector<HTMLButtonElement>('[data-mail-message-id="Msg001"] [data-mail-message-header]')!;
+    await waitFor(() => bodyRequests.requests.length === 1);
+    header().click();
+    await waitFor(() => header().getAttribute("aria-expanded") === "false");
+    await Bun.sleep(5);
+    expect(bodyRequests.requests).toHaveLength(1);
+    header().click();
+    await waitFor(() => bodyRequests.requests.length === 2);
+    expect(bodyRequests.requests).toEqual([{}, {}]);
+  } finally {
+    dispose();
+    bodyRequests.restore();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("after the deadline the reader says it waits for the mailbox and asks again on request", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  // The server counts the wait from its first request, so 29.99 s have passed before this open, as after a reload.
+  let answer: BodyRequestAnswer = { state: "requested", waitedMs: 29_990 };
+  const bodyRequests = mockBodyRequests(() => answer);
+  let refreshes = 0;
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        onReconcile: async () => {
+          refreshes += 1;
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const card = () => dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg001"]')!;
+    const waiting = () => card().querySelector<HTMLElement>("[data-mail-body-waiting]");
+    expect(card().querySelector('.k2b-placeholder[data-state="loading"]')).not.toBeNull();
+    expect(waiting()).toBeNull();
+    await waitFor(() => waiting() !== null);
+
+    expect(waiting()?.getAttribute("role")).toBe("status");
+    expect(waiting()?.textContent).toContain("Waiting for the mailbox");
+    expect(waiting()?.textContent).toContain("The mailbox answers slowly. The body follows on its own.");
+    expect(card().querySelector('.k2b-placeholder[data-state="loading"]')).toBeNull();
+    expect(card().querySelector("[data-mail-body-state]")?.className).toContain("min-h-44");
+
+    answer = { state: "requested", waitedMs: 0 };
+    const retry = waiting()!.querySelector<HTMLButtonElement>("button")!;
+    expect(retry.textContent).toBe("Request again");
+    retry.click();
+    await waitFor(() => waiting() === null);
+    expect(bodyRequests.requests).toEqual([{}, { retry: true }]);
+    expect(refreshes).toBe(1);
+    expect(card().querySelector('.k2b-placeholder[data-state="loading"]')).not.toBeNull();
+  } finally {
+    dispose();
+    bodyRequests.restore();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("an answer to a request from before the card closed changes nothing after it opens again", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const originalFetch = globalThis.fetch;
+  const answers: Array<(answer: BodyRequestAnswer) => void> = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      if (!String(input).endsWith("/body-request")) return Response.json({ items: [] });
+      return new Promise<Response>((resolve) => answers.push((answer) => resolve(Response.json(answer))));
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const dispose = render(() => createComponent(MailConversationReader, readerProps), dom.root);
+  try {
+    const header = () => dom.root.querySelector<HTMLButtonElement>('[data-mail-message-id="Msg001"] [data-mail-message-header]')!;
+    await waitFor(() => answers.length === 1);
+    header().click();
+    await waitFor(() => header().getAttribute("aria-expanded") === "false");
+    header().click();
+    await waitFor(() => answers.length === 2);
+    answers[1]!({ state: "requested", waitedMs: 0 });
+    await Bun.sleep(5);
+    // The first open's late answer would say the deadline has passed.
+    answers[0]!({ state: "unavailable", waitedMs: 0 });
+    await Bun.sleep(5);
+    expect(dom.root.querySelector("[data-mail-body-waiting]")).toBeNull();
+    expect(dom.root.querySelector('[data-mail-body-state] .k2b-placeholder[data-state="loading"]')).not.toBeNull();
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a body no job can fetch shows the wait at once", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const bodyRequests = mockBodyRequests(() => ({ state: "unavailable", waitedMs: 0 }));
+  const dispose = render(() => createComponent(MailConversationReader, readerProps), dom.root);
+  try {
+    const waiting = () => dom.root.querySelector<HTMLElement>("[data-mail-body-waiting]");
+    await waitFor(() => waiting() !== null);
+    expect(waiting()?.textContent).toContain("Waiting for the mailbox");
+    expect(waiting()?.textContent).toContain("Mail cannot load it from the mailbox right now.");
+  } finally {
+    dispose();
+    bodyRequests.restore();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a failed body shows the error, asks for no body on open and requests it again on retry", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  let answer: BodyRequestAnswer = { state: "requested", waitedMs: 0 };
+  const bodyRequests = mockBodyRequests(() => answer);
+  const [messages, setMessages] = createSignal<MessageDetail[]>([{ ...envelopeOnly, hydrationStatus: "failed" }]);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+        onReconcile: async () => {
+          setMessages([envelopeOnly]);
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const card = () => dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg001"]')!;
+    const failed = () => card().querySelector<HTMLElement>('.k2b-placeholder[data-state="error"]');
+    expect(failed()?.getAttribute("role")).toBe("alert");
+    expect(failed()?.textContent).toContain("The message body could not be synchronized");
+    expect(failed()?.textContent).toContain("You can request it again.");
+    await Bun.sleep(5);
+    expect(bodyRequests.requests).toEqual([]);
+
+    const retry = failed()!.querySelector<HTMLButtonElement>("button")!;
+    expect(retry.textContent).toBe("Try again");
+    retry.click();
+    // The reset body loads again; its retry was its request, so the new open state asks no second time.
+    await waitFor(() => card().querySelector('.k2b-placeholder[data-state="loading"]') !== null);
+    await Bun.sleep(5);
+    expect(bodyRequests.requests).toEqual([{ retry: true }]);
+
+    // A body that cannot be fetched at all offers no retry that does nothing.
+    answer = { state: "unavailable", waitedMs: 0 };
+    setMessages([{ ...envelopeOnly, hydrationStatus: "failed" }]);
+    await waitFor(() => failed() !== null);
+    failed()!.querySelector<HTMLButtonElement>("button")!.click();
+    await waitFor(() => failed()?.querySelector("button") === null);
+    expect(failed()?.textContent).toContain("Mail cannot load it from the mailbox right now.");
+  } finally {
+    dispose();
+    bodyRequests.restore();
+    dom.cleanup();
+  }
+});
 
 test.skipIf(isServer)("an opened quoted block stays open when a live update refreshes the conversation", async () => {
   const dom = createDomTestHarness();
@@ -378,7 +592,7 @@ test.skipIf(isServer)("a saved summary is announced to screen readers, with no t
     async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method !== "PUT") return Response.json({ items: [] });
       puts.push(JSON.parse(String(init.body)));
-      return Response.json({ summary: "Numbers agreed, invoice next week.", summaryRevision: 2, conversationRevision: 1 });
+      return Response.json(summaryState({ summary: "Numbers agreed, invoice next week.", summaryRevision: 2, conversationRevision: 1 }));
     },
     { preconnect: originalFetch.preconnect },
   );
@@ -388,7 +602,7 @@ test.skipIf(isServer)("a saved summary is announced to screen readers, with no t
     () =>
       createComponent(MailConversationReader, {
         ...readerProps,
-        conversationSummary: { summary: "Numbers pending.", summaryRevision: 1, conversationRevision: 1 },
+        conversationSummary: summaryState({ summary: "Numbers pending.", summaryRevision: 1, conversationRevision: 1 }),
         onSummarySaved: async () => {
           saved = true;
         },
@@ -723,7 +937,7 @@ test.skipIf(isServer)("queued actions keep triage available while structure cont
       [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent?.trim() === label);
     expect(menuItem("Move to Trash")?.disabled).toBe(false);
     expect(menuItem("Keep")?.disabled).toBe(true);
-    expect(menuItem("Tags")?.disabled).toBe(true);
+    expect(menuItem("Manage tags")?.disabled).toBe(true);
   } finally {
     dispose();
     dom.cleanup();
@@ -1013,5 +1227,125 @@ test.skipIf(isServer)("the reply box names whom Reply writes to, also when this 
   } finally {
     dispose();
     dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("an abandoned summary form cannot write into a new A session after A → B → A", async () => {
+  setSystemTime(new Date(now));
+  const dom = createDomTestHarness();
+  const { prompts } = await import("@k2b/ui");
+  let finish = (_values: { summary: string }) => {};
+  const values = new Promise<{ summary: string }>((resolve) => {
+    finish = resolve;
+  });
+  const form = spyOn(prompts, "form").mockReturnValue(values);
+  const originalFetch = globalThis.fetch;
+  let puts = 0;
+  let saved = 0;
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "PUT") puts++;
+      return Response.json({ summary: "Old session text", summaryRevision: 2, conversationRevision: 1 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const [mailboxId, setMailboxId] = createSignal("Box001");
+  const conversationId = () => (mailboxId() === "Box001" ? "Conv01" : "Conv02");
+  const dispose = render(
+    () =>
+      createComponent(modules!.MailConversationReader, {
+        ...readerProps,
+        get mailboxId() {
+          return mailboxId();
+        },
+        get selectedConversationId() {
+          return conversationId();
+        },
+        get selectionKey() {
+          return conversationId();
+        },
+        get requestUrl() {
+          return `/app/mail/${mailboxId()}?conversation=${conversationId()}`;
+        },
+        conversationSummary: summaryState({ summary: "Numbers pending.", summaryRevision: 1, conversationRevision: 1 }),
+        onSummarySaved: async () => {
+          saved++;
+        },
+      }),
+    dom.root,
+  );
+  try {
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Edit summary"]')!.click();
+    expect(form).toHaveBeenCalledTimes(1);
+    setMailboxId("Box002");
+    setMailboxId("Box001");
+    finish({ summary: "Old session text" });
+    await Bun.sleep(0);
+    expect(puts).toBe(0);
+    expect(saved).toBe(0);
+  } finally {
+    finish({ summary: "Old session text" });
+    dispose();
+    form.mockRestore();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+    setSystemTime();
+  }
+});
+
+test.skipIf(isServer)("summary generation cancels the earlier A session after A → B → A", async () => {
+  setSystemTime(new Date(now));
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  const pending: { signal: AbortSignal | null | undefined; finish: (response: Response) => void }[] = [];
+  const saved: string[] = [];
+  const [mailboxId, setMailboxId] = createSignal("Box001");
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/body-request")) return Response.json({ state: "requested", waitedMs: 0 });
+      if (init?.method !== "POST") return Response.json({ items: [] });
+      return new Promise<Response>((finish) => pending.push({ signal: init.signal, finish }));
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const dispose = render(
+    () =>
+      createComponent(modules!.MailConversationReader, {
+        ...readerProps,
+        get mailboxId() {
+          return mailboxId();
+        },
+        conversationSummary: summaryState({ summary: "Numbers pending.", canGenerate: true }),
+        get onSummarySaved() {
+          const id = mailboxId();
+          return async () => {
+            saved.push(id);
+          };
+        },
+      }),
+    dom.root,
+  );
+  const generate = () => dom.root.querySelector<HTMLButtonElement>('button[aria-label="Write again"]')!.click();
+  try {
+    generate();
+    await waitFor(() => pending.length === 1);
+    setMailboxId("Box002");
+    setMailboxId("Box001");
+    expect(pending[0]!.signal?.aborted).toBe(true);
+    pending[0]!.finish(Response.json(summaryState({ status: "writing" })));
+    await Bun.sleep(0);
+    expect(saved).toEqual([]);
+    generate();
+    await waitFor(() => pending.length === 2);
+    expect(pending[1]!.signal?.aborted).toBe(false);
+    pending[1]!.finish(Response.json(summaryState({ status: "writing" })));
+    await waitFor(() => saved.length === 1);
+    expect(saved).toEqual(["Box001"]);
+  } finally {
+    dispose();
+    for (const request of pending) request.finish(Response.json(summaryState()));
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+    setSystemTime();
   }
 });

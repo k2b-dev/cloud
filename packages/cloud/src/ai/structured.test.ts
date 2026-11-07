@@ -1,10 +1,11 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { nessi, type Provider, StructuredOutputError } from "@k2b/nessi";
+import { nessi, type Provider, type ProviderRequest, StructuredOutputError } from "@k2b/nessi";
 import { z } from "zod";
 import { type TraceContext, trace } from "../services/logging";
+import { streamAnswer } from "./answer-stream.test-fixture";
 import { AiBackgroundCostError } from "./inference-calls";
 import * as quotaProvider from "./quota-provider";
-import { runAiStructured, selectAiWorkflowModelId, structuredProviderFailure } from "./structured";
+import { runAiStructured, structuredProviderFailure } from "./structured";
 import * as structuredRuns from "./structured-runs";
 
 describe("structured provider failures", () => {
@@ -15,11 +16,8 @@ describe("structured provider failures", () => {
       family: "openai-compatible",
       model: "test",
       capabilities: { streaming: false, tools: false, images: false, thinking: false, usage: false },
-      complete: async () => {
-        throw failure;
-      },
       stream: async function* () {
-        throw new Error("Unused stream");
+        throw failure;
       },
     } satisfies Provider;
     let caught: unknown;
@@ -46,45 +44,27 @@ describe("structured provider failures", () => {
   });
 });
 
-describe("workflow AI model selection", () => {
-  test("uses action, workflow, background, then platform default precedence", () => {
-    expect(selectAiWorkflowModelId({ requestedModelId: "action", workflowModelId: "workflow", backgroundModelId: "background" })).toBe(
-      "action",
-    );
-    expect(selectAiWorkflowModelId({ workflowModelId: "workflow", backgroundModelId: "background" })).toBe("workflow");
-    expect(selectAiWorkflowModelId({ backgroundModelId: "background" })).toBe("background");
-    expect(selectAiWorkflowModelId({})).toBeUndefined();
-  });
-
-  test("ignores blank overrides", () => {
-    expect(selectAiWorkflowModelId({ requestedModelId: " ", workflowModelId: "", backgroundModelId: "background" })).toBe("background");
-  });
-});
-
-for (const [family, reasoningEffort] of [
-  ["openai-compatible", "low"],
+for (const [type, reasoningEffort] of [
+  ["openai", "low"],
   ["gemini", "none"],
   ["anthropic", undefined],
 ] as const)
-  test(`runAiStructured preserves ${family} task reasoning at the public task boundary`, async () => {
+  test(`runAiStructured preserves ${type} task reasoning at the public task boundary`, async () => {
     const context: TraceContext = { traceId: "trace", spanId: "span", traceparent: "parent" };
     const span = spyOn(trace, "withSpan").mockImplementation(
       async <T>(_params: Parameters<typeof trace.withSpan>[0], run: (ctx: TraceContext) => Promise<T> | T) => run(context),
     );
     const record = spyOn(trace, "record").mockResolvedValue(context);
     const ledger = spyOn(structuredRuns, "safelyRecordStructuredRun").mockResolvedValue(undefined);
-    const requests: Parameters<Provider["complete"]>[0][] = [];
+    const requests: ProviderRequest[] = [];
     const provider: Provider = {
       name: "fixture",
-      family,
+      family: "openai-compatible",
       model: "fixture",
       capabilities: { streaming: false, tools: false, images: false, thinking: true, usage: true },
-      complete: async (request) => {
+      async *stream(request) {
         requests.push(request);
-        return { message: { role: "assistant", content: [{ type: "text", text: '{"answer":"ok"}' }] }, finishReason: "stop" };
-      },
-      async *stream() {
-        throw new Error("Unexpected stream");
+        yield* streamAnswer({ message: { role: "assistant", content: [{ type: "text", text: '{"answer":"ok"}' }] }, finishReason: "stop" });
       },
     };
     const accounting = spyOn(quotaProvider, "inferenceProvider").mockReturnValue(provider);
@@ -93,9 +73,74 @@ for (const [family, reasoningEffort] of [
         task: "test",
         input: "Answer",
         output: z.object({ answer: z.string() }),
+        resolveModel: async (request) => {
+          expect(request).toEqual({ class: "balanced" });
+          return {
+            model: { id: "fixture" },
+            provider,
+            profile: {
+              modelId: "fixture",
+              providerId: "fixture",
+              variantLabel: "Standard",
+              description: "",
+              icon: { kind: "provider" },
+              showInPicker: true,
+              id: "fixture",
+              label: "Fixture",
+              provider: type,
+              model: "fixture",
+              enabled: true,
+              capabilities: [],
+              dataBoundary: "hosted",
+            },
+          };
+        },
+      });
+      expect(result.output).toEqual({ answer: "ok" });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.reasoningEffort).toBe(reasoningEffort);
+    } finally {
+      accounting.mockRestore();
+      ledger.mockRestore();
+      record.mockRestore();
+      span.mockRestore();
+    }
+  });
+
+test("a provider error a structured task streams is stored with Cloud's code", async () => {
+  const context: TraceContext = { traceId: "trace", spanId: "span", traceparent: "parent" };
+  const span = spyOn(trace, "withSpan").mockImplementation(
+    async <T>(_params: Parameters<typeof trace.withSpan>[0], run: (ctx: TraceContext) => Promise<T> | T) => run(context),
+  );
+  const record = spyOn(trace, "record").mockResolvedValue(context);
+  const ledger = spyOn(structuredRuns, "safelyRecordStructuredRun").mockResolvedValue(undefined);
+  // An HTTP rejection reaches nessi as an issue; its complete() then raises nessi's ProviderError.
+  const provider: Provider = {
+    name: "fixture",
+    family: "openai-compatible",
+    model: "fixture",
+    capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: true },
+    async *stream() {
+      yield { type: "issue", issue: { kind: "provider_error", message: "AI provider request failed.", retryable: false, status: 422 } };
+    },
+  };
+  const accounting = spyOn(quotaProvider, "inferenceProvider").mockReturnValue(provider);
+  try {
+    await expect(
+      runAiStructured({
+        task: "test",
+        input: "Answer",
+        output: z.object({ answer: z.string() }),
         resolveModel: async () => ({
+          model: { id: "fixture" },
           provider,
           profile: {
+            modelId: "fixture",
+            providerId: "fixture",
+            variantLabel: "Standard",
+            description: "",
+            icon: { kind: "provider" },
+            showInPicker: true,
             id: "fixture",
             label: "Fixture",
             provider: "openai",
@@ -105,15 +150,13 @@ for (const [family, reasoningEffort] of [
             dataBoundary: "hosted",
           },
         }),
-      });
-      expect(result.output).toEqual({ answer: "ok" });
-      expect(requests).toHaveLength(1);
-      expect(requests[0]?.reasoningEffort).toBe(reasoningEffort);
-      expect(requests[0]?.disableReasoning).toBeUndefined();
-    } finally {
-      accounting.mockRestore();
-      ledger.mockRestore();
-      record.mockRestore();
-      span.mockRestore();
-    }
-  });
+      }),
+    ).rejects.toThrow("AI provider request failed.");
+    expect(ledger.mock.calls[0]?.[0]).toMatchObject({ status: "failed", errorCode: "provider_error" });
+  } finally {
+    accounting.mockRestore();
+    ledger.mockRestore();
+    record.mockRestore();
+    span.mockRestore();
+  }
+});

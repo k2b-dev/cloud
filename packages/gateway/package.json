@@ -8,10 +8,13 @@
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
-    "@k2b/cloud": "workspace:*"
+    "@k2b/cloud": "workspace:*",
+    "@k2b/ssr": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
+    "@typescript/typescript6": "catalog:",
     "hono": "catalog:",
     "typescript": "catalog:"
   },

@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { LiveViewer } from "@k2b/cloud/events";
 import type { RequestActor } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { useRegisteredTestApp } from "@k2b/cloud/services/identity/application.test-fixture";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";

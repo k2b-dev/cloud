@@ -1,6 +1,5 @@
 import {
   CAPABILITY_MAX_RESULT_BYTES,
-  type CapabilityExecutionContext,
   defineCapabilities,
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
@@ -8,10 +7,12 @@ import {
 import { FilegateError } from "@k2b/filegate";
 import { err, fail, fileIcons, ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { activityQueries } from "./activity-capabilities";
 import { apiError } from "./api/api-error";
 import { errorMessage } from "./api/messages";
 import { filesCapabilityMessages } from "./capability-messages";
 import { filesCapabilityPresentation } from "./capability-presentation";
+import { type DirectoryResult, SEARCH_WORD_LIMIT, type SearchResult } from "./contracts";
 import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
 import { fileActions, fileQueries } from "./file-capabilities";
@@ -23,6 +24,7 @@ import { FilesError, filesService } from "./service";
 const EntryReadInputSchema = z
   .object({ id: z.string().min(1).max(512).describe("Entry ID from a filesv2.entry ref or search result.") })
   .strict();
+const UserCreatedDataSchema = z.object({ userId: z.uuid(), provider: z.enum(["local", "ipa"]) }).strict();
 const EntryDataSchema = z.object({
   id: z.string(),
   base: z.object({ id: z.string(), name: z.string(), area: z.enum(["cloud", "freeipa"]) }),
@@ -36,25 +38,38 @@ const EntryDataSchema = z.object({
 });
 /** Global search fans out over every accessible base; the count of bases is the user's own membership, not user input. */
 const SEARCH_BASE_LIMIT = 10;
-const userActor = (context: CapabilityExecutionContext) => (context.actor.kind === "user" ? context.actor : null);
+/** Filegate admits two searches per root at once. */
+const SEARCH_CONCURRENCY = 2;
 const parent = (path: string) => path.split("/").slice(0, -1).join("/");
 const entryHref = (baseId: string, path: string, directory: boolean) =>
   directory ? filesUrl(baseId, path) : filesUrl(baseId, parent(path), null, path);
 
 export const filesCapabilities = defineCapabilities({
   protocolVersion: 2,
+  subscribes: {
+    "core.user.created": {
+      version: 1,
+      schema: UserCreatedDataSchema,
+      async run(envelope, context) {
+        await filesService.provisionUserHome(envelope.data.userId, { eventId: envelope.id, signal: context.signal });
+      },
+    },
+  },
   presentation: filesCapabilityPresentation,
   types: {
     entry: {
       title: "File or folder",
       description: "One file or folder in an accessible Cloud or FreeIPA storage base.",
       icon: "ti ti-folders",
+      color: "blue",
       reader: "entry.read",
+      pages: ["/app/filesv2/ref/:id"],
     },
   },
   actions: fileActions,
   queries: {
     ...fileQueries,
+    ...activityQueries,
     "entry.read": {
       title: "Read file entry",
       description: "Read the current metadata of one filesv2.entry ref after checking access.",
@@ -62,12 +77,20 @@ export const filesCapabilities = defineCapabilities({
       data: EntryDataSchema,
       openWorld: false,
       run: async (input, context) => {
-        const actor = userActor(context);
-        if (!actor) return fail(err.forbidden("File entries are read on behalf of a signed-in user."));
         try {
           const result = await filesService.entryById(capabilityCall(context), input.id);
+          const folder = parent(result.entry.path).split("/").at(-1) || result.base.name;
+          const t = filesCapabilityMessages(context.locale);
+          const resourceContext = result.entry.directory ? t.folderInFolder({ folder }) : t.fileInFolder({ folder });
           return ok({
-            refs: [{ type: ENTRY_TYPE, id: input.id, title: result.entry.name }],
+            refs: [
+              {
+                type: ENTRY_TYPE,
+                id: input.id,
+                title: result.entry.name,
+                context: resourceContext.replace(/\s+/g, " ").trim().slice(0, 200),
+              },
+            ],
             links: [{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(input.id)}` }],
             data: {
               id: input.id,
@@ -99,23 +122,31 @@ export const filesCapabilities = defineCapabilities({
         tags: [{ tag: "file", title: "Files", description: "Search file and folder names.", aliases: ["files", "folder", "folders"] }],
       },
       run: async ({ query, limit }, context) => {
-        const actor = userActor(context);
-        if (!actor) return fail(err.forbidden("File search runs on behalf of a signed-in user."));
-        const q = query.trim();
+        // Filegate takes at most eight words; the first eight still find what the rest would narrow.
+        const q = query.trim().split(/\s+/).filter(Boolean).slice(0, SEARCH_WORD_LIMIT).join(" ");
         const available = (await filesService.bases(capabilityCall(context))).items;
         const readable = available.filter((base) => base.status === "existing");
         const bases = readable.slice(0, SEARCH_BASE_LIMIT);
-        // Query failures are failures, never empty search results. Promise.all bounds fan-out to ten.
-        const pages = await Promise.all(
-          bases.map((base) =>
-            q
-              ? filesService.search(capabilityCall(context), { baseId: base.id, q })
-              : filesService.list(capabilityCall(context), { baseId: base.id }),
-          ),
-        );
-        const entries = pages.flatMap((page) =>
-          (q ? page.items : [...page.items].sort((a, b) => b.modified.localeCompare(a.modified))).map((entry) => ({ page, entry })),
-        );
+        // Query failures are failures, never empty search results. Bases usually share one Filegate root, which runs
+        // two searches at once, so two workers walk the bases instead of ten parallel requests waiting for a slot.
+        const pages: (SearchResult | DirectoryResult)[] = [];
+        let started = 0;
+        const worker = async () => {
+          while (started < bases.length) {
+            const index = started++;
+            const base = bases[index]!;
+            pages[index] = q
+              ? await filesService.search(capabilityCall(context), { baseId: base.id, q, signal: context.signal })
+              : await filesService.list(capabilityCall(context), { baseId: base.id });
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(SEARCH_CONCURRENCY, bases.length) }, worker));
+        // Each base ranks its own hits best first; taking them in turns keeps every base's best hits near the top.
+        const entries = q
+          ? Array.from({ length: Math.max(0, ...pages.map((page) => page.items.length)) }, (_, rank) =>
+              pages.flatMap((page) => (page.items[rank] ? [{ page, entry: page.items[rank] }] : [])),
+            ).flat()
+          : pages.flatMap((page) => [...page.items].sort((a, b) => b.modified.localeCompare(a.modified)).map((entry) => ({ page, entry })));
         const data = await Promise.all(
           entries.slice(0, limit).map(async ({ page, entry }) => {
             const id = await entryRef(page.base.id, entry);
@@ -156,7 +187,7 @@ export const filesCapabilities = defineCapabilities({
           omittedBases > 0 ||
           unavailableBases > 0 ||
           entries.length > limit ||
-          pages.some((page) => page.next);
+          pages.some((page) => page.next || ("truncated" in page && page.truncated));
         const summary = limited
           ? filesCapabilityMessages(context.locale).partialSearch({
               searched: bases.length,

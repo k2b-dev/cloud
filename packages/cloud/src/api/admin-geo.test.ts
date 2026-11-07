@@ -22,7 +22,7 @@ const status: GeoAdminStatus = {
     customRps: 5,
     customDailyCredits: 3000,
     monthlyCredits: 90000,
-    personDailyCredits: 300,
+
     unreadable: [],
     changedAt: null,
     changedBy: null,
@@ -42,7 +42,7 @@ const usage: GeoAdminUsage = {
   today: { period: "2026-10-20", used: 0, allowance: 3000, resetsAt: "2026-10-20T22:00:00.000Z" },
   shares: [],
   routeCostOverruns: 0,
-  peopleAtLimit: 0,
+
   timezone: "Europe/Berlin",
 };
 const calls: string[] = [];
@@ -57,7 +57,7 @@ const service = {
   removeKey: async () => (calls.push("removeKey"), status),
   saveBudget: async () => {
     calls.push("saveBudget");
-    throw new GeoAdminError({ code: "geo_budget_invalid", errors: { personDailyCredits: { code: "above_monthly", max: 90000 } } }, 400);
+    throw new GeoAdminError({ code: "geo_budget_invalid", errors: { monthlyCredits: { code: "not_whole_number" } } }, 400);
   },
 };
 const withScopes =
@@ -72,7 +72,7 @@ const requests = [
   ["/usage", "GET", undefined],
   ["/key", "PUT", { apiKey: "secret-value" }],
   ["/key", "DELETE", undefined],
-  ["/budget", "PUT", { plan: "free", customRps: 5, customDailyCredits: 3000, monthlyCredits: 9, personDailyCredits: 1 }],
+  ["/budget", "PUT", { plan: "free", customRps: 5, customDailyCredits: 3000, monthlyCredits: 9 }],
 ] as const;
 const send = (app: ReturnType<typeof createAdminGeoRoutes>, [path, method, body]: (typeof requests)[number]) =>
   app.request(path, {
@@ -120,7 +120,7 @@ test("refusals return stable codes and never echo the key", async () => {
   const budget = await send(app, requests[4]);
   expect(await budget.json()).toEqual({
     code: "geo_budget_invalid",
-    errors: { personDailyCredits: { code: "above_monthly", max: 90000 } },
+    errors: { monthlyCredits: { code: "not_whole_number" } },
   });
   const unknownField = await app.request("/key", {
     method: "PUT",

@@ -62,6 +62,7 @@ function fakeAuth(options: { online?: boolean; stored?: Binding; account?: () =>
     act: noop,
     decideChange: noop,
     decide: noop,
+    recheck: noop,
     revoke: noop,
     syncPush: noop,
     forget: noop,
@@ -117,7 +118,7 @@ test("the card's info button shows the account this device signs in", async () =
   expect(values[5]).toContain("2026");
   expect(dialog.querySelector('[aria-label="Copy username"]')).not.toBeNull();
   expect(dialog.querySelector('[role="status"]')).toBeNull();
-  [...dialog.querySelectorAll<HTMLButtonElement>("header button")].find((b) => b.getAttribute("aria-label") === "Close")!.click();
+  [...dialog.querySelectorAll<HTMLButtonElement>("header button")].find((b) => b.textContent === "Close")!.click();
   await Bun.sleep(40);
   expect(document.querySelector("dialog[open]")).toBeNull();
 });

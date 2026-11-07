@@ -2,6 +2,7 @@ import { cliAmbiguityText, formatCliCandidates, localizeCloudCliText } from "@k2
 import type { MutationResult, PermissionLevel, User } from "@k2b/cloud/contracts";
 import {
   AccessEntrySchema,
+  AccessMemberSchema,
   createPagination,
   ErrorResponseSchema,
   GrantAccessSchema,
@@ -11,11 +12,14 @@ import {
   PaginationResponseSchema,
   parsePagination,
   ServiceAccountCredentialSchema,
+  toAccessMember,
   UpdateAccessSchema,
 } from "@k2b/cloud/contracts";
+import { GEO_SNAPSHOT_MAX_BYTES, GEO_SNAPSHOT_MAX_METADATA_BYTES } from "@k2b/cloud/contracts/geo-snapshot";
 import {
   type AuthContext,
   auth,
+  expectUserBackedActor,
   getDateConfig,
   getLocale,
   hasPermission,
@@ -31,6 +35,7 @@ import {
 import { isStandaloneServiceAccountKind, settings, settingsService } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import {
+  GeoMapSnapshotAssetError,
   type GotenbergConfig,
   GotenbergRenderError,
   getGotenbergConfig,
@@ -40,15 +45,27 @@ import {
   MarkdownPdfError,
 } from "@k2b/cloud/services/pdf";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { toBase64 } from "@k2b/cloud/shared-text";
+import { dates, err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { noteDocumentSessionSchema, noteGenerationSchema } from "@/lib/document-session";
 import { NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY } from "@/lib/note-delete-permission";
 import { NOTE_PATH_MAX_LENGTH, NOTE_PATH_MAX_SEGMENTS } from "@/lib/note-path";
+import { PAGE_TEMPLATE_LIMIT, PAGE_TEMPLATE_NAME_MAX_LENGTH } from "@/lib/page-templates";
 import { encodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES } from "@/lib/pdf-omissions";
 import { PRESENTATION_MODES } from "@/lib/presentation-mode";
+import { QUERY_MAX_BLOCKS } from "@/lib/query-blocks";
+import { SIDEBAR_MAX_LEVELS, SIDEBAR_MAX_WINDOW, SIDEBAR_PAGE_SIZE } from "@/lib/sidebar-tree";
+import {
+  decodeTableActionIntent,
+  decodeTableFocus,
+  NoteTableActionErrorSchema,
+  NoteTableActionRequestSchema,
+  NoteTableActionResponseSchema,
+} from "@/lib/table-actions";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
 import { InvalidActivityCursorError, NOTEBOOK_ACTIVITY_ACTIONS } from "../service/activity";
@@ -60,6 +77,8 @@ import { notePdfPhaseMs, renderNotePdf } from "../service/note-pdf";
 import type { Notebook } from "../service/notebooks";
 import type { Note, NotePlacement } from "../service/notes";
 import { loadEditableNoteRouteData } from "../service/route-state";
+import { resolveNotebookNoteIds } from "../service/tree-levels";
+import { annotationResourceRoutes, annotationRoutes } from "./annotations";
 import { notebookApiMessages } from "./messages";
 import {
   ResourceShortIdSchema,
@@ -145,6 +164,7 @@ const NoteSchema = z.object({
 
 const NoteWithContentSchema = NoteSchema.extend({
   yjsSnapshot: z.string().nullable().describe("Base64-encoded Yjs snapshot"),
+  yjsRestoreRevision: z.string(),
 });
 
 const NoteCommentSchema = z.object({
@@ -207,7 +227,7 @@ const NoteEditBlockFields = {
 
 const NoteEditOperationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("set-content"), content: z.string() }),
-  z.object({ kind: z.literal("append"), content: z.string() }),
+  z.object({ kind: z.literal("append"), content: z.string(), separator: z.literal("none").optional() }),
   z.object({ kind: z.literal("prepend"), content: z.string() }),
   z.object({ kind: z.literal("insert-before-line"), line: z.number().int().positive(), content: z.string() }),
   z.object({ kind: z.literal("insert-after-line"), line: z.number().int().positive(), content: z.string() }),
@@ -259,27 +279,101 @@ const TagSummarySchema = z.object({
   count: z.number().int(),
 });
 
+const SidebarNoteSchema = z
+  .object({
+    id: ResourceShortIdSchema,
+    parentId: ResourceShortIdSchema.nullable(),
+    title: z.string(),
+    position: z.number().int(),
+    hasChildren: z.boolean(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    lockedAt: z.string().nullable(),
+  })
+  .meta({ id: "SidebarNote" });
+
+const SidebarLevelSchema = z.object({
+  parentId: ResourceShortIdSchema.nullable().describe("The level's parent note; null is the top level"),
+  total: z.number().int().nonnegative().describe("Notes in the level"),
+  offset: z.number().int().nonnegative(),
+  items: z.array(SidebarNoteSchema),
+});
+
+const SIDEBAR_LEVEL_PATTERN = /^([0-9A-Za-z]{6})?:(\d{1,6}):(\d{1,4})$/;
+
+const SidebarLevelsQuerySchema = z.object({
+  sort: z.enum(["title", "updated", "created"]).default("title"),
+  levels: z.string().max(2000).optional().describe("Comma-separated `<parent>:<offset>:<limit>` windows; an empty parent is the top level"),
+  reveal: ResourceShortIdSchema.optional().describe("A note whose way down from the top level is returned as well"),
+  book: z.literal("1").optional().describe("Book's reading order: the start page leads the top level wherever it lives"),
+});
+
+const SidebarListQuerySchema = z.object({
+  view: z.enum(["favorites", "recents", "tag"]),
+  tag: z.string().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+  limit: z.coerce.number().int().min(1).max(SIDEBAR_MAX_WINDOW).default(SIDEBAR_PAGE_SIZE),
+});
+
+const PageTemplateIdSchema = z
+  .string()
+  .regex(/^(?:[0-9A-Za-z]{6}|[a-z]+(?:-[a-z]+)+)$/)
+  .describe("Page template ID: a 6-character ID of the notebook's own template, or a built-in ID such as meeting-notes");
+
+const PageTemplateSchema = z.object({
+  id: PageTemplateIdSchema,
+  name: z.string(),
+  description: z.string().nullable().describe("What a built-in template holds; own templates have none"),
+  icon: z.string(),
+  builtIn: z.boolean(),
+  updatedAt: z.string().nullable(),
+});
+
+const PageTemplateNameSchema = z.string().trim().min(1).max(PAGE_TEMPLATE_NAME_MAX_LENGTH);
+
+const CreatePageTemplateSchema = z.object({
+  name: PageTemplateNameSchema,
+  noteId: ResourceShortIdSchema.describe("The page of this notebook whose current text becomes the template"),
+});
+
+const UpdatePageTemplateSchema = z
+  .object({
+    name: PageTemplateNameSchema.optional(),
+    noteId: ResourceShortIdSchema.optional().describe("Replace the template's text with this page's current text"),
+  })
+  .refine((value) => value.name !== undefined || value.noteId !== undefined, { message: "Pass a name, a noteId, or both" });
+
+const PageTemplateDraftSchema = z.object({
+  name: z.string(),
+  contentMd: z.string().describe("The template's Markdown with {{date}} and {{author}} filled in for the caller"),
+});
+
 const WorkspaceStateSchema = z.object({
   notebook: NotebookSchema,
-  tree: z.array(NoteTreeNodeSchema),
   favoriteNoteIds: z.array(ResourceShortIdSchema),
   tags: z.array(TagSummarySchema),
   attachmentCount: z.number().int().nonnegative(),
+  pageTemplates: z.array(PageTemplateSchema),
 });
 
-const CreateNoteSchema = z.object({
-  parentId: ResourceShortIdSchema.optional().describe("Parent note ID"),
-  parentPath: z
-    .string()
-    .max(NOTE_PATH_MAX_LENGTH)
-    .optional()
-    .describe(
-      "Parent path, relative to parentId or the notebook root. When present, a title that already exists among the target siblings is refused with 409.",
-    ),
-  createParents: z.boolean().optional().describe("Create missing parentPath segments as notes titled after the segment"),
-  position: z.number().int().min(0).optional().describe("0-based place among siblings; placing switches this level to hand order."),
-  contentMd: z.string().optional(),
-});
+const CreateNoteSchema = z
+  .object({
+    parentId: ResourceShortIdSchema.optional().describe("Parent note ID"),
+    parentPath: z
+      .string()
+      .max(NOTE_PATH_MAX_LENGTH)
+      .optional()
+      .describe(
+        "Parent path, relative to parentId or the notebook root. When present, a title that already exists among the target siblings is refused with 409.",
+      ),
+    createParents: z.boolean().optional().describe("Create missing parentPath segments as notes titled after the segment"),
+    position: z.number().int().min(0).optional().describe("0-based place among siblings; placing switches this level to hand order."),
+    contentMd: z.string().optional(),
+    templateId: PageTemplateIdSchema.optional().describe("Start from this page template instead of contentMd"),
+  })
+  .refine((value) => value.contentMd === undefined || value.templateId === undefined, {
+    message: "Pass either contentMd or templateId",
+  });
 
 const NoteOutlineEntrySchema = z.object({
   id: ResourceShortIdSchema,
@@ -297,6 +391,19 @@ const NoteOutlineQuerySchema = z.object({
 
 const ResolveNotePathQuerySchema = z.object({
   path: z.string().max(NOTE_PATH_MAX_LENGTH).describe("Notebook-relative address path such as `operations/backup`"),
+});
+
+/** Title matches offered at once; the person narrows them by typing. */
+const NOTE_TITLES_MAX = 50;
+
+const NoteTitlesQuerySchema = z.object({
+  q: z.string().max(500).optional().describe("Text the title contains; without it the last changed notes"),
+  limit: z.coerce.number().int().min(1).max(NOTE_TITLES_MAX).optional().describe(`At most ${NOTE_TITLES_MAX}, the default`),
+});
+
+const NoteTitlesSchema = z.object({
+  data: z.array(z.object({ id: z.string(), title: z.string() })),
+  hasMore: z.boolean().describe("More titles match than the response holds"),
 });
 
 const ResolvedNoteSchema = NoteSchema.extend({
@@ -394,6 +501,10 @@ const GraphEdgeSchema = z.object({
 const NoteGraphSchema = z.object({
   nodes: z.array(GraphNodeSchema),
   edges: z.array(GraphEdgeSchema),
+  scope: z
+    .object({ around: ResourceShortIdSchema, total: z.number().int().nonnegative() })
+    .optional()
+    .describe("Present when the graph holds only the notes around one note of a large notebook"),
 });
 
 const FavoriteNoteSchema = z.object({
@@ -498,7 +609,6 @@ const EditableNoteRouteStateSchema = z.object({
   note: z.object({
     id: ResourceShortIdSchema,
     title: z.string(),
-    yjsSnapshot: z.string().nullable(),
     historyIncomplete: z.boolean(),
     contentMd: z.string().nullable(),
     createdAt: z.string(),
@@ -527,16 +637,13 @@ const RouteStateQuerySchema = z.object({
   href: z.string().min(1).max(500),
 });
 
-const BookTreeSchema: z.ZodType<{ id: string; title: string; children: z.infer<typeof BookTreeSchema>[] }> = z
-  .lazy(() => z.object({ id: ResourceShortIdSchema, title: z.string(), children: z.array(BookTreeSchema) }))
-  .meta({ id: "BookTreeNode" });
 const BookSnapshotSchema = z.object({
   href: z.string(),
   html: z.string().nullable(),
   title: z.string().nullable(),
   notebookName: z.string(),
   selectedNoteId: ResourceShortIdSchema.nullable(),
-  tree: z.array(BookTreeSchema),
+  hasNotes: z.boolean().describe("Whether the notebook has any page; the navigation reads its levels from /tree/levels"),
   tags: z.array(TagSummarySchema),
   activeTag: z.string().optional(),
   canWrite: z.boolean(),
@@ -547,7 +654,16 @@ const BookSnapshotSchema = z.object({
 // Same request envelope budget as a collaboration sync payload. Preview never
 // persists the draft; query block/row work is further bounded by its parser.
 const BLOCK_PREVIEW_MAX_REQUEST_BYTES = 8_000_000;
-const BlockPreviewInputSchema = z.object({ markdown: z.string().max(BLOCK_PREVIEW_MAX_REQUEST_BYTES).optional() }).strict();
+const BlockPreviewInputSchema = z
+  .object({
+    markdown: z.string().max(BLOCK_PREVIEW_MAX_REQUEST_BYTES).optional(),
+    pages: z
+      .record(z.string().regex(/^\d{1,7}$/), z.number().int().min(1).max(1_000_000))
+      .refine((pages) => Object.keys(pages).length <= QUERY_MAX_BLOCKS)
+      .optional()
+      .describe("The page each query shows, by the query's one-based source line; other queries show their first page"),
+  })
+  .strict();
 const BlockPreviewSchema = z.object({
   markdown: z.string(),
   blocks: z.array(z.object({ line: z.number().int().positive(), html: z.string() })),
@@ -662,7 +778,7 @@ const fallbackServiceMessage = (locale: string, status: number, current: string)
 };
 
 const localizeResult = <T>(result: Result<T>, locale: string): Result<T> => {
-  if (result.ok) return result;
+  if (result.ok || result.error.code === "LAST_MANAGER") return result;
   if (result.error.code === "NOTEBOOK_SNAPSHOT_TARGET_BLOCKED") {
     return fail({ ...result.error, message: notebookServiceMessages.resolve([locale]).t.snapshotTargetBlocked });
   }
@@ -693,6 +809,16 @@ const getNotebookActivityActor = (c: Context<AuthContext>) => {
   return actor.kind === "user"
     ? ({ kind: "user", id: actor.user.id } as const)
     : ({ kind: "service_account", id: actor.serviceAccount.id } as const);
+};
+
+/** `{{date}}` and `{{author}}` for the caller: their day in their time zone, and their name. */
+const pageTemplatePlaceholders = (c: Context<AuthContext>) => {
+  const actor = c.get("actor");
+  const person = getUserBackedActor(c);
+  return {
+    date: dates.formatDateKey(new Date(), getDateConfig(c)),
+    author: person ? person.displayName || person.uid : actor.kind === "service_account" ? actor.serviceAccount.name : "",
+  };
 };
 
 const requireUserBackedActor = (c: Context<AuthContext>): Result<User> => {
@@ -943,6 +1069,7 @@ const notePdfDisposition = (filename: string): string => {
 
 const notePdfError = (error: unknown, locale?: string): { message: string; status: 413 | 422 | 502 | 503 | 504 } => {
   const { t } = notebookApiMessages.resolve(locale ? [locale] : []);
+  if (error instanceof GeoMapSnapshotAssetError) return { message: t.pdfFailed, status: error.code === "too_large" ? 413 : 422 };
   if (error instanceof MarkdownPdfError) {
     const message =
       error.reason === "css_too_large"
@@ -999,6 +1126,69 @@ const notePdfAdmissions = new WeakMap<
   { notebook: Notebook; note: Note; raw: Request; config: GotenbergConfig; maxAttachmentBytes: number }
 >();
 
+const renderNotePdfResponse = async (c: Context<AuthContext>, input: z.infer<typeof NotePdfRequestSchema>, mapSnapshots?: FormData) => {
+  const { notebook, note, raw, config, maxAttachmentBytes } = notePdfAdmissions.get(c)!;
+  const notebookId = notebook.id;
+
+  if (byteLength(input.markdown) > MARKDOWN_PDF_MAX_MARKDOWN_BYTES) {
+    return respond(c, { ok: false, error: messages(c).markdownTooLarge, status: 413 });
+  }
+  if (input.customCss && byteLength(input.customCss) > MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES) {
+    return respond(c, { ok: false, error: messages(c).cssTooLarge, status: 413 });
+  }
+  if (activeNotePdfConversions >= NOTE_PDF_MAX_ACTIVE_CONVERSIONS) {
+    return respond(c, { ok: false, error: messages(c).pdfBusy, status: 503 });
+  }
+
+  activeNotePdfConversions += 1;
+  // The body was read under the default idle timeout, so a slow upload cannot keep the socket open longer.
+  // Preparation and rendering each get one phase, plus 10 s for assembly and cleanup.
+  c.req.raw = raw;
+  try {
+    setRequestTimeout(c, Math.min(REQUEST_IDLE_TIMEOUT_MAX_SECONDS, Math.ceil((2 * notePdfPhaseMs(config) + 10_000) / 1000)));
+    const filename = notePdfFilename(note.title);
+    // Query blocks resolve for the same access subject checkNotebookAccess authorized.
+    const subject = getNotebookAccessSubject(c);
+    const rendered = await renderNotePdf(
+      {
+        markdown: input.markdown,
+        publicOrigin: publicCloudOrigin(await settings.get<string>("app.url")),
+        title: note.title.trim() || filename.slice(0, -".pdf".length),
+        templateId: input.templateId,
+        customCss: input.customCss,
+        notebookId,
+        notebookShortId: notebook.shortId,
+        noteId: note.id,
+        noteShortId: note.shortId,
+        userId: subject.userId,
+        serviceAccountId: subject.serviceAccountId,
+        // checkNotebookAccess admitted a resource-bound account only for this notebook.
+        boundNotebookId: subject.serviceAccount?.kind === "resource_bound" ? notebookId : null,
+        bypassAccess: subject.user ? hasRole(subject.user, "admin") : false,
+        locale: getLocale(c),
+      },
+      { config, maxAttachmentBytes, signal: raw.signal, mapSnapshots },
+    );
+    const omissionsHeader = encodeNotePdfOmissions(rendered.omissions);
+    const buffer = new Uint8Array(rendered.pdf);
+    return new Response(new Blob([buffer], { type: "application/pdf" }), {
+      headers: {
+        "Cache-Control": "private, no-store",
+        "Content-Disposition": notePdfDisposition(filename),
+        "Content-Type": "application/pdf",
+        "X-Content-Type-Options": "nosniff",
+        ...(omissionsHeader ? { [NOTE_PDF_OMISSIONS_HEADER]: omissionsHeader } : {}),
+      },
+    });
+  } catch (cause) {
+    const projected = notePdfError(cause, getLocale(c));
+    return respond(c, { ok: false, error: projected.message, status: projected.status });
+  } finally {
+    activeNotePdfConversions -= 1;
+    setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+  }
+};
+
 const app = new Hono<AuthContext>()
   .use("/", middleware.noTransform())
   .use("/search", middleware.noTransform())
@@ -1010,6 +1200,8 @@ const app = new Hono<AuthContext>()
   .use(rateLimit())
   .use(auth.requireRole("authenticated"))
   .route("/templates", templatesRoutes)
+  .route("/annotations", annotationResourceRoutes)
+  .route("/notes/:noteId/annotations", annotationRoutes)
 
   // ==========================
   // NOTEBOOKS
@@ -1381,25 +1573,116 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const userResult = requireUserBackedActor(c);
       if (!userResult.ok) return respond(c, userResult);
-      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      const { notebook, permission, error } = await checkNotebookAccess(c, c.req.param("id")!);
       if (error) return error;
 
-      const [tree, favoriteRows, tags, attachmentCount] = await Promise.all([
-        notebooksService.note.getTree({ notebookId: notebook!.id, locale: getLocale(c) }),
+      const [favoriteRows, tags, attachmentCount, pageTemplates] = await Promise.all([
         notebooksService.note.favorites.listIds({ notebookId: notebook!.id, userId: userResult.data.id }),
         notebooksService.tag.listForNotebook({ notebookId: notebook!.id }),
         notebooksService.attachment.count({ notebookId: notebook!.id }),
+        notebooksService.pageTemplate.list({ notebookId: notebook!.id, permission, locale: getLocale(c) }),
       ]);
+      if (!pageTemplates.ok) return respond(c, pageTemplates);
       return respond(
         c,
         ok({
           notebook: toPublicNotebook(notebook!),
-          tree: await toPublicNoteTree(tree, notebook!.shortId),
           favoriteNoteIds: favoriteRows.map((row) => row.noteId),
           tags,
           attachmentCount,
+          pageTemplates: pageTemplates.data,
         }),
       );
+    },
+  )
+
+  // The sidebar's open levels, a window of rows each, without Markdown
+  .get(
+    "/:id/tree/levels",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Get sidebar tree levels",
+      description:
+        "Returns windows of note rows for the requested levels, in the order on screen, and optionally the levels that lead to one note. Each request is bounded by the levels it names.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.object({ levels: z.array(SidebarLevelSchema), expandedIds: z.array(ResourceShortIdSchema) }), "Tree levels"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid levels"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
+      },
+    }),
+    v("query", SidebarLevelsQuerySchema),
+    async (c) => {
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      const query = c.req.valid("query");
+      const requested = (query.levels ? query.levels.split(",") : []).map((entry) => SIDEBAR_LEVEL_PATTERN.exec(entry));
+      if (requested.length > SIDEBAR_MAX_LEVELS || requested.some((match) => !match || Number(match[3]) > SIDEBAR_MAX_WINDOW)) {
+        return respond(c, fail(err.badInput(messages(c).requestInvalid)));
+      }
+      const parentShortIds = requested.map((match) => match![1]).filter((id): id is string => !!id);
+      const parents = await resolveNotebookNoteIds(notebook!.id, [...parentShortIds, ...(query.reveal ? [query.reveal] : [])]);
+      const scope = {
+        notebookId: notebook!.id,
+        sort: query.sort,
+        locale: getLocale(c),
+        homepageId: notebook!.homepageNoteId,
+        book: query.book === "1",
+      };
+      const known = requested.filter((match) => !match![1] || parents.has(match![1]));
+      const [levels, revealed] = await Promise.all([
+        notebooksService.note.sidebar.levels({
+          ...scope,
+          levels: known.map((match) => ({
+            parentId: match![1] ? parents.get(match![1])! : null,
+            offset: Number(match![2]),
+            limit: Number(match![3]),
+          })),
+        }),
+        query.reveal && parents.has(query.reveal)
+          ? notebooksService.note.sidebar.reveal({ ...scope, noteId: parents.get(query.reveal)! })
+          : Promise.resolve(null),
+      ]);
+      // A parent that left the notebook answers as an empty level, so the sidebar drops it.
+      const gone = requested
+        .filter((match) => match![1] && !parents.has(match![1]))
+        .map((match) => ({ parentId: match![1]!, total: 0, offset: 0, items: [] }));
+      return respond(c, ok({ levels: [...levels, ...gone, ...(revealed?.levels ?? [])], expandedIds: revealed?.expandedIds ?? [] }));
+    },
+  )
+
+  // The notes of a sidebar filter, newest first
+  .get(
+    "/:id/tree/list",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "List notes of a sidebar filter",
+      description: "Returns a page of the person's favorites, the most recently changed notes, or the notes with one tag, newest first.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.object({
+            total: z.number().int().nonnegative(),
+            offset: z.number().int().nonnegative(),
+            items: z.array(SidebarNoteSchema.extend({ tags: z.array(z.string()) })),
+          }),
+          "Filtered notes",
+        ),
+        400: jsonResponse(ErrorResponseSchema, "Invalid filter"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
+      },
+    }),
+    v("query", SidebarListQuerySchema),
+    async (c) => {
+      const userResult = requireUserBackedActor(c);
+      if (!userResult.ok) return respond(c, userResult);
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      const query = c.req.valid("query");
+      if (query.view === "tag" && !query.tag) return respond(c, fail(err.badInput(messages(c).requestInvalid)));
+      return respond(c, ok(await notebooksService.note.sidebar.list({ notebookId: notebook!.id, userId: userResult.data.id, ...query })));
     },
   )
 
@@ -1433,6 +1716,12 @@ const app = new Hono<AuthContext>()
         locale: getLocale(c),
         origin: new URL(c.req.url).origin,
         href: c.req.valid("query").href,
+        geoCaller: {
+          cookie: c.req.header("Cookie"),
+          authorization: c.req.header("Authorization"),
+          locale: getLocale(c),
+          signal: c.req.raw.signal,
+        },
       });
       c.header("Cache-Control", "private, no-store");
       if (result.kind === "denied") return respond(c, fail(err.forbidden(messages(c).accessDenied)));
@@ -1443,6 +1732,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/:id/notes/:noteId/block-preview",
+    auth.readOnly,
     describeRoute({
       tags: ["Notebooks"],
       summary: "Preview query and contents blocks",
@@ -1461,7 +1751,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const actor = requireUserBackedActor(c);
       if (!actor.ok) return respond(c, actor);
-      const { markdown } = c.req.valid("json");
+      const { markdown, pages } = c.req.valid("json");
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, markdown === undefined ? "read" : "write");
       if (error) return error;
       const result = await loadBookBlockPreview({
@@ -1472,6 +1762,13 @@ const app = new Hono<AuthContext>()
         bypassAccess: hasRole(actor.data, "admin"),
         locale: getLocale(c),
         ...(markdown === undefined ? {} : { markdown }),
+        geoCaller: {
+          cookie: c.req.header("Cookie"),
+          authorization: c.req.header("Authorization"),
+          locale: getLocale(c),
+          signal: c.req.raw.signal,
+        },
+        pages: new Map(Object.entries(pages ?? {}).map(([line, page]) => [Number(line), page])),
       });
       c.header("Cache-Control", "private, no-store");
       if (result.kind === "denied") return respond(c, fail(err.forbidden(messages(c).accessDenied)));
@@ -1623,24 +1920,54 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
       if (error) return error;
       const query = c.req.valid("query");
-      const entries = await notebooksService.note.paths.outline({ notebookId: notebook!.id });
       const offset = (query.page - 1) * query.per_page;
-      const pageEntries = entries.slice(offset, offset + query.per_page);
-      const shortIds = new Map(entries.map((entry) => [entry.id, entry.shortId]));
+      const result = await notebooksService.note.paths.outline({
+        notebookId: notebook!.id,
+        pagination: { limit: query.per_page, offset },
+      });
       return respond(
         c,
         ok({
-          data: pageEntries.map((entry) => ({
+          data: result.items.map((entry) => ({
             id: entry.shortId,
-            parentId: entry.parentId ? (shortIds.get(entry.parentId) ?? null) : null,
+            parentId: entry.parentShortId,
             title: entry.title,
             position: entry.position,
             hasChildren: entry.hasChildren,
             updatedAt: entry.updatedAt,
           })),
-          pagination: createPagination({ page: query.page, perPage: query.per_page, offset }, entries.length),
+          pagination: createPagination({ page: query.page, perPage: query.per_page, offset }, result.total),
         }),
       );
+    },
+  )
+
+  // Notes by title, for pickers
+  .get(
+    "/:id/titles",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Find notes by title",
+      description:
+        "List the notes whose title contains the text, without content: the exact title first, then titles that start with it. Without text, the last changed notes.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(NoteTitlesSchema, "Matching notes"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
+      },
+    }),
+    v("query", NoteTitlesQuerySchema),
+    async (c) => {
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      const query = c.req.valid("query");
+      const result = await notebooksService.note.findByTitle({
+        notebookId: notebook!.id,
+        query: query.q ?? "",
+        limit: query.limit ?? NOTE_TITLES_MAX,
+      });
+      return respond(c, ok({ data: result.notes.map((note) => ({ id: note.shortId, title: note.title })), hasMore: result.hasMore }));
     },
   )
 
@@ -1673,6 +2000,165 @@ const app = new Hono<AuthContext>()
   )
 
   // Create Note
+  .get(
+    "/:id/page-templates",
+    describeRoute({
+      tags: ["Notebooks:Page templates"],
+      summary: "List page templates",
+      description: `The notebook's own templates by name (at most ${PAGE_TEMPLATE_LIMIT}), then the built-in ones, in the caller's language.`,
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.array(PageTemplateSchema), "Page templates"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
+      },
+    }),
+    async (c) => {
+      const { notebook, permission, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      return respond(c, notebooksService.pageTemplate.list({ notebookId: notebook!.id, permission, locale: getLocale(c) }));
+    },
+  )
+
+  .post(
+    "/:id/page-templates",
+    describeRoute({
+      tags: ["Notebooks:Page templates"],
+      summary: "Save a page as a template",
+      description: "Saves the page's current text as a template of its notebook. Names are unique per notebook, ignoring case.",
+      ...requiresAuth,
+      responses: {
+        201: jsonResponse(PageTemplateSchema, "Saved template"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid name or page too long"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook or page not found"),
+        409: jsonResponse(ErrorResponseSchema, "Name taken or template limit reached"),
+      },
+    }),
+    v("json", CreatePageTemplateSchema),
+    async (c) => {
+      const { notebook, permission, error } = await checkNotebookAccess(c, c.req.param("id")!, "write");
+      if (error) return error;
+      const body = c.req.valid("json");
+      const note = await requireNoteInNotebook(notebook!.id, body.noteId, getLocale(c));
+      if (!note.ok) return respond(c, note);
+      return respond(
+        c,
+        notebooksService.pageTemplate.create({
+          notebookId: notebook!.id,
+          permission,
+          name: body.name,
+          noteId: note.data.id,
+          createdBy: getUserBackedActor(c)?.id ?? null,
+          locale: getLocale(c),
+        }),
+        201,
+      );
+    },
+  )
+
+  .patch(
+    "/:id/page-templates/:templateId",
+    describeRoute({
+      tags: ["Notebooks:Page templates"],
+      summary: "Rename a page template or replace its text",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(PageTemplateSchema, "Changed template"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid name, page too long, or a built-in template"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook, template or page not found"),
+        409: jsonResponse(ErrorResponseSchema, "Name taken"),
+      },
+    }),
+    v("param", z.object({ id: z.string(), templateId: PageTemplateIdSchema })),
+    v("json", UpdatePageTemplateSchema),
+    async (c) => {
+      const { notebook, permission, error } = await checkNotebookAccess(c, c.req.param("id")!, "write");
+      if (error) return error;
+      const body = c.req.valid("json");
+      let noteId: string | undefined;
+      if (body.noteId) {
+        const note = await requireNoteInNotebook(notebook!.id, body.noteId, getLocale(c));
+        if (!note.ok) return respond(c, note);
+        noteId = note.data.id;
+      }
+      return respond(
+        c,
+        notebooksService.pageTemplate.update({
+          notebookId: notebook!.id,
+          templateId: c.req.valid("param").templateId,
+          permission,
+          name: body.name,
+          noteId,
+          locale: getLocale(c),
+        }),
+      );
+    },
+  )
+
+  .delete(
+    "/:id/page-templates/:templateId",
+    describeRoute({
+      tags: ["Notebooks:Page templates"],
+      summary: "Delete a page template",
+      description: "Pages made from the template stay as they are.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(MessageResponseSchema, "Deleted"),
+        400: jsonResponse(ErrorResponseSchema, "A built-in template"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook or template not found"),
+      },
+    }),
+    v("param", z.object({ id: z.string(), templateId: PageTemplateIdSchema })),
+    async (c) => {
+      const { notebook, permission, error } = await checkNotebookAccess(c, c.req.param("id")!, "write");
+      if (error) return error;
+      return respondMessage(
+        c,
+        notebooksService.pageTemplate.remove({
+          notebookId: notebook!.id,
+          templateId: c.req.valid("param").templateId,
+          permission,
+          locale: getLocale(c),
+        }),
+        messages(c).pageTemplateDeleted,
+      );
+    },
+  )
+
+  .get(
+    "/:id/page-templates/:templateId/draft",
+    describeRoute({
+      tags: ["Notebooks:Page templates"],
+      summary: "Fill in a page template",
+      description:
+        "The template's Markdown with {{date}} (YYYY-MM-DD in the caller's time zone) and {{author}} filled in, as a new page from it would start. Needs write access.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(PageTemplateDraftSchema, "Filled-in template"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook or template not found"),
+      },
+    }),
+    v("param", z.object({ id: z.string(), templateId: PageTemplateIdSchema })),
+    async (c) => {
+      const { notebook, permission, error } = await checkNotebookAccess(c, c.req.param("id")!, "write");
+      if (error) return error;
+      return respond(
+        c,
+        notebooksService.pageTemplate.draft({
+          notebookId: notebook!.id,
+          templateId: c.req.valid("param").templateId,
+          permission,
+          placeholders: pageTemplatePlaceholders(c),
+          locale: getLocale(c),
+        }),
+      );
+    },
+  )
+
   .post(
     "/:id/notes",
     describeRoute({
@@ -1694,9 +2180,21 @@ const app = new Hono<AuthContext>()
       let notebookId = c.req.param("id")!;
       const data = c.req.valid("json");
 
-      const { notebook, user, error } = await checkNotebookAccess(c, notebookId, "write");
+      const { notebook, user, permission, error } = await checkNotebookAccess(c, notebookId, "write");
       if (error) return error;
       notebookId = notebook!.id;
+      let contentMd = data.contentMd;
+      if (data.templateId) {
+        const drafted = await notebooksService.pageTemplate.draft({
+          notebookId,
+          templateId: data.templateId,
+          permission,
+          placeholders: pageTemplatePlaceholders(c),
+          locale: getLocale(c),
+        });
+        if (!drafted.ok) return respond(c, drafted);
+        contentMd = drafted.data.contentMd;
+      }
       let parentId = data.parentId;
       if (parentId) {
         const parentResult = await requireNoteInNotebook(notebookId, parentId, getLocale(c));
@@ -1709,7 +2207,7 @@ const app = new Hono<AuthContext>()
           parentId: parentId ?? null,
           parentPath: data.parentPath,
           createParents: data.createParents ?? false,
-          contentMd: data.contentMd,
+          contentMd,
           position: data.position,
           creatorId: user?.id ?? null,
           actor: getNotebookActivityActor(c),
@@ -1723,7 +2221,7 @@ const app = new Hono<AuthContext>()
         c,
         toPublicNoteResult(
           notebooksService.note.create({
-            data: { contentMd: data.contentMd, position: data.position, notebookId, parentId },
+            data: { contentMd, position: data.position, notebookId, parentId },
             creatorId: user?.id ?? null,
             actor: getNotebookActivityActor(c),
             dateConfig: getDateConfig(c),
@@ -1731,6 +2229,48 @@ const app = new Hono<AuthContext>()
           notebook!.shortId,
           getLocale(c),
         ),
+      );
+    },
+  )
+
+  .get(
+    "/:id/notes/:noteId/document",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Authorize device input and read the committed note snapshot",
+      description:
+        "Checks the rendered account, current write access and document generation. Older device generations may only be opened for explicit recovery.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(noteDocumentSessionSchema, "Committed Yjs snapshot and current generation"),
+        403: jsonResponse(ErrorResponseSchema, "Account or access changed"),
+        404: jsonResponse(ErrorResponseSchema, "Note not found"),
+      },
+    }),
+    v("query", z.object({ expectedUserId: z.uuid(), generation: noteGenerationSchema.optional() })),
+    async (c) => {
+      c.header("Cache-Control", "no-store");
+      const actor = c.get("actor");
+      if (actor?.kind !== "user" || actor.user.id !== c.req.valid("query").expectedUserId)
+        return respond(c, fail(err.forbidden(messages(c).accessDenied)));
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, "write");
+      if (error) return error;
+      const note = await requireNoteInNotebook(notebook!.id, c.req.param("noteId")!, getLocale(c));
+      if (!note.ok) return respond(c, note);
+      const stored = await notebooksService.note.getAnchoredYjsState({ noteId: note.data.id, signal: c.req.raw.signal });
+      if (!stored?.yjsState) return respond(c, fail(err.notFound(messages(c).noteNotFound)));
+      return respond(
+        c,
+        ok({
+          generation: stored.restoreRevision,
+          mode:
+            c.req.valid("query").generation && c.req.valid("query").generation !== stored.restoreRevision
+              ? ("recovery" as const)
+              : ("current" as const),
+          historyIncomplete: stored.historyIncomplete,
+          locked: !!note.data.lockedAt,
+          durable: { state: toBase64(stored.yjsState), cursor: stored.streamCursor },
+        }),
       );
     },
   )
@@ -1988,13 +2528,14 @@ const app = new Hono<AuthContext>()
       const note = await notebooksService.note.getCurrentWithContent({ id: noteCheck.data.id });
       if (!note) return respond(c, fail(notFoundMessage(messages(c).noteNotFound)));
       const [data] = await toPublicNotes([note], notebook!.shortId);
-      return respond(c, ok({ ...data!, yjsSnapshot: note.yjsSnapshot }));
+      return respond(c, ok({ ...data!, yjsSnapshot: note.yjsSnapshot, yjsRestoreRevision: note.yjsRestoreRevision }));
     },
   )
 
   // Render the current browser-side Markdown snapshot without persisting it.
   .post(
     "/:id/notes/:noteId/pdf",
+    auth.readOnly,
     describeRoute({
       tags: ["Notebooks"],
       summary: "Download note as PDF",
@@ -2008,7 +2549,7 @@ const app = new Hono<AuthContext>()
             [NOTE_PDF_OMISSIONS_HEADER]: {
               required: false,
               description:
-                "Optional base64url (no padding) of UTF-8 JSON {items:[{code,kind,label}],more}, at most 2048 bytes. Items list what the PDF could not include; each is also marked in place in the PDF. The more count is the number of items that did not fit in the header. Absent when nothing is omitted.",
+                "Optional base64url (no padding) of UTF-8 JSON {items:[{code,kind,label}],more}, at most 2048 bytes. Items list what the PDF could not include. Map images fall back to linked, attributed pin and route lists; other omitted content is marked in place. The more count is the number of items that did not fit in the header. Absent when nothing is omitted.",
               schema: { type: "string", maxLength: NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES, pattern: "^[A-Za-z0-9_-]+$" },
             },
           },
@@ -2047,67 +2588,90 @@ const app = new Hono<AuthContext>()
     }),
     v("json", NotePdfRequestSchema),
     async (c) => {
-      const { notebook, note, raw, config, maxAttachmentBytes } = notePdfAdmissions.get(c)!;
-      const notebookId = notebook.id;
-      const input = c.req.valid("json");
+      return renderNotePdfResponse(c, c.req.valid("json"));
+    },
+  )
 
-      if (byteLength(input.markdown) > MARKDOWN_PDF_MAX_MARKDOWN_BYTES) {
-        return respond(c, { ok: false, error: messages(c).markdownTooLarge, status: 413 });
-      }
-      if (input.customCss && byteLength(input.customCss) > MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES) {
-        return respond(c, { ok: false, error: messages(c).cssTooLarge, status: 413 });
-      }
-      if (activeNotePdfConversions >= NOTE_PDF_MAX_ACTIVE_CONVERSIONS) {
-        return respond(c, { ok: false, error: messages(c).pdfBusy, status: 503 });
-      }
-
-      activeNotePdfConversions += 1;
-      // The body was read under the default idle timeout, so a slow upload cannot keep the socket open longer.
-      // Preparation and rendering each get one phase, plus 10 s for assembly and cleanup.
-      c.req.raw = raw;
+  .post(
+    "/:id/notes/:noteId/pdf/maps",
+    auth.readOnly,
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Download note PDF with browser map images",
+      requestBody: {
+        required: true,
+        content: {
+          "multipart/form-data": {
+            schema: {
+              type: "object",
+              required: ["input", "mapSnapshots"],
+              properties: {
+                input: {
+                  type: "string",
+                  description: "JSON PDF input: markdown, optional templateId and customCss. Exports the current caller snapshot.",
+                },
+                mapSnapshots: {
+                  type: "string",
+                  description: "JSON manifest bound to the Markdown revision and each complete GeoDocument fingerprint.",
+                },
+              },
+              additionalProperties: {
+                type: "string",
+                format: "binary",
+                description: "PNG part named map-snapshot-line-N for each validated map block.",
+              },
+            },
+          },
+        },
+      },
+      ...requiresAuth,
+      description:
+        "Export the caller's current Markdown snapshot with validated binary map images. Images are presentation input for this caller only and are never stored. The same note read permission and PDF conversion limits apply.",
+      responses: {
+        200: { description: "Generated PDF", content: { "application/pdf": { schema: { type: "string", format: "binary" } } } },
+        400: jsonResponse(ErrorResponseSchema, "Invalid map upload"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        413: jsonResponse(ErrorResponseSchema, "Input too large"),
+      },
+    }),
+    // Admit the caller before reading the body. The conversion slot is taken only after parsing,
+    // so a slowly streamed body cannot hold a slot that no conversion uses.
+    async (c, next) => {
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      const note = await requireNoteInNotebook(notebook!.id, c.req.param("noteId")!, getLocale(c));
+      if (!note.ok) return respond(c, note);
+      const [config, maxAttachmentBytes] = await Promise.all([getGotenbergConfig(), getMaxAttachmentSizeBytes()]);
+      // bodyLimit replaces c.req.raw for a chunked body. Bun's idle timer and the client's abort signal
+      // belong to the original, socket-backed request, so the handler uses it for both.
+      notePdfAdmissions.set(c, { notebook: notebook!, note: note.data, raw: c.req.raw, config, maxAttachmentBytes });
       try {
-        setRequestTimeout(c, Math.min(REQUEST_IDLE_TIMEOUT_MAX_SECONDS, Math.ceil((2 * notePdfPhaseMs(config) + 10_000) / 1000)));
-        const filename = notePdfFilename(note.title);
-        // Query blocks resolve for the same access subject checkNotebookAccess authorized.
-        const subject = getNotebookAccessSubject(c);
-        const rendered = await renderNotePdf(
-          {
-            markdown: input.markdown,
-            publicOrigin: publicCloudOrigin(await settings.get<string>("app.url")),
-            title: note.title.trim() || filename.slice(0, -".pdf".length),
-            templateId: input.templateId,
-            customCss: input.customCss,
-            notebookId,
-            notebookShortId: notebook.shortId,
-            noteId: note.id,
-            noteShortId: note.shortId,
-            userId: subject.userId,
-            serviceAccountId: subject.serviceAccountId,
-            // checkNotebookAccess admitted a resource-bound account only for this notebook.
-            boundNotebookId: subject.serviceAccount?.kind === "resource_bound" ? notebookId : null,
-            bypassAccess: subject.user ? hasRole(subject.user, "admin") : false,
-            locale: getLocale(c),
-          },
-          { config, maxAttachmentBytes, signal: raw.signal },
-        );
-        const omissionsHeader = encodeNotePdfOmissions(rendered.omissions);
-        const buffer = new Uint8Array(rendered.pdf);
-        return new Response(new Blob([buffer], { type: "application/pdf" }), {
-          headers: {
-            "Cache-Control": "private, no-store",
-            "Content-Disposition": notePdfDisposition(filename),
-            "Content-Type": "application/pdf",
-            "X-Content-Type-Options": "nosniff",
-            ...(omissionsHeader ? { [NOTE_PDF_OMISSIONS_HEADER]: omissionsHeader } : {}),
-          },
-        });
-      } catch (cause) {
-        const projected = notePdfError(cause, getLocale(c));
-        return respond(c, { ok: false, error: projected.message, status: projected.status });
+        await next();
       } finally {
-        activeNotePdfConversions -= 1;
-        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+        notePdfAdmissions.delete(c);
       }
+    },
+    bodyLimit({
+      maxSize: GEO_SNAPSHOT_MAX_BYTES + NOTE_PDF_MAX_REQUEST_BYTES + GEO_SNAPSHOT_MAX_METADATA_BYTES,
+      onError: (c) => respond(c, { ok: false, error: messages(c).requestTooLarge, status: 413 }),
+    }),
+    async (c) => {
+      let form: FormData;
+      try {
+        form = await c.req.raw.formData();
+      } catch {
+        return respond(c, { ok: false, error: messages(c).pdfMarkdownInvalid, status: 400 });
+      }
+      const fields = form.getAll("input");
+      if (fields.length !== 1 || typeof fields[0] !== "string" || byteLength(fields[0]) > NOTE_PDF_MAX_REQUEST_BYTES)
+        return respond(c, { ok: false, error: messages(c).pdfMarkdownInvalid, status: 400 });
+      let input: z.infer<typeof NotePdfRequestSchema>;
+      try {
+        input = NotePdfRequestSchema.parse(JSON.parse(fields[0]));
+      } catch {
+        return respond(c, { ok: false, error: messages(c).pdfMarkdownInvalid, status: 400 });
+      }
+      return renderNotePdfResponse(c, input, form);
     },
   )
 
@@ -2149,6 +2713,75 @@ const app = new Hono<AuthContext>()
       if (!result.ok) return respond(c, localizeMutationResult(result, getLocale(c)));
       const [note] = await toPublicNotes([result.data.note], notebook!.shortId);
       return respond(c, ok({ ...result.data, note: note! }));
+    },
+  )
+
+  // Apply an anchored table action; the live stream carries the resulting text.
+  .post(
+    "/:id/notes/:noteId/table-action",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Apply a table action",
+      description:
+        "Capture character anchors synchronously, then flush all unconfirmed edits before sending. The restore revision must match the current note. Rejected actions preserve text. Never automatically retry a conflict or an unknown publication outcome. An accepted persistence failure includes the published cursor and undo receipt; recover through the live stream rather than resubmitting. actionId correlates undo; it is not an idempotency key.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(NoteTableActionResponseSchema, "Applied or unchanged; current text arrives through the live stream"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid action transport"),
+        403: jsonResponse(z.union([ErrorResponseSchema, NoteTableActionErrorSchema]), "Access denied or locked"),
+        404: jsonResponse(z.union([ErrorResponseSchema, NoteTableActionErrorSchema]), "Note not found in this notebook"),
+        409: jsonResponse(NoteTableActionErrorSchema, "Rejected action; inspect current state before another action"),
+        413: jsonResponse(NoteTableActionErrorSchema, "Content limit exceeded; existing text preserved"),
+        500: jsonResponse(NoteTableActionErrorSchema, "Accepted persistence failure or unknown publication outcome; do not resubmit"),
+      },
+    }),
+    v("json", NoteTableActionRequestSchema),
+    async (c) => {
+      const { notebook, user, permission, error } = await checkNotebookAccess(c, c.req.param("id")!, "write");
+      if (error) return error;
+      const noteCheck = await requireNoteInNotebook(notebook!.id, c.req.param("noteId")!, getLocale(c));
+      if (!noteCheck.ok) return respond(c, noteCheck);
+      const data = c.req.valid("json");
+      const result = await notebooksService.note.tableAction({
+        notebookId: notebook!.id,
+        noteId: noteCheck.data.id,
+        permission,
+        intent: decodeTableActionIntent(data.intent),
+        focus: data.focus ? decodeTableFocus(data.focus) : undefined,
+        caret: data.caret,
+        restoreRevision: data.restoreRevision,
+        actionId: data.actionId,
+        createdBy: user?.id ?? null,
+        actor: getNotebookActivityActor(c),
+        signal: c.req.raw.signal,
+      });
+      if (result.ok) return respond(c, ok(result.data));
+      const t = messages(c);
+      const copy = {
+        table_action_access_denied: t.accessDenied,
+        table_action_note_not_found: t.noteNotFound,
+        table_action_locked: t.tableActionLocked,
+        table_action_history_incomplete: t.tableActionHistoryIncomplete,
+        table_action_restore_conflict: t.tableActionRestoreConflict,
+        table_target_rejected: t.tableTargetRejected,
+        table_action_conflict: t.tableActionConflict,
+        table_action_too_large: t.tableActionTooLarge,
+        table_action_sync_failed: t.tableActionSyncFailed,
+        table_action_persist_failed: t.tableActionPersistFailed,
+        table_action_outcome_unknown: t.tableActionOutcomeUnknown,
+      };
+      return respond(
+        c,
+        { ok: false, error: copy[result.code], code: result.code, status: result.status },
+        {
+          errorDetails: {
+            accepted: result.accepted,
+            cursor: result.cursor,
+            receipt: result.receipt,
+            focus: result.focus,
+          },
+        },
+      );
     },
   )
 
@@ -2525,7 +3158,7 @@ const app = new Hono<AuthContext>()
       return respond(
         c,
         toPublicNoteResult(
-          notebooksService.note.versions.restore({ noteId, yjsSnapshot, createdBy: user?.id ?? null }),
+          notebooksService.note.versions.restore({ noteId, yjsSnapshot, createdBy: user?.id ?? null, signal: c.req.raw.signal }),
           notebook!.shortId,
           getLocale(c),
         ),
@@ -2753,7 +3386,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Get link graph",
-      description: "Return all notes (nodes) and all internal note-links (edges) for the notebook.",
+      description:
+        "Return all notes (nodes) and all internal note-links (edges) for the notebook. With `around`, a notebook of more than 500 notes returns only the bounded graph around that note, with `scope`.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(z.object({ data: NoteGraphSchema }), "Graph data"),
@@ -2761,11 +3395,18 @@ const app = new Hono<AuthContext>()
         404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
       },
     }),
+    v("query", z.object({ around: ResourceShortIdSchema.optional().describe("The note the Links page draws around") })),
     async (c) => {
       let notebookId = c.req.param("id")!;
       const { notebook, error } = await checkNotebookAccess(c, notebookId);
       if (error) return error;
       notebookId = notebook!.id;
+      const { around } = c.req.valid("query");
+      if (around) {
+        const note = await requireNoteInNotebook(notebookId, around, getLocale(c));
+        if (!note.ok) return respond(c, note);
+        return respond(c, ok({ data: await notebooksService.notebook.graphView({ notebookId, noteId: note.data.id }) }));
+      }
       const graph = await notebooksService.notebook.graph({ notebookId });
       return respond(c, ok({ data: graph }));
     },
@@ -2893,8 +3534,6 @@ const app = new Hono<AuthContext>()
       },
     }),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       let notebookId = c.req.param("id")!;
 
       const { notebook, error } = await checkNotebookAccess(c, notebookId, "admin");
@@ -2906,13 +3545,45 @@ const app = new Hono<AuthContext>()
     },
   )
 
+  // List who has access, read-only
+  .get(
+    "/:id/access/members",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "List who has access",
+      description:
+        "Names and roles of everyone with access to a notebook, read-only. Requires read permission as a member: public access alone does not show who else has access.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.array(AccessMemberSchema), "Who has access"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
+      },
+    }),
+    async (c) => {
+      const { notebook, permission, error } = await checkNotebookAccess(c, c.req.param("id")!, "read");
+      if (error) return error;
+      const subject = getNotebookAccessSubject(c);
+      // A global admin already holds `admin`; everyone else needs a grant of their own, a group's, or all signed-in users'.
+      if (!(subject.user && hasRole(subject.user, "admin"))) {
+        let member = await notebooksService.notebook.access.memberPermission({ notebookId: notebook!.id, subject: c.get("accessSubject") });
+        if (subject.serviceAccount && subject.serviceAccount.kind !== "user_delegated") {
+          member = minPermission(member, permissionFromScopes(subject.serviceAccountScopes));
+        }
+        if (!hasPermission(minPermission(member, permission), "read")) return respond(c, fail(err.forbidden(messages(c).accessDenied)));
+      }
+      const entries = await notebooksService.notebook.access.list({ notebookId: notebook!.id });
+      return respond(c, ok(entries.items.map(toAccessMember)));
+    },
+  )
+
   // Grant Access
   .post(
     "/:id/access",
     describeRoute({
       tags: ["Notebooks"],
       summary: "Grant access",
-      description: "Grant access to a user, group, or public. Requires admin permission.",
+      description: "Grant access to a user, group, service account, all signed-in users, or public. Requires admin permission.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(AccessEntrySchema, "Created access entry"),
@@ -2923,8 +3594,6 @@ const app = new Hono<AuthContext>()
     }),
     v("json", GrantAccessSchema),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       let notebookId = c.req.param("id")!;
       const { principal, permission } = c.req.valid("json");
 
@@ -2938,6 +3607,7 @@ const app = new Hono<AuthContext>()
             notebookId,
             principal,
             permission,
+            caller: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) },
           }),
           getLocale(c),
         ),
@@ -2955,15 +3625,13 @@ const app = new Hono<AuthContext>()
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Access updated"),
-        400: jsonResponse(ErrorResponseSchema, "Cannot remove last admin"),
+        409: jsonResponse(ErrorResponseSchema, "Cannot remove the last manager"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Access entry not found"),
       },
     }),
     v("json", UpdateAccessSchema),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       let notebookId = c.req.param("id")!;
       const accessId = c.req.param("accessId")!;
       const { permission } = c.req.valid("json");
@@ -2972,18 +3640,16 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       notebookId = notebook!.id;
 
-      const guard = await notebooksService.notebook.access.guard({
-        notebookId,
-        accessId,
-      });
-      if (!guard.currentPermission) {
-        return respond(c, fail(notFoundMessage(messages(c).accessEntryNotFound)));
-      }
-
-      if (guard.currentPermission === "admin" && permission !== "admin" && guard.otherAdmins <= 0) {
-        return respond(c, fail(err.badInput(messages(c).lastAdmin)));
-      }
-      return respondMessage(c, notebooksService.notebook.access.update({ notebookId, accessId, permission }), messages(c).accessUpdated);
+      return respondMessage(
+        c,
+        notebooksService.notebook.access.update({
+          notebookId,
+          accessId,
+          permission,
+          caller: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) },
+        }),
+        messages(c).accessUpdated,
+      );
     },
   )
 
@@ -2993,18 +3659,17 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Revoke access",
-      description: "Remove an access entry. Cannot remove the last admin. Requires admin permission.",
+      description: "Remove an access entry. Cannot remove the last manager. Requires admin permission.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Access revoked"),
-        400: jsonResponse(ErrorResponseSchema, "Cannot remove last access entry or admin"),
+        400: jsonResponse(ErrorResponseSchema, "Cannot remove last access entry"),
+        409: jsonResponse(ErrorResponseSchema, "Cannot remove the last manager"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Access entry not found"),
       },
     }),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       let notebookId = c.req.param("id")!;
       const accessId = c.req.param("accessId")!;
 
@@ -3012,26 +3677,12 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       notebookId = notebook!.id;
 
-      const guard = await notebooksService.notebook.access.guard({
-        notebookId,
-        accessId,
-      });
-      if (!guard.currentPermission) {
-        return respond(c, fail(notFoundMessage(messages(c).accessEntryNotFound)));
-      }
-
-      if (guard.total <= 1) {
-        return respond(c, fail(err.badInput(messages(c).lastAccess)));
-      }
-
-      if (guard.currentPermission === "admin" && guard.otherAdmins <= 0) {
-        return respond(c, fail(err.badInput(messages(c).lastAdmin)));
-      }
       return respondMessage(
         c,
         notebooksService.notebook.access.remove({
           notebookId,
           accessId,
+          caller: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) },
         }),
         messages(c).accessRevoked,
       );
@@ -3473,6 +4124,7 @@ const requireAdmin = (c: Context<AuthContext>) => {
 };
 
 const appWithAdmin = appWithLimits
+  .use("/admin/*", auth.requireRole("admin"))
   // List all notebooks-namespaced settings
   .get(
     "/admin/settings",
@@ -3519,13 +4171,26 @@ const appWithAdmin = appWithLimits
       const { value, replaceUnreadable } = c.req.valid("json");
       const result =
         key === "notebooks.snapshot_cron" && typeof value === "string"
-          ? await notebooksService.backup.updateCron(value, { replaceUnreadable })
-          : await settingsService.entry.update({ key, value, replaceUnreadable });
+          ? await notebooksService.backup.updateCron(value, { replaceUnreadable, actorId: expectUserBackedActor(c).id })
+          : await settingsService.entry.update({
+              key,
+              value,
+              replaceUnreadable,
+              audit: {
+                action: "settings.update",
+                outcome: "allowed",
+                actor: { userId: expectUserBackedActor(c).id },
+                target: { type: "setting", id: key },
+              },
+            });
       if (!result.ok) {
+        // A refused value names its reason, which the settings dialog shows at the field.
         const message =
           key === "notebooks.snapshot_cron"
             ? fallbackServiceMessage(getLocale(c), result.error.status, result.error.message)
-            : messages(c).settingUpdateFailed;
+            : result.error.status === 400
+              ? result.error.message
+              : messages(c).settingUpdateFailed;
         return respond(c, fail({ ...result.error, message }));
       }
       // If the user changed the reindex cron, reschedule live (no restart

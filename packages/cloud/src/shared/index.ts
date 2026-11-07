@@ -1,5 +1,16 @@
 // Cloud-specific shared utils (NOT in stdlib)
 
+// The standalone editor owns the formula engine; Cloud preserves its existing shared API.
+export type { ErrorCode, EvalContext, EvalError, EvalResult, EvalValue, ProgressValue } from "@k2b/editor/formula";
+export {
+  createProgressValue,
+  evaluateFormula,
+  evaluateTableCell,
+  formatValue,
+  isFormula,
+  isTotalRow,
+  parseProgressValue,
+} from "@k2b/editor/formula";
 // Re-export from stdlib for backward compatibility
 // Prefer importing directly from @k2b/stdlib
 export { dates, dates as calendar, encoding, fileIcons, gradients } from "@k2b/stdlib";
@@ -13,6 +24,8 @@ export {
 export * from "./account-display";
 export * from "./account-session";
 export * from "./ai-costs";
+export * from "./ai-models";
+export * from "./ai-models";
 export type { AiPromptContextInput, AiToolPromptHint } from "./ai-platform-prompt";
 export {
   AI_LOCAL_CLIENT_DEFAULT_INSTRUCTIONS,
@@ -47,16 +60,6 @@ export * from "./locale-preference";
 export * from "./login-method";
 export { markdown } from "./markdown";
 export { markdownCalloutSanitizeOptions } from "./markdown/callout-sanitizer";
-export type { ErrorCode, EvalContext, EvalError, EvalResult, EvalValue, ProgressValue } from "./markdown/formula";
-export {
-  createProgressValue,
-  evaluateFormula,
-  evaluateTableCell,
-  formatValue,
-  isFormula,
-  isTotalRow,
-  parseProgressValue,
-} from "./markdown/formula";
 export type { MockCover, MockCoverIcon, MockCoverOptions, MockCoverTheme } from "./mock-cover";
 export { createMockCover, createMockCoverSvg, parseDataUrl } from "./mock-cover";
 export * from "./network-address";

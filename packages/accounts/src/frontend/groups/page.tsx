@@ -12,7 +12,6 @@ import { buildGroupDetailUrl, buildGroupsPageBaseUrl, buildGroupsUrl, parseGroup
 import { accountsMessages } from "../messages";
 import GroupsScopeFilter from "./GroupsScopeFilter.island";
 import NewGroup from "./NewGroup.island";
-import PersonalGroupTag from "./PersonalGroupTag";
 
 /** Groups page - nav sidebar + full-page list. */
 export default ssr<AuthContext>(async (c) => {
@@ -30,28 +29,24 @@ export default ssr<AuthContext>(async (c) => {
       page: c.req.query("page"),
       provider: c.req.query("provider"),
       scope: c.req.query("scope"),
-      personal: c.req.query("personal"),
     },
     { defaultScope },
   );
   const groupsPage = await accountsService.group.list({
     pagination: { page: listState.page, perPage },
-    filter: { search: listState.search || undefined, includePersonal: listState.personal },
+    filter: { search: listState.search || undefined },
     scope: {
       userId: listState.scope === "all" ? undefined : sessionUser.id,
       mode: listState.scope,
       provider: listState.provider || undefined,
     },
   });
-  const pendingRequestsPage = isAdmin
-    ? await accountsService.accountRequest.list({
-        access: { userId: sessionUser.id, isAdmin: true },
-        filter: { status: "pending" },
-      })
-    : { total: 0 };
+  const pendingRequests = isAdmin ? await accountsService.accountRequest.countPending() : 0;
   const totalPages = Math.max(1, Math.ceil(groupsPage.total / perPage));
+  // Deleting a group, or an old link, can leave the requested page past the end; open the last page instead.
+  if (listState.page > totalPages) return c.redirect(buildGroupsUrl({ ...listState, page: totalPages }, { defaultScope }));
   const paginationBaseUrl = buildGroupsPageBaseUrl(
-    { search: listState.search, provider: listState.provider, scope: listState.scope, personal: listState.personal },
+    { search: listState.search, provider: listState.provider, scope: listState.scope },
     { defaultScope },
   );
   type GroupRow = (typeof groupsPage.items)[number];
@@ -64,7 +59,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.groups }]}>
-      <AccountsWorkspace active="groups" isAdmin={isAdmin} pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-groups">
+      <AccountsWorkspace active="groups" isAdmin={isAdmin} pendingRequests={pendingRequests} scrollPreserveKey="accounts-groups">
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-groups-title">
             <h1 class="text-base font-semibold text-primary">{t.groups}</h1>
@@ -136,17 +131,10 @@ export default ssr<AuthContext>(async (c) => {
                   if (col.id === "flags") {
                     return (
                       <div class="flex flex-wrap items-center gap-1">
-                        {group.personalOwner ? (
-                          <PersonalGroupTag
-                            owner={group.personalOwner}
-                            label={t.personalGroupOf({ name: group.personalOwner.displayName })}
-                            linkToOwner={isAdmin}
-                          />
-                        ) : null}
                         <a href={href} class="flex flex-wrap gap-1" tabindex={-1}>
                           {isManaged ? <Tag>{t.managed}</Tag> : null}
                           {group.gidnumber ? <Tag>POSIX</Tag> : null}
-                          {!isManaged && !group.gidnumber && !group.personalOwner ? <span class="text-dimmed">-</span> : null}
+                          {!isManaged && !group.gidnumber ? <span class="text-dimmed">-</span> : null}
                         </a>
                       </div>
                     );

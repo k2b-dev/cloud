@@ -5,10 +5,12 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code, device authorization, or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-10-19
+updated: 2026-10-31
 ---
 
 # OAuth clients and flows
+
+See [Who may do what](/en/docs/identity/access-model) for the access model.
 
 Use authorization code when an integration acts for a person. Use the device
 authorization grant when that person signs in on a machine without a usable
@@ -88,7 +90,7 @@ The authorization request accepts:
 | `code_challenge` | Public clients | PKCE challenge |
 | `code_challenge_method` | With challenge | Must be `S256` |
 
-The person approves in a web session. The mobile app's session never
+The person approves in a web session. The Cloud app's session never
 authorizes a client: `/oauth/authorize` treats it as no session and leads to
 sign-in, and consent decisions from it are refused.
 
@@ -258,7 +260,7 @@ confirmation that expired or was already answered ends on "Request no longer
 valid", which asks the person to start the sign-in on the device again and
 offers to enter another code. Code entry rejects a code that already expired
 with the same message as a mistyped one. The page requires a browser session on
-the web. API keys, OAuth access tokens and the mobile app's session cannot
+the web. API keys, OAuth access tokens and the Cloud app's session cannot
 approve a device. The client profile and access rules apply exactly as in the
 authorization-code flow. The approve or deny form carries a single-use
 confirmation token bound to that person, and cross-origin submissions are
@@ -424,6 +426,10 @@ OAuth client creation supports:
 | `allowedGroupIds` | `[]` | Direct or nested group members allowed in `specific` mode |
 | `isPublic` | `false` | Public client without a secret |
 | `allowDeviceGrant` | `false` | Allow the device authorization grant; public clients only |
+
+Navigating to `GET /oauth/logout` displays a sign-out confirmation and keeps the
+session active. Only its same-origin `POST /oauth/logout` form signs the user out,
+then redirects to the registered `logoutUri` when requested.
 
 Supported scopes:
 

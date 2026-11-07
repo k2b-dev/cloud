@@ -47,7 +47,7 @@ test("global task dialogs provide live context through activity, run detail and 
     kind: "message",
     message: { role: "user", content: [{ type: "text", text: "Routine task01 (2026-09-20T08:00:00Z):\n\nOriginal run instruction" }] },
     loopId: "run001",
-    modelProfileId: null,
+    modelId: null,
     providerModel: null,
     usage: null,
     stopReason: null,

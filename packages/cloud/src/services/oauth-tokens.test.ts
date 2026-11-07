@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
-import { sql } from "bun";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWK, SignJWT } from "jose";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import { publicCloudOrigin } from "../shared/app-url";
 import { clearOAuthVerifierCachesForTest, resolveOAuthTokenActor, verifyAccessToken } from "./oauth-tokens";

@@ -19,7 +19,17 @@ export const applyMailCollaborationPatch = (
       ? {
           assignees: patch.assigneeUserIds.flatMap((id) => {
             const user = knownAssignees.get(id);
-            return user ? [{ id: user.id, uid: user.uid, displayName: user.displayName, avatarHash: user.avatarHash }] : [];
+            return user
+              ? [
+                  {
+                    id: user.id,
+                    uid: user.uid,
+                    displayName: user.displayName,
+                    avatarHash: user.avatarHash,
+                    ...(user.type ? { type: user.type, serviceAccountKind: user.serviceAccountKind } : {}),
+                  },
+                ]
+              : [];
           }),
         }
       : {}),

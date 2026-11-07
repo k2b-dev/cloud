@@ -1,11 +1,12 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 
 const SECRET = `${"A".repeat(42)}w`;
 const LINK = `http://localhost/pwa/#pair=${SECRET}`;
-const expiresAt = new Date(Date.now() + 600_000).toISOString();
+const NOW = new Date("2026-10-23T12:00:00.000Z");
+const expiresAt = "2026-10-23T12:10:00.000Z";
 
 const waitFor = async (condition: () => boolean, label: string) => {
   for (let attempt = 0; attempt < 300; attempt += 1) {
@@ -47,15 +48,20 @@ const SAFARI =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
 const mount = (options: {
   standalone: boolean;
+  locale?: string;
   url?: string;
   state?: "new" | "ended" | "expired";
   userAgent?: string;
-  platform?: "apple-mobile" | "apple-in-app" | "android";
+  platform?: "apple-mobile" | "apple-in-app" | "apple-desktop" | "android";
+  clearDrafts?: boolean;
+  before?: (dom: DomTestHarness) => void;
 }): Mounted => {
+  setSystemTime(NOW);
   const { ui, Welcome } = modules!;
   const dom = createDomTestHarness();
   delegateEvents(["click", "input"]);
   dom.window.history.replaceState(null, "", options.url ?? "/pwa/?pwa=new");
+  options.before?.(dom);
   const query = (media: string) => ({
     matches: media === "(display-mode: standalone)" ? options.standalone : media === "(pointer: coarse)",
     addEventListener: () => {},
@@ -72,7 +78,7 @@ const mount = (options: {
   const dispose = render(
     () =>
       createComponent(ui.LocaleProvider, {
-        locale: "en",
+        locale: options.locale ?? "en",
         get children() {
           return createComponent(Welcome, {
             state: options.state ?? "new",
@@ -80,6 +86,7 @@ const mount = (options: {
             icon: "/branding/pwa-icon-192.png?v=1",
             platform: options.platform ?? "apple-mobile",
             url: "http://localhost/pwa/",
+            clearDrafts: options.clearDrafts,
           });
         },
       }),
@@ -92,6 +99,7 @@ const mount = (options: {
       dispose();
       timeout.mockRestore();
       dom.cleanup();
+      setSystemTime();
     },
   };
 };
@@ -104,6 +112,181 @@ const waiting = () => Response.json({ state: "waiting", code: "482913", account:
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
+  for (const locale of ["en", "de"]) {
+    for (const decision of ["confirm", "reject"]) {
+      test(`administrative device confirmation requires an explicit ${decision} in ${locale}`, async () => {
+        let accepted = false;
+        let rejected = false;
+        const token = "D".repeat(43);
+        const fetch = mockFetch((_method, path, body) => {
+          if (path.endsWith("/claim")) return claimed();
+          if (path.endsWith("/complete"))
+            return accepted
+              ? Response.json({ state: "paired" })
+              : rejected
+                ? Response.json({ state: "rejected" })
+                : Response.json(
+                    {
+                      state: "confirmation_required",
+                      account: { name: "Ada Example" },
+                      administrator: { name: "Admin Example" },
+                      confirmationToken: token,
+                      expiresAt,
+                    },
+                    { status: 202 },
+                  );
+          if (path.endsWith("/decision")) {
+            expect(body).toEqual({ confirmationToken: token, decision });
+            accepted = decision === "confirm";
+            rejected = decision === "reject";
+            return new Response(null, { status: 204 });
+          }
+        });
+        const page = mount({ standalone: true, locale, url: `/pwa/#pair=${SECRET}` });
+        try {
+          const title = locale === "de" ? "Als Ada Example anmelden?" : "Sign in as Ada Example?";
+          await waitFor(() => text(page.dom).includes(title), "device confirmation");
+          expect(text(page.dom)).toContain(
+            locale === "de"
+              ? "Eingerichtet von Admin Example (Administration). Bestätige nur, wenn das dein Gerät ist."
+              : "Set up by Admin Example (Administration). Confirm only if this is your device.",
+          );
+          expect(fetch.calls.filter((call) => call.path.endsWith("/decision"))).toHaveLength(0);
+          expect(page.replaced).toEqual([]);
+          button(
+            page.dom,
+            decision === "confirm" ? (locale === "de" ? "Bestätigen" : "Confirm") : locale === "de" ? "Ablehnen" : "Reject",
+          )!.click();
+          await waitFor(
+            () =>
+              decision === "confirm"
+                ? page.replaced.length === 1
+                : text(page.dom).includes(locale === "de" ? "Es wurde nichts gekoppelt." : "Nothing was paired."),
+            "device decision",
+          );
+          expect(page.replaced).toEqual(decision === "confirm" ? ["/pwa/"] : []);
+        } finally {
+          page.dispose();
+          fetch.restore();
+        }
+      });
+    }
+  }
+  test("an expired or replaced device decision never traps the person on the prompt", async () => {
+    const prompt = (token: string) =>
+      Response.json(
+        { state: "confirmation_required", account: { name: "Ada" }, administrator: { name: "Admin" }, confirmationToken: token, expiresAt },
+        { status: 202 },
+      );
+    // Expired: back to entering a code, with the reason.
+    let fetch = mockFetch((_method, path) => {
+      if (path.endsWith("/complete")) return prompt("D".repeat(43));
+      if (path.endsWith("/decision")) return Response.json({ code: "EXPIRED" }, { status: 410 });
+    });
+    let page = mount({ standalone: true });
+    try {
+      await waitFor(() => text(page.dom).includes("Sign in as Ada?"), "device confirmation");
+      button(page.dom, "Confirm")!.click();
+      await waitFor(() => !text(page.dom).includes("Sign in as Ada?"), "prompt closed");
+      expect(page.dom.document.querySelector("[role=alert]")?.textContent).toContain("expired");
+      expect(button(page.dom, "Scan code")).toBeDefined();
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+    // Replaced by a newer prompt: the newer prompt shows and needs its own decision.
+    const decisions: unknown[] = [];
+    let completions = 0;
+    fetch = mockFetch((_method, path, body) => {
+      if (path.endsWith("/complete")) return prompt((completions++ === 0 ? "D" : "E").repeat(43));
+      if (path.endsWith("/decision")) {
+        decisions.push(body);
+        return Response.json({ code: "FORBIDDEN" }, { status: 403 });
+      }
+    });
+    page = mount({ standalone: true });
+    try {
+      await waitFor(() => text(page.dom).includes("Sign in as Ada?"), "device confirmation");
+      button(page.dom, "Confirm")!.click();
+      await waitFor(() => completions === 2, "current state read");
+      await Bun.sleep(20);
+      expect(text(page.dom)).toContain("Sign in as Ada?");
+      expect(decisions).toHaveLength(1);
+      expect(page.replaced).toEqual([]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("a failed device decision keeps the confirmation visible for retry", async () => {
+    let decisions = 0;
+    const fetch = mockFetch((_method, path) => {
+      if (path.endsWith("/complete"))
+        return Response.json(
+          {
+            state: "confirmation_required",
+            account: { name: "Ada" },
+            administrator: { name: "Admin" },
+            confirmationToken: "D".repeat(43),
+            expiresAt,
+          },
+          { status: 202 },
+        );
+      if (path.endsWith("/decision")) {
+        decisions++;
+        return Response.json({ code: "UNAVAILABLE" }, { status: 503 });
+      }
+    });
+    const page = mount({ standalone: true });
+    try {
+      await waitFor(() => text(page.dom).includes("Sign in as Ada?"), "resumed device confirmation");
+      button(page.dom, "Confirm")!.click();
+      await waitFor(() => page.dom.document.querySelector("[role=alert]") !== null, "decision error");
+      expect(text(page.dom)).toContain("Sign in as Ada?");
+      expect(page.replaced).toEqual([]);
+      button(page.dom, "Confirm")!.click();
+      await waitFor(() => decisions === 2, "retry");
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("mounting an iPad keeps both server-selected variants and the mobile Share guide", async () => {
+    const page = mount({
+      standalone: false,
+      platform: "apple-desktop",
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+    });
+    try {
+      await Bun.sleep(0);
+      expect(page.dom.root.querySelector('.pwa-coarse-only [data-platform="apple-mobile"]')?.textContent).toContain("Open Share");
+      expect(page.dom.root.querySelector(".pwa-fine-only")?.textContent).toBe("On a computer, use Example Cloud in the browser.");
+      expect(text(page.dom)).toContain("On the same device, copy the link there and paste it here.");
+      expect(text(page.dom)).not.toContain("This app is for phones");
+    } finally {
+      page.dispose();
+    }
+  });
+
+  test("the welcome after an ended pairing deletes the app's drafts only on the launch's order", () => {
+    for (const clearDrafts of [false, true]) {
+      const page = mount({
+        standalone: true,
+        state: "ended",
+        url: "/pwa/?pwa=ended",
+        clearDrafts,
+        before: (dom) => dom.window.localStorage.setItem("cloud.pwa.draft:mia:chat", "old"),
+      });
+      try {
+        expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:mia:chat")).toBe(clearDrafts ? null : "old");
+      } finally {
+        page.dispose();
+      }
+    }
+  });
+
   test("the installed app takes the link out of the address before it claims, then shows the code to type on the web", async () => {
     let addressAtClaim = "";
     const fetch = mockFetch((method, path) => {
@@ -333,10 +516,10 @@ else {
       "ACCOUNT_MISMATCH",
       {
         message:
-          "Chrome on this phone is signed in to Example Cloud with another account. Sign out there first, or pair from that account.",
+          "Chrome on this device is signed in to Example Cloud with another account. Sign out there first, or pair from that account.",
       },
     ],
-    [429, "LIMIT_REACHED", { message: "You have paired the most phones allowed. Remove one on the web." }],
+    [429, "LIMIT_REACHED", { message: "You have paired the most devices allowed. Remove one on the web." }],
   ] as const)
     test(`waiting ends on ${code}`, async () => {
       const fetch = mockFetch((_method, path) => {
@@ -395,7 +578,7 @@ else {
       },
     });
     try {
-      expect(text(page.dom)).toContain("This phone was signed out. Connect it again.");
+      expect(text(page.dom)).toContain("This device was signed out. Connect it again.");
       button(page.dom, "Scan code")!.click();
       await waitFor(
         () => text(page.dom).includes("Camera access is off. Allow it in settings, or paste the link instead."),

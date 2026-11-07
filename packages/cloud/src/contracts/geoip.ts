@@ -40,3 +40,10 @@ export type GeoIpErrorCode =
   | "geoip_invalid"
   | "geoip_unsupported_type"
   | "geoip_upload_busy";
+
+/** Country-only application lookup; availability describes the active City database. */
+export type IpCountryResult = {
+  country: string | null;
+  available: boolean;
+  attribution: typeof DBIP_ATTRIBUTION | null;
+};

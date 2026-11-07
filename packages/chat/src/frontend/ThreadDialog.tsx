@@ -1,6 +1,5 @@
-import { Button, LocaleProvider, prompts, TextInput } from "@k2b/ui";
+import { Button, TextInput } from "@k2b/ui";
 import { createSignal, type JSX, Show } from "solid-js";
-import { chatMessages } from "../messages";
 import { DialogActions, DialogError, useChatMessages } from "./chat-dialog";
 import { ChatRequestError } from "./chat-store";
 import type { Thread, ThreadList } from "./threads";
@@ -9,7 +8,7 @@ export type ThreadDialogStore = {
   createThread(chatId: string, input: { name: string; description: string | null; createKey: string }): Promise<Thread>;
   updateThread(chatId: string, threadId: string, patch: { name?: string; description?: string | null }): Promise<Thread>;
 };
-type ThreadDialogProps = {
+export type ThreadDialogProps = {
   store: ThreadDialogStore;
   chatId: string;
   title: string;
@@ -25,22 +24,6 @@ type ThreadDialogProps = {
  * Admins create a thread with a name and an optional one-line description, or rename one. A taken name shows at once;
  * a failed request keeps the text and turns the main button into "Try again". Resolves with the saved thread.
  */
-export const openThreadDialog = (props: ThreadDialogProps): Promise<Thread | undefined> => {
-  const t = chatMessages.resolve([props.locale]).t;
-  return prompts.dialog<Thread>(
-    (close, context) => (
-      // A prompt renders outside the workspace, so its content gets the workspace's locale again.
-      <LocaleProvider locale={props.locale}>
-        <ThreadDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
-      </LocaleProvider>
-    ),
-    {
-      title: props.thread ? t.renameThread : t.newThreadTitle({ title: props.title }),
-      icon: props.thread ? "ti ti-pencil" : "ti ti-hash",
-      size: "medium",
-    },
-  );
-};
 
 export function ThreadDialog(
   props: ThreadDialogProps & { close: (thread?: Thread) => void; setDismissHandler: (handler: () => void) => void },

@@ -30,7 +30,7 @@ import { CLOUD_INVOCATION_TOKEN_TTL_SECONDS } from "../services/identity/constan
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { widgetInvocationOperation } from "../services/identity/invocation-operations";
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
-import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
+import { prepareFanoutIssuance, issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { logger } from "../services/logging";
 import { LOCALE_HEADER } from "../shared/locale";
@@ -42,6 +42,7 @@ type WidgetRouteDependencies = {
   authenticate?: MiddlewareHandler<AuthContext>;
   listApps?: typeof listApps;
   signInvocation?: typeof signInvocationToken;
+  prepareFanout?: typeof prepareFanoutIssuance;
   withActiveSigner?: typeof withActiveIdentitySigner;
   timeoutMs?: number;
 };
@@ -231,10 +232,38 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
         tokens = await waitWithin(
           withActiveSigner(
             "invocation",
-            (signer, db) =>
-              Promise.all(
-                startBounded(entries, WIDGET_CONCURRENCY, async (entry) => sign(c, entry.widget, requestId, signer, db), signing),
-              ),
+            async (signer, db) => {
+              const issue = await (dependencies.prepareFanout ?? prepareFanoutIssuance)(
+                {
+                  authority: invocationAuthorityFromRequest(auth.getAuthority(c)),
+                  callingAppId: "core",
+                  entries: entries.map((entry) => entry.widget),
+                },
+                {
+                  db,
+                  groupsAdmin: signer.groupsAdmin,
+                  signal: signing,
+                  registry: dependencies.listApps,
+                  sign: dependencies.signInvocation,
+                },
+              );
+              return Promise.all(
+                startBounded(
+                  entries,
+                  WIDGET_CONCURRENCY,
+                  (entry) =>
+                    issue({
+                      targetAppId: entry.widget.appId,
+                      operation: widgetInvocationOperation(entry.widget.widgetId),
+                      schemaHash: null,
+                      requestId,
+                      signer,
+                      issuer: signer.issuer,
+                    }),
+                  signing,
+                ),
+              );
+            },
             { signal: signing, timeoutMs },
           ),
           signing,
@@ -353,6 +382,7 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
       })
       .post(
         "/widgets/v1",
+        auth.readOnly,
         bodyLimit({ maxSize: WIDGET_REQUEST_MAX_BYTES, onError: (c) => c.json({ message: "Widget request is too large" }, 400) }),
         async (c) => {
           let raw: unknown;

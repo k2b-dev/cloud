@@ -2,14 +2,55 @@ import { describe, expect, test } from "bun:test";
 import { createCollectionSelection, LocaleProvider } from "@k2b/ui";
 import { renderToString } from "solid-js/web";
 import type { InventoryEntry } from "../src/contracts";
+import AdminHistory from "../src/frontend/AdminHistory";
 import AdminIssue from "../src/frontend/AdminIssue";
 import { parseAdminLocation } from "../src/frontend/admin-location";
 import FileList, { type FileRow } from "../src/frontend/FileList";
 import FileThumbnail from "../src/frontend/FileThumbnail";
 import { DirectoryStatus, IssueMessage } from "../src/frontend/feedback";
 import Inventory from "../src/frontend/Inventory";
+import Workspace from "../src/frontend/Workspace.island";
+import { chain, current, entry, gone } from "./history-fixtures";
 
 describe("Filesv2 server-rendered feedback", () => {
+  test("an old folder SSR snapshot shows its move without a false loading error", () => {
+    const base = {
+      id: "cloud:groups:team",
+      area: "cloud" as const,
+      kind: "groups" as const,
+      name: "Team",
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: true,
+      versioningEnabled: true,
+    };
+    const moved = entry({ action: "item.move", before: gone("team/Old"), after: current("team/New") });
+    const html = renderToString(() => (
+      <LocaleProvider locale="en">
+        <Workspace
+          timeZone="Europe/Berlin"
+          initial={{
+            source: `/app/filesv2?base=${encodeURIComponent(base.id)}&path=Old`,
+            bases: { items: [base], issues: [], editor: null },
+            selectedId: base.id,
+            directory: null,
+            errorCode: null,
+            now: "2026-10-20T12:30:00.000Z",
+            moved: {
+              baseId: base.id,
+              path: "Old",
+              entry: moved,
+              chain: chain({ endpoint: { baseId: base.id, path: "New", itemId: null }, certainty: "verified" }),
+            },
+          }}
+        />
+      </LocaleProvider>
+    ));
+    expect(html).toContain("This folder has moved");
+    expect(html).not.toContain("Files could not be loaded");
+    expect(html).not.toContain("Try again");
+  });
+
   test("all inventory states have readable localized labels independent of color", () => {
     const html = renderToString(() => (
       <LocaleProvider locale="de">
@@ -34,7 +75,7 @@ describe("Filesv2 server-rendered feedback", () => {
         <IssueMessage code="unavailable" />
       </LocaleProvider>
     ));
-    expect(html).toContain("Cloud files require local Linux identities");
+    expect(html).toContain("Personal and group Cloud storage requires local Linux identities");
     expect(html).toContain("This directory is missing");
     expect(html).toContain("Storage is currently unavailable");
     expect(html).not.toContain("This folder is empty");
@@ -162,6 +203,88 @@ describe("Filesv2 server-rendered feedback", () => {
     expect(row(tree, "Projects")).toContain("ti-folder-open");
     expect(row(tree, "Projects/Drafts")).not.toContain("ti-folder-open");
   });
+});
+
+test("the administration history renders its authorized first page as table and list on the server", () => {
+  const binding = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const filters = { when: "30" as const };
+  const html = renderToString(() => (
+    <LocaleProvider locale="de">
+      <AdminHistory
+        env={{ now: "2026-10-20T12:30:00.000Z", timeZone: "Europe/Berlin" }}
+        filters={filters}
+        onFiltersChange={() => {}}
+        bases={{ items: [], next: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }}
+        baseLabels={[
+          {
+            id: "cloud:groups:11111111-1111-4111-8111-111111111111",
+            bindingId: binding,
+            area: "cloud",
+            kind: "groups",
+            name: "vertrieb",
+            displayName: "Team Vertrieb",
+            root: "cloud",
+            path: "groups/vertrieb",
+          },
+        ]}
+        loadBases={async () => {
+          throw new Error("SSR must use its authorized metadata snapshot");
+        }}
+        initial={{
+          filters,
+          page: {
+            items: [
+              {
+                id: "00000000-0000-4000-8000-000000000001",
+                action: "file.overwrite",
+                state: "done",
+                time: "2026-10-20T06:52:00.000Z",
+                startedAt: "2026-10-20T06:52:00.000Z",
+                finishedAt: "2026-10-20T06:52:00.000Z",
+                actor: { kind: "user", userId: "33333333-3333-4333-8333-333333333333", name: "Mia Schulz" },
+                via: "office",
+                before: { visibility: "hidden" },
+                after: {
+                  visibility: "full",
+                  source: "snapshot",
+                  name: "Proof_Visitenkarten.pdf",
+                  path: "groups/vertrieb/Proof_Visitenkarten.pdf",
+                  root: "cloud",
+                  baseId: binding,
+                  publicBaseId: null,
+                  itemId: null,
+                  directory: false,
+                  size: 3_400_000,
+                  revision: null,
+                },
+                batchId: null,
+              },
+            ],
+            next: null,
+            visibleCount: 1,
+            batches: [],
+            exhausted: true,
+            scanLimitReached: false,
+            searchLimitReached: false,
+          },
+        }}
+        load={() => new Promise(() => {})}
+      />
+    </LocaleProvider>
+  ));
+  for (const text of [
+    "Zeit",
+    "Ablage",
+    "Weg",
+    "20.10. 08:52",
+    "Überschrieben",
+    "Proof_Visitenkarten.pdf",
+    "Team Vertrieb",
+    "Office-Editor",
+  ])
+    expect(html).toContain(text);
+  expect(html).toContain("filesv2-history-row");
+  expect(html).not.toContain("Aktivität wird geladen");
 });
 
 test("thumbnail fallbacks use file-type tiles at row, grid and hero sizes", () => {

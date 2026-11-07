@@ -7,6 +7,7 @@ export const PrincipalReferenceSchema = z
   .discriminatedUnion("type", [
     z.object({ type: z.literal("user"), id: z.string().uuid() }).strict(),
     z.object({ type: z.literal("group"), id: z.string().uuid() }).strict(),
+    z.object({ type: z.literal("service_account"), id: z.string().uuid() }).strict(),
   ])
   .readonly();
 
@@ -48,7 +49,7 @@ export const principalHandler: ValueFieldType = {
       return required ? fail("required") : ok(null);
     }
     if (normalized === "invalid") {
-      return fail(`must contain at most ${MAX_PRINCIPALS_PER_FIELD} valid users or groups`);
+      return fail(`must contain at most ${MAX_PRINCIPALS_PER_FIELD} valid users, groups, or service accounts`);
     }
     if (config.data.cardinality === "single" && normalized.length > 1) {
       return fail("single-cardinality principal accepts at most one value");

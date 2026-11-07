@@ -14,7 +14,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
+import { type CatalogSubscription, projectAppEventCatalog, readEventCatalogSubscriptions } from "../_internal/app-event-catalog";
 import { readBoundedJson } from "../_internal/bounded-json";
+import { isPersonVisibleCapabilityQuery, resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { capabilitySentenceText } from "../_internal/capability-sentences";
 import { withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import {
@@ -32,8 +34,12 @@ import {
   CAPABILITY_MAX_REQUEST_BYTES,
   CAPABILITY_MAX_RESULT_BYTES,
   CAPABILITY_PROTOCOL_VERSION,
+  CAPABILITY_QUALIFIED_ID_MAX_LENGTH,
   type CapabilityActionManifest,
   CapabilityActionReceiptSchema,
+  CapabilityAppIdSchema,
+  CapabilityEventCatalogEntrySchema,
+  CapabilityQualifiedIdSchema,
   type CapabilityQueryManifest,
   CapabilitySemanticLinkSchema,
   type CloudResourceRef,
@@ -46,6 +52,7 @@ import {
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestAuthority, rateLimit, rejectReservedWorkloadCredential, resolveLocale } from "../server";
 import { preferredLocale } from "../server/locale";
+import { oauthScopeByOperation } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
 import { discoverableApps } from "../services/app-discovery";
 import { createHelpReader, type HelpArticle, type HelpMetadata, type HelpReader, type HelpReaderFactory } from "../services/help";
@@ -63,6 +70,27 @@ const IDEMPOTENCY_KEY_FIELD = "idempotencyKey";
 const RESOURCE_READ_TOOL = "cloud__resource__read";
 const HELP_SEARCH_TOOL = "cloud__help__search";
 const HELP_READ_TOOL = "cloud__help__read";
+const EVENT_LIST_TOOL = "cloud__events__list";
+const EVENT_READ_TOOL = "cloud__events__read";
+const eventListArguments = z.strictObject({
+  appId: CapabilityAppIdSchema.optional(),
+  automation: z.boolean().optional(),
+  cursor: z
+    .string()
+    .max(CAPABILITY_QUALIFIED_ID_MAX_LENGTH + 1 + String(Number.MAX_SAFE_INTEGER).length)
+    .regex(/^[a-z][a-z0-9-]*\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*@[1-9]\d*$/)
+    .optional(),
+  limit: z.number().int().min(1).max(MCP_TOOL_PAGE_SIZE).default(MCP_TOOL_PAGE_SIZE),
+});
+const eventReadArguments = z.strictObject({ type: CapabilityQualifiedIdSchema, version: z.number().int().positive() });
+const eventSummarySchema = CapabilityEventCatalogEntrySchema.omit({ dataSchema: true, subscribers: true }).extend({
+  appId: CapabilityAppIdSchema,
+});
+const eventDetailSchema = CapabilityEventCatalogEntrySchema.extend({ appId: CapabilityAppIdSchema });
+const eventPageSchema = z.object({
+  events: z.array(eventSummarySchema),
+  nextCursor: z.string().optional(),
+});
 export const CLOUD_MCP_PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource/api/mcp/v1";
 const MCP_TOOL_NAME_MAX_LENGTH = 128;
 const MCP_INSTRUCTIONS =
@@ -72,6 +100,7 @@ const log = logger("mcp");
 type McpRouteDependencies = CapabilityDispatchDependencies & {
   listApps?: () => Promise<AppRegistryEntry[]>;
   help?: HelpReaderFactory;
+  eventSubscriptions?: (type: string, version: number) => Promise<CatalogSubscription[]>;
   getOperatorLocale?: () => Promise<string | undefined>;
   getOperatorTimeZone?: () => Promise<string | undefined>;
   getAppUrl?: () => Promise<string>;
@@ -205,6 +234,38 @@ const platformTools: Tool[] = [
     annotations: { title: "Read Cloud Help", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _meta: { "cloud/kind": "help-read" },
   },
+  {
+    name: EVENT_LIST_TOOL,
+    title: "List declared Cloud events",
+    description:
+      "Discover declared event types of apps you may discover. Returns publisher appId, type, version, title, description, subject and place types (place may be null), and automation metadata. Filter by appId or automation; pass nextCursor to continue. This reads declarations only.",
+    inputSchema: cloneObjectSchema(z.toJSONSchema(eventListArguments, { io: "input" })),
+    outputSchema: cloneObjectSchema(z.toJSONSchema(eventPageSchema)),
+    annotations: {
+      title: "List declared Cloud events",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    _meta: { "cloud/kind": "events-list" },
+  },
+  {
+    name: EVENT_READ_TOOL,
+    title: "Read declared Cloud event",
+    description:
+      "Read one exact event type and version returned by cloud__events__list, including its data JSON Schema and discoverable subscribers with persisted subscription states. This reads declarations only; it does not observe events or create subscriptions.",
+    inputSchema: cloneObjectSchema(z.toJSONSchema(eventReadArguments)),
+    outputSchema: cloneObjectSchema(z.toJSONSchema(z.object({ event: eventDetailSchema }))),
+    annotations: {
+      title: "Read declared Cloud event",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    _meta: { "cloud/kind": "events-read" },
+  },
 ];
 
 const projectTool = (
@@ -250,7 +311,9 @@ const orderedCapabilityEntries = function* (app: CapabilityRegistryEntry): Gener
   for (const operation of [...app.manifest.actions].sort((left, right) => left.localId.localeCompare(right.localId))) {
     yield { app, kind: "actions", operation };
   }
-  for (const operation of [...app.manifest.queries].sort((left, right) => left.localId.localeCompare(right.localId))) {
+  for (const operation of app.manifest.queries
+    .filter(isPersonVisibleCapabilityQuery)
+    .sort((left, right) => left.localId.localeCompare(right.localId))) {
     yield { app, kind: "queries", operation };
   }
 };
@@ -342,10 +405,12 @@ const parseResponse = async (response: Response): Promise<Record<string, unknown
     : { code: CAPABILITY_FRAMEWORK_ERROR_CODES.invalidAppResponse, message: "Capability returned a non-object result" };
 };
 
-const responseTooLargeToolResult = (): CallToolResult => {
+const responseTooLargeToolResult = (
+  message = "Capability result is too large for an MCP tool response; narrow the query and retry",
+): CallToolResult => {
   const error = {
     code: CAPABILITY_FRAMEWORK_ERROR_CODES.responseTooLarge,
-    message: "Capability result is too large for an MCP tool response; narrow the query and retry",
+    message,
   };
   return { isError: true, structuredContent: error, content: [{ type: "text", text: JSON.stringify(error) }] };
 };
@@ -489,6 +554,97 @@ const callHelpTool = async (name: string, argsValue: unknown, reader: HelpReader
   return null;
 };
 
+const eventCursor = (event: { type: string; version: number }): string => `${event.type}@${event.version}`;
+
+type EventCatalogReader = {
+  registry: () => Promise<AppRegistryEntry[]>;
+  lookup: (appId: string) => Promise<CapabilityRegistryEntry | null>;
+  locale: () => Promise<string>;
+  subscriptions: (type: string, version: number) => Promise<CatalogSubscription[]>;
+};
+
+const listEvents = async (argsValue: unknown, reader: EventCatalogReader): Promise<CallToolResult> => {
+  const parsed = eventListArguments.safeParse(argsValue ?? {});
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`).join("; ");
+    return validationToolError(`cloud__events__list accepts appId, automation (boolean), cursor and limit (1-100) (${issues})`);
+  }
+  const { appId, automation, cursor, limit } = parsed.data;
+  const cursorAppId = cursor?.split(".")[0];
+  if (appId && cursorAppId && appId !== cursorAppId) {
+    return validationToolError("cloud__events__list cursor must belong to the requested appId");
+  }
+  const summaries = (await reader.registry())
+    .filter((entry) => entry.capabilities?.protocolVersion === CAPABILITY_PROTOCOL_VERSION)
+    .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  const locale = await reader.locale();
+  const events: z.infer<typeof eventSummarySchema>[] = [];
+  const encoder = new TextEncoder();
+  const emptyBytes = encoder.encode(JSON.stringify(toolResult({ events: [] }, false))).byteLength;
+  let bytes = emptyBytes;
+  for (const summary of summaries) {
+    if (appId && summary.id !== appId) continue;
+    if (cursorAppId && summary.id < cursorAppId) continue;
+    const app = await reader.lookup(summary.id);
+    if (!app || app.manifest.manifestHash !== summary.capabilities?.manifestHash) continue;
+    const manifest = resolveCapabilityManifestPresentation(app.manifest, app.presentation, locale);
+    const catalog = projectAppEventCatalog(manifest, []).sort((left, right) =>
+      eventCursor(left) < eventCursor(right) ? -1 : eventCursor(left) > eventCursor(right) ? 1 : 0,
+    );
+    for (const entry of catalog) {
+      if (automation !== undefined && entry.automation !== automation) continue;
+      if (cursor && summary.id === cursorAppId && eventCursor(entry) <= cursor) continue;
+      const last = events.at(-1);
+      if (last && events.length === limit) return boundedToolResult({ events, nextCursor: eventCursor(last) }, false);
+      const { dataSchema: _schema, subscribers: _subscribers, ...summaryEntry } = entry;
+      const next = { appId: app.appId, ...summaryEntry };
+      const serialized = JSON.stringify(next);
+      // Count both structuredContent and the JSON-escaped text copy, plus their array separators.
+      const entryBytes = encoder.encode(serialized).byteLength + encoder.encode(JSON.stringify(serialized)).byteLength - 2;
+      const nextBytes = bytes + entryBytes + (events.length ? 2 : 0);
+      const cursorBytes =
+        encoder.encode(JSON.stringify(toolResult({ events: [], nextCursor: eventCursor(next) }, false))).byteLength - emptyBytes;
+      if (nextBytes + cursorBytes > CAPABILITY_MAX_RESULT_BYTES) {
+        return last ? boundedToolResult({ events, nextCursor: eventCursor(last) }, false) : responseTooLargeToolResult();
+      }
+      events.push(next);
+      bytes = nextBytes;
+    }
+  }
+  return boundedToolResult({ events }, false);
+};
+
+const readEvent = async (argsValue: unknown, reader: EventCatalogReader): Promise<CallToolResult> => {
+  const parsed = eventReadArguments.safeParse(argsValue);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`).join("; ");
+    return validationToolError(`cloud__events__read requires an exact event type and positive integer version (${issues})`);
+  }
+  const { type, version } = parsed.data;
+  const summaries = (await reader.registry()).filter((entry) => entry.capabilities?.protocolVersion === CAPABILITY_PROTOCOL_VERSION);
+  const summary = summaries.find((entry) => entry.id === type.split(".")[0]);
+  if (summary) {
+    const app = await reader.lookup(summary.id);
+    if (app && app.manifest.manifestHash === summary.capabilities?.manifestHash) {
+      const manifest = resolveCapabilityManifestPresentation(app.manifest, app.presentation, await reader.locale());
+      const declaration = manifest.events?.find((event) => `${app.appId}.${event.localId}` === type && event.version === version);
+      if (declaration) {
+        const visibleApps = new Set(summaries.map((entry) => entry.id));
+        const subscribers = (await reader.subscriptions(type, version)).filter((row) => visibleApps.has(row.appId));
+        const [entry] = projectAppEventCatalog({ ...manifest, events: [declaration] }, subscribers);
+        const result = toolResult({ event: { appId: app.appId, ...entry } }, false);
+        return fitsToolResult(result)
+          ? result
+          : responseTooLargeToolResult("Event schema and subscriber list exceed the MCP response size limit");
+      }
+    }
+  }
+  return boundedToolResult(
+    { code: "EVENT_NOT_FOUND", message: "Event type and version are not in the current discoverable catalog" },
+    true,
+  );
+};
+
 const createMcpServer = (
   request: Request,
   dependencies: McpRouteDependencies,
@@ -581,6 +737,26 @@ const createMcpServer = (
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (message) => {
+    if (message.params.name === EVENT_LIST_TOOL || message.params.name === EVENT_READ_TOOL) {
+      if (!hasScope("read")) return boundedToolResult({ code: "FORBIDDEN", message: "OAuth scope read is required" }, true);
+      const reader: EventCatalogReader = {
+        registry,
+        lookup: capabilityLookup,
+        locale: resolveHelpLocale,
+        subscriptions: dependencies.eventSubscriptions ?? readEventCatalogSubscriptions,
+      };
+      try {
+        return message.params.name === EVENT_LIST_TOOL
+          ? await listEvents(message.params.arguments, reader)
+          : await readEvent(message.params.arguments, reader);
+      } catch (error) {
+        log.error("Failed to read MCP event catalog", { error: error instanceof Error ? error.message : String(error) });
+        return boundedToolResult(
+          { code: CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, message: "Event catalog is currently unavailable" },
+          true,
+        );
+      }
+    }
     if (message.params.name === HELP_SEARCH_TOOL || message.params.name === HELP_READ_TOOL) {
       if (!hasScope("read")) {
         return boundedToolResult({ code: "FORBIDDEN", message: "OAuth scope read is required" }, true);
@@ -783,8 +959,8 @@ export const createMcpRoutes = (dependencies: McpRouteDependencies = {}) =>
     .use("/mcp/v1", validateMcpOrigin(dependencies.getAppUrl ?? defaultAppUrl))
     .use("/mcp/v1", dependencies.authenticate ?? mcpAuthentication(dependencies.getAppUrl ?? defaultAppUrl))
     .use("/mcp/v1", rejectReservedWorkloadCredential)
-    .use("/mcp/v1", dependencies.limit ?? rateLimit())
-    .all("/mcp/v1", async (c) =>
+    .use("/mcp/v1", auth.readOnlyMiddleware(dependencies.limit ?? rateLimit()))
+    .post("/mcp/v1", oauthScopeByOperation, async (c) =>
       withCapabilityRequestTimeout(c, "query", async () => {
         if (c.req.method !== "POST") {
           return new Response(null, { status: 405, headers: { Allow: "POST" } });
@@ -825,6 +1001,7 @@ export const createMcpRoutes = (dependencies: McpRouteDependencies = {}) =>
           }
         }
       }),
-    );
+    )
+    .all("/mcp/v1", () => new Response(null, { status: 405, headers: { Allow: "POST" } }));
 
 export type McpApiType = ReturnType<typeof createMcpRoutes>;

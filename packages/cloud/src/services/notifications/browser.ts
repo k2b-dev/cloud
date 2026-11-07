@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
-import { sql } from "bun";
 import webpush from "web-push";
 import { z } from "zod";
 import { notificationGroupTag } from "../../contracts/notification-group";
 import { isSafeNotificationTargetHref } from "../../contracts/notification-types";
 import { type BrowserPushSubscription, BrowserPushSubscriptionSchema } from "../../contracts/user-notifications";
+import { sql } from "../../runtime/clients";
 import { decryptSecret, encryptSecret } from "../secrets";
 import { coreSettings } from "../settings/api";
-import { SettingUnreadableError } from "../settings/store";
+import { invalidateSettingsCache, readKeyState, SettingUnreadableError, writeKey } from "../settings/store";
 import { type NotificationDestination, registerNotificationChannel } from "./channels";
 import { NOTIFICATION_PREVIEW_LIMIT } from "./preview";
 import { sendPinnedWebPush } from "./web-push-transport";
@@ -29,6 +29,7 @@ type BrowserDeliveryPayload = {
   group?: string;
   badge?: number;
   createdAt?: number;
+  alert?: false;
 };
 
 // RFC 8030 section 7.2 guarantees 4,096 bytes; aes128gcm adds a header, tag, and padding delimiter.
@@ -44,6 +45,7 @@ const browserPushMessage = (payload: BrowserDeliveryPayload): string =>
     ...(payload.group !== undefined ? { group: payload.group } : {}),
     ...(payload.badge !== undefined ? { badge: payload.badge } : {}),
     ...(payload.createdAt !== undefined ? { createdAt: payload.createdAt } : {}),
+    ...(payload.alert === false ? { alert: false } : {}),
   });
 
 const BrowserDeliveryPayloadSchema = z.object({
@@ -59,6 +61,7 @@ const BrowserDeliveryPayloadSchema = z.object({
     .optional(),
   badge: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   createdAt: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  alert: z.literal(false).optional(),
 });
 
 const BrowserDestinationContextSchema = z.object({
@@ -74,11 +77,14 @@ let unregisterDriver: (() => void) | null = null;
 
 const ensureVapidConfig = (): Promise<{ publicKey: string; privateKey: string }> => {
   if (vapidConfigPromise) return vapidConfigPromise;
+  const keys = ["notifications.web_push_public_key", "notifications.web_push_private_key"] as const;
+  let created = false;
   vapidConfigPromise = sql
     .begin(async (tx) => {
       await tx`SELECT pg_advisory_xact_lock(hashtextextended('notifications:web-push-vapid', 0))`;
-      const keys = ["notifications.web_push_public_key", "notifications.web_push_private_key"] as const;
-      const states = await Promise.all(keys.map((key) => coreSettings.read<string>(key)));
+      // Stay on the lock-owning connection. A pool query can queue behind a
+      // concurrent index build waiting for this transaction to finish.
+      const states = await Promise.all(keys.map((key) => readKeyState(key, tx)));
       for (const [index, state] of states.entries()) {
         if (state.stored === "unreadable") {
           const key = keys[index]!;
@@ -86,15 +92,21 @@ const ensureVapidConfig = (): Promise<{ publicKey: string; privateKey: string }>
           throw new SettingUnreadableError(key);
         }
       }
-      let [publicKey, privateKey] = states.map((state) => state.value);
+      let [publicKey, privateKey] = states.map((state) => (typeof state.value === "string" ? state.value : ""));
       if (!publicKey || !privateKey) {
         const generated = webpush.generateVAPIDKeys();
         publicKey = generated.publicKey;
         privateKey = generated.privateKey;
-        await coreSettings.set("notifications.web_push_public_key", publicKey);
-        await coreSettings.set("notifications.web_push_private_key", privateKey);
+        await writeKey(keys[0], publicKey, tx);
+        await writeKey(keys[1], privateKey, tx);
+        created = true;
       }
       return { publicKey, privateKey };
+    })
+    .then(async (config) => {
+      // Both keys commit together before other processes can refill their cache.
+      if (created) await invalidateSettingsCache(keys);
+      return config;
     })
     .catch((error) => {
       vapidConfigPromise = null;
@@ -192,6 +204,7 @@ const browserDriver = {
       ...(group !== undefined ? { group } : {}),
       ...(presentation.badge !== undefined ? { badge: presentation.badge } : {}),
       ...(presentation.group !== undefined || presentation.badge !== undefined ? { createdAt: Date.now() } : {}),
+      ...(presentation.alert === false ? { alert: false } : {}),
     });
     if (payload.preview !== undefined && Buffer.byteLength(browserPushMessage(payload), "utf8") > WEB_PUSH_PLAINTEXT_BUDGET) {
       const { preview: _preview, ...titleOnlyPayload } = payload;

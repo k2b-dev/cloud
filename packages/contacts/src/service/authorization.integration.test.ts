@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { accounts, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";

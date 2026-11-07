@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
-import { redis, sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import { redis, sql } from "../../runtime/clients";
 import { buildProjectedUser } from "../session/user";
 import { announcements } from "./index";
 

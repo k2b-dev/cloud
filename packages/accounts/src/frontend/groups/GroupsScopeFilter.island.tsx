@@ -1,5 +1,5 @@
-import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { buildGroupsUrl, type GroupsListState } from "../lib/url-state";
 import { useAccountsMessages } from "../messages";
 
@@ -10,9 +10,9 @@ type GroupsScopeFilterProps = {
 
 const SCOPE_VALUES = new Set<GroupsListState["scope"]>(["managed", "member", "all"]);
 const PROVIDER_VALUES = new Set<Exclude<GroupsListState["provider"], never>>(["", "ipa", "local"]);
-const PERSONAL_VALUE = "personal";
 
 export default function GroupsScopeFilter(props: GroupsScopeFilterProps) {
+  const { openPage } = usePageSwap();
   const messages = useAccountsMessages();
   const options = (): FilterChipSection[] => [
     {
@@ -31,18 +31,13 @@ export default function GroupsScopeFilter(props: GroupsScopeFilterProps) {
         { value: "local", label: messages().local, icon: "ti ti-home" },
       ],
     },
-    {
-      label: messages().linuxSection,
-      multiple: true,
-      options: [{ value: PERSONAL_VALUE, label: messages().showPersonalGroups }],
-    },
   ];
   return (
     <FilterChip
       label={messages().view}
       icon="ti ti-adjustments-horizontal"
       options={options()}
-      value={[props.state.scope, props.state.provider, ...(props.state.personal ? [PERSONAL_VALUE] : [])]}
+      value={[props.state.scope, props.state.provider]}
       onValueChange={(value) => {
         const nextScope =
           value.find((entry): entry is GroupsListState["scope"] => SCOPE_VALUES.has(entry as GroupsListState["scope"])) ??
@@ -50,13 +45,12 @@ export default function GroupsScopeFilter(props: GroupsScopeFilterProps) {
         const nextProvider =
           value.find((entry): entry is GroupsListState["provider"] => PROVIDER_VALUES.has(entry as GroupsListState["provider"])) ?? "";
 
-        navigateTo(
+        openPage(
           buildGroupsUrl(
             {
               ...props.state,
               scope: nextScope,
               provider: nextProvider,
-              personal: value.includes(PERSONAL_VALUE),
               page: 1,
             },
             { defaultScope: props.defaultScope },

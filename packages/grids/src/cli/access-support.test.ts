@@ -32,11 +32,9 @@ describe("Grids CLI access resources", () => {
     expect(() => assertAccessPrincipal({ type: "app", id: "app-id", label: "App", allowed: ["read"] }, { type: "public" })).not.toThrow();
   });
 
-  test("allows service accounts only for Base grants", () => {
+  test("allows service accounts for Base and App grants", () => {
     const principal = { type: "service_account" as const, serviceAccountId: "service-account-id" };
     expect(() => assertAccessPrincipal({ type: "base", id: "base-id", label: "Base", allowed: ["read"] }, principal)).not.toThrow();
-    expect(() => assertAccessPrincipal({ type: "app", id: "app-id", label: "App", allowed: ["read"] }, principal)).toThrow(
-      "Grids App access does not support service accounts; grant access to the delegated user instead",
-    );
+    expect(() => assertAccessPrincipal({ type: "app", id: "app-id", label: "App", allowed: ["read"] }, principal)).not.toThrow();
   });
 });

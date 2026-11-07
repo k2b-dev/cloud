@@ -32,7 +32,6 @@ export type GeoAdminBudget = {
   customRps: number;
   customDailyCredits: number;
   monthlyCredits: number;
-  personDailyCredits: number;
   /** Budget settings whose stored value cannot be read; saving the form replaces them. */
   unreadable: Array<GeoBudgetField | "plan">;
   changedAt: string | null;
@@ -53,8 +52,6 @@ export type GeoAdminUsage = {
   /** Cloud-wide use today against the provider's daily allowance of the selected plan. */
   today: { period: string; used: number; allowance: number; resetsAt: string };
   shares: Array<{ group: GeoUsageGroup; credits: number }>;
-  /** Access subjects whose use today reached the per-person daily limit. */
-  peopleAtLimit: number;
   /** Routing estimates exceeded this month; details are in the audit view. */
   routeCostOverruns: number;
   timezone: string;
@@ -68,24 +65,22 @@ export const GeoBudgetInputSchema = z
     customRps: z.unknown(),
     customDailyCredits: z.unknown(),
     monthlyCredits: z.unknown(),
-    personDailyCredits: z.unknown(),
   })
   .strict();
 export type GeoBudgetInput = z.infer<typeof GeoBudgetInputSchema>;
-export type GeoBudgetField = "customRps" | "customDailyCredits" | "monthlyCredits" | "personDailyCredits";
+export type GeoBudgetField = "customRps" | "customDailyCredits" | "monthlyCredits";
 
 /** Stable field error codes; the page renders their text. */
 export const GeoBudgetFieldErrorSchema = z.discriminatedUnion("code", [
   z.object({ code: z.literal("not_whole_number") }),
   z.object({ code: z.literal("too_small"), min: z.number() }),
   z.object({ code: z.literal("too_large"), max: z.number() }),
-  z.object({ code: z.literal("above_monthly"), max: z.number() }),
 ]);
 export type GeoBudgetFieldError = z.infer<typeof GeoBudgetFieldErrorSchema>;
 /** The 400 answer of a refused budget save. */
 export const GeoBudgetRefusalSchema = z.object({
   code: z.literal("geo_budget_invalid"),
-  errors: z.partialRecord(z.enum(["customRps", "customDailyCredits", "monthlyCredits", "personDailyCredits"]), GeoBudgetFieldErrorSchema),
+  errors: z.partialRecord(z.enum(["customRps", "customDailyCredits", "monthlyCredits"]), GeoBudgetFieldErrorSchema),
 });
 
 export type GeoKeyError =
@@ -102,22 +97,15 @@ const checkNumber = (value: unknown, min: number, max: number): GeoBudgetFieldEr
   return null;
 };
 
-/** Check the whole form before anything is written; the same rules as the settings registry plus the pair rule. */
+/** Check the whole form before anything is written; the same rules as the settings registry. */
 export const validateGeoBudget = (input: GeoBudgetInput) => {
   const errors: Partial<Record<GeoBudgetField, GeoBudgetFieldError>> = {};
-  const fields: Array<[GeoBudgetField, number, number]> = [
-    ["monthlyCredits", 0, GEO_MAX_CREDITS],
-    ["personDailyCredits", 0, GEO_MAX_CREDITS],
-  ];
+  const fields: Array<[GeoBudgetField, number, number]> = [["monthlyCredits", 0, GEO_MAX_CREDITS]];
   if (input.plan === "custom") fields.push(["customRps", 1, GEO_MAX_RPS], ["customDailyCredits", 1, GEO_MAX_CREDITS]);
   for (const [field, min, max] of fields) {
     const error = checkNumber(input[field], min, max);
     if (error) errors[field] = error;
   }
-  const month = input.monthlyCredits,
-    day = input.personDailyCredits;
-  if (!errors.monthlyCredits && !errors.personDailyCredits && typeof month === "number" && typeof day === "number" && day > month)
-    errors.personDailyCredits = { code: "above_monthly", max: month };
   return errors;
 };
 

@@ -1,10 +1,11 @@
+import { sql } from "@k2b/cloud";
 import { audit } from "@k2b/cloud/services";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { AddConversationLocalTags, CreateLocalTag, DeleteLocalTag, SetConversationLocalTags, UpdateLocalTag } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
 import { conversationVisibleTo, requireMailboxAccess, requireMailboxPermission, requireVisibleConversation } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
+import { invalidateAutomationEffects } from "./automation-effect-state";
 import { insertActivity } from "./collaboration";
 import { mailLive } from "./live";
 
@@ -50,7 +51,7 @@ export type WorkflowLocalTagMutation = {
 
 type ActorIdentity = { kind: "user" | "service_account"; id: string };
 
-const localTagColumns = sql`tag.id, tag.short_id, tag.mailbox_id, tag.name, tag.color, tag.revision, tag.created_at, tag.updated_at`;
+const localTagColumns = () => sql`tag.id, tag.short_id, tag.mailbox_id, tag.name, tag.color, tag.revision, tag.created_at, tag.updated_at`;
 const toIso = (value: Date | string): string => (value instanceof Date ? value : new Date(value)).toISOString();
 const mapTag = (row: LocalTagRow): LocalTag => ({
   id: row.id,
@@ -134,7 +135,7 @@ export const listLocalTags = async (context: MailRequestContext, mailboxId: stri
   const allowed = await requireMailboxAccess(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<LocalTagRow[]>`
-    SELECT ${localTagColumns}
+    SELECT ${localTagColumns()}
     FROM mail.local_tags tag
     WHERE tag.mailbox_id = ${mailboxId}::uuid
     ORDER BY tag.normalized_name, tag.id
@@ -214,7 +215,7 @@ export const updateLocalTag = async (params: {
       const allowed = await lockMailboxForWrite(params.context, params.mailboxId, tx);
       if (!allowed.ok) return allowed;
       const [current] = await tx<LocalTagRow[]>`
-        SELECT ${localTagColumns}
+        SELECT ${localTagColumns()}
         FROM mail.local_tags tag
         WHERE tag.id = ${params.tagId}::uuid AND tag.mailbox_id = ${params.mailboxId}::uuid
         FOR UPDATE
@@ -286,7 +287,7 @@ export const deleteLocalTag = async (params: {
       const allowed = await lockMailboxForWrite(params.context, params.mailboxId, tx);
       if (!allowed.ok) return allowed;
       const [current] = await tx<LocalTagRow[]>`
-        SELECT ${localTagColumns}
+        SELECT ${localTagColumns()}
         FROM mail.local_tags tag
         WHERE tag.id = ${params.tagId}::uuid AND tag.mailbox_id = ${params.mailboxId}::uuid
         FOR UPDATE
@@ -357,7 +358,7 @@ const loadConversationLocalTags = async (
   `;
   if (!conversation) return null;
   const rows = await db<LocalTagRow[]>`
-    SELECT ${localTagColumns}
+    SELECT ${localTagColumns()}
     FROM mail.conversation_local_tags assignment
     JOIN mail.local_tags tag ON tag.id = assignment.tag_id AND tag.mailbox_id = assignment.mailbox_id
     WHERE assignment.mailbox_id = ${mailboxId}::uuid AND assignment.conversation_id = ${conversationId}::uuid
@@ -390,7 +391,7 @@ export const listConversationLocalTags = async (params: {
   if (conversationIds.length === 0) return ok(new Map());
   if (conversationIds.length > 100) return fail(err.badInput("At most 100 conversations can be loaded at once"));
   const rows = await sql<(LocalTagRow & { conversation_id: string })[]>`
-    SELECT assignment.conversation_id, ${localTagColumns}
+    SELECT assignment.conversation_id, ${localTagColumns()}
     FROM mail.conversation_local_tags assignment
     JOIN mail.local_tags tag ON tag.id = assignment.tag_id AND tag.mailbox_id = assignment.mailbox_id
     WHERE ${conversationVisibleTo(allowed.data, sql`assignment.conversation_id`)}
@@ -470,6 +471,7 @@ export const addConversationLocalTags = async (params: {
           current.push(row.tag_id);
           insertedByConversation.set(row.conversation_id, current);
         }
+        for (const [conversationId, ids] of insertedByConversation) await invalidateAutomationEffects(tx, conversationId, "tag", ids);
         const updatedConversationIds = [...insertedByConversation.keys()].sort();
         const unchangedConversationIds = conversationIds.filter((conversationId) => !insertedByConversation.has(conversationId));
         if (updatedConversationIds.length === 0) {
@@ -526,7 +528,8 @@ export const updateWorkflowConversationLocalTagInTransaction = async (params: {
   db: SqlClient;
   mailboxId: string;
   conversationId: string;
-  workflowVersionId: string;
+  workflowVersionId?: string;
+  context?: MailRequestContext;
   expectedRevision: number;
   tagId: string;
   operation: "add" | "remove";
@@ -555,7 +558,7 @@ export const updateWorkflowConversationLocalTagInTransaction = async (params: {
             mailbox_id, conversation_id, tag_id, assigned_by_actor_kind, assigned_by_actor_id
           ) VALUES (
             ${params.mailboxId}::uuid, ${params.conversationId}::uuid, ${params.tagId}::uuid,
-            'workflow', ${params.workflowVersionId}::uuid
+            ${params.context ? mutationActor(params.context).kind : "workflow"}, ${params.context ? mutationActor(params.context).id : params.workflowVersionId}::uuid
           )
           ON CONFLICT (conversation_id, tag_id) DO NOTHING
           RETURNING tag_id
@@ -570,6 +573,7 @@ export const updateWorkflowConversationLocalTagInTransaction = async (params: {
   if (changed.length === 0) {
     return ok({ conversationRevision: Number(conversation.revision), applied: false, activityId: null });
   }
+  await invalidateAutomationEffects(params.db, params.conversationId, "tag", [params.tagId]);
   const [updated] = await params.db<{ revision: string | number }[]>`
     UPDATE mail.conversations
     SET revision = revision + 1, updated_at = now()
@@ -581,8 +585,8 @@ export const updateWorkflowConversationLocalTagInTransaction = async (params: {
     db: params.db,
     mailboxId: params.mailboxId,
     conversationId: params.conversationId,
-    context: null,
-    actorOverride: { kind: "workflow", workflowVersionId: params.workflowVersionId },
+    context: params.context ?? null,
+    actorOverride: params.workflowVersionId ? { kind: "workflow", workflowVersionId: params.workflowVersionId } : undefined,
     action: params.operation === "add" ? "conversation.local_tag_added" : "conversation.local_tag_removed",
     targetType: "local_tag",
     targetId: params.tagId,
@@ -638,6 +642,12 @@ export const setConversationLocalTags = async (params: {
           if (!state) return fail(err.notFound("Conversation"));
           return ok({ state, activityId: null, conversationId });
         }
+        await invalidateAutomationEffects(
+          tx,
+          conversationId,
+          "tag",
+          [...new Set([...existingTagIds, ...tagIds])].filter((id) => existingTagIds.includes(id) !== tagIds.includes(id)),
+        );
         await tx`
         DELETE FROM mail.conversation_local_tags
         WHERE mailbox_id = ${params.mailboxId}::uuid AND conversation_id = ${conversationId}::uuid

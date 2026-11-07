@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
+import { type PersonAvatar, randomizePersonAvatar, startPersonAvatar } from "../contracts/avatar";
 import { isModelsOnlyApiKey } from "../contracts/shared";
+import { applyAvatarParts, avatarRows, type CliAvatarState, readAvatarPhoto } from "./avatar";
 import { arg, type CliInputFlagValue, type CloudCliContext, command, confirmFlag, defineCliCommands, flag, readCliInput } from "./index";
 
 type User = {
@@ -229,6 +231,7 @@ export default defineCliCommands({
   summary: "Manage the authenticated account, profile, personal API keys, and SSH keys.",
   groupSummaries: {
     profile: "Show and update the account profile",
+    avatar: "Show and change the profile picture: photo, built avatar, or initials",
     "api-keys": "Manage personal API keys",
     "ssh-keys": "Manage SSH public keys",
     password: "Change the account password",
@@ -262,6 +265,60 @@ export default defineCliCommands({
       },
       run: async ({ ctx, flags }) => {
         await updateProfile(ctx, buildProfileUpdate(flags));
+      },
+    }),
+    command("avatar show", {
+      summary: "Show which profile picture others see and the parts of the built avatar",
+      run: async ({ ctx }) => {
+        const state = await readApi<CliAvatarState>(ctx, "/avatar");
+        printJsonOrTable(ctx, state, avatarRows(state), [{ key: "key" }, { key: "value" }]);
+      },
+    }),
+    command("avatar use", {
+      summary: "Show the stored photo, the built avatar, or initials",
+      args: { kind: arg.required({ valueLabel: "photo|avatar|initials", description: "Picture to show" }) },
+      run: async ({ ctx, args }) => {
+        const use = { photo: "photo", avatar: "built", initials: "initials" }[args.kind];
+        if (!use) throw new Error(`Choose photo, avatar, or initials, not "${args.kind}".`);
+        const state = await readApi<CliAvatarState>(ctx, "/avatar", jsonRequest("PUT", { use }));
+        printJsonOrTable(ctx, state, avatarRows(state), [{ key: "key" }, { key: "value" }]);
+      },
+    }),
+    command("avatar random", {
+      summary: "Build a random avatar, keep the skin tone, and show it",
+      run: async ({ ctx }) => {
+        const current = await readApi<CliAvatarState>(ctx, "/avatar");
+        const base = current.built?.kind === "person" ? current.built : startPersonAvatar();
+        const state = await readApi<CliAvatarState>(ctx, "/avatar", jsonRequest("PUT", { built: randomizePersonAvatar(base) }));
+        printJsonOrTable(ctx, state, avatarRows(state), [{ key: "key" }, { key: "value" }]);
+      },
+    }),
+    command("avatar set", {
+      summary: "Change parts of the built avatar, for example hair=curly hairColor=red, and show it",
+      args: { parts: arg.rest({ valueLabel: "part=value", description: "Parts to change; an unknown value lists the choices" }) },
+      run: async ({ ctx, args }) => {
+        const current = await readApi<CliAvatarState>(ctx, "/avatar");
+        const base: PersonAvatar = current.built?.kind === "person" ? current.built : startPersonAvatar();
+        const state = await readApi<CliAvatarState>(ctx, "/avatar", jsonRequest("PUT", { built: applyAvatarParts(base, args.parts) }));
+        printJsonOrTable(ctx, state, avatarRows(state), [{ key: "key" }, { key: "value" }]);
+      },
+    }),
+    command("avatar photo", {
+      summary: "Store a small square PNG, JPEG, or WebP (at most 48 KiB) and show it",
+      args: { file: arg.required({ valueLabel: "file", description: "Image file" }) },
+      run: async ({ ctx, args }) => {
+        const state = await readApi<CliAvatarState>(ctx, "/avatar", jsonRequest("PUT", { dataUrl: await readAvatarPhoto(args.file) }));
+        printJsonOrTable(ctx, state, avatarRows(state), [{ key: "key" }, { key: "value" }]);
+      },
+    }),
+    command("avatar delete-photo", {
+      summary: "Delete the stored photo; when it was showing, initials show",
+      flags: { yes: confirmFlag("Delete the stored photo") },
+      run: async ({ ctx, flags }) => {
+        if (!flags.yes) throw new Error("Pass --yes to delete the stored photo.");
+        await readApi(ctx, "/avatar", jsonRequest("DELETE"));
+        const state = await readApi<CliAvatarState>(ctx, "/avatar");
+        printJsonOrTable(ctx, state, avatarRows(state), [{ key: "key" }, { key: "value" }]);
       },
     }),
     command("activity", {

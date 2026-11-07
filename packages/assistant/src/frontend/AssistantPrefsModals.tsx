@@ -1,4 +1,4 @@
-import type { AiApprovalPreferenceView, AiMemory, AiMemoryKind, AiPublicModelProfile, AiUserPrefs } from "@k2b/cloud/ai";
+import type { AiApprovalPreferenceView, AiMemory, AiMemoryKind, AiUserPrefs } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
 import {
   Button,
@@ -34,7 +34,7 @@ const MEMORY_MAX_CHARS = 500;
 type AssistantPrefsTab = "personalization" | "skills" | "system-prompt" | "approvals" | "api-access";
 
 /** Present only while the operator offers the OpenAI-compatible API. */
-type OpenAiApiAccess = { baseUrl: string; models: AiPublicModelProfile[] };
+type OpenAiApiAccess = { baseUrl: string; models: import("@k2b/cloud/ai").AiPeopleModels["options"] };
 
 const readApiError = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
@@ -130,7 +130,7 @@ const loadOpenAiApiAccess = async (): Promise<OpenAiApiAccess | null> => {
   if (!status.openaiApi.enabled) return null;
   return {
     baseUrl: `${globalThis.location.origin}/api/ai/openai/v1`,
-    models: status.models.filter((model) => !model.capabilities.includes("transcription")),
+    models: status.options,
   };
 };
 
@@ -174,11 +174,8 @@ function ApiAccessPanel(props: { access: OpenAiApiAccess }) {
             <SettingsCollection.Item
               title={model.label}
               description={<code class="break-all font-mono text-xs">{model.id}</code>}
-              icon={<i class={model.dataBoundary === "private" ? "ti ti-lock" : "ti ti-cloud"} aria-hidden="true" />}
+              icon={<i class="ti ti-sparkles" aria-hidden="true" />}
             >
-              <SettingsCollection.Item.Status>
-                <StatusBadge tone="neutral" icon={null} label={text(model.dataBoundary === "private" ? "Private" : "Hosted")} />
-              </SettingsCollection.Item.Status>
               <SettingsCollection.Item.Actions>
                 <CopyButton text={model.id} label={text("Copy model ID")} iconOnly size="sm" />
               </SettingsCollection.Item.Actions>

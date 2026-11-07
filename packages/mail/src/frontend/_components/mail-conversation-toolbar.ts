@@ -4,6 +4,7 @@ export const MAIL_CONVERSATION_TOOLBAR_ACTION_IDS = [
   "reply",
   "reply_all",
   "forward",
+  "done",
   "archive",
   "spam",
   "trash",
@@ -22,11 +23,12 @@ export type MailConversationToolbarSectionId = "respond" | "organize" | "mark" |
 
 export const MAX_MAIL_CONVERSATION_TOOLBAR_ACTIONS = 8;
 
+// Done leads the conversation's own actions; Archive stays in the "…" menu and in the choice of actions.
 export const DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS: MailConversationToolbarActionId[] = [
   "reply",
   "reply_all",
   "forward",
-  "archive",
+  "done",
   "spam",
   "trash",
 ];
@@ -60,6 +62,7 @@ export const getMailConversationToolbarSections = (locale: string): readonly Mai
       id: "organize",
       label: t.organize,
       options: [
+        { id: "done", label: t.markDone, description: t.markDoneDescription, icon: "ti ti-check" },
         { id: "archive", label: t.archive, description: t.archiveDescription, icon: "ti ti-archive" },
         { id: "spam", label: t.junkToggle, description: t.junkToggleDescription, icon: "ti ti-alert-octagon" },
         { id: "trash", label: t.delete, description: t.deleteDescription, icon: "ti ti-trash" },
@@ -92,8 +95,16 @@ export const getMailConversationToolbarSections = (locale: string): readonly Mai
   ];
 };
 
+/** The default before Done replaced Archive; Mail stored it for everyone, so it reads as today's default. */
+const PREVIOUS_DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS = ["reply", "reply_all", "forward", "archive", "spam", "trash"];
+
 export const normalizeMailConversationToolbarActions = (value: unknown): MailConversationToolbarActionId[] => {
   if (!Array.isArray(value)) return [...DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS];
+  if (
+    value.length === PREVIOUS_DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS.length &&
+    value.every((actionId, index) => actionId === PREVIOUS_DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS[index])
+  )
+    return [...DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS];
   const requested = new Set(value.filter((candidate): candidate is string => typeof candidate === "string"));
   return MAIL_CONVERSATION_TOOLBAR_ACTION_IDS.filter((actionId) => requested.has(actionId)).slice(0, MAX_MAIL_CONVERSATION_TOOLBAR_ACTIONS);
 };

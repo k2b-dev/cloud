@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import "../../../../ui/test/solid-ssr-preload";
 import { type AiTurnBlock, splitActiveTurnBlocks } from "../protocol";
 
 test("uses the shared message streaming state before the first model block", () => {

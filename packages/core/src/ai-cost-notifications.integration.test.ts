@@ -1,26 +1,22 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import * as cloud from "@k2b/cloud";
+import { sql } from "@k2b/cloud";
 import { getFreeIpaConfig } from "@k2b/cloud/services";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
 import * as platform from "@k2b/cloud/services/notifications/platform";
 import * as deliveryRuntime from "@k2b/cloud/services/notifications/runtime";
-import { sql } from "bun";
-import { suiteFor, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
+import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 import { createAiNotificationService } from "./ai-notifications";
 import { app } from "./config";
-import { runCoreSetup } from "./runtime-helpers";
 
 // Recovery crosses every cost alert with every admin in the database. On the shared
 // integration database that fans out to the admins and alerts of every other test,
 // including leftovers of aborted runs, so this suite owns a private database: it sees
 // only its own rows, and dropping the database cleans up even after a timeout.
 suiteFor("database", "valkey")("background cost alert recovery", () => {
-  let fresh: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
-  // Core setup on an empty database takes several seconds, mostly the AI schema. The hook
-  // gets the integration budget of scripts/run-tests.ts, so a direct `bun test` passes too.
+  let fresh: Awaited<ReturnType<typeof useMigratedDatabase>> | undefined;
   beforeAll(async () => {
-    fresh = await useFreshDatabase("core_cost_alerts");
-    await runCoreSetup();
+    fresh = await useMigratedDatabase("core_cost_alerts");
     await registerNotificationDefinitions(app.meta.id, app.notifications);
   }, 30_000);
   afterAll(async () => {
@@ -79,7 +75,7 @@ suiteFor("database", "valkey")("background cost alert recovery", () => {
         [localAdmin.id, localAdmin.id, ipaAdmin.id, ipaAdmin.id].sort(),
       );
       expect(new Set(events.map((event) => event.idempotency_key)).size).toBe(4);
-      expect(events.every((event) => event.target_href === "/admin/settings?tab=ai-quotas&view=rules")).toBe(true);
+      expect(events.every((event) => event.target_href === "/admin/ai?sec=budgets&view=rules")).toBe(true);
       expect(events.map((event) => event.title).sort()).toEqual(
         ["Background AI cost warning", "Background AI cost warning", "Background AI stopped", "Background AI stopped"].sort(),
       );

@@ -43,7 +43,7 @@ const done = () => Response.json({ id: "7" });
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
-  test("on a page of the mobile app, an expired session is renewed and the request is sent once more", async () => {
+  test("on a page of the Cloud app, an expired session is renewed and the request is sent once more", async () => {
     const { calls, client } = page("/pwa/inventory", [
       ended(),
       Response.json({ renewed: true }),

@@ -157,7 +157,7 @@ export default function MailCalendarInvitation(props: {
       async ({ query }) =>
         options
           .filter((space) => space.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
-          .map((space) => ({ value: { id: space.id }, label: space.label, icon: space.icon })),
+          .map((space) => ({ id: space.id, value: { id: space.id }, label: space.label, icon: space.icon })),
       { title: messages().chooseSpace, minQueryLength: 0 },
     );
     if (!choice?.value || !isCurrent()) return false;
@@ -197,9 +197,9 @@ export default function MailCalendarInvitation(props: {
           if (!(await chooseDestination(isCurrent)) || !isCurrent()) return;
           const choice = await prompts.search<{ status: "accepted" | "tentative" | "declined" }>(
             async () => [
-              { value: { status: "accepted" }, label: messages().accept },
-              { value: { status: "tentative" }, label: messages().maybe },
-              { value: { status: "declined" }, label: messages().decline },
+              { id: "accepted", value: { status: "accepted" }, label: messages().accept },
+              { id: "tentative", value: { status: "tentative" }, label: messages().maybe },
+              { id: "declined", value: { status: "declined" }, label: messages().decline },
             ],
             { title: copy.respondTitle, minQueryLength: 0 },
           );

@@ -1,6 +1,8 @@
 import { timed } from "@k2b/stdlib/solid";
 import type QrScannerEngine from "qr-scanner";
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { Button } from "../actions/Button";
+import { useUiMessages } from "../intl/messages";
 import { prefersReducedMotion } from "../motion";
 import { useQrMessages } from "./qr-messages";
 
@@ -74,6 +76,12 @@ const openCamera = async (closed: () => boolean): Promise<{ stream: MediaStream;
   return { error };
 };
 
+/**
+ * How long the camera may take to show its first picture. A working camera shows one well within a second; after three
+ * the person has looked at a black square long enough to need a way to start it again.
+ */
+const firstPictureMs = 3000;
+
 const stopStream = (stream: MediaStream) => {
   for (const track of stream.getTracks()) track.stop();
 };
@@ -85,7 +93,9 @@ const stopStream = (stream: MediaStream) => {
  */
 export function QrScanner(props: QrScannerProps): JSX.Element {
   const qrMessages = useQrMessages();
+  const uiMessages = useUiMessages();
   const [starting, setStarting] = createSignal(true);
+  const [stalled, setStalled] = createSignal(false);
   const [invalid, setInvalid] = createSignal(false);
   let lastRejected: string | undefined;
   const resetRejected = timed.debounce(() => {
@@ -94,23 +104,67 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
   const resetFeedback = timed.debounce(() => setInvalid(false), 1500);
   let video!: HTMLVideoElement;
   let scanner: QrScannerEngine | undefined;
+  let stream: MediaStream | undefined;
   let closed = false;
-  let cleanupMotion: (() => void) | undefined;
+  const detach: (() => void)[] = [];
   const destroy = () => {
     closed = true;
-    cleanupMotion?.();
+    for (const listener of detach.splice(0)) listener();
     resetRejected.cancel();
     resetFeedback.cancel();
-    // pause(true) stops the camera stream immediately.
+    // pause(true) stops the camera stream immediately while the engine runs; a stream it never started stops here.
     void scanner?.pause(true);
     scanner?.destroy();
     scanner = undefined;
+    if (stream) stopStream(stream);
+    stream = undefined;
+    video.srcObject = null;
   };
   // Once closed, the host has unmounted the scanner or heard why it stopped; later failures stay silent.
   const fail = (reason: QrScannerError) => {
     if (closed) return;
     destroy();
     props.onError(reason);
+  };
+  /**
+   * Waits for the camera picture. WebKit, above all in an installed web app, can leave a stream black: play() never
+   * settles or is refused. The scanner then offers to try again rather than wait in silence, and a picture that starts
+   * late still clears that offer.
+   */
+  let attempt = 0;
+  const show = async (play: () => Promise<void>) => {
+    const current = ++attempt;
+    const latest = () => !closed && current === attempt;
+    setStalled(false);
+    const playing = play().then(
+      () => video.videoWidth > 0,
+      () => false,
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const shown = await Promise.race([
+      playing,
+      new Promise<false>((resolve) => {
+        timer = setTimeout(resolve, firstPictureMs, false);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (!latest()) return;
+    if (!shown) {
+      setStalled(true);
+      if (!(await playing) || !latest()) return;
+    }
+    setStalled(false);
+    setStarting(false);
+  };
+  /**
+   * Attaching the stream again restarts a player that stalled on it, and play() runs within the click, the gesture a
+   * refused play() may need. The engine already runs from its first start and scans from the play event it hears.
+   */
+  const retry = () => {
+    if (closed || !stream) return;
+    video.srcObject = null;
+    video.srcObject = stream;
+    void show(() => video.play());
   };
   onMount(() => {
     const hidden = () => {
@@ -170,15 +224,30 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
         };
         applyMotion();
         motion.addEventListener("change", applyMotion);
-        cleanupMotion = () => motion.removeEventListener("change", applyMotion);
+        detach.push(() => motion.removeEventListener("change", applyMotion));
+        // The engine places its scan region and frame on loadedmetadata, play, and a window resize. It misses a picture
+        // that turns, as when a tablet rotates, and a preview that changes size alone; replay loadedmetadata for both,
+        // or the region stays where the old picture had it and the frame sits off-centre.
+        const relayout = () => {
+          if (video.videoWidth > 0) video.dispatchEvent(new Event("loadedmetadata"));
+        };
+        video.addEventListener("resize", relayout);
+        const resized = new ResizeObserver(relayout);
+        resized.observe(video);
+        detach.push(() => {
+          video.removeEventListener("resize", relayout);
+          resized.disconnect();
+        });
         const camera = await openCamera(() => closed);
         if ("error" in camera) return fail(camera.error);
         if (closed) return stopStream(camera.stream);
         // qr-scanner plays a stream that is already set instead of opening its own.
-        video.srcObject = camera.stream;
+        stream = camera.stream;
+        video.srcObject = stream;
         video.style.transform = camera.mirrored ? "scaleX(-1)" : "";
-        await scanner.start();
-        if (!closed) setStarting(false);
+        // start() awaits the engine's play() of this stream.
+        const engine = scanner;
+        await show(() => engine.start());
       } catch {
         fail("unavailable");
       }
@@ -188,9 +257,20 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
     <div class={props.class ? `k2b-qr-scanner ${props.class}` : "k2b-qr-scanner"}>
       <div class="k2b-qr-scanner__preview" data-invalid={invalid() || undefined}>
         {/* Live camera preview contains no prerecorded speech or audio. */}
-        <video ref={video} muted playsinline aria-label={qrMessages().qrCameraPreview} />
+        <video ref={video} autoplay muted playsinline aria-label={qrMessages().qrCameraPreview} />
       </div>
-      <p role="status">{starting() ? qrMessages().qrCameraStarting : (props.instructions ?? qrMessages().qrCameraInstructions)}</p>
+      <p role="status">
+        {stalled()
+          ? qrMessages().qrCameraStalled
+          : starting()
+            ? qrMessages().qrCameraStarting
+            : (props.instructions ?? qrMessages().qrCameraInstructions)}
+      </p>
+      <Show when={stalled()}>
+        <Button type="button" size="sm" variant="secondary" class="k2b-qr-scanner__retry" onClick={retry}>
+          {uiMessages().tryAgain}
+        </Button>
+      </Show>
       <Show when={!starting()}>
         <p class="k2b-qr-scanner__note">{qrMessages().qrCameraPrivacy}</p>
       </Show>

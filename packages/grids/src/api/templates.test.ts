@@ -38,24 +38,39 @@ const resourceServiceAccount = {
   createdAt: "2026-01-01T00:00:00.000Z",
 };
 
-const requireDelegatedRead: MiddlewareHandler<AuthContext> = async (c, next) => {
-  c.set("actor", {
-    kind: "service_account",
-    serviceAccount: {
-      ...resourceServiceAccount,
-      kind: "user_delegated",
-      delegatedUserId: user.id,
-      appId: null,
-      resourceType: null,
-      resourceId: null,
-    },
-    delegatedUser: user,
-    scopes: ["read"],
-  });
-  c.set("accessSubject", { type: "user", userId: user.id });
-  c.set("user", user);
-  await next();
-};
+const requireDelegatedServiceAccount =
+  (scopes: string[]): MiddlewareHandler<AuthContext> =>
+  async (c, next) => {
+    c.set("actor", {
+      kind: "service_account",
+      serviceAccount: {
+        ...resourceServiceAccount,
+        kind: "user_delegated",
+        delegatedUserId: user.id,
+        appId: null,
+        resourceType: null,
+        resourceId: null,
+      },
+      delegatedUser: user,
+      scopes,
+    });
+    c.set("accessSubject", { type: "user", userId: user.id });
+    c.set("user", user);
+    await next();
+  };
+
+const requireMachineRead =
+  (kind: "standalone" | "agent"): MiddlewareHandler<AuthContext> =>
+  async (c, next) => {
+    c.set("actor", {
+      kind: "service_account",
+      serviceAccount: { ...resourceServiceAccount, kind, appId: null, resourceType: null, resourceId: null },
+      delegatedUser: null,
+      scopes: ["grids:read"],
+    });
+    c.set("accessSubject", { type: "service_account", serviceAccountId: resourceServiceAccount.id });
+    await next();
+  };
 
 const requireResourceBound: MiddlewareHandler<AuthContext> = async (c, next) => {
   c.set("actor", { kind: "service_account", serviceAccount: resourceServiceAccount, delegatedUser: null, scopes: ["grids:*"] });
@@ -81,19 +96,45 @@ describe("Grids template API", () => {
   afterEach(() => mock.restore());
 
   test("rejects built-in template instantiation without write scope", async () => {
-    expect((await instantiate(requireDelegatedRead)).status).toBe(403);
+    const create = spyOn(gridsService.template, "instantiate");
+    for (const kind of ["standalone", "agent"] as const) {
+      const response = await instantiate(requireMachineRead(kind));
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ code: "FORBIDDEN", message: "The API credential does not grant the required Grids scope." });
+    }
+    expect(create).not.toHaveBeenCalled();
   });
 
   test("rejects built-in template instantiation from resource-bound credentials", async () => {
     expect((await instantiate(requireResourceBound)).status).toBe(403);
   });
 
-  test("returns the created base with its public id only", async () => {
-    spyOn(gridsService.template, "instantiate").mockImplementation(async () => ({
-      ok: true,
-      data: {
-        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        shortId: "BASE01",
+  for (const [actor, authenticate] of [
+    ["user", requireAuthenticated],
+    ["delegated full key", requireDelegatedServiceAccount([])],
+    ["delegated legacy read scope", requireDelegatedServiceAccount(["grids:read"])],
+  ] as const) {
+    test(`${actor} receives the created base with its public id only`, async () => {
+      const create = spyOn(gridsService.template, "instantiate").mockImplementation(async () => ({
+        ok: true,
+        data: {
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          shortId: "BASE01",
+          name: "Bookshop",
+          description: null,
+          documentDefaults: {},
+          createdBy: user.id,
+          deletedAt: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      }));
+
+      const response = await instantiate(authenticate);
+      expect(response.status).toBe(201);
+      expect(create.mock.calls[0]?.slice(0, 3)).toEqual(["bookshop", {}, user.id]);
+      expect(await response.json()).toEqual({
+        id: "BASE01",
         name: "Bookshop",
         description: null,
         documentDefaults: {},
@@ -101,20 +142,7 @@ describe("Grids template API", () => {
         deletedAt: null,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
-      },
-    }));
-
-    const response = await instantiate(requireAuthenticated);
-    expect(response.status).toBe(201);
-    expect(await response.json()).toEqual({
-      id: "BASE01",
-      name: "Bookshop",
-      description: null,
-      documentDefaults: {},
-      createdBy: user.id,
-      deletedAt: null,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
+      });
     });
-  });
+  }
 });

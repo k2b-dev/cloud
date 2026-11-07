@@ -1,11 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
+import type { AuthContext } from "@k2b/cloud/server";
+import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
 import type { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import { err, fail, ok } from "@k2b/stdlib";
-import { sql } from "bun";
+import { Hono } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { app } from "../config";
 import { createIdentityInvocationRoutes } from "./identity-invocation";
+
+useUnitClients();
 
 const mandateId = "11111111-1111-4111-8111-111111111111";
 const userId = "22222222-2222-4222-8222-222222222222";
@@ -124,7 +131,7 @@ describe("identity invocation broker", () => {
         },
         fetch: async (input, init) => {
           targetRequests.push(input instanceof Request ? input : new Request(input, init));
-          return Response.json({ data: { id: "one" } });
+          return Response.json({ data: { id: "one" } }, { headers: { "x-cloud-workload-auth": "required" } });
         },
       },
     });
@@ -133,6 +140,7 @@ describe("identity invocation broker", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-cloud-workload-auth")).toBeNull();
     const body = await response.json();
     expect(body).toEqual({ data: { id: "one" } });
     expect(JSON.stringify(body)).not.toContain("target-only-invocation");
@@ -252,7 +260,9 @@ describe("identity invocation broker", () => {
 
   test("rejects an unauthenticated workload without an issuance switch", async () => {
     const routes = createIdentityInvocationRoutes({ authenticateWorkload: async () => null });
-    expect((await routes.request(request(invocation()))).status).toBe(401);
+    const rejected = await routes.request(request(invocation()));
+    expect(rejected.status).toBe(401);
+    expect(rejected.headers.get("x-cloud-workload-auth")).toBe("required");
   });
 });
 
@@ -279,4 +289,81 @@ test("mandate invocation keeps its socket raised through dispatch and restores i
   }
   expect((await pending).status).toBe(503);
   expect(calls).toEqual([55, 10]);
+});
+
+test("Core's actual entry policy lets the child broker authenticate its own invocation", async () => {
+  const server = new Hono<AuthContext>()
+    .use(
+      "*",
+      requireAppAccess(app.meta, async (_c, message) => new Response(message, { status: 403 })),
+    )
+    .route("/api/_internal/identity/v1", createIdentityInvocationRoutes());
+  const response = await server.request("http://core.test/api/_internal/identity/v1/invoke-child", { method: "POST" });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: "FORBIDDEN" });
+  expect((await server.request("http://core.test/api/_internal/identity/v1/invoke-child/other", { method: "POST" })).status).toBe(401);
+});
+
+test("app queries use workload identity without a mandate, while other targets and undeclared callers fail", async () => {
+  let forwarded = 0;
+  let appOnly = true;
+  let admitted = true;
+  const routes = createIdentityInvocationRoutes({
+    authenticateWorkload,
+    dispatchDependencies: {
+      getCapability: async () => ({
+        ...registryEntry,
+        manifest: {
+          ...registryEntry.manifest,
+          queries: registryEntry.manifest.queries.map((query) => ({ ...query, ...(appOnly ? { appOnly: true as const } : {}) })),
+        },
+      }),
+      getApp: async (id) => ({
+        id,
+        platformPermissions: admitted ? ["resources:readers"] : [],
+        name: id,
+        description: "",
+        icon: "",
+        routes: [],
+        baseUrl: "http://caller.test",
+      }),
+      checkAppQueryRate: async () => ({ limited: false }),
+      withActiveSigner,
+      fetch: async (url, init) => {
+        forwarded++;
+        expect(String(url)).toContain("/app-queries/get");
+        expect(new Headers(init?.headers).get("authorization")).not.toContain(workloadToken);
+        return Response.json({ data: { id: "one" } });
+      },
+    },
+  });
+  const { mandateId: _mandate, mandateRevision: _revision, ...appQuery } = invocation();
+  expect((await routes.request(request(appQuery))).status).toBe(200);
+  expect(forwarded).toBe(1);
+  expect((await routes.request(request({ ...appQuery, mandateId }))).status).toBe(400);
+  expect((await routes.request(request({ ...appQuery, mandateRevision: 3 }))).status).toBe(400);
+  expect((await routes.request(request({ ...appQuery, actor: { kind: "user", userId } }))).status).toBe(400);
+  admitted = false;
+  const denied = await routes.request(request(appQuery));
+  expect(denied.status).toBe(403);
+  expect(await denied.json()).toMatchObject({ code: "APP_QUERY_NOT_ADMITTED" });
+  admitted = true;
+  appOnly = false;
+  expect((await routes.request(request(appQuery))).status).toBe(403);
+  expect(forwarded).toBe(1);
+});
+
+test("app-owned capability authority never accepts a legacy service-account workload token", async () => {
+  const routes = createIdentityInvocationRoutes({
+    authenticateWorkload,
+    dispatchDependencies: {
+      getCapability: async () => {
+        throw new Error("Unsigned app authority must not reach dispatch");
+      },
+    },
+  });
+  const response = await routes.request(
+    request({ appCaller: true, kind: "query", targetApp: "core", capabilityId: "address.autocomplete", input: { text: "Orleans" } }),
+  );
+  expect(response.status).toBe(401);
 });

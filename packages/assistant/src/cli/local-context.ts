@@ -12,6 +12,7 @@ import {
   splitAiSkillMarkdown,
 } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
+import { type LocalFileReview, openReviewedFile, reviewLocalFile } from "./local-file";
 import { classifyLocalPath, isProtectedLocalPath } from "./local-paths";
 
 export type LocalSkill = {
@@ -78,6 +79,7 @@ export const discoverLocalContext = async (workspace: string, home = homedir(), 
     hasProjectContext: false,
     trusted: false,
   };
+  const reviews = new Map<string, LocalFileReview>();
   for (const folder of folders) {
     if (!(await entries(folder)).some((entry) => entry.name === "AGENTS.md")) continue;
     const path = join(folder, "AGENTS.md");
@@ -96,7 +98,9 @@ export const discoverLocalContext = async (workspace: string, home = homedir(), 
       context.problems.push({ path, error: "AGENTS.md points outside the project or to a protected file; not loaded" });
       continue;
     }
-    if (!(await stat(path)).isFile()) continue;
+    const review = await reviewLocalFile(path);
+    if (!review.identity || review.identity.directory || review.target !== target) continue;
+    reviews.set(path, review);
     context.instructionPaths.push(path);
   }
   context.hasProjectContext = context.instructionPaths.length > 0;
@@ -106,10 +110,18 @@ export const discoverLocalContext = async (workspace: string, home = homedir(), 
       context.shortened = true;
       break;
     }
-    // Decoding never shrinks text (an invalid byte becomes a 3-byte U+FFFD), so one byte past the budget is enough to read.
-    let content = await Bun.file(path)
-      .slice(0, remaining + 1)
-      .text();
+    // Read the checked file through its handle; the path may name another file by now.
+    const { file, info } = await openReviewedFile(path, reviews.get(path)!);
+    let content: string;
+    try {
+      if (!info.isFile()) throw new Error(`${path} changed after it was checked. Try again.`);
+      // Decoding never shrinks text (an invalid byte becomes a 3-byte U+FFFD), so one byte past the budget is enough to read.
+      const buffer = Buffer.alloc(Math.min(remaining + 1, info.size));
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+      content = new TextDecoder().decode(buffer.subarray(0, bytesRead));
+    } finally {
+      await file.close();
+    }
     if (Buffer.byteLength(content) > remaining) {
       const suffix = "\n[shortened by cld: 32 KiB limit]";
       if (remaining < Buffer.byteLength(suffix)) {

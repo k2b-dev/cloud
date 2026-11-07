@@ -1,5 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
-import { redis } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { redis } from "../runtime/clients";
+
 import * as platformSettings from "../services/settings";
 import * as models from "./assistant-models";
 import { getAiChatQuotas } from "./chat-quotas";
@@ -7,6 +9,8 @@ import { aiQuotas } from "./quotas";
 import { aiRoutes } from "./routes";
 import * as settings from "./settings";
 import type { AiModelProfile } from "./types";
+
+useUnitClients();
 
 const subject = { type: "user" as const, userId: "own-user" };
 const balance = (scope: string) => ({
@@ -50,10 +54,11 @@ test("own view strips grant identities, history and inaccessible model scopes", 
   const config = spyOn(aiQuotas, "config").mockResolvedValue({ enabled: true, revision: 0, rules: [] });
   const available = spyOn(models, "listAssistantAiModels").mockResolvedValue([]);
   const configured = spyOn(settings, "readAiSettingsState").mockResolvedValue({
+    assignments: [{ slot: "balanced", variantId: "", revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
     ok: true,
     enabled: true,
     profiles: [],
-    defaultModelId: "",
+
     globalInstructions: "",
     localClientInstructions: "",
     compactionInstructions: "",
@@ -67,7 +72,10 @@ test("own view strips grant identities, history and inaccessible model scopes", 
   });
   try {
     const result = await getAiChatQuotas(subject);
-    expect(snapshot).toHaveBeenCalledWith(subject);
+    expect(snapshot).toHaveBeenCalledWith(subject, undefined, undefined, undefined, {
+      state: await configured.mock.results[0]?.value,
+      config: { enabled: true, revision: 0, rules: [] },
+    });
     expect(result.balances.map((b) => b.scope)).toEqual(["*"]);
     expect(JSON.stringify(result)).not.toContain("Private group");
     expect(result).not.toHaveProperty("usage");
@@ -81,22 +89,29 @@ test("own view strips grant identities, history and inaccessible model scopes", 
 });
 test("own view marks visible unpriced models as unlimited; zero prices remain priced", async () => {
   const profile = (id: string, pricing?: AiModelProfile["pricing"]): AiModelProfile => ({
+    modelId: id,
+    providerId: id,
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
     id,
     label: id,
     provider: "ollama",
     model: id,
     enabled: true,
-    capabilities: ["streaming"],
+    capabilities: [],
     dataBoundary: "private",
     pricing,
   });
   const config = spyOn(aiQuotas, "config").mockResolvedValue({ enabled: true, revision: 0, rules: [], unit: "points" });
   const available = spyOn(models, "listAssistantAiModels").mockResolvedValue([profile("unpriced"), profile("free")]);
   const configured = spyOn(settings, "readAiSettingsState").mockResolvedValue({
+    assignments: [{ slot: "balanced", variantId: "free", revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
     ok: true,
     enabled: true,
     profiles: [profile("unpriced"), profile("free", { inputPerMillion: 0, outputPerMillion: 0 }), profile("secret")],
-    defaultModelId: "free",
+
     globalInstructions: "",
     localClientInstructions: "",
     compactionInstructions: "",
@@ -119,12 +134,18 @@ test("own view marks visible unpriced models as unlimited; zero prices remain pr
 });
 test("own view carries usage shares only: no amounts, limits, or unit", async () => {
   const model = (id: string): AiModelProfile => ({
+    modelId: id,
+    providerId: id,
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
     id,
     label: id,
     provider: "ollama",
     model: id,
     enabled: true,
-    capabilities: ["streaming"],
+    capabilities: [],
     dataBoundary: "private",
     pricing: { inputPerMillion: 3, outputPerMillion: 15 },
   });
@@ -132,10 +153,11 @@ test("own view carries usage shares only: no amounts, limits, or unit", async ()
   const config = spyOn(aiQuotas, "config").mockResolvedValue({ enabled: true, revision: 0, rules: [], unit: "EUR" });
   const available = spyOn(models, "listAssistantAiModels").mockResolvedValue(ids.map(model));
   const configured = spyOn(settings, "readAiSettingsState").mockResolvedValue({
+    assignments: [{ slot: "balanced", variantId: "near", revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
     ok: true,
     enabled: true,
     profiles: ids.map(model),
-    defaultModelId: "near",
+
     globalInstructions: "",
     localClientInstructions: "",
     compactionInstructions: "",

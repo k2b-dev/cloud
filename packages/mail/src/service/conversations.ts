@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { MergeConversationsInput, ReassignConversationMessageInput, SplitConversationInput } from "../contracts";
 import { MAIL_CONVERSATION_ASSIGNEE_LIMIT } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
@@ -8,6 +8,7 @@ import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { requireMailboxCollaborationPermission, writeConversationAssignees } from "./collaboration";
 import { keepCarriesOver, recordCarriedKeep } from "./conversation-keeps";
 import { mergeConversationReferencesInTransaction } from "./conversation-reference";
+import { discardConversationSummaries } from "./conversation-summary-lifecycle";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
 import { type MailActivityChange, mailLive } from "./live";
@@ -395,9 +396,9 @@ export const mergeConversations = async (params: {
         return fail(err.conflict("Source conversation was changed by another collaborator"));
       }
       const assignees = await tx<{ user_id: string; assigned_at: string }[]>`
-        SELECT user_id, MIN(assigned_at)::text AS assigned_at FROM mail.conversation_assignees
+        SELECT principal_id AS user_id, MIN(assigned_at)::text AS assigned_at FROM mail.conversation_assignees
         WHERE conversation_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${conversationIds}::jsonb))
-        GROUP BY user_id ORDER BY MIN(assigned_at), user_id
+        GROUP BY principal_id ORDER BY MIN(assigned_at), principal_id
       `;
       if (assignees.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
         return fail(err.badInput(`A conversation can have at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees`));
@@ -490,6 +491,7 @@ export const mergeConversations = async (params: {
         SET conversation_id = ${params.targetConversationId}::uuid
         WHERE conversation_id = ${params.input.sourceConversationId}::uuid
       `;
+      await discardConversationSummaries(tx, { mailboxId: params.mailboxId, conversationId: params.input.sourceConversationId });
       await tx`DELETE FROM mail.conversations WHERE id = ${params.input.sourceConversationId}::uuid`;
 
       const actor = actorIdentity(params.context);
@@ -775,7 +777,7 @@ export const splitConversation = async (params: {
       if (!created) return fail(err.internal("Split conversation insert returned no row"));
       const carriesKeep = await keepCarriesOver(tx, params.conversationId, created.id);
       const assignees = await tx<{ user_id: string; assigned_at: string }[]>`
-        SELECT user_id, assigned_at::text AS assigned_at FROM mail.conversation_assignees WHERE conversation_id = ${params.conversationId}::uuid ORDER BY assigned_at, user_id
+        SELECT principal_id AS user_id, assigned_at::text AS assigned_at FROM mail.conversation_assignees WHERE conversation_id = ${params.conversationId}::uuid ORDER BY assigned_at, principal_id
       `;
       await writeConversationAssignees(tx, {
         mailboxId: params.mailboxId,

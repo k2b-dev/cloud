@@ -1,0 +1,6 @@
+### A pairing test jumped the page clock while the claim was still busy
+
+- **What happened:** `network loss stays visible and retry resumes status checks` in `pwas/pwa-auth/src/pairing.browser.test.ts` hung at `getByRole("alert").waitFor()` until the 5 s test timeout on loaded Chromium shards. Bun's timeout cleanup then closed the shared browser, and the next cases of the file failed within milliseconds (#2098).
+- **Root cause:** The pairing checks its status from a 1 s interval but skips a tick while a check or the claim is busy. `claim()` shows the comparison code first and then still awaits `storage.saveEnrollment()`, a real-time IndexedDB write, before it ends. The test reacted to the visible code, went offline, and jumped the page clock 6 s ahead while the claim was still busy. Every tick of the jump was skipped, and with the clock standing still no later check was scheduled, so the network loss never showed.
+- **Error class:** A test advances a fake clock in one jump while the page still finishes real-time work that the ticks depend on.
+- **Guard:** The fixture counts status requests refused while offline. The test advances the clock one poll interval at a time, within a bounded real-time deadline, until a check has reached the lost network, and only then expects the alert. It passed 8 of 8 Chromium runs and the WebKit run locally.

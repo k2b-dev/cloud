@@ -1,5 +1,6 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { MailMessage } from "../../contracts/outgoing-mail";
+import { sql } from "../../runtime/clients";
 import {
   cancelMailStreams,
   deleteMailObjects,

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CloudResourceRefSchema } from "../../contracts";
-import { CapabilitySearchTagManifestSchema } from "../../contracts/capabilities";
+import { CapabilitySearchTagManifestSchema, CloudResourceReferenceSchema } from "../../contracts/capabilities";
 
 const TAG_PATTERN = /^[^\s#]+$/;
 const SEARCH_BASE_URL = "https://cloud.invalid";
@@ -30,6 +30,14 @@ const TagArraySchema = z.preprocess(
     .transform((tags) => [...new Set(tags.map((tag) => tag.toLowerCase()))]),
 );
 
+/** Rows one app adds to a search at a time: its first page, and each "load more". */
+export const SEARCH_PAGE_SIZE = 30;
+/**
+ * The most rows a search lists from one app: three pages. Core asks for one row more to learn whether there are
+ * more, and an app answers at most 100 Universal Search rows.
+ */
+export const SEARCH_APP_RESULT_LIMIT = 3 * SEARCH_PAGE_SIZE;
+
 export const SearchQuerySchema = z
   .object({
     q: z
@@ -48,6 +56,8 @@ export const SearchQuerySchema = z
       .optional()
       .transform((value) => value === "true"),
     provider_limit: z.coerce.number().int().min(1).max(30).optional().default(10),
+    /** Rows of a search that reaches one app, for loading more; without it the app lists a first page. */
+    limit: z.coerce.number().int().min(1).max(SEARCH_APP_RESULT_LIMIT).optional(),
   })
   .refine((value) => Boolean(value.scope_type) === Boolean(value.scope_id), { message: "Both scope_type and scope_id are required" })
   .refine((value) => !value.scope_tag || (Boolean(value.app) && !value.scope_type), {
@@ -69,10 +79,12 @@ export const SearchItemSchema = z.object({
   ref: CloudResourceRefSchema,
   title: z.string(),
   href: SameOriginPathSchema,
+  context: CloudResourceReferenceSchema.shape.context,
+  status: CloudResourceReferenceSchema.shape.status,
   preview: z.string().optional(),
   icon: z.string().optional(),
   priority: z.number().int().min(0).max(9).optional(),
-  metadata: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+  metadata: z.array(z.object({ label: z.string(), value: z.string(), format: z.enum(["date", "date-time"]).optional() })).optional(),
   previewUrl: SameOriginPathSchema.optional(),
 });
 
@@ -108,6 +120,8 @@ export const SearchStreamLineSchema = z.discriminatedUnion("type", [
     provider: z.string(),
     status: SearchProviderStatusSchema,
     results: z.array(SearchItemSchema),
+    /** The app found more rows than it listed; a search with a larger `limit` lists them. */
+    more: z.boolean().optional(),
     ms: z.number().int().nonnegative(),
   }),
   z.object({

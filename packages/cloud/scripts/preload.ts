@@ -22,8 +22,10 @@ import { cp, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
+import { startPlatform } from "../src/start";
 import { writeAppFavicon } from "./app-favicon";
 import { buildBrowserPerformance } from "./browser-performance";
+import { writeInstallableIcons } from "./installable-assets";
 
 const appId = process.env.APP_ID ?? "core";
 
@@ -42,7 +44,10 @@ if (!existsSync(appDir)) throw new Error(`Unknown app dir: ${appDir} (set APP_DI
 // Share the resolved source directory with defineApp before importing config.
 process.env.APP_DIR = appDir;
 
-const { app, plugin } = await import(resolve(appDir, "src/config"));
+const { app, plugin } = await startPlatform({ appId, load: () => import(resolve(appDir, "src/config")) });
+if (app && app.meta.id !== appId) {
+  throw new Error(`APP_ID ${JSON.stringify(appId)} does not match declared app ${JSON.stringify(app.meta.id)}`);
+}
 Bun.plugin((app?.plugin ?? plugin)());
 
 // ── Build CSS ───────────────────────────────────────────────────────────────
@@ -138,6 +143,8 @@ const appPublicSource = resolve(appDir, "public");
 if (existsSync(appPublicSource) && appPublicSource !== publicDir && !appPublicDir.startsWith(`${appPublicSource}/`)) {
   await cp(appPublicSource, appPublicDir, { recursive: true });
 }
+
+if (app?.meta.installable) await writeInstallableIcons(publicDir, appId, app.meta.installable);
 
 if (appId !== "core" && app) {
   await writeAppFavicon({

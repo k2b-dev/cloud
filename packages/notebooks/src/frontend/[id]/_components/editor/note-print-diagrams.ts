@@ -1,4 +1,4 @@
-import { closesCodeFence, type MarkdownCodeFence, openingCodeFence } from "../../../../lib/markdown-fences";
+import { closesCodeFence, type MarkdownCodeFence, openingCodeFence } from "@k2b/editor/markdown/lib/markdown-fences";
 
 /** Container-prefixed fences in lists or blockquotes print as readable source on first print. */
 export function mermaidFenceSources(markdown: string): string[] {

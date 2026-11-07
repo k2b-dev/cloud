@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { releaseDueSnoozes } from "./collaboration";
 import { type ConnectorEnvelope, type ConnectorProtocolFacts, MAX_IMAP_LITERAL_BYTES } from "./connectors";
@@ -40,7 +39,6 @@ suite("mail conversation work-state projection", () => {
   let context: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const uid = `mail-work-state-${suffix}`;
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)

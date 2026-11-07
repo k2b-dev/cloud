@@ -6,6 +6,7 @@ export type {
   CalendarDayBadge,
   CalendarEvent,
   CalendarEventColor,
+  CalendarEventLink,
   CalendarEventRenderContext,
   CalendarEventTimeChange,
   CalendarExternalDrag,
@@ -51,6 +52,7 @@ export type {
   StateTimelineRow,
   StateTimelineState,
 } from "./chart-state-timeline";
+export type { ChartTimeAxis } from "./chart-time-axis";
 export { highlightSql } from "./code-highlight";
 export { type CollectionSelection, createCollectionSelection, type SelectionModifiers } from "./collection-selection";
 export type {
@@ -69,9 +71,9 @@ export { default as DataTable } from "./DataTable";
 export type { DocCodeHighlighter, DocCodeProps, DocConcept, DocNoteVariant, DocRow } from "./Docs";
 export { DocCode, DocConceptGrid, DocInlineCode, DocLead, DocNote, DocPage, DocRows, DocSection } from "./Docs";
 export { FileBrowserPanel, type FileBrowserPanelProps, type FileSource, openFileBrowser } from "./FileBrowser";
-export { FileGrid, type FileGridProps } from "./FileGrid";
+export { FileGrid, type FileGridGroup, type FileGridOpenProps, type FileGridProps, type FileGridSelectableProps } from "./FileGrid";
 export { default as FileTree, type FileTreeActions, type FileTreeEntry, type FileTreeProps } from "./FileTree";
-export { type FileType, FileTypeIcon, type FileTypeIconProps, fileTypeOf } from "./FileTypeIcon";
+export { type FileType, FileTypeIcon, type FileTypeIconProps, fileKindLabel, fileTypeOf } from "./FileTypeIcon";
 export {
   canPreviewFile,
   default as FileView,
@@ -96,7 +98,10 @@ export { MapAttribution } from "./MapAttribution";
 export { MapView } from "./MapView";
 export { MapViewFrame } from "./MapViewFrame";
 export { default as MarkdownView, type MarkdownRenderOptions, type MarkdownViewProps, renderSafeMarkdown } from "./MarkdownView";
+export { type MatchRange, MatchText, type MatchTextProps, matchParts } from "./MatchText";
 export type {
+  MessageEventGroupProps,
+  MessageEventRowProps,
   MessageGroupEntry,
   MessageRowAction,
   MessageRowAttachment,
@@ -112,19 +117,23 @@ export type {
   MessageRowThread,
   MessageSystemRowProps,
 } from "./MessageRow";
-export { MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
+export { MessageEventGroup, MessageEventRow, MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
 export { type MapPaletteColors, type MapTheme, mapPalette } from "./map-palette";
 export { type MapStyleOptions, mapAttribution, mapStyle } from "./map-style";
+export { MAP_SNAPSHOT_MAX_PIXELS, MapSnapshotError, type MapSnapshotErrorCode } from "./map-view-snapshot";
 export type {
   MapViewArea,
   MapViewFit,
   MapViewFrameProps,
+  MapViewHandle,
   MapViewLine,
   MapViewLineTone,
   MapViewMarker,
   MapViewOwnLocation,
   MapViewPoint,
   MapViewProps,
+  MapViewSnapshot,
+  MapViewSnapshotOptions,
   MapViewStyle,
   MapViewStyleSource,
   MapViewTone,

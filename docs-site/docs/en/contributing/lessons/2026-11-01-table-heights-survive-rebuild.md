@@ -1,0 +1,6 @@
+### Text jumped when someone typed below a table
+
+- **What happened:** In a note with tables above the reading position, a change further down moved the text up for good: 392 px on a phone and 252 px on a desktop with eight tables. The WebKit job failed `block-geometry.browser.test.ts` now and then with two tables 56 px taller than the height map and every later line 112 px off.
+- **Root cause:** The shared table grid replaces every table's widget on each change and on each new syntax tree, and the widget is never equal to its predecessor, so CodeMirror takes the height of every table from `estimatedHeight` again. That formula was too low for the current table layout. Drawn tables recover at the next measure; tables outside the drawn range keep the guess.
+- **Error class:** A block widget that is replaced without being equal loses its measured height, so an inexact `estimatedHeight` moves every line below it. A test that reads the height map can also land in the frame before the measure.
+- **Guard:** `block-geometry.browser.test.ts` reads the height map in the same task as an edit, and checks that a line keeps its screen position when someone types below scrolled-out tables, on a desktop and a phone width.

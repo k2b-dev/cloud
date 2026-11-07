@@ -1,6 +1,8 @@
 import { startCompletion } from "@codemirror/autocomplete";
+import { serializeGeoDocument } from "@k2b/cloud/geo/document";
+import { setListKind } from "@k2b/editor/markdown";
 import { crypto as stdCrypto } from "@k2b/stdlib";
-import { setListKind } from "../../../../lib/editor/list-commands";
+import { notebookMapMessages } from "../../../../../lib/map-messages";
 import { openNoteSearchPrompt } from "../../search/openNoteSearchPrompt";
 import { openAttachmentPicker } from "../AttachmentPicker";
 import {
@@ -12,6 +14,7 @@ import {
   insertTable,
   setHeadingLevel,
 } from "../editor-actions";
+import { applyPageTemplateById, pickPageTemplate } from "../page-templates";
 import type { SlashCommand } from "./types";
 
 // =============================================================================
@@ -75,6 +78,21 @@ const formatDateTime = (d: Date): string => `${formatDate(d)} ${formatTime(d)}`;
  *      where possible so the toolbar and slash command stay in lockstep.
  */
 export const slashCommands: SlashCommand[] = [
+  {
+    name: "map",
+    label: "Map",
+    icon: "ti-map-2",
+    section: "Insert",
+    aliases: ["karte"],
+    description: "Add linked places and a saved route",
+    run: (view, context) => {
+      if (view.state.readOnly) return;
+      const title = notebookMapMessages.resolve(context.locale ? [context.locale] : []).t.map;
+      const insert = `${serializeGeoDocument({ version: 1, title, pins: [] })}\n\n`;
+      const from = view.state.selection.main.from;
+      view.dispatch({ changes: { from, to: view.state.selection.main.to, insert }, selection: { anchor: from + insert.length } });
+    },
+  },
   // ── Formatting ───────────────────────────────────────────
   //
   // Headings 1-6. Each entry is registered separately so all six
@@ -278,13 +296,26 @@ export const slashCommands: SlashCommand[] = [
     run: (view) => insertCodeBlock(view, { language: "bash" }),
   },
   {
+    name: "template",
+    label: "Template",
+    icon: "ti-template",
+    section: "Insert",
+    description: "Start from a template; on an empty note it becomes the whole note",
+    aliases: ["vorlage", "templates"],
+    run: async (view, ctx) => {
+      const template = await pickPageTemplate(ctx.notebookId, ctx.locale);
+      if (template) await applyPageTemplateById(view, ctx.notebookId, template, ctx.locale);
+    },
+  },
+  {
     name: "table",
+    aliases: ["tabelle"],
     label: "Table",
     icon: "ti-table",
     section: "Insert",
     description: "Insert a markdown table — try /table2x4 for direct sizing",
     // Power-cmd: `/table<R>x<C>` inserts an R×C table immediately,
-    // bypassing the modal. Bare `/table` keeps the modal flow.
+    // bypassing the picker. Bare `/table` opens the shared size picker.
     params: /^(\d+)x(\d+)$/,
     run: (view, ctx, params) => {
       if (params) {
@@ -292,7 +323,7 @@ export const slashCommands: SlashCommand[] = [
         const cols = Number.parseInt(params[2]!, 10);
         return insertTable(view, { rows, cols }, ctx.locale);
       }
-      return insertTable(view, undefined, ctx.locale);
+      if (!view.state.readOnly) ctx.openTablePicker();
     },
   },
   {

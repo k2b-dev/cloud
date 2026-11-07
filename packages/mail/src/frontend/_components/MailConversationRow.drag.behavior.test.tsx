@@ -51,7 +51,6 @@ const question: MailListItem = {
   unread: false,
   activeFolderIds: ["inbox"],
   flagged: false,
-  hasAttachments: false,
   messageCount: 2,
   workStatus: "needs_action",
   assigneeUserIds: [],
@@ -142,9 +141,19 @@ if (!isServer) {
               selectionMode: false,
               canWrite: true,
               spamAction: "junk",
+              currentUserId: null,
               dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
             }}
-            actions={{ navigate: () => {}, toggleSelection: () => {}, itemAction: () => {}, manageTags: () => {}, merge: () => {} }}
+            actions={{
+              navigate: () => {},
+              toggleSelection: () => {},
+              itemAction: () => {},
+              manageTags: () => {},
+              merge: () => {},
+              respond: () => {},
+              assigneeNames: () => [],
+              setCompletion: () => {},
+            }}
           />
         </>
       ),

@@ -14,14 +14,14 @@ import {
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate } from "@/lib/note-title-template";
-import type { Notebook, NoteTreeNode } from "../sidebar/types";
+import type { SidebarNote } from "../../../../lib/sidebar-tree";
+import type { Notebook } from "../sidebar/types";
 import { notebookSettingsMessages } from "./messages";
 import type { NoteSelectOption } from "./types";
-import { flattenNoteOptions, readErrorMessage } from "./utils";
+import { readErrorMessage } from "./utils";
 
 export function GeneralSection(props: {
   notebook: Notebook;
-  tree: NoteTreeNode[];
   canWrite: boolean;
   dateConfig: DateContext;
   onNotebookChange: (notebook: Notebook) => void;
@@ -29,7 +29,6 @@ export function GeneralSection(props: {
 }) {
   const locale = useLocale();
   const t = () => notebookSettingsMessages.resolve([locale()]).t;
-  const options = createMemo(() => flattenNoteOptions(props.tree, t().untitled));
   const [base, setBase] = createSignal({
     name: props.notebook.name,
     description: props.notebook.description ?? "",
@@ -61,7 +60,24 @@ export function GeneralSection(props: {
     }
   });
 
-  const selectedLabel = () => options().find((option) => option.id === homepageNoteId())?.label;
+  // Only the homepage's title is needed up front; every other note is found by searching.
+  const [homepageTitle, setHomepageTitle] = createSignal<{ id: string; title: string } | null>(null);
+  createEffect(() => {
+    const id = base().homepageNoteId;
+    if (!id) return;
+    const controller = new AbortController();
+    void apiClient[":id"].notes[":noteId"]
+      .$get({ param: { id: props.notebook.id, noteId: id } }, { init: { signal: controller.signal } })
+      .then(async (response) => {
+        if (response.ok) setHomepageTitle({ id, title: ((await response.json()) as { title: string }).title || t().untitled });
+      })
+      .catch(() => undefined);
+    onCleanup(() => controller.abort());
+  });
+  const selectedLabel = () => {
+    const id = homepageNoteId();
+    return id && homepageTitle()?.id === id ? homepageTitle()!.title : id ? `#${id}` : undefined;
+  };
   const dirty = () =>
     name() !== base().name ||
     description() !== base().description ||
@@ -87,11 +103,20 @@ export function GeneralSection(props: {
     setDefaultNoteTitleTemplate(current.defaultNoteTitleTemplate);
   };
 
+  /** The top level until the person types, then the notes whose title or text match, as the notebook's search finds them. */
   const fetchNotes = async (query: string, signal: AbortSignal): Promise<NoteSelectOption[]> => {
-    if (signal.aborted) return [];
-    const q = query.trim().toLowerCase();
-    const filtered = q ? options().filter((option) => `${option.label} ${option.description ?? ""}`.toLowerCase().includes(q)) : options();
-    return filtered.slice(0, 50);
+    const q = query.trim();
+    const response = q
+      ? await apiClient[":id"].notes.$get({ param: { id: props.notebook.id }, query: { q, per_page: "50" } }, { init: { signal } })
+      : await apiClient[":id"].tree.levels.$get({ param: { id: props.notebook.id }, query: { levels: ":0:50" } }, { init: { signal } });
+    if (!response.ok) throw new Error(t().loadNotesFailed);
+    const payload = (await response.json()) as { data?: SidebarNote[]; levels?: Array<{ items: SidebarNote[] }> };
+    return (payload.data ?? payload.levels?.[0]?.items ?? []).map((note) => ({
+      id: note.id,
+      label: note.title || t().untitled,
+      description: `#${note.id}`,
+      icon: note.lockedAt ? "ti ti-lock" : "ti ti-file-text",
+    }));
   };
 
   const mutation = mutations.create({

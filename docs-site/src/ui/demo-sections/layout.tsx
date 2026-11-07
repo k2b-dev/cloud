@@ -1,15 +1,22 @@
 import {
+  AnchoredPopover,
   AppOverview,
   AppWorkspace,
   type AppWorkspaceNavTreeMove,
+  AppWorkspaceSidebarItemStatus,
   Avatar,
   addPanesItem,
+  BottomSheet,
   Button,
   ButtonLink,
+  bottomSheetAdaptiveOptions,
   DataPanel,
   DescriptionList,
   DetailPanel,
+  DetailsToggle,
+  type DialogTone,
   Discussion,
+  dialogCore,
   FilterChip,
   FloatingWindow,
   IconButton,
@@ -30,6 +37,7 @@ import {
   Placeholder,
   PullToRefresh,
   removePanesItem,
+  SaveStatus,
   ScrollArea,
   SegmentedControl,
   Select,
@@ -48,10 +56,13 @@ import {
   Tag,
   TextInput,
   Toolbar,
+  toast,
   ViewTabs,
 } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
+import { DetailPanelOutlineDemo } from "./detail-outline";
+import { DetailSectionsDemo } from "./detail-sections";
 import { BottomSheetDemo, MobileShellDemo, NavigationDemo, TabBarDemo } from "./mobile-navigation";
 import { ResizeSeparatorDemo } from "./resize-separator";
 import { DemoGrid, type DemoSection } from "./types";
@@ -458,7 +469,7 @@ const WorkspaceDemo = () => {
               <AppWorkspace.SidebarItem href="#discussion-restock" icon="ti ti-hash">
                 <AppWorkspace.SidebarItemLabel>Restock</AppWorkspace.SidebarItemLabel>
                 <AppWorkspace.SidebarItemMeta>
-                  <AppWorkspace.SidebarItemStatus unread={3} mention />
+                  <AppWorkspaceSidebarItemStatus unread={3} mention />
                 </AppWorkspace.SidebarItemMeta>
               </AppWorkspace.SidebarItem>
               <AppWorkspace.SidebarItem href="#discussion-returns" icon="ti ti-hash">
@@ -1275,6 +1286,21 @@ const SettingsSaveBarDemo = () => (
   </DemoCard>
 );
 
+const SaveStatusDemo = () => (
+  <DemoCard
+    id="save-status"
+    chip={{ kind: "component", name: "SaveStatus", from: "@k2b/ui" }}
+    description="The save status of a form at one fixed place in a level head: the state, then Discard and Save. Its width is reserved, so a change of state never moves the title or the buttons."
+    code={`<SaveStatus state={state()} savedAt={savedAt()} onDiscard={discard} onSave={save} />`}
+  >
+    <div class="flex flex-col items-end gap-3">
+      <SaveStatus state="draft" onDiscard={() => undefined} onSave={() => undefined} />
+      <SaveStatus state="saved" savedAt="10:42" onDiscard={() => undefined} onSave={() => undefined} />
+      <SaveStatus state="invalid" invalidCount={2} onDiscard={() => undefined} onSave={() => undefined} />
+    </div>
+  </DemoCard>
+);
+
 const PanelDemo = () => {
   const [tab, setTab] = createSignal("general");
   const [shared, setShared] = createSignal(true);
@@ -1365,6 +1391,106 @@ const [reference, setReference] = createSignal("");
     </DemoCard>
   );
 };
+
+const toneExamples: Record<DialogTone, { title: string; subtitle: string; text: string; email: string }> = {
+  success: {
+    title: "Invoice RE-2026-0142 created",
+    subtitle: "Mueller Antik GmbH · €1,428.00",
+    text: "Due on 16 Nov 2026. The PDF is saved with the invoice.",
+    email: "accounts@mueller-antik.example",
+  },
+  warning: {
+    title: "Invoice RE-2026-0143 created",
+    subtitle: "Weber & Sons · €640.00",
+    text: "Weber & Sons has no email address. Print the invoice or enter an address.",
+    email: "",
+  },
+  danger: {
+    title: "Void invoice RE-2026-0139?",
+    subtitle: "Mueller Antik GmbH · €312.50",
+    text: "The invoice becomes invalid and a credit note is created.",
+    email: "",
+  },
+};
+
+const openToneDialog = (tone: DialogTone) => {
+  const example = toneExamples[tone];
+  void dialogCore.open<void>(
+    (close, context) => (
+      <BottomSheet tone={tone} onDismiss={() => context.requestDismiss()}>
+        <PanelDialog.Header title={example.title} subtitle={example.subtitle} icon="ti ti-file-invoice" close={() => close()} />
+        <PanelDialog.Body>
+          <p class="text-sm">{example.text}</p>
+          <Show when={tone !== "danger"} fallback={<TextInput label="Reason (optional)" value="" />}>
+            <TextInput label="Send to" value={example.email} placeholder="name@company.example" />
+          </Show>
+        </PanelDialog.Body>
+        <PanelDialog.Footer>
+          <Show
+            when={tone !== "danger"}
+            fallback={
+              <div class="ui-demo-row">
+                <Button variant="secondary" onClick={() => close()}>
+                  Cancel
+                </Button>
+                <Button variant="danger" onClick={() => close()}>
+                  Void invoice
+                </Button>
+              </div>
+            }
+          >
+            <div class="ui-demo-row">
+              <Button variant="secondary" onClick={() => toast("Print view opened")}>
+                Print
+              </Button>
+              <Button variant="secondary" onClick={() => toast("Invoice sent")}>
+                Send by email
+              </Button>
+              <Button onClick={() => close()}>Done</Button>
+            </div>
+          </Show>
+        </PanelDialog.Footer>
+      </BottomSheet>
+    ),
+    bottomSheetAdaptiveOptions,
+  );
+};
+
+const PanelToneDemo = () => (
+  <DemoCard
+    id="panel-dialog-tone"
+    chip={{ kind: "component", name: "PanelDialog", from: "@k2b/ui" }}
+    description="A tone gives a normal dialog a touch of success, warning or danger: a 2 px edge in its colour inside the frame and the tone's icon in the header. The frame and its content keep their exact place. Phones show the same dialog as a sheet."
+    code={`dialogCore.open<void>(
+  (close, context) => (
+    <BottomSheet tone="success" onDismiss={() => context.requestDismiss()}>
+      <PanelDialog.Header title="Invoice RE-2026-0142 created" subtitle="Mueller Antik GmbH · €1,428.00" close={() => close()} />
+      <PanelDialog.Body>
+        <TextInput label="Send to" value={email()} onValueChange={setEmail} />
+      </PanelDialog.Body>
+      <PanelDialog.Footer>
+        <Button variant="secondary" onClick={print}>Print</Button>
+        <Button variant="secondary" onClick={send}>Send by email</Button>
+        <Button onClick={() => close()}>Done</Button>
+      </PanelDialog.Footer>
+    </BottomSheet>
+  ),
+  bottomSheetAdaptiveOptions,
+);`}
+  >
+    <div class="ui-demo-row">
+      <Button variant="secondary" onClick={() => openToneDialog("success")}>
+        Success
+      </Button>
+      <Button variant="secondary" onClick={() => openToneDialog("warning")}>
+        Warning
+      </Button>
+      <Button variant="secondary" onClick={() => openToneDialog("danger")}>
+        Danger
+      </Button>
+    </div>
+  </DemoCard>
+);
 
 const DiscussionDemo = () => {
   const [composerOpen, setComposerOpen] = createSignal(false);
@@ -1545,8 +1671,13 @@ const DetailPanelDemo = () => {
               <DetailPanel.Header
                 title="Bug report"
                 subtitle="No preview · 5 minutes ago"
+                menu={[
+                  { label: "Duplicate request", icon: "ti ti-copy-plus", action: () => {} },
+                  { items: [{ label: "Copy Cloud ID", icon: "ti ti-id", action: () => {} }] },
+                ]}
+                menuLabel="Request actions"
                 actions={
-                  <IconButton variant="ghost" size="xs" label="Close request details">
+                  <IconButton variant="ghost" size="sm" label="Close request details">
                     <i class="ti ti-x" aria-hidden="true" />
                   </IconButton>
                 }
@@ -1976,6 +2107,27 @@ const PullToRefreshDemo = () => (
   </DemoCard>
 );
 
+const DetailsToggleDemo = () => {
+  const [open, setOpen] = createSignal(true);
+  return (
+    <DemoCard
+      id="details-toggle"
+      chip={{ kind: "component", name: "DetailsToggle", from: "@k2b/ui" }}
+      description="The icon-only Details button for an app's own toolbar: the info circle in every app, with the selection fill while its panel is open."
+      code={`<DetailsToggle
+  label="Details"
+  aria-controls={appWorkspaceDetailElementId("note")}
+  data-app-workspace-detail-toggle=""
+/>`}
+    >
+      <div style="display: flex; gap: 1rem; align-items: center">
+        <DetailsToggle label="Details" aria-expanded={false} />
+        <DetailsToggle label="Details" aria-expanded={open()} onClick={() => setOpen(!open())} />
+      </div>
+    </DemoCard>
+  );
+};
+
 const DetailPanelActionDemo = () => (
   <DemoCard
     id="detail-panel-action"
@@ -2055,6 +2207,40 @@ const DetailPanelActionDemo = () => (
     </div>
   </DemoCard>
 );
+
+const AnchoredPopoverDemo = () => {
+  const [anchor, setAnchor] = createSignal<HTMLElement | null>(null);
+  return (
+    <DemoCard
+      id="anchored-popover"
+      chip={{ kind: "component", name: "AnchoredPopover", from: "@k2b/ui" }}
+      description="A card anchored to a control, such as a model card with a slider. It keeps the side it opened on while its content changes, returns focus on close, and is a bottom sheet on a phone."
+      code={`const [anchor, setAnchor] = createSignal<HTMLElement | null>(null);
+
+<Button aria-expanded={anchor() !== null} onClick={(event) => setAnchor(anchor() ? null : event.currentTarget)}>
+  Model
+</Button>
+<AnchoredPopover anchor={anchor()} onClose={() => setAnchor(null)} label="Choose a model" width="21rem">
+  …
+</AnchoredPopover>`}
+    >
+      <Button
+        variant="secondary"
+        aria-haspopup="dialog"
+        aria-expanded={anchor() !== null}
+        onClick={(event) => setAnchor(anchor() ? null : event.currentTarget)}
+      >
+        Model
+      </Button>
+      <AnchoredPopover anchor={anchor()} onClose={() => setAnchor(null)} label="Choose a model" width="21rem">
+        <div class="grid gap-2 p-4 text-sm">
+          <strong>Balanced</strong>
+          <span class="text-dimmed">For most tasks</span>
+        </div>
+      </AnchoredPopover>
+    </DemoCard>
+  );
+};
 
 const FloatingDemo = () => {
   const [open, setOpen] = createSignal(false);
@@ -2189,6 +2375,7 @@ const items = [
   workspace: () => (
     <DemoGrid columns="one">
       <WorkspaceHeadRowDemo />
+      <DetailsToggleDemo />
       <WorkspaceHeadLongViewsDemo />
       <NavigationDemo />
       <LiveWorkspaceDemo />
@@ -2215,15 +2402,19 @@ const items = [
       <SettingsPageDemo />
       <SettingsDemo />
       <SettingsSaveBarDemo />
+      <SaveStatusDemo />
     </DemoGrid>
   ),
   "panel-dialog": () => (
     <DemoGrid columns="one">
+      <PanelToneDemo />
       <PanelDemo />
     </DemoGrid>
   ),
   "detail-panel": () => (
     <DemoGrid columns="one">
+      <DetailPanelOutlineDemo />
+      <DetailSectionsDemo />
       <DetailPanelActionDemo />
       <DetailPanelDemo />
     </DemoGrid>
@@ -2249,6 +2440,11 @@ const items = [
   "floating-window": () => (
     <DemoGrid columns="one">
       <FloatingDemo />
+    </DemoGrid>
+  ),
+  "anchored-popover": () => (
+    <DemoGrid columns="one">
+      <AnchoredPopoverDemo />
     </DemoGrid>
   ),
 };

@@ -229,3 +229,73 @@ describe("invocation middleware", () => {
     expect(verified).toBeFalse();
   });
 });
+
+test("new invocation mutation routes inherit OAuth scope limits and declared queries remain readable", async () => {
+  const { auth } = await import("./auth");
+  for (const credentialKind of ["oauth", "session", "api_key"] as const) {
+    for (const scopes of [[], ["read"], ["write"], ["admin"]]) {
+      let writes = 0;
+      const app = new Hono<AuthContext>()
+        .use(
+          requireInvocation(expected, {
+            getApp: async () => ({ id: "demo" }),
+            verify: async () => ({ ...claims, credential_kind: credentialKind, scopes }),
+            resolve: async () => ({
+              actor: { kind: "user", user },
+              accessSubject: { type: "user", userId: user.id },
+              credentialKind: "invocation",
+              scopes,
+            }),
+          }),
+        )
+        .post("/mutate", (c) => {
+          writes++;
+          return c.text("written");
+        })
+        .post("/query", auth.readOnly, (c) => c.text("read"));
+      const headers = { authorization: `Bearer ${invocationCandidate}` };
+      const allowed = credentialKind !== "oauth" || scopes.includes("write") || scopes.includes("admin");
+      expect((await app.request("/mutate", { method: "POST", headers })).status).toBe(allowed ? 200 : 403);
+      expect(writes).toBe(Number(allowed));
+      const readable = credentialKind !== "oauth" || scopes.includes("read") || scopes.includes("admin");
+      expect((await app.request("/query", { method: "POST", headers })).status).toBe(readable ? 200 : 403);
+    }
+  }
+});
+
+test("an unavailable resource access check returns retryable 503 without entering the invocation handler", async () => {
+  const { bindResourceAppAccess } = await import("../../_internal/app-access-resources");
+  const { appAccess, compileAppAccess } = await import("../../contracts/app-access");
+  const declaration = appAccess.resources({
+    adapters: {
+      workspace: {
+        hasAnyRight: async () => {
+          throw new Error("unavailable");
+        },
+      },
+    },
+  });
+  const stop = bindResourceAppAccess("demo", declaration);
+  const server = new Hono<AuthContext>()
+    .use(
+      requireInvocation(expected, {
+        getApp: async () => ({ id: "demo", access: compileAppAccess(declaration) }),
+        verify: async () => claims,
+        resolve: async () => ({
+          actor: { kind: "user", user },
+          accessSubject: { type: "user", userId: user.id },
+          credentialKind: "invocation",
+          scopes: ["read"],
+        }),
+      }),
+    )
+    .get("/", (c) => c.text("private invocation"));
+  try {
+    const response = await server.request("/", { headers: { authorization: `Bearer ${invocationCandidate}` } });
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("1");
+    expect(await response.json()).toMatchObject({ code: "app_access_unavailable", app: "demo" });
+  } finally {
+    stop();
+  }
+});

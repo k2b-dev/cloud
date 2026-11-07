@@ -1,4 +1,14 @@
+export type { DecisionAnswers, DecisionImage, DecisionQuestions } from "@k2b/nessi/ai";
+export * from "../shared/ai-models";
 export { type AiAppSkillIssue, aiAppSkills, appSkillsRegistryState, reconcileAppSkills } from "./app-skill-store";
+export {
+  type ApplicationAiTaskInput,
+  type ApplicationAiTaskKey,
+  deleteApplicationAiTasks,
+  listUnreleasedApplicationAiTaskSources,
+  releaseApplicationAiTask,
+  runApplicationAiTask,
+} from "./application-tasks";
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
   AI_WEBSITE_APPROVAL_TOOL,
@@ -19,7 +29,7 @@ export {
   rememberAiToolApproval,
   revokeAiToolApprovalPreference,
 } from "./approvals";
-export { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
+export { assistantAiSettingsState, listAssistantAiModels, peopleAiModels, selectAssistantAiModel } from "./assistant-models";
 export { type AiAttachmentRef, aiAttachmentMarker, formatAiFileSize, parseAiAttachmentMarkers } from "./attachments";
 export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, createCloudAiTranscribeAudioTool } from "./audio-tool";
 export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
@@ -65,7 +75,10 @@ export { parseAiSse } from "./client/transport";
 export { CODE_CAPABILITY_TOKEN_HEADER, createCodeCapabilityTransport } from "./code-capability-transport";
 export { authorizeCodeExecution } from "./code-execution";
 export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
-export { listAiCredentialProfileIds } from "./credentials";
+export { type AiConversationWatch, aiApprovalUnwatched, watchAiConversation } from "./conversation-watchers";
+export { listAiCredentialProviderIds } from "./credentials";
+export type { AiDecisionErrorCode, AiDecisionUsage, RunAiDecisionInput, RunAiDecisionResult } from "./decision";
+export { AI_DECISION_MAX_QUESTIONS, AiDecisionError, runAiDecision } from "./decision";
 export {
   CLOUD_AI_CHART_MAX_SERIES,
   CLOUD_AI_CHART_MAX_VALUES,
@@ -171,6 +184,8 @@ export {
   toAiErrorResponse,
 } from "./http";
 export { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";
+export { createAiLiveTranscriptionProvider, getLiveDictationStatus, type LiveDictationStatus } from "./live-dictation-model";
+export { aiDictationRoutes, stopLiveDictationSessions } from "./live-dictation-routes";
 export {
   AI_INVALIDATION_DOMAINS,
   type AiInvalidation,
@@ -262,7 +277,7 @@ export {
   createCloudAiMemoryTool,
 } from "./memory-tool";
 export { migrateCloudAi } from "./migrate";
-export { type AiOpenQuestion, type AiOpenQuestions, listAiOpenQuestions } from "./open-questions";
+export { type AiOpenQuestion, type AiOpenQuestions, countAiOpenQuestions, listAiOpenQuestions } from "./open-questions";
 export { personalAiModelPolicy } from "./personal-agent";
 export { type AiUserPrefs, aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 export {
@@ -281,6 +296,7 @@ export {
   type AiProjectReference,
   aiProjects,
 } from "./projects";
+export { type AiResourceContext, AiResourceCredentialError } from "./projects-authorization";
 export {
   type AiProjectsRoutes,
   aiProjectsRoutes,
@@ -306,7 +322,6 @@ export {
   listAiModels,
   readAiSettingsState,
   resolveAiModel,
-  resolveAiSettingsStateFromRaw,
   resolveAiVisionModel,
   selectAiModelProfile,
   toPublicAiSettingsState,
@@ -317,6 +332,8 @@ export {
   AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS,
   AI_SKILL_INSTRUCTIONS_MAX_CHARS,
   AI_SKILL_INSTRUCTIONS_MAX_LINES,
+  AI_SKILL_LOAD_TOOLS_FIELD,
+  AI_SKILL_LOAD_TOOLS_MAX_ITEMS,
   AI_SKILL_NAME_MAX_CHARS,
   AI_SKILL_NAME_PATTERN,
   AI_SKILL_REFERENCE_MAX_CHARS,
@@ -326,6 +343,7 @@ export {
   type AiSkillDocument,
   type AiSkillExtraFrontmatter,
   type AiSkillReferenceInput,
+  aiSkillLoadTools,
   isAiSkillManualOnly,
   mountAiSkillInstructionLinks,
   parseAiSkillMarkdown,
@@ -365,7 +383,6 @@ export {
   streamAiConversationEvents,
 } from "./stream";
 export {
-  AI_BACKGROUND_MODEL_SETTING_KEY,
   type RunAiStructuredInput,
   type RunAiStructuredResult,
   resolveAiBackgroundModel,
@@ -420,7 +437,6 @@ export type {
   AiPendingTurnAction,
   AiProjectPromptSnapshot,
   AiProviderId,
-  AiPublicModelProfile,
   AiRecentResource,
   AiResolvedModel,
   AiRuntimeTool,

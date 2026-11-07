@@ -1,6 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
 import type { NessiIssue, Provider, ProviderIssue, StreamEvent, TimeoutIssue } from "@k2b/nessi/ai";
-import { type ProviderFetchMarks, runWithProviderFetchMarks } from "./provider-fetch";
 
 /** Waits before the first and the second retry when the provider names none. nessi itself never retries. */
 export const AI_PROVIDER_RETRY_DELAYS_MS: readonly number[] = [1_000, 4_000];
@@ -8,7 +7,7 @@ export const AI_PROVIDER_RETRY_DELAYS_MS: readonly number[] = [1_000, 4_000];
 /**
  * The longest Retry-After that is honored, the bound the OpenAI and Anthropic
  * SDKs apply. A provider that asks for a longer wait is unavailable for this
- * turn, so the call fails now with the provider's message.
+ * turn, so the call fails now with Cloud's fixed provider error.
  */
 const AI_PROVIDER_MAX_RETRY_AFTER_MS = 60_000;
 
@@ -46,9 +45,9 @@ export function retryTransientProviderErrors(
   },
 ): Provider {
   const delays = options.delaysMs ?? AI_PROVIDER_RETRY_DELAYS_MS;
-  const waitFor = (retry: number, marks: ProviderFetchMarks, signal: AbortSignal | undefined): number | null => {
+  const waitFor = (retry: number, issue: ProviderIssue | TimeoutIssue, signal: AbortSignal | undefined): number | null => {
     if (retry >= delays.length || signal?.aborted) return null;
-    const delayMs = marks.retryAfterMs ?? delays[retry]!;
+    const delayMs = (issue.kind === "provider_error" ? issue.retryAfterMs : undefined) ?? delays[retry]!;
     if (delayMs > AI_PROVIDER_MAX_RETRY_AFTER_MS) return null;
     if (options.deadline !== null && Date.now() + delayMs >= options.deadline) return null;
     return delayMs;
@@ -59,12 +58,10 @@ export function retryTransientProviderErrors(
     model: provider.model,
     contextWindow: provider.contextWindow,
     capabilities: provider.capabilities,
-    complete: (request) => provider.complete(request),
     stream: async function* (request) {
       for (let retry = 0; ; retry += 1) {
-        const marks: ProviderFetchMarks = {};
         const events = provider.stream(request)[Symbol.asyncIterator]();
-        const next = () => runWithProviderFetchMarks(marks, () => events.next());
+        const next = () => events.next();
         // Events before the first block (usage, issues) are held so that a retried attempt leaves no trace.
         const held: StreamEvent[] = [];
         let committed = false;
@@ -73,7 +70,7 @@ export function retryTransientProviderErrors(
           for (let step = await next(); !step.done; step = await next()) {
             const event = step.value;
             if (!committed && event.type === "issue" && transientIssue(event.issue)) {
-              const delayMs = waitFor(retry, marks, request.signal);
+              const delayMs = waitFor(retry, event.issue, request.signal);
               if (delayMs !== null) {
                 pending = { retry: retry + 1, delayMs, issue: event.issue };
                 break;

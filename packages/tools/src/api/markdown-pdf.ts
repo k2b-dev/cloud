@@ -168,6 +168,7 @@ export const createMarkdownPdfRoutes = (dependencies: MarkdownPdfRouteDependenci
 
   return new Hono<AuthContext>().post(
     "/pdf",
+    auth.readOnly,
     describeRoute({
       tags: ["Tools"],
       summary: "Convert Markdown to PDF",

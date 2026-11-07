@@ -1,5 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { RecordSnapshot, RecordSnapshotSummary } from "../contracts";
 import type { SqlClient } from "./audit";
 import { logAudit } from "./audit";

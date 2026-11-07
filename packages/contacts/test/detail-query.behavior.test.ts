@@ -124,6 +124,7 @@ describe("Contacts detail query behavior", () => {
           bookNames: { team: "Team" },
           writableBooks: [],
           adminBookIds: [],
+          memberBookIds: [],
           currentUserId: "user-1",
           showEmpty: false,
           initialFavoriteKeys: [],

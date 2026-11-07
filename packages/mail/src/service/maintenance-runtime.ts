@@ -1,15 +1,15 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { createRuntimeTaskTracker, stopRuntimeJobs } from "@k2b/cloud/services";
 import { toPgTextArray } from "@k2b/cloud/services/postgres";
 import type { JobContext, Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
-import { sql } from "bun";
 import { z } from "zod";
 import { type CommandState, type MaintenanceCommandInput, maintenanceCommandInputSchema } from "../contracts";
 import { commandStillAuthorized, type StoredCommandAuthorization } from "./command-authorization";
 import { keepLastKeptPlacements } from "./conversation-keep-rules";
 import { resolveMailExecution } from "./execution";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
+import { REQUESTS_PER_MINUTE as PRIORITY_BODY_REQUESTS_PER_MINUTE } from "./message-body-request";
 import { executeOperatorAction, OPERATOR_MAINTENANCE_KINDS } from "./operator-actions";
 import { providerBusyRetryAfterMs } from "./provider-operation-lock";
 import { executeQueuedSenderVerification } from "./sender-verification";
@@ -17,6 +17,7 @@ import {
   enqueueFolderSync,
   enqueueMailboxHydration,
   enqueueMailboxSync,
+  enqueueMessageHydration,
   executeBindingRediscovery,
   FOLDER_SYNC_REQUEST_MS,
   requestedSyncProgress,
@@ -206,7 +207,7 @@ const executeFolderRebuild = async (command: DbMaintenanceCommand, folderId: str
     `;
     return { folderId, staleRemoteMessages: staleRefs.length };
   });
-  if (enqueueWork) await enqueueFolderSync(folderId);
+  if (enqueueWork) await enqueueFolderSync(folderId, { trigger: "maintenance" });
   return { ...result, queued: enqueueWork };
 };
 
@@ -234,7 +235,15 @@ const executeHydrationRetry = async (mailboxId: string, enqueueWork: boolean): P
     ORDER BY internal_date DESC, id DESC
     LIMIT 500
   `;
-  if (enqueueWork && queued.length > 0) await enqueueMailboxHydration(mailboxId);
+  if (enqueueWork) {
+    // On an account with hundreds of folders, mailbox hydration waits about a full round of folder
+    // checks for each turn. The newest pending bodies get their own jobs, which rank with commands,
+    // as many as a person may ask for in a minute when opening messages: more would hold back the
+    // mailbox's later commands, which take their turns in the same class. They are chosen from the
+    // pending bodies, not from this run's resets, so a repair that runs again queues them again.
+    for (const message of queued.slice(0, PRIORITY_BODY_REQUESTS_PER_MINUTE)) await enqueueMessageHydration(message.id);
+    if (queued.length > 0) await enqueueMailboxHydration(mailboxId);
+  }
   return { reset: reset.length, queued: enqueueWork ? queued.length : 0 };
 };
 
@@ -256,7 +265,7 @@ const executeMaintenanceWork = async (
     if (reason) return folderId ? { folderId, queued: false, reason } : { queuedFolders: 0, reason };
   }
   if (command.kind === "sync_mailbox") {
-    if (enqueueWork) return { queuedFolders: await enqueueMailboxSync(command.mailbox_id) };
+    if (enqueueWork) return { queuedFolders: await enqueueMailboxSync(command.mailbox_id, { trigger: "maintenance", awaited: true }) };
     const [folders] = await sql<{ count: number }[]>`
       SELECT COUNT(*)::int AS count
       FROM mail.folders folder
@@ -273,7 +282,7 @@ const executeMaintenanceWork = async (
   }
   if (command.kind === "sync_folder") {
     const { folderId } = folderTargetSchema.parse(target);
-    if (enqueueWork) await enqueueFolderSync(folderId);
+    if (enqueueWork) await enqueueFolderSync(folderId, { trigger: "maintenance", awaited: true });
     return { folderId, queued: enqueueWork };
   }
   if (command.kind === "rebuild_folder") {

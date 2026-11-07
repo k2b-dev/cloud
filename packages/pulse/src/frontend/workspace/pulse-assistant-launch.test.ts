@@ -118,3 +118,22 @@ test("overview opens the exact localized unsent draft with the base and read too
     });
   }
 });
+
+test("dashboard launch keeps an unsent draft with the Pulse skill, base and exact dashboard resource", async () => {
+  const { launchPulseDashboardAssistant } = await import("./pulse-assistant-launch");
+  const calls = capture();
+  await launchPulseDashboardAssistant({ base: { id: "Base01", name: "Demo" }, dashboard: { id: "Dash01", name: "Website" }, locale: "de" });
+  expect(calls).toHaveLength(1);
+  expect(calls[0]!.body).toMatchObject({
+    launchedByAppId: "pulse",
+    skills: ["cloud-pulse"],
+    preloadTools: expect.arrayContaining([{ appId: "pulse", kind: "query", id: "dashboard.read" }]),
+    draft: {
+      content: [
+        { type: "text", text: expect.stringContaining("Website") },
+        { type: "resource", ref: { type: "pulse.base", id: "Base01" }, href: "/app/pulse/Base01" },
+        { type: "resource", ref: { type: "pulse.dashboard", id: "Dash01" }, href: "/app/pulse/Base01/dashboards/Dash01" },
+      ],
+    },
+  });
+});

@@ -1,8 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { createMailbox } from "./mailboxes";
@@ -46,7 +45,6 @@ suite("mail remote content rules", () => {
   let outsiderContext: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const suffix = crypto.randomUUID().slice(0, 8);
     const createUser = async (role: string) => {
       const uid = `mail-remote-content-${role}-${suffix}`;

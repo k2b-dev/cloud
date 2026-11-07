@@ -15,7 +15,7 @@ It keeps portable mail state synchronized with the provider while adding team
 context such as assignments, comments, local tags, reminders, and follow-up state.
 
 The sidebar lists **Focus** and your mailboxes, with pinned mailboxes first.
-The open mailbox expands to Inbox, Drafts, Scheduled, Send problems, Sent,
+The open mailbox expands to Inbox, Drafts, Outbox, Send problems, Sent,
 Archive/Trash/Junk under **More**, and custom folders. In the sidebar, the open
 mailbox and its folders share a quiet teal surface. Other mailboxes stay readable
 and clickable with less emphasis. On a phone, open the mailbox title to reach
@@ -28,7 +28,7 @@ The head contains view tabs (**All**, **Needs action**, **Assigned to me**,
 views) and a **Search** chip for an active structured search. The **Tag** icon
 next to **Search** filters by a local tag; its tooltip
 names the selected tag. Open it to change or clear that choice.
-Remove the **Search** chip or use **Reset** to clear filters. Folders, Scheduled, and
+Remove the **Search** chip or use **Reset** to clear filters. Folders, Outbox, and
 Send problems have no view tabs. Use the magnifier or press `/` to search:
 the input replaces the views, with field and place options beside it (below it
 on a phone). Text searches the whole mailbox by default; **Place** can restrict
@@ -41,10 +41,17 @@ the head. Selection replaces the views with its count and labeled actions;
 for conversations or individual messages, plus details, tools, and Settings
 according to your access.
 
-Drafts and Scheduled show their count in the workspace head. Draft rows lead
-with the subject, followed by recipients and a preview, with the edit time and
-person who started the draft. Members with write access can open a draft to
-continue it; readers can view the list.
+Drafts and Outbox show their count in the workspace head. Outbox also shows its
+count in the sidebar. It includes immediate sends in the waiting queue after
+their undo window and sends scheduled for later. Sends stay out while Undo or its
+dispatch grace is still running. Counts and rows follow your current
+conversation access and refresh as sends complete, without reloading the page.
+Open Outbox to inspect or cancel a waiting send; cancellation is refused once
+processing has begun.
+
+Draft rows lead with the subject, followed by recipients and a preview, with
+the edit time and person who started the draft. Members with write access can
+open a draft to continue it; readers can view the list.
 
 Assignee filters in search and saved-view summaries read **Assigned to a
 specific person**. Open the search editor to change the selected
@@ -345,19 +352,23 @@ for the backup boundary.
 
 ## Assign conversations and limit access to them
 
-A conversation can have up to 20 assignees. People with mailbox-wide Write or
-Admin access assign them; each newly added person gets one notification per
-request. **Assigned to me** lists the conversations a person is one of the
+A conversation can have up to 20 assignees: people, agents, or standalone
+service accounts. An account with mailbox-wide Write or Admin access can
+assign them by name. Eligible accounts have direct or local-group access;
+public and authenticated audiences do not enumerate assignees. Each newly added person gets one notification per request;
+machine accounts do not receive personal notifications. **Assigned to me** lists the conversations a person is one of the
 assignees of, and **Unassigned** the ones without an assignee who can still
-work on them. Only people being added must have access; someone whose access
+work on them. Only accounts being added must have access; someone whose access
 ended stays assigned until removed, also when others are added. The API takes
-`assigneeUserIds` with the modes `add`, `remove`, and `replace` on
+`assigneeUserIds` (user or service-account UUIDs) with the modes `add`, `remove`, and `replace` on
 `POST /api/mail/mailboxes/{mailboxId}/conversations/assign`,
 and replaces the whole set with `assigneeUserIds` on the collaboration
 `PATCH`. Lists, search, focus items, and the workflow data type
 `mailConversation` report `assigneeUserIds`; collaboration reports
 `assignees`. The workflow action `assignConversation` keeps its single `user`:
-it replaces the assignees with that person, and `null` removes them all.
+it accepts an eligible person or machine account by exact name or UUID,
+assigns only when nobody is assigned, and leaves existing assignees in place
+when given `null`.
 Merging two conversations keeps the assignees of both, and splitting one gives
 the new conversation the same assignees.
 
@@ -368,8 +379,8 @@ It needs write access, including assigned-only write access, and no revision.
 Results follow request order; each reports `ok` with `workStatus` and
 `revision`, or `not_found` for missing or invisible conversations.
 
-Next to View, Edit, and Manage, a mailbox grant for a person or group can cover
-only the conversations assigned to the person: **View assigned only** (`read`)
+Next to View, Edit, and Manage, a mailbox grant for a person, group, agent,
+or standalone service account can cover only its assigned conversations: **View assigned only** (`read`)
 or **Edit assigned only** (`write`). The access API takes it as
 `"scope": "assigned"` on `POST` and `PATCH /api/mail/mailboxes/{mailboxId}/access`
 and returns it on each such entry; a `PATCH` without `scope` keeps the grant's
@@ -380,14 +391,14 @@ take `--scope assigned`, and `cld mail ls` shows each mailbox's scope:
 cld mail access set <mailbox-id> --group "Reply Team" --permission write --scope assigned
 ```
 
-Such people:
+Accounts with assigned-only access:
 
 - see no mail until a conversation is assigned to them, then that
   conversation with all its messages, including later replies;
 - see only the folders that hold one of their conversations, and counts,
   search, the overview, live updates, Assistant actions, and `cld` cover only
   their conversations;
-- with `read`, comment, set personal reminders, and show that they are viewing;
+- with `read`, comment; people can also set personal reminders and show that they are viewing;
 - with `write`, also reply and forward with drafts, attachments, and scheduled
   sends, change mail state, move, delete, choose existing tags, edit the summary,
   and mark done or snooze their conversations, but never compose new mail or
@@ -407,8 +418,8 @@ assignment ends, access ends at once: lists,
 open views, search, attachment downloads in progress, reminders, and queued or
 scheduled actions they started for the conversation stop. A person with
 mailbox-wide access keeps it; an additional assigned-only grant changes
-nothing. Older Mail images ignore assigned-only grants and treat these people
-as having no access.
+nothing. Machine accounts remain capped by credential scopes,
+and disabling an account ends its access.
 
 ## Manage automation access
 
@@ -455,6 +466,23 @@ including messages the automation already processed on arrival, so their steps
 run again. After a retry backfill, the automation menu in Mail settings offers
 **Retry failed messages** to continue with another retry. **Automations >
 Activity** shows how the new runs ended.
+
+## Format outgoing messages
+
+Markdown messages keep horizontal rules (`---`), strikethrough (`~~old~~`),
+and left, center, or right table-column alignment in previews and sent HTML.
+Table separators use `:---`, `:---:`, or `---:` for alignment. The same rules
+apply to signatures, inserted snippets, and copies in the provider's Drafts
+folder. A mailbox's custom CSS can override the default table alignment.
+
+Mail displays formulas such as `=SUM(Amount)` as text and never calculates
+them. Math source such as `$x^2$` also stays literal. The text alternative
+keeps formula source; a draft in plain-text format keeps its body unchanged.
+Notebooks continues to calculate its table formulas.
+
+If a row has more cells than the table header, preview and sending stop with
+**Check table**. Add the missing columns to the header and separator before
+sending. This keeps extra cell text from disappearing in the email.
 
 When a new message first saves as a draft, the editor keeps focus and the cursor
 stays in place. If your Cloud sign-in expires, the composer keeps your text and
@@ -814,6 +842,14 @@ send-safety review and approval.
 
 ## Check failed synchronization
 
+For delayed message content, see [Diagnose delayed Mail content](/en/docs/operations/mail-body-hydration)
+to distinguish hydration queue wait, provider contention, and delayed discovery.
+
+When the provider limits requests, Mail retries unconfirmed flag changes and
+incomplete message downloads. Read state, flags, and labels are not skipped,
+and a partial body is not marked complete. A provider that reports a larger
+message size remains supported when Mail can confirm the end of its source.
+
 `cld mail status` counts the sync runs that failed in the last 24 hours. Each
 attempt to sync a batch of one folder is a run, so a failure that a retry
 completed still counts. List the failed runs of the last 30 days, newest first,
@@ -872,6 +908,13 @@ checks the mailbox from the newest message on until those 1,000 are found;
 otherwise it reads the matches through the search index. Add a more specific
 word, or choose **Newest first**, to reach older matches.
 
+Cloud search and the `search` capability list every matching message, newest
+first, from every mailbox the person may read (up to 200, most recently active
+first). Each result names its sender below the subject, the mailbox too when
+results come from several mailboxes, and shows the date. Its details add the
+recipients, folder, mailbox and number of attachments, and it opens that
+message.
+
 Cloud search and the `search` capability search up to four mailboxes at a time.
 Each mailbox has three seconds, and the whole search has six. A mailbox's search
 stops its database work once its time is spent, and only then does the next
@@ -896,6 +939,10 @@ See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
 
+Upgrading from people-only assignments requires stopping every older Mail
+replica and worker before migration. Follow the
+[Mail assignment cutover](/en/docs/operations/mail-assignee-cutover) for the
+preflight, schema compatibility marker, verification and rollback procedure.
 
 ## Commands in global search
 

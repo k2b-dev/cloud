@@ -3,11 +3,11 @@ import { closeSync, openSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
+import { bindProcessSync, sql, unbindProcessSync } from "@k2b/cloud";
 import { WORKFLOW_RUN_LEASE_MS } from "@k2b/cloud/workflows/store";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { connectTestNats, testFor, testInfra, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { localVerificationUrl } from "../../scripts/verification";
 import { testShortId, testUuid } from "../integration-test-utils";
@@ -157,7 +157,14 @@ async function runAcceptance() {
     const child = Bun.spawn(
       [process.execPath, join(import.meta.dir, "document-workflow-crash.worker.ts"), runId, checkpoint, namespace, String(receiver.port)],
       {
-        env: { ...process.env, DATABASE_URL: childUrl.toString(), NATS_SERVERS: nats.toString(), GOTENBERG_URL: gotenberg.toString() },
+        env: {
+          ...process.env,
+          BUN_OPTIONS: `${process.env.BUN_OPTIONS ?? "--no-env-file"} --preload=${join(import.meta.dir, "../../../../scripts/fixtures/test-infra.ts")}`,
+          CLOUD_TEST_DATABASE_URL: childUrl.toString(),
+          DATABASE_URL: childUrl.toString(),
+          NATS_SERVERS: nats.toString(),
+          GOTENBERG_URL: gotenberg.toString(),
+        },
         stdout: fd,
         stderr: fd,
         ipc: (message) => {

@@ -1,0 +1,1 @@
+| Relative navigation URLs in offline documents | A PDF renderer resolves web paths against its local HTML file. | Test: Notebooks `note-pdf.integration.test.ts` checks actual PDF URI annotations against the public origin and rejects `file://` ([#1365](https://github.com/k2b-dev/cloud/issues/1365)). |

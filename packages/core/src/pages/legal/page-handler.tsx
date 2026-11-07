@@ -51,8 +51,8 @@ export const makeLegalPage = (kind: LegalKind) =>
               description={
                 <>
                   {t.legalNotConfigured({ title })}{" "}
-                  <a href="/admin/settings?tab=legal" class="underline">
-                    /admin/settings
+                  <a href="/admin/base/legal" class="underline">
+                    /admin/base/legal
                   </a>
                   .
                 </>

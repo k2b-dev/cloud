@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { clickhouseAdminQuery, clickhouseTestAdmin, clickhouseTestPrefix } from "../../../../scripts/fixtures/test-clickhouse";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -31,7 +31,12 @@ export const fixtureStore = (clock = fixtureClock) => {
   const query = store.query;
   store.query = async (statement, params, connection) => {
     if (/\bsystem\.disks\b/i.test(statement)) throw new Error("Tests must inject disk measurements");
-    return query(statement, params, connection);
+    // Freeze the ClickHouse view clock at DDL time. Tests that advance their clock
+    // must reconcile again to advance these read boundaries.
+    const frozen = statement.startsWith("CREATE OR REPLACE VIEW")
+      ? statement.replaceAll("now64(3,'UTC')", `fromUnixTimestamp64Milli(${clock().getTime()},'UTC')`)
+      : statement;
+    return query(frozen, params, connection);
   };
   return store;
 };

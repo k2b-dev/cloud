@@ -5,7 +5,7 @@ section: Frontend
 order: 890
 description: Apply Cloud's visual and interaction rules without forking shared primitives.
 tags: [css, accessibility, themes, design, colors, selection]
-updated: 2026-10-20
+updated: 2026-10-23
 ---
 
 # Styling and accessibility
@@ -48,11 +48,12 @@ keyboard behavior: check those again after you remove decoration.
 
 ## Tables, states, and moved paths
 
-[DataTable](/en/ui/content/tables#presentation) follows the minimal Grids
-reference: no grid, zebra striping, or row lines; 44px rows (40px compact),
-a hover fill, a small muted header without a line, and numbers aligned right
-with tabular figures. Only tables with more than 8 columns get row hairlines,
-automatically. Do not add custom row borders.
+[DataTable](/en/ui/content/tables#presentation) is the one surface that keeps
+lines: a grey head with a stronger line below it, a line under every row, and
+lighter column lines, all drawn inside the cells. Rows are 44px (40px
+compact), numbers align right with tabular figures, and a selected row is a
+fill in the app ink without a coloured line. Do not add custom row borders or
+selection fills.
 
 Use row-height loading placeholders and distinguish empty, no results, and
 no access without adding a box. Every load error offers **Try again** through
@@ -117,9 +118,9 @@ An app accent must not recolor every primary button. A red app must not make
 normal navigation look destructive. Status color must not identify an app.
 
 A selected navigation row or a row for an opened or picked object or place
-uses the app's selection fill and ink. A selected tab, view tab, or segment and
-an active filter chip share the navigation fill: like a selected row, they mark
-where the person is or what they picked. Controls keep platform blue: buttons,
+uses the app's selection fill and ink. A selected tab, view tab, or segment
+and an active filter chip mark where the person is or what they picked in the
+same app ink, drawn as a selected edge with a light fill. Controls keep platform blue: buttons,
 inputs, checkboxes, radios, switches, and focus rings, plus select and
 keyboard-active options, pressed toolbar buttons, and checked cards. Link text
 stays body ink; only its underline follows the app ink. Only the
@@ -203,8 +204,8 @@ contrast on Cloud's theme and selection surfaces. `--ui-app-selected` and
 and the sidebar. Cloud maps these fills to `--k2b-row-selected` and
 `--k2b-app-workspace-selected`, with `--k2b-app-workspace-active` for
 navigation ink. Tabs, view tabs, segmented controls, and active filter chips
-share the navigation fill; other controls and options retain their platform
-colors.
+mix their selected edge and fill from that ink; other controls and options
+retain their platform colors.
 
 When app-owned CSS is necessary, use the semantic theme variables already
 provided by the host. The host's `--ui-focus` is a complete `box-shadow`: use
@@ -514,8 +515,9 @@ when a list renders. Keep field errors associated with their inputs.
 
 On a Cloud page, the OS reduced-motion setting or `data-k2b-motion="reduced"`
 on `<html>` makes CSS transitions, animations, and scrolling inside `.k2b-ui`
-instant and stops view transitions. Color may still change, movement does
-not. A delay that only keeps a fast request from flashing a loading indicator
+instant and stops the animation of view transitions. With the OS setting,
+enhanced navigation starts no view transition at all, so the address changes
+at once. Color may still change, movement does not. A delay that only keeps a fast request from flashing a loading indicator
 must keep its wait under reduced motion. Motion that your code drives, such as a smooth `scrollIntoView()` or
 `element.animate()`, checks `prefersReducedMotion()` from `@k2b/ui`; see
 [Motion](/en/ui/motion).
@@ -592,20 +594,22 @@ Before accepting a component or screen, verify:
 ## Show Cloud account avatars
 
 Import `CloudAvatar` from `@k2b/cloud/account/ui` for Cloud account identity.
-Pass the visible `username`, `userId`, and `avatarHash`; uploaded user pictures
-use the account avatar endpoint with the hash as a revision. Without a picture,
-the avatar uses initials.
+Pass the visible `username`, `userId`, and `avatarHash`. A person's picture, a
+photo or a built avatar, comes from the account avatar endpoint with the hash
+as a revision; while a person shows initials, `avatarHash` is `null` and the
+avatar draws the initials. See [Profile pictures](/en/docs/identity/profile-pictures).
 
 `kind` defaults to `"user"` and renders a circle. `"service_account"` renders a
-square robot icon; `"system"` renders a square automation icon. These two kinds
-use their semantic icon even when an avatar hash is supplied. Cloud owns this
-mapping; callers do not pass `shape`, `icon`, `name`, or `src`.
+square with the account's photo or robot from the same endpoint, also without a
+hash; its robot icon shows only while the image cannot load. `"system"` renders
+a square automation icon. Cloud owns this mapping; callers do not pass `shape`,
+`icon`, `name`, or `src`.
 
 ```tsx
 import { CloudAvatar } from "@k2b/cloud/account/ui";
 
 <CloudAvatar username="Jana Berger" userId={user.id} avatarHash={user.avatarHash} size="sm" />
-<CloudAvatar username="Stock bot" kind="service_account" size="sm" />
+<CloudAvatar username="Stock bot" userId={agent.id} kind="service_account" size="sm" />
 ```
 
 ```ts
@@ -617,5 +621,6 @@ type CloudAvatarProps = Omit<AvatarProps, "name" | "src" | "shape" | "icon"> & {
 
 Other presentation props follow [`Avatar`](/en/ui/surfaces/cards). For an
 [`AvatarStack`](/en/ui/surfaces/avatar-stack) person, `cloudAvatarSource(userId,
-avatarHash)` from the same account UI entry point supplies the uploaded picture
-URL, or `undefined` when either value is absent.
+avatarHash)` from the same account UI entry point supplies a person's picture
+URL, or `undefined` when either value is absent; `cloudAvatarImage({ kind,
+userId, avatarHash })` also covers service accounts.

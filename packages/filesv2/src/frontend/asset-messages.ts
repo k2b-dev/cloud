@@ -35,6 +35,7 @@ export const assetMessages = i18n.define({
       remove: "Delete template",
       removeQuestion: "Delete this template? Files already created from it will remain unchanged.",
       permissions: "Who can use this template?",
+      accessDialogSubtitle: "Template · Files",
       use: "Use",
       snapshot:
         "Templates are independent copies. Changes to the original or to a template do not change files already created from it. Access is granted here, independently of storage permissions.",
@@ -85,6 +86,7 @@ export const assetMessages = i18n.define({
       remove: "Vorlage löschen",
       removeQuestion: "Diese Vorlage löschen? Bereits daraus erstellte Dateien bleiben unverändert.",
       permissions: "Wer darf diese Vorlage verwenden?",
+      accessDialogSubtitle: "Vorlage · Dateien",
       use: "Verwenden",
       snapshot:
         "Vorlagen sind unabhängige Kopien. Änderungen am Original oder an einer Vorlage ändern keine bereits daraus erstellten Dateien. Die Nutzung wird hier unabhängig von den Ablagenrechten erlaubt.",

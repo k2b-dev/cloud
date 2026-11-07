@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1088
 description: Add optional instructions for the person completing an account or group change.
 tags: [accounts, administration, authentication]
-updated: 2026-09-09
+updated: 2026-10-28
 ---
 
 # Show notices after account changes
@@ -15,7 +15,7 @@ such as arranging access in another system. Leave it empty when there is nothing
 else to do.
 
 Edit **Notice after account or group changes** under
-**Administration → Accounts & sign-in → Registration & requests**.
+**Administration → Sign-in & security → Registration**.
 The Liquid-Markdown template is empty by default. An empty template or empty
 result adds no notice. The editor offers sample data and a rendered preview;
 unknown variables and invalid Liquid are rejected on save through both GUI and CLI.

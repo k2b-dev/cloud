@@ -47,6 +47,8 @@ Use these words consistently:
   `packages/ui`;
 - **`@k2b/ssr`** means the standalone SolidJS islands SSR framework in
   `packages/ssr`;
+- **`@k2b/editor`** means the standalone SolidJS Markdown editor package in
+  `packages/editor`;
 - **documentation** means the canonical Fibel sources under `docs-site`;
 - **deployment** means placement, networking, configuration, and runtime
   infrastructure.
@@ -145,8 +147,10 @@ A new behavior rides an existing mechanism before it may add a new one:
   never a hand edit of `.env.example`, documentation, or Compose;
 - a new integration test needs zero configuration; it gates itself on
   `CLOUD_TEST_*` through `scripts/fixtures/test-infra.ts`;
-- a new application touches exactly three files: the workspace list,
-  `compose.dev.yml`, and `compose.prod.yml`;
+- a new application has exactly three source inputs: the workspace list and
+  `scripts/templates/compose.dev.yml` and `scripts/templates/compose.prod.yml`;
+  regenerate Compose files and development keys with
+  `bun scripts/generate-app-deployments.ts`;
 - a new repository rule is one module under `scripts/checks/`, never a new
   `package.json` script or workflow;
 - a new script is a file with `--help`, not a `package.json` entry, unless CI
@@ -213,6 +217,8 @@ Before calling a change complete, decide which of these apply:
   application-domain dependencies;
 - `packages/ssr` — standalone `@k2b/ssr` framework with no Cloud
   dependencies; its `AGENTS.md` covers framework internals;
+- `packages/editor` — standalone `@k2b/editor` package (editor, toolbar,
+  bubble menu, slash menu) on `@k2b/ui`, with no Cloud dependencies;
 - other `packages/*` — independently owned built-in applications;
 - `docs-site/docs/en` — canonical developer and operations documentation;
 - `docs-site/src/ui/context` and `docs-site/src/ui/demo-sections` — canonical
@@ -296,8 +302,10 @@ fixing them when practical, run focused tests at the highest public seam, then
 widen to the owning package's typecheck, build, documentation checks, or root
 checks only when the boundary requires it.
 A fix pull request answers "How do we prevent this next time?" with a guard
-(check, test, or convention ID) or a reason why none, and adds its lesson to
-[Lessons learned](docs-site/docs/en/contributing/lessons-learned.md).
+(check, test, or convention ID) or a reason why none, and adds one new file at
+`docs-site/docs/en/contributing/lessons/YYYY-MM-DD-<unique-slug>.md`.
+Follow [Add a lesson](docs-site/docs/en/contributing/lessons-learned.md#add-a-lesson);
+never insert entries into the shared page, which Fibel assembles at runtime.
 
 The `gate` check runs `bun run check`, `bun run test`, and the integration
 suites with `CLOUD_TEST_*`, plus path-filtered jobs such as Grids

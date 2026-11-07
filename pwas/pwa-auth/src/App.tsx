@@ -7,7 +7,7 @@ import { openInstallDialog } from "./InstallDialog";
 import { authMessages } from "./i18n";
 import { createInstallation } from "./install";
 import { openNotifications, PushCard } from "./Notifications";
-import { Pairing } from "./Pairing";
+import { Pairing, pairingDialogOptions } from "./Pairing";
 import type { Preferences } from "./preferences";
 import { createPush, rememberLocale } from "./push";
 import { OPEN_REQUEST_MESSAGE } from "./push-worker";
@@ -73,7 +73,7 @@ export function App(props: { preferences: Preferences }) {
             <Pairing auth={auth} link={link} close={() => close()} />
           </LocaleProvider>
         ),
-        { panelClassName: "k2b-dialog k2b-dialog--small", contentClassName: "k2b-dialog__viewport" },
+        pairingDialogOptions,
       );
     } finally {
       pairingOpen = false;

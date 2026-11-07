@@ -68,7 +68,8 @@ const person = (index: number) => ({
   avatarHash: null,
 });
 /** Accessible names of the rendered avatars in stack order. */
-const avatarNames = (html: string) => [...html.matchAll(/aria-label="([^"]+)"/g)].map((match) => match[1]);
+// An avatar is named by `aria-label` (initials) or by `alt` (a picture, such as a service account's robot).
+const avatarNames = (html: string) => [...html.matchAll(/(?:aria-label|alt)="([^"]+)"/g)].map((match) => match[1]);
 /** The tooltip surface text rendered next to a control. */
 const tooltipText = (html: string) => html.match(/role="tooltip"[^>]*>([^<]*)</)?.[1];
 
@@ -148,7 +149,9 @@ describe("Spaces claim controls", () => {
     expect(picture).toContain(`<img src="/api/accounts/users/${other}/avatar?rev=rev1"`);
 
     const bot = avatar({ claim: botClaim });
-    expect(bot).toContain('class="ti ti-api"');
+    // A service account shows its robot in a square, never a bare icon.
+    expect(bot).toContain(`<img src="/api/accounts/users/${other}/avatar"`);
+    expect(bot).toContain('data-shape="square"');
     expect(bot).toContain('title="Task worker is on it"');
 
     const own = avatar({ claim: ownClaim }, "de");
@@ -207,7 +210,7 @@ describe("Spaces claim controls", () => {
     const html = stack({ claim: botClaim, assignees: [{ id: other, kind: "user" as const, displayName: "Mira Beck", avatarHash: null }] });
     expect(avatarNames(html)).toEqual(["Task worker is on it", "Mira Beck avatar"]);
     expect(html.match(/data-ring="success"/g)).toHaveLength(1);
-    expect(html).toMatch(/data-ring="success"[^>]*aria-label="Task worker is on it"/);
+    expect(html).toMatch(/alt="Task worker is on it"[^>]*data-ring="success"/);
     expect(html).not.toMatch(/data-ring="success"[^>]*aria-label="Mira Beck avatar"/);
     expect(html).not.toContain(">+");
   });

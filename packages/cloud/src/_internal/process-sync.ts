@@ -11,7 +11,8 @@ import { hostname } from "node:os";
 import { createSync, type Sync, SyncError } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
 import type { NatsConnection } from "@nats-io/transport-node";
-import { env } from "../config/env";
+import { connections } from "../runtime/connections";
+import { DEPENDENCY_STARTUP_BUDGET_MS } from "../runtime/startup-budget";
 import { logger } from "../services/logging";
 import { flushSyncTraceEvents, observeSyncEvent } from "../services/logging/trace";
 import { connectNats } from "./nats-connection";
@@ -19,15 +20,34 @@ import { withSyncBudgets } from "./sync-budget";
 
 let current: Sync | undefined;
 let starting = false;
+let processNats: NatsConnection | undefined;
+let readerController = new AbortController();
+const readerStops = new Set<() => Promise<void>>();
+
+/** Process-owned readers stop before Sync and its transport are drained. */
+export const processSyncReaders = () => ({ signal: readerController.signal, stops: readerStops, connection: processNats });
+
+/** Existing non-retained NATS transport, owned and drained by the process lifecycle. */
+export const getProcessNats = (): NatsConnection => {
+  if (!processNats) throw new Error("NATS is not available before app.start()");
+  return processNats;
+};
 
 /** Bind the process instance. `startProcessSync()` does this; tests may bind their own. */
-export const bindProcessSync = (sync: Sync): void => {
+export const bindProcessSync = (sync: Sync, connection?: NatsConnection): void => {
   if (current) throw new Error("A Sync instance is already bound to this process");
+  readerController = new AbortController();
+  if (connection) processNats = connection;
   current = sync;
 };
 
 export const unbindProcessSync = (): void => {
+  readerController.abort();
+  for (const stop of readerStops)
+    void stop().catch((error: unknown) => logger("sync").error("Registry reader cleanup failed", { error: errorMessage(error) }));
+  readerStops.clear();
   current = undefined;
+  processNats = undefined;
 };
 
 export const getProcessSync = (): Sync => {
@@ -68,15 +88,6 @@ export type ProcessSync = {
   stop: () => Promise<void>;
 };
 
-/**
- * How long a starting process waits for NATS and JetStream. After a host or
- * stack restart, NATS nodes come up in any order and JetStream must recover
- * its streams and elect a leader before its API answers; five minutes covers
- * that. A process that still gets no answer exits instead of staying alive
- * without readiness, so Docker or Kubernetes restarts it and the outage shows
- * up as restarts.
- */
-const NATS_STARTUP_BUDGET_MS = 5 * 60_000;
 // About 1 s, doubling to 20 s, each ±50 % so processes that restarted together spread their retries.
 const NATS_STARTUP_BACKOFF = { baseMs: 1_000, maxMs: 20_000, jitter: 0.5 };
 
@@ -92,7 +103,7 @@ const errorMessage = (error: unknown): string => (error instanceof Error ? error
  */
 export const waitForNats = async <T>(
   attempt: () => Promise<T>,
-  { application, budgetMs = NATS_STARTUP_BUDGET_MS }: { application: string; budgetMs?: number },
+  { application, budgetMs = DEPENDENCY_STARTUP_BUDGET_MS }: { application: string; budgetMs?: number },
 ): Promise<T> => {
   const log = logger("sync");
   const deadline = Date.now() + budgetMs;
@@ -128,19 +139,21 @@ const connectReadySync = async (application: string): Promise<{ sync: Sync; conn
     sync = withSyncBudgets(
       createSync({
         connection,
-        namespace: env.SYNC_NAMESPACE,
+        namespace: connections().nats.namespace,
         application,
-        defaults: { replicas: env.SYNC_REPLICAS },
+        defaults: { replicas: connections().nats.replicas },
         observe: (event) => observeSyncEvent(event, application),
       }),
-      { connection, namespace: env.SYNC_NAMESPACE },
+      { connection, namespace: connections().nats.namespace },
     );
+    processNats = connection;
     bindProcessSync(sync);
     await sync.ready();
     return { sync, connection };
   } catch (error) {
     if (current === sync) unbindProcessSync();
-    await flushSyncTraceEvents();
+    if (processNats === connection) processNats = undefined;
+    await flushSyncTraceEvents({ stopping: true });
     await connection.close();
     throw error;
   }
@@ -153,17 +166,17 @@ const connectReadySync = async (application: string): Promise<{ sync: Sync; conn
  *
  * While NATS or JetStream does not answer, it retries with a fresh connection
  * and instance (see `waitForNats`), and exits the process once
- * `NATS_STARTUP_BUDGET_MS` is spent. Callers are process entry points; nothing
+ * `DEPENDENCY_STARTUP_BUDGET_MS` is spent. Callers are process entry points; nothing
  * serves readiness before this returns.
  */
 export const startProcessSync = async ({ application }: { application: string }): Promise<ProcessSync> => {
-  if (!env.SYNC_NAMESPACE.trim()) {
+  if (!connections().nats.namespace.trim()) {
     throw new Error(
       `SYNC_NAMESPACE is not set (application "${application}"). Every process of one Cloud installation ` +
         "must share the same @k2b/sync namespace.",
     );
   }
-  if (env.NATS_SERVERS.length === 0) {
+  if (connections().nats.servers.length === 0) {
     throw new Error(
       `NATS_SERVERS is not set (application "${application}"). @k2b/sync needs a comma-separated list of ` +
         "nats://host:port bootstrap servers, e.g. NATS_SERVERS=nats://ipa_nats_1:4222,nats://ipa_nats_2:4222.",
@@ -173,18 +186,23 @@ export const startProcessSync = async ({ application }: { application: string })
   starting = true;
   try {
     const { sync: active, connection } = await waitForNats(() => connectReadySync(application), { application });
+    processNats = connection;
     let stopPromise: Promise<void> | undefined;
     return {
       sync: active,
       stop: () =>
         (stopPromise ??= (async () => {
           try {
+            readerController.abort();
+            await Promise.all([...readerStops].map((stop) => stop()));
+            readerStops.clear();
             await active.drain();
           } finally {
             try {
-              await flushSyncTraceEvents();
+              await flushSyncTraceEvents({ stopping: true });
             } finally {
               if (current === active) unbindProcessSync();
+              if (processNats === connection) processNats = undefined;
               await connection.drain();
             }
           }

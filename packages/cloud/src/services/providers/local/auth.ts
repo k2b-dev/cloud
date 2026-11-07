@@ -1,11 +1,12 @@
-import { redis } from "bun";
+import { createHash } from "node:crypto";
+import { redis } from "../../../runtime/clients";
 
 /** Requested by email or username on the login page; resolves the account through its email at use. */
 export type EmailLoginTokenPayload = { email: string; category?: "guest" | "login" };
 /** Issued by an administrator for one account; works without an email address. */
 export type AccountLoginTokenPayload = { userId: string };
 
-const loginTokenKey = (token: string) => `email-login:${token}`;
+const loginTokenKey = (token: string) => `email-login:${createHash("sha256").update(token).digest("hex")}`;
 
 export const createMagicLinkToken = async (params: {
   email: string;
@@ -36,7 +37,7 @@ type PasswordResetPayload = {
   email: string;
 };
 
-const passwordResetTokenKey = (token: string) => `password-reset:${token}`;
+const passwordResetTokenKey = (token: string) => `password-reset:${createHash("sha256").update(token).digest("hex")}`;
 
 export const createPasswordResetToken = async (params: PasswordResetPayload & { ttlSeconds?: number }): Promise<string> => {
   const token = crypto.randomUUID();

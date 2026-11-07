@@ -1,5 +1,6 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { APP_REGISTRY_TTL_MS } from "../../_internal/registry";
+import { sql } from "../../runtime/clients";
 import type { HelpAccessLevel, HelpKind } from "../../shared/help";
 import { ensureSchema, toPgTextArray } from "../postgres";
 import type { HelpCorpus, HelpMetadata } from "./types";
@@ -193,7 +194,7 @@ export const queryHelp = async (
     ],
   );
   // Match the app publication write deadline and bound abandoned reads at the driver.
-  const timeout = setTimeout(() => pending.cancel(), 10_000);
+  const timeout = setTimeout(() => void pending.cancel().catch(() => {}), 10_000);
   try {
     return await pending;
   } finally {
