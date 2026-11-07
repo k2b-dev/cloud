@@ -20,13 +20,7 @@ callbacks. Use ISO text for dates and `null` for missing observations.
 The portable Zod validator `chartKinds()` from `@k2b/editor/charts` is checked
 against those types at compile time. It normalizes null gaps to non-finite
 renderer values; keep the original JSON when saving. Its optional limits are
-host policy. Chat and Pulse retain their own input budgets.
-
-Notebooks and `cloud.chart()` use the same description and validator. Cloud
-owns adjacent `{block: "stats" | "table" | "group" | "details" | "explorer", ...}`
-nodes, including Cloud reference cells. Existing saved `{view, ...}` envelopes
-remain valid; `cloudAiViewDescription()` from `@k2b/cloud/ai` converts validated
-views to nodes without changing their chart or table data.
+host policy. Each consuming application keeps its own input budget.
 
 ## Import
 

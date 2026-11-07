@@ -871,3 +871,11 @@ latest checkpoint independently of history pagination. Compaction preserves an
 exact plan checkpoint alongside its summary; fork and retry follow the selected
 history rather than importing a later plan. A plan records intended and completed
 work; it neither executes actions nor grants permission.
+
+## Portable view descriptions
+
+Notebooks and `cloud.chart()` use the same description and validator. Cloud
+owns adjacent `{block: "stats" | "table" | "group" | "details" | "explorer", ...}`
+nodes, including Cloud reference cells. Existing saved `{view, ...}` envelopes
+remain valid; `cloudAiViewDescription()` from `@k2b/cloud/ai` converts validated
+views to nodes without changing their chart or table data.
