@@ -2098,7 +2098,9 @@
 }
 
 .ui-charts-frame .k2b-chart-explorer__title,
-.ui-charts-frame__header > :first-child {
+.ui-charts-frame__header h2,
+.ui-charts-frame__header h3,
+.ui-charts-frame__header h4 {
   margin: 0;
   color: var(--k2b-text);
   font-size: 0.875rem;
@@ -2107,7 +2109,25 @@
 }
 
 .ui-charts-frame__header {
+  display: flex;
+  min-height: 2.5rem;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: space-between;
   margin-bottom: 0.75rem;
+}
+
+.ui-charts-frame__header > div {
+  min-width: 0;
+}
+
+.ui-charts-frame__search {
+  flex: 0 1 14rem;
+  min-width: 8rem;
+}
+
+.ui-charts-frame__header .ui-charts-frame__stale {
+  color: var(--k2b-warning-text);
 }
 
 .ui-charts-frame__header p {

@@ -34,6 +34,8 @@ test("every example of a kind that exists today draws, never as a slot", () => {
     expect(drawing.mode, example.id).not.toBe("slot");
     if (drawing.mode === "snapshot") {
       expect(drawing.snapshot.marks.length, example.id).toBeGreaterThan(0);
+      // Every mark, the first one too, names its values in the tooltip.
+      for (const mark of drawing.snapshot.marks) expect(mark.tooltip.rows.length, `${example.id} ${mark.key}`).toBeGreaterThan(0);
       expect(drawing.rows.length, example.id).toBeGreaterThan(0);
     }
     if (drawing.mode === "live") expect(drawing.rows.length, example.id).toBeGreaterThan(0);

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { launchBrowser, settled } from "../../../packages/ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../packages/ui/test/browser";
 import { showcaseDashboards } from "./demo-sections/charts/dashboards";
 import { chartShowcaseKinds } from "./demo-sections/charts/examples";
 
@@ -57,7 +57,8 @@ const islands = (page: Page) =>
           (attribute) =>
             !generated.has(attribute.name) &&
             !attribute.name.startsWith("data-overflow") &&
-            !(attribute.value === "" && (attribute.name === "style" || attribute.name === "class")),
+            // The server writes an empty field's value; the browser sets the property instead.
+            !(attribute.value === "" && (attribute.name === "style" || attribute.name === "class" || attribute.name === "value")),
         )
         .map((attribute) => {
           // The server writes class and style as text, the browser as tokens and declarations.
@@ -116,8 +117,7 @@ const open = async (path: string, width: number) => {
   const server = await islands(plain);
   await plain.close();
   const page = await browser!.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   page.on("console", (message) => {
     if (message.type() === "error" || (message.type() === "warning" && /hydrat/i.test(message.text()))) errors.push(message.text());
   });
@@ -147,6 +147,20 @@ for (const width of [1280, 390]) {
         for (const example of kind.examples) {
           if (kind.examples.length > 1) await pick(page, "Example", example.title);
           const before = await frames(page, ".ui-charts-stage .ui-charts-frame");
+          expect(before.length, example.id).toBe(1);
+          if (width === 1280) {
+            // Focus inspects the first value: its tooltip names it, also for the first mark of the chart.
+            await page.locator(".ui-charts-stage .k2b-chart[tabindex]").first().focus();
+            const tooltip = page.locator('.ui-charts-stage [role="tooltip"]:popover-open');
+            await tooltip.waitFor({ state: "visible" });
+            expect((await tooltip.locator(".k2b-chart__tooltip-row").count()) > 0, example.id).toBe(true);
+            await page.keyboard.press("Escape");
+            // The table view lists the typed rows inside the same frame.
+            await pick(page, "View", "Table");
+            expect(await page.locator(".ui-charts-stage tbody tr").count(), example.id).toBeGreaterThan(0);
+            expect(await frames(page, ".ui-charts-stage .ui-charts-frame").then((boxes) => boxes[0]![0])).toEqual(before[0]![0]);
+            await pick(page, "View", "Chart");
+          }
           for (const state of states) {
             await pick(page, "State", state);
             expect({ example: example.id, state, frames: await frames(page, ".ui-charts-stage .ui-charts-frame") }).toEqual({
@@ -170,6 +184,7 @@ test("both dashboards keep every panel in place in every state", async () => {
       const { page, errors } = await open(`/en/ui/charts/dashboards/${dashboard.slug}`, width);
       try {
         const before = await frames(page, ".ui-charts-grid__cell > *, .ui-charts-tile");
+        expect(before.length, dashboard.slug).toBeGreaterThan(4);
         for (const state of states) {
           await pick(page, "Preview state", state);
           expect({

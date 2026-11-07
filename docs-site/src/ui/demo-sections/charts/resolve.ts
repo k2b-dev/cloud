@@ -162,7 +162,11 @@ export function resolveDrawing(spec: JsonValue, locale = "en"): ShowcaseDrawing 
   const table = chartRows(input, locale);
   const snapshot = prepareChartSnapshot(chartRenderOptions(input, locale, { legend: "outside" }), {
     key: ({ datum }) => chartMarkKey(datum),
-    tooltip: ({ datum }) => chartTooltip(table.columns(), table.add(datum)),
+    // Add the row first: it may introduce the columns its own tooltip names.
+    tooltip: ({ datum }) => {
+      const row = table.add(datum);
+      return chartTooltip(table.columns(), row);
+    },
     reference: ({ datum }) => chartReferenceMark(input, datum),
   });
   const { columns, rows } = table.table();

@@ -1,5 +1,17 @@
-import { Chart, ChartExplorer, type ChartFrameRequest, ChartSnapshotView, DataTable, Paper, StatCell, StatGrid } from "@k2b/ui";
-import { createMemo, For, type JSX, Match, Show, Switch } from "solid-js";
+import {
+  Button,
+  Chart,
+  ChartExplorer,
+  type ChartFrameRequest,
+  ChartSnapshotView,
+  DataTable,
+  type DataTableSort,
+  Paper,
+  StatCell,
+  StatGrid,
+  TextInput,
+} from "@k2b/ui";
+import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { JsonValue } from "./examples/types";
 import { formatNumber } from "./format";
@@ -121,10 +133,12 @@ export function ShowcaseFrame(props: ShowcaseFrameProps): JSX.Element {
         {(slot) => (
           <Paper class="ui-charts-frame">
             <header class="ui-charts-frame__header">
-              <Dynamic component={`h${props.headingLevel ?? 3}`}>{title()}</Dynamic>
-              <Show when={subtitle()}>
-                <p>{subtitle()}</p>
-              </Show>
+              <div>
+                <Dynamic component={`h${props.headingLevel ?? 3}`}>{title()}</Dynamic>
+                <Show when={subtitle()}>
+                  <p>{subtitle()}</p>
+                </Show>
+              </div>
             </header>
             <div class="ui-charts-slot" style={{ height: height() }}>
               <span class="ui-charts-slot__kind">{slot().kind}</span>
@@ -215,37 +229,102 @@ function StatsBlock(props: { spec: JsonObject; state: ShowcaseState; onRetry?: (
 
 type TableRow = { key: string; cells: JsonObject };
 
-/** `{ block: "table", columns, rows }`: the table reaches the frame's edges below its header. */
+/**
+ * `{ block: "table", columns, rows, search? }`: search sits in the frame's head, headers sort, and the table reaches
+ * the frame's edges below. Loading, empty, failure and stale use the explorer's words and places.
+ */
 function TableBlock(props: ShowcaseFrameProps & { spec: JsonObject }): JSX.Element {
+  const [query, setQuery] = createSignal("");
+  const [sort, setSort] = createSignal<DataTableSort | null>(null);
   const columns = () => list(props.spec.columns).filter(object);
-  const rows = (): TableRow[] =>
-    list(props.spec.rows)
-      .filter(object)
-      .map((cells, index) => ({ key: String(index), cells }));
   const cell = (column: JsonObject, row: TableRow): string => {
     const value = row.cells[text(column.id)];
     if (value === null || value === undefined) return "–";
     if (typeof value === "number") return formatNumber(value, column.format);
     return text(value);
   };
+  const rows = createMemo((): TableRow[] => {
+    const all = list(props.spec.rows)
+      .filter(object)
+      .map((cells, index) => ({ key: String(index), cells }));
+    const needle = query().trim().toLocaleLowerCase("en");
+    const found = needle
+      ? all.filter((row) => columns().some((column) => cell(column, row).toLocaleLowerCase("en").includes(needle)))
+      : all;
+    const order = sort();
+    if (!order) return found;
+    const collator = new Intl.Collator("en", { numeric: true });
+    return [...found].sort((a, b) => {
+      const left = a.cells[order.key],
+        right = b.cells[order.key];
+      if (left === null || left === undefined) return right === null || right === undefined ? 0 : 1;
+      if (right === null || right === undefined) return -1;
+      const comparison = typeof left === "number" && typeof right === "number" ? left - right : collator.compare(text(left), text(right));
+      return order.direction === "asc" ? comparison : -comparison;
+    });
+  });
+  const failed = () => props.state === "error";
   return (
     <Paper class="ui-charts-frame" data-block="table">
-      <header class="ui-charts-frame__header">
-        <Dynamic component={`h${props.headingLevel ?? 3}`}>{props.title}</Dynamic>
-        <Show when={props.subtitle}>
-          <p>{props.state === "stale" ? "As of 09:12 · Refresh failed" : props.subtitle}</p>
+      <header class="ui-charts-frame__header" data-search={props.spec.search === true ? "true" : undefined}>
+        <div>
+          <Dynamic component={`h${props.headingLevel ?? 3}`}>{props.title}</Dynamic>
+          <p role="status" class={props.state === "stale" ? "ui-charts-frame__stale" : undefined}>
+            {props.state === "loading" ? "Loading …" : props.state === "stale" ? "As of 09:12 · Refresh failed" : props.subtitle}
+            <Show when={props.state === "stale" && props.onRetry}>
+              {" · "}
+              <button type="button" class="ui-charts-link" onClick={() => props.onRetry?.()}>
+                Try again
+              </button>
+            </Show>
+          </p>
+        </div>
+        <Show when={props.spec.search === true}>
+          <TextInput
+            class="ui-charts-frame__search"
+            type="search"
+            icon="ti ti-search"
+            aria-label={`Search ${props.title}`}
+            placeholder="Search"
+            value={query()}
+            onValueChange={setQuery}
+            disabled={!withRows(props.state)}
+          />
         </Show>
       </header>
-      <div class="ui-charts-frame__table" style={{ height: `${props.height}px` }}>
+      <div
+        class="ui-charts-frame__table"
+        style={{ height: `${props.height}px` }}
+        aria-busy={props.state === "loading" ? "true" : undefined}
+      >
         <Show
-          when={withRows(props.state)}
+          when={withRows(props.state) && rows().length}
           fallback={
-            <div class="k2b-chart-explorer__state" data-state={props.state}>
-              <Show
-                when={props.state === "loading"}
-                fallback={<p>{props.state === "error" ? "The data could not be loaded." : props.empty}</p>}
-              >
-                <p>Loading …</p>
+            <div class="k2b-chart-explorer__state" data-state={props.state} role={failed() ? "alert" : undefined}>
+              <Show when={props.state !== "loading"}>
+                <span class="k2b-chart-explorer__state-icon" aria-hidden="true">
+                  <i class={failed() ? "ti ti-alert-circle" : "ti ti-table-off"} />
+                </span>
+              </Show>
+              <p>
+                {failed()
+                  ? "The data could not be loaded."
+                  : props.state === "loading"
+                    ? ""
+                    : query()
+                      ? `No row contains “${query()}”.`
+                      : props.empty}
+              </p>
+              <Show when={failed() && props.onRetry}>
+                <Button variant="secondary" size="sm" onClick={() => props.onRetry?.()}>
+                  <i class="ti ti-refresh" aria-hidden="true" />
+                  Try again
+                </Button>
+              </Show>
+              <Show when={!failed() && query() && withRows(props.state)}>
+                <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
+                  Clear search
+                </Button>
               </Show>
             </div>
           }
@@ -256,11 +335,14 @@ function TableBlock(props: ShowcaseFrameProps & { spec: JsonObject }): JSX.Eleme
             fillHeight
             rows={rows()}
             getRowId={(row) => row.key}
+            sort={sort()}
+            onSortChange={setSort}
             columns={columns().map((column) => ({
               id: text(column.id),
               header: text(column.label),
               value: (row: TableRow) => cell(column, row),
-              align: column.type === "number" || column.type === "amount" ? "right" : "left",
+              sortable: true,
+              align: column.type === "number" || column.type === "amount" || column.type === "flow" ? "right" : "left",
             }))}
           />
         </Show>

@@ -95,7 +95,7 @@ export default function ChartKindPlayground(props: { kind: string }) {
         </div>
         <p>
           {code() === "tsx"
-            ? "Solid props of the chart component. Callbacks such as tooltip or onSelect are props only and never part of the JSON."
+            ? "The same description as props of the chart component. Callbacks such as tooltip or onSelect are props only and never part of the JSON. Until the chart component reads the portable description itself (catalog step 4), pass format functions and numeric x values where the JSON names a format or a date."
             : "The portable form that Pulse saves, Chat and Code pages send and Notebooks embed. The page draws the chart above from exactly this."}
         </p>
         <Show when={code() === "tsx"} fallback={<DocCode title="JSON" code={JSON.stringify(example().spec, null, 2)} language="js" copy />}>
