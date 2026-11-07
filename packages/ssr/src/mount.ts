@@ -79,9 +79,8 @@ const mountElement = <Props extends object>(
       const dispose = render(() => {
         const owner = getOwner();
         if (owner) {
-          const islands = registry();
-          islands.roots ??= new WeakMap();
-          islands.roots.set(owner, element);
+          shared.roots ??= new WeakMap();
+          shared.roots.set(owner, element);
         }
         return createComponent(ErrorBoundary, {
           fallback: (error: unknown, reset: () => void) => {
@@ -109,7 +108,7 @@ const mountElement = <Props extends object>(
       element.replaceChildren(defaultFallback(start));
       mounted.set(element, () => element.replaceChildren());
     }
-    for (const listener of [...(registry().listeners ?? [])]) listener();
+    for (const listener of [...(shared.listeners ?? [])]) listener();
   };
   // A presentation module can keep server HTML visible while its first-use code loads.
   // Disposal cancels a late resume, including a page replaced by progressive navigation.
