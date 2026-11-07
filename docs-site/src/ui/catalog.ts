@@ -266,7 +266,7 @@ const portableSections = [
       ),
       page("avatar-stack", "AvatarStack", "ti ti-users", "Overlapping faces that open the full list of people."),
       page("details", "Description list", "ti ti-list-details", "Semantic responsive key-value details with optional actions."),
-      page("progress", "Progress", "ti ti-progress", "Determinate progress in compact sizes and semantic tones."),
+      page("progress", "Progress", "ti ti-progress", "Determinate progress in compact sizes and semantic tones, and budgets."),
       page("change-list", "ChangeList", "ti ti-list-check", "Pending changes before saving, one line each, with tone icons."),
       page("stats", "Statistics", "ti ti-chart-bar", "Labeled values, context, accents, trends, and grids."),
       page(
@@ -313,7 +313,7 @@ const portableSections = [
       page("match-text", "MatchText", "ti ti-highlight", "Search matches marked in a result's name or path."),
       page("steps", "Steps", "ti ti-list-numbers", "Ordered instructions with accent numbers."),
       page("charts", "Charts", "ti ti-chart-line", "Typed responsive charts and interactive state timelines."),
-      page("money", "Money", "ti ti-coin", "Amounts that show their direction: turquoise in, violet out."),
+      page("money", "Money", "ti ti-coin", "Amounts that show their direction, turquoise in and violet out, and balance rows."),
       page("tables", "DataTable", "ti ti-table", "Basic records and professional panels with search, filters, actions, and pagination."),
       page("calendar", "Calendar", "ti ti-calendar-month", "Controlled generic calendar navigation and items."),
       page(
@@ -439,7 +439,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 181;
+export const portableUiComponentCount = 183;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -482,6 +482,8 @@ export const documentedOnlyUiCatalogExports = {
   filterRows: "Search helper for complete table rows; documented in Search, groups, and order on the DataTable page.",
   sortRows: "Order helper for complete table rows by a typed column; documented on the DataTable page.",
   DETAILS_ICON: "The one Details icon class that DetailsToggle and AppWorkspace.Detail show; documented on the AppWorkspace page.",
+  budgetState: "Documented BudgetList figures (total, over, free, level) on the Progress page (/en/ui/surfaces/progress).",
+  progressBarParts: "Documented segmented ProgressBar geometry on the Progress page (/en/ui/surfaces/progress).",
   flowDirection: "Documented FlowAmount direction rule (in, out, none) on the Money page (/en/ui/content/money).",
   personColor: "Documented person color for avatars, cursors and comments in Colors and selection (/en/ui/surfaces/color).",
   PERSON_COLORS: "Documented person color palette in Colors and selection (/en/ui/surfaces/color).",

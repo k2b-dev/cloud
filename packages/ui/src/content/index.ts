@@ -1,4 +1,5 @@
 export type { ChartDateFormat, ChartDatum, ChartDatumRole, ChartFormat, ChartNumberFormat } from "../charts/core";
+export { BalanceSummary, type BalanceSummaryProps } from "./BalanceSummary";
 export type {
   CalendarAttendee,
   CalendarCommand,
