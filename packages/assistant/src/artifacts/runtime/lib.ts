@@ -70,7 +70,11 @@ type StoredChart = {
 const ChartSchema = /* @__PURE__ */ cloudAiAppChartSchema();
 /** Inspection accepts exactly the same kinds as the app's portable chart schema. */
 export const isAppChartKind = (value: string | null): value is CloudAiChartInput["kind"] =>
-  ChartSchema.options.some((option) => option.shape.kind.safeParse(value).success);
+  ChartSchema.options.some((option) =>
+    "options" in option
+      ? option.options.some((layout) => layout.shape.kind.safeParse(value).success)
+      : option.shape.kind.safeParse(value).success,
+  );
 
 function responsive(svg: string): string {
   return svg.replace("<svg ", '<svg preserveAspectRatio="none" ').replace(/<text\b[^>]*>/g, (tag) => {
