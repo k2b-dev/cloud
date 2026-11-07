@@ -1,4 +1,4 @@
-import { chartSchema } from "@k2b/editor/chart-schema";
+import { chartNumberFormatSchema, chartSchema } from "@k2b/editor/chart-schema";
 import { z } from "zod";
 import { codeOwnPath } from "../contracts/code-routes";
 import { CODE_REQUEST_LIMITS } from "./request-limits";
@@ -11,6 +11,9 @@ export const CODE_PAGE_LIMITS = Object.freeze({
   rows: 200,
   columns: 20,
   fields: 40,
+  follow: 8,
+  stats: 6,
+  trend: 60,
 });
 const text = z.string().max(CODE_PAGE_LIMITS.bytes);
 const label = z.string().min(1).max(200);
@@ -27,6 +30,8 @@ export const CodePageFieldSchema = z
     type: z.enum(["text", "email", "number", "textarea", "select", "checkbox", "scan"]),
     value: z.union([text, z.number().finite(), z.boolean()]).optional(),
     required: z.boolean().optional(),
+    /** The Code's validation message after a submit, shown at the field. */
+    error: z.string().min(1).max(500).optional(),
     options: z
       .array(z.strictObject({ value: text, label }))
       .max(CODE_PAGE_LIMITS.rows)
@@ -52,6 +57,25 @@ export const CodeChartDescriptionSchema = chartSchema({
   maxMarks: CODE_PAGE_LIMITS.rows * 8,
 });
 export type CodeChartDescription = z.infer<typeof CodeChartDescriptionSchema>;
+/** A Tabler icon class such as `ti ti-package`; a name only, never markup. */
+const icon = z.string().regex(/^ti ti-[a-z0-9]+(?:-[a-z0-9]+)*$/);
+/** Colours with meaning in @k2b/ui; the AI colour is not among them. */
+const color = z.enum(["zinc", "blue", "emerald", "amber", "red"]);
+/** A panel's share of the six grid columns; narrow pages give every panel more room, phones the whole row. */
+const width = z.enum(["third", "half", "twoThirds", "full"]).optional();
+const numberFormat = chartNumberFormatSchema();
+/** One key figure: its value, how it changed and what it compares with, as the shared key-figure tiles show it. */
+const stat = z.strictObject({
+  label,
+  value: z.union([z.number().finite(), label, z.null()]),
+  format: numberFormat.optional(),
+  /** Change since the comparison: a share (0.082 is 8.2 %) or, with `unit: "points"`, percentage points. */
+  delta: z
+    .strictObject({ value: z.number().finite(), unit: z.literal("points").optional(), better: z.enum(["up", "down"]).optional() })
+    .optional(),
+  compare: z.strictObject({ label, value: z.union([z.number().finite(), label]) }).optional(),
+  trend: z.array(z.number().finite()).max(CODE_PAGE_LIMITS.trend).optional(),
+});
 const leaf = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("Text"), text }),
   z.strictObject({ kind: z.literal("Heading"), text: label, level: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional() }),
@@ -59,10 +83,13 @@ const leaf = z.discriminatedUnion("kind", [
     kind: z.literal("Table"),
     title: label,
     columns: z
-      .array(z.strictObject({ key: fieldName, label }))
+      .array(z.strictObject({ key: fieldName, label, format: numberFormat.optional() }))
       .min(1)
       .max(CODE_PAGE_LIMITS.columns),
     rows: z.array(z.record(z.string(), scalar)).max(CODE_PAGE_LIMITS.rows),
+    /** Shown instead of rows when there are none. */
+    empty: label.optional(),
+    width,
   }),
   z.strictObject({
     kind: z.literal("Form"),
@@ -70,13 +97,23 @@ const leaf = z.discriminatedUnion("kind", [
     action: ownPath,
     fields: z.array(CodePageFieldSchema).min(1).max(CODE_PAGE_LIMITS.fields),
     submit: label,
+    width,
   }),
   z.strictObject({
     kind: z.literal("Detail"),
     title: label,
     items: z.array(z.strictObject({ label, value: scalar })).max(CODE_PAGE_LIMITS.rows),
+    width,
   }),
-  z.strictObject({ kind: z.literal("Chart"), description: CodeChartDescriptionSchema }),
+  /** A drawn chart, or, while there is nothing to draw, its title and what the empty frame says. */
+  z.strictObject({
+    kind: z.literal("Chart"),
+    description: CodeChartDescriptionSchema.optional(),
+    title: label.optional(),
+    empty: label.optional(),
+    width,
+  }),
+  z.strictObject({ kind: z.literal("Stats"), items: z.array(stat).min(1).max(CODE_PAGE_LIMITS.stats) }),
   z.strictObject({ kind: z.literal("Link"), label, href: ownPath }),
   z.strictObject({ kind: z.enum(["Button", "Action"]), label, action: ownPath, values: z.record(fieldName, text).optional() }),
   z.strictObject({
@@ -86,17 +123,47 @@ const leaf = z.discriminatedUnion("kind", [
     text: text.optional(),
   }),
 ]);
-export type CodePageNode = z.infer<typeof leaf> | { kind: "Section"; title: string; children: CodePageNode[] };
+type CodePageSection = {
+  kind: "Section";
+  title: string;
+  description?: string;
+  icon?: string;
+  color?: z.infer<typeof color>;
+  children: CodePageNode[];
+};
+export type CodePageNode = z.infer<typeof leaf> | CodePageSection;
 export const CodePageNodeSchema: z.ZodType<CodePageNode> = z.lazy(() =>
   z.union([
     leaf,
-    z.strictObject({ kind: z.literal("Section"), title: label, children: z.array(CodePageNodeSchema).max(CODE_PAGE_LIMITS.nodes) }),
+    z.strictObject({
+      kind: z.literal("Section"),
+      title: label,
+      description: label.optional(),
+      icon: icon.optional(),
+      color: color.optional(),
+      children: z.array(CodePageNodeSchema).max(CODE_PAGE_LIMITS.nodes),
+    }),
   ]),
 );
+/** An application event type, `<app>.<event>`, as the event catalog names it. */
+const eventType = z
+  .string()
+  .max(200)
+  .regex(/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9_-]*)+$/);
 export const CodePageTreeSchema = z.strictObject({
   version: z.literal(1),
   kind: z.literal("Page"),
   title: label,
+  /** Quiet line below the title, such as the data's time or source. */
+  subtitle: label.optional(),
+  icon: icon.optional(),
+  color: color.optional(),
+  /** Event types after which Cloud loads this page again for its viewer. */
+  follow: z
+    .array(eventType)
+    .max(CODE_PAGE_LIMITS.follow)
+    .refine((types) => new Set(types).size === types.length, "Event types are unique")
+    .optional(),
   children: z.array(CodePageNodeSchema).max(CODE_PAGE_LIMITS.nodes),
 });
 export type CodePageTree = z.infer<typeof CodePageTreeSchema>;
@@ -153,6 +220,8 @@ export function validateCodePage(value: unknown, codeId: string): CodePageTree {
     if (node.kind === "Section") node.children.forEach((child) => check(child, depth + 1));
     if (node.kind === "Link") codeOwnPath(codeId, node.href);
     if (node.kind === "Form" || node.kind === "Button" || node.kind === "Action") codeOwnPath(codeId, node.action);
+    if (node.kind === "Chart" && (node.description ? node.title !== undefined : node.title === undefined || node.empty === undefined))
+      throw new Error("code_page_chart");
     if (node.kind === "Form" && new Set(node.fields.map((field) => field.name)).size !== node.fields.length)
       throw new Error("code_page_duplicate_field");
     if (node.kind === "Table") {

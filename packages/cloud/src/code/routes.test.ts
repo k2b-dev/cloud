@@ -72,16 +72,16 @@ test("SDK runtime routes return description responses without cookies, HTML or a
   ).toEqual({ kind: "json", status: 200, body: "null" });
 });
 
-test("personal Code cannot register private or public routes", () => {
-  const personal = generateCodeSdk([], { mode: "personal" });
+test("personal Code registers private and public routes like resource Code", () => {
   for (const options of ["", ", { public: true }"]) {
     const result = analyzeCode({
-      sdk: personal,
+      sdk: generateCodeSdk([], { mode: "personal" }),
       entry: "code.ts",
       aiOperations: [],
       files: { "code.ts": `import { app } from "@sdk"; app.get("/", c => c.text("x")${options});` },
     });
-    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "code_route_account_required" }));
+    expect(result.diagnostics).toEqual([]);
+    expect(result.entrypoints.map((entry) => entry.route)).toEqual([{ method: "GET", path: "/", public: options !== "" }]);
   }
 });
 
