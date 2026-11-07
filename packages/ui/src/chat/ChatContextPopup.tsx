@@ -135,12 +135,13 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
             if (!surface?.contains(next) && next !== trigger) close();
             return;
           }
-          // A control that replaces itself, such as a retry that succeeded, takes the focus with it: keep the details
-          // open and hold the focus in them. Any other loss of focus closes them.
-          const left = event.target;
+          // Focus that falls to nothing, because a control inside replaced itself (a retry that succeeded) or turned
+          // disabled while it loads, stays in the details. Focus that moved elsewhere closes them.
           setTimeout(() => {
-            if (left instanceof Node && !left.isConnected && open()) surface?.focus();
-            else if (!surface?.contains(document.activeElement)) close();
+            const active = document.activeElement;
+            if (!open() || surface?.contains(active)) return;
+            if (!active || active === document.body) surface?.focus();
+            else close();
           });
         }}
       >

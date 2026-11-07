@@ -580,7 +580,8 @@ describe("@k2b/ui portable chat family", () => {
     expect(zero).toContain("<dt>Input</dt><dd>0</dd>");
     expect(zero).toContain("8,000");
     expect(invalid).toContain("Context usage unavailable, 8,000 token context window");
-    expect(invalid).not.toMatch(/NaN|Infinity|-1/);
+    // The popup's own tabindex="-1" is not a usage value.
+    expect(invalid.replaceAll('tabindex="-1"', "")).not.toMatch(/NaN|Infinity|-1/);
   });
 
   test("groups numbers in the render locale and lets the host override them", () => {

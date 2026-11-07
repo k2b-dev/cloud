@@ -23,6 +23,7 @@ const [budget, setBudget] = createSignal(34);
 const [failed, setFailed] = createSignal(false);
 const [running, setRunning] = createSignal(false);
 const [context, setContext] = createSignal(18_000);
+const [refreshing, setRefreshing] = createSignal(false);
 window.calls = { compact: 0, refresh: 0, retry: 0 };
 window.fixture = { setBudget, setFailed, setRunning, setContext };
 const icon = (name) => {
@@ -92,7 +93,19 @@ render(
                       createComponent(ProgressBar, { get value() { return budget(); }, size: "xs", get tone() { return budget() >= 80 ? "warning" : "info"; }, label: "Orion 2" }),
                       row(
                         line("Orion 2 · setzt sich in 3 Tagen zurück"),
-                        createComponent(IconButton, { label: "Aktualisieren", size: "xs", onClick: () => { window.calls.refresh++; }, children: icon("ti-refresh") }),
+                        createComponent(IconButton, {
+                          label: "Aktualisieren",
+                          size: "xs",
+                          // Loading disables the focused button natively, as the Assistant's refresh does.
+                          get loading() {
+                            return refreshing();
+                          },
+                          onClick: () => {
+                            window.calls.refresh++;
+                            setRefreshing(true);
+                            setTimeout(() => setRefreshing(false), 300);
+                          },
+                          children: icon("ti-refresh") }),
                       ),
                     ],
             },
@@ -252,8 +265,15 @@ test("the details hold the old context window and the budget, and the summary ic
     const compact = popup.getByRole("button", { name: "Jetzt zusammenfassen" });
     await compact.click();
     expect(await page.evaluate(() => calls.compact)).toBe(1);
-    await popup.getByRole("button", { name: "Aktualisieren" }).click();
+    // Keyboard Refresh: the button disables itself while it loads, and the details stay open.
+    await popup.getByRole("button", { name: "Aktualisieren" }).focus();
+    await page.keyboard.press("Enter");
     expect(await page.evaluate(() => calls.refresh)).toBe(1);
+    const refreshing = '.k2b-chat-context-popup button[aria-label="Aktualisieren"]';
+    expect(await page.locator(refreshing).isDisabled()).toBe(true);
+    await page.waitForFunction((selector) => !document.querySelector<HTMLButtonElement>(selector)?.disabled, refreshing);
+    await expect(trigger.getAttribute("aria-expanded")).resolves.toBe("true");
+    expect(await page.evaluate(() => Boolean(document.activeElement?.closest(".k2b-chat-context-popup")))).toBe(true);
 
     // While an answer runs the icon is off, stays focusable, and its tooltip gives the reason.
     await page.evaluate(() => fixture.setRunning(true));
