@@ -70,3 +70,6 @@ export {
   type ChartNumberFormat,
   chartDatumRoles,
 } from "./types";
+
+export * from "./treemap";
+export * from "./pareto";

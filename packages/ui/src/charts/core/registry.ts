@@ -1,10 +1,14 @@
 import { renderBarChartSvg } from "../../content/chart-bar";
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
+import { renderTreemapSvg } from "./treemap";
+import { renderParetoSvg } from "./pareto";
 import { charts } from "./svg";
 
 // Add one renderer here: its key defines the discriminator, ChartKind and the capitalized Chart namespace member.
 // Keep kind-specific adaptations in renderChartSvg and add a fixture to the namespace parity test.
 export const chartRenderers = {
+  treemap: renderTreemapSvg,
+  pareto: renderParetoSvg,
   line: charts.line,
   bar: renderBarChartSvg,
   pie: charts.pie,

@@ -4,6 +4,8 @@ import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 
 const examples = {
+  treemap:{description:"Treemap · Area shows the share of each product.",chart:{kind:"treemap",groups:["Products"],data:[{label:"Chairs",group:"Products",value:40},{label:"Tables",group:"Products",value:25}]}},
+  pareto:{description:"Pareto · Ranked causes with a cumulative share.",chart:{kind:"pareto",labels:["Current","Previous"],data:[{label:"Chairs",value:40,prev:30},{label:"Tables",value:25,prev:28}]}},
   line: {
     description: "Line · Requests rise from 12 to 42 per second. Inspect individual points with the pointer or keyboard.",
     chart: {
@@ -243,6 +245,8 @@ type TooltipField = { label: string; unit?: string; names?: Record<string, strin
 type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
 const tooltipExamples: Record<ChartKind, TooltipExample> = {
+ treemap:{title:"Product shares",fields:{value:{label:"Units"},percent:{label:"Share",unit:"%"}}},
+ pareto:{title:"Ranked causes",fields:{value:{label:"Current"},previous:{label:"Previous"},cumulative:{label:"Cumulative"}}},
   line: {
     title: "Request rate",
     fields: {

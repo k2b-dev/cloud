@@ -26,6 +26,7 @@ import {
   line,
   pie,
   renderBarChartSvg,
+  renderTreemapSvg, renderParetoSvg,
   scatter,
   sparkline,
   stat,
@@ -95,6 +96,8 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
     const common = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
     let svg: string;
     switch (mapped.kind) {
+      case "treemap": svg = renderTreemapSvg({ ...mapped, ...common, displayWidth: width }); break;
+      case "pareto": svg = renderParetoSvg({ ...mapped, ...common, displayWidth: width }); break;
       case "bar": {
         // The title and subtitle take height too: lay out exactly what is drawn.
         const layout = barChartLayout({ ...mapped, ...common }, width);

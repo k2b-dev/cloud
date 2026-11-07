@@ -30,7 +30,7 @@ import {
   closeChartInspectionOnOutside,
 } from "./chart-inspection-core";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
-import { useChartMessages } from "./chart-messages";
+import { resolveChartMessages, useChartMessages } from "./chart-messages";
 import {
   panStateTimelineViewport,
   type StateTimelineDomain,
@@ -113,7 +113,7 @@ export type ChartProps = {
   [K in ChartKind]: Extract<ChartDrawingOptions, { kind: K }> & {
     class?: string;
     style?: JSX.CSSProperties | string;
-    labels?: ChartLabels;
+    labels?: K extends "pareto" ? [string,string] : ChartLabels;
     /**
      * Navigation for maps and state timelines: pan, zoom and reset controls.
      * Arrows pan; Alt+arrows inspect. Every chart shows tooltips and keyboard
@@ -136,6 +136,7 @@ export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../c
  *  block on truly empty inputs; partially-filled series get rendered
  *  as-is and the core handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
+  if (props.kind === "treemap" || props.kind === "pareto") return !props.data.length;
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);
   }
@@ -155,7 +156,7 @@ const isEmpty = (props: ChartProps): boolean => {
 };
 
 const ChartRoot = (props: ChartProps): JSX.Element => {
-  const [, drawingProps] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
+  const [, drawingProps] = splitProps(props, ["class", "style", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
   const viewportMessages = useViewportMessages();
@@ -204,7 +205,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   const interactiveMap = () => props.kind === "map" && props.interactive === true;
   const interactiveTimeline = () => props.kind === "stateTimeline" && props.interactive === true;
   const draggable = () => interactiveMap() || interactiveTimeline();
-  const labels = () => props.labels ?? {};
+  const labels = (): ChartLabels => props.kind === "pareto" ? {} : props.labels ?? {};
   const accessibleName = () => {
     const override =
       props.kind === "map"
@@ -436,7 +437,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     select: (selection) => props.onSelect?.(selection),
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
-      const fields = chartMessages().chartFields;
+      const fields = props.kind === "treemap" || props.kind === "pareto" ? resolveChartMessages(props.locale ?? locale()).chartFields : chartMessages().chartFields;
       const format = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 });
       return {
         title:
@@ -446,7 +447,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
             : undefined),
         rows: selection.datum.values.map((field) => ({
           label:
-            selection.kind === "line" && field.key === "y"
+            props.kind === "pareto" && (field.key === "value" || field.key === "previous") ? props.labels[field.key === "value" ? 0 : 1] : selection.kind === "line" && field.key === "y"
               ? (selection.datum.label ?? labels().series ?? chartMessages().series)
               : fields({ key: field.key }),
           value:
@@ -465,7 +466,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
     renderChartSvg(
-      drawingProps,
+      props.kind === "treemap" || props.kind === "pareto" ? { ...props, locale: props.locale ?? locale() } : drawingProps,
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,

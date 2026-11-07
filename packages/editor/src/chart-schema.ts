@@ -31,7 +31,7 @@ export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
 export const chartKindSchema = () =>
-  z.enum(["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
+  z.enum(["treemap", "pareto", "bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
 
 export const chartParts = (limits?: ChartLimits) => {
   const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
@@ -149,6 +149,8 @@ export const chartKinds = (limits?: ChartLimits) => {
   const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
   const numberFormat = chartNumberFormatSchema();
   return z.discriminatedUnion("kind", [
+    z.object({kind:z.literal("treemap"),...ChartKindCommon,groups:list(ChartLabel,1,limits?.maxSeries),data:list(z.object({label:ChartLabel,group:ChartLabel,value:z.number().nonnegative()}),1,limits?.maxMarks),format:numberFormat.optional(),locale:z.string().optional()}).superRefine((spec,ctx)=>{if(spec.data.some(d=>!spec.groups.includes(d.group)))ctx.addIssue({code:"custom",message:"Treemap groups must contain every item group."});}),
+    z.object({kind:z.literal("pareto"),...ChartKindCommon,labels:z.tuple([ChartLabel,ChartLabel]),data:list(z.object({label:ChartLabel,value:z.number().nonnegative(),prev:z.number().nonnegative()}),1,limits?.maxValues),format:numberFormat.optional(),locale:z.string().optional()}),
     z.object({
       kind: z.literal("bar"),
       ...ChartKindCommon,

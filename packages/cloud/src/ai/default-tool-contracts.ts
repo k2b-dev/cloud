@@ -121,6 +121,9 @@ const flatChartSchema = () => {
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
+    groups: z.array(ChartLabel).max(CLOUD_AI_CHART_MAX_SERIES).optional().describe("treemap: group names."),
+    labels: z.array(ChartLabel).length(2).optional().describe("pareto: current and previous period labels."),
+    locale: z.string().optional(),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
     data: z
       .union([
@@ -129,6 +132,8 @@ const flatChartSchema = () => {
             z.object({
               label: ChartLabel.optional(),
               value: z.number().optional(),
+              group: ChartLabel.optional(),
+              prev: z.number().optional(),
               values: z.array(z.number()).min(1).optional(),
               x: ChartLabel.optional(),
               y: ChartLabel.optional(),

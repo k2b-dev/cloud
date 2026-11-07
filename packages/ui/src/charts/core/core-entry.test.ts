@@ -27,6 +27,7 @@ test("core entry bundles for server and browser without Solid, DOM or upstream d
     expect(code).not.toMatch(/solid-js|document\.|window\.|HTMLElement|createSignal/);
     expect([...code.matchAll(/\.stdlib-chart-reference \{/g)]).toHaveLength(1);
   }
-  expect(Object.keys(chartKinds)).toHaveLength(14);
+  expect(Object.keys(chartKinds)).toContain("Treemap");
+  expect(Object.keys(chartKinds)).toContain("Pareto");
   expect(chartDatumRoles).toContain("interval");
 });

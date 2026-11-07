@@ -2,6 +2,8 @@ import type { ChartProps } from "../../src/content/Chart";
 
 /** Shared fictional inputs for entry-point, renderer and hydration parity. */
 export const chartFixtures = {
+  treemap: {kind:"treemap",groups:["Products"],data:[{label:"Chairs",group:"Products",value:40}]},
+  pareto: {kind:"pareto",labels:["Current","Previous"],data:[{label:"Chairs",value:40,prev:30}]},
   line: {
     kind: "line",
     series: [
