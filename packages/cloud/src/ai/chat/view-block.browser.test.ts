@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { z } from "zod";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { cloudAiNumberFormatters } from "../chart-block";
 import type { AiTurnBlock } from "../protocol";
@@ -1260,9 +1260,13 @@ test("stats show the shared change badge and comparison without moving during lo
     try {
       const page = await context.newPage();
       await page.goto(`http://127.0.0.1:${server.port}/`);
-      await page.evaluate((block) => window.show([block]), present("/views/compared-12345678.view.json", cloudAiViewSummary(parsed)));
+      const path = "/views/compared-12345678.view.json";
+      const loaded = hold(path);
+      await page.evaluate((block) => window.show([block]), present(path, cloudAiViewSummary(parsed)));
       await page.waitForSelector("[data-view-path]");
+      await settled(page);
       const loading = await boxes(page);
+      loaded();
       const badge = page.locator('.k2b-stat-cell__delta[role="img"]');
       await badge.waitFor();
       expect(await badge.getAttribute("aria-label")).toContain("Last month");
