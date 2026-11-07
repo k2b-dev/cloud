@@ -94,3 +94,9 @@ test("headers, explicit wrapping legends and muted-source flow colors", () => {
   expect(svg).toContain('k2b-chart-sankey-link" fill="var(--stdlib-chart-c2,#10b981)');
   expect(svg).not.toContain("data-chart-scroll");
 });
+
+test("labels truncate by glyph width without deforming their natural metrics", () => {
+  const svg = renderSankeySvg({ ...spec, nodes: spec.nodes.map((n) => ({ ...n, label: "WWW iii WWW iii WWW iii" })) });
+  expect(svg).not.toMatch(/textLength|lengthAdjust/);
+  expect(svg).toContain("…");
+});

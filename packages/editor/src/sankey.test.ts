@@ -30,3 +30,16 @@ test("Sankey JSON validates graph semantics and keeps typed table rows and local
   expect(table.rows.find((r) => r.cells.label === "Click → Read")?.cells.value).toBe("1.234,5");
   expect(chartRenderOptions(parsed, "en", { width: 900 })).toMatchObject({ displayWidth: 900 });
 });
+
+test("notebook reserves the full wrapped Sankey legend height", async () => {
+  const { notebookChartHeight } = await import("./markdown/lib/chart-blocks");
+  const { sankeyLayout } = await import("@k2b/ui/charts/core");
+  const parsed = chartKinds().parse({
+    ...input,
+    legend: Array.from({ length: 60 }, (_, i) => ({ tone: "tax", label: "Long meaning " + i })),
+  });
+  const options = chartRenderOptions(parsed, "en", { legend: "outside" });
+  if (options.kind !== "sankey") throw new Error("Expected Sankey");
+  expect(notebookChartHeight(parsed, "en")).toBe(sankeyLayout(options).height);
+  expect(notebookChartHeight(parsed, "en")).toBeGreaterThan(280);
+});

@@ -249,7 +249,6 @@ addEventListener(
 const inspections = new Map<Element, ChartInspection>();
 const chartTooltips = new WeakMap<Element, Map<string, ChartTooltip>>();
 const chartKinds: readonly ChartKind[] = [
-  "sankey",
   "bar",
   "line",
   "scatter",
@@ -262,6 +261,7 @@ const chartKinds: readonly ChartKind[] = [
   "stat",
   "heatmap",
   "sparkline",
+  "sankey",
 ];
 const isChartKind = (value: string | null): value is ChartKind => chartKinds.some((kind) => kind === value);
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;

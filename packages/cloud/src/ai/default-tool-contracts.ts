@@ -33,6 +33,7 @@ import {
   type ChartDateFormat as CloudAiDateFormat,
   type ChartFormat as CloudAiFormat,
   type ChartNumberFormat as CloudAiNumberFormat,
+  chartAcceptsLocale,
   chartKinds,
   chartLocaleSchema,
   chartParts,
@@ -138,7 +139,9 @@ const flatChartSchema = () => {
       .max(CLOUD_AI_VIEW_MAX_MARKS)
       .optional()
       .describe("sankey: positive flows between existing node ids, without cycles."),
-    locale: chartLocaleSchema().optional().describe("sankey: optional BCP 47 locale, for example de-DE."),
+    locale: chartLocaleSchema()
+      .optional()
+      .describe("Optional BCP 47 locale for Sankey, calendar, treemap, Pareto, bubble and radar charts."),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
     data: z
       .union([
@@ -227,11 +230,21 @@ const chartInputSchema = () => {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });
           return;
         }
+        value.charts.forEach((chart, index) => {
+          if (chart.locale !== undefined && !chartAcceptsLocale(chart))
+            context.addIssue({
+              code: "custom",
+              path: ["charts", index, "locale"],
+              message: "locale is not supported for this chart kind.",
+            });
+        });
         parsed.data.charts.forEach((chart, index) => {
           const issue = chartDrawingIssue(chart);
           if (issue) context.addIssue({ code: "custom", message: issue, path: ["charts", index] });
         });
       } else {
+        if (value.locale !== undefined && !chartAcceptsLocale(value))
+          context.addIssue({ code: "custom", path: ["locale"], message: "locale is not supported for this chart kind." });
         if (value.linkX !== undefined || value.layout !== undefined)
           context.addIssue({ code: "custom", message: "linkX and layout belong to groups." });
         const parsed = ChartSchema.safeParse(value);

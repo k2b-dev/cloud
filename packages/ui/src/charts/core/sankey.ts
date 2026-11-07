@@ -1,4 +1,5 @@
 import { type ChartOptions, chartDatumSvg, escapeXml, renderHeader, svgRoot } from "./svg";
+import { chartTextWidth, fitChartText } from "./text";
 
 export type SankeyNode = {
   id: string;
@@ -287,13 +288,10 @@ export function renderSankeySvg(spec: SankeyOptions): string {
   for (const node of scene.nodes) {
     const room = Math.min(150, scene.width - node.x - scene.nodeWidth - 10);
     const value = number(node.value);
-    const limit = Math.max(1, Math.min(16, Math.floor(room / 7) - value.length - 1));
-    const label = node.label.length > limit ? node.label.slice(0, Math.max(0, limit - 1)) + "…" : node.label;
-    // SVG text metrics vary by host font. Bound the complete label, including the value, inside the drawing.
-    const length = Math.min(room, (label.length + value.length + 1) * 7);
+    const label = fitChartText(node.label, room - chartTextWidth(value, 12) - 6, 12);
     body.push(
       chartDatumSvg(
-        `<rect x="${node.x}" y="${node.y}" width="${scene.nodeWidth}" height="${node.height}" rx="2" fill="${sankeyColor(node.tone)}" stroke="none"/>${node.showLabel ? `<text x="${node.x + scene.nodeWidth + 6}" y="${node.y + node.height / 2 + 4}" fill="var(--k2b-text,#27272a)" font-size="12" font-family="inherit" textLength="${length}" lengthAdjust="spacingAndGlyphs" stroke="var(--k2b-surface,#fff)" stroke-width="3" paint-order="stroke">${escapeXml(label)} <tspan font-weight="600">${escapeXml(value)}</tspan></text>` : ""}`,
+        `<rect x="${node.x}" y="${node.y}" width="${scene.nodeWidth}" height="${node.height}" rx="2" fill="${sankeyColor(node.tone)}" stroke="none"/>${node.showLabel ? `<text x="${node.x + scene.nodeWidth + 6}" y="${node.y + node.height / 2 + 4}" fill="var(--k2b-text,#27272a)" font-size="12" font-family="inherit" stroke="var(--k2b-surface,#fff)" stroke-width="3" paint-order="stroke">${escapeXml(label)} <tspan font-weight="600">${escapeXml(value)}</tspan></text>` : ""}`,
         {
           role: "item",
           index: node.index,

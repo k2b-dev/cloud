@@ -2,14 +2,6 @@ import type { ChartProps } from "../../src/content/Chart";
 
 /** Shared fictional inputs for entry-point, renderer and hydration parity. */
 export const chartFixtures = {
-  sankey: {
-    kind: "sankey",
-    nodes: [
-      { id: "a", label: "Click" },
-      { id: "b", label: "Read" },
-    ],
-    links: [{ source: "a", target: "b", value: 42 }],
-  },
   line: {
     kind: "line",
     series: [
@@ -42,4 +34,12 @@ export const chartFixtures = {
   heatmap: { kind: "heatmap", data: [{ x: "Mon", y: "Imports", value: 4 }] },
   map: { kind: "map", series: [{ data: [{ latitude: 52, longitude: 13 }] }] },
   stateTimeline: { kind: "stateTimeline", rows: [{ label: "Queue", intervals: [{ from: 1, to: 2, state: "ok" }] }] },
+  sankey: {
+    kind: "sankey",
+    nodes: [
+      { id: "a", label: "Click" },
+      { id: "b", label: "Read" },
+    ],
+    links: [{ source: "a", target: "b", value: 42 }],
+  },
 } satisfies { [K in ChartProps["kind"]]: Extract<ChartProps, { kind: K }> };
