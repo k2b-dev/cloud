@@ -891,8 +891,10 @@ export const DslQueryPreviewBodySchema = z.object({
 });
 export type DslQueryPreviewBody = z.infer<typeof DslQueryPreviewBodySchema>;
 
+export const MAX_GQL_RESULT_ROWS = 10_000;
+
 export const DslQueryExecuteBodySchema = DslQueryPreviewBodySchema.extend({
-  limit: z.number().int().min(1).max(10_000).optional(),
+  limit: z.number().int().min(1).max(MAX_GQL_RESULT_ROWS).optional(),
   pageSize: z.number().int().min(1).max(1000).optional(),
   filePreviewFieldIds: z.array(z.string().uuid()).max(3).optional(),
 });
