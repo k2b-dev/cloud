@@ -22,6 +22,36 @@ describe("@k2b/ui feedback runtime", () => {
     await Bun.sleep(220);
   });
 
+  test("repositioning an open dialog does not notify class observers", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { createDialogCore } = await import("../src/feedback/dialog-core");
+    const core = createDialogCore();
+    let move: (point: { x: number; y: number } | null) => void = () => {};
+    const result = core.open((_close, context) => {
+      move = context.setPosition;
+      return document.createElement("input");
+    });
+    await settle();
+    const dialog = dom.document.querySelector("dialog")!;
+    const mutations: MutationRecord[] = [];
+    const observer = new MutationObserver((records) => mutations.push(...records));
+    observer.observe(dialog, { attributes: true, attributeFilter: ["class"] });
+    try {
+      // Position observers can remeasure after a frame class changes. Writing
+      // that class again from setPosition would make them run indefinitely.
+      move({ x: 20, y: 30 });
+      move(null);
+      await settle();
+      expect(mutations).toHaveLength(0);
+    } finally {
+      observer.disconnect();
+      core.close();
+      await result;
+      dom.cleanup();
+    }
+  });
+
   test("focuses and names the active dialog level, then restores its opener", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";

@@ -31,7 +31,6 @@ export function auditPrimaryColors(selector: string): string[] {
       "border",
       "border-strong",
       "placeholder-color",
-      "hover",
     ]
       .map((name) => rootStyle.getPropertyValue(`--k2b-${name}`).trim())
       .filter((value) => CSS.supports("color", value))

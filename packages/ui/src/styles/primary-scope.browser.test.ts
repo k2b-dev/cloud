@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { auditPrimaryColors } from "../../test/primary-scope-audit";
+import emojiData from "../inputs/emoji/emoji-data";
+import { RECENT_EMOJI_LIMIT } from "../inputs/emoji/emoji-index";
 
 const ui = resolve(import.meta.dir, "../..");
 const repo = resolve(ui, "../..");
@@ -18,6 +20,7 @@ import { createComponent, render } from "solid-js/web";
 import { createSignal } from "solid-js";
 import { Button, Panes, createPanesLayout, prompts, toast } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 import { getK2bPortalRoot } from ${JSON.stringify(resolve(ui, "dist/browser/internal/portal.js"))};
+import { readUiScope } from ${JSON.stringify(resolve(ui, "dist/browser/internal/portal-scope.js"))};
 import { PrimaryScopeControls } from ${JSON.stringify(resolve(repo, "docs-site/src/ui/PrimaryScopeDemo.island.tsx"))};
 import aiDemos from ${JSON.stringify(resolve(repo, "docs-site/src/ui/demo-sections/ai.tsx"))};
 import inputDemos from ${JSON.stringify(resolve(repo, "docs-site/src/ui/demo-sections/input.tsx"))};
@@ -35,6 +38,7 @@ render(() => [
  createComponent(Button, { children: "Outside toast", id: "outside-toast", onClick: () => toast("Outside toast", {duration: 0}) }),
 ], document.getElementById("outside"));
 const sections = Object.entries({ai: aiDemos, input: inputDemos, actions: actionsDemos, layout: layoutDemos, surfaces: surfacesDemos, feedback: feedbackDemos, content: contentDemos, widgets: widgetsDemos, cloud: cloudDemos, charts});
+document.documentElement.dataset.primaryScopeDemos = JSON.stringify(sections.flatMap(([section, demos]) => Object.keys(demos).map(slug => section + "/" + slug)));
 const disposals = [];
 for (const [section, demos] of sections) {
  const host = document.createElement("section");
@@ -43,9 +47,9 @@ for (const [section, demos] of sections) {
 }
 document.addEventListener("primary-scope-demo", event => {
   for (const dispose of disposals.splice(0)) dispose();
-  const [section, demos] = sections.find(([name]) => name === event.detail);
+  const [section, demos] = sections.find(([name]) => name === event.detail.section);
   const host = document.querySelector('[data-demo-section="' + section + '"]');
-  disposals.push(render(() => Object.values(demos).map(demo => createComponent(demo, {markdownHtml: "", window: "1h"})), host));
+  disposals.push(render(() => createComponent(demos[event.detail.slug], {markdownHtml: "", window: "1h"}), host));
 });
 const panes = document.createElement("div");
 panes.id = "panes";
@@ -80,11 +84,37 @@ frame.id = "foreign-document";
 document.body.append(frame);
 const frameSource = frame.contentDocument.createElement("button");
 frameSource.dataset.k2bPrimary = "ai";
+frameSource.style.colorScheme = "dark";
 frame.contentDocument.body.append(frameSource);
+frame.dataset.sourceTheme = readUiScope(frameSource).theme;
 getK2bPortalRoot(frame.contentDocument.body, frameSource, frame.contentDocument).id = "foreign-portal";
 
 `;
-const { transformAsync } = await import("@babel/core");
+const { parseAsync, transformAsync } = await import("@babel/core");
+// Derive cases from the actual demo registry, so new demos join the guard automatically.
+const demos: { section: string; slug: string }[] = [];
+for (const section of ["ai", "input", "actions", "layout", "surfaces", "feedback", "content", "widgets", "cloud", "charts"]) {
+  const source = readFileSync(resolve(repo, `docs-site/src/ui/demo-sections/${section}.tsx`), "utf8");
+  const ast = await parseAsync(source, { babelrc: false, configFile: false, parserOpts: { plugins: ["typescript", "jsx"] } });
+  if (!ast) throw new Error(`Could not read ${section} demos`);
+  for (const statement of ast.program.body) {
+    const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+    if (section === "charts" && declaration?.type === "FunctionDeclaration" && declaration.id)
+      demos.push({ section, slug: declaration.id.name });
+    if (declaration?.type !== "VariableDeclaration") continue;
+    for (const item of declaration.declarations) {
+      if (item.id.type !== "Identifier") continue;
+      if (section === "charts" && statement.type === "ExportNamedDeclaration") demos.push({ section, slug: item.id.name });
+      if (item.id.name !== "demos" || item.init?.type !== "ObjectExpression") continue;
+      for (const property of item.init.properties) {
+        if (property.type !== "ObjectProperty" || property.computed) throw new Error(`Unsupported ${section} demo key`);
+        const key = property.key;
+        if (key.type !== "Identifier" && key.type !== "StringLiteral") throw new Error(`Unsupported ${section} demo key`);
+        demos.push({ section, slug: key.type === "Identifier" ? key.name : key.value });
+      }
+    }
+  }
+}
 const typescript = (await import("@babel/preset-typescript")).default;
 const solid = (await import("babel-preset-solid")).default;
 const build = await Bun.build({
@@ -162,9 +192,8 @@ for (const theme of ["light", "dark"] as const) {
       afterAll(async () => {
         await page?.close();
       });
-      test("nested roots, portals, and unchanged blue outside", async () => {
+      beforeAll(async () => {
         page = await browser.newPage({ viewport: { width, height: 1000 } });
-        const errors = pageErrors(page);
         await page.route(`${assets}**`, (route) =>
           route.fulfill({
             path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)),
@@ -175,7 +204,6 @@ for (const theme of ["light", "dark"] as const) {
           <style>*,*::before,*::after{transition:none!important;animation:none!important}body{margin:0}#evidence{padding:24px;max-width:1000px;margin:auto}#outside{margin-bottom:24px}#scope{padding:24px;border:1px solid var(--k2b-border);border-radius:12px}#catalog{padding:24px}#nested{margin-top:16px}</style></head>
           <body class="k2b-ui" data-theme="${theme}"><main id="evidence"><h1>Primary scope · ${theme}</h1><section id="outside"></section><section id="scope" data-k2b-primary="ai"><h2>AI primary</h2><div id="controls"></div><div class="k2b-ui" id="nested"></div></section></main><section id="catalog" data-k2b-primary="ai"></section></body></html>`);
         await settled(page);
-        const before = await palette(page, "#outside");
         await page.evaluate(() => {
           // Pin Date alone; timers, animation frames and performance keep running.
           const at = Date.parse("2026-11-07T12:00:00Z");
@@ -201,6 +229,10 @@ for (const theme of ["light", "dark"] as const) {
         await page.evaluate(() => document.fonts.ready);
         await page.mouse.move(0, 0);
         await settled(page);
+      }, 30_000);
+      test("nested roots, portals, and unchanged blue outside", async () => {
+        const errors = pageErrors(page);
+        const before = await palette(page, "#outside");
         expect(await palette(page, "#outside")).toEqual(before);
         expect(before.action).toBe(theme === "light" ? "#1d4ed8" : "#93c5fd");
         const inside = await palette(page, "#scope");
@@ -215,9 +247,10 @@ for (const theme of ["light", "dark"] as const) {
               ownDocument: portal?.ownerDocument === doc,
               parent: portal?.parentElement === doc.body,
               primary: portal?.dataset.k2bPrimary,
+              theme: node.getAttribute("data-source-theme"),
             };
           }),
-        ).toEqual({ ownDocument: true, parent: true, primary: "ai" });
+        ).toEqual({ ownDocument: true, parent: true, primary: "ai", theme: "dark" });
         expect(inside["action-solid"]).toBe(theme === "light" ? "#8e1b6f" : "#b7408f");
         expect(inside["focus-ring"]).toBe(theme === "light" ? "#c4519f" : "#f0abdc");
         const nested = await palette(page, "#nested");
@@ -246,6 +279,11 @@ for (const theme of ["light", "dark"] as const) {
         await settled(page);
         expect((await page.evaluate(auditPrimaryColors, "#portal-trigger")).some((leak) => leak.includes("outline-color"))).toBe(true);
         await page.locator("#portal-trigger").evaluate((node) => node.style.removeProperty("outline"));
+        // The default light hover is an accent blue, never a neutral exception.
+        await page.locator("#portal-trigger").evaluate((node) => (node.style.backgroundColor = "#eff6ff"));
+        await settled(page);
+        expect((await page.evaluate(auditPrimaryColors, "#portal-trigger")).some((leak) => leak.includes("background-color"))).toBe(true);
+        await page.locator("#portal-trigger").evaluate((node) => node.style.removeProperty("background-color"));
         await page.locator("#evidence").scrollIntoViewIfNeeded();
 
         const primary = page.locator("#controls").getByRole("button", { name: "Save notes", exact: true });
@@ -400,22 +438,42 @@ for (const theme of ["light", "dark"] as const) {
         expect(await palette(page, "#outside")).toEqual(before);
         expect(errors).toEqual([]);
       }, 30_000);
-      for (const section of ["ai", "input", "actions", "layout", "surfaces", "feedback", "content", "widgets", "cloud", "charts"]) {
-        test(`${section}: every demo and keyboard focus follows the scope`, async () => {
-          const area = `[data-demo-section="${section}"] .ui-demo-card__preview`;
-          await page.evaluate((section) => document.dispatchEvent(new CustomEvent("primary-scope-demo", { detail: section })), section);
-          await page.locator(area).first().waitFor();
-          await settled(page);
-          expect(await page.evaluate(auditPrimaryColors, `${area}, ${area} *`)).toEqual([]);
-          // Every tabbable receives a real Tab transition, including offscreen demos.
-          const tabbables = await page
-            .locator(`${area} :is(button,a[href],input,select,textarea,[tabindex],[contenteditable])`)
-            .evaluateAll((nodes) => {
+      test("covers every exported catalog demo", async () => {
+        expect(JSON.parse((await page.locator("html").getAttribute("data-primary-scope-demos"))!).sort()).toEqual(
+          demos.map(({ section, slug }) => `${section}/${slug}`).sort(),
+        );
+      });
+      for (const { section, slug } of demos) {
+        // The emoji demo mounts the full Unicode catalog. Keep every option in
+        // coverage while giving each small batch its own unchanged deadline.
+        const emojiBatches = Math.ceil((emojiData.trim().split("\n").length + RECENT_EMOJI_LIMIT) / 100);
+        const batches =
+          section === "input" && slug === "emoji-picker"
+            ? ["controls", ...Array.from({ length: emojiBatches }, (_, index) => index)]
+            : ["all"];
+        for (const batch of batches) {
+          test(`${section}/${slug} ${batch}: every demo and keyboard focus follows the scope`, async () => {
+            const area = `[data-demo-section="${section}"] .ui-demo-card__preview`;
+            await page.evaluate((demo) => document.dispatchEvent(new CustomEvent("primary-scope-demo", { detail: demo })), {
+              section,
+              slug,
+            });
+            await page.locator(area).first().waitFor();
+            if (section === "input" && slug === "emoji-picker") await page.locator(`${area} .k2b-emoji-picker__option`).last().waitFor();
+            await settled(page);
+            expect(await page.evaluate(auditPrimaryColors, `${area}, ${area} *`)).toEqual([]);
+            // Every tabbable receives a real Tab transition, including offscreen demos.
+            const selector =
+              typeof batch === "number"
+                ? ".k2b-emoji-picker__option"
+                : `:is(button,a[href],input,select,textarea,[tabindex],[contenteditable])${batch === "controls" ? ":not(.k2b-emoji-picker__option)" : ""}`;
+            const candidates = await page.locator(`${area} ${selector}`).evaluateAll((nodes) => {
               return nodes
                 .filter(
                   (node) =>
                     node instanceof HTMLElement &&
-                    !node.matches(":disabled,[inert] *") &&
+                    !node.matches(":disabled") &&
+                    !node.closest("[inert]") &&
                     node.getClientRects().length &&
                     getComputedStyle(node).visibility === "visible",
                 )
@@ -424,36 +482,45 @@ for (const theme of ["light", "dark"] as const) {
                   return String(index);
                 });
             });
-          for (const id of tabbables) {
-            const target = page.locator(`[data-primary-focus-probe="${id}"]`);
-            await target.evaluate((node) => {
-              const sentinel = document.createElement("button");
-              sentinel.id = "primary-tab-sentinel";
-              sentinel.onkeydown = (event) => event.stopPropagation();
-              sentinel.style.cssText = "position:fixed;width:1px;height:1px;opacity:0";
-              node.setAttribute("data-primary-original-tabindex", node.getAttribute("tabindex") ?? "absent");
-              if (node instanceof HTMLElement) node.tabIndex = 0;
-              node.before(sentinel);
-              sentinel.focus();
-            });
-            await page.keyboard.press("Tab");
-            await settled(page);
-            await page.locator("#primary-tab-sentinel").evaluate((node) => node.remove());
-            expect(await target.evaluate((node) => node === document.activeElement)).toBe(true);
-            expect(
-              await page.evaluate(
-                auditPrimaryColors,
-                `[data-primary-focus-probe="${id}"], [data-primary-focus-probe="${id}"] *, #catalog .ui-demo-card__preview :focus-within, #catalog .ui-demo-card__preview :focus-within > *`,
-              ),
-            ).toEqual([]);
-            await target.evaluate((node) => {
-              const original = node.getAttribute("data-primary-original-tabindex");
-              if (original === "absent") node.removeAttribute("tabindex");
-              else if (original !== null) node.setAttribute("tabindex", original);
-              node.removeAttribute("data-primary-focus-probe");
-            });
-          }
-        }, 30_000);
+            if (typeof batch === "number") expect(candidates.length).toBeLessThanOrEqual(emojiBatches * 100);
+            const tabbables = typeof batch === "number" ? candidates.slice(batch * 100, (batch + 1) * 100) : candidates;
+            for (const id of tabbables) {
+              const target = page.locator(`[data-primary-focus-probe="${id}"]`);
+              await target.evaluate((node) => {
+                const sentinel = document.createElement("button");
+                sentinel.id = "primary-tab-sentinel";
+                sentinel.onkeydown = (event) => event.stopPropagation();
+                sentinel.style.cssText = "position:fixed;width:1px;height:1px;opacity:0";
+                node.setAttribute("data-primary-original-tabindex", node.getAttribute("tabindex") ?? "absent");
+                if (node instanceof HTMLElement) node.tabIndex = 0;
+                node.before(sentinel);
+                sentinel.focus();
+              });
+              await page.keyboard.press("Tab");
+              await settled(page);
+              expect(
+                await target.evaluate((node) => ({
+                  target: node.outerHTML.slice(0, 500),
+                  active: document.activeElement?.outerHTML.slice(0, 500),
+                  focused: node === document.activeElement,
+                })),
+              ).toMatchObject({ focused: true });
+              expect(
+                await page.evaluate(
+                  auditPrimaryColors,
+                  `[data-primary-focus-probe="${id}"], [data-primary-focus-probe="${id}"] *, #catalog .ui-demo-card__preview :focus-within, #catalog .ui-demo-card__preview :focus-within > *`,
+                ),
+              ).toEqual([]);
+              await target.evaluate((node) => {
+                const original = node.getAttribute("data-primary-original-tabindex");
+                if (original === "absent") node.removeAttribute("tabindex");
+                else if (original !== null) node.setAttribute("tabindex", original);
+                node.removeAttribute("data-primary-focus-probe");
+                document.getElementById("primary-tab-sentinel")?.remove();
+              });
+            }
+          }, 30_000);
+        }
       }
     });
   }

@@ -358,7 +358,6 @@ export const createDialogCore = () => {
   };
 
   const ensureDialogElement = () => {
-    if (typeof document === "undefined") throw new Error("@k2b/ui dialogs can only be opened in the browser");
     // Reuse the shared element whenever it is still in the document. Resolving
     // the portal root first would create a second <dialog> when focus has moved
     // into another `.k2b-ui` scope, orphaning the levels already on the stack.
@@ -375,7 +374,7 @@ export const createDialogCore = () => {
       resolveInitialFocusTarget(top, element)?.focus();
     };
     // Each stack level carries its own palette, independently of the first opener.
-    getK2bPortalRoot(document.body, document.body).appendChild(element);
+    getK2bPortalRoot(undefined, document.body).appendChild(element);
     state.element = element;
     return element;
   };
@@ -401,7 +400,7 @@ export const createDialogCore = () => {
   const applyPresentation = (entry: DialogStackEntry) => {
     const dialog = state.element;
     if (!dialog || state.stack[state.stack.length - 1] !== entry) return;
-    dialog.className = `k2b-ui ${entry.panelClassName}`;
+    if (dialog.className !== entry.panelClassName) dialog.className = entry.panelClassName;
     applyUiScope(dialog, entry.uiScope);
     const position = entry.position;
     dialog.style.position = position ? "fixed" : "";
@@ -547,6 +546,7 @@ export const createDialogCore = () => {
   };
 
   const open = <T>(view: DialogRender<T>, options: OpenDialogOptions = {}): Promise<T | undefined> => {
+    if (typeof document === "undefined") throw new Error("@k2b/ui dialogs can only be opened in the browser");
     return openAfter(view, options, disposals, readUiScope());
   };
 

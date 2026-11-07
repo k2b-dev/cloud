@@ -284,7 +284,11 @@ describe("Spaces item reactions", () => {
     addSurface();
     await flush();
     answer(1, [], 500);
-    await until(() => Boolean(rail()?.textContent?.includes("The reaction could not be saved.")));
+    // The dismissed notice keeps its text during its exit. Wait for the new
+    // active notice before unmounting the surface that owns this retry.
+    await until(() =>
+      Boolean(rail()?.querySelector(".k2b-toast:not([data-closing])")?.textContent?.includes("The reaction could not be saved.")),
+    );
     remaining.unmount();
     await new Promise((resolve) => setTimeout(resolve, 250));
     expect(rail()?.children.length ?? 0).toBe(0);

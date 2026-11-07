@@ -7,7 +7,7 @@ const eventSource = (event?: Event) => event?.composedPath().find((node): node i
 
 const scopeFrom = (source: Element | undefined): UiScope => ({
   primary: source?.closest(`[${PRIMARY_ATTRIBUTE}]`)?.getAttribute(PRIMARY_ATTRIBUTE) ?? null,
-  theme: (source?.ownerDocument.defaultView ?? window).getComputedStyle(source ?? document.body).colorScheme === "dark" ? "dark" : "light",
+  theme: getComputedStyle(source ?? document.body).colorScheme === "dark" ? "dark" : "light",
 });
 
 const liveInteraction = () => {

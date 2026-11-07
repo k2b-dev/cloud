@@ -152,7 +152,8 @@ const ensureContainer = (): HTMLElement | null => {
   if (typeof document === "undefined") return null;
   // The shared live regions exist before the first toast's text arrives.
   ensureLiveRegions(document);
-  let container = document.querySelector<HTMLElement>(`[${CONTAINER_ATTRIBUTE}]`);
+  const root = document.documentElement;
+  let container = root.querySelector<HTMLElement>(`[${CONTAINER_ATTRIBUTE}]`);
   if (container) return container;
 
   container = document.createElement("div");
@@ -174,7 +175,7 @@ const ensureContainer = (): HTMLElement | null => {
     "max-height:calc(100dvh - env(safe-area-inset-top,0px) - var(--k2b-toast-offset-top,0px) - env(safe-area-inset-bottom,0px));" +
     "margin:0;padding:var(--k2b-toast-rail-padding,0.75rem 1rem);border:0;background:transparent;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;" +
     "pointer-events:none;";
-  getK2bPortalRoot(document.body, document.body).appendChild(container);
+  getK2bPortalRoot(undefined, document.body).appendChild(container);
   return container;
 };
 
@@ -304,7 +305,7 @@ function enforceCap(): void {
 
 const createToastCard = (doc: Document): HTMLDivElement => {
   const element = doc.createElement("div");
-  element.className = "k2b-ui k2b-toast";
+  element.className = "k2b-toast";
   element.dataset.k2bToast = "";
   inheritUiScope(element);
   return element;
