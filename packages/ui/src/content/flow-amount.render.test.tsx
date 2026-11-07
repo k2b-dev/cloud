@@ -75,3 +75,13 @@ test("flow tokens exist in light and dark", () => {
     expect(css.match(new RegExp(`--k2b-flow-${token}:`, "g"))?.length, token).toBe(2);
   }
 });
+
+test("a money tile's icon chip takes the flow colours", () => {
+  const css = readFileSync(resolve(import.meta.dir, "../styles/surfaces-widgets-parity.css"), "utf8");
+  expect(css).toContain(
+    '.k2b-ui .k2b-stat-cell__icon[data-tone="in"] { color: var(--k2b-flow-in-text); background: var(--k2b-flow-in-surface); }',
+  );
+  expect(css).toContain(
+    '.k2b-ui .k2b-stat-cell__icon[data-tone="out"] { color: var(--k2b-flow-out-text); background: var(--k2b-flow-out-surface); }',
+  );
+});

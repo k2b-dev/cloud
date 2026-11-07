@@ -38,6 +38,7 @@ const catalogs = {
   FlowAmount: (await import("../content/flow-amount-messages")).checkFlowAmountMessages,
   BalanceSummary: (await import("../content/balance-summary-messages")).checkBalanceSummaryMessages,
   Budget: (await import("../surfaces/budget-messages")).checkBudgetMessages,
+  StatCell: (await import("../surfaces/stat-cell-messages")).checkStatCellMessages,
   Lightbox: (await import("../content/lightbox-messages")).checkLightboxMessages,
   Prompt: (await import("../feedback/prompt-messages")).checkPromptMessages,
   Calendar: (await import("../content/calendar-messages")).checkCalendarMessages,
