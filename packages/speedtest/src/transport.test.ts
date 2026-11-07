@@ -1,11 +1,49 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { createBrowserTransport } from "./browser";
 import { UPLOAD_BYTES } from "./engine";
 import { createHttpTransport } from "./http";
 import { createNodeTransport } from "./node";
 
 const unusedUpload = async () => {};
+test("browser upload streams share one immutable payload and count progress before completion", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "XMLHttpRequest");
+  const bodies: unknown[] = [];
+  const counts: number[] = [];
+  class UploadRequest {
+    upload: { onprogress: ((event: { loaded: number }) => void) | null } = { onprogress: null };
+    onload: (() => void) | null = null;
+    status = 200;
+    open() {}
+    setRequestHeader() {}
+    getResponseHeader() {
+      return null;
+    }
+    send(body: unknown) {
+      bodies.push(body);
+      queueMicrotask(() => {
+        this.upload.onprogress?.({ loaded: 7 });
+        expect(counts.length).toBeGreaterThan(0);
+        this.onload?.();
+      });
+    }
+  }
+  Object.defineProperty(globalThis, "XMLHttpRequest", { configurable: true, value: UploadRequest });
+  try {
+    const transport = createBrowserTransport("https://example.com");
+    await Promise.all(
+      Array.from({ length: 4 }, () => transport.upload(65_536, (value) => counts.push(value), new AbortController().signal)),
+    );
+    expect(bodies[0]).toBeInstanceOf(Blob);
+    expect(bodies[0]).toHaveProperty("size", 65_536);
+    expect(bodies.every((body) => body === bodies[0])).toBe(true);
+    expect(counts).toEqual([7, 7, 7, 7]);
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "XMLHttpRequest", descriptor);
+    else Reflect.deleteProperty(globalThis, "XMLHttpRequest");
+  }
+});
 test("HTTP errors never count their response bodies as throughput", async () => {
   let counted = 0;
   const transport = createHttpTransport(
