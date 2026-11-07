@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { AI_SHORT_ID_PATTERN } from "@k2b/cloud/ai";
 import { z } from "zod";
 import { AUTOMATION_REBUILD_CASES, type AutomationRebuildTrace, scoreAutomationRebuild } from "./automation-rebuild";
 
@@ -28,12 +29,31 @@ const passing = (): AutomationRebuildTrace => {
   };
 };
 
-test("ships both full v1 export fixtures without importing the old automation services", () => {
-  expect(AUTOMATION_REBUILD_CASES.map((item) => item.export.format)).toEqual(["cloud.mail-automation", "cloud.chat-tasks"]);
+test("ships full v1 Mail, deterministic routine and agent routine export fixtures", () => {
+  expect(AUTOMATION_REBUILD_CASES.map((item) => item.name)).toEqual(["mail-rule", "routine", "routine-agent"]);
+  expect(AUTOMATION_REBUILD_CASES.map((item) => item.export.format)).toEqual([
+    "cloud.mail-automation",
+    "cloud.chat-tasks",
+    "cloud.chat-tasks",
+  ]);
   for (const item of AUTOMATION_REBUILD_CASES) {
     expect(item.export).toMatchObject({ version: 1, authority: "none", nextCursor: null });
     expect(item.export.items).toHaveLength(1);
   }
+});
+
+test("fixture chat and mailbox IDs are usable by their owning APIs", () => {
+  // Mail's public resource ID contract: six alphanumeric characters.
+  const mailId = /^[0-9A-Za-z]{6}$/;
+  for (const item of AUTOMATION_REBUILD_CASES)
+    for (const entry of item.export.items) {
+      if ("mailbox" in entry) expect(entry.mailbox.id).toMatch(mailId);
+      if ("targetChat" in entry) {
+        expect(entry.id).toMatch(AI_SHORT_ID_PATTERN);
+        expect(entry.targetChat.id).toMatch(AI_SHORT_ID_PATTERN);
+        for (const grant of entry.grants) if ("mailboxId" in grant.fixedInput) expect(grant.fixedInput.mailboxId).toMatch(mailId);
+      }
+    }
 });
 
 test("scores same-source authoring evidence, with semantic review still required", () => {

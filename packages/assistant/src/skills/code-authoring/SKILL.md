@@ -51,7 +51,10 @@ For a Mail rule or Assistant routine export, read
 [Rebuild exported Mail rules and routines](references/rebuild.md). Explain the
 old behavior, discover its current SDK equivalents, and draft through the same
 check, fictional test and submit tools. The export grants nothing; activation
-stays with a person. Automatic replies have no replacement at the cut.
+stays with a person. When available, open-ended routines schedule
+`core.ai.chat.run` in the owner's original Gustav chat; deterministic routines
+keep explicit operations.
+Automatic replies have no replacement at the cut.
 
 ## Mail triage: category first
 
