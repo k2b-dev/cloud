@@ -24,8 +24,8 @@ import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
 import { parseAiModelChoice } from "@k2b/cloud/shared";
-import { httpApprovalNotice } from "../artifacts/code-approval-message";
-import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
+import { httpApprovalNotice } from "../chat-code/code-approval-message";
+import type { CapabilityDecision, CodeApproval } from "../chat-code/runtime/capabilities";
 import { pendingActionQuestion, printPendingActionContent, printReviewContent } from "./action-question";
 import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
 import { closeCliCodeHost } from "./code-host";
@@ -887,7 +887,7 @@ They go to the model with every message and can steer what it does with your Clo
               mode,
               ...(model ? { model: parseAiModelChoice(model) } : {}),
               ...clientInput,
-              clientToolIds: [...clientInput.clientToolIds, "code_open", "code_secret"],
+              clientToolIds: [...clientInput.clientToolIds, "code_open"],
             },
           });
         }

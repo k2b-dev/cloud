@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { chromium } from "playwright";
+import { launchBrowser } from "../../../ui/test/browser";
 
-test("compact context hides runs; Studio reuses cards, menus and explicit panel starts", async () => {
+test("chat workspace opens file and source context without loading Studio", async () => {
   const build = Bun.spawn(["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "./context-browser-harness.tsx"], {
     stdout: "pipe",
     stderr: "pipe",
@@ -19,7 +19,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
     revision: 1,
     publishedRevision: null,
     publishedVersion: null,
-    updatedAt: new Date().toISOString(),
+    updatedAt: "2030-01-02T12:00:00.000Z",
     forkedFromId: null,
     forkedFromRevision: null,
   };
@@ -36,7 +36,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
         return Response.json({
           chatId: "chat-one",
           viewerUserId: "test",
-          now: new Date().toISOString(),
+          now: "2030-01-02T12:00:00.000Z",
           timeZone: "UTC",
           results: [
             {
@@ -45,7 +45,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
               title: app.title,
               description: app.description,
               icon: app.icon,
-              deliveredAt: new Date().toISOString(),
+              deliveredAt: "2030-01-02T12:00:00.000Z",
               turnId: "turn-1",
               callId: "open-1",
               messageSeq: 2,
@@ -65,7 +65,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
           skills: [],
           memories: [],
           runCount: 3,
-          runs: [{ id: "run-1", status: "ready", createdAt: new Date().toISOString() }],
+          runs: [{ id: "run-1", status: "ready", createdAt: "2030-01-02T12:00:00.000Z" }],
         });
       if (path.endsWith("/AAAAA2"))
         return Response.json({
@@ -80,7 +80,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
       );
     },
   });
-  const browser = await chromium.launch({ headless: true, channel: "chrome" });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
     page.setDefaultTimeout(3000);
@@ -91,32 +91,13 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
     // One-off runs stay one level deeper, as a row under working files.
     await context.getByRole("button", { name: /Working files/ }).click();
     expect(await context.getByRole("button", { name: /Script runs · 3/ }).count()).toBe(1);
-    await context.getByRole("button", { name: `Open ${app.title}`, exact: true }).click();
-    await page.getByRole("tab", { name: app.title, exact: true }).waitFor();
-    expect(requests.some((path) => path.endsWith("/app-assets"))).toBe(false);
-    await page.locator(".artifact-workspace__tabs").getByRole("button", { name: "Open", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Studio", exact: true }).click();
-    expect(await context.getByText("Recent one-off runs").count()).toBe(0);
-    await page.locator(".assistant-studio-card").waitFor();
-    expect(await page.locator(".assistant-studio-card").count()).toBe(1);
-    expect(await page.locator(".artifact-workspace").getByRole("heading", { name: "Studio", exact: true }).count()).toBe(0);
-    expect(await page.getByRole("table").getByText("Succeeded").count()).toBe(1);
-    expect(requests.some((path) => path.endsWith("/app-assets"))).toBe(false);
-    const card = page.locator(".assistant-studio-card");
-    await card.getByRole("button", { name: /Actions/ }).click();
-    await page.getByRole("menuitem", { name: "Manage access", exact: true }).waitFor();
-    await page.keyboard.press("Escape");
-    expect(await card.getByRole("link", { name: "Open in new tab" }).getAttribute("target")).toBe("_blank");
-    const compiling = page.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/app-assets"));
-    await card.getByRole("button", { name: "Start", exact: true }).click();
-    await compiling;
-    expect(await page.getByRole("tab", { name: app.title, exact: true }).count()).toBe(1);
-    await page.getByRole("tab", { name: "Studio", exact: true }).click();
-    await page.locator(".assistant-studio-card").getByRole("button", { name: "Start", exact: true }).click();
-    expect(await page.getByRole("tab", { name: app.title, exact: true }).count()).toBe(1);
+    await page.locator(".assistant-context-open").getByRole("button", { name: "Open", exact: true }).click();
+    expect(await page.getByRole("menuitem", { name: "Studio", exact: true }).count()).toBe(0);
+    await page.getByRole("menuitem", { name: "Sources", exact: true }).click();
+    await page.getByRole("tab", { name: "Sources", exact: true }).waitFor();
+    expect(await page.locator(".assistant-studio-card").count()).toBe(0);
+    expect(requests.some((path) => path.includes("/artifacts/"))).toBe(false);
     expect(errors).toEqual([]);
-    await page.getByRole("tab", { name: "Studio", exact: true }).click();
-    await page.screenshot({ path: "/tmp/assistant-studio-slice.png" });
   } finally {
     await browser.close();
     await server.stop(true);

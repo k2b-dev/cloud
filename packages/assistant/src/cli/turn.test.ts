@@ -123,7 +123,7 @@ test("draft submit carries local context and Skill resources, registering only c
     draftRevision: 1,
     client,
     localContext,
-    clientToolIds: ["local_read", "code_open", "code_secret"],
+    clientToolIds: ["local_read", "code_open"],
   });
 });
 

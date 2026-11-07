@@ -4,13 +4,13 @@ import { aiChatTasks, aiConversations, createAiShortId } from "@k2b/cloud/ai";
 import * as settingsStore from "@k2b/cloud/services/settings/store";
 import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { databaseSuite, requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { HttpPrepare } from "../chat-code/http-contracts";
+import { runChatRunnerFixture } from "../chat-code/runner-code.test-fixture";
+import * as runnerHost from "../chat-code/runner-code-host";
 import { agentHost, hostFetch } from "./agent-host";
 import { artifactDatabase } from "./database";
 import { appChecks } from "./html/check-service";
-import { HttpPrepare } from "./http-contracts";
 import { httpService } from "./http-service";
-import { runChatRunnerFixture } from "./runner-code.test-fixture";
-import * as runnerHost from "./runner-code-host";
 import { artifacts } from "./service";
 import { testIdentity } from "./test-identity";
 

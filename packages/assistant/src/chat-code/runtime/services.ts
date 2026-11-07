@@ -2,7 +2,7 @@ import { CapabilityIdempotencyKeySchema, CapabilityInvocationBodySchema } from "
 import { z } from "zod";
 import { LIMITS } from "../contracts";
 import { CloudError } from "./errors";
-import { RuntimeStorage } from "./shared-storage";
+import { RuntimeStorage } from "./storage";
 import { RuntimeStream, runStream } from "./streams";
 
 /** Normalized coordinates and retry metadata; validated again at the authenticated capability endpoint. */
@@ -18,7 +18,7 @@ export type RuntimeSdkCallOptions = z.infer<typeof RuntimeSdkCallOptions>;
 /** Host services behind `cloud.*`, shared by script runs and HTML app frames. Each one rechecks access on the server. */
 export type RuntimeServices = {
   stream?: typeof runStream;
-  /** Loads a lazy runtime chunk; the default reads the authenticated artifacts API. */
+  /** Loads a lazy runtime chunk from the owning host. */
   chunk?: (name: string, signal: AbortSignal) => Promise<string>;
   capability?: (name: string, input: unknown, signal: AbortSignal, options?: RuntimeSdkCallOptions) => Promise<unknown>;
   http?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
@@ -32,7 +32,7 @@ export type RuntimeServices = {
 export const APPROVAL_METHODS: ReadonlySet<string> = new Set(["capabilities.run", "http.fetch"]);
 const CHUNKS = new Set(["csv", "sheet", "finance", "pdf-read"]);
 
-/** Lazy runtime chunks as JavaScript text from `base` (`/api/assistant/artifacts/runtime` or the public runner). */
+/** Lazy runtime chunks as JavaScript text from `base` (`/api/assistant/chat-code/runtime` or the public runner). */
 export const fetchChunk = (base: string) => async (name: string, signal: AbortSignal) => {
   const response = await fetch(`${base}/chunks/${name}`, { signal });
   if (!response.ok || !/^(?:text|application)\/(?:javascript|ecmascript)(?:;|$)/i.test(response.headers.get("content-type") ?? ""))
@@ -45,7 +45,7 @@ export const fetchChunk = (base: string) => async (name: string, signal: AbortSi
 
 /** One dispatcher per run or mount: it owns the capability streams that run was issued. */
 export function createServiceCalls(services: RuntimeServices) {
-  const chunk = services.chunk ?? fetchChunk("/api/assistant/artifacts/runtime");
+  const chunk = services.chunk;
   const streams = new Map<string, RuntimeStream>();
   let streamBytes = 0;
   return async (method: string, args: unknown[], signal: AbortSignal): Promise<unknown> => {
@@ -53,6 +53,7 @@ export function createServiceCalls(services: RuntimeServices) {
       case "runtime.chunk": {
         const name = args[0];
         if (typeof name !== "string" || !CHUNKS.has(name)) throw new CloudError("invalid", "Unknown runtime library.");
+        if (!chunk) throw new CloudError("unavailable", "Runtime library service unavailable");
         return chunk(name, signal);
       }
       case "capabilities.run": {

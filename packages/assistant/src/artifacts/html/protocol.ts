@@ -1,5 +1,5 @@
 // Messages between a Cloud page that mounts an HTML app and the app frame's prelude.
-import type { RuntimeContext } from "../runtime/cloud";
+import type { RuntimeContext } from "../../chat-code/runtime/cloud";
 
 /** Embedded by the composer as JSON and read once by the prelude. */
 export type FrameConfig = {

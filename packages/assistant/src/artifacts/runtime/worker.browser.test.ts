@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import { ChunkName, chunkSource } from "../../chat-code/runtime/chunks";
 import type {} from "./browser-harness";
-import { ChunkName, chunkSource } from "./chunks";
 import { compileArtifact } from "./compile";
 
 test("real opaque worker returns data, reads inputs, captures downloads and remains terminable", async () => {
@@ -54,8 +54,12 @@ test("real opaque worker returns data, reads inputs, captures downloads and rema
     return {before, count:await cloud.kv.user.get("count")};
   };`);
   const agentSource = await compile("export default () => ({ answer: 42 });");
-  const pdfBytes = Buffer.from(await Bun.file(new URL("./fixtures/invoice.pdf", import.meta.url)).arrayBuffer()).toString("base64");
-  const xlsxBytes = Buffer.from(await Bun.file(new URL("./fixtures/ledger.xlsx", import.meta.url)).arrayBuffer()).toString("base64");
+  const pdfBytes = Buffer.from(
+    await Bun.file(new URL("../../chat-code/runtime/fixtures/invoice.pdf", import.meta.url)).arrayBuffer(),
+  ).toString("base64");
+  const xlsxBytes = Buffer.from(
+    await Bun.file(new URL("../../chat-code/runtime/fixtures/ledger.xlsx", import.meta.url)).arrayBuffer(),
+  ).toString("base64");
   const documentsSource = await compile(`export default async (_input, {files,signal,progress}) => {
     const blob = b64 => new Blob([Uint8Array.from(atob(b64), c=>c.charCodeAt(0))]);
     const document = await cloud.pdf.read(blob(${JSON.stringify(pdfBytes)}));

@@ -5,6 +5,7 @@ import adminPages from "./artifacts/admin-page";
 import { codeToolRoutes } from "./artifacts/code-tool-routes";
 import { machineApi } from "./artifacts/machine-api";
 import { runnerApi } from "./artifacts/runner-api";
+import { chatCodeToolRoutes } from "./chat-code/code-tool-routes";
 import { ssr } from "./config";
 import pageRoutes from "./frontend";
 import { pwaApi, pwaRoutes } from "./pwa";
@@ -17,6 +18,7 @@ export const router = new Hono<AuthContext>()
   .use("*", middleware.noTransform())
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
+  .route("/_internal/assistant/tools", chatCodeToolRoutes)
   .route("/_internal/assistant/tools", codeToolRoutes)
   .route("/api/assistant/runner", runnerApi)
   .route("/api/assistant/pwa", pwaApi)

@@ -502,7 +502,9 @@ bridge budgets; see [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat
 Background turns use the same runner path. Their capability and HTTP calls
 still require the routine's current mandate and exact grants; they cannot ask
 for interactive approval. Studio RSQL `database` grants are unavailable in
-runner `code_run`, including when `resourceId` or a saved script is supplied.
+runner `code_run`. Chat accepts inline `code` and optional `inputPaths` only;
+saved script `id`, published `version`, and Studio `resourceId` contexts are
+rejected. App KV/files storage is also unavailable; use chat or Project files.
 Use an application's permission-aware capabilities for application data.
 There is no automatic replacement database or grant migration.
 

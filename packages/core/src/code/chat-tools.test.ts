@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { createCloudAiCodeTools, createCodeSourceTool } from "@k2b/cloud/ai/tools";
 import { z } from "zod";
 import { createCodeAuthoringChatTools } from "./chat-tools";
 
@@ -38,38 +37,20 @@ test("chat tool schemas are provider object schemas and expose no activation or 
   for (const tool of tools) expect(z.toJSONSchema(tool.def.inputSchema).type).toBe("object");
 });
 
-test("stable read/write/check names accept Code and preserve Studio inputs with revision guards", () => {
-  for (const input of [{ codeId: "c_1234" }, { id: "Abc234", path: "index.html", offset: 0 }])
-    expect(schema("code_read").safeParse(input).success).toBe(true);
-  for (const input of [
-    { project, path: "code.ts", content: "changed" },
-    { id: "Abc234", path: "index.html", content: "changed", expectedRevision: 1 },
-  ])
-    expect(schema("code_write").safeParse(input).success).toBe(true);
-  for (const input of [
-    { codeId: "c_1234", files: project.files },
-    { id: "Abc234" },
-    { files: [{ path: "index.html", content: "<h1>Fixture</h1>" }] },
-  ])
-    expect(schema("code_check").safeParse(input).success).toBe(true);
+test("stable read/write/check names accept lasting Code and reject Studio overloads", () => {
   for (const [name, input] of [
+    ["code_read", { codeId: "c_1234" }],
+    ["code_write", { project, path: "code.ts", content: "changed" }],
+    ["code_check", { codeId: "c_1234", files: project.files }],
+  ] as const)
+    expect(schema(name).safeParse(input).success).toBe(true);
+  for (const [name, input] of [
+    ["code_read", { id: "Abc234", path: "index.html", offset: 0 }],
+    ["code_write", { id: "Abc234", path: "index.html", content: "changed", expectedRevision: 1 }],
+    ["code_check", { id: "Abc234" }],
+    ["code_check", { files: [{ path: "index.html", content: "<h1>Fixture</h1>" }] }],
     ["code_read", { codeId: "c_1234", id: "Abc234" }],
-    ["code_write", { id: "Abc234", path: "index.html", content: "lost revision" }],
     ["code_write", { project, path: "../escape.ts", content: "invalid" }],
-    ["code_check", { codeId: "c_1234", id: "Abc234", files: project.files }],
   ] as const)
     expect(schema(name).safeParse(input).success).toBe(false);
-});
-
-test("overloaded tools retain the complete Studio workflow guidance", () => {
-  const originals = [
-    createCodeSourceTool("code_read"),
-    createCodeSourceTool("code_write"),
-    ...createCloudAiCodeTools().filter((tool) => tool.def.name === "code_check"),
-  ];
-  for (const original of originals) {
-    const actual = tools.find((tool) => tool.def.name === original.def.name);
-    expect(actual?.def.description.startsWith(original.def.description)).toBe(true);
-    expect(actual?.def.promptHint).toBe(original.def.promptHint);
-  }
 });

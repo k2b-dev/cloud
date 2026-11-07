@@ -387,7 +387,6 @@ describe("AI tools", () => {
       "text_editor",
       "chart",
       "map",
-      "code_create",
       "list_files",
       "read_file",
       "fetch_file",

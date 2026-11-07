@@ -9,7 +9,7 @@ import type {
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
-import { CODE_RUNTIME_TOOL_NAMES, createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
+import { createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
@@ -69,14 +69,13 @@ import {
 } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
-import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
-import { revokeChatWebsite } from "../artifacts/approval-preferences";
-import { createCodeApprovals } from "../artifacts/CapabilityApproval";
-import { ChatPresentation } from "../artifacts/ChatPresentation";
-import { artifactMessages } from "../artifacts/messages";
-import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
-import { ArtifactWorkspace, createArtifactWorkspace } from "../artifacts/Workspace";
-import { appTab, contextTab, fileTab, taskTab } from "../artifacts/workspace-state";
+import { revokeChatWebsite } from "../chat-code/approval-preferences";
+import { createCodeApprovals } from "../chat-code/CapabilityApproval";
+import { artifactMessages } from "../chat-code/messages";
+import { openSecretsDialog } from "../chat-code/SecretsDialog";
+import { createChatSecretRuntime } from "../chat-code/secret-runtime";
+import { ChatWorkspace, createChatWorkspace } from "../chat-code/Workspace";
+import { contextTab, fileTab } from "../chat-code/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { CodeRunCount, CodeSummaryPage } from "../code-summary";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
@@ -103,6 +102,7 @@ import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
 import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
+import { openAssistantTask } from "./AssistantTasksDialog";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
@@ -247,19 +247,17 @@ export default function AssistantWorkspace(props: Props) {
   const contextText = useAssistantText();
   const commandCopy = useAssistantCopy();
   const runKeys = createAssistantTaskRunKeys();
-  const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref);
+  const artifactWorkspace = createChatWorkspace(props.initialWorkspaceHref);
   const [workspaceMounted, setWorkspaceMounted] = createSignal(false);
   // Grows when a version card in this chat switched Code on, so the panel's block above it shows the new state.
   const [codeRevision, setCodeRevision] = createSignal(0);
   const openContextView = (view: ContextView) =>
     artifactWorkspace.open(
-      view.task
-        ? taskTab(view.task.id, view.title)
-        : view.context
-          ? contextTab(view.context.conversationId, view.context.category, view.title, view.context.project)
-          : view.file
-            ? { ...fileTab(view.file.conversationId, view.file.path), title: view.title }
-            : { ...view, kind: "view" },
+      view.context
+        ? contextTab(view.context.conversationId, view.context.category, view.title, view.context.project)
+        : view.file
+          ? { ...fileTab(view.file.conversationId, view.file.path), title: view.title }
+          : { ...view, kind: "view" },
     );
   const openContextOverview = (category: ContextCategory, title: string) => {
     const chatId = chat.activeConversationId();
@@ -275,7 +273,7 @@ export default function AssistantWorkspace(props: Props) {
           project={project}
           category={category}
           onOpenView={openContextView}
-          onOpenApp={(id, title, start) => artifactWorkspace.open(appTab(id, title, start))}
+          onOpenApp={(id, title, start) => window.location.assign(`/app/assistant/apps/${encodeURIComponent(id)}`)}
           onJump={(target) => void jumpTo(target)}
           onOpenSecrets={openChatSecrets}
         />
@@ -290,7 +288,6 @@ export default function AssistantWorkspace(props: Props) {
   const t = () => assistantMessages.resolve([locale()]).t;
   const contextMenuItems = () => [
     { label: "Secrets", icon: "ti ti-key", action: openChatSecrets },
-    { label: artifactCopy().apps, icon: "ti ti-app-window", action: () => openContextOverview("apps", artifactCopy().apps) },
     { label: artifactCopy().files, icon: "ti ti-files", action: () => openContextOverview("files", artifactCopy().files) },
     { label: contextText("Sources"), icon: "ti ti-link", action: () => openContextOverview("sources", contextText("Sources")) },
     ...(activeConversationProject()
@@ -299,15 +296,6 @@ export default function AssistantWorkspace(props: Props) {
             label: contextText("Project knowledge"),
             icon: "ti ti-bulb",
             action: () => openContextOverview("knowledge", contextText("Project knowledge")),
-          },
-        ]
-      : []),
-    ...(workspaceContext()?.tasks.length
-      ? [
-          {
-            label: contextText("Routines"),
-            icon: "ti ti-calendar-time",
-            action: () => openContextOverview("tasks", contextText("Routines")),
           },
         ]
       : []),
@@ -325,8 +313,8 @@ export default function AssistantWorkspace(props: Props) {
     initialTimeline: props.initialDetail?.timeline,
     initialError: props.status.error?.message ?? null,
     trackViewedState: true,
-    clientToolIds: [...CODE_RUNTIME_TOOL_NAMES],
-    frontendTools: createArtifactAgentRuntime(artifactWorkspace.open, codeApprovals.ask, "chat-tool", browserHttpHost),
+    clientToolIds: ["code_secret"],
+    frontendTools: createChatSecretRuntime(),
   });
 
   const quotas = createAssistantQuota(props.initialQuotas);
@@ -1540,9 +1528,10 @@ export default function AssistantWorkspace(props: Props) {
         sources: contextText("Sources"),
       },
       onOpenView: openContextView,
-      onOpenApp: (id, title) => artifactWorkspace.open(appTab(id, title)),
+      onOpenApp: (id, title) => window.location.assign(`/app/assistant/apps/${encodeURIComponent(id)}`),
       onJump: (target) => void jumpTo(target),
       onOpenSecrets: openChatSecrets,
+      onOpenTask: (task) => void openAssistantTask(task, liveHub, editScheduledTask),
       onFileDeleted: (file) => artifactWorkspace.closeFile(file.conversationId, file.path),
     });
   const contextHost = createChatSidebarHost({
@@ -2834,14 +2823,6 @@ export default function AssistantWorkspace(props: Props) {
                               fallback={
                                 <AiChatActionsProvider
                                   actions={{
-                                    renderCodePresentation: (result) => (
-                                      <ChatPresentation
-                                        result={result()}
-                                        conversationId={chat.activeConversationId()!}
-                                        httpHost={browserHttpHost}
-                                        openApp={(id, title) => artifactWorkspace.open(appTab(id, title, true))}
-                                      />
-                                    ),
                                     renderCodeVersion: (version) => (
                                       <AssistantCodeVersionCard
                                         {...version}
@@ -3005,8 +2986,7 @@ export default function AssistantWorkspace(props: Props) {
                   </div>
                 }
               >
-                <ArtifactWorkspace
-                  onEditTask={(task, repair) => void editScheduledTask(task, repair)}
+                <ChatWorkspace
                   onOpenView={openContextView}
                   project={activeConversationProject()}
                   conversationId={chat.activeConversationId()}

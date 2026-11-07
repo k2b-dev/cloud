@@ -1,7 +1,7 @@
 import { type AiConversation, aiConversations, aiProjects } from "@k2b/cloud/ai";
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import { z } from "zod";
-import { ArtifactError, type ArtifactIdentity } from "./service";
+import { ArtifactError, type ArtifactIdentity } from "./identity";
 
 // Public chat id or internal UUID.
 export const ChatReference = z.union([z.uuid(), CodeResourceId]);

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
+import { artifactMessages } from "../chat-code/messages";
 import { machineMessages } from "./machine-messages";
-import { artifactMessages } from "./messages";
 
 test("Studio messages keep matching locale contracts", () => {
   expect(artifactMessages.check()).toEqual([]);

@@ -175,7 +175,7 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
             <Button variant="ghost" size="sm" onClick={() => navigateTo(assistantConversationHref("/app/assistant", value().task.chatId))}>
               {text("Open chat")}
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => openAssistantTask(value().task)}>
+            <Button variant="ghost" size="sm" onClick={() => openAssistantTask(value().task, live)}>
               {text("Manage routine")}
             </Button>
           </div>

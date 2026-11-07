@@ -1,6 +1,6 @@
 # Manage an App's data and lifecycle
 
-Read this only for requested inspection, maintenance, export, or deletion.
+Legacy Studio reference. These tools are unavailable in chat.
 Normal published actions need no management tools. All operations here require
 Manage on the App. They use Studio's documented contracts; the backing service
 is not an additional API and requires no vendor documentation.
@@ -28,12 +28,10 @@ source, storage, grant, or database change invalidates App-deletion review.
 Database writes invalidate earlier database reviews even when their outcome is
 uncertain. File versions change across deletion and recreation of the same key.
 
-For JSON reads/writes or structured record/schema edits, use the existing
-[Storage](storage.md) or [Database](database.md) methods in a temporary
-`code_run({code,resourceId})` run. This requires Manage and leaves App source
-unchanged. Do not add maintenance controls to the user's dashboard just to
-perform an agent task. Database state belongs to the App across sessions;
-source restore never rolls back its data.
+Chat `code_run` cannot inspect or mutate Studio storage. `resourceId` is
+unavailable. Use Studio's standalone management UI for saved app data;
+source restore never rolls back that data. These legacy management tools are
+not offered in chat.
 
 A clear operation shares one 15-second database budget across all tables and
 keeps the App locked against writes and resets until it ends. On partial failure,

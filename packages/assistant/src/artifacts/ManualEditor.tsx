@@ -1,11 +1,11 @@
 import { files } from "@k2b/stdlib/browser";
 import { Button, NoticeCard, prompts, SplitButton, Tabs, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { artifactMessages } from "../chat-code/messages";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { advancedMessages } from "./advanced-messages";
 import { artifactClient } from "./client";
 import { ArtifactPath, ArtifactSource } from "./contracts";
-import { artifactMessages } from "./messages";
 import { SourceEditor } from "./SourceEditor";
 import type { ArtifactBundle } from "./service";
 

@@ -8,10 +8,10 @@ import {
 } from "@k2b/cloud/ai/browser";
 import { escapeXml } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
-import { createCloud } from "./cloud";
-import { CloudError } from "./errors";
-import { boundMoney, chart, chartOptions, chartSvg, html } from "./lib";
-import { parseCsv, toCsv } from "./sheet-lib";
+import { createCloud } from "../../chat-code/runtime/cloud";
+import { CloudError } from "../../chat-code/runtime/errors";
+import { boundMoney, chart, chartOptions, chartSvg, html } from "../../chat-code/runtime/lib";
+import { parseCsv, toCsv } from "../../chat-code/runtime/sheet-lib";
 
 test("cloud.html escapes values, joins arrays and keeps nested markup", () => {
   const items = ["<b>", "Müller & Söhne"];

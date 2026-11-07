@@ -6,7 +6,7 @@ import { generateCodeSdk } from "@k2b/cloud/code";
 import { z } from "zod";
 import { ChunkName, chunkSource } from "./chunks";
 import { usesCodeRunSdk } from "./code-run-sdk";
-import { compileArtifact } from "./compile";
+import { compileScript } from "./compile";
 import { createServiceCalls, type RuntimeSdkCallOptions } from "./services";
 
 const manifest = compileCapabilityManifest("grids", {
@@ -41,7 +41,7 @@ test("one code_run input imports the shared SDK and converts dynamic table recor
   const sdk = generateCodeSdk([manifest], { mode: "code_run" });
   expect(sdk.declarations).not.toContain("export declare const app");
   expect(sdk.declarations).not.toContain("export declare const owner");
-  const source = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: input.code! }] }, undefined, sdk);
+  const source = await compileScript({ entry: "main.ts", files: [{ path: "main.ts", content: input.code! }] }, sdk);
   const output = Promise.withResolvers<unknown>();
   let receive: ((event: unknown) => void) | undefined;
   const calls: { name: string; input: unknown; options?: RuntimeSdkCallOptions }[] = [];
@@ -107,13 +107,9 @@ test("one code_run input imports the shared SDK and converts dynamic table recor
 
 test("@sdk is a trusted compile input and does not enable arbitrary package imports", async () => {
   const source = (content: string) => ({ entry: "main.ts", files: [{ path: "main.ts", content }] });
-  await expect(compileArtifact(source('import {grids} from "@sdk"; export default () => grids;'))).rejects.toThrow();
+  await expect(compileScript(source('import {grids} from "@sdk"; export default () => grids;'))).rejects.toThrow();
   await expect(
-    compileArtifact(
-      source('import fs from "node:fs"; export default () => fs;'),
-      undefined,
-      generateCodeSdk([manifest], { mode: "code_run" }),
-    ),
+    compileScript(source('import fs from "node:fs"; export default () => fs;'), generateCodeSdk([manifest], { mode: "code_run" })),
   ).rejects.toThrow();
 });
 

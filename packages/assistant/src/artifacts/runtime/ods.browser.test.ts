@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import { ChunkName, chunkSource } from "../../chat-code/runtime/chunks";
 import type {} from "./browser-harness";
-import { ChunkName, chunkSource } from "./chunks";
 import { compileArtifact } from "./compile";
 
 test("ODS reads typed cells, grouped rows and cached formulas and writes workbooks in the isolated worker", async () => {
@@ -32,7 +32,7 @@ test("ODS reads typed cells, grouped rows and cached formulas and writes workboo
     await rm(directory, { recursive: true });
   }
   const fixture = async (name: string) =>
-    Buffer.from(await Bun.file(new URL(`./fixtures/${name}`, import.meta.url)).arrayBuffer()).toString("base64");
+    Buffer.from(await Bun.file(new URL(`../../chat-code/runtime/fixtures/${name}`, import.meta.url)).arrayBuffer()).toString("base64");
   const source = await compileArtifact({
     entry: "main.js",
     files: [

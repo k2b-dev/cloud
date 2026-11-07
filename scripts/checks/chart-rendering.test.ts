@@ -75,7 +75,7 @@ test.each([
 
 test.each([
   "packages/ui/src/content/Chart.tsx",
-  "packages/assistant/src/artifacts/runtime/lib.ts",
+  "packages/assistant/src/chat-code/runtime/lib.ts",
   "packages/editor/src/charts.ts",
   "packages/demo/src/plot.test.ts",
   "packages/demo/src/plot.spec.tsx",

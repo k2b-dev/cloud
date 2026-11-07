@@ -1,10 +1,10 @@
 import {
-  type AiFileLocation,
-  type AiFileReference,
   AiFileVersionConflict,
   aiConversations,
   aiFileContentVersion,
   aiProjects,
+  AiFileLocation as ChatFileLocation,
+  AiFileReference as ChatFileReference,
   listAiConversationFiles,
   normalizeAiFilePath,
   readAiConversationFile,
@@ -13,6 +13,10 @@ import {
 import { z } from "zod";
 import { ArtifactError, type ArtifactIdentity, artifacts, user } from "./service";
 
+export const StudioFileLocation = ChatFileLocation.extend({ scope: z.enum(["chat", "project", "app"]) });
+export const StudioFileReference = ChatFileReference.extend({ scope: z.enum(["chat", "project", "app"]) });
+type AiFileLocation = z.infer<typeof StudioFileLocation>;
+type AiFileReference = z.infer<typeof StudioFileReference>;
 type Container = Pick<AiFileLocation, "scope" | "id">;
 async function resolve(location: Container, identity: ArtifactIdentity, write = false) {
   if (location.scope !== "app" && "path" in location && typeof location.path === "string") {

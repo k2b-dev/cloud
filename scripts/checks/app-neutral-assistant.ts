@@ -15,8 +15,8 @@ const PRESENTATION_ROOTS = [
   "packages/cloud/src/ai/tool-sentences.ts",
   "packages/assistant/src/frontend",
   "packages/assistant/src/cli",
-  "packages/assistant/src/artifacts/CapabilityApproval.tsx",
-  "packages/assistant/src/artifacts/code-approval-message.ts",
+  "packages/assistant/src/chat-code/CapabilityApproval.tsx",
+  "packages/assistant/src/chat-code/code-approval-message.ts",
 ];
 
 const unwrap = (node: ts.Node): ts.Node =>
@@ -117,8 +117,11 @@ export const rule: Rule = {
     const findings: Finding[] = [];
     const files = PRESENTATION_ROOTS.flatMap((root) => {
       const path = join(workspaceRoot, root);
-      if (!sourceFilePattern.test(path)) return listFiles(path, sourceFilePattern);
-      return existsSync(path) ? [path] : [];
+      if (!existsSync(path)) {
+        findings.push({ file: path, message: "Assistant presentation scan root is missing; update its owner path." });
+        return [];
+      }
+      return sourceFilePattern.test(path) ? [path] : listFiles(path, sourceFilePattern);
     });
     for (const file of files.sort()) {
       if (isTestFile(file)) continue;
