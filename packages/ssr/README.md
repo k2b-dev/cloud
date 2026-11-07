@@ -749,13 +749,3 @@ An agent skill for building with `@k2b/ssr` lives in `skills/ssr`:
 ```bash
 bunx skills add k2b-dev/cloud --skill ssr
 ```
-
-### Keep server content while optional code loads
-
-Before clearing an island wrapper, the browser runtime dispatches the bubbling,
-cancelable `ssr:before-island-mount` event on it. A presentation module can call
-`preventDefault()` and later `event.detail.resume()` once its code is ready.
-The wrapper keeps its server HTML in the meantime. Resume is idempotent;
-disposing the wrapper cancels a late resume. Deferred wrappers count as pending
-for scroll restoration. The listener must offer recovery if loading fails.
-Without a listener, mounting remains synchronous.

@@ -136,15 +136,6 @@ Just before cleanup, the wrapper dispatches a bubbling `ssr:island-dispose`
 event. Code that renders outside the wrapper, such as a portal, can close what
 the island opened. Disposal closes every open `@k2b/ui` dialog.
 
-## Deferred presentation code
-
-The browser runtime dispatches `ssr:before-island-mount` on each wrapper before
-clearing its server HTML. A listener for an optional presentation module can
-prevent the default mount, load the module, then call `event.detail.resume()`.
-Keep the server content in place and offer recovery if loading fails. Resume
-is idempotent and does nothing after the wrapper is disposed; pending wrappers
-still delay scroll restoration. Ordinary islands need no listener.
-
 ## Island Error Boundaries
 
 Every island and client component instance is mounted in its own error

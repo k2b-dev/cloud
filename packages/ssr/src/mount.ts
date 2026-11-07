@@ -2,12 +2,6 @@ import { fromJSON } from "seroval";
 import { type Component, getOwner, type Owner } from "solid-js";
 import { createComponent, ErrorBoundary, render } from "solid-js/web";
 
-declare global {
-  interface WindowEventMap {
-    "ssr:before-island-mount": CustomEvent<{ resume: () => void }>;
-  }
-}
-
 /** Props received by a configured island error fallback component. */
 export type IslandErrorProps = {
   error: unknown;
@@ -42,8 +36,6 @@ type IslandRegistry = {
   /** The dispose function of each mounted wrapper. */
   mounted: WeakMap<HTMLElement, () => void>;
   roots?: WeakMap<Owner, HTMLElement>;
-  /** Pending mount disposers double as unique cancellation tokens. */
-  preparing?: WeakSet<() => void>;
   /** Internal navigation listeners called after each wrapper mounted, also when it renders nothing. */
   listeners?: Set<() => void>;
 };
@@ -68,19 +60,17 @@ const mountElement = <Props extends object>(
   Component: Component<Props>,
   Fallback?: Component<IslandErrorProps>,
 ): void => {
-  const shared = registry();
-  const { mounted } = shared;
+  const { mounted } = registry();
   if (mounted.has(element)) return;
-  shared.preparing ??= new WeakSet();
-  const preparing = shared.preparing;
   const start = (): void => {
     try {
       element.innerHTML = "";
       const dispose = render(() => {
         const owner = getOwner();
         if (owner) {
-          shared.roots ??= new WeakMap();
-          shared.roots.set(owner, element);
+          const islands = registry();
+          islands.roots ??= new WeakMap();
+          islands.roots.set(owner, element);
         }
         return createComponent(ErrorBoundary, {
           fallback: (error: unknown, reset: () => void) => {
@@ -108,22 +98,9 @@ const mountElement = <Props extends object>(
       element.replaceChildren(defaultFallback(start));
       mounted.set(element, () => element.replaceChildren());
     }
-    for (const listener of [...(shared.listeners ?? [])]) listener();
+    for (const listener of [...(registry().listeners ?? [])]) listener();
   };
-  // A presentation module can keep server HTML visible while its first-use code loads.
-  // Disposal cancels a late resume, including a page replaced by progressive navigation.
-  const cancel = () => preparing.delete(cancel);
-  preparing.add(cancel);
-  mounted.set(element, cancel);
-  const resume = () => {
-    if (preparing.delete(cancel)) start();
-  };
-  const event = new CustomEvent("ssr:before-island-mount", {
-    bubbles: true,
-    cancelable: true,
-    detail: { resume },
-  });
-  if (element.dispatchEvent(event)) resume();
+  start();
 };
 
 const wrappers = (root: ParentNode): HTMLElement[] => {
@@ -162,11 +139,8 @@ export const onIslandMount = (listener: () => void): (() => void) => {
 
 /** Initial scroll restoration must wait for regions that only exist after mounting. */
 export const islandsPending = (root: ParentNode): boolean => {
-  const { mounted, preparing } = registry();
-  return wrappers(root).some((element) => {
-    const dispose = mounted.get(element);
-    return !dispose || preparing?.has(dispose);
-  });
+  const { mounted } = registry();
+  return wrappers(root).some((element) => !mounted.has(element));
 };
 
 /**

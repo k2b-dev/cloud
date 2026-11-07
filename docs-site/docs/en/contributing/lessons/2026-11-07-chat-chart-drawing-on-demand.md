@@ -1,6 +1,6 @@
-### Keep optional chart renderers out of the initial Chat bundle
+### Keep optional drawing loads inside the chart boundary
 
-- **What happened:** Adding chart kinds exceeded the Assistant PWA and workspace JavaScript budgets, even in chats without charts.
-- **Root cause:** Chat imported its chart and explorer drawing code eagerly. Stat-tile trends also imported the complete Chart dispatcher through a sparkline; transitive sizing exports and a shared map module kept renderer code eager.
-- **Error class:** An optional renderer catalog entered every initial island closure through shared presentation imports.
-- **Guard:** The unchanged `island-bundles` limits cover every measured island. A browser build guard excludes the registry and world-map data from its static graph. Chat loads drawing code on first use; browser tests compare exact desktop and phone frames with code and data arriving in either order, failed imports, and server history. A byte-for-byte render test keeps the dedicated stat sparkline equal to the generic Chart output. Deferred mounts preserve server HTML and cancel late resumes after disposal.
+- **What happened:** Adding chart kinds exceeded the Assistant PWA and workspace JavaScript budgets, even in chats without charts. Deferring the entire island to retain its server drawing also delayed the composer and unrelated controls.
+- **Root cause:** Shared presentation imports pulled in the renderer catalog. Waiting for that optional module at the island mount crossed the boundary between a drawing and the surrounding chat.
+- **Error class:** Optional presentation code blocked unrelated interaction and risked discarding input typed before the delayed mount.
+- **Guard:** Unchanged island budgets and a static-graph check exclude the registry and map data. Chart-local wrappers claim their detached server subtree synchronously; unclaimed subtrees expire in a microtask. The island mounts immediately. Browser tests require the same SVG node and bytes, inert retained drawings, exact desktop/phone frames, a usable composer and sibling controls through success and localized load failure, and cancellation after chart removal. The drawing module attaches the normal inspector. Stat sparklines retain byte-for-byte parity with Chart.

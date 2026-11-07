@@ -49,13 +49,6 @@ This has two consequences:
   for example the server's render time, or read the value in `onMount` and
   reserve its space in the server markup.
 
-A shared presentation module that loads code on first use can defer mounting
-with the bubbling, cancelable `ssr:before-island-mount` event. It prevents the
-default mount and calls `event.detail.resume()` after loading. Until then the
-server HTML stays visible. Disposal cancels a late resume; the module must
-provide recovery if loading fails. Cloud uses this for server-rendered Chat
-charts so they do not disappear while their drawing code loads.
-
 ## Cross the prop boundary
 
 ```tsx

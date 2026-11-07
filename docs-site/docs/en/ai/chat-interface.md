@@ -349,7 +349,9 @@ order:
    headings, controls and plot areas reserve the same space while the code and
    data arrive. A drawing that came from the server stays visible until its
    browser code is ready, including when reopening history. If that code cannot
-   load, **Reload** offers a fresh page; other messages remain readable.
+   load, that chart shows **The chart could not be loaded** with **Reload**.
+   The composer, sidebar and other chat controls remain usable while charts load
+   and if loading fails.
 
    A table with `search` or `groupBy` shows a search field or a group choice
    beside its title. The summary reserves their space while the controls load,

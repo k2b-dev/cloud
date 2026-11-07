@@ -18,7 +18,7 @@ const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
-    entrypoints: [resolve(import.meta.dir, "view-block.browser-harness.tsx")],
+    entrypoints: ["chat-browser-entry"],
     target: "browser",
     // MapView's lazy worker uses import.meta; keep the shared chat harness a module.
     format: "esm",
@@ -30,6 +30,23 @@ const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry
       {
         name: "solid-view-block-test",
         setup(builder) {
+          // As in buildIslands: generate the runtime entry outside the component. The harness imports no package internals.
+          builder.onResolve({ filter: /^chat-browser-entry$/ }, () => ({ path: "chat-browser-entry", namespace: "chat-test" }));
+          builder.onLoad({ filter: /.*/, namespace: "chat-test" }, () => ({
+            contents: `import { mount, disposeIslands, mountIslands } from ${JSON.stringify(resolve(Bun.resolveSync("@k2b/ssr", import.meta.dir), "../mount.ts"))};
+              import { ChartHistory } from ${JSON.stringify(resolve(import.meta.dir, "view-block.browser-harness.tsx"))};
+              mount(ChartHistory, 'solid-island[data-id="chart-history"]');
+              window.restoreChartHistory = () => {
+                disposeIslands(document);
+                const old = document.querySelector('solid-island[data-id="chart-history"]');
+                old.outerHTML = window.historyServerMarkup;
+                window.historyServerSvg = document.querySelector('solid-island .k2b-chart__svg > svg');
+                window.historyServerHtml = window.historyServerSvg.outerHTML;
+                window.historyServerFrame = document.querySelector('solid-island .k2b-chart-explorer').getBoundingClientRect().toJSON();
+                mountIslands(document);
+              };`,
+            loader: "js",
+          }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -435,7 +452,7 @@ beforeAll(async () => {
   chartModulePath = `/${built.chartEntry}`;
   const { createConfig } = await import("@k2b/ssr");
   Bun.plugin(createConfig({ dev: true, rootDir: resolve(import.meta.dir, "../../../..") }).plugin());
-  const { CloudChartBlock } = await import("./chart-eager");
+  const { ChartHistory } = await import("./view-block-history.browser-harness");
   const { createComponent } = await import("solid-js");
   const { renderToString } = await import("solid-js/web");
   const { toJSON } = await import("seroval");
@@ -447,7 +464,7 @@ beforeAll(async () => {
       { label: "South", value: 18 },
     ],
   };
-  serverChartHtml = renderToString(() => createComponent(CloudChartBlock, { args, completed: true }));
+  serverChartHtml = renderToString(() => createComponent(ChartHistory, { args, completed: true }));
   historyProps = Bun.escapeHTML(JSON.stringify(toJSON({ args, completed: true })));
   const tableModule = [...harness].find(([name, source]) => name !== "harness.js" && source.includes("/ai/chat/table-block.tsx"));
   if (!tableModule) throw new Error("Table controls must have their own lazy browser module");
@@ -477,7 +494,7 @@ beforeAll(async () => {
         `<!doctype html><html lang="${lang}" class="${theme}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
           `<style>${css}</style></head><body class="k2b-ui" style="margin: 0">` +
           (url.searchParams.has("history")
-            ? `<solid-island data-id="chart-history" data-props="${historyProps}" style="display:block;margin:1rem">${serverChartHtml}</solid-island>`
+            ? `<solid-island data-id="chart-history" data-props="${historyProps}" style="display:block;margin:1rem">${serverChartHtml}</solid-island><script>window.historyServerMarkup=document.querySelector("solid-island").outerHTML;window.historyServerSvg=document.querySelector("solid-island .k2b-chart__svg > svg");window.historyServerHtml=window.historyServerSvg.outerHTML;window.historyServerFrame=document.querySelector("solid-island .k2b-chart-explorer").getBoundingClientRect().toJSON();</script>`
             : "") +
           `<script type="module" src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
@@ -497,7 +514,11 @@ declare global {
     show: (blocks: ToolBlock[]) => void;
     opened: { title: string; ref: CloudResourceRef }[];
     showCharts: (charts: unknown[]) => void;
-    chartHistoryPending: () => boolean;
+    historyServerMarkup: string;
+    restoreChartHistory: () => void;
+    historyServerSvg: Element;
+    historyServerHtml: string;
+    historyServerFrame: DOMRect;
     disposeChartHistory: () => void;
   }
 }
@@ -1497,12 +1518,12 @@ for (const width of [1280, 390]) {
       await settled(page);
       const first = await boxes(page);
       code();
-      await page.getByText("Part of this page could not load. Reload the page and try again.").waitFor();
-      expect(await page.getByRole("button", { name: "Reload", exact: true }).count()).toBe(1);
+      await page.getByText("The chart could not be loaded.", { exact: true }).first().waitFor();
+      expect(await page.getByRole("button", { name: "Reload", exact: true }).count()).toBe(4);
       await settled(page);
       expect(await boxes(page)).toEqual(first);
       expect(await page.locator("[data-view-path] .k2b-chart__empty > [role=status]").allTextContents()).toEqual(
-        Array(4).fill("This view is no longer available. Its file was changed or deleted."),
+        Array(4).fill("The chart could not be loaded.Reload"),
       );
     } finally {
       code();
@@ -1510,71 +1531,110 @@ for (const width of [1280, 390]) {
     }
   });
 
-  test(`server history retains its exact SVG and frame until drawing code is ready (${width})`, async () => {
-    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
-    const code = hold(chartModulePath);
-    try {
-      const page = await context.newPage();
-      await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "domcontentloaded" });
-      await page.waitForFunction(() => window.chartHistoryPending?.());
-      const history = page.locator('solid-island[data-id="chart-history"]');
-      expect(await history.locator("svg").count()).toBe(1);
-      const svg = await history.locator("svg").evaluate((node) => node.outerHTML);
-      const frame = await history.locator(".k2b-chart-explorer").boundingBox();
-      expect(svg).toContain("data-chart-datum");
-      code();
-      await page.waitForFunction(() => !window.chartHistoryPending());
-      expect(await history.locator("svg").evaluate((node) => node.outerHTML)).toBe(svg);
-      expect(await history.locator(".k2b-chart-explorer").boundingBox()).toEqual(frame);
-      await history.locator(".k2b-chart").focus();
-      await page.keyboard.press("ArrowRight");
-      await page.waitForSelector(".k2b-chart__tooltip:popover-open");
-    } finally {
-      code();
-      await context.close();
-    }
-  });
+  for (const arrival of ["initial", "navigation"])
+    test(`server history retains its exact SVG and frame until drawing code is ready (${width}, ${arrival})`, async () => {
+      const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+      const code = hold(chartModulePath);
+      try {
+        const page = await context.newPage();
+        await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "domcontentloaded" });
+        await page.waitForSelector("solid-island[data-mounted=true]");
+        if (arrival === "navigation") await page.evaluate(() => window.restoreChartHistory());
+        const history = page.locator('solid-island[data-id="chart-history"]');
+        expect(await history.locator(".k2b-chart__svg > svg").count()).toBe(1);
+        const svg = await history.locator(".k2b-chart__svg > svg").evaluate((node) => node.outerHTML);
+        expect(await page.evaluate(() => document.querySelector("solid-island .k2b-chart__svg > svg") === window.historyServerSvg)).toBe(
+          true,
+        );
+        expect(svg).toBe(await page.evaluate(() => window.historyServerHtml));
+        expect(
+          await page.evaluate(() => document.querySelector("solid-island .k2b-chart-explorer")?.getBoundingClientRect().toJSON()),
+        ).toEqual(await page.evaluate(() => window.historyServerFrame));
+        await page.getByRole("textbox", { name: "Message" }).fill("Keep my draft");
+        await page.getByRole("button", { name: "Sidebar 0" }).click();
+        await page.getByRole("button", { name: "Sidebar 1" }).waitFor();
+        expect(await history.locator(".k2b-chart").evaluate((node) => Boolean(node.closest("[inert]")))).toBe(true);
+        const frame = await history.locator(".k2b-chart-explorer").boundingBox();
+        expect(svg).toContain("data-chart-datum");
+        if (process.env.VIEW_SHOTS && arrival === "initial")
+          await page.screenshot({ path: `${process.env.VIEW_SHOTS}/history-loading-light-${width}.png`, fullPage: true });
+        code();
+        await page.waitForSelector("solid-island .k2b-chart:not([inert])");
+        await page.waitForFunction(() => !document.querySelector("solid-island .k2b-chart")?.closest("[inert]"));
+        expect(await history.locator(".k2b-chart__svg > svg").evaluate((node) => node.outerHTML)).toBe(svg);
+        expect(await page.evaluate(() => document.querySelector("solid-island .k2b-chart__svg > svg") === window.historyServerSvg)).toBe(
+          true,
+        );
+        expect(await page.getByRole("textbox", { name: "Message" }).inputValue()).toBe("Keep my draft");
+        expect(await history.locator(".k2b-chart-explorer").boundingBox()).toEqual(frame);
+        if (process.env.VIEW_SHOTS && arrival === "initial")
+          await page.screenshot({ path: `${process.env.VIEW_SHOTS}/history-ready-light-${width}.png`, fullPage: true });
+        await history.locator(".k2b-chart").focus();
+        await page.keyboard.press("ArrowRight");
+        await page.waitForSelector(".k2b-chart__tooltip:popover-open");
+      } finally {
+        code();
+        await context.close();
+      }
+    });
 }
 
-test("failed history code keeps server SVG visible and offers Reload", async () => {
-  const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
-  const code = hold(chartModulePath);
-  try {
-    const page = await context.newPage();
-    await page.route(`**${chartModulePath}`, async (route) => {
-      await held.get(chartModulePath)?.promise;
-      await route.abort();
+for (const width of [1280, 390])
+  for (const lang of ["en", "de"])
+    test(`failed history code leaves the chat usable and SVG intact (${width}, ${lang})`, async () => {
+      const context = await browser.newContext({ viewport: { width, height: 900 } });
+      const code = hold(chartModulePath);
+      try {
+        const page = await context.newPage();
+        await page.route(`**${chartModulePath}`, async (route) => {
+          await held.get(chartModulePath)?.promise;
+          await route.abort();
+        });
+        await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=${lang}`, { waitUntil: "domcontentloaded" });
+        await page.waitForSelector("solid-island[data-mounted=true]");
+        const svg = await page.locator("solid-island .k2b-chart__svg > svg").evaluate((node) => node.outerHTML);
+        await page.getByRole("textbox", { name: "Message" }).fill("Keep my draft");
+        const frame = await page.locator("solid-island .k2b-chart-explorer").boundingBox();
+        code();
+        await page
+          .getByText(lang === "de" ? "Das Diagramm konnte nicht geladen werden." : "The chart could not be loaded.", { exact: true })
+          .waitFor();
+        await page.getByRole("button", { name: lang === "de" ? "Neu laden" : "Reload", exact: true }).waitFor();
+        expect(await page.locator("solid-island .k2b-chart__svg > svg").evaluate((node) => node.outerHTML)).toBe(svg);
+        expect(await page.locator("solid-island .k2b-chart-explorer").boundingBox()).toEqual(frame);
+        expect(await page.evaluate(() => document.querySelector("solid-island .k2b-chart__svg > svg") === window.historyServerSvg)).toBe(
+          true,
+        );
+        expect(await page.getByRole("textbox", { name: "Message" }).inputValue()).toBe("Keep my draft");
+        await page.getByRole("button", { name: "Sidebar 0" }).click();
+        await page.getByRole("button", { name: "Sidebar 1" }).waitFor();
+        await page.getByRole("textbox", { name: "Message" }).fill("Still usable");
+        expect(await page.getByRole("textbox", { name: "Message" }).inputValue()).toBe("Still usable");
+        if (process.env.VIEW_SHOTS && lang === "en")
+          await page.screenshot({ path: `${process.env.VIEW_SHOTS}/history-failed-light-${width}.png`, fullPage: true });
+      } finally {
+        code();
+        await context.close();
+      }
     });
-    await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "domcontentloaded" });
-    await page.waitForFunction(() => window.chartHistoryPending?.());
-    const svg = await page.locator("solid-island svg").evaluate((node) => node.outerHTML);
-    code();
-    await page.getByRole("button", { name: "Reload", exact: true }).waitFor();
-    expect(await page.locator("solid-island svg").evaluate((node) => node.outerHTML)).toBe(svg);
-    expect(await page.evaluate(() => window.chartHistoryPending())).toBe(true);
-  } finally {
-    code();
-    await context.close();
-  }
-});
 
-test("disposing history cancels a late drawing-code resume", async () => {
+test("removing a chart while drawing code loads leaves the mounted chat usable", async () => {
   const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
   const code = hold(chartModulePath);
   try {
     const page = await context.newPage();
     await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "domcontentloaded" });
-    await page.waitForFunction(() => window.chartHistoryPending?.());
+    await page.waitForSelector("solid-island[data-mounted=true]");
     await page.evaluate(() => {
       window.disposeChartHistory();
-      document.querySelector("solid-island")?.remove();
     });
     const arrival = page.waitForResponse((response) => new URL(response.url()).pathname === chartModulePath);
     code();
     await arrival;
     await settled(page);
-    expect(await page.locator("solid-island").count()).toBe(0);
-    expect(await page.evaluate(() => window.chartHistoryPending())).toBe(false);
+    expect(await page.locator("solid-island .k2b-chart").count()).toBe(0);
+    await page.getByRole("textbox", { name: "Message" }).fill("Chart removed");
+    expect(await page.getByRole("textbox", { name: "Message" }).inputValue()).toBe("Chart removed");
   } finally {
     code();
     await context.close();

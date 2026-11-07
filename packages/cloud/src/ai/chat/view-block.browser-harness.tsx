@@ -1,7 +1,6 @@
 import { createSignal, For } from "solid-js";
 import { render } from "solid-js/web";
 import { CloudChartBlock } from "#chat-charts";
-import { disposeIslands, islandsPending, mount } from "../../../../ssr/src/mount";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import type { AiTurnBlock } from "../protocol";
 import { PresentToolBlock } from "./file-tools";
@@ -44,9 +43,4 @@ render(
   root,
 );
 
-// Server history tests use real mount/disposal rather than replacing SSR markup in the harness.
-mount(CloudChartBlock, 'solid-island[data-id="chart-history"]');
-Object.assign(window, {
-  chartHistoryPending: () => islandsPending(document),
-  disposeChartHistory: () => disposeIslands(document),
-});
+export { ChartHistory } from "./view-block-history.browser-harness";
