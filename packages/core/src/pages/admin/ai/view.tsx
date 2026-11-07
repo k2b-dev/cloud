@@ -101,7 +101,9 @@ function AreaColumn(props: {
                 description={
                   <span class="inline-flex items-center gap-1.5">
                     <StatusBadge tone={aiProviderStateTone(state)} variant="dot" label="" class="shrink-0" />
-                    {providerLine(t, provider)}
+                    {[providerLine(t, provider), provider.dataBoundary === "restricted" ? t.boundaryRestrictedShort : ""]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                 }
               >
@@ -135,9 +137,20 @@ function AreaColumn(props: {
   );
 }
 
-const ClassChips = (props: { t: AiAreaMessages; slots: AiModelSlot[]; enabled: boolean }) => (
+const RestrictedChip = (props: { t: AiAreaMessages }) => (
+  <StatusBadge
+    tone="warning"
+    variant="chip"
+    icon="ti ti-shield-off"
+    label={props.t.boundaryRestrictedShort}
+    title={props.t.boundaryRestricted}
+  />
+);
+
+const ClassChips = (props: { t: AiAreaMessages; slots: AiModelSlot[]; enabled: boolean; restricted: boolean }) => (
   <span class="flex flex-wrap justify-end gap-1">
     {!props.enabled ? <StatusBadge tone="neutral" variant="chip" icon={null} label={props.t.disabled} /> : null}
+    {props.restricted ? <RestrictedChip t={props.t} /> : null}
     {props.slots.map((slot) => (
       <StatusBadge tone={slot === "balanced" ? "info" : "neutral"} variant="chip" icon={null} label={aiSlotLabel(props.t, slot)} />
     ))}
@@ -188,7 +201,16 @@ function ProviderColumn(props: {
           icon="ti ti-cube"
           title={t.noModelsYet}
           description={t.noModelsYetSub}
-          action={<AiAreaActions kind="add-models" providerId={props.provider.id} providerLabel={props.provider.label} existing={[]} />}
+          action={
+            <AiAreaActions
+              kind="add-models"
+              providerType={props.provider.type}
+              chatOnly={props.provider.dataBoundary === "restricted"}
+              providerId={props.provider.id}
+              providerLabel={props.provider.label}
+              existing={[]}
+            />
+          }
         />
       ) : (
         <AppWorkspace.SidebarSection title={t.nModels({ p: models.length })}>
@@ -200,7 +222,14 @@ function ProviderColumn(props: {
               description={variantsOf(model)
                 .map((variant) => variant.label)
                 .join(" · ")}
-              meta={<ClassChips t={t} slots={aiModelSlots(props.index, model.id)} enabled={model.enabled} />}
+              meta={
+                <ClassChips
+                  t={t}
+                  slots={aiModelSlots(props.index, model.id)}
+                  enabled={model.enabled}
+                  restricted={props.provider.dataBoundary === "restricted"}
+                />
+              }
             >
               <AppWorkspace.SidebarItemIcon>
                 <AiModelIcon icon={aiModelDisplayIcon(model.icon, props.provider)} size="sm" />
@@ -279,6 +308,8 @@ function ClassesColumn(props: { t: AiAreaMessages; query: AiAreaQuery; overview:
       <AppWorkspace.SidebarSection title={t.slots_cloud}>
         {row("vision")}
         {row("audio")}
+        {row("liveAudio")}
+        {row("decision")}
       </AppWorkspace.SidebarSection>
     </>
   );
@@ -489,7 +520,12 @@ export function AiAreaView(props: AiAreaViewProps) {
         <AiClassDetail
           slot={query.slot}
           assignment={detail}
-          providers={overview.providers.map((entry) => ({ id: entry.id, label: entry.label, state: aiProviderState(entry) }))}
+          providers={overview.providers.map((entry) => ({
+            id: entry.id,
+            label: entry.label,
+            dataBoundary: entry.dataBoundary,
+            state: aiProviderState(entry),
+          }))}
           models={index.models}
           variants={index.variants}
           effective={overview.effective}
@@ -544,6 +580,8 @@ export function AiAreaView(props: AiAreaViewProps) {
     query.sec === "providers" && provider ? (
       <AiAreaActions
         kind="add-models"
+        providerType={provider.type}
+        chatOnly={provider.dataBoundary === "restricted"}
         providerId={provider.id}
         providerLabel={provider.label}
         existing={index?.models.filter((entry) => entry.providerId === provider.id).map((entry) => entry.providerModel) ?? []}
@@ -570,7 +608,15 @@ export function AiAreaView(props: AiAreaViewProps) {
     if (model) return `${model.providerModel} · ${provider?.label ?? ""}`;
     if (query.pane === "conn") return provider?.label;
     if (query.slot)
-      return isAiModelClass(query.slot) ? aiClassSubtitle(t, query.slot) : query.slot === "vision" ? t.slotd_vision : t.slotd_audio;
+      return isAiModelClass(query.slot)
+        ? aiClassSubtitle(t, query.slot)
+        : query.slot === "decision"
+          ? t.slotd_decision
+          : query.slot === "vision"
+            ? t.slotd_vision
+            : query.slot === "liveAudio"
+              ? t.slotd_liveAudio
+              : t.slotd_audio;
     return undefined;
   };
 

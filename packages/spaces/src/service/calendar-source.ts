@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import {
   CALENDAR_SOURCE_PAGE_LIMIT,
   CAPABILITY_MAX_RESULT_BYTES,
@@ -12,7 +13,6 @@ import {
 import type { AccessSubject } from "@k2b/cloud/server";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import type { CalendarItem } from "../contracts";
 import { buildSpaceItemHref } from "../routes";

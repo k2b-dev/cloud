@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { TraceSpan } from "@k2b/cloud/services";
 import type { WorkflowRunSummary } from "@k2b/cloud/workflows/store";
-import {
-  mailBackfillWorkflowId,
-  projectMailBackfillActivity,
-  projectMailWorkflowActivity,
-  summarizeMailAutomationActivity,
-} from "./automation-activity";
+import { projectMailBackfillActivity, projectMailWorkflowActivity, summarizeMailAutomationActivity } from "./automation-activity";
+import type { IncomingAutomationBackfillActivity } from "./incoming-automations";
 
 const run = (workflowId: string, state: WorkflowRunSummary["state"] = "succeeded"): WorkflowRunSummary => ({
   id: `run-${workflowId}`,
@@ -30,25 +25,15 @@ const run = (workflowId: string, state: WorkflowRunSummary["state"] = "succeeded
   resultMessage: null,
 });
 
-const backfillSpan = (overrides: Partial<TraceSpan> = {}): TraceSpan => ({
-  traceId: "trace-1",
-  spanId: "span-1",
-  traceparent: "00-trace-1-span-1-01",
-  spanKey: "sync:pump:mail:incoming-automation-backfill:one",
-  parentSpanId: null,
-  name: "Incoming automation backfill",
-  source: "mail:incoming-automation-backfill",
-  appId: "mail",
-  category: "backfill",
-  kind: "internal",
-  status: "ok",
-  statusMessage: null,
-  attributes: { "mail.mailbox.id": "mailbox-1", "mail.incoming_automation.id": "automation-1" },
-  summary: { status: "completed", dispatched: 3 },
-  eventCount: 4,
-  startedAt: "2026-07-28T10:00:00.000Z",
-  endedAt: "2026-07-28T10:00:02.000Z",
-  durationMs: 2_000,
+const backfill = (overrides: Partial<IncomingAutomationBackfillActivity> = {}): IncomingAutomationBackfillActivity => ({
+  operationId: "operation-1",
+  automationId: "automation-1",
+  workflowId: "workflow-1",
+  name: "Invoices",
+  status: "completed",
+  dispatched: 3,
+  lastError: null,
+  createdAt: "2026-07-28T10:00:00.000Z",
   updatedAt: "2026-07-28T10:00:02.000Z",
   ...overrides,
 });
@@ -77,33 +62,32 @@ describe("Mail automation activity projection", () => {
     });
   });
 
-  test("projects backfill progress and terminal failure without inventing a Mail run store", () => {
-    expect(
-      mailBackfillWorkflowId(backfillSpan({ attributes: { "mail.mailbox.id": "mailbox-1", "mail.workflow.id": "deleted-workflow" } })),
-    ).toBe("deleted-workflow");
+  test("projects durable backfill progress and terminal states independently of traces", () => {
     expect(
       projectMailBackfillActivity({
         mailboxId: "mailbox-1",
-        span: backfillSpan(),
+        backfill: backfill(),
         automationNames: new Map([["automation-1", "Invoices"]]),
       }),
     ).toMatchObject({
+      id: "backfill:automation-1:operation-1",
       kind: "backfill",
       name: "Backfill · Invoices",
+      durationMs: 2_000,
       status: "completed",
       detail: "3 matching messages dispatched",
     });
     expect(
       projectMailBackfillActivity({
         mailboxId: "mailbox-1",
-        span: backfillSpan({ status: "error", statusMessage: "Provider unavailable" }),
+        backfill: backfill({ status: "failed", lastError: "Provider unavailable" }),
         automationNames: new Map(),
       }),
     ).toMatchObject({ status: "failed", detail: "Provider unavailable" });
     expect(
       projectMailBackfillActivity({
         mailboxId: "mailbox-1",
-        span: backfillSpan({ summary: { status: "canceled", dispatched: 1 } }),
+        backfill: backfill({ status: "canceled", dispatched: 1 }),
         automationNames: new Map(),
       }),
     ).toMatchObject({ status: "canceled" });
@@ -113,7 +97,7 @@ describe("Mail automation activity projection", () => {
     expect(
       projectMailBackfillActivity({
         mailboxId: "mailbox-1",
-        span: backfillSpan(),
+        backfill: backfill(),
         automationNames: new Map([["automation-1", "Rechnungen"]]),
         locale: "de-CH",
       }),
@@ -155,7 +139,7 @@ describe("Mail automation activity projection", () => {
     const items = [
       projectMailWorkflowActivity({ ...common, run: run("one", "running") }),
       projectMailWorkflowActivity({ ...common, run: run("two", "failed") }),
-      projectMailBackfillActivity({ mailboxId: "mailbox-1", span: backfillSpan(), automationNames: new Map() }),
+      projectMailBackfillActivity({ mailboxId: "mailbox-1", backfill: backfill(), automationNames: new Map() }),
     ];
     expect(summarizeMailAutomationActivity(items)).toEqual({ total: 3, active: 1, failed: 1, backfills: 1 });
   });

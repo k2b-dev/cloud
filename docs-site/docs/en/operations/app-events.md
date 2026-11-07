@@ -55,7 +55,8 @@ cld apps show filesv2 --json
 
 `GET /api/app-events/apps/:appId` returns `{ app, access, sends, hears,
 notifications, totals }`. It requires the administrator role and, for OAuth,
-the `admin` scope. Unknown app IDs return 404. Offline apps remain inspectable
+`read` or `admin` scope, checked against the person’s current role. Mutations
+retain the explicit `admin` scope. Unknown app IDs return 404. Offline apps remain inspectable
 while Core has declarations, subscriptions, notification definitions or access
 records for them. Their saved, non-retired declarations remain visible; metadata
 Core does not hold is unknown, with the app ID used as its name. An offline app's unknown

@@ -10,6 +10,7 @@ import {
 import { sql } from "../../runtime/clients";
 import { createGeoIp, type GeoIp, type GeoIpDatabaseInfo, getGeoIp } from "../../server/request-context/geoip";
 import { audit } from "../audit";
+import { isDbIp } from "./attribution";
 import { GeoIpError, parseGeoIpUpload, readGeoIpUpload } from "./upload";
 
 export { GEOIP_MAX_DATABASE_BYTES, GEOIP_MAX_REQUEST_BYTES } from "../../contracts/geoip";
@@ -32,7 +33,6 @@ const requireAdmin = (actor: Actor) => {
 };
 let bundledInfo: ReturnType<GeoIp["status"]> | undefined;
 const getBundledInfo = () => (bundledInfo ??= createGeoIp().status());
-const isDbIp = (value: string) => /db[\s-]?ip/i.test(value);
 
 export const geoIpAdminStatus = (
   rows: GeoIpUploadInfo[],

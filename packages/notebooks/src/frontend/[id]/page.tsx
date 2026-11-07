@@ -1,3 +1,4 @@
+import { getLiveDictationStatus } from "@k2b/cloud/ai";
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
@@ -124,11 +125,15 @@ export default ssr<AuthContext>(async (c) => {
     showDetailPanel,
     panelAttachments,
     backlinks,
+    relations,
+    accessVisible,
     initialCommentsPage,
     initialAnnotations,
     dateConfig,
   } = data;
   const showsEditorToolbar = !!selectedNote && !isVersionsMode && !isGraphMode && !readonlyMode;
+  // The microphone shows only where dictation can start: a live model is set up and this person may use it.
+  const liveDictation = showsEditorToolbar && (await getLiveDictationStatus(c.get("accessSubject"))).available;
   return () => (
     <Layout
       context={{ scope: { type: "notebooks.notebook", id: data.notebook.id } }}
@@ -144,7 +149,13 @@ export default ssr<AuthContext>(async (c) => {
     >
       <link rel="stylesheet" href={katexStylesHref} />
       <RememberNotebook notebookId={notebook.id} />
-      <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
+      {/* Write and Links draw no workspace head: their toolbar holds the navigation and Details buttons, and the note's
+          title is in the navigation. Read and version history have no toolbar and keep the head's buttons. */}
+      <AppWorkspace
+        mobileSurface="flush"
+        class="notebooks-workspace flex-1 min-h-0"
+        head={showsEditorToolbar || isGraphMode ? false : undefined}
+      >
         <NotebookCommands
           notebookId={notebook.id}
           notebookName={notebook.name}
@@ -152,7 +163,12 @@ export default ssr<AuthContext>(async (c) => {
           ownsSearchNavigation={!selectedNote || isVersionsMode || isGraphMode}
         />
         {/* Live changes reach the page through one workspace socket; a note connects its own only while it is edited. */}
-        <WorkspaceEventBridge notebookId={notebook.id} appUrl={appUrl} initialCursor={ctx.workspaceCursor} />
+        <WorkspaceEventBridge
+          notebookId={notebook.id}
+          appUrl={appUrl}
+          initialCursor={ctx.workspaceCursor}
+          initialNoteId={!isVersionsMode && !isGraphMode ? selectedNote?.id : null}
+        />
 
         {/* The writable editor is the one with the toolbar and its navigation toggle. */}
         <NotebookSidebar
@@ -187,7 +203,6 @@ export default ssr<AuthContext>(async (c) => {
                 view={data.graphView}
                 now={data.now}
                 timeZone={data.dateConfig.timeZone ?? "UTC"}
-                navigationHidden={ctx.navigationHidden}
               />
             ) : selectedNote ? (
               <div
@@ -214,6 +229,7 @@ export default ssr<AuthContext>(async (c) => {
                   initialRichMode={ctx.settings.richMode}
                   readOnly={readonlyMode}
                   canWrite={canWrite}
+                  liveDictation={liveDictation}
                   initialAnnotations={initialAnnotations}
                   initialHref={currentHref}
                   initialDetail={{
@@ -230,6 +246,7 @@ export default ssr<AuthContext>(async (c) => {
                     taskProgress: selectedRouteState?.taskProgress ?? { done: 0, total: 0 },
                     attachments: panelAttachments,
                     backlinks,
+                    relations,
                     namedBlocks,
                   }}
                 />
@@ -262,6 +279,9 @@ export default ssr<AuthContext>(async (c) => {
               taskProgress={selectedRouteState?.taskProgress ?? { done: 0, total: 0 }}
               attachments={panelAttachments}
               backlinks={backlinks}
+              relations={relations}
+              accessVisible={accessVisible}
+              canManageAccess={data.permission === "admin"}
               namedBlocks={namedBlocks}
               currentNotebookId={notebook.id}
               notebookId={notebook.id}

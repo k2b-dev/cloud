@@ -83,7 +83,7 @@ render(() => {
   const probes = document.createElement("div");
   probes.style.cssText = "position:absolute;width:1px;height:1px;overflow:hidden;pointer-events:none";
   for (const [name, declaration] of Object.entries({
-    selected: "background:var(--k2b-selected)",
+    edgeSelected: "background:color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))",
     solid: "background:var(--k2b-action-solid)",
     link: "color:var(--k2b-link-accent)",
     underline: "color:color-mix(in srgb, var(--k2b-link-accent) 55%, transparent)",
@@ -167,11 +167,20 @@ const contrast = (foreground: Rgb, background: Rgb) => {
 };
 const paint = async (element: Locator, textSelector?: string) => {
   const values = await element.evaluate((node, selector) => {
+    // color-mix() serializes as color(srgb …); a canvas turns every color into rgba().
+    const context = document.createElement("canvas").getContext("2d")!;
+    const rgba = (color: string) => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+      return `rgba(${r}, ${g}, ${b}, ${a! / 255})`;
+    };
     const ancestors: string[] = [];
     for (let parent = node.parentElement; parent; parent = parent.parentElement)
-      ancestors.unshift(getComputedStyle(parent).backgroundColor);
+      ancestors.unshift(rgba(getComputedStyle(parent).backgroundColor));
     const text = selector ? node.querySelector(selector)! : node;
-    return { background: getComputedStyle(node).backgroundColor, color: getComputedStyle(text).color, ancestors };
+    return { background: rgba(getComputedStyle(node).backgroundColor), color: rgba(getComputedStyle(text).color), ancestors };
   }, textSelector);
   const surface = values.ancestors.reduce<Rgb>((below, value) => composite(value, below), [255, 255, 255]);
   const background = composite(values.background, surface);
@@ -234,7 +243,7 @@ describe("selection colors in the browser", () => {
                 secondary: [".k2b-app-workspace__sidebar-item-description", ".k2b-app-workspace__sidebar-item-meta"],
               },
               { element: page.getByRole("tab", { name: "Preferences", exact: true }), kind: "nav" },
-              { element: page.locator(".k2b-data-table__row").first(), kind: "row", text: "td" },
+              { element: page.locator(".k2b-data-table__row").first(), kind: "table", text: "td" },
               { element: page.locator(".k2b-file-grid__item").first(), kind: "row", text: ".k2b-file-grid__name" },
             ] as const;
             const before = await Promise.all(
@@ -257,7 +266,14 @@ describe("selection colors in the browser", () => {
                   expect(contrast(secondary.ink, selected.background), `${selector} contrast`).toBeGreaterThanOrEqual(4.5);
                 }
               if (colors) {
-                expect(selected.background).toEqual(rgb(colors[target.kind]));
+                if (target.kind === "table") {
+                  // A selected table row mixes 16 % of the host ink into the surface below it.
+                  const surface = before[index]!.paint.background;
+                  const ink = rgb(colors.ink);
+                  selected.background.forEach((channel, i) =>
+                    expect(Math.abs(channel - (ink[i]! * 0.16 + surface[i]! * 0.84)), "table fill").toBeLessThanOrEqual(1.5),
+                  );
+                } else expect(selected.background).toEqual(rgb(colors[target.kind]));
                 if (target.kind === "nav") expect(selected.ink).toEqual(rgb(colors.ink));
               } else {
                 expect(Number(selected.alpha)).toBeGreaterThan(0);
@@ -307,7 +323,8 @@ describe("selection colors in the browser", () => {
             await page.mouse.move(1400, 1100);
             await settled(page);
 
-            const selected = (await paint(page.locator("#probe-selected"))).background;
+            // Tabs, views, segments, and active filters share the selected edge and fill, mixed from the host ink.
+            const edgeSelected = (await paint(page.locator("#probe-edgeSelected"))).background;
             for (const selector of [
               '.k2b-tabs__list button[aria-selected="true"]',
               '.k2b-view-tabs__tab[aria-current="page"]',
@@ -317,8 +334,7 @@ describe("selection colors in the browser", () => {
             ]) {
               await settled(page);
               const actual = await paint(page.locator(`#controls ${selector}`));
-              expect(actual.background, `${selector}: selection fill`).toEqual(colors ? rgb(colors.nav) : selected);
-              expect(Number(actual.alpha), `${selector}: selection must have a painted background`).toBeGreaterThan(0);
+              expect(actual.background, `${selector}: selected fill`).toEqual(edgeSelected);
               if (colors) expect(actual.ink, `${selector}: host ink`).toEqual(rgb(colors.ink));
               expect(contrast(actual.ink, actual.background), `${selector}: selected text contrast`).toBeGreaterThanOrEqual(4.5);
             }

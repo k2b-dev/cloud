@@ -342,6 +342,13 @@ export const lockDraftDocumentInTransaction = async (
         throw new Error("Stored draft cursor and sequence disagree");
       if (row.doc_seq !== null && sequence <= Number(row.doc_seq))
         return { status: "covered", revision: Number(row.revision), durable: snapshot(row) };
+      if (row.doc_state && Buffer.from(row.doc_state).equals(Buffer.from(input.state))) {
+        const head = await mailDraftDocumentLog.topic().latestCursor({ tenantId: draftId });
+        // A global watermark can move without input for this draft. Published
+        // retries for this draft still need a revision with the covering cursor.
+        if (!head || (row.doc_cursor && mailDraftDocumentLog.topic().cursorSequence(head) <= Number(row.doc_seq)))
+          return { status: "covered", revision: Number(row.revision), durable: snapshot(row) };
+      }
       const content = decode(input.state);
       if (content.body !== input.text) throw new Error("Draft body projection differs from document");
       const valid = await validateContent(content, row);

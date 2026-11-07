@@ -20,6 +20,7 @@ export type AiStructuredRunRecord = {
   providerModel?: string;
   status: "ok" | "failed";
   durationMs: number;
+  audioMs?: number;
   usage?: Usage;
   mode?: string;
   repaired?: boolean;
@@ -37,12 +38,12 @@ const usageNumber = (usage: Usage | undefined, key: "input" | "output" | "total"
 export const recordAiStructuredRun = async (record: AiStructuredRunRecord): Promise<void> => {
   await sql`
     INSERT INTO ai.structured_runs (
-      task, app_id, model_profile_id, provider_model, status, duration_ms,
+      task, app_id, model_profile_id, provider_model, status, duration_ms, audio_ms,
       input_tokens, output_tokens, total_tokens,
       mode, repaired, attempts, error_code, error, user_id, conversation_id, turn_id, workflow_run_id, trace_id
     ) VALUES (
       ${record.task}, ${record.appId ?? null}, ${record.modelId ?? null}, ${record.providerModel ?? null},
-      ${record.status}, ${Math.max(0, Math.round(record.durationMs))},
+      ${record.status}, ${Math.max(0, Math.round(record.durationMs))}, ${record.audioMs === undefined ? null : Math.max(0, Math.round(record.audioMs))},
       ${usageNumber(record.usage, "input")}, ${usageNumber(record.usage, "output")},
       ${usageNumber(record.usage, "total")},
       ${record.mode ?? null}, ${record.repaired ?? null}, ${record.attempts ?? null},

@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { z } from "zod";
 import { type ChatContext, messages as catalog, requireConversation, subjectPrincipal } from "./access";
 import {
@@ -21,6 +21,7 @@ import { chatLive } from "./live";
 import { validateMentions } from "./mentions";
 import { mutateMessage } from "./message-mutations";
 import { appendMessage, type MessageRow, messageViews } from "./message-store";
+import { notificationOutbox } from "./notification-delivery";
 import { openParticipant } from "./read-state";
 import { discussionIncomplete, discussionStopped } from "./resource-access";
 import { canReadThread, visibleMessages, visibleThreadIdPage } from "./thread-access";
@@ -117,7 +118,10 @@ const send = async (input: Input & { input: unknown; replayHash?: string }): Pro
     });
     return ok({ message: (await messageViews(db, [row], input.conversationId, input.accessSubject, input.locale))[0]!, created: true });
   });
-  if (result.ok && result.data.created) chatLive.wake();
+  if (result.ok && result.data.created) {
+    chatLive.wake();
+    void notificationOutbox.notify();
+  }
   return result;
 };
 const list = async (input: Input & { query?: unknown }) => {

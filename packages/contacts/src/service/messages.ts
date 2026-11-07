@@ -124,7 +124,7 @@ const catalog = i18n.define({
       noContactWithEmail: ({ email }) => `Kein lesbarer Kontakt hat die E-Mail-Adresse „${email}“.`,
       noteNotFound: "Der Kommentar wurde nicht gefunden",
       tagNotFound: "Der Tag wurde nicht gefunden",
-      apiKeyNotFound: "Der API-Schlüssel wurde nicht gefunden",
+      apiKeyNotFound: "Der API Key wurde nicht gefunden",
 
       bookAccessEntryExists: "Dieser Zugriffseintrag existiert bereits",
       principalAlreadyHasAccess: "Dieser Zugriff besteht für dieses Kontaktbuch bereits",
@@ -191,7 +191,7 @@ const catalog = i18n.define({
       contactDeleted: "Kontakt gelöscht",
       noteDeleted: "Kommentar gelöscht",
       tagDeleted: "Tag gelöscht",
-      apiKeyRevoked: "API-Schlüssel widerrufen",
+      apiKeyRevoked: "API Key widerrufen",
     },
   },
 });

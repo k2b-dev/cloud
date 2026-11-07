@@ -197,11 +197,31 @@ describe("ssr.pwaAccess", () => {
     ]);
   });
 
+  test("a part that refuses names itself, in the reader's language", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory", { presentation: { baseLocale: "en", translations: { de: { name: "Lager" } } } })];
+    try {
+      const english = await render("/pwa/admin-only");
+      expect(english.response.status).toBe(403);
+      expect(english.document.querySelector(".k2b-placeholder")?.textContent).toContain("Inventory is not available to you");
+      expect(english.document.title).toContain("Inventory is not available to you");
+      const german = await render("/pwa/admin-only", { "Accept-Language": "de" });
+      expect(german.document.querySelector(".k2b-placeholder")?.textContent).toContain("Lager ist für dich nicht freigegeben");
+      expect(german.document.querySelector('.k2b-placeholder a[href="/pwa/"]')?.textContent).toBe("Zum Start");
+      // A part with declared access is left out of the display view until it is preloaded; its own page still names it.
+      apps = [shell, part("inventory", "Inventory", { access: { kind: "signedIn" } })];
+      const declared = await render("/pwa/admin-only");
+      expect(declared.document.querySelector(".k2b-placeholder")?.textContent).toContain("Inventory is not available to you");
+    } finally {
+      apps = [];
+    }
+  });
+
   test("renders the app's 404 in the phone frame", async () => {
     const { response, document } = await render("/pwa/missing", { "Accept-Language": "de" });
     expect(response.status).toBe(404);
     expect(document.querySelector(".k2b-mobile-shell__title")?.textContent).toBe("Seite nicht gefunden");
-    expect(document.querySelector(".k2b-placeholder a")?.textContent).toBe("Zurück zum Start");
+    expect(document.querySelector(".k2b-placeholder a")?.textContent).toBe("Zum Start");
   });
 });
 
@@ -291,6 +311,18 @@ describe("PwaLayout", () => {
     expect(tab("beta")?.querySelector(".k2b-tab-bar__badge")).toBeNull();
     expect(island(sidebar("inventory"))).toBeNull();
     expect(tab("inventory")?.querySelector(".k2b-tab-bar__badge")).toBeNull();
+  });
+
+  test("a part's pages take its app colour for selection and accents; parts without one keep Cloud's", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory", { appearance: { accent: "#8e1b6f" } })];
+    const coloured = (await render("/pwa/inventory")).document.body;
+    expect(coloured.classList.contains("app-accent-scope")).toBe(true);
+    expect(coloured.getAttribute("style")).toContain("--app-accent:#8e1b6f");
+    apps = [shell, part("inventory", "Inventory")];
+    const plain = (await render("/pwa/inventory")).document.body;
+    expect(plain.classList.contains("app-accent-scope")).toBe(false);
+    expect(plain.getAttribute("style")).toBeNull();
   });
 
   test("marks Start, which lists every part, for a part without its own tab", async () => {

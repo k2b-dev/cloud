@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import { SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { SQL } from "bun";
 import { requireInfra, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { installIngestControlsFixture } from "./ingest-controls.test-fixture";
 

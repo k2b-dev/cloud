@@ -51,8 +51,9 @@ describe("@k2b/ui stylesheet hygiene", () => {
     // Without a coarse pointer a preview opens on hover, so its button and the action before it share one slot and
     // only one of them shows. That follows the pointer capability, never the input mode: a pen on such a screen
     // records touch and would otherwise show both buttons in one place.
+    // `data-preview-focus` is the workspace controller's mark for the preview's keyboard focus.
     const previewSlot = (rule: (typeof rules)[number]) =>
-      rule.selector.includes("sidebar-preview-trigger") && rule.context.includes("not all and (any-pointer: coarse)");
+      /sidebar-preview-trigger|\[data-preview-focus\]/.test(rule.selector) && rule.context.includes("not all and (any-pointer: coarse)");
     const previewSlotHides = rules.filter((rule) => previewSlot(rule) && cssDeclarations(rule.body).get("opacity")?.includes("0"));
     expect(previewSlotHides.length).toBeGreaterThanOrEqual(2);
     for (const rule of previewSlotHides) expect(rule.selector, rule.selector).not.toContain("data-k2b-input");

@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { MAX_ITEM_RESOURCE_REFERENCES, type SpaceItemResourceReference, type SpaceItemResourceReferenceInput } from "@/contracts";
 import { publishSpaceChange, spacesLive } from "./live";
 

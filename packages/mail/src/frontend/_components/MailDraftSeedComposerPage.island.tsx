@@ -25,6 +25,8 @@ export default function MailDraftSeedComposerPage(props: {
   canManageMailbox: boolean;
   currentUserEmail: string | null;
   calendarIntegrationAvailable: boolean;
+  /** Live dictation is set up and allowed for this person. */
+  liveDictation?: boolean;
   contactDirectory: MailContactDirectory;
 }) {
   const locale = useLocale();
@@ -82,6 +84,7 @@ export default function MailDraftSeedComposerPage(props: {
             currentUserEmail={props.currentUserEmail}
             contactDirectory={props.contactDirectory}
             calendarIntegrationAvailable={props.calendarIntegrationAvailable}
+            liveDictation={props.liveDictation}
           />
         )}
       </Show>

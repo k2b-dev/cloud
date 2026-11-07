@@ -100,6 +100,7 @@ describe("notebook sidebar", () => {
     attachmentCount: 0,
     favoriteNoteIds: [],
     tags: [{ tag: "garden", count: 2 }],
+    pageTemplates: [],
     workspaceCursor: null,
     dateConfig: { locale: "en", timeZone: "UTC" },
     sidebarFilter: {},
@@ -280,6 +281,30 @@ describe("notebook sidebar", () => {
     try {
       expect(view.rows(null)).toEqual([]);
       expect(view.dom.root.textContent).toContain("No favorites yet. Add notes from their menu.");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("writers get New note as a menu: a blank note first, then the templates, on the phone as well", async () => {
+    const templates = [
+      { id: "Own123", name: "Weekly", description: null, icon: "ti ti-template", builtIn: false, updatedAt: "2026-11-01T10:00:00.000Z" },
+      { id: "meeting-notes", name: "Meeting notes", description: "Agenda", icon: "ti ti-users", builtIn: true, updatedAt: null },
+    ];
+    const view = await mount(ctx(null, { permission: "write", pageTemplates: templates }));
+    try {
+      const trigger = view.button("New note")!;
+      expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
+      trigger.click();
+      await Promise.resolve();
+      const rows = Array.from(view.dom.document.querySelectorAll('[role="menuitem"]'), (row) => row.textContent?.trim());
+      expect(rows).toEqual(["Blank note", "Weekly", "Meeting notesAgenda", "Manage templates…"]);
+      const phone = view.phoneItems();
+      expect(phone.slice(0, 2).map((item) => item.id)).toEqual(["new", "new-from-template"]);
+      expect(phone[1]?.children?.map((item) => [item.label, item.action])).toEqual([
+        ["Weekly", "template:Own123"],
+        ["Meeting notes", "template:meeting-notes"],
+      ]);
     } finally {
       view.cleanup();
     }

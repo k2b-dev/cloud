@@ -73,12 +73,22 @@ if (process.env.NOTEBOOKS_ADMIN_SETTINGS_TEST !== "1") {
         const response = await request();
         expect(response.status).toBe(409);
         expect(await response.json()).toEqual({ code: "setting_unreadable", message: error.message });
-        expect(update).toHaveBeenLastCalledWith({ key, value, replaceUnreadable: undefined });
+        expect(update).toHaveBeenLastCalledWith({
+          key,
+          value,
+          replaceUnreadable: undefined,
+          audit: expect.objectContaining({ action: "settings.update", actor: { userId: user.id } }),
+        });
         expect(reschedule).not.toHaveBeenCalled();
 
         update.mockResolvedValue(ok(undefined));
         expect((await request(true)).status).toBe(200);
-        expect(update).toHaveBeenLastCalledWith({ key, value, replaceUnreadable: true });
+        expect(update).toHaveBeenLastCalledWith({
+          key,
+          value,
+          replaceUnreadable: true,
+          audit: expect.objectContaining({ action: "settings.update", actor: { userId: user.id } }),
+        });
         if (key === "notebooks.snapshot_cron") expect(reschedule).toHaveBeenCalledWith(value);
       }
     } finally {

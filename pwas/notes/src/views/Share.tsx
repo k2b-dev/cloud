@@ -1,5 +1,5 @@
 import { qr } from "@k2b/stdlib/qr";
-import { Button, CopyButton, toast } from "@k2b/ui";
+import { Button, Checkbox, CopyButton, toast } from "@k2b/ui";
 import { createResource, createSignal, Match, Show, Switch } from "solid-js";
 import { ApiError, api, shareUrl } from "../lib/api";
 import type { NoteRecord } from "../lib/model";
@@ -122,26 +122,34 @@ function ShareBody(props: { record: () => NoteRecord | undefined; close: () => v
               <div>{t().sharePaused}</div>
             </div>
           </Show>
-          <label class="n-check">
-            <input type="checkbox" checked={terms()} onChange={(event) => setTerms(event.currentTarget.checked)} />
-            <span>
-              {t().shareAgreeTermsBefore}
-              <a href="/nutzungsbedingungen" target="_blank" rel="noopener">
-                {t().terms}
-              </a>
-              {t().shareAgreeTermsAfter}
-            </span>
-          </label>
-          <label class="n-check">
-            <input type="checkbox" checked={privacy()} onChange={(event) => setPrivacy(event.currentTarget.checked)} />
-            <span>
-              {t().shareAgreePrivacyBefore}
-              <a href="/datenschutz" target="_blank" rel="noopener">
-                {t().privacyNotice}
-              </a>
-              {t().shareAgreePrivacyAfter}
-            </span>
-          </label>
+          <Checkbox
+            class="n-check"
+            value={terms()}
+            onValueChange={setTerms}
+            label={
+              <>
+                {t().shareAgreeTermsBefore}
+                <a href="/nutzungsbedingungen" target="_blank" rel="noopener">
+                  {t().terms}
+                </a>
+                {t().shareAgreeTermsAfter}
+              </>
+            }
+          />
+          <Checkbox
+            class="n-check"
+            value={privacy()}
+            onValueChange={setPrivacy}
+            label={
+              <>
+                {t().shareAgreePrivacyBefore}
+                <a href="/datenschutz" target="_blank" rel="noopener">
+                  {t().privacyNotice}
+                </a>
+                {t().shareAgreePrivacyAfter}
+              </>
+            }
+          />
           <p class="n-fine">{t().shareFine}</p>
           <div class="n-dialog-acts">
             <Button variant="ghost" onClick={() => props.close()}>

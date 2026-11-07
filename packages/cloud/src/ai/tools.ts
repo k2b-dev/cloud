@@ -9,6 +9,7 @@ import type {
   AiApprovalTarget,
   AiDataBoundary,
   AiFrontendToolMode,
+  AiLoadToolsResult,
   AiProjectFileToolSource,
   AiResolvedModel,
   AiRuntimeTool,
@@ -29,6 +30,8 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
   approval?: AiToolApprovalPolicy;
   /** Per-tool execution timeout. nessi aborts the call and reports a timeout issue. */
   timeoutMs?: number;
+  /** The tool only reads; see `AiToolDefinition.readOnly`. */
+  readOnly?: true;
   /** One-line "when to use" hint listed in the system prompt's Tool guidance section. */
   promptHint?: string;
   /** Optional compact representation sent to providers in later loops. */
@@ -42,6 +45,7 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
     outputSchema: config.outputSchema,
     approval: config.approval ?? "once",
     timeoutMs: config.timeoutMs,
+    ...(config.readOnly ? { readOnly: true as const } : {}),
     promptHint: config.promptHint,
     toHistoricalResult: config.toHistoricalResult,
   };
@@ -73,6 +77,8 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
           requestRelayedApproval?: (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => Promise<boolean>;
           /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */
           reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
+          /** Loads tools for the next model turn under the same rules as load_tools; absent where a turn has no tool discovery. */
+          loadTools?: (names: readonly string[]) => Promise<AiLoadToolsResult>;
         },
       ) => Promise<z.infer<TOutput>>,
     ): AiToolRuntime<TInput, TOutput> {
@@ -131,6 +137,7 @@ export type AiToolPreparationContext = {
   /** Registers the deterministic review before requesting or consuming a nested approval. */
   describeReview?: (approvalCallId: string, review: CapabilityActionCallReview) => void | Promise<void>;
   reportWebsiteReceipts?: (callId: string, receipts: AiWebsiteReceipt[]) => Promise<void>;
+  loadTools?: (names: readonly string[]) => Promise<AiLoadToolsResult>;
 };
 
 /**
@@ -210,6 +217,8 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
       if (tool.kind !== "server") return tool;
       return {
         ...tool,
+        // Cloud guards a repeated run itself, as for its own tools below.
+        def: { ...tool.def, replay: tool.def.replay ?? "safe" },
         execute: async (toolInput, ctx) => tool.execute(toolInput, await approvalContext(toolInput, ctx, tool.def.needsApproval === true)),
       };
     }
@@ -224,6 +233,10 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
       outputSchema: tool.def.outputSchema,
       needsApproval: tool.location === "server" && aiToolNeedsApproval(tool.def.approval),
       timeoutMs: tool.def.timeoutMs,
+      ...(tool.def.readOnly ? { concurrency: "parallel" as const } : {}),
+      // A resumed turn runs a call again that stopped while it ran, for example one waiting for an approval it asked
+      // for. Cloud guards such a repeat itself: a used approval ends the call, and Actions carry idempotency keys.
+      replay: "safe",
       toHistoricalResult: tool.def.toHistoricalResult,
     });
 
@@ -257,6 +270,7 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
               : undefined,
           reportWebsiteReceipts:
             callId && input.reportWebsiteReceipts ? (receipts) => input.reportWebsiteReceipts!(callId, receipts) : undefined,
+          loadTools: input.loadTools,
         });
       });
     }

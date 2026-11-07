@@ -47,6 +47,11 @@ export type ChatDecisionProps = {
   remember?: ChatDecisionAnswer;
   /** Turns `confirm` and `remember` off; this reason replaces `reason` in the same place. */
   unavailable?: ChatDecisionReason;
+  /**
+   * Turns every answer off until the reason clears, such as no connection, so no answer is lost on the way; this
+   * reason replaces `reason` and `unavailable` in the same place.
+   */
+  waiting?: ChatDecisionReason;
   /** The result line shown in every state but `open`, usually `Chat.Outcome`. */
   outcome?: JSX.Element;
   /** Receives a rejected promise from an answer's `onSelect`. */
@@ -98,7 +103,8 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
   };
 
   // Read once: an object literal from the host builds its JSX again on every read.
-  const reason = createMemo(() => props.unavailable ?? props.reason);
+  const reason = createMemo(() => props.waiting ?? props.unavailable ?? props.reason);
+  const confirmOff = () => Boolean(props.waiting ?? props.unavailable);
   const open = () => props.state === "open";
 
   const answer = (choice: ChatDecisionAnswer, enabled: boolean) => {
@@ -183,13 +189,19 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
               class="k2b-chat-decision__answer"
               wrap
               variant={props.confirm.variant ?? "ai"}
-              disabled={Boolean(props.unavailable)}
-              onClick={() => answer(props.confirm, !props.unavailable)}
+              disabled={confirmOff()}
+              onClick={() => answer(props.confirm, !confirmOff())}
             >
               <Show when={props.confirm.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
               {props.confirm.label}
             </Button>
-            <Button class="k2b-chat-decision__answer" wrap variant="subtle" onClick={() => answer(props.decline, true)}>
+            <Button
+              class="k2b-chat-decision__answer"
+              wrap
+              variant="subtle"
+              disabled={Boolean(props.waiting)}
+              onClick={() => answer(props.decline, !props.waiting)}
+            >
               <Show when={props.decline.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
               {props.decline.label}
             </Button>
@@ -199,8 +211,8 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                   class="k2b-chat-decision__remember"
                   wrap
                   variant="text"
-                  disabled={Boolean(props.unavailable)}
-                  onClick={() => answer(remember(), !props.unavailable)}
+                  disabled={confirmOff()}
+                  onClick={() => answer(remember(), !confirmOff())}
                 >
                   {remember().label}
                 </Button>

@@ -565,7 +565,10 @@ export const pressAcrossRebuild = async (page: Page, target: Locator, rebuild: (
  * Infinite, scroll-driven, and paused animations are not waited for. A page that
  * keeps starting finite animations is not settled: this throws with their names,
  * and the test must wait for its own condition instead. Suites not about motion
- * pass `reducedMotion: "reduce"` to newPage/newContext themselves.
+ * pass `reducedMotion: "reduce"` to newPage/newContext themselves. Playwright's
+ * pointer rests at the top left from the first page on, touch contexts included,
+ * so content that arrives there later fades into hover; the error marks such
+ * targets with `"hovered":true`.
  */
 export const settled = async (page: Page): Promise<void> => {
   const remaining = await page.evaluate(async () => {
@@ -610,6 +613,7 @@ export const settled = async (page: Page): Promise<void> => {
               ? animation.animationName
               : animation.id,
         currentTime: animation.currentTime,
+        hovered: target instanceof Element && target.matches(":hover"),
       };
     });
   });

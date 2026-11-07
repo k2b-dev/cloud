@@ -1,0 +1,6 @@
+### "Use as new message" answered "Invalid UUID" instead of opening the composer
+
+- **What happened:** Choosing "Use as new message" on any received or sent mail showed the error "Die Eingabe ist ungültig: Invalid UUID", and no composer opened.
+- **Root cause:** The Mail API resolves public short IDs to internal UUIDs by field name. `messageId` is not in that generic list, because the name means different resources in different inputs. The `draft-seeds` routes passed the derive origin's `messageId` through unchanged, so the service schema rejected the short ID and returned the schema message to the person. The seed response also kept the internal UUID in `origin.messageId`, which the composer sends back when it saves.
+- **Error class:** A public ID crosses a transport boundary unresolved because the boundary maps IDs by field name and the field is not on the list.
+- **Guard:** `public-resource-boundary.test.ts` resolves and projects the derive origin through `internalDraftSeedInput` and `projectDraftSeed`, and `drafts-public-boundary.test.ts` covers both `draft-seeds` routes. The draft service now answers a malformed internal ID as a localized "not found" error, so a future gap does not show a raw schema detail.

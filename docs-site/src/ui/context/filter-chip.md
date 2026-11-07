@@ -169,13 +169,18 @@ const sections: FilterChipSection[] = [
 
 Use `FilterToggle` for one on/off filter, such as **Service accounts** or
 **Only mine**. The parent owns `active` and updates the URL or filter state.
-It looks like a `FilterChip`, and an active toggle has the same selection fill.
+It looks like a `FilterChip`, and an active toggle has the same selected edge and fill.
 Selection changes only color and background, so neighboring chips stay in place.
 
 Pass `href` to render a native link that works without JavaScript. The active
 link carries `aria-current="true"`. Without `href`, it renders a button with
 `aria-pressed`; use `onClick` to update the controlled state. A disabled toggle
 renders a disabled button even when `href` is supplied.
+
+A button toggle may open a dialog with more filters, such as a filter builder:
+set `opensDialog`, and `active` while those filters apply. Set `busy` while
+the dialog's code loads; the button stays enabled, so it keeps focus for the
+dialog to return it.
 
 ```tsx
 const [onlyMine, setOnlyMine] = createSignal(false);
@@ -202,6 +207,8 @@ type FilterToggleProps = {
   active: boolean;
   href?: string;
   onClick?: (event: MouseEvent) => void;
+  opensDialog?: boolean;
+  busy?: boolean;
   title?: string;
   disabled?: boolean;
   class?: string;

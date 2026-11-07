@@ -1,5 +1,6 @@
+import { createSql, sql } from "@k2b/cloud";
 import { logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
-import { type ReservedSQL, type SQL, sql } from "bun";
+import type { ReservedSQL, SQL } from "bun";
 import {
   ACTIVITY_PAGE_LIMIT,
   ACTIVITY_SCAN_LIMIT,
@@ -101,13 +102,15 @@ async function readQuery<T>(query: SQL.Query<T>, budget?: ActivityReadBudget): P
     () => {
       const owned = connection;
       if (!owned) return;
-      // Bun's PostgreSQL query.cancel() does not interrupt the server on all supported versions.
+      // Bun before 1.4.4 does not cancel on query.cancel(), so cancel the backend directly.
       // Keep this session reserved until its cancellation completes, so it cannot hit another request.
       cancellation = (async () => {
         try {
           if (backendPid !== undefined) {
             // Cancellation must not queue behind blocked reads in the application pool.
-            const control = new Bun.SQL({ ...sql.options, max: 1 });
+            const { adapter, ...options } = sql.options;
+            if (adapter === "sqlite") throw new Error("Activity cancellation requires a Postgres connection");
+            const control = createSql({ ...options, adapter, max: 1 });
             try {
               await withActivityReadBudget(undefined, (cleanup) =>
                 cleanup.run(

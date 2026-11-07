@@ -194,7 +194,7 @@ export const queryHelp = async (
     ],
   );
   // Match the app publication write deadline and bound abandoned reads at the driver.
-  const timeout = setTimeout(() => pending.cancel(), 10_000);
+  const timeout = setTimeout(() => void pending.cancel().catch(() => {}), 10_000);
   try {
     return await pending;
   } finally {

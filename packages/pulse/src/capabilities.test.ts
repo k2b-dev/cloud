@@ -16,13 +16,15 @@ import { adminFixtureIdentity } from "./store/admin-identity.test-fixture";
 import { fixturePolicy } from "./store/base-store.test-fixture";
 
 test("declares SQL and saved query capabilities with base and source readers", () => {
-  expect(Object.keys(pulseCapabilities.types).sort()).toEqual(["base", "source"]);
+  expect(Object.keys(pulseCapabilities.types).sort()).toEqual(["base", "dashboard", "source"]);
   expect(Object.keys(pulseCapabilities.queries).sort()).toEqual([
     "alert.list",
     "alert.read",
     "base.list",
     "base.read",
     "base.search",
+    "dashboard.list",
+    "dashboard.read",
     "saved_query.list",
     "source.list",
     "source.read",
@@ -34,6 +36,10 @@ test("declares SQL and saved query capabilities with base and source readers", (
     "base.clear_data",
     "base.create",
     "base.delete",
+    "dashboard.delete",
+    "dashboard.publish",
+    "dashboard.save",
+    "dashboard.unpublish",
     "ingest.write",
     "saved_query.delete",
     "saved_query.save",

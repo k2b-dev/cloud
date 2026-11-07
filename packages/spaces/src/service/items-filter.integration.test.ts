@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { type ItemFilter, ItemFilterSchema } from "../contracts";
 import { newShortId } from "../lib/short-id";

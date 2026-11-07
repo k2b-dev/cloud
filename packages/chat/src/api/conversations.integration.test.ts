@@ -1,8 +1,8 @@
 import { afterEach, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { type AuthContext, createAccess, type PermissionLevel } from "@k2b/cloud/server";
 import { serviceAccountCredentials, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -1768,7 +1768,7 @@ suite("chat conversations, people, and directory groups", () => {
       headers: { ...headers, "x-forwarded-for": uniqueCallerAddress(), "content-type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  test("discovery audience counts independent accounts and only credentials bound to this channel", async () => {
+  test("discovery audience counts people only; agents and bound credentials are not all signed-in people", async () => {
     const owner = await user(),
       outsider = await user();
     const headers = await cookie(owner),
@@ -1795,11 +1795,11 @@ suite("chat conversations, people, and directory groups", () => {
         VALUES ('Audience binding', 'resource_bound', ${binding.appId}, ${binding.resourceType}, ${binding.resourceId}) RETURNING id`;
       trackedAccounts.push(row!.id);
     }
-    expect(await count()).toBe(before + 2);
-    expect(await count(channel.id)).toBe(before + 3);
+    expect(await count()).toBe(before);
+    expect(await count(channel.id)).toBe(before);
     const settings = await request(headers, `/${channel.id}/discovery`);
     expect(settings.status).toBe(200);
-    expect(DiscoveryStateSchema.parse(await settings.json()).audienceCount).toBe(before + 3);
+    expect(DiscoveryStateSchema.parse(await settings.json()).audienceCount).toBe(before);
     expect((await discoveryRequest(outsiderHeaders, `/preview?conversation=${channel.id}`, "POST", entries)).status).toBe(403);
   });
   test("a bound channel manager can preview only its existing channel audience", async () => {
@@ -1901,7 +1901,8 @@ suite("chat conversations, people, and directory groups", () => {
       discovery: [{ principal: { type: "authenticated" }, permission: "write" }],
     });
     const readKey = await credential("standalone");
-    expect((await request(readKey.headers, `/${channel.id}/join`, "POST")).status).toBe(403);
+    // All signed-in people are people: an independent machine does not even find the channel.
+    expect((await request(readKey.headers, `/${channel.id}/join`, "POST")).status).toBe(404);
 
     const browse = ConversationPageSchema.parse(await (await discoveryRequest(readerHeaders, "?q=Atlas")).json());
     expect(browse.items.some((row) => row.id === channel.id && !row.member && row.permission === "read")).toBe(true);
@@ -1975,7 +1976,7 @@ suite("chat conversations, people, and directory groups", () => {
     expect((await request(readerHeaders, `/${chat.shortId}`)).status).toBe(404);
     expect(ConversationPageSchema.parse(await (await discoveryRequest(readerHeaders, "?q=Design")).json()).items).toEqual([]);
   });
-  test("service accounts join, send, appear in counts and members, take management, leave and rejoin", async () => {
+  test("service accounts are added, send, appear in members, take management and leave; discovery is for people", async () => {
     const owner = await user();
     const ownerHeaders = await cookie(owner);
     const agent = await credential("agent", null, ["openid", "read", "write", "admin"]);
@@ -1984,9 +1985,16 @@ suite("chat conversations, people, and directory groups", () => {
       purpose: "Coordinate automated work",
       discovery: [{ principal: { type: "authenticated" }, permission: "write" }],
     });
-    expect((await request(agent.headers, `/${channel.id}/messages`, "POST", { clientId: "agent-before", body: "No" })).status).toBe(403);
-    const joined = ConversationSchema.parse(await (await request(agent.headers, `/${channel.id}/join`, "POST")).json());
-    expect(joined).toMatchObject({ memberCount: 2, member: true, permission: "write" });
+    // All signed-in people are people: the agent neither finds nor joins the channel until a manager adds it.
+    expect((await request(agent.headers, `/${channel.id}/messages`, "POST", { clientId: "agent-before", body: "No" })).status).toBe(404);
+    expect((await request(agent.headers, `/${channel.id}/join`, "POST")).status).toBe(404);
+    expect(
+      (
+        await request(ownerHeaders, `/${channel.id}/members`, "POST", {
+          members: [{ type: "service_account", serviceAccountId: agent.id }],
+        })
+      ).status,
+    ).toBe(200);
     expect((await request(agent.headers, `/${channel.id}/messages`, "POST", { clientId: "agent-after", body: "Agent here" })).status).toBe(
       201,
     );
@@ -2004,7 +2012,7 @@ suite("chat conversations, people, and directory groups", () => {
     expect((await request(agent.headers, `/${channel.id}/leave`, "POST", { successor: successor.accessId })).status).toBe(200);
     const history = MessagePageSchema.parse(await (await request(ownerHeaders, `/${channel.id}/messages`)).json());
     expect(history.items.at(-1)?.system).toMatchObject({ code: "permission_changed", params: { permission: "admin" } });
-    expect((await request(agent.headers, `/${channel.id}/join`, "POST")).status).toBe(200);
+    expect((await request(agent.headers, `/${channel.id}/join`, "POST")).status).toBe(404);
   });
   test("deleted service accounts retain messages and a former-account title marker", async () => {
     const owner = await user();
@@ -2270,9 +2278,8 @@ suite("chat conversations, people, and directory groups", () => {
       purpose: "Other updates",
       discovery: [{ principal: { type: "authenticated" }, permission: "read" }],
     });
-    expect(ConversationPageSchema.parse(await (await discoveryRequest(boundHeaders, "")).json()).items.map((row) => row.id)).toEqual([
-      channel.id,
-    ]);
+    // All signed-in people are people: a bound account discovers no channel through that audience.
+    expect(ConversationPageSchema.parse(await (await discoveryRequest(boundHeaders, "")).json()).items.map((row) => row.id)).toEqual([]);
     expect(ConversationPageSchema.parse(await (await request(boundHeaders)).json()).items.map((row) => row.id)).toEqual([channel.id]);
     for (const path of [`/${other.id}`, `/${other.id}/discovery`]) expect((await request(boundHeaders, path)).status).toBe(403);
     expect((await request(boundHeaders, `/${other.id}/join`, "POST")).status).toBe(403);

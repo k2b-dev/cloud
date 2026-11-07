@@ -115,8 +115,21 @@ export const appKeyFingerprint = async (publicKey: string): Promise<string> => {
   return Array.from(hash.subarray(0, 16), (byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
+/**
+ * WebKit on Linux refuses about one Ed25519 generateKey in a hundred with an OperationError (#2286). Each attempt draws
+ * a new random pair, so a refusal is not repeated; three attempts leave about one failure in a million.
+ */
+const GENERATE_ATTEMPTS = 3;
+
 export const generateAppKeyPair = async (): Promise<{ seed: string; publicKey: string }> => {
-  const pair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
+  let pair: CryptoKeyPair | undefined;
+  for (let attempt = 1; !pair; attempt++) {
+    try {
+      pair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
+    } catch (error) {
+      if (attempt >= GENERATE_ATTEMPTS || !(error instanceof DOMException && error.name === "OperationError")) throw error;
+    }
+  }
   const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
   if (jwk.kty !== "OKP" || jwk.crv !== "Ed25519" || !jwk.d || !jwk.x) throw new Error("Ed25519 key generation failed");
   decode32(jwk.d, "App-key seed");

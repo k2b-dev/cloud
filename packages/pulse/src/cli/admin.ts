@@ -8,6 +8,10 @@ import type { StoreStatus } from "../store/contracts";
 import { StorePassword, StoreSaveInput, StoreUser } from "../store/validation";
 import { jsonRequest, printJsonOrTable, printStructured } from "./shared";
 
+const yes = confirmFlag("Confirm administrator change or external check");
+const requireYes = (value: boolean) => {
+  if (!value) throw new Error("Administrator changes require --yes.");
+};
 const passwordFlags = {
   passwordFile: flag.string({ name: "password-file", description: "Read the password from a file" }),
   passwordStdin: flag.boolean({ name: "password-stdin", description: "Read the password from stdin" }),
@@ -87,11 +91,13 @@ export const adminCommands = [
   command("admin store set", {
     summary: "Check and connect the Pulse data store",
     flags: {
+      yes,
       url: flag.string({ required: true, description: "ClickHouse HTTP or HTTPS origin" }),
       user: flag.string({ description: "Service user (default: saved user or pulse_service)" }),
       ...passwordFlags,
     },
     async run({ ctx, flags }) {
+      requireYes(flags.yes);
       const password = await readPassword(flags);
       const user = flags.user ?? (await request<StoreStatus>(ctx)).user;
       const input = StoreSaveInput.safeParse({ url: flags.url, user, password });
@@ -102,17 +108,17 @@ export const adminCommands = [
   }),
   command("admin store check", {
     summary: "Check Pulse store access rights and profiles",
-    async run({ ctx }) {
+    flags: { yes },
+    async run({ ctx, flags }) {
+      requireYes(flags.yes);
       reportCheck(ctx, await request<StoreCheckResult>(ctx, "/check", jsonRequest("POST")));
     },
   }),
   command("admin store setup-sql", {
     summary: "Print the ClickHouse admin setup script with a salted password hash",
-    flags: {
-      user: flag.string({ description: "Service user (default: saved user or pulse_service)" }),
-      ...passwordFlags,
-    },
+    flags: { yes, user: flag.string({ description: "Service user (default: saved user or pulse_service)" }), ...passwordFlags },
     async run({ ctx, flags }) {
+      requireYes(flags.yes);
       const password = await readPassword(flags, true);
       if (flags.user !== undefined && !StoreUser.safeParse(flags.user).success) throw new Error("Invalid service user.");
       const value = await request<{ sql: string }>(ctx, "/setup-sql", jsonRequest("POST", { user: flags.user, password }));
@@ -164,6 +170,7 @@ adminCommands.push(
   command("admin policy set", {
     summary: "Change base policy and defaults",
     flags: {
+      yes,
       baseCreation: flag.string({ name: "base-creation", description: "everyone, people or admins" }),
       maxBases: flag.int({ name: "max-bases", min: 1, description: "Maximum bases" }),
       maxRawRetentionDays: flag.int({ name: "max-raw-retention-days", min: 1, max: 3650, description: "Maximum raw retention" }),
@@ -182,6 +189,7 @@ adminCommands.push(
       defaultMaxStateKeys: flag.int({ name: "default-max-state-keys", min: 1, description: "Default maximum state keys" }),
     },
     async run({ ctx, flags }) {
+      requireYes(flags.yes);
       const body = PulsePolicyUpdateSchema.parse({
         baseCreation: flags.baseCreation,
         maxBases: flags.maxBases,
@@ -210,10 +218,10 @@ adminCommands.push(
   command("admin bases limits", {
     summary: "Show or change a base profile and limits",
     args: baseArg,
-    flags: { ...limitFlags, profile: flag.string({ description: "small, normal or large" }) },
+    flags: { yes, ...limitFlags, profile: flag.string({ description: "small, normal or large" }) },
     async run({ ctx, args, flags }) {
-      const { profile, ...limits } = flags;
-      if (Object.values(flags).every((value) => value === undefined)) {
+      const { profile, yes: confirmed, ...limits } = flags;
+      if ([profile, ...Object.values(limits)].every((value) => value === undefined)) {
         const result = z
           .object({ items: z.array(AdminBaseRowSchema) })
           .parse(await adminRequest(ctx, `/bases${queryString({ q: args.baseId })}`));
@@ -222,6 +230,7 @@ adminCommands.push(
         show(ctx, row);
         return;
       }
+      requireYes(confirmed);
       const body = LimitsUpdateSchema.parse({ profile, limits });
       show(ctx, await adminRequest(ctx, `/bases/${encodeURIComponent(args.baseId)}/limits`, jsonRequest("PUT", body)));
     },
@@ -273,15 +282,18 @@ adminCommands.push(
   command("admin targets add", {
     summary: "Release an internal target for a base",
     args: { entry: arg.required({ valueLabel: "entry" }) },
-    flags: { base: flag.string({ required: true, description: "Public base ID" }) },
+    flags: { yes, base: flag.string({ required: true, description: "Public base ID" }) },
     async run({ ctx, args, flags }) {
+      requireYes(flags.yes);
       show(ctx, await adminRequest(ctx, "/targets", jsonRequest("POST", { baseId: flags.base, entry: args.entry })));
     },
   }),
   command("admin targets remove", {
     summary: "Revoke an internal target",
     args: { targetId: arg.required({ valueLabel: "targetId" }) },
-    async run({ ctx, args }) {
+    flags: { yes },
+    async run({ ctx, args, flags }) {
+      requireYes(flags.yes);
       show(ctx, await adminRequest(ctx, `/targets/${encodeURIComponent(args.targetId)}`, jsonRequest("DELETE")));
     },
   }),

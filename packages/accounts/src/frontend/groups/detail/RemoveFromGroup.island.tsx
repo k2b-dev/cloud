@@ -1,7 +1,7 @@
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, RemoveButton } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { showAccountActionNotice } from "../../action-notice";
 import { useAccountsMessages } from "../../messages";
 
@@ -15,6 +15,7 @@ type RemoveFromGroupProps = {
 };
 
 export default function RemoveFromGroup(props: RemoveFromGroupProps) {
+  const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const mutation = mutations.create<void, void>({
     mutation: async () => {
@@ -33,7 +34,7 @@ export default function RemoveFromGroup(props: RemoveFromGroupProps) {
       );
     },
     onSuccess: () => {
-      refreshCurrentPath();
+      showChanges();
     },
     onError: (err) => {
       prompts.error(err.message);

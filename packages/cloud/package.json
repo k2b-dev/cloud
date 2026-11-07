@@ -1,6 +1,6 @@
 {
   "name": "@k2b/cloud",
-  "version": "0.49.0",
+  "version": "0.60.0",
   "description": "Application platform library for independently deployed Hono and SolidJS services behind a dynamic gateway.",
   "license": "AGPL-3.0-or-later",
   "repository": {
@@ -11,6 +11,12 @@
   "homepage": "https://github.com/k2b-dev/cloud",
   "bugs": "https://github.com/k2b-dev/cloud/issues",
   "type": "module",
+  "imports": {
+    "#katex-render": {
+      "browser": "./src/shared/markdown/extensions/katex-render.browser.ts",
+      "default": "./src/shared/markdown/extensions/katex-render.ts"
+    }
+  },
   "files": [
     "src",
     "scripts",
@@ -89,6 +95,7 @@
     "./ai/tools": "./src/ai/runtime-tools.ts",
     "./ai/ui": "./src/ai/ui.tsx",
     "./account/ui": "./src/account/ui.ts",
+    "./access/members": "./src/access/access-members.ts",
     "./access/ui": "./src/access/ui.ts",
     "./approvals/ui": "./src/approvals/ui.ts",
     "./ssr": "./src/ssr/index.ts",
@@ -119,6 +126,8 @@
   },
   "scripts": {
     "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
+    "test:part:ssr-ai": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/ssr src/ai",
+    "test:part:rest": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' --path-ignore-patterns 'src/ssr/**' --path-ignore-patterns 'src/ai/**'",
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
@@ -129,9 +138,9 @@
     "@simplewebauthn/server": "14.0.3",
     "@tabler/icons": "3.48.0",
     "@tailwindcss/typography": "0.5.20",
-    "@k2b/nessi": "0.18.0",
-    "@k2b/ssr": "0.20.2",
-    "@k2b/ui": "0.38.1",
+    "@k2b/nessi": "1.2.0",
+    "@k2b/ssr": "0.21.0",
+    "@k2b/ui": "0.49.0",
     "@k2b/stdlib": "0.30.0",
     "@k2b/sync": "7.0.1",
     "@nats-io/jetstream": "3.4.0",
@@ -163,7 +172,7 @@
     "hash-wasm": "4.12.0",
     "@types/sanitize-html": "2.16.1",
     "@types/web-push": "3.6.4",
-    "@k2b/editor": "0.2.0"
+    "@k2b/editor": "0.6.5"
   },
   "devDependencies": {
     "@babel/core": "8.0.6",

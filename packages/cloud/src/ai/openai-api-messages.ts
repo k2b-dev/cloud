@@ -24,7 +24,7 @@ const catalog = i18n.define({
     },
     de: {
       openai_api_disabled: "Die OpenAI-kompatible API ist ausgeschaltet. Wende dich an einen Administrator.",
-      invalid_api_key: "Verwende einen aktiven API-Schlüssel mit dem Zugriff „Nur KI-Modelle“. Du erstellst ihn in deinem Cloud-Profil.",
+      invalid_api_key: "Verwende einen aktiven API Key mit dem Zugriff „Nur KI-Modelle“. Du erstellst ihn in deinem Cloud-Profil.",
       model_not_found: "Dieses Modell ist nicht verfügbar oder nicht für dich freigegeben.",
       invalid_request: "Deine Anfrage entspricht nicht dem unterstützten Format für Chat-Vervollständigungen.",
       unsupported_content:

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { dirname } from "node:path";
-import { sql } from "bun";
+import { connections, sql } from "@k2b/cloud";
+import { initializePlatform } from "@k2b/cloud/start";
 
-assert.equal(new URL(process.env.DATABASE_URL!).pathname, "/cloud_oauth_verify_regressions");
-assert.equal(new URL(process.env.DATABASE_URL!).hostname, "127.0.0.1");
+await initializePlatform({ appId: "oauth", source: "env" });
+assert.equal(new URL(connections().database.url).pathname, "/cloud_oauth_verify_regressions");
+assert.equal(new URL(connections().database.url).hostname, "127.0.0.1");
 const nativePackage = dirname(Bun.resolveSync("@firecrawl/anydoc", "/app/packages/cloud"));
 const sourcePackage = dirname(Bun.resolveSync("@firecrawl/anydoc", "/workspace/packages/cloud"));
 assert.equal(

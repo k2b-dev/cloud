@@ -86,7 +86,7 @@ const SAFE_ERROR_CODE = /^[A-Za-z0-9_]{1,40}$/;
 /**
  * Loggable fields of a transport failure. Messages and `err.path` can carry the
  * upstream URL and query, so keep only the error type and an enum-like code
- * (Bun reports every fetch failure as `TypeError`; `ConnectionRefused` or
+ * (Bun reports every fetch failure as `TypeError`; `ECONNREFUSED` or
  * `ENOTFOUND` tells the operator what failed).
  */
 export const transportErrorFields = (err: unknown): { error: string; code?: string } => {

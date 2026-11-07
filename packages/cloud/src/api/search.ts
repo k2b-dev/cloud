@@ -18,8 +18,8 @@ import { appAccessAuthority } from "../services/app-access";
 import { discoverableAppEntries } from "../services/app-discovery";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { searchInvocationOperation } from "../services/identity/invocation-operations";
-import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
-import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
+import { normalizeInvocationRequestId, type signInvocationToken } from "../services/identity/invocation-token";
+import { prepareFanoutIssuance } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
 import { ndjsonLine, ndjsonStream, ndjsonStreamHeaders, startBounded, waitWithin } from "./fanout";
@@ -88,17 +88,18 @@ type SearchRouteDependencies = {
   authenticate?: MiddlewareHandler<AuthContext>;
   listApps?: typeof listApps;
   signInvocation?: typeof signInvocationToken;
+  prepareFanout?: typeof prepareFanoutIssuance;
   withActiveSigner?: typeof withActiveIdentitySigner;
 };
 
-/** Highest app-provided priority first, then by title. */
-const rankItems = (items: SearchItem[]) => items.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0) || a.title.localeCompare(b.title));
+/** Highest app-provided priority first; equal priorities keep the order the app ranked them in, such as newest first. */
+const rankItems = (items: SearchItem[]) => items.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
 
 /** The browser asks for a stream explicitly; every other client keeps the merged JSON response. */
 const acceptsStream = (accept: string | undefined) =>
   accept?.split(",").some((type) => type.split(";")[0]?.trim().toLowerCase() === SEARCH_STREAM_CONTENT_TYPE) ?? false;
 
-type AppOutcome = { appId: string; status: SearchProviderStatus; items: SearchItem[]; ms: number };
+type AppOutcome = { appId: string; status: SearchProviderStatus; items: SearchItem[]; more: boolean; ms: number };
 
 /**
  * Creates the global search route.
@@ -230,8 +231,12 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       // Single-provider queries get a larger sample for better local
       // ranking — the global slice below still caps the response. Capped
       // at GLOBAL_RESULT_LIMIT so a single app can saturate the response
-      // but no more.
-      const effectiveProviderLimit = active.length === 1 ? Math.min(GLOBAL_RESULT_LIMIT, query.provider_limit * 3) : query.provider_limit;
+      // but no more, unless the browser loads more with `limit`.
+      // One app counts once, however many Queries it searches with.
+      const effectiveProviderLimit =
+        new Set(active.map((provider) => provider.appId)).size === 1
+          ? (query.limit ?? Math.min(GLOBAL_RESULT_LIMIT, query.provider_limit * 3))
+          : query.provider_limit;
       // Guard the whole issuance batch once, then reuse the prepared signer for
       // every target. This is one Postgres check per outer search request, not
       // one check per provider.
@@ -241,28 +246,34 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
           signedInvocations = await waitWithin(
             (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
               "invocation",
-              (signer, db) =>
-                Promise.all(
+              async (signer, db) => {
+                const sign = await (dependencies.prepareFanout ?? prepareFanoutIssuance)(
+                  { authority: invocationAuthority, callingAppId: "core", entries: active },
+                  {
+                    db,
+                    groupsAdmin: signer.groupsAdmin,
+                    signal: fanoutSignal,
+                    registry: dependencies.listApps,
+                    sign: dependencies.signInvocation,
+                  },
+                );
+                return Promise.all(
                   startBounded(
                     active,
                     PROVIDER_CONCURRENCY,
                     (provider) =>
-                      (dependencies.signInvocation ?? signInvocationToken)(
-                        {
-                          targetAppId: provider.appId,
-                          callingAppId: "core",
-                          operation: searchInvocationOperation,
-                          schemaHash: provider.schemaHash,
-                          authority: invocationAuthority,
-                          requestId,
-                          signer,
-                          issuer: signer.issuer,
-                        },
-                        { db, groupsAdmin: signer.groupsAdmin, signal: fanoutSignal },
-                      ),
+                      sign({
+                        targetAppId: provider.appId,
+                        operation: searchInvocationOperation,
+                        schemaHash: provider.schemaHash,
+                        requestId,
+                        signer,
+                        issuer: signer.issuer,
+                      }),
                     fanoutSignal,
                   ),
-                ),
+                );
+              },
               { signal: fanoutSignal, timeoutMs: PROVIDER_TIMEOUT_MS },
             ),
             fanoutSignal,
@@ -318,7 +329,8 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
               query: query.q,
               tags: scopedTags,
               ...(scope ? { scope } : {}),
-              limit: effectiveProviderLimit,
+              // One row more than listed tells whether the app has more.
+              limit: effectiveProviderLimit + 1,
             },
           }),
           signal: fanoutSignal,
@@ -374,7 +386,7 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
             continue;
           }
           if (!query.require_reader || parsed.data.readable) validItems.push(parsed.data);
-          if (validItems.length >= effectiveProviderLimit) break;
+          if (validItems.length > effectiveProviderLimit) break;
         }
 
         return validItems;
@@ -393,12 +405,10 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
             error: result.reason instanceof Error ? result.reason.message : String(result.reason),
           });
         }
-        const items = rankItems(results.flatMap((result) => (result.status === "fulfilled" ? result.value : []))).slice(
-          0,
-          effectiveProviderLimit,
-        );
+        const found = rankItems(results.flatMap((result) => (result.status === "fulfilled" ? result.value : [])));
+        const items = found.slice(0, effectiveProviderLimit);
         const status = failed.length ? (providerDeadline.aborted ? "timeout" : "error") : items.length ? "ok" : "empty";
-        return { appId, status, items, ms: Math.round(performance.now() - fanoutStarted) };
+        return { appId, status, items, more: found.length > items.length, ms: Math.round(performance.now() - fanoutStarted) };
       });
       const failure = (outcome: AppOutcome) => outcome.status === "timeout" || outcome.status === "error";
 
@@ -413,6 +423,7 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
                 provider: outcome.appId,
                 status: outcome.status,
                 results: outcome.items,
+                ...(outcome.more ? { more: true } : {}),
                 ms: outcome.ms,
               }),
             ),

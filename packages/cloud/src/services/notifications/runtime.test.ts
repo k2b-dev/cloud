@@ -19,6 +19,7 @@ test("notification jobs preserve delivery recovery, retries, and bounded worker 
       },
     };
     mock.module(${JSON.stringify(new URL("../../_internal/process-sync.ts", import.meta.url).pathname)}, () => ({
+      processSyncReaders: () => ({ signal: new AbortController().signal, stops: new Set() }),
       lazySync: factory => {
         let handle;
         return () => handle ??= factory({ job: config => { declaration = config; return job; } });

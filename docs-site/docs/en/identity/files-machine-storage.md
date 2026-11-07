@@ -10,6 +10,8 @@ updated: 2026-10-23
 
 # Files machine storage
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Agents and standalone service accounts can own Cloud storage independently of
 people. Ownership reserves a storage binding; it does not grant access. An
 administrator grants named principals access to that binding and a relative

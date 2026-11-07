@@ -15,7 +15,7 @@ const setup = (
   options: {
     response?: (url: URL, init: RequestInit) => Response | Promise<Response>;
     cache?: ReturnType<typeof createGeoCache>;
-    daily?: number;
+    monthly?: number;
     now?: () => Date;
   } = {},
 ) => {
@@ -30,8 +30,8 @@ const setup = (
   });
   const reserve = mock(async (_subject, _config, cost: number, group: string) => {
     events.push(`reserve:${cost}`);
-    if (used + cost > (options.daily ?? 90000) * 1000)
-      throw new (await import("./errors")).GeoError("GEO_BUDGET_EXHAUSTED", { scope: "person", resetsAt: "2026-10-20T22:00:00.000Z" });
+    if (used + cost > (options.monthly ?? 90000) * 1000)
+      throw new (await import("./errors")).GeoError("GEO_BUDGET_EXHAUSTED", { scope: "cloud", resetsAt: "2026-10-20T22:00:00.000Z" });
     used += cost;
     return { cost, group, rows: [] };
   });
@@ -49,7 +49,7 @@ const setup = (
   const cachePut = mock(async () => {});
   const recordTransition = mock(async (..._args: unknown[]) => {});
   const service = createGeoService({
-    config: async () => ({ ...geoTestConfig, personDailyCredits: options.daily ?? 90000 }),
+    config: async () => ({ ...geoTestConfig, monthlyCredits: options.monthly ?? 90000 }),
     now: options.now ?? (() => GEO_TEST_NOW),
     adapter: new GeoapifyAdapter({ fetch, now: options.now ?? (() => GEO_TEST_NOW) }),
     bucket: { acquire },
@@ -182,7 +182,7 @@ test("ambiguous geocodes identify the stop, charge the completed lookup, and nev
 });
 
 test("budget refusal happens before geocoding, including when the route would cost only one credit", async () => {
-  const f = setup({ daily: 1 });
+  const f = setup({ monthly: 1 });
   await expect(
     f.service.calculateRoute(calculate([{ id: "A", address: { text: "Fixture" } }, routeStops(2)[1]!]), geoTestContext),
   ).rejects.toMatchObject({ code: "GEO_LIMIT_EXCEEDED", details: { limit: "reservationCredits", actual: 82, max: 1 } });
@@ -282,7 +282,7 @@ test("optimization fixes endpoints, validates the permutation, and reapplies out
 });
 
 test("known cost overrun truthfully debits beyond reservation and blocks all future calls", async () => {
-  const f = setup({ daily: 1, response: (url) => Response.json(syntheticRouteResponse(url, { distances: [600000] })) });
+  const f = setup({ monthly: 1, response: (url) => Response.json(syntheticRouteResponse(url, { distances: [600000] })) });
   try {
     await f.service.calculateRoute(calculate(routeStops(2)), geoTestContext);
     throw new Error("Expected overrun");
@@ -544,14 +544,14 @@ test("a known route distance is charged even if malformed geometry prevents a re
 
 test("local long chains no longer reserve a fixed 500 km for every leg", async () => {
   for (const plan of [{ stops: routeStops(26) }, { stops: routeStops(8), optimize: true }]) {
-    const f = setup({ daily: 300 });
+    const f = setup({ monthly: 300 });
     await f.service.calculateRoute({ plan }, geoTestContext);
     expect(f.reserve.mock.calls[0]![2]).toBe(plan.optimize ? 43000 : 25000);
   }
 });
 
 test("unattainable estimated reservations reject before admission and provider work", async () => {
-  const f = setup({ daily: 1 });
+  const f = setup({ monthly: 1 });
   await expect(
     f.service.calculateRoute(
       {
@@ -752,7 +752,7 @@ test("dense paid overruns fit the cache and an explicit retry does not pay again
 });
 
 test("three unresolved addresses exceed the default reservation before any provider work", async () => {
-  const f = setup({ daily: 300 });
+  const f = setup({ monthly: 300 });
   await expect(
     f.service.calculateRoute(
       calculate([

@@ -33,12 +33,19 @@ export const buildMailFolderTree = <T extends MailFolderTreeEntry>(folders: read
   return roots;
 };
 
-/** Full display paths such as `Projects / 2025 / Archive`, for flat pickers where a leaf name alone is ambiguous. */
-export const mailFolderPaths = <T extends MailFolderTreeEntry>(folders: readonly T[]): Map<string, string> => {
+/**
+ * Full display paths such as `Projects / 2025 / Archive`, for flat pickers where a leaf name alone is ambiguous.
+ * `name` gives each segment, such as a localized standard folder name; by default the server's name.
+ */
+export const mailFolderPaths = <T extends MailFolderTreeEntry>(
+  folders: readonly T[],
+  name: (folder: T) => string = (folder) => folder.name,
+): Map<string, string> => {
   const paths = new Map<string, string>();
   const visit = (nodes: readonly MailFolderTreeNode<T>[], parentPath: string | null) => {
     for (const node of nodes) {
-      const path = parentPath === null ? node.folder.name : `${parentPath} / ${node.folder.name}`;
+      const segment = name(node.folder);
+      const path = parentPath === null ? segment : `${parentPath} / ${segment}`;
       paths.set(node.folder.id, path);
       visit(node.children, path);
     }

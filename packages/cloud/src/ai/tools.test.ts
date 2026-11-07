@@ -87,6 +87,18 @@ describe("AI tools", () => {
     expect(prepared.approvalPolicies.get("create_record")).toBe("once");
   });
 
+  test("only a read-only tool runs next to other reads; a resumed turn may run any Cloud tool again", () => {
+    const tool = (name: string, readOnly?: true) =>
+      defineAiTool({ name, description: name, inputSchema: z.object({}), outputSchema: z.unknown(), approval: "never", readOnly }).server(
+        async () => "ok",
+      );
+    const prepared = prepareAiTools({ tools: [tool("read_record", true), tool("send_mail")], actor });
+    expect(prepared.tools.map((each) => [each.def.name, each.def.concurrency, each.def.replay])).toEqual([
+      ["read_record", "parallel", "safe"],
+      ["send_mail", undefined, "safe"],
+    ]);
+  });
+
   test("intermediate results use the declared schema and normal result budget", async () => {
     const reports: unknown[] = [];
     const tool = defineAiTool({
@@ -168,9 +180,6 @@ describe("AI tools", () => {
         yield { type: "block_delta", blockId: `text-${providerCall}`, delta: "Done" };
         yield { type: "block_end", blockId: `text-${providerCall}`, index: 0, block: { type: "text", text: "Done" } };
         yield { type: "usage", usage: { input: 120, output: 5, total: 125 }, finishReason: "stop" };
-      },
-      async complete() {
-        throw new Error("complete should not be used");
       },
     };
     const tool = defineAiTool({
@@ -255,9 +264,6 @@ describe("AI tools", () => {
         yield { type: "block_start", blockId: "text", index: 0, kind: "text" };
         yield { type: "block_end", blockId: "text", index: 0, block: { type: "text", text: "Done" } };
         yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
-      },
-      async complete() {
-        throw new Error("complete should not be used");
       },
     };
     const entries: StoreEntry[] = [];
@@ -492,9 +498,6 @@ describe("AI tools", () => {
         };
         yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" };
       },
-      async complete() {
-        throw new Error("complete should not be used");
-      },
     };
     const prepared = prepareAiTools({ tools: [createCloudAiCardTool()], actor });
     const loop = nessi({
@@ -539,9 +542,6 @@ describe("platform approval consumption in server tools", () => {
       family: "openai-compatible",
       model: "test",
       capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-      async complete() {
-        throw new Error("Unexpected completion");
-      },
       async *stream() {
         if (calls++ === 0) {
           yield { type: "block_start", blockId: "call", index: 0, kind: "tool_call", callId: "run", name };

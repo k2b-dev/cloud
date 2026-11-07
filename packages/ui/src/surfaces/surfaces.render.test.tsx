@@ -38,6 +38,20 @@ const ownedSelectors =
 const ownedSelectorFiles = new Set(stylesheets.filter((file) => ownedSelectors.test(readFileSync(resolve(stylesDir, file), "utf8"))));
 
 describe("@k2b/ui Cloud-faithful surfaces", () => {
+  test("NoticeCard icon true shows the tone's dialog icon and names the tone for screen readers", () => {
+    const warning = renderToString(() =>
+      createComponent(NoticeCard, { tone: "warning", icon: true, children: "Anyone with the link sees this." }),
+    );
+    expect(warning).toContain("data-icon");
+    expect(warning).toContain("ti ti-alert-triangle k2b-notice-card__icon");
+    expect(warning).toContain('<span class="k2b-sr-only">Warning: </span>');
+    const danger = renderToString(() => createComponent(NoticeCard, { tone: "danger", icon: true, children: "Gone" }));
+    expect(danger).toContain("ti ti-alert-octagon");
+    const info = renderToString(() => createComponent(NoticeCard, { tone: "info", icon: true, children: "Note" }));
+    expect(info).toContain("ti ti-info-circle");
+    expect(info).not.toContain("k2b-sr-only");
+  });
+
   test("NoticeCard keeps its calm markup without a Markdown callout icon", () => {
     const html = renderToString(() => createComponent(NoticeCard, { tone: "warning", title: "x", children: "Body" }));
     expect(html).toContain('data-tone="warning"');
@@ -438,6 +452,18 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(dot).toContain('title="Current state"');
     expect(dot).toContain("k2b-status-badge__label");
     expect(text).not.toContain("ti ti-alert-circle");
+  });
+
+  test("keeps the width of every possible label so the dot holds one place", () => {
+    const html = renderToString(() =>
+      createComponent(StatusBadge, { label: "Running", tone: "ok", variant: "dot", labels: ["Running", "Not started"] }),
+    );
+    expect(html).toContain(`class="k2b-status-badge__label" data-reserve><span>Running</span>`);
+    // The alternatives only take room; screen readers hear the one current word.
+    expect(html).toContain('<span aria-hidden="true">Not started</span>');
+    expect(renderToString(() => createComponent(StatusBadge, { label: "Running", tone: "ok", variant: "dot" }))).not.toContain(
+      "data-reserve",
+    );
   });
 
   test("renders responsive stat grids and prevents nested accent links", () => {

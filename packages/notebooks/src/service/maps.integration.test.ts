@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { serializeGeoDocument } from "@k2b/cloud/geo/document";
-import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { fictionalMap, fictionalRouteMap } from "../lib/map.test-fixture";

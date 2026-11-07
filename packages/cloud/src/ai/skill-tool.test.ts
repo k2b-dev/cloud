@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { userResourceContext } from "./projects.test-fixture";
-import { CloudAiLoadSkillInputSchema, createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool, loadSelectedAiSkills } from "./skill-tool";
+import {
+  CloudAiLoadSkillInputSchema,
+  CloudAiLoadSkillOutputSchema,
+  createCloudAiLoadSkillTool,
+  createCloudAiSearchSkillsTool,
+  loadSelectedAiSkills,
+} from "./skill-tool";
 import { aiSkills } from "./skills";
 
 afterEach(() => mock.restore());
@@ -13,6 +19,7 @@ test("explicit Skills respect tool scope, deduplicate and fail clearly after rev
     revision: 2,
     instructions: "Read rules.",
     files: [],
+    loadTools: [],
     loadedAt: "2026-09-16",
   });
   await expect(loadSelectedAiSkills(["Sk2345"], "turn", userResourceContext(subject), false)).rejects.toThrow("tool scope");
@@ -53,6 +60,7 @@ describe("load_skill", () => {
         { path: "/skills/weekly-status/SKILL.md", content: "skill" },
         { path: "/skills/weekly-status/references/style.md", content: "style" },
       ],
+      loadTools: [],
       loadedAt: "2026-08-20T12:00:00.000Z",
     });
     const tool = createCloudAiLoadSkillTool(userResourceContext(subject));
@@ -81,6 +89,60 @@ describe("load_skill", () => {
     );
   });
 
+  test("loads the tools the Skill lists and reports them with the Skill", async () => {
+    const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
+    spyOn(aiSkills, "loadForTurn").mockResolvedValue({
+      name: "cloud-spaces",
+      description: "Spaces.",
+      revision: 3,
+      instructions: "Create tasks.",
+      files: [],
+      loadTools: ["spaces.space.browse", "spaces.task.create"],
+      loadedAt: "2026-10-31T12:00:00.000Z",
+    });
+    const loadTools = mock(async (names: readonly string[]) => ({
+      loaded: names.map((name) => ({ name, call: name.replaceAll(".", "__") })),
+      alreadyLoaded: [],
+      unavailable: [],
+      evicted: [],
+      titles: { ignored: "not part of the Skill result" },
+    }));
+    const tool = createCloudAiLoadSkillTool(userResourceContext(subject));
+    if (tool.location !== "server") throw new Error("Expected server tool");
+    const result = await tool.run({ name: "cloud-spaces" }, { turnId: "turn-1", loadTools } as never);
+    expect(loadTools).toHaveBeenCalledWith(["spaces.space.browse", "spaces.task.create"]);
+    expect(CloudAiLoadSkillOutputSchema.parse(result).tools).toEqual({
+      loaded: [
+        { name: "spaces.space.browse", call: "spaces__space__browse" },
+        { name: "spaces.task.create", call: "spaces__task__create" },
+      ],
+      alreadyLoaded: [],
+      unavailable: [],
+      evicted: [],
+    });
+  });
+
+  test("loads no tools for a Skill without load-tools or a turn without tool discovery", async () => {
+    const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
+    const snapshot = {
+      name: "weekly-status",
+      description: "Summarize recent work.",
+      revision: 1,
+      instructions: "List wins.",
+      files: [],
+      loadTools: [] as string[],
+      loadedAt: "2026-10-31T12:00:00.000Z",
+    };
+    const load = spyOn(aiSkills, "loadForTurn").mockResolvedValue(snapshot);
+    const loadTools = mock(async () => ({ loaded: [], alreadyLoaded: [], unavailable: [], evicted: [] }));
+    const tool = createCloudAiLoadSkillTool(userResourceContext(subject));
+    if (tool.location !== "server") throw new Error("Expected server tool");
+    expect(await tool.run({ name: "weekly-status" }, { turnId: "turn-1", loadTools } as never)).not.toHaveProperty("tools");
+    expect(loadTools).not.toHaveBeenCalled();
+    load.mockResolvedValue({ ...snapshot, loadTools: ["spaces.task.create"] });
+    expect(await tool.run({ name: "weekly-status" }, { turnId: "turn-2" } as never)).not.toHaveProperty("tools");
+  });
+
   test("does not expose a skill after its permission check fails", async () => {
     const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
     spyOn(aiSkills, "loadForTurn").mockResolvedValue(null);
@@ -104,6 +166,7 @@ describe("load_skill", () => {
         revision: 2,
         instructions: "Use GQL",
         files: [],
+        loadTools: [],
         loadedAt: "2026-09-09T20:00:00Z",
       })
       .mockResolvedValueOnce(null);

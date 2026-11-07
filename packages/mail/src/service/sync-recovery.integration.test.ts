@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "@k2b/cloud";
-import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { connections, createSql, redis, sql } from "@k2b/cloud";
+import { initializeTestPlatform, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, type ProviderConnectionInput, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import type { MailRequestContext } from "./auth";
@@ -8,9 +9,11 @@ import { sha256Json } from "./canonical";
 import { createMailCommand } from "./commands";
 import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
+import { getMailboxOperationalHealth } from "./health";
 import { loadImapPushPlan } from "./imap-push-runtime";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
+import { getMailboxOperations } from "./operations";
 import { createProviderConnection, replaceProviderConnection } from "./provider-connections";
 import {
   acquireProviderLease,
@@ -18,7 +21,8 @@ import {
   recordProviderReachable,
   releaseProviderLease,
 } from "./provider-operation-lock";
-import { claimFence, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
+import { takeFolderSyncActivity } from "./sync-activity";
+import { claimFence, commitSyncBatch, enqueueFolderSync, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -396,5 +400,423 @@ suite("mail sync recovery", () => {
       code: "MAILBOX_TRANSPORT_CHANGED",
     });
     expect(await loadImapPushPlan(fixture.bindingId)).toBeNull();
+  });
+  test("a changed quiet folder claims its fence before the STATUS its run records, and a reset during the check wins", async () => {
+    const fixture = await createSyncedMailbox("quiet-change");
+    const warm = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+    try {
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+    } finally {
+      warm.mockRestore();
+    }
+    const runningRun = async () =>
+      (
+        await sql<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid AND state = 'running'`
+      )[0]!.count > 0;
+
+    // The quiet check reads STATUS without a run; the batch then reads it again under its run,
+    // so a sync command that started meanwhile is not confirmed by a STATUS from before it.
+    const claimedAtStatus: boolean[] = [];
+    const changed = spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async () => {
+      claimedAtStatus.push(await runningRun());
+      return { ...EMPTY_INBOX, messages: 1 };
+    });
+    try {
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+    } finally {
+      changed.mockRestore();
+    }
+    expect(claimedAtStatus).toEqual([false, true]);
+
+    // A rebuild while the quiet check reads STATUS resets the folder; the batch must not write
+    // its old cursor over the reset.
+    let reset = false;
+    const rebuilt = spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async () => {
+      if (!reset) {
+        reset = true;
+        await sql`UPDATE mail.folders SET envelope_cursor = '{}'::jsonb, sync_status = 'rebuilding' WHERE id = ${fixture.folderId}::uuid`;
+        await sql`UPDATE mail.remote_resources SET sync_generation = sync_generation + 1 WHERE id = ${fixture.resourceId}::uuid`;
+      }
+      return { ...EMPTY_INBOX, messages: 2 };
+    });
+    try {
+      await expect(syncFolderBatch(fixture.folderId, async () => undefined)).rejects.toMatchObject({ code: "STALE_SYNC_FENCE" });
+    } finally {
+      rebuilt.mockRestore();
+    }
+    const [folder] = await sql<{ envelope_cursor: unknown; sync_status: string }[]>`
+      SELECT envelope_cursor, sync_status FROM mail.folders WHERE id = ${fixture.folderId}::uuid`;
+    expect(folder).toEqual({ envelope_cursor: {}, sync_status: "rebuilding" });
+
+    // A quiet check that fails after the folder's binding changed claims no fence and leaves the
+    // failure state to the batch that owns the folder now.
+    const quiet = await createSyncedMailbox("quiet-failure");
+    const warmQuiet = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+    try {
+      await syncFolderBatch(quiet.folderId, async () => undefined);
+      await syncFolderBatch(quiet.folderId, async () => undefined);
+    } finally {
+      warmQuiet.mockRestore();
+    }
+    const failing = spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async () => {
+      await sql`UPDATE mail.provider_bindings SET state = 'pending' WHERE id = ${quiet.bindingId}::uuid`;
+      throw connectTimeout();
+    });
+    try {
+      await expect(syncFolderBatch(quiet.folderId, async () => undefined)).rejects.toMatchObject({ code: "CONNECT_TIMEOUT" });
+    } finally {
+      failing.mockRestore();
+    }
+    expect(await transportState(quiet)).toMatchObject({ resource_status: "active", health: "active", binding_state: "pending" });
+    const [binding] = await sql<{ last_error_code: string | null }[]>`
+      SELECT last_error_code FROM mail.provider_bindings WHERE id = ${quiet.bindingId}::uuid`;
+    expect(binding?.last_error_code).toBeNull();
+  });
+
+  test("a folder job's turn that finds the lease busy runs no database statement", async () => {
+    const fixture = await createSyncedMailbox("busy-turn");
+    const holder = await acquireProviderLease({
+      resource: fixture.resourceId,
+      waiter: `outbox:${crypto.randomUUID()}`,
+      priority: "command",
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    });
+    if (!holder.lock) throw new Error("The test could not take the provider lease");
+    const counter = await countPostgresRoundTrips(connections().database.url);
+    const originalUrl = connections().database.url;
+    try {
+      process.env.DATABASE_URL = counter.url;
+      await initializeTestPlatform();
+      const turn = async (input: { folderId: string; remoteResourceId?: string }) => {
+        let resubmitted: { delayMs?: number; input?: unknown } | undefined;
+        const before = counter.count();
+        await runSyncFolderJob({ input, heartbeat: async () => undefined, resubmit: (options) => (resubmitted = options) });
+        return { statements: counter.count() - before, resubmitted };
+      };
+      // The first turn reads the folder's remote mailbox once and carries it into its retry.
+      const first = await turn({ folderId: fixture.folderId });
+      expect(first.statements).toBe(1);
+      expect(first.resubmitted?.input).toMatchObject({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId });
+      // Every later turn that finds the lease busy asks the lease line only.
+      const later = await turn({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId });
+      expect(later.statements).toBe(0);
+      expect(later.resubmitted?.input).toMatchObject({ remoteResourceId: fixture.resourceId });
+    } finally {
+      process.env.DATABASE_URL = originalUrl;
+      await initializeTestPlatform();
+      await counter.close();
+      await releaseProviderLease(holder.lock);
+    }
+  });
+
+  test("a folder job whose folder is gone leaves the provider breaker as it is", async () => {
+    const fixture = await createSyncedMailbox("gone-folder");
+    // The breaker's window ended: the next job probes the provider.
+    const breaker = `mail:provider-lease-line:{${fixture.resourceId}}:breaker`;
+    await redis.send("HSET", [breaker, "window", "5000", "until", String(Date.now() - 1_000)]);
+    await redis.send("PEXPIRE", [breaker, "60000"]);
+    try {
+      await runSyncFolderJob({
+        input: { folderId: crypto.randomUUID(), remoteResourceId: fixture.resourceId },
+        heartbeat: async () => undefined,
+        resubmit: () => undefined,
+      });
+      // It never reached the provider, so the breaker still waits for a real probe.
+      expect(await redis.send("HGET", [breaker, "window"])).toBe("5000");
+    } finally {
+      await redis.send("DEL", [breaker]);
+    }
+  });
+
+  /** Runs one `mail:sync-folder` job turn and returns whether it asked for a continuation. */
+  const jobTurn = async (folderId: string): Promise<boolean> => {
+    let continued = false;
+    await runSyncFolderJob({
+      input: { folderId },
+      heartbeat: async () => undefined,
+      resubmit: () => {
+        continued = true;
+      },
+    });
+    return continued;
+  };
+  const storedCursor = async (folderId: string) => {
+    const [row] = await sql<{ envelope_cursor: Record<string, unknown> }[]>`
+      SELECT envelope_cursor FROM mail.folders WHERE id = ${folderId}::uuid`;
+    return row!.envelope_cursor;
+  };
+  const warmFolder = async (fixture: SyncFixture): Promise<void> => {
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+    try {
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+    } finally {
+      status.mockRestore();
+    }
+  };
+
+  test("a flag walk never starts on an empty folder, and one left open there ends in one batch", async () => {
+    const fixture = await createSyncedMailbox("empty-flag-walk");
+    await warmFolder(fixture);
+    const flagReads = spyOn(imapSmtpConnector, "fetchFlagChanges").mockResolvedValue([]);
+    try {
+      // A modification sequence bump on an empty folder needs no walk and no continuation.
+      const bumped = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue({ ...EMPTY_INBOX, highestModseq: "5" });
+      try {
+        expect(await jobTurn(fixture.folderId)).toBe(false);
+      } finally {
+        bumped.mockRestore();
+      }
+      expect(await storedCursor(fixture.folderId)).toMatchObject({ highestModseq: "5", flagNextLow: null, flagMaxUid: null });
+
+      // The cursors production holds from before: a walk over UIDs 1..0, with and without its
+      // target. The next batch closes it and asks for no continuation; no migration is needed.
+      for (const stuck of [
+        { flagMaxUid: 0, flagNextLow: 1, flagTargetModseq: "8", highestModseq: "5" },
+        { flagMaxUid: 0, flagNextLow: 1, flagTargetModseq: null, highestModseq: "8" },
+      ]) {
+        await sql`
+          UPDATE mail.folders SET envelope_cursor = envelope_cursor || ${stuck}::jsonb WHERE id = ${fixture.folderId}::uuid`;
+        const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue({ ...EMPTY_INBOX, highestModseq: "8" });
+        try {
+          expect(await jobTurn(fixture.folderId)).toBe(false);
+        } finally {
+          status.mockRestore();
+        }
+        expect(await storedCursor(fixture.folderId)).toMatchObject({
+          highestModseq: "8",
+          flagTargetModseq: null,
+          flagNextLow: null,
+          flagMaxUid: null,
+        });
+      }
+      expect(flagReads).not.toHaveBeenCalled();
+    } finally {
+      flagReads.mockRestore();
+    }
+  });
+
+  test("a flag walk over a folder ends after one batch per window", async () => {
+    const fixture = await createSyncedMailbox("bounded-flag-walk");
+    await warmFolder(fixture);
+    // Mail holds UIDs up to 12,000; the provider's modification sequence moved on.
+    await sql`
+      UPDATE mail.folders
+      SET envelope_cursor = envelope_cursor || '{"highestSeenUid": 12000, "countedMessages": 12000}'::jsonb
+      WHERE id = ${fixture.folderId}::uuid`;
+    const flagReads = spyOn(imapSmtpConnector, "fetchFlagChanges").mockResolvedValue([]);
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue({
+      uidValidity: "10",
+      uidNext: 12_001,
+      highestModseq: "9",
+      messages: 12_000,
+    });
+    try {
+      let batches = 0;
+      while (await jobTurn(fixture.folderId)) {
+        batches += 1;
+        if (batches > 10) throw new Error("The flag walk did not end");
+      }
+      // Three windows of 5,000 UIDs: two continuations, then the walk ends.
+      expect(batches).toBe(2);
+      expect(flagReads).toHaveBeenCalledTimes(3);
+      expect(await storedCursor(fixture.folderId)).toMatchObject({ highestModseq: "9", flagNextLow: null, flagMaxUid: null });
+
+      // A walk whose server stops reporting a modification sequence stops too, without claiming
+      // the changes it did not read.
+      status.mockResolvedValue({ uidValidity: "10", uidNext: 12_001, highestModseq: "12", messages: 12_000 });
+      expect(await jobTurn(fixture.folderId)).toBe(true);
+      // Without one, reconcile windows carry the flags instead.
+      status.mockResolvedValue({ uidValidity: "10", uidNext: 12_001, highestModseq: null, messages: 12_000 });
+      const windows = spyOn(imapSmtpConnector, "fetchUidWindow").mockResolvedValue([]);
+      try {
+        await syncFolderBatch(fixture.folderId, async () => undefined);
+      } finally {
+        windows.mockRestore();
+      }
+      expect(await storedCursor(fixture.folderId)).toMatchObject({ highestModseq: "9", flagNextLow: null, flagTargetModseq: null });
+    } finally {
+      status.mockRestore();
+      flagReads.mockRestore();
+    }
+  });
+
+  test("idle commits skip unchanged metadata while preserving freshness, history and changed-state recovery", async () => {
+    const fixture = await createSyncedMailbox("idle-writes");
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+    try {
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+      await syncFolderBatch(fixture.folderId, async () => undefined);
+    } finally {
+      status.mockRestore();
+    }
+    const [folder] = await sql<Parameters<typeof commitSyncBatch>[0]["folder"][]>`
+      SELECT id AS folder_id, ${fixture.mailboxId}::uuid AS mailbox_id, remote_resource_id,
+        0 AS sync_generation, envelope_cursor, role FROM mail.folders WHERE id = ${fixture.folderId}::uuid
+    `;
+    if (!folder || typeof folder.envelope_cursor === "string") throw new Error("Missing initialized folder cursor");
+    const cursor = folder.envelope_cursor;
+    await sql`CREATE TABLE mail.idle_write_probe (table_name text, operation text)`;
+    await sql
+      .unsafe(`CREATE FUNCTION mail.record_idle_write() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN INSERT INTO mail.idle_write_probe VALUES (TG_TABLE_NAME, TG_OP); RETURN NEW; END $$`)
+      .simple();
+    const tables = [
+      "remote_resources",
+      "sync_runs",
+      "folders",
+      "binding_folder_refs",
+      "provider_bindings",
+      "provider_connections",
+      "mailboxes",
+    ];
+    for (const table of tables)
+      await sql
+        .unsafe(`CREATE TRIGGER idle_write_probe AFTER INSERT OR UPDATE ON mail.${table}
+      FOR EACH ROW EXECUTE FUNCTION mail.record_idle_write()`)
+        .simple();
+    const counter = await countPostgresRoundTrips(connections().database.url);
+    const measured = createSql({ url: counter.url, max: 1, tls: false });
+    const commit = async (secretRevision = 1, afterClaim?: () => Promise<void>) => {
+      const fence = await claimFence(fixture.resourceId, fixture.bindingId, "incremental", fixture.folderId, measured);
+      await afterClaim?.();
+      return commitSyncBatch({
+        db: measured,
+        folder,
+        folderId: fixture.folderId,
+        bindingId: fixture.bindingId,
+        secretRevision,
+        fence,
+        status: EMPTY_INBOX,
+        beforeCursor: cursor,
+        cursor: structuredClone(cursor),
+        uidValidityChanged: false,
+        envelopeBatch: null,
+        envelopeKind: null,
+        flagChanges: [],
+        reconcileWindow: null,
+      });
+    };
+    try {
+      await measured`SELECT 1`;
+      await sql`UPDATE mail.remote_resources SET last_sync_at = '2026-01-01' WHERE id = ${fixture.resourceId}::uuid`;
+      await sql`TRUNCATE mail.idle_write_probe`;
+      const before = counter.count();
+      await commit();
+      const statements = counter.count() - before;
+      const writes = await sql<{ table_name: string; count: number }[]>`
+        SELECT table_name, count(*)::int AS count FROM mail.idle_write_probe GROUP BY table_name ORDER BY table_name
+      `;
+      console.info("idle sync run", { statements, writes });
+      expect(statements).toBe(16); // Includes BEGIN/COMMIT for both fence claim and commit; the Drafts role rides on the folder lock.
+      expect(writes).toEqual([
+        { table_name: "provider_bindings", count: 1 },
+        { table_name: "remote_resources", count: 2 },
+        { table_name: "sync_runs", count: 2 },
+      ]);
+      const health = await getMailboxOperationalHealth(ownerContext, fixture.mailboxId);
+      const operations = await getMailboxOperations(ownerContext, fixture.mailboxId);
+      const state = await transportState(fixture);
+      expect(state.last_sync_at!.getTime()).toBeGreaterThan(new Date("2026-01-01").getTime());
+      expect(health.ok).toBe(true);
+      expect(operations.ok).toBe(true);
+      if (health.ok) expect(JSON.stringify(health.data)).toContain(state.last_sync_at!.toISOString());
+      if (operations.ok) expect(JSON.stringify(operations.data)).toContain(state.last_sync_at!.toISOString());
+      expect(state.health).toBe("active");
+      const [run] = await sql<{ state: string; cursor_after: unknown }[]>`
+        SELECT state, cursor_after FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid
+        ORDER BY started_at DESC LIMIT 1`;
+      expect(run?.state).toBe("completed");
+      expect(run?.cursor_after).toEqual(cursor);
+
+      // Count a whole warmed idle folder batch as well as the commit seam above.
+      const originalUrl = connections().database.url;
+      const idleStatus = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+      try {
+        process.env.DATABASE_URL = counter.url;
+        await initializeTestPlatform();
+        await sql`TRUNCATE mail.idle_write_probe`;
+        const beforeBatch = counter.count();
+        const batch = await syncFolderBatch(fixture.folderId, async () => undefined);
+        const batchStatements = counter.count() - beforeBatch;
+        const batchWrites = await sql<{ table_name: string; count: number }[]>`
+          SELECT table_name, count(*)::int AS count FROM mail.idle_write_probe GROUP BY table_name ORDER BY table_name`;
+        console.info("whole idle folder batch", { statements: batchStatements, writes: batchWrites });
+        // An unchanged folder claims no fence and commits nothing: was 24 commands and five row writes.
+        expect(batchStatements).toBe(7);
+        expect(batch).toMatchObject({ unchanged: true, imported: 0, flagsUpdated: 0, removed: 0, hasMore: false });
+        expect(batchWrites).toEqual([]);
+
+        // Its sync time moves on at most once a minute, without a run.
+        const runs = async () =>
+          (
+            await sql<
+              { count: number }[]
+            >`SELECT count(*)::int AS count FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid`
+          )[0]!.count;
+        const runsBefore = await runs();
+        await sql`UPDATE mail.remote_resources SET last_sync_at = now() - interval '2 minutes' WHERE id = ${fixture.resourceId}::uuid`;
+        await sql`TRUNCATE mail.idle_write_probe`;
+        const staleCheck = counter.count();
+        expect(await syncFolderBatch(fixture.folderId, async () => undefined)).toMatchObject({ unchanged: true });
+        console.info("idle folder batch with an old sync time", { statements: counter.count() - staleCheck });
+        expect(await sql<{ table_name: string }[]>`SELECT table_name FROM mail.idle_write_probe`).toEqual([
+          { table_name: "remote_resources" },
+        ]);
+        expect((await transportState(fixture)).last_sync_at!.getTime()).toBeGreaterThan(Date.now() - 30_000);
+        expect(await runs()).toBe(runsBefore);
+
+        // The process counts what asked for a sync and how each batch ended.
+        takeFolderSyncActivity();
+        await runSyncFolderJob({ input: { folderId: fixture.folderId }, heartbeat: async () => undefined, resubmit: () => undefined });
+        expect(takeFolderSyncActivity()).toEqual({ triggers: {}, batches: { unchanged: 1 } });
+
+        // A sync command waiting for the folder settles on a completed run.
+        await enqueueFolderSync(fixture.folderId, { trigger: "maintenance", awaited: true });
+        expect(await syncFolderBatch(fixture.folderId, async () => undefined)).not.toHaveProperty("unchanged");
+        expect(await runs()).toBe(runsBefore + 1);
+        expect(takeFolderSyncActivity().triggers).toEqual({ maintenance: 1 });
+      } finally {
+        idleStatus.mockRestore();
+        process.env.DATABASE_URL = originalUrl;
+        await initializeTestPlatform();
+      }
+
+      // A changed provider cursor, error and mailbox health must still write immediately.
+      await sql`UPDATE mail.binding_folder_refs SET uid_next = 99 WHERE binding_id = ${fixture.bindingId}::uuid`;
+      await sql`UPDATE mail.provider_connections SET last_error_code = 'OLD_FAILURE', last_error_message = 'old' WHERE id = ${fixture.connectionId}::uuid`;
+      await sql`UPDATE mail.mailboxes SET health = 'degraded', health_reason = 'old' WHERE id = ${fixture.mailboxId}::uuid`;
+      await sql`UPDATE mail.folders SET sync_status = 'syncing' WHERE id = ${fixture.folderId}::uuid`;
+      await sql`TRUNCATE mail.idle_write_probe`;
+      await commit();
+      for (const table of ["binding_folder_refs", "provider_connections", "mailboxes", "folders"]) {
+        expect(await sql`SELECT 1 FROM mail.idle_write_probe WHERE table_name = ${table}`).toHaveLength(1);
+      }
+      expect((await transportState(fixture)).health).toBe("active");
+      // FK checks and hydration hold KEY SHARE; idle metadata must remain compatible.
+      await measured`SET lock_timeout = '2s'`;
+      try {
+        await sql.begin(async (locker) => {
+          await locker`SELECT id FROM mail.mailboxes WHERE id = ${fixture.mailboxId}::uuid FOR KEY SHARE`;
+          await locker`SELECT id FROM mail.provider_connections WHERE id = ${fixture.connectionId}::uuid FOR KEY SHARE`;
+          await commit();
+        });
+      } finally {
+        await measured`RESET lock_timeout`;
+      }
+      await expect(
+        commit(1, async () => {
+          await sql`UPDATE mail.provider_connections SET secret_revision = 2 WHERE id = ${fixture.connectionId}::uuid`;
+        }),
+      ).rejects.toMatchObject({ code: "STALE_SYNC_BINDING", message: "Sync credentials changed before commit" });
+    } finally {
+      await measured.close();
+      await counter.close();
+      for (const table of tables) await sql.unsafe(`DROP TRIGGER idle_write_probe ON mail.${table}`).simple();
+      await sql`DROP FUNCTION mail.record_idle_write()`;
+      await sql`DROP TABLE mail.idle_write_probe`;
+    }
   });
 });

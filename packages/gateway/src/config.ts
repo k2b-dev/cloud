@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+import { createConfig } from "@k2b/ssr";
 import type { BunPlugin } from "bun";
 import { DEFAULT_TRUSTED_PROXIES, trustedProxySet } from "./client-address";
 import { appEnv, DEFAULT_GATEWAY_URL, GATEWAY_PORT } from "./env";
@@ -14,4 +16,5 @@ export const gatewayRouter = {
   trustedProxies: trustedProxySet(DEFAULT_TRUSTED_PROXIES),
 };
 
-export const plugin = (): BunPlugin => ({ name: "gateway-router-noop", setup: () => undefined });
+// The gateway renders no page, but the platform it starts includes JSX, which only this transform compiles.
+export const plugin = (): BunPlugin => createConfig({ dev: false, rootDir: resolve(import.meta.dir, "..") }).plugin();

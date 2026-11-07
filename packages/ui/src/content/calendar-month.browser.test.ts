@@ -388,3 +388,62 @@ describe(`continuous month in ${browserName}`, () => {
     }
   }, 30_000);
 });
+
+// The paged month: a crowded day keeps its row as high as the others and counts the rest, on every width.
+const crowdedEntry = resolve(import.meta.dir, "calendar-month-crowded.fixture.ts");
+const crowdedBuild = await Bun.build({
+  entrypoints: [crowdedEntry],
+  files: {
+    [crowdedEntry]: `
+import { createComponent } from "solid-js";
+import { render } from "solid-js/web";
+import { Calendar } from ${JSON.stringify(resolve(packageRoot, "dist/browser/index.js"))};
+const crowded = Array.from({ length: 9 }, (_, index) => ({
+  id: "busy" + index, title: "Meeting " + (index + 1), start: "2026-11-05T" + String(8 + index).padStart(2, "0") + ":00:00",
+  end: "2026-11-05T" + String(9 + index).padStart(2, "0") + ":00:00", color: index % 2 ? "amber" : "blue",
+}));
+render(() => createComponent(Calendar, {
+  view: "month", date: "2026-11-05", timeZone: "Europe/Berlin",
+  events: [...crowded, { id: "fair", title: "Fair", start: "2026-11-03", end: "2026-11-07", allDay: true, color: "emerald" }],
+}), document.getElementById("host"));
+`,
+  },
+  target: "browser",
+  conditions: ["browser"],
+  format: "iife",
+});
+if (!crowdedBuild.success) throw new AggregateError(crowdedBuild.logs, "Could not bundle the crowded month fixture.");
+const crowdedScript = await crowdedBuild.outputs[0]!.text();
+
+describe(`crowded month in ${browserName}`, () => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 820, height: 1180 },
+    { width: 390, height: 844 },
+  ]) {
+    test(`a day with nine entries keeps its row's height at ${viewport.width} px and counts what does not fit`, async () => {
+      const page = await browser.newPage({ viewport, timezoneId: "Europe/Berlin" });
+      try {
+        await page.setContent(
+          `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>body{margin:0}#host{height:100vh;display:flex;flex-direction:column}#host>*{flex:1}</style></head><body class="k2b-ui"><div id="host"></div><script>${crowdedScript}</script></body></html>`,
+        );
+        await page.locator(".k2b-calendar-month__more").first().waitFor();
+        const rows = await page.evaluate(() => {
+          const weeks = Array.from(document.querySelectorAll(".k2b-calendar-month__week"));
+          const day = document.querySelector('[data-calendar-day-key="2026-11-05"]')!.getBoundingClientRect();
+          const entries = Array.from(document.querySelectorAll('[data-calendar-day-key="2026-11-05"] [data-calendar-event]'));
+          return {
+            heights: new Set(weeks.map((week) => Math.round(week.getBoundingClientRect().height))).size,
+            inside: entries.every((entry) => entry.getBoundingClientRect().bottom <= day.bottom + 0.5),
+            more: document.querySelector('[data-calendar-day-key="2026-11-05"] .k2b-calendar-month__more')?.textContent ?? "",
+          };
+        });
+        expect(rows.heights).toBe(1);
+        expect(rows.inside).toBe(true);
+        expect(rows.more).toMatch(/\+\d/);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+});

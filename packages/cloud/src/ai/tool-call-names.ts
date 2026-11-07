@@ -27,7 +27,6 @@ export const acceptCanonicalToolNames = (provider: Provider, canonicalNames: Rea
   model: provider.model,
   contextWindow: provider.contextWindow,
   capabilities: provider.capabilities,
-  complete: (request) => provider.complete(request),
   stream: async function* (request) {
     const offered = new Set(request.tools?.map((tool) => tool.name));
     const aliases = new Map<string, string>();

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { readBasePolicy } from "../service/base-policy";
 import type { BaseStoreStatus, PulsePolicy } from "./admin-contracts";
 import { BaseStoreStatusSchema } from "./admin-schemas";

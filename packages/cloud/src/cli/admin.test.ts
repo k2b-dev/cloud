@@ -860,7 +860,7 @@ describe("admin agents", () => {
       isPublic: false,
       allowedProfiles: [],
       redirectUris: [],
-      scopes: ["openid", "profile", "email", "offline_access", "read", "write"],
+      scopes: ["openid", "profile", "email", "offline_access", "read", "write", "admin"],
     });
     expect(saved).toEqual([
       {

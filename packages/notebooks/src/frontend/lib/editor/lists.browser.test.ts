@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, type Page, devices as playwrightDevices } from "playwright";
 import { browserName, launchBrowser } from "../../../../../ui/test/browser";
+import { solidTestPlugin } from "../../../../../ui/test/solid-test-plugin";
 import type { ListMeasurements } from "./lists.browser-harness";
 
 // Where a click leaves the note depends on real focus, selection, and scrolling, so this runs in a real browser.
@@ -32,6 +33,7 @@ beforeAll(async () => {
     target: "browser",
     conditions: ["browser"],
     format: "iife",
+    plugins: [solidTestPlugin()],
   });
   if (!build.success) throw new AggregateError(build.logs, "Could not bundle the editor harness.");
   const bundle = await build.outputs[0]!.text();

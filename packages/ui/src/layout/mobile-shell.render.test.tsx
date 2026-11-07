@@ -74,6 +74,12 @@ describe("MobileShell", () => {
     );
   });
 
+  test("a screen of its own is marked from the server's first paint", () => {
+    const shell = (screen?: boolean) => renderToString(() => createComponent(MobileShell, { screen, children: "Chat" }));
+    expect(shell(true)).toMatch(/^<div class="k2b-mobile-shell"[^>]* data-k2b-screen=""/);
+    expect(shell()).not.toContain("data-k2b-screen");
+  });
+
   test("the header offers Back as a link or a button and keeps actions after the title", () => {
     const link = renderToString(() =>
       createComponent(MobileShell.Header, { title: "Task", back: { href: "/pwa/tasks", label: "Tasks" }, actions: "Menu" }),

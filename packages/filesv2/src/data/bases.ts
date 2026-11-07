@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { RequestActor } from "@k2b/cloud/server";
 import { audit } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { Area, BaseKind } from "../contracts";
 export type Binding = {
   id: string;

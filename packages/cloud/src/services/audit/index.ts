@@ -47,6 +47,7 @@ export type AuditEvent = {
 };
 
 export type AuditListFilter = {
+  automatic?: "hide" | "include";
   search?: string;
   actor?: string;
   target?: string;
@@ -375,22 +376,35 @@ const buildWhere = (filter: AuditListFilter = {}) => {
   return conditions.reduce((acc, condition) => sql`${acc} AND ${condition}`);
 };
 
-const list = async (config: { pagination?: PageParams; filter?: AuditListFilter }): Promise<Paginated<AuditEvent>> => {
+const list = async (config: {
+  pagination?: PageParams;
+  filter?: AuditListFilter;
+}): Promise<Paginated<AuditEvent> & { hiddenAutomaticCount?: number }> => {
   const { page, perPage, offset } = paginate(config.pagination);
   const where = buildWhere(config.filter);
+  const hideAutomatic = config.filter?.automatic === "hide";
+  // Remove this predicate when runtime keys are no longer issued (step 8).
+  const automatic = sql`(metadata->>'provenance' = 'system' AND metadata->>'service' = 'app-workload') IS TRUE`;
+  const visibleWhere = hideAutomatic ? sql`${where} AND NOT (${automatic})` : where;
   const [countRows, rows] = await Promise.all([
-    sql<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM audit.events WHERE ${where}`,
+    sql<{ count: number; automatic_count: number }[]>`
+      SELECT COUNT(*)::int AS count,
+        ${hideAutomatic ? sql`COUNT(*) FILTER (WHERE ${automatic})` : sql`0`}::int AS automatic_count
+      FROM audit.events WHERE ${where}
+    `,
     sql<DbAuditRow[]>`
       SELECT *
       FROM audit.events
-      WHERE ${where}
+      WHERE ${visibleWhere}
       ORDER BY created_at DESC, id DESC
       LIMIT ${perPage}
       OFFSET ${offset}
     `,
   ]);
-  const total = countRows[0]?.count ?? 0;
+  const hiddenAutomaticCount = countRows[0]?.automatic_count ?? 0;
+  const total = (countRows[0]?.count ?? 0) - hiddenAutomaticCount;
   return {
+    ...(hideAutomatic ? { hiddenAutomaticCount } : {}),
     items: rows.map(mapRow),
     page,
     perPage,

@@ -1,8 +1,8 @@
 # TextEditor
 
 `TextEditor` edits Markdown in a formatted view with directly editable table
-cells. Switch to Markdown to see and edit the same source. Use it when a text
-field needs tables or a CodeMirror collaboration extension.
+cells. Use it when a text field needs tables or a CodeMirror collaboration
+extension.
 
 ## Use TextEditor
 
@@ -38,7 +38,9 @@ import { TextEditor } from "@k2b/ui/text-editor";
 ## Edit text and tables
 
 The toolbar formats text and inserts links, lists, quotes, rules and tables.
-The view switch changes presentation without rewriting the document.
+It has no Formatted/Markdown switch: people edit formatted. Only a source view,
+set through `mode="source"` or opened by **Check Markdown**, shows a switch
+back to the formatted view. Neither view rewrites the document.
 `mode="plain"` shows unformatted text.
 
 Click a table cell to type. Tab and Shift+Tab move between cells; Tab from the
@@ -48,15 +50,33 @@ The cell menu inserts, moves or deletes rows and columns, changes alignment,
 toggles the header, copies the table or its Markdown, and deletes the table.
 Alt+ArrowUp/ArrowDown moves the active row; Alt+ArrowLeft/ArrowRight moves its
 column. An all-empty GFM header is hidden without removing its source cells.
-Open the same menu from a row or column grip, by right-clicking a cell, or
-with Shift+F10 or the context-menu key while a cell has focus.
+No cell or header carries a menu button. Right-clicking a cell, Shift+F10 or
+the context-menu key in a cell, and the toolbar's table button open the whole
+menu; it names the row and column, groups row, column, alignment and table
+actions, and keeps its cell outlined. A row grip opens only the row and table
+actions and marks the row; a column grip opens column, alignment and table
+actions and marks the column. Grips sit in gutters outside the grid, left of
+each row and above each column, out of the Tab order; showing them never moves
+or covers content. Pointer users see them on hover, phones for the focused
+cell, with 30 × 44 pixel targets. A press beside an open menu only closes it:
+no cell takes focus and nothing is selected or marked. Escape and that press
+return focus to the cell the menu came from.
 Arrow keys enter a table from the adjacent text line; Tab from prose leaves
 the editor instead of entering every cell.
-The menu names the active row and column and keeps its target cell outlined.
-It groups row, column, alignment and table actions. On phones the table toolbar button opens a sheet with two columns of
+On phones the menu opens as a sheet with two columns of
 44-pixel touch targets; it occupies at most 62% of the viewport and scrolls
-inside that space. The sheet stays open after moving a row or column. Read-only tables expose only copying;
+inside that space. The sheet stays open after moving a row or column. Read-only tables expose only copying,
+by right-click and keys, and on phones by a **Copy table** control below the table;
 formula previews keep their rendered values when selected.
+
+All cells of a row are as tall as the row, so focus, hover and marks fill the
+whole cell. A wide table scrolls sideways under its fixed first column; while
+it is scrolled, content fades flat beneath that column and at the right edge
+while more follows, never with a shadow. **+ Row** below the grid and the **+**
+strip beside it are quieter than the cell text; the strip shows while the table
+is hovered, in space that is always reserved. The grid reaches into the host's
+margin, never past an ancestor that clips, so cell text lines up with the
+paragraphs when the host leaves room for the grip gutter.
 
 **Edit as Markdown** opens only that table's source in its existing space.
 **Show as table** returns to the cell at the source caret after confirmation.
@@ -153,10 +173,10 @@ building blocks share one editor state and describe actions as data; its
 
 ## Keep an application's own presentation and toolbar
 
-An application presentation without a `status` prop adds no empty status row
-above its content. Table warnings still appear when needed. Supplying `status`
-reserves that row across status transitions; the standalone editor also keeps
-its reserved row.
+The status row above the toolbar appears only while `status` has content or a
+table warning shows, so an editor without a status adds no empty row above its
+toolbar or content. Keep `status` set across transitions, such as Saving and
+Saved, so the row does not come and go.
 
 An application with its own Markdown presentation, such as Notebooks, passes
 `presentation` and `toolbar={false}`. `presentation(mode)` replaces the
@@ -208,8 +228,7 @@ transaction and reparse before another operation.
 ## Loading and access
 
 `loading` reserves the text area with a placeholder and blocks editing.
-`readOnly` blocks editing and hides the built-in toolbar, including its mode
-switch. Neither replaces the application's server authorization.
+`readOnly` blocks editing and hides the built-in toolbar. Neither replaces the application's server authorization.
 
 The length limit refuses only edits that make an over-limit text longer, so a
 text above the limit can still be shortened.
@@ -235,10 +254,10 @@ server authorization, convergence checks or send ordering.
 ## Accessibility
 
 Supply a descriptive `label`; the editor uses it as the accessible name of
-its text input. Formatting controls have labels, and the mode control exposes
-its selected state. Table cells support the keyboard navigation described
-above; the context-menu key or Shift+F10 opens the cell menu. Tab from prose
-leaves the editor.
+its text input. Formatting controls have labels, and the source view's switch
+back exposes its selected state. Table cells support the keyboard navigation described
+above; the context-menu key or Shift+F10 opens the cell menu, and each cell
+announces that key through `aria-keyshortcuts`. Tab from prose leaves the editor.
 
 Loading and recovery messages use status regions. Rejected input remains in
 a read-only field so the person can copy it before continuing. Keep the

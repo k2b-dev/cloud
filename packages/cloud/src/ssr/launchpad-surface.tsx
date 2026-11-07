@@ -3,7 +3,9 @@ import { type AppLaunchpadContext, AppLaunchpadPanel } from "./AppLaunchpadPanel
 import { openCloudMobileMenu } from "./MobileNavigation";
 
 export function openLaunchpadSurface(context: AppLaunchpadContext) {
-  if (window.matchMedia("(max-width: 767px)").matches) {
+  // The sheet belongs to the title row, which shows below `md` (48rem), as the rail does from there; with a larger
+  // default font size that switch moves above 768 px.
+  if (!window.matchMedia("(min-width: 48rem)").matches) {
     void openCloudMobileMenu(context);
     return;
   }

@@ -4,10 +4,10 @@ import { renderAdminNavigation } from "./app-access-pulse-admin-navigation.fixtu
 setSystemTime(new Date("2026-10-21T12:00:00Z"));
 afterAll(() => setSystemTime());
 
-test("Pulse is one active entry under App administration in both SSR navigation surfaces", async () => {
+test("Pulse is one active entry under Settings per app in both SSR navigation surfaces", async () => {
   for (const [locale, group, tab] of [
-    ["en", "App administration", "Data store"],
-    ["de", "App-Administration", "Datenspeicher"],
+    ["en", "Settings per app", "Data store"],
+    ["de", "Einstellungen je App", "Datenspeicher"],
   ] as const) {
     const result = await renderAdminNavigation(locale);
     expect(result.status).toBe(200);

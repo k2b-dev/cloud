@@ -25,7 +25,7 @@ Use `disabled` for the whole group. Set an option's `disabled` property to skip 
 
 Keep the option set short. Each option should describe the same dimension, such as List, Board, or Calendar.
 
-The soft control has no tray, separators, or selection ring. The selected option takes the selection fill and ink; see [Colors and selection](/en/ui/surfaces/color). Font weight and geometry stay the same through selection and hover, so no option moves; keyboard focus keeps its visible ring. In forced-color mode the selected option is underlined.
+The options sit on a grey track (`--k2b-tray`), and with it the control is as tall as a field. Options have no edge until selected; the selected option is the thumb, with the selected edge, fill, and ink of the app (see [Filters, buttons, and clickable cards](/en/ui/surfaces/color#filters-buttons-and-clickable-cards)). Keyboard focus turns the same 2 px edge blue. Nothing casts a shadow, and font weight and geometry stay the same through selection, hover, and focus, so no option moves. In forced-color mode the selected option is underlined and focus takes the system outline. The same look applies to a row of choices in a menu.
 
 ## API reference
 

@@ -15,6 +15,8 @@ test("every activity written by a service has translated named, self and overvie
       const action = match[1]!;
       // These two queue dispositions are not stored notebook activity.
       if (file === "yjs-snapshot-worker.ts" && (action === "retry" || action === "dead_letter")) continue;
+      // Platform setting audits are not stored notebook activity either.
+      if (file === "backup.ts" && action === "settings.update") continue;
       expect(isNotebookActivityAction(action), `${file}: ${action}`).toBe(true);
       written.add(action);
     }

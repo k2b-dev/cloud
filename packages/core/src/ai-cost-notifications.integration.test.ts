@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import * as cloud from "@k2b/cloud";
+import { sql } from "@k2b/cloud";
 import { getFreeIpaConfig } from "@k2b/cloud/services";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
 import * as platform from "@k2b/cloud/services/notifications/platform";
 import * as deliveryRuntime from "@k2b/cloud/services/notifications/runtime";
-import { sql } from "bun";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 import { createAiNotificationService } from "./ai-notifications";
 import { app } from "./config";
