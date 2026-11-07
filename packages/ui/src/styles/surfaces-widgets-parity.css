@@ -1836,6 +1836,27 @@
 
 :where(.k2b-ui) .k2b-dashboard-frame__header .k2b-dashboard-frame__stale { color: var(--k2b-warning-text); }
 
+/* Try again inside a line of text: it reads as part of the sentence and never makes the line taller. */
+:where(.k2b-ui) .k2b-dashboard-frame__link {
+  display: inline;
+  position: static;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0.2rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__link:focus-visible {
+  outline: var(--k2b-focus-width, 2px) solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+
 :where(.k2b-ui) .k2b-dashboard-frame__tools {
   display: flex;
   flex: 0 1 auto;
@@ -1893,6 +1914,7 @@
 :where(.k2b-ui) .k2b-dashboard-frame__stack > * {
   grid-area: 1 / 1;
   min-width: 0;
+  margin: 0;
 }
 
 :where(.k2b-ui) .k2b-dashboard-frame__reserve { visibility: hidden; }

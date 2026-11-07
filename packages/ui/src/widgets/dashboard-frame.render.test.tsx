@@ -35,7 +35,8 @@ const frame = (props: Props, locale = "en") =>
 const base: Props = { title: "Budgets", subtitle: "Booked and expected", height: "240px", children: "content" };
 
 test("without a title the frame is only the surface, for content with its own head", () => {
-  expect(frame({ children: "explorer" })).toBe('<div class="k2b-paper k2b-dashboard-frame">explorer</div>');
+  expect(frame({ children: "explorer" })).toBe('<div data-width="third" class="k2b-paper k2b-dashboard-frame">explorer</div>');
+  expect(frame({ width: "twoThirds", children: "explorer" })).toContain('data-width="twoThirds"');
 });
 
 test("ready shows title, subtitle, tools and the content at the body's height", () => {
@@ -81,6 +82,27 @@ test("a reserved frame keeps the hidden full content in every state and centres 
   expect(
     frame({ ...base, reserve: "rows", state: "empty", empty: "No campaign.", emptyIcon: "ti ti-table-off", emptyAction: "Clear" }),
   ).toContain('<i class="ti ti-table-off"></i></span><p>No campaign.</p>Clear</div>');
+});
+
+test("content without matches says so below while a stale head keeps its note and Try again", () => {
+  const html = frame({
+    ...base,
+    reserve: "every row",
+    state: "stale",
+    asOf: "09:12",
+    onRetry: () => {},
+    emptyContent: true,
+    empty: "No row contains “x”.",
+    emptyAction: "Clear search",
+  });
+  expect(html).toContain("As of 09:12 · Refresh failed");
+  expect(html).toContain('data-state="stale"');
+  expect(html).toContain("<p>No row contains “x”.</p>Clear search</div>");
+  expect(html).not.toContain(">content<");
+  // A compact frame keeps its action too.
+  expect(frame({ ...base, compact: true, state: "empty", empty: "No budget is set.", emptyAction: "Set a budget" })).toContain(
+    "No budget is set.Set a budget</p>",
+  );
 });
 
 test("the frame's own words follow the inherited locale", () => {

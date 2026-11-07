@@ -20,6 +20,7 @@ import {
 } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import type { DescriptionJson as JsonValue } from "./json";
+import { descriptionMessages } from "./messages";
 
 /** One typed row of a chart's table view and Copy data. */
 export type DescriptionRow = { key: string; cells: Record<string, string>; values: Record<string, string | number> };
@@ -76,10 +77,10 @@ const columnsOf = (columns: { id: string; label: string; numeric: boolean }[]): 
     align: column.numeric ? "right" : "left",
   }));
 
-const number = new Intl.NumberFormat("en", { maximumFractionDigits: 2 });
-
 /** Typed rows for the kinds that only the Solid component draws. */
-const liveRows = (spec: JsonObject): { columns: ChartExplorerColumn<DescriptionRow>[]; rows: DescriptionRow[] } => {
+const liveRows = (spec: JsonObject, locale: string): { columns: ChartExplorerColumn<DescriptionRow>[]; rows: DescriptionRow[] } => {
+  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
+  const t = descriptionMessages.resolve([locale]).t;
   if (spec.kind === "map") {
     const rows = (Array.isArray(spec.series) ? spec.series : []).flatMap((series, seriesIndex) =>
       object(series) && Array.isArray(series.data)
@@ -102,10 +103,10 @@ const liveRows = (spec: JsonObject): { columns: ChartExplorerColumn<DescriptionR
     );
     return {
       columns: columnsOf([
-        { id: "label", label: "Place", numeric: false },
-        { id: "latitude", label: "Latitude", numeric: true },
-        { id: "longitude", label: "Longitude", numeric: true },
-        { id: "size", label: "Size", numeric: true },
+        { id: "label", label: t.columnPlace, numeric: false },
+        { id: "latitude", label: t.columnLatitude, numeric: true },
+        { id: "longitude", label: t.columnLongitude, numeric: true },
+        { id: "size", label: t.columnSize, numeric: true },
       ]),
       rows,
     };
@@ -138,12 +139,12 @@ const liveRows = (spec: JsonObject): { columns: ChartExplorerColumn<DescriptionR
   );
   return {
     columns: columnsOf([
-      { id: "row", label: "Row", numeric: false },
-      { id: "state", label: "State", numeric: false },
-      { id: "from", label: "From", numeric: true },
-      { id: "to", label: "To", numeric: true },
-      { id: "duration", label: "Duration", numeric: true },
-      { id: "detail", label: "Detail", numeric: false },
+      { id: "row", label: t.columnRow, numeric: false },
+      { id: "state", label: t.columnState, numeric: false },
+      { id: "from", label: t.columnFrom, numeric: true },
+      { id: "to", label: t.columnTo, numeric: true },
+      { id: "duration", label: t.columnDuration, numeric: true },
+      { id: "detail", label: t.columnDetail, numeric: false },
     ]),
     rows,
   };
@@ -164,7 +165,7 @@ export function resolveDescription(spec: JsonValue, locale = "en"): DescriptionD
   const kind = typeof spec.kind === "string" ? spec.kind : "unknown";
   if (liveKinds.has(kind)) {
     const { title: _title, subtitle: _subtitle, ...props } = spec;
-    return { mode: "live", props: props as unknown as ChartProps, ...liveRows(spec) };
+    return { mode: "live", props: props as unknown as ChartProps, ...liveRows(spec, locale) };
   }
   const parsed = chartKinds().safeParse(spec);
   if (!parsed.success) {

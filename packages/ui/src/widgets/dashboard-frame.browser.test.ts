@@ -5,7 +5,8 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
-const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
+// The base stylesheet too, as a Cloud host loads it: its buttons must not change a frame's lines.
+const css = readFileSync(resolve(ui, "dist/base.css"), "utf8") + readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "dashboard-frame.fixture.ts");
 // Three frames as cells of a section (a third, two thirds, full): a short compact block, a table that reserves its full height, and a bare surface
 // around content with its own head. `window.frameState(state)` switches all of them; `window.retries` counts Try again.
@@ -111,8 +112,8 @@ test("Try again is reachable by keyboard in a failure and in a stale note, and c
     // A failure is announced; the hidden reserve never takes focus.
     expect(await page.locator('.k2b-dashboard-frame [role="alert"]').count()).toBe(2);
     expect(
-      await page.locator(".k2b-dashboard-frame__reserve").evaluateAll((nodes) => nodes.every((node) => (node as HTMLElement).inert)),
-    ).toBe(true);
+      await page.locator(".k2b-dashboard-frame__reserve").evaluateAll((nodes) => nodes.map((node) => (node as HTMLElement).inert)),
+    ).toEqual([true]);
     await setState(page, "stale");
     await page.locator("body").focus();
     await page.keyboard.press("Tab");

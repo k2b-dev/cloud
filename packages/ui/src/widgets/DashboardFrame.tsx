@@ -1,4 +1,4 @@
-import { type JSX, Match, Show, Switch } from "solid-js";
+import { children, type JSX, Match, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { Button } from "../actions/Button";
 import { useChartMessages } from "../content/chart-messages";
@@ -36,6 +36,11 @@ export type DashboardFrameProps = {
   emptyIcon?: string;
   /** An action under the empty sentence, such as "Clear search". */
   emptyAction?: JSX.Element;
+  /**
+   * The content has nothing to show right now although the read succeeded, such as a search without matches: the body
+   * shows the empty sentence and action while the head keeps its state, so a stale note stays.
+   */
+  emptyContent?: boolean;
   /** Height of the body, a CSS length. Every state keeps it. */
   height?: string;
   /**
@@ -63,7 +68,12 @@ export function DashboardFrame(props: DashboardFrameProps): JSX.Element {
   const chart = useChartMessages();
   const state = () => props.state ?? "ready";
   const failed = () => state() === "error";
-  const shown = () => state() === "ready" || state() === "stale";
+  const read = () => state() === "ready" || state() === "stale";
+  const shown = () => read() && !props.emptyContent;
+  const empty = () => state() === "empty" || (read() && props.emptyContent === true);
+  // Slots resolve once: checking a slot and then rendering it must not mount its components twice.
+  const tools = children(() => props.tools);
+  const reserve = children(() => props.reserve);
   const busy = () => (state() === "loading" ? "true" : undefined);
   const className = () => (props.class ? `k2b-dashboard-frame ${props.class}` : "k2b-dashboard-frame");
   const retryLink = () => (
@@ -77,17 +87,17 @@ export function DashboardFrame(props: DashboardFrameProps): JSX.Element {
       : state() === "stale"
         ? [props.asOf ? chart().chartAsOf({ time: props.asOf }) : undefined, chart().chartRefreshFailed].filter(Boolean).join(" · ")
         : props.subtitle;
-  const empty = () => props.empty ?? ui().noData;
+  const sentence = () => props.empty ?? ui().noData;
   return (
     <Show
       when={props.title !== undefined}
       fallback={
-        <Paper class={className()} data-width={props.width}>
+        <Paper class={className()} data-width={props.width ?? "third"}>
           {props.children}
         </Paper>
       }
     >
-      <Paper class={className()} data-width={props.width}>
+      <Paper class={className()} data-width={props.width ?? "third"}>
         <header class="k2b-dashboard-frame__header">
           <div>
             <Dynamic component={`h${props.headingLevel ?? 3}`}>{props.title}</Dynamic>
@@ -100,12 +110,12 @@ export function DashboardFrame(props: DashboardFrameProps): JSX.Element {
               </Show>
             </p>
           </div>
-          <Show when={props.tools !== undefined}>
-            <div class="k2b-dashboard-frame__tools">{props.tools}</div>
+          <Show when={tools() !== undefined}>
+            <div class="k2b-dashboard-frame__tools">{tools()}</div>
           </Show>
         </header>
         <Show
-          when={props.reserve !== undefined}
+          when={reserve() !== undefined}
           fallback={
             <div class="k2b-dashboard-frame__body" style={props.height ? { height: props.height } : undefined} aria-busy={busy()}>
               <Switch fallback={props.children}>
@@ -115,11 +125,12 @@ export function DashboardFrame(props: DashboardFrameProps): JSX.Element {
                     <span />
                   </div>
                 </Match>
-                <Match when={(failed() || state() === "empty") && props.compact}>
+                <Match when={(failed() || empty()) && props.compact}>
                   <p class="k2b-dashboard-frame__inline-state" role={failed() ? "alert" : undefined}>
                     <i class={failed() ? "ti ti-alert-circle" : (props.emptyIcon ?? "ti ti-chart-bar-off")} aria-hidden="true" />
-                    {failed() ? chart().chartLoadFailed : empty()}
+                    {failed() ? chart().chartLoadFailed : sentence()}
                     <Show when={failed() && props.onRetry}>{retryLink()}</Show>
+                    <Show when={empty()}>{props.emptyAction}</Show>
                   </p>
                 </Match>
                 <Match when={!shown()}>
@@ -132,7 +143,7 @@ export function DashboardFrame(props: DashboardFrameProps): JSX.Element {
           <div class="k2b-dashboard-frame__stack" aria-busy={busy()}>
             {/* The full content, hidden: the body's height in every state. */}
             <div class="k2b-dashboard-frame__reserve" aria-hidden="true" inert>
-              {props.reserve}
+              {reserve()}
             </div>
             <Show when={shown()} fallback={<Message />}>
               <div class="k2b-dashboard-frame__content">{props.children}</div>
@@ -151,14 +162,14 @@ export function DashboardFrame(props: DashboardFrameProps): JSX.Element {
             <i class={failed() ? "ti ti-alert-circle" : (props.emptyIcon ?? "ti ti-chart-bar-off")} />
           </span>
         </Show>
-        <p>{failed() ? chart().chartLoadFailed : state() === "loading" ? "" : empty()}</p>
+        <p>{failed() ? chart().chartLoadFailed : state() === "loading" ? "" : sentence()}</p>
         <Show when={failed() && props.onRetry}>
           <Button variant="secondary" size="sm" onClick={() => props.onRetry?.()}>
             <i class="ti ti-refresh" aria-hidden="true" />
             {ui().tryAgain}
           </Button>
         </Show>
-        <Show when={state() === "empty"}>{props.emptyAction}</Show>
+        <Show when={empty()}>{props.emptyAction}</Show>
       </div>
     );
   }

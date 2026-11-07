@@ -82,11 +82,12 @@ export function DescriptionPanel(props: DescriptionPanelProps): JSX.Element {
   const subtitle = () => descriptionSubtitle(props.spec, props.subtitle);
   const height = () => cssLength(props.height);
   const empty = () => props.empty ?? t().nothingToShow;
+  // Rows, columns and legend are accessors: a new description of the same kind updates the table and Copy data too.
   const explorer = (
-    rows: DescriptionRow[],
-    columns: Parameters<typeof ChartExplorer<DescriptionRow>>[0]["columns"],
+    rows: () => DescriptionRow[],
+    columns: () => Parameters<typeof ChartExplorer<DescriptionRow>>[0]["columns"],
     chart: () => JSX.Element,
-    extra: Partial<Parameters<typeof ChartExplorer<DescriptionRow>>[0]> = {},
+    legend?: () => Parameters<typeof ChartExplorer<DescriptionRow>>[0]["legend"],
   ) => (
     <DashboardFrame width={props.width}>
       <ChartExplorer<DescriptionRow>
@@ -102,9 +103,9 @@ export function DescriptionPanel(props: DescriptionPanelProps): JSX.Element {
         asOf={props.asOf}
         onRetry={props.onRetry}
         empty={empty()}
-        data={{ rows: withContent(state()) ? rows : [] }}
-        columns={columns}
-        {...extra}
+        data={{ rows: withContent(state()) ? rows() : [] }}
+        columns={columns()}
+        legend={legend?.()}
       >
         {chart()}
       </ChartExplorer>
@@ -115,8 +116,8 @@ export function DescriptionPanel(props: DescriptionPanelProps): JSX.Element {
       <Match when={drawing().mode === "snapshot" && (drawing() as Extract<ReturnType<typeof resolveDescription>, { mode: "snapshot" }>)}>
         {(snapshot) =>
           explorer(
-            snapshot().rows,
-            snapshot().columns,
+            () => snapshot().rows,
+            () => snapshot().columns,
             () => (
               <ChartSnapshotView
                 snapshot={snapshot().snapshot}
@@ -125,12 +126,18 @@ export function DescriptionPanel(props: DescriptionPanelProps): JSX.Element {
                 style={snapshot().legend.length ? undefined : { height: "100%" }}
               />
             ),
-            { legend: snapshot().legend },
+            () => snapshot().legend,
           )
         }
       </Match>
       <Match when={drawing().mode === "live" && (drawing() as Extract<ReturnType<typeof resolveDescription>, { mode: "live" }>)}>
-        {(live) => explorer(live().rows, live().columns, () => <Chart {...live().props} style={{ height: "100%" }} />)}
+        {(live) =>
+          explorer(
+            () => live().rows,
+            () => live().columns,
+            () => <Chart {...live().props} style={{ height: "100%" }} />,
+          )
+        }
       </Match>
       <Match when={drawing().mode === "block" && (drawing() as Extract<ReturnType<typeof resolveDescription>, { mode: "block" }>)}>
         {(block) => (
@@ -359,14 +366,16 @@ function TableBlock(props: Omit<DescriptionPanelProps, "spec" | "state"> & { sta
   const grouping = (): { groupBy?: string } => (group() ? { groupBy: group() } : {});
   // A search without a match is the empty state with its own sentence and a way back.
   const noMatch = () => withContent(props.state) && query() !== "" && rows().length === 0;
-  const state = (): DashboardFrameState => (noMatch() || (props.state === "ready" && !allRows().length) ? "empty" : props.state);
+  // The read's state stays in the head (a stale note keeps its Try again); a table without rows to show says why below.
+  const nothing = () => noMatch() || (withContent(props.state) && !allRows().length);
   return (
     <DashboardFrame
       title={props.title}
       subtitle={props.subtitle}
       headingLevel={props.headingLevel}
       width={props.width}
-      state={state()}
+      state={props.state}
+      emptyContent={nothing()}
       asOf={props.asOf}
       onRetry={props.onRetry}
       empty={noMatch() ? t().noRowContains({ query: query() }) : (props.empty ?? t().nothingToShow)}
