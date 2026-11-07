@@ -251,6 +251,56 @@ test("offline, disabled, network retry and 429 keep feedback visible and control
   }
 }, 45_000);
 
+test("finished tests fit their actual time span and leave an unwrapped complete terminal in fixed slots", async () => {
+  for (const width of [1440, 390]) {
+    const page = await open("public", width);
+    try {
+      const initial = await geometry(page);
+      const axisEnd = async () =>
+        page.locator(".tools-speedtest-chart .stdlib-chart-tick-label").evaluateAll((ticks) =>
+          Math.max(
+            ...ticks
+              .map((tick) => tick.textContent ?? "")
+              .filter((text) => text.endsWith(" s"))
+              .map((text) => Number(text.replace(" s", "").replace(",", "."))),
+          ),
+        );
+      await page.getByRole("button", { name: "Test starten", exact: true }).click();
+      await page.clock.runFor(2_000);
+      await settled(page);
+      expect(await axisEnd()).toBe(14);
+      expect(await page.locator(".tools-speedtest-eta").evaluate((node) => getComputedStyle(node).visibility)).toBe("visible");
+      await page.clock.runFor(13_000);
+      await settled(page);
+      expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("done");
+      expect(await geometry(page)).toEqual(initial);
+      const end = await axisEnd();
+      expect(end).toBeLessThan(14);
+      expect(await page.locator(".tools-speedtest-eta").evaluate((node) => getComputedStyle(node).visibility)).toBe("hidden");
+      expect(await page.getByRole("progressbar").count()).toBe(0);
+      const terminal = await page.locator(".tools-speedtest-terminal").evaluate((node) => ({
+        whiteSpace: getComputedStyle(node).whiteSpace,
+        verticalOverflow: node.scrollHeight > node.clientHeight,
+        horizontalOverflow: node.scrollWidth > node.clientWidth,
+        text: node.textContent,
+      }));
+      expect(terminal.whiteSpace).toBe("pre");
+      expect(terminal.verticalOverflow).toBe(false);
+      if (width === 390) expect(terminal.horizontalOverflow).toBe(true);
+      expect(terminal.text).toContain("Fertig nach");
+      await page.getByRole("button", { name: "--json", exact: true }).click();
+      const duration = await page.locator(".tools-speedtest-terminal").evaluate((node) => {
+        const text = node.textContent!;
+        return JSON.parse(text.slice(text.indexOf("{\n"))).duration_ms / 1_000;
+      });
+      expect(Math.abs(end - duration)).toBeLessThanOrEqual(0.05);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    } finally {
+      await page.close();
+    }
+  }
+}, 45_000);
+
 test("delayed browser callbacks keep every plotted sample inside the fixed time axis", async () => {
   const page = await open("delayed");
   const errors = pageErrors(page);

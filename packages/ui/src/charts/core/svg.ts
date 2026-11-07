@@ -1239,7 +1239,9 @@ const computeAxisScale = (values: readonly number[], axisOpts: AxisOptions | und
       // increment. Keep endpoint ticks instead of entering a non-advancing loop.
       if (step > 0 && Number.isFinite(step) && (hi - lo) / step <= MAX_AXIS_TICKS) {
         for (let value = Math.ceil(lo / step) * step; value < hi; ) {
-          if (value > lo) ticks.push(value);
+          // Exact bounds are labelled too. Leave half a regular interval beside
+          // each endpoint so a nearby round tick cannot overprint its label.
+          if (value - lo >= step / 2 && hi - value >= step / 2) ticks.push(value);
           const next = value + step;
           if (next <= value) break;
           value = next;

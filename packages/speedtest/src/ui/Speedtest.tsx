@@ -53,6 +53,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean; i
   const disabled = () => props.enabled === false;
   const waiting = () => Math.max(0, Math.ceil((retryAt() - now()) / 1_000));
   const totalCap = () => PLANS[mode()].ping + PLANS[mode()].download + PLANS[mode()].upload;
+  const historySeconds = () => (state() === "done" ? result()!.duration_ms : totalCap()) / 1_000;
   const remaining = () => Math.ceil((progress()?.remaining_ms ?? totalCap()) / 1_000);
   const labels = () => ({
     idle: t().phaseIdle,
@@ -298,7 +299,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean; i
             <i aria-hidden="true" class={running() ? "ti ti-player-stop" : state() === "error" ? "ti ti-refresh" : "ti ti-player-play"} />
             {running() ? t().stop : state() === "error" ? t().retry : state() === "done" ? t().runAgain : t().startTest}
           </Button>
-          <div class="tools-speedtest-eta">
+          <div class="tools-speedtest-eta" data-finished={state() === "done"} aria-hidden={state() === "done"}>
             <ProgressBar
               size="sm"
               value={state() === "done" ? 100 : (progress()?.progress ?? 0) * 100}
@@ -331,7 +332,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean; i
               maxGap={0.6}
               smooth={false}
               references={phaseStarts().map((item) => ({ axis: "x" as const, value: item.x, style: "dotted" as const }))}
-              xAxis={{ domain: [0, totalCap() / 1_000], format: (value) => `${formatSpeedTestReading(value, locale())} s` }}
+              xAxis={{ domain: [0, historySeconds()], format: (value) => `${formatSpeedTestReading(value, locale())} s` }}
               yAxis={{ domain: [0, chartCeiling()], format: (value) => formatSpeedTestReading(value, locale()) }}
               legend
               legendPlacement="top-start"

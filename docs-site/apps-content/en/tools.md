@@ -122,7 +122,7 @@ metadata.
 Open **Internet Speed Test** and check the named measurement server. Choose
 **Quick · up to 14 s** or **Accurate · up to 29 s**, then start. Ping, download
 and upload share one bounded engine with the CLI and standalone Node/Bun script.
-The page and terminal show the same readings and decreasing remaining time.
+The page and terminal show the same readings and decreasing remaining time. The chart keeps its time axis fixed while running and fits the completed result to its actual duration. The terminal keeps a fixed height and scrolls long lines horizontally.
 Stop cancels active work; a completed result can be copied as JSON.
 
 The test is anonymous. The measurement server sees the source IP address and

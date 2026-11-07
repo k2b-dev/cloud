@@ -32,7 +32,9 @@ The large reading shows the download; the tiles show upload, ping, jitter and
 loaded latency. The terminal shows the same measurements. The history draws the
 initial ramp-up as a thin gray line; it is excluded from the throughput. Ping is the median; jitter is the mean difference between
 consecutive pings. **Loaded latency** measures response time during transfers.
-A dash means no completed sample is available.
+A dash means no completed sample is available. The time axis stays fixed while
+the test runs, then ends at its actual duration. Long terminal lines stay on
+one line and scroll horizontally.
 
 After **Done**, use **Copy result** for JSON. **--json** shows it in the terminal
 panel; it does not start a second measurement. **Run again** starts a fresh test.

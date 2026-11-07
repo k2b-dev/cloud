@@ -271,7 +271,9 @@ over `autoVariant`. Non-finite coordinates are skipped.
 `AxisOptions` supports `label?: string`, `format?: (value: number) => string`,
 `ticks?: number` (suggested count, default 5), `scale?: "linear" | "log"`
 (default linear), `minorTicks?: boolean` (default false), and optional exact
-`domain?: [number, number]` comparison bounds. See the snapshot section for domain validation.
+`domain?: [number, number]` comparison bounds. Exact linear bounds keep both
+endpoint labels and omit round ticks closer than half a regular interval to
+either endpoint. See the snapshot section for domain validation.
 For line and scatter charts, log axes exclude non-positive coordinates. `references` is an array of
 `{ value: number; axis?: "x" | "y"; label?: string }`; the default axis is Y.
 Categorical bars ignore X references. Use the
