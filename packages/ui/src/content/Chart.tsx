@@ -224,7 +224,7 @@ export const renderChartSvg = (
     return responsiveChartSvg(
       renderAreaSvg({
         ...(opts as AreaOptions),
-        locale: renderLocale ?? (opts as AreaOptions).locale,
+        locale: (opts as AreaOptions).locale ?? renderLocale,
         legend: false,
         width,
         height,

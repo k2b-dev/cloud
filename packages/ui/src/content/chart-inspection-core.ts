@@ -300,7 +300,7 @@ export function createChartInspector(options: {
         const line = document.createElement("span");
         line.className = "k2b-chart__tooltip-row";
         const label = document.createElement("span");
-        label.textContent = `${chartMessages.resolve([options.locale?.() ?? "en"]).t.chartFields({ key: "total" })}: `;
+        label.textContent = `${chartMessages.resolve([options.locale?.() ?? "en"]).t.chartFields({ key: "areaTotal" })}: `;
         const value = document.createElement("b");
         value.textContent = total.formatted ?? String(total.value);
         line.append(label, value);

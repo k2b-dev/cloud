@@ -45,9 +45,9 @@ beforeAll(async () => {
     ssr.push(
       renderToString(() =>
         createComponent(LocaleProvider, {
-          locale: "de",
+          locale: "en",
           get children() {
-            return createComponent(ServerChart, { kind: "area", ...areaFixture, normalize });
+            return createComponent(ServerChart, { kind: "area", ...areaFixture, normalize, locale: "de" });
           },
         }),
       ),

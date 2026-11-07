@@ -78,3 +78,20 @@ test("Notebook line legends keep their existing names without area cursor values
   expect(html).toContain("Requests");
   expect(html).not.toContain("data-chart-legend-value");
 });
+
+test("titled area figures leave the heading to their Chat and Notebook frame", () => {
+  const input = chartKinds().parse({ ...spec, subtitle: "Invented studio sales" });
+  const options = chartRenderOptions(input, "de");
+  expect(options).not.toHaveProperty("title");
+  expect(options).not.toHaveProperty("subtitle");
+  const snapshot = prepareChartSnapshot(options, {
+    key: ({ datum }) => `${datum.seriesIndex}:${datum.index}`,
+    tooltip: () => ({ rows: [] }),
+  });
+  expect(snapshot.svg).not.toContain("Sales mix");
+  expect(snapshot.svg).not.toContain("Invented studio sales");
+  const html = renderNotebookChartFigure(input, "de")!;
+  expect(html).toContain("Sales mix");
+  expect(html.match(/class="notebook-book-chart__title">Sales mix<\/span>/g)).toHaveLength(1);
+  expect(html).not.toMatch(/<text[^>]*>Sales mix<\/text>/);
+});

@@ -357,7 +357,11 @@ export function chartRenderOptions(
   switch (input.kind) {
     case "area":
       return {
-        ...input,
+        kind: "area",
+        layout: input.layout,
+        normalize: input.normalize,
+        x: input.x,
+        series: input.series,
         displayWidth: options.width,
         locale,
         format: format.value,

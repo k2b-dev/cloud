@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { chartMessages } from "../../content/chart-messages";
 import { areaLayout, renderAreaSvg } from "./area";
 
 const size = { width: 480, height: 280 };
@@ -100,4 +101,10 @@ test("single and isolated observations have a visible band and a top edge", () =
     expect(svg).toContain('stroke="none"');
   }
   expect(areaLayout({ layout: "stacked", x: [1], series: [{ label: "A", data: [1] }] }, size).top).toBe(36);
+});
+
+test("area total wording does not change the existing pie and donut total label", () => {
+  const messages = chartMessages.resolve(["de"]).t;
+  expect(messages.chartFields({ key: "total" })).toBe("Gesamt");
+  expect(messages.chartFields({ key: "areaTotal" })).toBe("Zusammen");
 });
