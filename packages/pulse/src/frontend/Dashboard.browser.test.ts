@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser } from "../../../ui/test/browser";
 import type { Dashboard } from "../dashboard-contracts";
 import {
   baseOverviewFixture,
@@ -336,8 +336,8 @@ test("a table panel searches and sorts its rows in the head, and an empty search
     // Numbers sort by value and read right-aligned in the reader's language.
     const cpu = panel.getByRole("button", { name: "CPU", exact: true });
     await cpu.click();
-    expect(await cpu.locator("xpath=ancestor::th").getAttribute("aria-sort")).toBe("descending");
-    await settled(tab);
+    // The workspace clock is paused, so wait for the sorted head itself rather than for the page to settle.
+    await cpu.locator("xpath=ancestor::th[@aria-sort='descending']").waitFor();
     expect(
       await panel
         .locator("tbody tr.k2b-data-table__row td:nth-child(2)")
