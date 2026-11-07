@@ -48,6 +48,7 @@ export function createChartInspector(options: {
   select: (selection: ChartSelection) => void;
 }) {
   const source = Symbol("chart cursor");
+  const calendar = () => Boolean(options.container()?.querySelector("svg[data-calendar]"));
   let entries: Entry[] | undefined;
   let sortedPoints: Entry[] = [];
   const byElement = new Map<Element, Entry>();
@@ -465,6 +466,9 @@ export function createChartInspector(options: {
     pointerStart = { x: event.clientX, y: event.clientY };
     moved = false;
   };
+  const up = () => {
+    pointerFocusing = false;
+  };
   const click = (event: MouseEvent) => {
     pointerFocusing = false;
     if (!options.enabled() || moved || (event.target instanceof Element && event.target.closest("button,a"))) return;
@@ -479,16 +483,12 @@ export function createChartInspector(options: {
   };
   const focus = (event: FocusEvent) => {
     if (event.target !== options.container() || !options.enabled()) return;
-    if (pointerFocusing && options.container()?.querySelector("svg[data-calendar]")) {
+    if (pointerFocusing && calendar()) {
       pointerFocusing = false;
       return;
     }
     const nodes = visibleRecords();
-    const first = options.container()?.querySelector("svg[data-calendar]")
-      ? nodes.at(-1)
-      : options.kind() === "line"
-        ? sortedPoints.at(-1)
-        : nodes[0];
+    const first = calendar() ? nodes.at(-1) : options.kind() === "line" ? sortedPoints.at(-1) : nodes[0];
     if (first) show(first);
   };
   const key = (event: KeyboardEvent): boolean => {
@@ -555,7 +555,7 @@ export function createChartInspector(options: {
       if (next) index = nodes.indexOf(next);
     } else index += event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
     const next = nodes[Math.max(0, Math.min(nodes.length - 1, index))]!;
-    if (options.container()?.querySelector("svg[data-calendar]")) next.element.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (calendar()) next.element.scrollIntoView({ block: "nearest", inline: "nearest" });
     show(next);
     return true;
   };
@@ -566,6 +566,7 @@ export function createChartInspector(options: {
     destroy: () => close(false),
     move,
     down,
+    up,
     click,
     focus,
     key,
@@ -601,38 +602,6 @@ export function closeChartInspectionOnOutside(options: {
   };
 }
 
-/** A calendar starts at the newest week. Pointer inspection never resets its scroll position. */
-export function mountCalendarScroll(container: HTMLElement): () => void {
-  const drawing = container.querySelector(".k2b-chart__svg");
-  if (!drawing) return () => {};
-  const header = () => {
-    const svg = drawing.querySelector<SVGSVGElement>("svg[data-calendar]");
-    const group = svg?.querySelector("[data-calendar-header]");
-    const scale = 1 / (svg?.getScreenCTM()?.a || 1);
-    if (group) container.style.setProperty("--k2b-calendar-header-x", `${container.scrollLeft * scale}px`);
-    for (const label of svg?.querySelectorAll<SVGTextElement>("[data-calendar-month]") ?? []) {
-      // A month name is useful whole; hide a fragment behind the fixed weekday rail.
-      container.style.setProperty(
-        `--k2b-calendar-month-${label.dataset.calendarMonth}`,
-        label.x.baseVal[0]!.value < container.scrollLeft * scale + 32 ? "hidden" : "visible",
-      );
-    }
-  };
-  const reset = () => {
-    if (!drawing.querySelector("svg[data-calendar]")) return;
-    container.scrollLeft = container.scrollWidth;
-    header();
-  };
-  reset();
-  const observer = new MutationObserver(reset);
-  observer.observe(drawing, { childList: true });
-  container.addEventListener("scroll", header, { passive: true });
-  return () => {
-    observer.disconnect();
-    container.removeEventListener("scroll", header);
-  };
-}
-
 export type InspectChartOptions = {
   kind: ChartKind;
   format: ChartTooltipFormatter;
@@ -658,7 +627,6 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
     tooltip.id = `k2b-chart-tooltip-${++tooltipId}`;
   } while (document.getElementById(tooltip.id));
   container.append(anchor, tooltip);
-  const removeCalendarScroll = mountCalendarScroll(container);
   const addedTabindex = !container.hasAttribute("tabindex");
   if (addedTabindex) container.setAttribute("tabindex", "0");
 
@@ -672,13 +640,21 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
     format: options.format,
     select: (selection) => options.select?.(selection),
   });
-  container.addEventListener("pointerdown", inspector.down);
-  container.addEventListener("pointermove", inspector.move);
-  container.addEventListener("click", inspector.click);
-  container.addEventListener("pointerleave", inspector.leave);
-  container.addEventListener("focusin", inspector.focus);
-  container.addEventListener("focusout", inspector.close);
-  container.addEventListener("keydown", inspector.key);
+  const listen = <K extends keyof HTMLElementEventMap>(name: K, listener: (event: HTMLElementEventMap[K]) => unknown) => {
+    container.addEventListener(name, listener);
+    return () => container.removeEventListener(name, listener);
+  };
+  const removeListeners = [
+    listen("pointerdown", inspector.down),
+    listen("pointerup", inspector.up),
+    listen("pointercancel", inspector.up),
+    listen("pointermove", inspector.move),
+    listen("click", inspector.click),
+    listen("pointerleave", inspector.leave),
+    listen("focusin", inspector.focus),
+    listen("focusout", inspector.close),
+    listen("keydown", inspector.key),
+  ];
   const removeOutside = closeChartInspectionOnOutside({ container: () => container, tooltip: () => tooltip, close: inspector.close });
   const unlinkCursor = inspector.linkCursor(options.cursor);
   let destroyed = false;
@@ -692,15 +668,8 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
     destroy() {
       if (destroyed) return;
       destroyed = true;
-      container.removeEventListener("pointerdown", inspector.down);
-      container.removeEventListener("pointermove", inspector.move);
-      container.removeEventListener("click", inspector.click);
-      container.removeEventListener("pointerleave", inspector.leave);
-      container.removeEventListener("focusin", inspector.focus);
-      container.removeEventListener("focusout", inspector.close);
-      container.removeEventListener("keydown", inspector.key);
+      for (const remove of removeListeners) remove();
       removeOutside();
-      removeCalendarScroll();
       unlinkCursor();
       inspector.destroy();
       for (const element of container.querySelectorAll<SVGGraphicsElement>("[data-chart-datum]")) {

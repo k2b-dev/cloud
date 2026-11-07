@@ -37,6 +37,8 @@ describe("framework-free chart inspection entry", () => {
     expect(result.outputs).toHaveLength(1);
     const output = await result.outputs[0]!.text();
     expect(output).not.toContain("solid-js");
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(16_000);
+    expect(output).not.toContain("k2b-calendar-header-x");
     expect(output).toMatch(/export\s*\{[^}]*\binspectChart\b/);
   });
 

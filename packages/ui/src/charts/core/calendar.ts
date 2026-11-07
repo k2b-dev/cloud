@@ -1,4 +1,5 @@
 import { type ChartOptions, chartDatumSvg, escapeXml, type HeatmapOptions, heatmap, renderHeader, svgRoot } from "./svg";
+import { chartTextWidth } from "./text";
 export type CalendarHeatmapOptions = ChartOptions & {
   layout: "calendar";
   data: [string, number | null][];
@@ -28,6 +29,11 @@ export const calendarWords = (locale = "en") =>
   locale.split("-")[0] === "de"
     ? { day: "Tag", less: "weniger", more: "mehr", moreIn: "mehr rein", moreOut: "mehr raus" }
     : { day: "Day", less: "less", more: "more", moreIn: "more in", moreOut: "more out" };
+/** Use one fixed, explicit Intl path. DateStyle/short forms differ across browser CLDR versions. */
+const calendarDateParts = (locale: string) => {
+  const formatter = new Intl.DateTimeFormat(locale, { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return (time: number) => Object.fromEntries(formatter.formatToParts(time).map((part) => [part.type, part.value]));
+};
 export function calendarLayout(spec: CalendarHeatmapOptions, size = { width: spec.width ?? 480, height: spec.height ?? 280 }) {
   const seen = new Set<string>();
   const dates = spec.data
@@ -48,11 +54,11 @@ export function calendarLayout(spec: CalendarHeatmapOptions, size = { width: spe
   const weeks = dates.length ? Math.floor((dates.at(-1)!.time - monday) / DAY / 7) + 1 : 0;
   const headerHeight = renderHeader(size.width, spec.title, spec.subtitle).height;
   // Seven square rows use the available panel height. Wider calendars scroll rather than flattening their cells.
-  const cell = Math.max(14, Math.floor((size.height - headerHeight - 22 - 20 - 18) / 7)),
+  const cell = Math.max(14, Math.floor((size.height - headerHeight - 32 - 20 - 18) / 7)),
     gap = 3,
     left = 32;
   const width = Math.max(spec.displayWidth ?? size.width, left + weeks * (cell + gap) + 4);
-  const top = 22 + renderHeader(width, spec.title, spec.subtitle).height;
+  const top = 32 + renderHeader(width, spec.title, spec.subtitle).height;
   const min = Math.min(...points.map((p) => p.value), 0),
     max = Math.max(...points.map((p) => p.value), 0);
   const absMax = Math.max(-min, max);
@@ -91,21 +97,19 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
     locale = spec.locale ?? "en",
     words = calendarWords(locale);
   const number = spec.format ?? new Intl.NumberFormat(locale, { maximumSignificantDigits: 15 }).format;
-  const date = new Intl.DateTimeFormat(locale, { dateStyle: "full", timeZone: "UTC" });
-  const weekday = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
-  const month = new Intl.DateTimeFormat(locale, { month: "short", timeZone: "UTC" });
+  const parts = calendarDateParts(locale);
   // Left aligned direct-core header; interactive hosts keep it at the visible scroll edge.
   const header = renderHeader(s.width, spec.title, spec.subtitle)
     .svg.replace(/x="[^"]*"/g, 'x="0"')
     .replace(/text-anchor="middle"/g, 'text-anchor="start"')
     .replace(/<text /g, '<text fill="var(--k2b-text,#27272a)" font-size="12" ');
-  const body: string[] = [`<g data-calendar-header="true" style="transform:translateX(var(--k2b-calendar-header-x,0px))">${header}</g>`];
+  const body: string[] = [`<g style="transform:translateX(var(--k2b-calendar-header-x,0px))">${header}</g>`];
   const days: string[] = [
     `<g data-calendar-weekdays="true" pointer-events="none" style="transform:translateX(var(--k2b-calendar-header-x,0px))"><rect x="-1" y="${s.top - 18}" width="33" height="${7 * (s.cell + 3) + 18}" fill="var(--k2b-surface,#fff)"/>`,
   ];
   for (const day of [0, 2, 4])
     days.push(
-      `<text x="0" y="${s.top + day * (s.cell + 3) + s.cell - 2}" fill="var(--k2b-text-muted,#45454e)" font-size="11">${escapeXml(weekday.format(Date.UTC(2026, 0, 4 + s.weekStart + day)))}</text>`,
+      `<text x="0" y="${s.top + day * (s.cell + 3) + s.cell - 2}" fill="var(--k2b-text-muted,#45454e)" font-size="11">${escapeXml(parts(Date.UTC(2026, 0, 4 + s.weekStart + day)).weekday!.slice(0, locale.startsWith("de") ? 2 : 3))}</text>`,
     );
   let lastRight = -Infinity,
     lastMonth = "";
@@ -115,18 +119,28 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
     const nextDate = new Date(next),
       ym = nextDate.toISOString().slice(0, 7);
     if (ym === lastMonth) continue;
-    const firstLabel = lastMonth === "";
     lastMonth = ym;
-    const text = `${month.format(next)}${firstLabel || nextDate.getUTCMonth() === 0 ? ` ${nextDate.getUTCFullYear()}` : ""}`;
-    const textWidth = text.length * 7;
-    const x = Math.max(32, Math.min(32 + week * (s.cell + 3), s.width - textWidth - 2));
-    if (x < lastRight + 2) continue;
+    const text = parts(next).month!.slice(0, 3);
+    const textWidth = chartTextWidth(text, 11);
+    const x = Math.min(s.width - textWidth - 2, Math.max(32 + week * (s.cell + 3), lastRight + 3));
+    const visibility = `visibility:var(--k2b-calendar-month-${week},visible)`;
+    // The year has its own row, so a partial first month cannot suppress the following month.
+    if (week === 0 || nextDate.getUTCMonth() === 0)
+      body.push(
+        `<g style="${visibility}"><text x="${x}" y="${s.top - 24}" font-size="10" fill="var(--k2b-text-muted,#45454e)">${nextDate.getUTCFullYear()}</text></g>`,
+      );
     body.push(
-      `<text data-calendar-month="${week}" style="visibility:var(--k2b-calendar-month-${week},visible)" x="${x}" y="${s.top - 10}" textLength="${textWidth}" lengthAdjust="spacingAndGlyphs" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(text)}</text>`,
+      `<text data-calendar-month="${week}" style="${visibility}" x="${x}" y="${s.top - 10}" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(text)}</text>`,
     );
     lastRight = x + textWidth;
   }
   for (const c of s.cells) {
+    const d = parts(c.time);
+    const date = locale.startsWith("de")
+      ? `${d.day}. ${d.month} ${d.year}`
+      : /^en(?:-US)?$/.test(locale)
+        ? `${d.month} ${d.day}, ${d.year}`
+        : `${d.day} ${d.month} ${d.year}`;
     const fill = spec.scale === "diverging" && c.value === 0 ? "var(--k2b-surface-muted,#f4f4f5)" : paint(c.color, c.intensity);
     const value =
       spec.scale === "diverging" && c.value !== 0
@@ -138,7 +152,7 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
         {
           role: "cell",
           index: c.index,
-          label: date.format(c.time),
+          label: `${d.weekday}, ${date}`,
           anchor: [c.x + s.cell / 2, c.y + s.cell / 2],
           grid: [c.week, c.weekday],
           values: [{ key: "value", value: c.value, formatted: value }],
@@ -173,7 +187,7 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
   );
   return svgRoot({ ...s, className: spec.className }, body.join("")).replace(
     "<svg ",
-    `<svg data-calendar="true" data-chart-scroll="end" data-chart-min-width="${s.minWidth}" `,
+    `<svg data-calendar="true" data-chart-min-width="${s.minWidth}" `,
   );
 }
 export const renderHeatmapSvg = (spec: HeatmapChartOptions): string =>

@@ -1089,10 +1089,10 @@ days and null values remain gaps. The date span is limited to three years. Weeks
 
 The color scale includes every observation. Diverging values use turquoise
 for positive and violet for negative values, with zero neutral. Phone charts
-scroll to the newest weeks. Left/right inspect a week; up/down inspect a day.
+scroll to the newest weeks. Month names use a separate year row, so short partial months do not hide the next month. Left/right inspect a week; up/down inspect a day.
 Home/End jump, Enter pins and Escape dismisses. The exact date and value are
 also available in the table. Optional `locale` takes precedence over the UI
-provider, and `format` formats values. `label` names their unit. Diverging values read “more in” or “more out” without a sign. Square cells use the available height. Weekday labels stay visible while the weeks scroll, and partially visible month names are hidden. Print output scales uniformly to the page. Measured hosts pass `displayWidth`.
+provider, and `format` formats values. `label` names their unit. Diverging values read “more in” or “more out” without a sign. Square cells use the available height. Weekday labels stay visible while the weeks scroll, and partially visible month names are hidden. Date labels use explicit long Intl parts and a shared date pattern for consistent server and browser text. Print output scales uniformly to the page. Measured hosts pass `displayWidth`. Plain SVG hosts mount `mountCalendarScroll` from `@k2b/ui/charts` and dispose its returned cleanup.
 
 Keep loading, empty, error/retry and stale feedback in the host's fixed-height
 frame. The newsletter example shows daily opens across a complete year.

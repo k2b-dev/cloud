@@ -166,7 +166,10 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
     );
     // stdlib embeds an unlayered <style> with fixed colors; the base stylesheet owns those rules instead.
     svg = svg.replace(/<style>[\s\S]*?<\/style>/, "");
-    return { svg: KEEP_ASPECT.has(mapped.kind) ? svg : responsive(svg), table: rows.table() };
+    return {
+      svg: KEEP_ASPECT.has(mapped.kind) || (mapped.kind === "heatmap" && mapped.layout === "calendar") ? svg : responsive(svg),
+      table: rows.table(),
+    };
   } catch (error) {
     throw new CloudError("invalid", `cloud.chart: ${error instanceof Error ? error.message : String(error)}`);
   }

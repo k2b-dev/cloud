@@ -6,6 +6,7 @@ import "./no-eval";
 import "./no-hints";
 import { cloudAiChartMarkKey } from "@k2b/cloud/ai/app-frame";
 import { type ChartInspection, type ChartKind, type ChartTooltip, inspectChart, isChartDatum } from "@k2b/ui/chart-inspection";
+import { mountCalendarScroll } from "@k2b/ui/charts";
 import { LIMITS } from "../contracts";
 import { createBridge } from "../runtime/bridge";
 import { createCloud } from "../runtime/cloud";
@@ -356,16 +357,21 @@ new MutationObserver((records) => {
         ? "Interaktives Diagramm. Mit den Pfeiltasten Werte ansehen, mit Escape schließen."
         : "Interactive chart. Use arrow keys to inspect values, Escape to dismiss.",
     );
-    inspections.set(
-      chart,
-      inspectChart(chart, {
-        kind,
-        format: ({ datum }) => {
-          const key = cloudAiChartMarkKey(datum);
-          return chartTooltips.get(chart)?.get(key) ?? readChartTooltips(chart).get(key) ?? { rows: [] };
-        },
-      }),
-    );
+    const unmountCalendar = chart.querySelector("svg[data-calendar]") ? mountCalendarScroll(chart) : () => {};
+    const inspection = inspectChart(chart, {
+      kind,
+      format: ({ datum }) => {
+        const key = cloudAiChartMarkKey(datum);
+        return chartTooltips.get(chart)?.get(key) ?? readChartTooltips(chart).get(key) ?? { rows: [] };
+      },
+    });
+    inspections.set(chart, {
+      ...inspection,
+      destroy() {
+        unmountCalendar();
+        inspection.destroy();
+      },
+    });
   }
   for (const element of document.querySelectorAll(".k2b-chart__svg[data-chart-id]:not([data-cloud-observed])")) {
     element.setAttribute("data-cloud-observed", "");

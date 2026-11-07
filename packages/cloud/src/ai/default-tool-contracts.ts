@@ -33,6 +33,7 @@ import {
   type ChartDateFormat as CloudAiDateFormat,
   type ChartFormat as CloudAiFormat,
   type ChartNumberFormat as CloudAiNumberFormat,
+  chartAcceptsLocale,
   chartKinds,
   chartLocaleSchema,
   chartParts,
@@ -208,13 +209,10 @@ const chartInputSchema = () => {
       }
       if (value.charts !== undefined) {
         value.charts.forEach((chart, index) => {
-          if (
-            (chart.layout === "calendar" && chart.kind !== "heatmap") ||
-            (chart.locale !== undefined && !(chart.kind === "heatmap" && chart.layout === "calendar"))
-          )
+          if ((chart.layout === "calendar" && chart.kind !== "heatmap") || (chart.locale !== undefined && !chartAcceptsLocale(chart)))
             context.addIssue({
               code: "custom",
-              message: "calendar layout and locale belong to calendar heatmaps.",
+              message: "Unsupported calendar layout or locale.",
               path: ["charts", index],
             });
         });
@@ -230,8 +228,8 @@ const chartInputSchema = () => {
       } else {
         if (value.linkX !== undefined || (value.layout !== undefined && value.layout !== "calendar"))
           context.addIssue({ code: "custom", message: "linkX and layout belong to groups." });
-        if (value.locale !== undefined && !(value.kind === "heatmap" && value.layout === "calendar"))
-          context.addIssue({ code: "custom", message: "locale is supported by calendar heatmaps." });
+        if (value.locale !== undefined && !chartAcceptsLocale(value))
+          context.addIssue({ code: "custom", message: "Unsupported chart locale." });
         if (value.layout === "calendar" && value.kind !== "heatmap")
           context.addIssue({ code: "custom", message: "calendar layout belongs to heatmaps." });
         const parsed = ChartSchema.safeParse(value);

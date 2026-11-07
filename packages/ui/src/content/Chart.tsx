@@ -21,6 +21,7 @@ import { type ChartDrawingOptions, chartRenderHeight, preservesAspectRatio, rend
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { mountCalendarScroll } from "./chart-calendar";
 import type { ChartCursor } from "./chart-cursor";
 import { createChartInspection } from "./chart-inspection";
 import {
@@ -350,6 +351,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   };
 
   const stopDragging: JSX.EventHandlerUnion<HTMLDivElement, PointerEvent> = (event) => {
+    inspection.up();
     if (pendingPointer?.pointerId === event.pointerId) flushPointerMove();
     if (timelineDrag?.pointerId === event.pointerId) {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -497,6 +499,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
 
   onMount(() => {
     if (!containerRef) return;
+    if (props.kind === "heatmap" && props.layout === "calendar") onCleanup(mountCalendarScroll(containerRef));
     onCleanup(
       closeChartInspectionOnOutside({
         container: () => containerRef,

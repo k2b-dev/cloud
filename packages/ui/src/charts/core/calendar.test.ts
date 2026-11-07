@@ -70,7 +70,7 @@ test("calendar gaps, square cells, locale weeks, months and complete scale legen
       ["2026-05-01", 2],
     ],
   });
-  for (const month of ["Jan 2026", "Feb", "Mar", "Apr", "May"]) expect(svg).toContain(month);
+  for (const month of ["2026", "Jan", "Feb", "Mar", "Apr", "May"]) expect(svg).toContain(month);
   expect(svg).toContain("more out");
   expect(svg).toContain("more in");
   expect(renderCalendarSvg({ ...spec, scale: "sequential" })).toContain("less");
@@ -91,4 +91,17 @@ test("calendar squares fill the panel and reserve a visible weekday rail", () =>
   expect(s.top + 7 * (s.cell + 3) + 12).toBeGreaterThan(s.height - 16);
   expect(s.top + 7 * (s.cell + 3) + 12).toBeLessThanOrEqual(s.height);
   expect(renderCalendarSvg(spec)).toContain('data-calendar-weekdays="true"');
+});
+
+test("month labels retain the month after a partial first month without stretching", () => {
+  const svg = renderCalendarSvg({
+    ...spec,
+    locale: "de-DE",
+    data: [
+      ["2026-05-29", 1],
+      ["2026-07-31", 2],
+    ],
+  });
+  for (const label of ["Mai", "Jun", "Jul", "2026"]) expect(svg).toContain(label);
+  expect(svg).not.toMatch(/textLength|lengthAdjust/);
 });

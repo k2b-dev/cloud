@@ -1,3 +1,7 @@
+import { chartLocaleSchema } from "./chart-locale";
+
+export { chartAcceptsLocale, chartLocaleSchema } from "./chart-locale";
+
 import { CALENDAR_MAX_DAYS, calendarDay } from "@k2b/ui/charts/core";
 import { z } from "zod";
 
@@ -30,19 +34,6 @@ export const chartFormatSchema = () => z.union([chartNumberFormatSchema(), dateF
 export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSchema>>;
 export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
-
-/** BCP 47 locale strings must be accepted by every Intl formatter used during rendering. */
-export const chartLocaleSchema = () =>
-  z
-    .string()
-    .min(1)
-    .refine((value) => {
-      try {
-        return Intl.getCanonicalLocales(value).length === 1;
-      } catch {
-        return false;
-      }
-    }, "Use a valid BCP 47 locale, such as de-DE.");
 
 export const chartKindSchema = () =>
   z.enum(["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);

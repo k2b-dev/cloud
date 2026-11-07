@@ -95,7 +95,7 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         expect(weekdayBox!.x).toBeGreaterThanOrEqual(visible!.x);
         expect(weekdayBox!.x + weekdayBox!.width).toBeLessThanOrEqual(visible!.x + 32);
         const monthBoxes = await chart
-          .locator("svg > text")
+          .locator("[data-calendar-month]")
           .evaluateAll((elements) =>
             elements.map((e) => (e as SVGGraphicsElement).getBBox()).map((b) => ({ left: b.x, right: b.x + b.width })),
           );
@@ -147,6 +147,18 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         await settled(page);
         expect(await chart.evaluate((e) => e.scrollLeft)).toBe(beforeTap);
         expect(await chart.locator("[data-selected]").getAttribute("data-chart-datum")).toContain('"index":0');
+        // A swipe has no click. Its pointerup/cancel must not suppress the next keyboard focus.
+        for (const end of ["pointerup", "pointercancel"]) {
+          await page.keyboard.press("Escape");
+          await chart.evaluate((e, end) => {
+            e.blur();
+            e.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch" }));
+            e.dispatchEvent(new PointerEvent(end, { bubbles: true, pointerType: "touch" }));
+            e.focus();
+          }, end);
+          await settled(page);
+          expect(await chart.locator("[data-inspected]").count()).toBe(1);
+        }
         const square = await mark.boundingBox();
         expect(Math.abs(square!.width - square!.height)).toBeLessThan(0.2);
         expect(await chart.locator("[data-inspected]").count()).toBe(1);
