@@ -11,13 +11,17 @@ declare module "solid-js" {
 /** Only drawing SVGs, never toolbar or legend icons. */
 export const drawingSvg = ".k2b-chart__svg > svg";
 
-/** Exact data identity prevents similarly titled history charts exchanging their server drawing. */
-export const drawingKey = (name: string, props: object): string =>
-  JSON.stringify([name, props], (_key, value: unknown) =>
+/** A stable 64-bit FNV-1a fingerprint keeps chart data out of the handoff attribute. */
+export const drawingKey = (name: string, props: object): string => {
+  const source = JSON.stringify([name, props], (_key, value: unknown) =>
     value && typeof value === "object" && !Array.isArray(value)
       ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
       : value,
   );
+  let hash = 0xcbf29ce484222325n;
+  for (let index = 0; index < source.length; index++) hash = BigInt.asUintN(64, (hash ^ BigInt(source.charCodeAt(index))) * 0x100000001b3n);
+  return hash.toString(16).padStart(16, "0");
+};
 
 /**
  * The ordinary island mount removes its server children synchronously. A chart's custom element can hand its

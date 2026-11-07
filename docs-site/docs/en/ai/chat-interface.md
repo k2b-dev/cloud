@@ -348,7 +348,9 @@ order:
    Chart, group and explorer drawings load when Chat first shows one. Their
    headings, controls and plot areas reserve the same space while the code and
    data arrive. A drawing that came from the server stays visible until its
-   browser code is ready, including when reopening history. If that code cannot
+   browser code is ready, including when reopening history. Its accessible name
+   remains available, “Loading chart” is announced politely, and its controls
+   look disabled until they can respond. If that code cannot
    load, that chart shows **The chart could not be loaded** with **Reload**.
    The composer, sidebar and other chat controls remain usable while charts load
    and if loading fails.

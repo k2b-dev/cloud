@@ -27,14 +27,31 @@ function DrawingBoundary(props: {
   children: (module: Drawing) => JSX.Element;
 }) {
   const module = useDrawing();
+  const locale = useLocale();
   const key = drawingKey(props.name, props.input);
   const server = takeServerDrawing(key);
   const retained = server instanceof HTMLElement ? server : undefined;
   const frames = [...(retained?.querySelectorAll<HTMLElement>(".k2b-chart-explorer") ?? [])];
   for (const frame of frames) {
     frame.style.position = "relative";
-    for (const control of frame.querySelectorAll<HTMLElement>(".k2b-chart, button, input, select, textarea, a[href], [tabindex]"))
+    // The drawing remains readable by assistive technology; only its inspection and controls wait for code.
+    for (const chart of frame.querySelectorAll<HTMLElement>(".k2b-chart")) {
+      chart.removeAttribute("tabindex");
+      chart.setAttribute("data-interactive", "false");
+      chart.setAttribute("aria-disabled", "true");
+    }
+    for (const control of frame.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]")) {
       control.inert = true;
+      control.setAttribute("aria-disabled", "true");
+      control.style.opacity = "0.4";
+      if (
+        control instanceof HTMLButtonElement ||
+        control instanceof HTMLInputElement ||
+        control instanceof HTMLSelectElement ||
+        control instanceof HTMLTextAreaElement
+      )
+        control.disabled = true;
+    }
   }
   function Upgrade(input: { module: Drawing }) {
     let root!: HTMLDivElement;
@@ -58,17 +75,24 @@ function DrawingBoundary(props: {
       fallback={
         <Show when={retained && drawingKey(props.name, props.input) === key} fallback={props.fallback(() => module() === null)}>
           {retained}
-          <Show when={module() === null}>
-            <For each={frames}>
-              {(frame) => (
-                <Portal mount={frame}>
+          <For each={frames}>
+            {(frame) => (
+              <Portal mount={frame}>
+                <Show
+                  when={module() === null}
+                  fallback={
+                    <span class="sr-only" role="status" aria-live="polite">
+                      {aiChatMessages(locale()).chartLoading}
+                    </span>
+                  }
+                >
                   <div class="absolute inset-x-2 bottom-2 rounded bg-surface p-2 text-sm">
                     <Status failed />
                   </div>
-                </Portal>
-              )}
-            </For>
-          </Show>
+                </Show>
+              </Portal>
+            )}
+          </For>
         </Show>
       }
     >
@@ -94,13 +118,13 @@ function useDrawing() {
 function Status(props: { failed: boolean; unavailable?: boolean }) {
   const locale = useLocale();
   return (
-    <span role="status">
+    <span role="status" aria-live="polite">
       <span>
         {props.failed
           ? aiChatMessages(locale()).chartLoadFailed
           : props.unavailable
             ? aiChatMessages(locale()).viewUnavailable
-            : aiChatMessages(locale()).viewLoading}
+            : aiChatMessages(locale()).chartLoading}
       </span>
       <Show when={props.failed}>
         <Button size="sm" variant="ghost" onClick={() => window.location.reload()}>

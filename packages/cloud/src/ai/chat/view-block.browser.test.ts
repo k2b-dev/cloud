@@ -30,7 +30,8 @@ const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry
       {
         name: "solid-view-block-test",
         setup(builder) {
-          // As in buildIslands: generate the runtime entry outside the component. The harness imports no package internals.
+          // Test-only private runtime access, as in production's generated buildIslands entry. The public @k2b/ssr
+          // and ./nav exports provide no mount/dispose/remount API; keep one in-memory split build for this fixture.
           builder.onResolve({ filter: /^chat-browser-entry$/ }, () => ({ path: "chat-browser-entry", namespace: "chat-test" }));
           builder.onLoad({ filter: /.*/, namespace: "chat-test" }, () => ({
             contents: `import { mount, disposeIslands, mountIslands } from ${JSON.stringify(resolve(Bun.resolveSync("@k2b/ssr", import.meta.dir), "../mount.ts"))};
@@ -577,13 +578,15 @@ const widgets = [
   }),
 ];
 
-const boxes = (page: Page) =>
-  page.evaluate(() =>
+const boxes = async (page: Page) => {
+  await settled(page);
+  return page.evaluate(() =>
     Array.from(document.querySelectorAll("[data-view-path]")).map((node) => {
       const box = node.getBoundingClientRect();
       return [box.top, box.height].map(Math.round);
     }),
   );
+};
 
 for (const view of [
   { name: "desktop", width: 1280, height: 900, touch: false },
@@ -600,9 +603,11 @@ for (const view of [
       try {
         const page = await context.newPage();
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${theme === "dark" ? "de" : "en"}&theme=${theme}`);
+        const filesReady = blocks.map((block) => hold(block.id));
         await page.evaluate((value) => window.show(value), blocks);
         await page.waitForSelector("[data-view-path]");
         const loading = await boxes(page);
+        filesReady.forEach((ready) => ready());
         await page.waitForSelector('[data-view-path] [data-chart-kind="bar"]');
         await page.waitForSelector('[data-view-path] [data-chart-kind="stat"]');
         expect(await page.locator('[data-view-path] [data-interactive="true"]').count()).toBe(7);
@@ -647,9 +652,11 @@ for (const view of [
       try {
         const page = await context.newPage();
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${theme === "dark" ? "de" : "en"}&theme=${theme}`);
+        const filesReady = widgets.map((block) => hold(block.id));
         await page.evaluate((value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value), widgets);
         await page.waitForSelector("[data-view-path]");
         const loading = await boxes(page);
+        filesReady.forEach((ready) => ready());
         await page.waitForFunction(() => document.querySelectorAll("[data-view-path] .k2b-stat-cell").length === 5);
         // The hidden copy that sizes the record keeps its eight rows beside the eight loaded ones.
         await page.waitForFunction(() => document.querySelectorAll("[data-view-path] dt").length === 16);
@@ -799,12 +806,14 @@ test("a record reserves the lines of values and labels that wrap on a phone", as
   try {
     const page = await context.newPage();
     await page.goto(`http://127.0.0.1:${server.port}/`);
+    const fileReady = hold("/views/delivery-note-1c2d3e4f.view.json");
     await page.evaluate(
       (value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value),
       [present("/views/delivery-note-1c2d3e4f.view.json", cloudAiViewSummary(parseCloudAiView(note)!))],
     );
     await page.waitForSelector("[data-view-path]");
     const loading = await boxes(page);
+    fileReady();
     await page.waitForFunction(() => document.querySelectorAll("[data-view-path] dt").length === 10);
     expect(await boxes(page)).toEqual(loading);
     const record = await page.evaluate(() => {
@@ -853,6 +862,7 @@ test("a card shows all of its text on a phone, also a long value, caption and tr
       ],
     );
     await page.waitForSelector(".k2b-stat-cell");
+    await settled(page);
     const parts = await page.evaluate(() => {
       const cell = document.querySelector(".k2b-stat-cell")!.getBoundingClientRect();
       return Array.from(
@@ -1028,17 +1038,20 @@ test("a view file edited after present shows unavailable instead of what its sum
   }
 });
 
-const explorerViewport = (page: Page) =>
-  page.evaluate(() => {
+const explorerViewport = async (page: Page) => {
+  await settled(page);
+  return page.evaluate(() => {
     const box = document.querySelector(".k2b-chart-explorer__viewport")!.getBoundingClientRect();
     return [box.top, box.height].map(Math.round);
   });
+};
 /**
  * The frame of a presented explorer whose file the test holds back: every view box and the explorer viewport,
  * measured in one call, so the loaded explorer can never replace the measured nodes halfway.
  */
 const explorerLoadingFrame = async (page: Page) => {
   await page.waitForSelector('[data-view-path] .k2b-chart-explorer__viewport [role="status"]');
+  await settled(page);
   return page.evaluate(() => {
     const viewport = document.querySelector(".k2b-chart-explorer__viewport")!.getBoundingClientRect();
     return {
@@ -1098,6 +1111,7 @@ for (const view of [
           expect(await explorerViewport(page)).toEqual(viewport);
         };
         const fits = async () => {
+          await settled(page);
           expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
           const controls = await page.locator(".k2b-chart-explorer").evaluate((node) => {
             const frame = node.getBoundingClientRect();
@@ -1236,8 +1250,9 @@ test("an explorer keeps its controls on one line inside a phone column with long
     const frame = await explorerLoadingFrame(page);
     loaded();
     await page.waitForSelector('[data-view-path] [data-interactive="true"]');
-    const layout = () =>
-      page.evaluate(() => {
+    const layout = async () => {
+      await settled(page);
+      return page.evaluate(() => {
         const section = document.querySelector(".k2b-chart-explorer")!;
         const box = section.getBoundingClientRect();
         const controls = Array.from(section.querySelectorAll(".k2b-chart-explorer__dimension, .k2b-filter-chip, .k2b-chart-explorer__pin"));
@@ -1251,6 +1266,7 @@ test("an explorer keeps its controls on one line inside a phone column with long
           }),
         };
       });
+    };
     expect(await boxes(page)).toEqual(frame.boxes);
     const initial = await layout();
     expect(initial).toMatchObject({ overflow: 0, inside: true });
@@ -1273,6 +1289,7 @@ test("an explorer keeps its controls on one line inside a phone column with long
       .locator(".k2b-chart-legend__swatch")
       .evaluate((node) => getComputedStyle(node).backgroundColor);
     await page.locator(".k2b-chart-explorer .k2b-filter-chip").tap();
+    await settled(page);
     const filterColor = await page
       .getByRole("menuitemcheckbox", { name: "South", exact: true })
       .locator(".k2b-dropdown__color")
@@ -1540,6 +1557,7 @@ for (const width of [1280, 390]) {
         await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "domcontentloaded" });
         await page.waitForSelector("solid-island[data-mounted=true]");
         if (arrival === "navigation") await page.evaluate(() => window.restoreChartHistory());
+        await settled(page);
         const history = page.locator('solid-island[data-id="chart-history"]');
         expect(await history.locator(".k2b-chart__svg > svg").count()).toBe(1);
         const svg = await history.locator(".k2b-chart__svg > svg").evaluate((node) => node.outerHTML);
@@ -1553,14 +1571,31 @@ for (const width of [1280, 390]) {
         await page.getByRole("textbox", { name: "Message" }).fill("Keep my draft");
         await page.getByRole("button", { name: "Sidebar 0" }).click();
         await page.getByRole("button", { name: "Sidebar 1" }).waitFor();
-        expect(await history.locator(".k2b-chart").evaluate((node) => Boolean(node.closest("[inert]")))).toBe(true);
+        const retainedChart = history.locator(".k2b-chart");
+        const name = await retainedChart.getAttribute("aria-label");
+        if (!name) throw new Error("The server chart must have an accessible name");
+        expect(await history.getByRole("group", { name, exact: true }).count()).toBe(1);
+        expect(await retainedChart.getAttribute("tabindex")).toBeNull();
+        expect(await retainedChart.getAttribute("data-interactive")).toBe("false");
+        expect(await retainedChart.getAttribute("aria-disabled")).toBe("true");
+        const status = history.getByRole("status").filter({ hasText: "Loading chart" });
+        expect(await status.getAttribute("aria-live")).toBe("polite");
+        const controls = await history.locator(".k2b-chart-explorer button").evaluateAll((nodes) =>
+          nodes.map((button) => {
+            if (!(button instanceof HTMLButtonElement)) throw new Error("Expected a native chart button");
+            return { inert: button.inert, disabled: button.disabled, opacity: getComputedStyle(button).opacity };
+          }),
+        );
+        expect(controls.length).toBeGreaterThan(0);
+        for (const control of controls) expect(control).toEqual({ inert: true, disabled: true, opacity: "0.4" });
+        expect(await history.locator("[data-cloud-chart-key]").getAttribute("data-cloud-chart-key")).toMatch(/^[0-9a-f]{16}$/);
         const frame = await history.locator(".k2b-chart-explorer").boundingBox();
         expect(svg).toContain("data-chart-datum");
         if (process.env.VIEW_SHOTS && arrival === "initial")
           await page.screenshot({ path: `${process.env.VIEW_SHOTS}/history-loading-light-${width}.png`, fullPage: true });
         code();
-        await page.waitForSelector("solid-island .k2b-chart:not([inert])");
-        await page.waitForFunction(() => !document.querySelector("solid-island .k2b-chart")?.closest("[inert]"));
+        await page.waitForSelector('solid-island .k2b-chart[data-interactive="true"]');
+        await settled(page);
         expect(await history.locator(".k2b-chart__svg > svg").evaluate((node) => node.outerHTML)).toBe(svg);
         expect(await page.evaluate(() => document.querySelector("solid-island .k2b-chart__svg > svg") === window.historyServerSvg)).toBe(
           true,
@@ -1594,6 +1629,7 @@ for (const width of [1280, 390])
         await page.waitForSelector("solid-island[data-mounted=true]");
         const svg = await page.locator("solid-island .k2b-chart__svg > svg").evaluate((node) => node.outerHTML);
         await page.getByRole("textbox", { name: "Message" }).fill("Keep my draft");
+        await settled(page);
         const frame = await page.locator("solid-island .k2b-chart-explorer").boundingBox();
         code();
         await page
