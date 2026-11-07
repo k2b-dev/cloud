@@ -67,10 +67,13 @@ const mountElement = <Props extends object>(
   Component: Component<Props>,
   Fallback?: Component<IslandErrorProps>,
 ): void => {
-  const { mounted } = registry();
+  const shared = registry();
+  const { mounted } = shared;
   if (mounted.has(element)) return;
+  shared.preparing ??= new WeakSet();
+  const preparing = shared.preparing;
   const start = (): void => {
-    registry().preparing?.delete(element);
+    preparing.delete(element);
     try {
       element.innerHTML = "";
       const dispose = render(() => {
@@ -110,18 +113,15 @@ const mountElement = <Props extends object>(
   };
   // A presentation module can keep server HTML visible while its first-use code loads.
   // Disposal cancels a late resume, including a page replaced by progressive navigation.
-  let active = true;
-  const shared = registry();
-  shared.preparing ??= new WeakSet();
-  shared.preparing.add(element);
+  let pending = true;
+  preparing.add(element);
   mounted.set(element, () => {
-    active = false;
-    shared.preparing?.delete(element);
+    pending = false;
+    preparing.delete(element);
   });
-  let resumed = false;
   const resume = () => {
-    if (!active || resumed) return;
-    resumed = true;
+    if (!pending) return;
+    pending = false;
     start();
   };
   const event = new CustomEvent("ssr:before-island-mount", {

@@ -12,7 +12,9 @@ export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
 export * from "./calendar";
 export * from "./inspection";
+export { map } from "./map";
 export * from "./render";
+export { chartRenderHeight, preservesAspectRatio } from "./render-size";
 export * from "./snapshot";
 export {
   type AxisOptions,
@@ -42,7 +44,6 @@ export {
   type MapSeries,
   type MapViewport,
   type MarkerShape,
-  map,
   mapLog,
   mapRange,
   markerPath,

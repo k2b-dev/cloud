@@ -1,6 +1,6 @@
 import { mergeProps } from "solid-js";
 import { sparkline } from "../charts/core/svg";
-import { type ChartProps, renderChartRoot } from "./Chart";
+import { type ChartProps, renderChartRoot } from "./ChartRoot";
 import { responsiveChartSvg } from "./chart-svg";
 
 /** The same chart host and SVG for stat trends, without the catalog dispatcher. */

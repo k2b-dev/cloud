@@ -52,8 +52,8 @@ const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry
     const output = outputs.get(name);
     if (!output) throw new Error(`Missing harness output: ${name}`);
     for (const [path, input] of Object.entries(output.inputs))
-      if (path.endsWith("/charts/core/registry.js") && input.bytesInOutput > 0)
-        throw new Error("The initial Chat module must not contain the chart renderer registry");
+      if ((path.endsWith("/charts/core/registry.js") || path.endsWith("/charts/core/chart-map-data.js")) && input.bytesInOutput > 0)
+        throw new Error("The initial Chat module must not contain the chart renderer registry or map data");
     for (const dependency of output.imports)
       if (dependency.kind !== "dynamic-import" && outputs.has(basename(dependency.path))) initial.add(basename(dependency.path));
   }
