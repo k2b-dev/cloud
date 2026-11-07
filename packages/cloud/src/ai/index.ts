@@ -478,6 +478,7 @@ export {
   type CloudAiViewSummary,
   CloudAiViewSummarySchema,
   type CloudAiViewTable,
+  type CloudMoneyDescription,
   checkCloudAiView,
   cloudAiDetailsRows,
   cloudAiExplorerControls,
