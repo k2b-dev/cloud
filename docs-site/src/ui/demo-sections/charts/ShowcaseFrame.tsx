@@ -246,19 +246,7 @@ export function ShowcaseBlockPreview(props: { block: string; spec: JsonObject })
           density="compact"
           rows={rows()}
           getRowId={(row) => row.key}
-          columns={columns().map((column) => ({
-            id: text(column.id),
-            header: text(column.label),
-            value: (row: TableRow) => {
-              const value = row.cells[text(column.id)];
-              return typeof value === "number"
-                ? formatNumber(value, column.format)
-                : value === null || value === undefined
-                  ? "–"
-                  : text(value);
-            },
-            align: column.type === "number" || column.type === "amount" || column.type === "flow" ? "right" : "left",
-          }))}
+          columns={tableColumnsOf(columns(), typedTables())}
         />
       </Match>
     </Switch>
@@ -327,6 +315,26 @@ type TableRow = { key: string; cells: JsonObject };
 const typedColumnKeys = ["type", "format", "states", "max", "priority"] as const;
 const typedTables = () => typeof Reflect.get(ui, "filterRows") === "function";
 
+/** Table columns from a description: raw values for a typed table, formatted text for an older one. */
+const tableColumnsOf = (columns: JsonObject[], typed: boolean): DataTableColumn<TableRow>[] =>
+  columns.map((column) => {
+    const base: DataTableColumn<TableRow> = {
+      id: text(column.id),
+      header: text(column.label),
+      value: (row: TableRow) => {
+        const value = row.cells[text(column.id)];
+        if (typed) return value ?? null;
+        if (value === null || value === undefined) return "–";
+        return typeof value === "number" ? formatNumber(value, column.format) : text(value);
+      },
+      sortable: true,
+      align: column.type === "number" || column.type === "amount" || column.type === "flow" ? "right" : "left",
+    };
+    return typed
+      ? Object.assign(base, Object.fromEntries(typedColumnKeys.filter((key) => key in column).map((key) => [key, column[key]])))
+      : base;
+  });
+
 /**
  * `{ block: "table", columns, rows, search?, groupBy? }`: search and grouping sit in the frame's head, headers sort,
  * and the table reaches the frame's edges below. The frame always holds every row whole: a hidden copy of the full
@@ -366,20 +374,7 @@ function TableBlock(props: ShowcaseFrameProps & { spec: JsonObject }): JSX.Eleme
       return order.direction === "asc" ? comparison : -comparison;
     });
   });
-  const tableColumns = () =>
-    columns().map((column) => {
-      const base: DataTableColumn<TableRow> = {
-        id: text(column.id),
-        header: text(column.label),
-        // A typed table formats raw values itself; an older one gets the formatted text.
-        value: (row: TableRow) => (typed ? (row.cells[text(column.id)] ?? null) : cell(column, row)),
-        sortable: true,
-        align: column.type === "number" || column.type === "amount" || column.type === "flow" ? "right" : "left",
-      };
-      return typed
-        ? Object.assign(base, Object.fromEntries(typedColumnKeys.filter((key) => key in column).map((key) => [key, column[key]])))
-        : base;
-    });
+  const tableColumns = () => tableColumnsOf(columns(), typed);
   const grouping = (): Record<string, unknown> => (typed && group() ? { groupBy: group() } : {});
   const failed = () => props.state === "error";
   const showing = () => withRows(props.state) && rows().length > 0;

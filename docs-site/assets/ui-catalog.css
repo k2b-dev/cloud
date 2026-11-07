@@ -1735,8 +1735,9 @@
   margin-top: auto;
 }
 
-/* A block in a card: its own height, read from the top. */
-.ui-charts-card__block {
+/* A block in a card: its own height, read from the top right under the summary. */
+.ui-charts-card__chart.ui-charts-card__block {
+  margin-top: 0;
   overflow: hidden;
 }
 
@@ -1756,11 +1757,20 @@
   container-type: inline-size;
 }
 
+.ui-charts-card__chart[data-fit="whole"] .stdlib-chart-legend {
+  display: none;
+}
+
+.ui-charts-card__legend {
+  justify-content: center;
+}
+
 .ui-charts-card__chart[data-fit="whole"] svg text:not(.stdlib-chart-gauge-value, .stdlib-chart-stat-value) {
   font-size: max(11px, calc(32px - 5cqw));
 }
 
 .ui-charts-card__open {
+  margin-top: auto;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;

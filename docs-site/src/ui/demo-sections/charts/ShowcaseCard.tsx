@@ -1,6 +1,6 @@
 import { Chart, type ChartSnapshot, ChartSnapshotView } from "@k2b/ui";
-import { createMemo, type JSX, Match, onMount, Switch } from "solid-js";
-import type { ChartShowcaseExample } from "./examples/types";
+import { createMemo, For, type JSX, Match, onMount, Show, Switch } from "solid-js";
+import type { ChartShowcaseExample, JsonValue } from "./examples/types";
 import { resolveDrawing } from "./resolve";
 import { ShowcaseBlockPreview } from "./ShowcaseFrame";
 
@@ -23,6 +23,14 @@ export const cardFit = (snapshot: ChartSnapshot): { mode: "stretch" | "rows" | "
   return { mode: "stretch", style: { height: `${STRETCH_HEIGHT}px` } };
 };
 
+/** Slice names of a pie or donut description, in drawing order. */
+const sliceLabels = (spec: JsonValue): string[] =>
+  spec !== null && typeof spec === "object" && !Array.isArray(spec) && Array.isArray(spec.data)
+    ? spec.data.flatMap((entry) =>
+        entry !== null && typeof entry === "object" && !Array.isArray(entry) && typeof entry.label === "string" ? [entry.label] : [],
+      )
+    : [];
+
 /** A small live chart for the overview: tooltips and keyboard inspection, no frame states. */
 export function ShowcaseCardChart(props: { example: ChartShowcaseExample; height: number }): JSX.Element {
   const drawing = createMemo(() => resolveDrawing(props.example.spec));
@@ -36,12 +44,36 @@ export function ShowcaseCardChart(props: { example: ChartShowcaseExample; height
           onMount(() => {
             if (scroller && fit().mode === "wide") scroller.scrollLeft = scroller.scrollWidth;
           });
+          // Slices name themselves in a legend under the card's drawing; the drawing's own legend is too small there.
+          const slices = () =>
+            snapshot().snapshot.kind === "pie" || snapshot().snapshot.kind === "donut" ? sliceLabels(props.example.spec) : [];
           return (
-            <div ref={scroller} class="ui-charts-card__chart" data-fit={fit().mode} style={fit().style}>
-              <div class="ui-charts-card__drawing" style={fit().mode === "wide" ? { width: `${snapshot().snapshot.width}px` } : undefined}>
-                <ChartSnapshotView snapshot={snapshot().snapshot} selectedKey={null} onSelect={() => {}} style={{ height: "100%" }} />
+            <>
+              <div ref={scroller} class="ui-charts-card__chart" data-fit={fit().mode} style={fit().style}>
+                <div
+                  class="ui-charts-card__drawing"
+                  style={fit().mode === "wide" ? { width: `${snapshot().snapshot.width}px` } : undefined}
+                >
+                  <ChartSnapshotView snapshot={snapshot().snapshot} selectedKey={null} onSelect={() => {}} style={{ height: "100%" }} />
+                </div>
               </div>
-            </div>
+              <Show when={slices().length}>
+                <ul class="k2b-chart-legend ui-charts-card__legend" aria-label="Legend">
+                  <For each={slices()}>
+                    {(label, index) => (
+                      <li>
+                        <span
+                          class="k2b-chart-legend__swatch"
+                          style={{ "--k2b-chart-legend-color": `var(--stdlib-chart-c${(index() % 8) + 1})` }}
+                          aria-hidden="true"
+                        />
+                        {label}
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+            </>
           );
         }}
       </Match>
